@@ -71,7 +71,10 @@ def run_training(
     validation_dataset: Dataset[tuple[torch.Tensor, torch.Tensor]],
     checkpoint_dir: str | Path,
     resume_path: str | Path | None = None,
+    initial_checkpoint_path: str | Path | None = None,
 ) -> dict[str, float | int | str]:
+    if resume_path is not None and initial_checkpoint_path is not None:
+        raise ValueError("resume_path and initial_checkpoint_path are mutually exclusive")
     seed_everything(training_config.seed)
     device = resolve_device(training_config.device)
     model = MiniGPT(model_config).to(device)
@@ -94,6 +97,8 @@ def run_training(
         payload = load_checkpoint(resume_path, model, optimizer, scheduler, device)
         start_step = int(payload["step"])
         best_validation_loss = float(payload["best_validation_loss"])
+    elif initial_checkpoint_path is not None:
+        load_checkpoint(initial_checkpoint_path, model, device=device, restore_rng=False)
 
     model.train()
     optimizer.zero_grad(set_to_none=True)
@@ -168,4 +173,3 @@ def run_training(
         "validation_loss": latest_validation_loss,
         "best_validation_loss": best_validation_loss,
     }
-

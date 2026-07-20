@@ -7,6 +7,7 @@ from pathlib import Path
 
 import torch
 
+from .chat_finetune_data import prepare_chat_corpus
 from .checkpointing import load_checkpoint
 from .config import ModelConfig, TrainingConfig
 from .data import TokenWindowDataset, encode_split, prepare_corpus
@@ -33,6 +34,11 @@ def _build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--processed-dir", default="data/processed")
     prepare.add_argument("--validation-ratio", type=float, default=0.1)
 
+    prepare_chat = subparsers.add_parser("prepare-chat", help="prepare approved chat examples for fine-tuning")
+    prepare_chat.add_argument("--input", default="data/conversations/approved.jsonl")
+    prepare_chat.add_argument("--output-dir", default="data/conversations/processed")
+    prepare_chat.add_argument("--validation-ratio", type=float, default=0.1)
+
     tokenizer = subparsers.add_parser("tokenizer", help="train a byte-level BPE tokenizer")
     tokenizer.add_argument("--text-dir", default="data/processed")
     tokenizer.add_argument("--output", default="data/tokenizer.json")
@@ -48,7 +54,9 @@ def _build_parser() -> argparse.ArgumentParser:
     train.add_argument("--processed-dir", default="data/processed")
     train.add_argument("--tokenizer", default="data/tokenizer.json")
     train.add_argument("--checkpoint-dir", default="checkpoints")
-    train.add_argument("--resume")
+    train_start = train.add_mutually_exclusive_group()
+    train_start.add_argument("--resume")
+    train_start.add_argument("--init-checkpoint")
 
     generate_parser = subparsers.add_parser("generate", help="generate text from a checkpoint")
     generate_parser.add_argument("--checkpoint", default="checkpoints/latest.pt")
@@ -83,6 +91,10 @@ def main(argv: list[str] | None = None) -> int:
         report = prepare_corpus(_path(args.raw_dir), _path(args.processed_dir), args.validation_ratio)
         print(json.dumps(report.__dict__, ensure_ascii=False, indent=2))
         return 0
+    if args.command == "prepare-chat":
+        report = prepare_chat_corpus(_path(args.input), _path(args.output_dir), args.validation_ratio)
+        print(json.dumps(report.__dict__, ensure_ascii=False, indent=2))
+        return 0
     if args.command == "tokenizer":
         text_files = sorted(_path(args.text_dir).glob("*.txt"))
         actual_size = train_tokenizer(text_files, _path(args.output), args.vocab_size)
@@ -105,6 +117,7 @@ def main(argv: list[str] | None = None) -> int:
             validation_dataset,
             _path(args.checkpoint_dir),
             _path(args.resume) if args.resume else None,
+            _path(args.init_checkpoint) if args.init_checkpoint else None,
         )
         print(json.dumps(result, indent=2))
         return 0

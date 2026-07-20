@@ -16,7 +16,7 @@
 - Create: `D:\LLM\src\mini_gpt\chat_finetune_data.py`
 - Create: `D:\LLM\tests\test_chat_finetune_data.py`
 
-- [ ] **Step 1: Write failing tests for Unicode formatting, deduplication, and deterministic split**
+- [x] **Step 1: Write failing tests for Unicode formatting, deduplication, and deterministic split**
 
 Create `tests/test_chat_finetune_data.py` with a helper that writes JSONL records. Include this test:
 
@@ -52,7 +52,7 @@ Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_chat_finetune_data.
 
 Expected: FAIL because `mini_gpt.chat_finetune_data` does not exist.
 
-- [ ] **Step 2: Implement the chat corpus module**
+- [x] **Step 2: Implement the chat corpus module**
 
 Add:
 
@@ -71,7 +71,7 @@ def format_chat_example(prompt: str, response: str) -> str:
 
 Read UTF-8 JSONL one line at a time; require object records with string `prompt` and `response`, normalize text with the existing `normalize_text`, reject blank values with their source line number, deduplicate exact normalized pairs, require two or more pairs, shuffle with `Random(seed)`, and write `train.txt`, `val.txt`, and `report.json`. Use the same validation-count formula as `prepare_corpus`.
 
-- [ ] **Step 3: Run focused chat-data tests**
+- [x] **Step 3: Run focused chat-data tests**
 
 Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_chat_finetune_data.py -q`
 
@@ -83,7 +83,7 @@ Expected: PASS.
 - Modify: `D:\LLM\src\mini_gpt\train.py`
 - Modify: `D:\LLM\tests\test_training_smoke.py`
 
-- [ ] **Step 1: Write a failing init-checkpoint smoke test**
+- [x] **Step 1: Write a failing init-checkpoint smoke test**
 
 Create a tiny source checkpoint using `run_training` for two CPU steps. Then call a second run with `initial_checkpoint_path=source_checkpoint`, `total_steps=1`, and a separate output directory. Assert the second result has `step == 1`, its `latest.pt` exists, and its payload has `step == 1` rather than inheriting the source checkpoint's step.
 
@@ -91,7 +91,7 @@ Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_training_smoke.py -
 
 Expected: FAIL because `run_training` has no `initial_checkpoint_path` argument.
 
-- [ ] **Step 2: Implement weight-only initialization**
+- [x] **Step 2: Implement weight-only initialization**
 
 Extend `run_training` with `initial_checkpoint_path: str | Path | None = None`. Raise `ValueError("resume_path and initial_checkpoint_path are mutually exclusive")` when both are supplied. Preserve the current resume branch exactly. In the new initialization branch call:
 
@@ -101,7 +101,7 @@ load_checkpoint(initial_checkpoint_path, model, device=device, restore_rng=False
 
 Do not pass optimizer or scheduler. Leave `start_step = 0`, `best_validation_loss = inf`, and the fresh seed/scheduler intact.
 
-- [ ] **Step 3: Run training smoke tests**
+- [x] **Step 3: Run training smoke tests**
 
 Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_training_smoke.py -q`
 
@@ -114,7 +114,7 @@ Expected: PASS.
 - Create: `D:\LLM\configs\chat_finetune.json`
 - Modify: `D:\LLM\tests\test_cli.py`
 
-- [ ] **Step 1: Write failing CLI tests**
+- [x] **Step 1: Write failing CLI tests**
 
 Add a `prepare-chat` invocation that writes a two-record source JSONL, assert `main(["prepare-chat", "--input", str(source), "--output-dir", str(processed)]) == 0`, and check `processed/train.txt` and `processed/val.txt` exist. Add a parser test asserting `train --resume state.pt --init-checkpoint base.pt` exits with parser error.
 
@@ -122,11 +122,11 @@ Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_cli.py -q`
 
 Expected: FAIL because `prepare-chat` and `--init-checkpoint` do not exist.
 
-- [ ] **Step 2: Implement the CLI composition**
+- [x] **Step 2: Implement the CLI composition**
 
 Import `prepare_chat_corpus`. Add `prepare-chat` with `--input` defaulting to `data/conversations/approved.jsonl`, `--output-dir` defaulting to `data/conversations/processed`, and `--validation-ratio` defaulting to `0.1`. Replace the train parser's standalone resume argument with a mutually exclusive group containing `--resume` and `--init-checkpoint`. Pass the resolved initialization path to `run_training`.
 
-- [ ] **Step 3: Add the fine-tuning config**
+- [x] **Step 3: Add the fine-tuning config**
 
 Create `configs/chat_finetune.json` with the 8-layer/512-dimension model shape from `configs/base.json` and this training payload:
 
@@ -148,7 +148,7 @@ Create `configs/chat_finetune.json` with the 8-layer/512-dimension model shape f
 }
 ```
 
-- [ ] **Step 4: Run focused CLI tests**
+- [x] **Step 4: Run focused CLI tests**
 
 Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_cli.py tests/test_training_smoke.py -q`
 
@@ -160,11 +160,11 @@ Expected: PASS.
 - Modify: `D:\LLM\README.md`
 - Modify: `D:\LLM\docs\superpowers\plans\2026-07-20-chat-finetuning-plan.md`
 
-- [ ] **Step 1: Document the post-base workflow**
+- [x] **Step 1: Document the post-base workflow**
 
 Add exact commands for `prepare-chat`, two existing `encode` commands targeting `data/conversations/processed`, and `train --init-checkpoint checkpoints/base/latest.pt --checkpoint-dir checkpoints/chat-finetune`. State that the base job must finish first, at least two examples are required technically but a useful conversational fine-tune needs a substantially reviewed dialogue set, and the user must select the chat-finetune checkpoint in the GUI.
 
-- [ ] **Step 2: Run full verification without launching fine-tuning**
+- [x] **Step 2: Run full verification without launching fine-tuning**
 
 Run:
 
@@ -177,7 +177,7 @@ git diff --check
 
 Expected: compile succeeds, all tests pass, and no whitespace errors appear. Do not run the production chat fine-tune because the approved data file may be empty and the base run may still be active.
 
-- [ ] **Step 3: Inspect documents, stage, and commit**
+- [x] **Step 3: Inspect documents, stage, and commit**
 
 Review all files under `D:\LLM\docs` and `README.md` for stale training paths. Mark this plan complete, stage only the feature files, run `git diff --cached --check`, and commit:
 

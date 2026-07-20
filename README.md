@@ -72,6 +72,27 @@ D:\LLM\data\conversations\approved.jsonl
 
 The model does not update its weights automatically when an example is saved. Review the approved examples before using them in a future explicit fine-tuning run.
 
+## Fine-tuning for natural conversation
+
+Complete base training first. Then collect and review a substantial set of useful chat turns with the GUI; the command requires at least two unique examples, but a useful conversational improvement needs many more high-quality examples.
+
+Prepare and encode the approved examples without changing the Wikipedia corpus or tokenizer:
+
+```powershell
+cd D:\LLM
+& .\.venv\Scripts\python.exe -m mini_gpt.cli prepare-chat --input data/conversations/approved.jsonl --output-dir data/conversations/processed
+& .\.venv\Scripts\python.exe -m mini_gpt.cli encode --text data/conversations/processed/train.txt --tokenizer data/tokenizer.json --output data/conversations/processed/train.bin
+& .\.venv\Scripts\python.exe -m mini_gpt.cli encode --text data/conversations/processed/val.txt --tokenizer data/tokenizer.json --output data/conversations/processed/val.bin
+```
+
+Fine-tune from the completed base model with a fresh optimizer and checkpoint directory:
+
+```powershell
+& .\.venv\Scripts\python.exe -m mini_gpt.cli train --config configs/chat_finetune.json --processed-dir data/conversations/processed --tokenizer data/tokenizer.json --checkpoint-dir checkpoints/chat-finetune --init-checkpoint checkpoints/base/latest.pt
+```
+
+`--init-checkpoint` copies only compatible model weights; it does not continue the base optimizer, scheduler, or step counter. Use `--resume checkpoints/chat-finetune/latest.pt` only to continue an interrupted chat fine-tuning run. When it finishes, select `checkpoints/chat-finetune/latest.pt` in the GUI.
+
 ## Replacing the corpus
 
 Put UTF-8 `.txt` documents under `data/raw`. A document can begin with `VI:` or `EN:` to contribute to the language report. Use only public-domain, openly licensed, or user-provided data with permission. Re-run preparation, tokenizer training, and encoding after changing the corpus.

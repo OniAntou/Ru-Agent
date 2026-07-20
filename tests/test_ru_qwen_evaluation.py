@@ -94,6 +94,23 @@ def test_base_only_decision_rejects_an_automatic_disqualifier():
     assert decision["failure_reasons"] == ["automatic_disqualifiers"]
 
 
+def test_base_only_decision_stops_before_manual_review_when_the_automatic_gate_fails():
+    assessments = {case.case_id: assess_response(case.prompt, "A helpful reply.", case.language) for case in V4_CONVERSATION_SUITE}
+    first_case = V4_CONVERSATION_SUITE[0]
+    assessments[first_case.case_id] = assess_response(first_case.prompt, first_case.prompt, first_case.language)
+
+    decision = record_base_only_decision(
+        profile_name="ru_qwen_v5_3b",
+        assessments=assessments,
+        reviews=None,
+        reviewer_notes="Automatic gate failed; manual review skipped.",
+    )
+
+    assert decision["manual_natural_count"] is None
+    assert decision["verdict"] == "not_adopted"
+    assert decision["failure_reasons"] == ["automatic_disqualifiers"]
+
+
 def test_base_only_decision_requires_one_human_review_for_every_case():
     assessments = {case.case_id: assess_response(case.prompt, "A helpful reply.", case.language) for case in V4_CONVERSATION_SUITE}
     incomplete_reviews = (ManualReview(V4_CONVERSATION_SUITE[0].case_id, True, True, True, True, "Only one."),)

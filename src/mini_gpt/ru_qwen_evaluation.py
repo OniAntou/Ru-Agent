@@ -40,17 +40,30 @@ def record_base_only_decision(
     *,
     profile_name: str,
     assessments: Mapping[str, ResponseAssessment],
-    reviews: Sequence[ManualReview],
+    reviews: Sequence[ManualReview] | None,
     reviewer_notes: str,
     manual_required_count: int = 24,
 ) -> dict[str, object]:
+    automatic_disqualifier_count = sum(not assessment.passed for assessment in assessments.values())
+    if reviews is None:
+        if not automatic_disqualifier_count:
+            raise ValueError("manual review is required when the automatic gate passes")
+        return {
+            "profile_name": profile_name,
+            "phase": "base_only",
+            "automatic_disqualifier_count": automatic_disqualifier_count,
+            "manual_natural_count": None,
+            "manual_required_count": manual_required_count,
+            "verdict": "not_adopted",
+            "failure_reasons": ["automatic_disqualifiers"],
+            "reviewer_notes": reviewer_notes,
+        }
     assessment_ids = set(assessments)
     review_ids = [review.case_id for review in reviews]
     if len(review_ids) != len(set(review_ids)):
         raise ValueError("manual review contains duplicate case ids")
     if set(review_ids) != assessment_ids:
         raise ValueError("manual review must cover every evaluated case exactly once")
-    automatic_disqualifier_count = sum(not assessment.passed for assessment in assessments.values())
     manual_natural_count = sum(
         review.natural and review.relevant and review.expected_language and review.voice for review in reviews
     )

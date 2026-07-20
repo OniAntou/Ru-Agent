@@ -15,7 +15,9 @@ from mini_gpt.ru_qwen_evaluation import ManualReview, ResponseAssessment, record
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Record a manual Ru base-only evaluation decision")
     parser.add_argument("--evaluation", required=True, help="Existing evaluator JSON output")
-    parser.add_argument("--review", required=True, help="Manual review JSON with reviewer_notes and reviews")
+    review_mode = parser.add_mutually_exclusive_group(required=True)
+    review_mode.add_argument("--review", help="Manual review JSON with reviewer_notes and reviews")
+    review_mode.add_argument("--automatic-only", action="store_true", help="Record an automatic-gate rejection without manual review")
     return parser
 
 
@@ -69,17 +71,23 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(passed, bool) or not isinstance(failures, list) or not all(isinstance(failure, str) for failure in failures):
             raise ValueError("base_assessment must contain boolean passed and string failures")
         assessments[case["case_id"]] = ResponseAssessment(passed=passed, failures=tuple(failures))
-    review_payload = _load_json(args.review)
-    reviewer_notes = review_payload.get("reviewer_notes", "")
-    if not isinstance(reviewer_notes, str):
-        raise ValueError("reviewer_notes must be a string")
+    review_payload: dict[str, object] | None = None
+    reviewer_notes = "Automatic gate failed; manual review skipped."
+    reviews: tuple[ManualReview, ...] | None = None
+    if args.review:
+        review_payload = _load_json(args.review)
+        reviewer_notes = review_payload.get("reviewer_notes", "")
+        if not isinstance(reviewer_notes, str):
+            raise ValueError("reviewer_notes must be a string")
+        reviews = _reviews(review_payload)
     decision = record_base_only_decision(
         profile_name=str(evaluation.get("profile_name", evaluation.get("base_model_id", "unknown"))),
         assessments=assessments,
-        reviews=_reviews(review_payload),
+        reviews=reviews,
         reviewer_notes=reviewer_notes,
     )
-    evaluation["manual_review"] = review_payload
+    if review_payload is not None:
+        evaluation["manual_review"] = review_payload
     evaluation["decision"] = decision
     evaluation["verdict"] = decision["verdict"]
     partial = evaluation_path.with_suffix(evaluation_path.suffix + ".partial")

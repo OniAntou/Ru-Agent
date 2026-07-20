@@ -88,3 +88,28 @@ def test_base_review_recorder_writes_a_not_adopted_decision_for_an_automatic_fai
     persisted = json.loads(evaluation_path.read_text(encoding="utf-8"))
     assert persisted["verdict"] == "not_adopted"
     assert persisted["decision"]["failure_reasons"] == ["automatic_disqualifiers", "manual_score_below_required"]
+
+
+def test_base_review_recorder_can_stop_at_an_automatic_failure_without_manual_reviews(tmp_path):
+    evaluation_path = tmp_path / "evaluation.json"
+    evaluation_path.write_text(
+        json.dumps(
+            {
+                "profile_name": "ru_qwen_v5_3b",
+                "cases": [{"case_id": "case_1", "base_assessment": {"passed": False, "failures": ["echo"]}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(REVIEW_SCRIPT), "--evaluation", str(evaluation_path), "--automatic-only"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    persisted = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    assert persisted["decision"]["manual_natural_count"] is None
+    assert persisted["decision"]["failure_reasons"] == ["automatic_disqualifiers"]

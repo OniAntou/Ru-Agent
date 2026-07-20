@@ -138,6 +138,14 @@ reply, an instruction/exercise, a list, an AI self-description, or broken
 context, correct the authored source and rebuild. The V3 training command is
 added only after its QLoRA implementation and CUDA smoke test exist.
 
+### First V3 adapter run (not adopted)
+
+The first one-epoch QLoRA run completed with validation loss
+`2.914673924446106` and peak VRAM about `1,000 MiB`, but its Vietnamese
+evaluation reply still used the wrong point of view and its English reply was
+generic. The adapter is retained for diagnosis only; it does not pass Ru's
+natural-conversation gate and must not become the GUI default.
+
 The local Qwen base is kept out of Git under `models/`. Its explicit download
 and verification command is:
 

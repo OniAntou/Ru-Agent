@@ -4,7 +4,8 @@ Mục tiêu dài hạn: Ru giao tiếp tự nhiên bằng tiếng Việt và ti�
 
 ## Nền tảng hội thoại
 
-- [ ] Hoàn tất base training và đánh giá checkpoint tốt nhất.
+- [x] Hoàn tất base training và đánh giá checkpoint tốt nhất.
+- [ ] Tạo và lọc bộ dữ liệu hội thoại nguồn mở Việt-Anh có kèm nguồn/giấy phép.
 - [ ] Thu thập các lượt chat được đánh dấu hữu ích.
 - [ ] Fine-tune hội thoại từ `data/conversations/approved.jsonl`.
 - [ ] Tạo bộ câu hỏi đánh giá giao tiếp Việt-Anh và theo dõi chất lượng sau mỗi lần fine-tune.

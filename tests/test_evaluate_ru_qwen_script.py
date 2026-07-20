@@ -9,6 +9,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_ru_qwen_v4.
 V5_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "ru_qwen_v5_3b.json"
 QWEN3_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "ru_qwen3_4b.json"
 REVIEW_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "record_ru_qwen_base_review.py"
+REASSESS_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "reassess_ru_qwen_evaluation.py"
 
 
 def test_v5_base_only_config_loads_without_an_adapter_or_training_settings():
@@ -130,3 +131,33 @@ def test_base_review_recorder_can_stop_at_an_automatic_failure_without_manual_re
     persisted = json.loads(evaluation_path.read_text(encoding="utf-8"))
     assert persisted["decision"]["manual_natural_count"] is None
     assert persisted["decision"]["failure_reasons"] == ["automatic_disqualifiers"]
+
+
+def test_reassessor_replaces_stale_automatic_assessments_without_generating_again(tmp_path):
+    evaluation_path = tmp_path / "evaluation.json"
+    evaluation_path.write_text(
+        json.dumps(
+            {
+                "verdict": "not_adopted",
+                "decision": {"failure_reasons": ["automatic_disqualifiers"]},
+                "cases": [
+                    {
+                        "case_id": "case_1",
+                        "language": "vi",
+                        "prompt": "Xin chào em.",
+                        "base_response": "Chào anh! Em là người bạn đồng hành của anh.",
+                        "base_assessment": {"passed": False, "failures": ["vietnamese_voice"]},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run([sys.executable, str(REASSESS_SCRIPT), "--evaluation", str(evaluation_path)], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 0
+    persisted = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    assert persisted["verdict"] == "not_reviewed"
+    assert "decision" not in persisted
+    assert persisted["cases"][0]["base_assessment"] == {"passed": True, "failures": []}

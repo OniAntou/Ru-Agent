@@ -8,8 +8,8 @@ from .data import normalize_text
 from .ru_style import RU_SYSTEM_PROMPT
 
 _AI_DISCLAIMER = re.compile(r"\b(as an ai language model|i cannot access|i do not have a physical body)\b", re.IGNORECASE)
-_VI_WRONG_SELF_REFERENCE = re.compile(r"\b(?:tôi|mình)\b", re.IGNORECASE)
-_VI_WRONG_USER_ADDRESS = re.compile(r"(?<!làm\s)\bbạn\b", re.IGNORECASE)
+_VI_WRONG_SELF_REFERENCE = re.compile(r"\btôi\b", re.IGNORECASE)
+_VI_WRONG_USER_ADDRESS = re.compile(r"(?<!làm\s)(?<!người\s)\bbạn\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)

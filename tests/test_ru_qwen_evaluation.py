@@ -41,6 +41,11 @@ def test_vietnamese_voice_check_allows_lam_ban_but_rejects_ban_as_an_address():
     assert not assess_response("Xin chào", "Em có thể giúp bạn nghỉ ngơi.", "vi").passed
 
 
+def test_vietnamese_voice_check_allows_non_address_ban_and_contextual_minh():
+    assert assess_response("Xin chào", "Chào anh! Em là người bạn đồng hành của anh.", "vi").passed
+    assert assess_response("Anh chưa ngủ được", "Em hiểu anh. Anh có thể uống trà ấm để giúp mình ngủ ngon hơn nhé.", "vi").passed
+
+
 def test_base_only_decision_passes_only_when_every_case_has_a_natural_human_review():
     assessments = {case.case_id: assess_response(case.prompt, "A helpful reply.", case.language) for case in V4_CONVERSATION_SUITE}
     reviews = tuple(

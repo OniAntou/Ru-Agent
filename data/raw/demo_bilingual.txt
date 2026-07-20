@@ -1,0 +1,44 @@
+VI: Xin chào Việt Nam. Đây là một câu tiếng Việt để kiểm tra mô hình ngôn ngữ nhỏ.
+
+EN: Hello from England. This is an English sentence for testing a small language model.
+
+VI: Một mô hình học ngôn ngữ dự đoán từ tiếp theo dựa trên những token trước đó.
+
+EN: A language model predicts the next token from the tokens that came before it.
+
+VI: Dữ liệu sạch, tokenizer tốt và vòng lặp huấn luyện ổn định đều quan trọng.
+
+EN: Clean data, a good tokenizer, and a stable training loop all matter.
+
+VI: Transformer sử dụng attention để kết nối các phần khác nhau của văn bản.
+
+EN: A Transformer uses attention to connect different parts of a sequence.
+
+VI: Chúng ta lưu checkpoint để có thể tiếp tục sau khi máy dừng hoặc hết thời gian.
+
+EN: We save checkpoints so training can continue after an interruption.
+
+VI: Tiếng Việt có dấu và tiếng Anh không dấu là hai bài kiểm tra khác nhau cho tokenizer.
+
+EN: Vietnamese diacritics and English spelling are useful tokenizer tests.
+
+VI: Mục tiêu đầu tiên là chạy được toàn bộ pipeline từ dữ liệu đến văn bản sinh ra.
+
+EN: The first goal is to run the complete pipeline from data to generated text.
+
+VI: Loss giảm trên tập validation cho thấy mô hình đang học một phần cấu trúc dữ liệu.
+
+EN: A lower validation loss shows that the model is learning some structure from the data.
+
+VI: Batch nhỏ giúp giảm yêu cầu bộ nhớ GPU nhưng cần gradient accumulation.
+
+EN: A small batch reduces GPU memory usage but may need gradient accumulation.
+
+VI: Chúng ta dùng dữ liệu mở và không đưa thông tin riêng tư vào corpus.
+
+EN: We use open data and do not put private information into the corpus.
+
+VI: Mô hình nhỏ không thể thay thế một trợ lý lớn, nhưng nó rất hữu ích để học.
+
+EN: A small model cannot replace a large assistant, but it is useful for learning.
+

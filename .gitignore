@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.tmp/
+pip-cache/
+data/processed/
+data/tokenizer.json
+checkpoints/
+*.egg-info/

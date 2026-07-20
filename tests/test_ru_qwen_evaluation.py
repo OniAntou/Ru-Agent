@@ -5,11 +5,16 @@ from pathlib import Path
 import pytest
 
 from mini_gpt.ru_qwen_evaluation import (
+    PROMPT_ROUTING_SMOKE_SUITE,
+    PromptRoutingReview,
+    ResponseAssessment,
     V4_CONVERSATION_SUITE,
     ManualReview,
     assess_response,
     record_base_only_decision,
+    record_prompt_routing_smoke_decision,
 )
+from mini_gpt.ru_style import ru_system_prompt_for
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_ru_qwen_v4.py"
 
@@ -20,6 +25,108 @@ def test_v4_suite_has_a_fixed_bilingual_shape():
     assert sum(case.language == "en" for case in V4_CONVERSATION_SUITE) == 14
     assert sum(case.language == "mixed" for case in V4_CONVERSATION_SUITE) == 4
     assert len({case.case_id for case in V4_CONVERSATION_SUITE}) == 32
+
+
+def test_prompt_routing_smoke_uses_the_eight_fixed_cases_with_language_specific_prompts():
+    assert tuple(case.case_id for case in PROMPT_ROUTING_SMOKE_SUITE) == (
+        "vi_greeting",
+        "vi_context_work",
+        "en_greeting",
+        "en_tired",
+        "en_context_work",
+        "en_small_talk",
+        "mixed_better",
+        "mixed_context",
+    )
+    assert all(case.messages[0] == ("system", ru_system_prompt_for(case.language)) for case in PROMPT_ROUTING_SMOKE_SUITE)
+
+
+def test_prompt_routing_smoke_decision_passes_only_with_all_english_cases_and_consistent_roles():
+    assessments = {
+        case.case_id: ResponseAssessment(passed=True, failures=()) for case in PROMPT_ROUTING_SMOKE_SUITE
+    }
+    reviews = tuple(
+        PromptRoutingReview(case.case_id, True, True, True, True, True, "Natural and on-topic.")
+        for case in PROMPT_ROUTING_SMOKE_SUITE
+    )
+
+    decision = record_prompt_routing_smoke_decision(
+        profile_name="ru_qwen3_4b",
+        assessments=assessments,
+        reviews=reviews,
+        reviewer_notes="All smoke cases reviewed.",
+    )
+
+    assert decision == {
+        "profile_name": "ru_qwen3_4b",
+        "phase": "prompt_routing_smoke",
+        "automatic_disqualifier_count": 0,
+        "manual_natural_count": 8,
+        "manual_required_count": 7,
+        "english_language_gate_passed": True,
+        "role_gate_passed": True,
+        "verdict": "passed",
+        "failure_reasons": [],
+        "reviewer_notes": "All smoke cases reviewed.",
+    }
+
+
+def test_prompt_routing_smoke_decision_rejects_a_non_english_english_response():
+    assessments = {
+        case.case_id: ResponseAssessment(passed=True, failures=()) for case in PROMPT_ROUTING_SMOKE_SUITE
+    }
+    reviews = tuple(
+        PromptRoutingReview(
+            case.case_id,
+            True,
+            True,
+            case.case_id != "en_greeting",
+            True,
+            True,
+            "Vietnamese appeared in the English response." if case.case_id == "en_greeting" else "Natural and on-topic.",
+        )
+        for case in PROMPT_ROUTING_SMOKE_SUITE
+    )
+
+    decision = record_prompt_routing_smoke_decision(
+        profile_name="ru_qwen3_4b",
+        assessments=assessments,
+        reviews=reviews,
+        reviewer_notes="One English response used Vietnamese.",
+    )
+
+    assert decision["english_language_gate_passed"] is False
+    assert decision["verdict"] == "not_adopted"
+    assert decision["failure_reasons"] == ["english_language_gate_failed"]
+
+
+def test_prompt_routing_smoke_decision_rejects_role_reversal():
+    assessments = {
+        case.case_id: ResponseAssessment(passed=True, failures=()) for case in PROMPT_ROUTING_SMOKE_SUITE
+    }
+    reviews = tuple(
+        PromptRoutingReview(
+            case.case_id,
+            True,
+            True,
+            True,
+            True,
+            case.case_id != "vi_context_work",
+            "Claimed the user's experience as Ru's own." if case.case_id == "vi_context_work" else "Natural and on-topic.",
+        )
+        for case in PROMPT_ROUTING_SMOKE_SUITE
+    )
+
+    decision = record_prompt_routing_smoke_decision(
+        profile_name="ru_qwen3_4b",
+        assessments=assessments,
+        reviews=reviews,
+        reviewer_notes="One reply reversed the roles.",
+    )
+
+    assert decision["role_gate_passed"] is False
+    assert decision["verdict"] == "not_adopted"
+    assert decision["failure_reasons"] == ["role_consistency_gate_failed"]
 
 
 def test_assess_response_rejects_echo_empty_disclaimer_and_wrong_vietnamese_voice():

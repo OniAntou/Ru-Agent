@@ -10,6 +10,8 @@ V5_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "ru_qwen_v5_3b.jso
 QWEN3_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "ru_qwen3_4b.json"
 REVIEW_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "record_ru_qwen_base_review.py"
 REASSESS_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "reassess_ru_qwen_evaluation.py"
+PROMPT_ROUTING_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_ru_qwen_prompt_routing.py"
+PROMPT_ROUTING_REVIEW_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "record_ru_prompt_routing_smoke_review.py"
 
 
 def test_v5_base_only_config_loads_without_an_adapter_or_training_settings():
@@ -50,6 +52,80 @@ def test_qwen3_base_only_config_loads_without_an_adapter_or_training_settings():
     assert config["phase"] == "base_only"
     assert "adapter_dir" not in config
     assert "dataset_dir" not in config
+
+
+def test_prompt_routing_smoke_evaluator_exposes_help_without_loading_a_model():
+    result = subprocess.run([sys.executable, str(PROMPT_ROUTING_SCRIPT), "--help"], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 0
+    assert "Prompt-routing smoke" in result.stdout
+
+
+def test_prompt_routing_smoke_recorder_exposes_help_without_changing_an_evaluation():
+    result = subprocess.run([sys.executable, str(PROMPT_ROUTING_REVIEW_SCRIPT), "--help"], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 0
+    assert "Record a manual Ru prompt-routing smoke decision" in result.stdout
+
+
+def test_prompt_routing_smoke_recorder_persists_a_passed_manual_review(tmp_path):
+    case_ids = (
+        "vi_greeting",
+        "vi_context_work",
+        "en_greeting",
+        "en_tired",
+        "en_context_work",
+        "en_small_talk",
+        "mixed_better",
+        "mixed_context",
+    )
+    evaluation_path = tmp_path / "prompt_routing_smoke.json"
+    review_path = tmp_path / "prompt_routing_smoke_review.json"
+    evaluation_path.write_text(
+        json.dumps(
+            {
+                "profile_name": "ru_qwen3_4b",
+                "cases": [
+                    {"case_id": case_id, "base_assessment": {"passed": True, "failures": []}}
+                    for case_id in case_ids
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    review_path.write_text(
+        json.dumps(
+            {
+                "reviewer_notes": "All eight responses are natural.",
+                "reviews": [
+                    {
+                        "case_id": case_id,
+                        "natural": True,
+                        "relevant": True,
+                        "expected_language": True,
+                        "voice": True,
+                        "role_consistent": True,
+                        "notes": "Natural and on-topic.",
+                    }
+                    for case_id in case_ids
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(PROMPT_ROUTING_REVIEW_SCRIPT), "--evaluation", str(evaluation_path), "--review", str(review_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    persisted = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    assert persisted["verdict"] == "passed"
+    assert persisted["decision"]["english_language_gate_passed"] is True
+    assert persisted["decision"]["role_gate_passed"] is True
 
 
 def test_base_review_recorder_exposes_help_without_changing_an_evaluation():

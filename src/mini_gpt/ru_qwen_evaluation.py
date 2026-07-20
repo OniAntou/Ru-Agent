@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from .data import normalize_text
-from .ru_style import RU_SYSTEM_PROMPT
+from .ru_style import RU_SYSTEM_PROMPT, ru_system_prompt_for
 
 _AI_DISCLAIMER = re.compile(r"\b(as an ai language model|i cannot access|i do not have a physical body)\b", re.IGNORECASE)
 _VI_WRONG_SELF_REFERENCE = re.compile(r"\btôi\b", re.IGNORECASE)
@@ -34,6 +34,85 @@ class ManualReview:
     expected_language: bool
     voice: bool
     notes: str
+
+
+@dataclass(frozen=True)
+class PromptRoutingReview:
+    case_id: str
+    natural: bool
+    relevant: bool
+    expected_language: bool
+    voice: bool
+    role_consistent: bool
+    notes: str
+
+
+_PROMPT_ROUTING_ENGLISH_CASE_IDS = frozenset(
+    {"en_greeting", "en_tired", "en_context_work", "en_small_talk"}
+)
+
+
+def record_prompt_routing_smoke_decision(
+    *,
+    profile_name: str,
+    assessments: Mapping[str, ResponseAssessment],
+    reviews: Sequence[PromptRoutingReview] | None,
+    reviewer_notes: str,
+) -> dict[str, object]:
+    required_case_ids = set(SMOKE_CASE_IDS)
+    if set(assessments) != required_case_ids:
+        raise ValueError("prompt-routing smoke assessments must cover every smoke case exactly once")
+    automatic_disqualifier_count = sum(not assessment.passed for assessment in assessments.values())
+    if reviews is None:
+        if not automatic_disqualifier_count:
+            raise ValueError("manual review is required when the automatic gate passes")
+        return {
+            "profile_name": profile_name,
+            "phase": "prompt_routing_smoke",
+            "automatic_disqualifier_count": automatic_disqualifier_count,
+            "manual_natural_count": None,
+            "manual_required_count": 7,
+            "english_language_gate_passed": None,
+            "role_gate_passed": None,
+            "verdict": "not_adopted",
+            "failure_reasons": ["automatic_disqualifiers"],
+            "reviewer_notes": reviewer_notes,
+        }
+    review_ids = [review.case_id for review in reviews]
+    if len(review_ids) != len(set(review_ids)):
+        raise ValueError("manual review contains duplicate case ids")
+    if set(review_ids) != required_case_ids:
+        raise ValueError("manual review must cover every evaluated case exactly once")
+    manual_natural_count = sum(
+        review.natural and review.relevant and review.expected_language and review.voice for review in reviews
+    )
+    english_language_gate_passed = all(
+        review.natural and review.expected_language
+        for review in reviews
+        if review.case_id in _PROMPT_ROUTING_ENGLISH_CASE_IDS
+    )
+    role_gate_passed = all(review.role_consistent for review in reviews)
+    failure_reasons: list[str] = []
+    if automatic_disqualifier_count:
+        failure_reasons.append("automatic_disqualifiers")
+    if not english_language_gate_passed:
+        failure_reasons.append("english_language_gate_failed")
+    if not role_gate_passed:
+        failure_reasons.append("role_consistency_gate_failed")
+    if manual_natural_count < 7:
+        failure_reasons.append("manual_score_below_required")
+    return {
+        "profile_name": profile_name,
+        "phase": "prompt_routing_smoke",
+        "automatic_disqualifier_count": automatic_disqualifier_count,
+        "manual_natural_count": manual_natural_count,
+        "manual_required_count": 7,
+        "english_language_gate_passed": english_language_gate_passed,
+        "role_gate_passed": role_gate_passed,
+        "verdict": "passed" if not failure_reasons else "not_adopted",
+        "failure_reasons": failure_reasons,
+        "reviewer_notes": reviewer_notes,
+    }
 
 
 def record_base_only_decision(
@@ -124,6 +203,31 @@ V4_CONVERSATION_SUITE = (
     _case("mixed_rest", "mixed", ("user", "Anh wants to rest a little tonight.")),
     _case("mixed_context", "mixed", ("user", "Can we nói chuyện for a bit?"), ("assistant", "Of course, anh."), ("user", "Today was hơi stressful.")),
 )
+
+
+SMOKE_CASE_IDS = (
+    "vi_greeting",
+    "vi_context_work",
+    "en_greeting",
+    "en_tired",
+    "en_context_work",
+    "en_small_talk",
+    "mixed_better",
+    "mixed_context",
+)
+
+
+def routed_case(case: ConversationCase) -> ConversationCase:
+    return ConversationCase(
+        case_id=case.case_id,
+        language=case.language,
+        messages=(("system", ru_system_prompt_for(case.language)), *case.messages[1:]),
+        prompt=case.prompt,
+    )
+
+
+_V4_CASES_BY_ID = {case.case_id: case for case in V4_CONVERSATION_SUITE}
+PROMPT_ROUTING_SMOKE_SUITE = tuple(routed_case(_V4_CASES_BY_ID[case_id]) for case_id in SMOKE_CASE_IDS)
 
 
 def _has_repeated_sentence(text: str) -> bool:

@@ -63,3 +63,38 @@ def test_v4_qwen_base_downloader_exposes_help_without_downloading():
 
     assert result.returncode == 0
     assert "Download and verify Ru's V4 Qwen 1.5B base" in result.stdout
+
+
+def test_qwen_generation_uses_deterministic_conversation_settings(monkeypatch):
+    import mini_gpt.qwen_runtime as runtime
+
+    class FakeInput:
+        shape = (1, 3)
+
+        def to(self, device):
+            assert device == "cuda"
+            return self
+
+    class FakeTokenizer:
+        def apply_chat_template(self, messages, **kwargs):
+            assert messages[-1] == {"role": "user", "content": "Hello Ru"}
+            assert kwargs == {"tokenize": True, "add_generation_prompt": True, "return_tensors": "pt"}
+            return FakeInput()
+
+        def decode(self, token_ids, **kwargs):
+            assert token_ids == [4, 5]
+            assert kwargs == {"skip_special_tokens": True}
+            return "Hello back"
+
+    class FakeModel:
+        def generate(self, **kwargs):
+            assert kwargs["input_ids"].shape == (1, 3)
+            assert kwargs["do_sample"] is False
+            assert kwargs["max_new_tokens"] == 96
+            assert kwargs["repetition_penalty"] == 1.05
+            return [[1, 2, 3, 4, 5]]
+
+    monkeypatch.setattr(runtime, "_load_qwen_for_generation", lambda profile, adapter_dir: (FakeTokenizer(), FakeModel()))
+    response = runtime.generate_qwen_response(runtime.QWEN_V4_BASE, (("system", "You are Ru"), ("user", "Hello Ru")))
+
+    assert response == "Hello back"

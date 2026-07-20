@@ -290,7 +290,7 @@ git commit -m "feat: build curated Ru V4 conversation corpus"
 - Modify: src/mini_gpt/qwen_runtime.py
 - Modify: tests/test_qwen_runtime.py
 
-- [ ] **Step 1: Write failing suite and assessment tests**
+- [x] **Step 1: Write failing suite and assessment tests**
 
 Create tests/test_ru_qwen_evaluation.py with these tests:
 
@@ -321,7 +321,7 @@ def test_assess_response_accepts_a_natural_default_vietnamese_reply():
 
 Add a context test that requires a previous assistant turn and a self-repetition test using one identical sentence twice.
 
-- [ ] **Step 2: Run the failing tests**
+- [x] **Step 2: Run the failing tests**
 
 Run:
 
@@ -331,7 +331,7 @@ Run:
 
 Expected: collection fails because V4_CONVERSATION_SUITE and assess_response do not exist.
 
-- [ ] **Step 3: Implement literal evaluation cases and pure assessments**
+- [x] **Step 3: Implement fixed evaluation cases and pure assessments**
 
 Create a frozen ConversationCase dataclass with case_id, language, messages, and prompt. Populate V4_CONVERSATION_SUITE with 32 literal cases: 14 Vietnamese, 14 English, and 4 light code-switching. Each case starts with RU_SYSTEM_PROMPT and ends with the exact user prompt. Include greeting, tiredness, a small story, direct question, mild frustration, positive news, language change, Vietnamese pronoun challenge, and six context-dependent cases.
 
@@ -357,7 +357,7 @@ def assess_response(prompt: str, response: str, language: str) -> ResponseAssess
 
 The Vietnamese voice check rejects word-boundary toi, mình, and bạn in default Vietnamese output. It allows the one explicit-form-change case only when the case metadata marks it. No external language detector or model judge is used.
 
-- [ ] **Step 4: Add deterministic Qwen generation**
+- [x] **Step 4: Add deterministic Qwen generation**
 
 Add generate_qwen_response to src/mini_gpt/qwen_runtime.py. It must require a QwenBaseProfile, verify its local model path, load 4-bit NF4, optionally load a PEFT adapter only when its directory exists, apply the tokenizer chat template, and decode only generated tokens.
 
@@ -374,7 +374,7 @@ model.generate(
 
 Add a monkeypatched test proving those three generation parameters are passed. Pytest must not load an actual model or CUDA.
 
-- [ ] **Step 5: Implement evaluator command and commit**
+- [x] **Step 5: Implement evaluator command and commit**
 
 Create scripts/evaluate_ru_qwen_v4.py. It reads the V4 profile, runs base output and optional adapter output for every case, writes atomic JSON containing prompt, responses, and assessments, and returns non-zero when a requested adapter fails any automatic check.
 

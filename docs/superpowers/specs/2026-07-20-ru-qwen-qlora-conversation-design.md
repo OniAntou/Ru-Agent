@@ -116,7 +116,8 @@ the Mini-GPT runner's checkpoint format. The Qwen runner:
 
 1. loads the local base and Ru adapter in 4-bit mode;
 2. sends a short fixed system instruction: Ru is a friendly bilingual local
-   companion who answers naturally and concisely in the user's language;
+   companion who answers naturally and concisely in the user's language, and
+   defaults to `em` for itself and `anh` for the user in Vietnamese;
 3. serializes the bounded saved turns using Qwen's chat template;
 4. generates only the newly produced assistant tokens; and
 5. releases no conversation content outside the local process.

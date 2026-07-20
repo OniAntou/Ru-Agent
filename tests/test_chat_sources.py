@@ -7,12 +7,35 @@ from pathlib import Path
 import pytest
 
 from mini_gpt.chat_sources import (
+    extract_5cd_pairs,
+    download_response_chat_seed,
     download_open_chat_seed,
     extract_oasst2_pairs,
     extract_ultrachat_pairs,
     extract_vietnamese_pairs,
     quality_rejection_reason,
 )
+
+
+def test_extracts_adjacent_human_gpt_pairs_from_5cd():
+    record = {
+        "conversations": [
+            {"from": "system", "value": "ignored"},
+            {"from": "human", "value": "Xin chào"},
+            {"from": "gpt", "value": "Chào anh, hôm nay anh thế nào?"},
+            {"from": "human", "value": "I am fine."},
+            {"from": "gpt", "value": "Glad to hear that!"},
+        ]
+    }
+
+    pairs = list(extract_5cd_pairs(record))
+
+    assert [(pair.prompt, pair.response) for pair in pairs] == [
+        ("Xin chào", "Chào anh, hôm nay anh thế nào?"),
+        ("I am fine.", "Glad to hear that!"),
+    ]
+    assert all(pair.source == "5CD-AI/Vietnamese-Multi-turn-Chat-Alpaca" for pair in pairs)
+    assert all(pair.license == "Apache-2.0" for pair in pairs)
 
 
 def test_extracts_normalized_pair_from_ultrachat():
@@ -120,6 +143,55 @@ def test_download_open_chat_seed_writes_provenance_and_manifest(tmp_path, monkey
     assert json.loads((tmp_path / "open_seed_manifest.json").read_text(encoding="utf-8")) == manifest
 
 
+def test_response_chat_downloader_combines_all_four_sources(tmp_path, monkeypatch):
+    streams = {
+        ("5CD-AI/Vietnamese-Multi-turn-Chat-Alpaca", "train"): [
+            {"conversations": [{"from": "human", "value": "Xin chào"}, {"from": "gpt", "value": "Chào anh!"}]}
+        ],
+        ("hoanghai2110/vietnamese-dataset", "train"): [
+            {"messages": [{"role": "user", "content": "Bạn khỏe không?"}, {"role": "assistant", "content": "Mình khỏe!"}]}
+        ],
+        ("OpenAssistant/oasst2", "train"): [
+            {"message_id": "p", "role": "prompter", "text": "How are you?", "lang": "en"},
+            {"message_id": "a", "parent_id": "p", "role": "assistant", "text": "I am fine!", "lang": "en", "deleted": False, "review_result": True, "synthetic": False},
+        ],
+        ("HuggingFaceH4/ultrachat_200k", "train_sft"): [
+            {"messages": [{"role": "user", "content": "Hello"}, {"role": "assistant", "content": "Hi there!"}]}
+        ],
+    }
+    monkeypatch.setitem(
+        sys.modules,
+        "datasets",
+        SimpleNamespace(load_dataset=lambda name, split, streaming: streams[(name, split)]),
+    )
+
+    manifest = download_response_chat_seed(
+        tmp_path / "response_seed.jsonl",
+        tmp_path / "response_seed_manifest.json",
+        tmp_path / "cache",
+        max_5cd_examples=1,
+        max_vietnamese_examples=1,
+        max_oasst_examples=1,
+        max_ultrachat_examples=1,
+    )
+
+    rows = [json.loads(line) for line in (tmp_path / "response_seed.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 4
+    assert {row["source"] for row in rows} == {
+        "5CD-AI/Vietnamese-Multi-turn-Chat-Alpaca",
+        "hoanghai2110/vietnamese-dataset",
+        "OpenAssistant/oasst2",
+        "HuggingFaceH4/ultrachat_200k",
+    }
+    assert manifest["total_examples"] == 4
+    assert manifest["limits"] == {
+        "max_5cd_examples": 1,
+        "max_vietnamese_examples": 1,
+        "max_oasst_examples": 1,
+        "max_ultrachat_examples": 1,
+    }
+
+
 def test_open_chat_downloader_script_exposes_help():
     script = Path(__file__).resolve().parents[1] / "scripts" / "download_open_chat_data.py"
 
@@ -132,6 +204,20 @@ def test_open_chat_downloader_script_exposes_help():
 
     assert result.returncode == 0
     assert "--max-vietnamese" in result.stdout
+
+
+def test_response_chat_downloader_script_exposes_help():
+    script = Path(__file__).resolve().parents[1] / "scripts" / "download_response_chat_data.py"
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "--max-5cd" in result.stdout
 
 
 def test_extractor_reports_missing_message_list_clearly():

@@ -16,6 +16,8 @@ OASST2_SOURCE = "OpenAssistant/oasst2"
 OASST2_LICENSE = "Apache-2.0"
 VIETNAMESE_SOURCE = "hoanghai2110/vietnamese-dataset"
 VIETNAMESE_LICENSE = "Apache-2.0"
+MULTI_TURN_SOURCE = "5CD-AI/Vietnamese-Multi-turn-Chat-Alpaca"
+MULTI_TURN_LICENSE = "Apache-2.0"
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,31 @@ def extract_vietnamese_pairs(record: dict[str, Any]) -> Iterator[ChatSeedRecord]
             language="vi",
             source=VIETNAMESE_SOURCE,
             license=VIETNAMESE_LICENSE,
+        )
+
+
+def extract_5cd_pairs(record: dict[str, Any]) -> Iterator[ChatSeedRecord]:
+    """Yield only adjacent human-to-gpt turns from the 5CD format."""
+    conversations = record.get("conversations")
+    if not isinstance(conversations, list):
+        raise ValueError("5CD record is missing a conversations list")
+
+    for user, assistant in zip(conversations, conversations[1:]):
+        if not isinstance(user, dict) or not isinstance(assistant, dict):
+            continue
+        if user.get("from") != "human" or assistant.get("from") != "gpt":
+            continue
+
+        prompt = _message_text(user, "value")
+        response = _message_text(assistant, "value")
+        combined = f"{prompt}{response}"
+        language = "vi" if any(char in combined for char in "ăâđêôơưĂÂĐÊÔƠƯ") else "en"
+        yield ChatSeedRecord(
+            prompt=prompt,
+            response=response,
+            language=language,
+            source=MULTI_TURN_SOURCE,
+            license=MULTI_TURN_LICENSE,
         )
 
 
@@ -225,6 +252,124 @@ def download_open_chat_seed(
                 "max_ultrachat_examples": max_ultrachat_examples,
                 "max_oasst_examples": max_oasst_examples,
                 "max_vietnamese_examples": max_vietnamese_examples,
+            },
+            "total_examples": total_examples,
+            "sources": source_report,
+        }
+        manifest_partial.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(output_partial, output)
+        os.replace(manifest_partial, manifest_file)
+        return manifest
+    except Exception:
+        output_partial.unlink(missing_ok=True)
+        manifest_partial.unlink(missing_ok=True)
+        raise
+
+
+def download_response_chat_seed(
+    output_path: str | Path,
+    manifest_path: str | Path,
+    cache_dir: str | Path,
+    max_5cd_examples: int = 18_000,
+    max_vietnamese_examples: int = 1_797,
+    max_oasst_examples: int = 2_000,
+    max_ultrachat_examples: int = 6_000,
+) -> dict[str, Any]:
+    """Create the larger V2 response-only chat seed without modifying V1 data."""
+    quotas = {
+        MULTI_TURN_SOURCE: max_5cd_examples,
+        VIETNAMESE_SOURCE: max_vietnamese_examples,
+        OASST2_SOURCE: max_oasst_examples,
+        ULTRACHAT_SOURCE: max_ultrachat_examples,
+    }
+    if any(quota <= 0 for quota in quotas.values()):
+        raise ValueError("all source quotas must be positive")
+
+    output = Path(output_path)
+    manifest_file = Path(manifest_path)
+    cache = Path(cache_dir)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    manifest_file.parent.mkdir(parents=True, exist_ok=True)
+    cache.mkdir(parents=True, exist_ok=True)
+    os.environ["HF_HOME"] = str(cache)
+    os.environ["HF_DATASETS_CACHE"] = str(cache / "datasets")
+    os.environ["HF_HUB_CACHE"] = str(cache / "hub")
+
+    try:
+        from datasets import load_dataset
+    except ImportError as error:
+        raise RuntimeError("install the data extra with: python -m pip install datasets") from error
+
+    output_partial = output.with_suffix(f"{output.suffix}.partial")
+    manifest_partial = manifest_file.with_suffix(f"{manifest_file.suffix}.partial")
+    source_specs = (
+        (MULTI_TURN_SOURCE, "train", extract_5cd_pairs),
+        (VIETNAMESE_SOURCE, "train", extract_vietnamese_pairs),
+        (OASST2_SOURCE, "train", extract_oasst2_pairs),
+        (ULTRACHAT_SOURCE, "train_sft", extract_ultrachat_pairs),
+    )
+    source_report: dict[str, dict[str, Any]] = {}
+    seen: set[tuple[str, str]] = set()
+    total_examples = 0
+
+    try:
+        with output_partial.open("w", encoding="utf-8", newline="\n") as handle:
+            for source, split, extractor in source_specs:
+                stream = load_dataset(source, split=split, streaming=True)
+                scanned = 0
+
+                def counted_stream() -> Iterator[dict[str, Any]]:
+                    nonlocal scanned
+                    for item in stream:
+                        scanned += 1
+                        yield item
+
+                if source == OASST2_SOURCE:
+                    candidates = extractor(counted_stream())
+                else:
+                    candidates = (pair for item in counted_stream() for pair in extractor(item))
+
+                accepted = 0
+                rejected: dict[str, int] = {}
+                for candidate in candidates:
+                    reason = quality_rejection_reason(candidate.prompt, candidate.response)
+                    if reason is not None:
+                        rejected[reason] = rejected.get(reason, 0) + 1
+                        continue
+                    key = (candidate.prompt, candidate.response)
+                    if key in seen:
+                        rejected["duplicate"] = rejected.get("duplicate", 0) + 1
+                        continue
+                    seen.add(key)
+                    handle.write(json.dumps(candidate.__dict__, ensure_ascii=False) + "\n")
+                    accepted += 1
+                    total_examples += 1
+                    if accepted == quotas[source]:
+                        break
+
+                if accepted != quotas[source]:
+                    raise ValueError(f"{source} yielded {accepted} acceptable examples; expected {quotas[source]}")
+                source_report[source] = {
+                    "split": split,
+                    "license": {
+                        MULTI_TURN_SOURCE: MULTI_TURN_LICENSE,
+                        VIETNAMESE_SOURCE: VIETNAMESE_LICENSE,
+                        OASST2_SOURCE: OASST2_LICENSE,
+                        ULTRACHAT_SOURCE: ULTRACHAT_LICENSE,
+                    }[source],
+                    "scanned": scanned,
+                    "accepted": accepted,
+                    "rejected": rejected,
+                }
+
+        manifest = {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "cache_dir": str(cache),
+            "limits": {
+                "max_5cd_examples": max_5cd_examples,
+                "max_vietnamese_examples": max_vietnamese_examples,
+                "max_oasst_examples": max_oasst_examples,
+                "max_ultrachat_examples": max_ultrachat_examples,
             },
             "total_examples": total_examples,
             "sources": source_report,

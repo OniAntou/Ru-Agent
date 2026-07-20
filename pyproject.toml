@@ -16,6 +16,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+qwen = [
+    "accelerate>=1.0,<2",
+    "bitsandbytes>=0.48,<1",
+    "peft>=0.14,<1",
+    "safetensors>=0.4",
+    "transformers>=4.37,<5",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

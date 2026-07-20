@@ -2,13 +2,13 @@
 
 ## Purpose
 
-The Qwen2.5-3B V5 base fit the RTX 4050 but failed Ru's mandatory Vietnamese anh/em voice gate. Ru will next test only Qwen/Qwen3-4B as a stronger local conversational base.
+The Qwen2.5-3B V5 base fit the RTX 4050 but failed Ru's mandatory Vietnamese anh/em voice gate. Ru then tested only Qwen/Qwen3-4B as a stronger local conversational base.
 
 Natural, friendly Vietnamese-English conversation remains the adoption target. Model size and benchmark scores do not substitute for this quality gate.
 
 ## Decision
 
-Run Qwen3-4B locally in 4-bit NF4, using the current fixed 32-case bilingual suite. This is base-only: it may not create a corpus, adapter, training configuration, GUI backend change, or user-chat training path.
+Qwen3-4B ran locally in 4-bit NF4 using the fixed 32-case bilingual suite. The experiment remained base-only: it created no corpus, adapter, training configuration, GUI backend change, or user-chat training path.
 
 The Qwen3 chat template must explicitly disable thinking mode so the test measures concise conversational replies, not visible reasoning text.
 
@@ -26,6 +26,15 @@ The Qwen3 chat template must explicitly disable thinking mode so the test measur
 The existing Qwen runtime and evaluation system are extended without changing existing V3, V4, or V5 profiles. Qwen3 validation must accept model type qwen3 while retaining the qwen2 validation required by older profiles.
 
 ## Base gate
+
+**Result (2026-07-21): not adopted.** The official safetensors download was
+`8,044,982,000` bytes and left `40,743,448,576` bytes free on D:. The valid
+non-thinking 32-case run used `2,635.017 MiB` peak allocated VRAM. A narrow
+automatic-voice guard correction was applied and the already saved outputs were
+reassessed without a second model generation; automatic disqualifiers were then
+zero. Full manual review scored only `11/32`, mainly because every English
+prompt received Vietnamese text plus several role reversals and invented shared
+experiences. No Qwen3 corpus, adapter, training run, or GUI change exists.
 
 Before download, verify CUDA availability, D: free space, and a clean non-overlapping working tree. The download must leave at least 5 GB free on D:.
 
@@ -48,4 +57,3 @@ Update README, TODO, and this design with observed evidence only. Do not claim i
 ## Out of scope
 
 Gemma, vision, speech, avatars, cloud APIs, CPU/RAM offload, datasets, and training are out of scope for this experiment.
-

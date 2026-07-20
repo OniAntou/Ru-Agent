@@ -25,7 +25,7 @@
 - Modify: src/mini_gpt/qwen_runtime.py
 - Modify: tests/test_qwen_runtime.py
 
-- [ ] **Step 1: Write the failing profile and validation tests.**
+- [x] **Step 1: Write the failing profile and validation tests.**
 
 Add a test named test_qwen3_profile_is_registered_with_non_thinking_generation. It must assert:
 
@@ -39,7 +39,7 @@ assert qwen_base_profile(QWEN3_4B_BASE.model_id) == QWEN3_4B
 
 Add a local verification test with config.json containing model_type qwen3 and a dummy safetensors file. It must pass. Retain the existing gpt2 rejection test.
 
-- [ ] **Step 2: Run the focused tests and verify RED.**
+- [x] **Step 2: Run the focused tests and verify RED.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe -m pytest tests\test_qwen_runtime.py -q
@@ -47,7 +47,7 @@ Add a local verification test with config.json containing model_type qwen3 and a
 
 Expected: import of QWEN3_4B_BASE fails and qwen3 is rejected by local verification.
 
-- [ ] **Step 3: Implement the profile and model type support.**
+- [x] **Step 3: Implement the profile and model type support.**
 
 Extend QwenBaseProfile without changing existing profiles:
 
@@ -80,7 +80,7 @@ if not isinstance(config, dict) or config.get("model_type") not in SUPPORTED_QWE
     raise ValueError("local base model_type must be qwen2 or qwen3")
 ~~~
 
-- [ ] **Step 4: Add the Qwen3-only template behavior.**
+- [x] **Step 4: Add the Qwen3-only template behavior.**
 
 Build chat-template kwargs before calling apply_chat_template:
 
@@ -97,7 +97,7 @@ input_ids = tokenizer.apply_chat_template(serialized, **template_kwargs).to("cud
 
 Extend the fake-tokenizer tests to assert Qwen V4 keeps the old kwargs and Qwen3 receives enable_thinking=False. Keep the explicit attention mask test.
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe -m pytest tests\test_qwen_runtime.py -q
@@ -117,7 +117,7 @@ Expected: all Qwen runtime tests pass.
 - Modify: tests/test_qwen_runtime.py
 - Modify: tests/test_evaluate_ru_qwen_script.py
 
-- [ ] **Step 1: Write failing downloader/config tests.**
+- [x] **Step 1: Write failing downloader/config tests.**
 
 Add a subprocess help test for scripts/download_ru_qwen3_4b_base.py. It must return zero and print:
 
@@ -136,7 +136,7 @@ assert "dataset_dir" not in config
 assert "adapter_dir" not in config
 ~~~
 
-- [ ] **Step 2: Run focused tests and verify RED.**
+- [x] **Step 2: Run focused tests and verify RED.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe -m pytest tests\test_qwen_runtime.py tests\test_evaluate_ru_qwen_script.py -q
@@ -144,7 +144,7 @@ assert "adapter_dir" not in config
 
 Expected: Qwen3 downloader/config paths do not exist.
 
-- [ ] **Step 3: Implement the fixed downloader.**
+- [x] **Step 3: Implement the fixed downloader.**
 
 Create the downloader with project-root resolution, no output-directory override, and verification through QWEN3_4B_BASE:
 
@@ -164,7 +164,7 @@ def report() -> dict[str, object]:
 
 On missing or invalid local files, call snapshot_download with QWEN3_4B_BASE.model_id and that exact output directory, then report verified results.
 
-- [ ] **Step 4: Add the base-only config.**
+- [x] **Step 4: Add the base-only config.**
 
 Create configs/ru_qwen3_4b.json:
 
@@ -177,7 +177,7 @@ Create configs/ru_qwen3_4b.json:
 }
 ~~~
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe -m pytest tests\test_qwen_runtime.py tests\test_evaluate_ru_qwen_script.py -q
@@ -195,7 +195,7 @@ Expected: focused tests pass without loading model weights.
 - Create: models/qwen3-4b (ignored)
 - Create: checkpoints/ru-qwen3-4b/base_evaluation.json (ignored)
 
-- [ ] **Step 1: Verify local hardware and repository state.**
+- [x] **Step 1: Verify local hardware and repository state.**
 
 ~~~powershell
 Get-PSDrive -Name D
@@ -205,7 +205,7 @@ git status --short
 
 Stop before download when CUDA is unavailable, unexpected overlapping edits exist, or expected model storage would leave less than 5 GB free.
 
-- [ ] **Step 2: Download and verify the official Qwen3 snapshot.**
+- [x] **Step 2: Download and verify the official Qwen3 snapshot.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe scripts\download_ru_qwen3_4b_base.py
@@ -216,7 +216,7 @@ Get-ChildItem models\qwen3-4b -File | Select-Object Name,Length
 
 Expected: verified qwen3 config, tokenizer, non-zero safetensors bytes, and at least 5 GB free on D:.
 
-- [ ] **Step 3: Run one valid adapter-free evaluation.**
+- [x] **Step 3: Run one valid adapter-free evaluation.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe scripts\evaluate_ru_qwen_v4.py --config configs\ru_qwen3_4b.json --output checkpoints\ru-qwen3-4b\base_evaluation.json
@@ -224,7 +224,7 @@ Expected: verified qwen3 config, tokenizer, non-zero safetensors bytes, and at l
 
 The evaluation must use non-thinking generation, no adapter argument, the fixed 32 cases, and the reset peak-memory counter. Capture peak_allocated_mib from the saved JSON.
 
-- [ ] **Step 4: Apply the decision gate.**
+- [x] **Step 4: Apply the decision gate.**
 
 If CUDA OOM occurs, peak_allocated_mib is above 5,500, or the base automatic gate fails, run:
 
@@ -242,7 +242,12 @@ Only when the automatic gate passes, write exactly 32 manual review objects to c
 
 Adopt only when the persisted decision says passed with manual_natural_count at least 24.
 
-- [ ] **Step 5: Run the full test suite.**
+Implementation note: Qwen3 initially triggered two automatic voice detections.
+After a test-backed guard correction for non-address `người bạn` and contextual
+`mình`, the already saved responses were reassessed without a second model run;
+the automatic gate passed and the full manual review then recorded 11/32.
+
+- [x] **Step 5: Run the full test suite.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe -m pytest -q
@@ -259,11 +264,11 @@ Expected: all tests pass. Keep models and evaluation artifacts ignored.
 - Modify: docs/superpowers/specs/2026-07-21-ru-qwen3-4b-baseline-design.md
 - Modify: docs/superpowers/plans/2026-07-21-ru-qwen3-4b-baseline-implementation.md
 
-- [ ] **Step 1: Write only observed Qwen3 evidence.**
+- [x] **Step 1: Write only observed Qwen3 evidence.**
 
 Record the verified weight bytes, D: free space after download, measured peak MiB, automatic failure count, manual score when it exists, and final verdict. State explicitly that no fine-tuning, corpus, adapter, or GUI backend change occurred on a failed baseline.
 
-- [ ] **Step 2: Review project documents for stale Gemma or planned-result text.**
+- [x] **Step 2: Review project documents for stale Gemma or planned-result text.**
 
 ~~~powershell
 rg -n "Gemma|Qwen3|ru_qwen3_4b|not adopted|passed|planned" README.md TODO.md docs
@@ -272,11 +277,10 @@ git diff --check
 
 Delete only a document that is wholly superseded. Keep V5 documents as historical evidence.
 
-- [ ] **Step 3: Commit the observed result.**
+- [x] **Step 3: Commit the observed result.**
 
 ~~~powershell
 git add README.md TODO.md docs/superpowers/specs/2026-07-21-ru-qwen3-4b-baseline-design.md docs/superpowers/plans/2026-07-21-ru-qwen3-4b-baseline-implementation.md
 git diff --cached --check
 git commit -m "docs: record Ru Qwen3 baseline result"
 ~~~
-

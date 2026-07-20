@@ -185,6 +185,25 @@ The ignored runtime evidence is kept locally at
 `models\qwen2.5-3b-instruct` and
 `checkpoints\ru-qwen-v5\base_evaluation.json`.
 
+## Ru Qwen3 4B baseline result (not adopted)
+
+Qwen3 used the official local `Qwen/Qwen3-4B` base in 4-bit NF4 with
+non-thinking generation. Its safetensors weigh `8,044,982,000` bytes; D: still
+had `40,743,448,576` bytes free after download. The 32-case run peaked at
+`2,635.017 MiB`, so the hardware gate passed.
+
+The initial automatic result contained two false voice detections. The guard
+was narrowed to allow the non-address phrase `người bạn` and contextual `mình`,
+then the saved responses were reassessed without running the model again. The
+automatic count became zero, but full manual review scored only `11/32`: Qwen3
+answered every English prompt in Vietnamese and sometimes reversed roles or
+invented shared experiences. It is not adopted; no Qwen3 corpus, adapter,
+training run, or GUI backend change was created.
+
+The ignored runtime evidence is kept locally at
+`models\qwen3-4b`, `checkpoints\ru-qwen3-4b\base_evaluation.json`, and
+`checkpoints\ru-qwen3-4b\base_review.json`.
+
 Runtime evidence is intentionally ignored by Git:
 
 - `models\qwen2.5-1.5b-instruct`

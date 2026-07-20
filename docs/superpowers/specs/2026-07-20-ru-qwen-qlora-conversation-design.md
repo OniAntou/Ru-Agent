@@ -1,5 +1,11 @@
 # Ru Qwen QLoRA Conversation Design
 
+> **Data-strategy update (2026-07-21):** The external-source V3 corpus did not
+> pass its manual quality audit. The project-authored corpus design in
+> `2026-07-21-ru-authored-dialogue-corpus-design.md` supersedes this document's
+> source-selection details; the Qwen runtime, QLoRA, GUI, and acceptance design
+> remain unchanged.
+
 **Date:** 2026-07-20
 **Status:** Approved design; implementation has not started
 

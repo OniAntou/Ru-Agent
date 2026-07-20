@@ -50,6 +50,21 @@ def test_default_paths_prefer_best_chat_finetune_over_latest(tmp_path, monkeypat
     assert checkpoint == best_checkpoint
 
 
+def test_default_paths_prefer_response_only_v2_best_checkpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr(gui, "PROJECT_ROOT", tmp_path)
+    v2_dir = tmp_path / "checkpoints" / "chat-response-v2"
+    v2_dir.mkdir(parents=True)
+    v2_best = v2_dir / "best.pt"
+    v2_best.touch()
+    v1_dir = tmp_path / "checkpoints" / "chat-finetune"
+    v1_dir.mkdir(parents=True)
+    (v1_dir / "best.pt").touch()
+
+    checkpoint, _ = gui.default_paths()
+
+    assert checkpoint == v2_best
+
+
 def test_runner_reports_missing_checkpoint():
     runner = ModelRunner()
     with pytest.raises(FileNotFoundError, match="checkpoint"):

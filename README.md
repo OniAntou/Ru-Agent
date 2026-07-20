@@ -107,6 +107,14 @@ Fine-tune from the completed base model with a fresh optimizer and checkpoint di
 
 `--init-checkpoint` copies only compatible model weights; it does not continue the base optimizer, scheduler, or step counter. Use `--resume checkpoints/chat-finetune/latest.pt` only to continue an interrupted chat fine-tuning run. When a validation-selected `checkpoints/chat-finetune/best.pt` exists, the GUI prefers it; otherwise it falls back to `latest.pt`. Use Browse to select the base checkpoint if a rollback is needed.
 
+### V2 result (not adopted)
+
+`chat-response-v2` trained for 1,200 CUDA steps from `checkpoints/base/latest.pt`.
+Its validation-best checkpoint was step 1,150 with assistant-token loss
+`3.3194339752197264`, but manual Vietnamese-English greeting tests still
+produced repetitive or nonsensical responses. The V2 artifacts are retained for
+comparison only; they do not meet Ru's natural-conversation goal.
+
 ## Replacing the corpus
 
 Put UTF-8 `.txt` documents under `data/raw`. A document can begin with `VI:` or `EN:` to contribute to the language report. Use only public-domain, openly licensed, or user-provided data with permission. Re-run preparation, tokenizer training, and encoding after changing the corpus.

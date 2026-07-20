@@ -5,7 +5,9 @@ Mục tiêu dài hạn: Ru giao tiếp tự nhiên bằng tiếng Việt và ti�
 ## Nền tảng hội thoại
 
 - [x] Hoàn tất base training và đánh giá checkpoint tốt nhất.
-- [ ] Tạo và lọc bộ dữ liệu hội thoại nguồn mở Việt-Anh có kèm nguồn/giấy phép.
+- [x] Tạo và lọc bộ dữ liệu hội thoại nguồn mở Việt-Anh có kèm nguồn/giấy phép.
+- [x] Build and run the V2 response-only fine-tune pipeline (quality gate failed; do not use it as Ru's final backend).
+- [ ] Make Ru consistently natural in short Vietnamese-English conversations.
 - [ ] Thu thập các lượt chat được đánh dấu hữu ích.
 - [ ] Fine-tune hội thoại từ `data/conversations/approved.jsonl`.
 - [ ] Tạo bộ câu hỏi đánh giá giao tiếp Việt-Anh và theo dõi chất lượng sau mỗi lần fine-tune.

@@ -7,6 +7,16 @@ by training from the completed base checkpoint with loss applied only to assista
 tokens. The existing 3,900-example chat run remains an experiment and is not
 overwritten.
 
+## Observed V2 outcome
+
+The implementation completed its four-source import, response-only masking,
+automatic `best.pt`, GUI candidate preference, and 1,200-step CUDA run. The
+best checkpoint was `checkpoints/chat-response-v2/best.pt` at step 1,150 with
+assistant-token validation loss `3.3194339752197264`. Deterministic Vietnamese
+and English greeting checks remained repetitive or nonsensical, so V2 was not
+adopted as Ru's conversational backend. The later Qwen V3 design supersedes it
+for runtime use while retaining every V2 artifact for comparison.
+
 ## Why the previous run failed
 
 The base model learned mostly Wikipedia-style continuation. The first chat
@@ -31,7 +41,7 @@ source and licence recorded for every pair:
 | Source | Limit | Purpose | Licence |
 | --- | ---: | --- | --- |
 | `5CD-AI/Vietnamese-Multi-turn-Chat-Alpaca` | 18,000 pairs | Vietnamese and English multi-turn dialogue | Apache-2.0 |
-| `hoanghai2110/vietnamese-dataset` | 1,800 pairs | Short Vietnamese daily conversation | Apache-2.0 |
+| `hoanghai2110/vietnamese-dataset` | 1,797 pairs | Short Vietnamese daily conversation | Apache-2.0 |
 | `OpenAssistant/oasst2` | 2,000 pairs | Reviewed Vietnamese-English assistant turns | Apache-2.0 |
 | `HuggingFaceH4/ultrachat_200k` | 6,000 pairs | English assistant turns | MIT |
 
@@ -82,5 +92,6 @@ priority. Runtime verification records deterministic completions for the same
 Vietnamese and English greeting prompts from base, old chat-best, and V2
 best. V2 is adopted only if it avoids an empty reply and immediate `User:`
 continuation in both languages and is visibly less repetitive than the old
-chat-best checkpoint. If it fails this manual quality gate, the GUI remains on
-the prior checkpoint and the result is reported honestly.
+chat-best checkpoint. V2 failed this manual quality gate. The mechanical GUI
+candidate remains available for experiment comparison, but V3 supersedes it as
+the intended runtime path and the result is reported honestly.

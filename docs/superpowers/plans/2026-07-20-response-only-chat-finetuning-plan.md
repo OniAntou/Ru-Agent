@@ -10,6 +10,17 @@
 
 ---
 
+## Observed execution result
+
+Implementation completed the importer, response-only labels, CLI, automatic
+best checkpoint, GUI candidate preference, and CUDA training. The actual V2
+corpus contains 27,797 accepted pairs and the processed artifacts are in
+`data/conversations/response_v2_processed`. Training ran for 1,200 CUDA steps;
+`best.pt` is step 1,150 with assistant-token validation loss
+`3.3194339752197264`. Manual Vietnamese-English greeting tests failed the
+natural-conversation gate because outputs remained repetitive or nonsensical.
+V2 is retained for comparison only and is superseded by the Ru Qwen V3 plan.
+
 ## File structure
 
 - Modify `D:\LLM\src\mini_gpt\chat_sources.py`: add 5CD source metadata/extraction and V2 bounded importer.
@@ -154,8 +165,8 @@ Create `scripts/download_response_chat_data.py` using the existing downloader sc
 --output D:\LLM\data\conversations\response_v2_seed.jsonl
 --manifest D:\LLM\data\conversations\response_v2_manifest.json
 --cache-dir D:\LLM\.hf
---max-multiturn 18000
---max-vietnamese 1800
+--max-5cd 18000
+--max-vietnamese 1797
 --max-oasst 2000
 --max-ultrachat 6000
 ```
@@ -197,7 +208,7 @@ def test_encoder_masks_prompt_targets_and_supervises_response(tmp_path, monkeypa
     source = tmp_path / "train.jsonl"
     source.write_text('{"prompt":"Hi","response":"OK"}\n', encoding="utf-8")
 
-    count = encode_response_chat_split(source, "unused.json", tmp_path / "train.tokens.bin", tmp_path / "train.labels.bin")
+    count = encode_response_chat_split(source, "unused.json", tmp_path / "train.bin", tmp_path / "train.labels.bin")
 
     labels = np.fromfile(tmp_path / "train.labels.bin", dtype=np.int32)
     assert count == len(labels)
@@ -304,8 +315,8 @@ In `cli.py`, import `SupervisedTokenWindowDataset`, `encode_response_chat_split`
 When `args.response_only` is true, construct exactly:
 
 ```python
-train_dataset = SupervisedTokenWindowDataset(processed / "train.tokens.bin", processed / "train.labels.bin", model_config.context_length)
-validation_dataset = SupervisedTokenWindowDataset(processed / "val.tokens.bin", processed / "val.labels.bin", model_config.context_length)
+train_dataset = SupervisedTokenWindowDataset(processed / "train.bin", processed / "train.labels.bin", model_config.context_length)
+validation_dataset = SupervisedTokenWindowDataset(processed / "val.bin", processed / "val.labels.bin", model_config.context_length)
 ```
 
 Otherwise preserve existing `TokenWindowDataset` behavior.
@@ -401,10 +412,10 @@ In `README.md`, add a **Response-only V2 fine-tune** subsection with the four so
 ```powershell
 cd D:\LLM
 & .\.venv\Scripts\python.exe scripts\download_response_chat_data.py
-& .\.venv\Scripts\python.exe -m mini_gpt.cli prepare-response-chat --input data/conversations/response_v2_seed.jsonl --output-dir data/conversations/response-v2
-& .\.venv\Scripts\python.exe -m mini_gpt.cli encode-response-chat --input data/conversations/response-v2/train.jsonl --tokenizer data/tokenizer.json --tokens-output data/conversations/response-v2/train.tokens.bin --labels-output data/conversations/response-v2/train.labels.bin
-& .\.venv\Scripts\python.exe -m mini_gpt.cli encode-response-chat --input data/conversations/response-v2/val.jsonl --tokenizer data/tokenizer.json --tokens-output data/conversations/response-v2/val.tokens.bin --labels-output data/conversations/response-v2/val.labels.bin
-& .\.venv\Scripts\python.exe -m mini_gpt.cli train --response-only --config configs/chat_response_v2.json --processed-dir data/conversations/response-v2 --tokenizer data/tokenizer.json --checkpoint-dir checkpoints/chat-response-v2 --init-checkpoint checkpoints/base/latest.pt
+& .\.venv\Scripts\python.exe -m mini_gpt.cli prepare-response-chat --input data/conversations/response_v2_seed.jsonl --output-dir data/conversations/response_v2_processed
+& .\.venv\Scripts\python.exe -m mini_gpt.cli encode-response-chat --input data/conversations/response_v2_processed/train.jsonl --tokenizer data/tokenizer.json --tokens-output data/conversations/response_v2_processed/train.bin --labels-output data/conversations/response_v2_processed/train.labels.bin
+& .\.venv\Scripts\python.exe -m mini_gpt.cli encode-response-chat --input data/conversations/response_v2_processed/val.jsonl --tokenizer data/tokenizer.json --tokens-output data/conversations/response_v2_processed/val.bin --labels-output data/conversations/response_v2_processed/val.labels.bin
+& .\.venv\Scripts\python.exe -m mini_gpt.cli train --response-only --config configs/chat_response_v2.json --processed-dir data/conversations/response_v2_processed --tokenizer data/tokenizer.json --checkpoint-dir checkpoints/chat-response-v2 --init-checkpoint checkpoints/base/latest.pt
 ```
 
 State that V2 preserves the base and previous fine-tunes, `best.pt` is selected by validation, and no claim of ChatGPT-level ability is made.
@@ -430,7 +441,7 @@ Expected: V2 is only selected after its checkpoint exists, all source/training d
 - Modify: `D:\LLM\TODO.md`
 - Generated, ignored: `D:\LLM\data\conversations\response_v2_seed.jsonl`
 - Generated, ignored: `D:\LLM\data\conversations\response_v2_manifest.json`
-- Generated, ignored: `D:\LLM\data\conversations\response-v2\*`
+- Generated, ignored: `D:\LLM\data\conversations\response_v2_processed\*`
 - Generated, ignored: `D:\LLM\checkpoints\chat-response-v2\*`
 
 - [ ] **Step 1: Confirm space and create V2 artifacts**
@@ -445,14 +456,14 @@ Get-PSDrive -Name D | Format-List Name,Free
 Get-Content -Raw data\conversations\response_v2_manifest.json
 ```
 
-Expected: 27,800 accepted pairs, every source quota/licence present, and sufficient D: headroom for V2 checkpoints. Stop before encoding if a quota fails.
+Expected: 27,797 accepted pairs, every source quota/licence present, and sufficient D: headroom for V2 checkpoints. Stop before encoding if a quota fails.
 
 - [ ] **Step 2: Prepare, encode, and inspect labels**
 
 Run the four response-only CLI preparation/encoding commands from Task 4. Then run:
 
 ```powershell
-& .\.venv\Scripts\python.exe -c "import numpy as np; from pathlib import Path; labels=np.memmap(Path('data/conversations/response-v2/train.labels.bin'), dtype=np.int32, mode='r'); print({'total': len(labels), 'supervised': int((labels != -100).sum()), 'masked': int((labels == -100).sum())})"
+& .\.venv\Scripts\python.exe -c "import numpy as np; from pathlib import Path; labels=np.memmap(Path('data/conversations/response_v2_processed/train.labels.bin'), dtype=np.int32, mode='r'); print({'total': len(labels), 'supervised': int((labels != -100).sum()), 'masked': int((labels == -100).sum())})"
 ```
 
 Expected: train/validation splits are non-empty and both masked prompt labels and supervised response labels are present.
@@ -472,7 +483,7 @@ Assistant:
 First record `checkpoints/base/latest.pt` and `checkpoints/chat-finetune/best.pt`. Then launch:
 
 ```powershell
-& .\.venv\Scripts\python.exe -m mini_gpt.cli train --response-only --config configs/chat_response_v2.json --processed-dir data/conversations/response-v2 --tokenizer data/tokenizer.json --checkpoint-dir checkpoints/chat-response-v2 --init-checkpoint checkpoints/base/latest.pt
+& .\.venv\Scripts\python.exe -m mini_gpt.cli train --response-only --config configs/chat_response_v2.json --processed-dir data/conversations/response_v2_processed --tokenizer data/tokenizer.json --checkpoint-dir checkpoints/chat-response-v2 --init-checkpoint checkpoints/base/latest.pt
 ```
 
 Expected: CUDA run starts at local step one, writes only V2 checkpoint files, and creates `best.pt` automatically at the first successful validation.

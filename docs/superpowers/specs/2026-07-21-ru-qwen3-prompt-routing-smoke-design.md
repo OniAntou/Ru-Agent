@@ -32,6 +32,14 @@ The smoke passes only when all four English replies are natural English without 
 
 ## Outcomes
 
+### Recorded result
+
+The local run passed all automatic checks, kept all four English cases in
+English, and peaked at `2,628.293 MiB`. Manual review scored `5/8`: the
+Vietnamese greeting reversed the Ru/user role and both mixed cases answered in
+Vietnamese only. The smoke therefore failed; Qwen3 remains not adopted and no
+32-case routed rerun, fine-tuning, corpus, adapter, or GUI change was run.
+
 If the smoke fails, Qwen3 remains not adopted and no 32-case rerun, fine-tuning, corpus, adapter, or GUI change is permitted.
 
 If the smoke passes, run the full existing 32-case suite once with prompt routing and a separate output file. The full rerun must again pass all automatic guards and score at least 24/32 in manual review before any fine-tuning design is considered.
@@ -39,4 +47,3 @@ If the smoke passes, run the full existing 32-case suite once with prompt routin
 ## Boundaries
 
 This is a prompt-policy experiment only. It does not alter model weights, model files, quantization, generation limits, GUI behavior, memory/offload configuration, or the previous Qwen3 baseline evidence.
-

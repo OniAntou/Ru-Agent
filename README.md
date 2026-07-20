@@ -204,6 +204,20 @@ The ignored runtime evidence is kept locally at
 `models\qwen3-4b`, `checkpoints\ru-qwen3-4b\base_evaluation.json`, and
 `checkpoints\ru-qwen3-4b\base_review.json`.
 
+## Ru Qwen3 4B prompt-routing smoke result (not adopted)
+
+The eight-case local prompt-routing smoke separated Vietnamese, English, and
+mixed system instructions. It kept all four English replies in natural English
+and passed automatic checks, while peaking at `2,628.293 MiB`. It still scored
+only `5/8` in manual review: the Vietnamese greeting reversed the Ru/user role,
+and both mixed cases answered in Vietnamese only instead of a natural bilingual
+mix. Qwen3 remains not adopted; the 32-case routed run, fine-tuning, corpus,
+adapter, and GUI changes were not run.
+
+The ignored runtime evidence is kept locally at
+`checkpoints\ru-qwen3-4b\prompt_routing_smoke.json` and
+`checkpoints\ru-qwen3-4b\prompt_routing_smoke_review.json`.
+
 Runtime evidence is intentionally ignored by Git:
 
 - `models\qwen2.5-1.5b-instruct`

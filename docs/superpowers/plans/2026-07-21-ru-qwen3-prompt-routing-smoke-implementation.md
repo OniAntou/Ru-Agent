@@ -17,7 +17,7 @@
 - Modify: src/mini_gpt/ru_style.py
 - Create: tests/test_ru_style.py
 
-- [ ] **Step 1: Write failing public-policy tests.**
+- [x] **Step 1: Write failing public-policy tests.**
 
 Create tests that assert:
 
@@ -31,7 +31,7 @@ with pytest.raises(ValueError, match="vi, en, or mixed"):
 
 Keep RU_SYSTEM_PROMPT unchanged for prior corpus and baseline evidence compatibility.
 
-- [ ] **Step 2: Confirm RED.**
+- [x] **Step 2: Confirm RED.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe -m pytest tests\test_ru_style.py -q
@@ -39,7 +39,7 @@ Keep RU_SYSTEM_PROMPT unchanged for prior corpus and baseline evidence compatibi
 
 Expected: ru_system_prompt_for cannot be imported.
 
-- [ ] **Step 3: Implement the immutable prompt policy.**
+- [x] **Step 3: Implement the immutable prompt policy.**
 
 Add:
 
@@ -57,7 +57,7 @@ def ru_system_prompt_for(language: str) -> str:
         raise ValueError("language must be vi, en, or mixed") from error
 ~~~
 
-- [ ] **Step 4: Confirm GREEN and commit.**
+- [x] **Step 4: Confirm GREEN and commit.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe -m pytest tests\test_ru_style.py -q
@@ -76,7 +76,7 @@ git commit -m "feat: add Ru language prompt policy"
 - Modify: tests/test_ru_qwen_evaluation.py
 - Modify: tests/test_evaluate_ru_qwen_script.py
 
-- [ ] **Step 1: Write failing suite and serialization tests.**
+- [x] **Step 1: Write failing suite and serialization tests.**
 
 Add a test for PROMPT_ROUTING_SMOKE_SUITE asserting this exact ordered id tuple:
 
@@ -97,7 +97,7 @@ For every case, assert its first message is system and equals ru_system_prompt_f
 
 Add pure-decision tests for `record_prompt_routing_smoke_decision` with an eight-case synthetic passing review, an English-language failure, and a role-reversal failure. Each routed review must include `case_id`, `natural`, `relevant`, `expected_language`, `voice`, `role_consistent`, and `notes`.
 
-- [ ] **Step 2: Confirm RED.**
+- [x] **Step 2: Confirm RED.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe -m pytest tests\test_ru_qwen_evaluation.py tests\test_evaluate_ru_qwen_script.py -q
@@ -105,7 +105,7 @@ Add pure-decision tests for `record_prompt_routing_smoke_decision` with an eight
 
 Expected: smoke suite and script are absent.
 
-- [ ] **Step 3: Implement a routed copy helper and suite.**
+- [x] **Step 3: Implement a routed copy helper and suite.**
 
 In ru_qwen_evaluation.py, define:
 
@@ -148,7 +148,7 @@ role_gate_passed = all(review.role_consistent for review in reviews)
 
 The verdict is `passed` only when the automatic gate has zero failures, all four English cases pass the English language gate, every review passes the role gate, and `manual_natural_count >= 7`. Include explicit failure reasons for each failed gate.
 
-- [ ] **Step 4: Implement the smoke script.**
+- [x] **Step 4: Implement the smoke script.**
 
 The script accepts --config and --output, defaults to configs/ru_qwen3_4b.json and checkpoints/ru-qwen3-4b/prompt_routing_smoke.json, resets CUDA peak memory, generates exactly PROMPT_ROUTING_SMOKE_SUITE, then writes:
 
@@ -175,11 +175,11 @@ The script accepts --config and --output, defaults to configs/ru_qwen3_4b.json a
 
 Always clear the Qwen cache after all eight responses and use the same atomic partial-file replacement as the existing evaluator.
 
-- [ ] **Step 5: Implement the smoke decision recorder.**
+- [x] **Step 5: Implement the smoke decision recorder.**
 
 Create `record_ru_prompt_routing_smoke_review.py` with the same `--evaluation`, mutually exclusive `--review` / `--automatic-only`, UTF-8 JSON validation, and atomic replacement conventions as `record_ru_qwen_base_review.py`. It parses `PromptRoutingReview`, invokes `record_prompt_routing_smoke_decision`, attaches `manual_review` when supplied, updates the evaluation's `decision` and `verdict`, then prints the decision JSON. Its parser description must contain `Record a manual Ru prompt-routing smoke decision`.
 
-- [ ] **Step 6: Confirm GREEN and commit.**
+- [x] **Step 6: Confirm GREEN and commit.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe -m pytest tests\test_ru_qwen_evaluation.py tests\test_evaluate_ru_qwen_script.py -q
@@ -199,7 +199,7 @@ git commit -m "feat: add Ru prompt routing smoke"
 - Modify: docs/superpowers/specs/2026-07-21-ru-qwen3-prompt-routing-smoke-design.md
 - Modify: docs/superpowers/plans/2026-07-21-ru-qwen3-prompt-routing-smoke-implementation.md
 
-- [ ] **Step 1: Run the isolated smoke.**
+- [x] **Step 1: Run the isolated smoke.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe scripts\evaluate_ru_qwen_prompt_routing.py --config configs\ru_qwen3_4b.json --output checkpoints\ru-qwen3-4b\prompt_routing_smoke.json
@@ -208,7 +208,7 @@ git commit -m "feat: add Ru prompt routing smoke"
 Do not reuse or overwrite the previous 32-case Qwen3 artifact. Stop on OOM or peak allocated MiB above 5,500.
 
 
-- [ ] **Step 2: Perform all eight manual reviews and persist the decision.**
+- [x] **Step 2: Perform all eight manual reviews and persist the decision.**
 
 Write eight review objects with case_id, natural, relevant, expected_language, voice, role_consistent, and notes. Mark an English case expected_language false if it contains Vietnamese words or Vietnamese forms of address. Mark `role_consistent` false if Ru claims the user's experience as its own or reverses the speaker roles. Then run:
 
@@ -218,13 +218,13 @@ Write eight review objects with case_id, natural, relevant, expected_language, v
 
 The recorder is the only authority for the pass/fail decision: it requires all four English cases to be natural English, no role reversal, and at least seven fully natural/relevant/right-language/right-voice rows.
 
-- [ ] **Step 3: Decide the next permitted action.**
+- [x] **Step 3: Decide the next permitted action.**
 
 If smoke fails, write not_adopted in the smoke JSON and stop: no 32-case rerun, fine-tuning, corpus, adapter, or GUI change.
 
 If smoke passes, document that only a new approved plan may run the 32-case routed evaluation. Do not start it in this plan.
 
-- [ ] **Step 4: Run full regression and document real evidence.**
+- [x] **Step 4: Run full regression and document real evidence.**
 
 ~~~powershell
 & .\.venv\Scripts\python.exe -m pytest -q

@@ -41,4 +41,3 @@ EN: We use open data and do not put private information into the corpus.
 VI: Mô hình nhỏ không thể thay thế một trợ lý lớn, nhưng nó rất hữu ích để học.
 
 EN: A small model cannot replace a large assistant, but it is useful for learning.
-

@@ -4,7 +4,10 @@ __pycache__/
 .pytest_cache/
 .tmp/
 pip-cache/
+.hf/
 data/processed/
 data/tokenizer.json
+data/raw/wikipedia_*.txt
+data/raw/wikipedia_manifest.json
 checkpoints/
 *.egg-info/

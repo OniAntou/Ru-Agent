@@ -13,7 +13,7 @@ $python311 = 'C:\Users\USER\AppData\Roaming\uv\python\cpython-3.11.15-windows-x8
 & $python311 -m venv D:\LLM\.venv
 & D:\LLM\.venv\Scripts\python.exe -m pip install --upgrade pip
 & D:\LLM\.venv\Scripts\python.exe -m pip install --no-cache-dir torch==2.9.0 --index-url https://download.pytorch.org/whl/cu130
-& D:\LLM\.venv\Scripts\python.exe -m pip install numpy tokenizers pytest
+& D:\LLM\.venv\Scripts\python.exe -m pip install numpy tokenizers datasets pytest
 & D:\LLM\.venv\Scripts\python.exe -m pip install -e D:\LLM --no-deps
 ```
 
@@ -41,6 +41,17 @@ Run from `D:\LLM`:
 ```
 
 The training command uses CUDA automatically when PyTorch detects it. The tiny configuration is only a pipeline check; it is not enough data or compute for strong language quality.
+
+## Download a larger open sample
+
+The downloader streams a bounded sample from the cleaned Wikimedia Wikipedia dataset and keeps the Hugging Face cache on D:. It does not download the complete Wikipedia collection.
+
+```powershell
+cd D:\LLM
+& .\.venv\Scripts\python.exe scripts\download_wikipedia.py --max-documents 10000 --min-characters 200
+```
+
+This creates `data/raw/wikipedia_en.txt`, `data/raw/wikipedia_vi.txt`, and `data/raw/wikipedia_manifest.json`. Review the manifest and the Wikimedia license information before redistributing the data. Then rerun the preparation/tokenizer/encoding commands above. Use `configs\base.json` for the larger model only after confirming that the data volume and available disk space are sufficient; it is configured for 10,000 steps and is intentionally not launched by the downloader.
 
 ## Replacing the corpus
 

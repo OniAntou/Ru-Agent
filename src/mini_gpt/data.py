@@ -28,21 +28,34 @@ def normalize_text(text: str) -> str:
     return unicodedata.normalize("NFC", text.replace("\r\n", "\n").replace("\r", "\n")).strip()
 
 
-def _documents_from_file(path: Path) -> list[tuple[str, str]]:
-    content = normalize_text(path.read_text(encoding="utf-8"))
-    documents: list[tuple[str, str]] = []
-    for block in content.split("\n\n"):
-        block = normalize_text(block)
+def _documents_from_file(path: Path):
+    buffer: list[str] = []
+
+    def emit() -> tuple[str, str] | None:
+        if not buffer:
+            return None
+        block = normalize_text("\n".join(buffer))
+        buffer.clear()
         if not block:
-            continue
+            return None
         language = "unknown"
         if block.startswith("VI:"):
             language, block = "vi", normalize_text(block[3:])
         elif block.startswith("EN:"):
             language, block = "en", normalize_text(block[3:])
-        if block:
-            documents.append((block, language))
-    return documents
+        return (block, language) if block else None
+
+    with path.open("r", encoding="utf-8", newline=None) as handle:
+        for line in handle:
+            if line.strip():
+                buffer.append(line.rstrip("\r\n"))
+            else:
+                document = emit()
+                if document is not None:
+                    yield document
+    document = emit()
+    if document is not None:
+        yield document
 
 
 def _write_documents(path: Path, documents: list[tuple[str, str]]) -> None:

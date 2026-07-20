@@ -34,7 +34,7 @@ Add `configs\chat_finetune.json` with the same 34M-parameter model shape as `bas
 - `--resume` continues an interrupted run including optimizer/scheduler state; `--init-checkpoint` starts a new phase from model weights only. They are mutually exclusive.
 - The chat preprocessor never edits `approved.jsonl`; it creates derived artifacts under the ignored `data\conversations\processed` directory.
 - A minimum of two unique approved examples is required to form a train/validation split. A clear error explains that more reviewed conversations are needed.
-- The GUI retains its existing checkpoint picker. Once fine-tuning produces `checkpoints\chat-finetune\latest.pt`, the GUI prefers it by default while still allowing the user to select the base checkpoint explicitly for rollback.
+- The GUI retains its existing checkpoint picker. Once a validation-selected `checkpoints\chat-finetune\best.pt` exists, the GUI prefers it by default and otherwise falls back to `latest.pt`; it still allows the user to select the base checkpoint explicitly for rollback.
 
 ## Verification
 

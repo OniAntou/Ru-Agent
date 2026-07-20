@@ -54,8 +54,9 @@ ignoring provenance fields. The user-owned `approved.jsonl` remains separate.
 The documented workflow prepares and encodes `open_seed.jsonl`, then starts a
 fresh optimizer from `checkpoints/base/latest.pt` using
 `configs/chat_finetune.json`. It saves only into
-`checkpoints/chat-finetune`. Once complete, the GUI will prefer that checkpoint
-over the base checkpoint, while the base remains available as a rollback.
+`checkpoints/chat-finetune`. Once a validation-selected `best.pt` exists, the
+GUI will prefer it over `latest.pt` and the base checkpoint, while the base
+remains available as a rollback.
 
 ## Error handling
 

@@ -358,7 +358,7 @@ Expected: a commit containing only GUI checkpoint preference, its test, and user
 - Generated, ignored: `D:\LLM\data\conversations\processed\*`
 - Generated, ignored: `D:\LLM\checkpoints\chat-finetune\*`
 
-- [ ] **Step 1: Verify the base artifacts and free disk before creating data**
+- [x] **Step 1: Verify the base artifacts and free disk before creating data**
 
 Run:
 
@@ -370,7 +370,7 @@ Get-PSDrive D | Select-Object Used,Free
 
 Expected: the base checkpoint and tokenizer exist, and D: has enough headroom for a second approximately 407 MB checkpoint plus generated data.
 
-- [ ] **Step 2: Download the bounded source corpus and inspect its manifest**
+- [x] **Step 2: Download the bounded source corpus and inspect its manifest**
 
 Run:
 
@@ -382,7 +382,7 @@ Get-Content -Raw data\conversations\open_seed_manifest.json
 
 Expected: 3,900 rows, each with prompt/response/language/source/licence; the manifest reports 2,000 UltraChat, 400 OASST2, and 1,500 Vietnamese-dataset records. Stop and diagnose instead of training if any quota, source, licence, or language is missing.
 
-- [ ] **Step 3: Build the fine-tuning token files**
+- [x] **Step 3: Build the fine-tuning token files**
 
 Run:
 
@@ -395,7 +395,7 @@ Get-Item data\conversations\processed\train.bin, data\conversations\processed\va
 
 Expected: a non-empty train and validation split and both `.bin` files larger than 512 tokens.
 
-- [ ] **Step 4: Capture a reproducible base-chat baseline**
+- [x] **Step 4: Capture a reproducible base-chat baseline**
 
 Run each command with CUDA and store the exact completions in the task record:
 
@@ -406,7 +406,7 @@ Run each command with CUDA and store the exact completions in the task record:
 
 Expected: baseline outputs may remain non-conversational; this is the comparison point rather than a quality gate.
 
-- [ ] **Step 5: Run the chat fine-tuning phase from the immutable base checkpoint**
+- [x] **Step 5: Run the chat fine-tuning phase from the immutable base checkpoint**
 
 Run:
 
@@ -427,7 +427,7 @@ Run:
 git diff --check
 ```
 
-Expected: both post-fine-tune completions begin as assistant turns without immediately continuing `User:` or producing empty text; all tests pass. Inspect `README.md`, `TODO.md`, and `docs/` for stale checkpoint-selection or command text. Only then mark the open seed-data and initial chat-fine-tune items complete in `TODO.md`; retain the separate user-approved-data fine-tune item as pending.
+Expected: compare each saved checkpoint with the same Vietnamese-English prompts, select the checkpoint with the best validation loss when its responses are not worse, and copy that checkpoint to `checkpoints/chat-finetune/best.pt`. The GUI must prefer `best.pt` and fall back to `latest.pt`. Then run all tests, inspect `README.md`, `TODO.md`, and `docs/` for stale checkpoint-selection or command text, and mark the open seed-data and initial chat-fine-tune items complete in `TODO.md`; retain the separate user-approved-data fine-tune item as pending.
 
 - [ ] **Step 7: Commit only the final roadmap status**
 

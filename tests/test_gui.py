@@ -36,6 +36,20 @@ def test_default_paths_prefer_completed_chat_finetune(tmp_path, monkeypatch):
     assert checkpoint == chat_checkpoint
 
 
+def test_default_paths_prefer_best_chat_finetune_over_latest(tmp_path, monkeypatch):
+    monkeypatch.setattr(gui, "PROJECT_ROOT", tmp_path)
+    checkpoint_dir = tmp_path / "checkpoints" / "chat-finetune"
+    checkpoint_dir.mkdir(parents=True)
+    latest_checkpoint = checkpoint_dir / "latest.pt"
+    latest_checkpoint.touch()
+    best_checkpoint = checkpoint_dir / "best.pt"
+    best_checkpoint.touch()
+
+    checkpoint, _ = gui.default_paths()
+
+    assert checkpoint == best_checkpoint
+
+
 def test_runner_reports_missing_checkpoint():
     runner = ModelRunner()
     with pytest.raises(FileNotFoundError, match="checkpoint"):

@@ -105,7 +105,7 @@ Fine-tune from the completed base model with a fresh optimizer and checkpoint di
 & .\.venv\Scripts\python.exe -m mini_gpt.cli train --config configs/chat_finetune.json --processed-dir data/conversations/processed --tokenizer data/tokenizer.json --checkpoint-dir checkpoints/chat-finetune --init-checkpoint checkpoints/base/latest.pt
 ```
 
-`--init-checkpoint` copies only compatible model weights; it does not continue the base optimizer, scheduler, or step counter. Use `--resume checkpoints/chat-finetune/latest.pt` only to continue an interrupted chat fine-tuning run. When it finishes, the GUI automatically prefers `checkpoints/chat-finetune/latest.pt`; use Browse to select the base checkpoint if a rollback is needed.
+`--init-checkpoint` copies only compatible model weights; it does not continue the base optimizer, scheduler, or step counter. Use `--resume checkpoints/chat-finetune/latest.pt` only to continue an interrupted chat fine-tuning run. When a validation-selected `checkpoints/chat-finetune/best.pt` exists, the GUI prefers it; otherwise it falls back to `latest.pt`. Use Browse to select the base checkpoint if a rollback is needed.
 
 ## Replacing the corpus
 

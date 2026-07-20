@@ -11,4 +11,5 @@ data/tokenizer.json
 data/raw/wikipedia_*.txt
 data/raw/wikipedia_manifest.json
 checkpoints/
+models/
 *.egg-info/

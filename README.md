@@ -138,6 +138,14 @@ reply, an instruction/exercise, a list, an AI self-description, or broken
 context, correct the authored source and rebuild. The V3 training command is
 added only after its QLoRA implementation and CUDA smoke test exist.
 
+The local Qwen base is kept out of Git under `models/`. Its explicit download
+and verification command is:
+
+```powershell
+& .\.venv\Scripts\python.exe scripts\qwen_preflight.py
+& .\.venv\Scripts\python.exe scripts\download_ru_qwen_base.py --output-dir D:\LLM\models\qwen2.5-0.5b-instruct
+```
+
 ## Replacing the corpus
 
 Put UTF-8 `.txt` documents under `data/raw`. A document can begin with `VI:` or `EN:` to contribute to the language report. Use only public-domain, openly licensed, or user-provided data with permission. Re-run preparation, tokenizer training, and encoding after changing the corpus.

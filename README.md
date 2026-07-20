@@ -53,6 +53,17 @@ cd D:\LLM
 
 This creates `data/raw/wikipedia_en.txt`, `data/raw/wikipedia_vi.txt`, and `data/raw/wikipedia_manifest.json`. Review the manifest and the Wikimedia license information before redistributing the data. Then rerun the preparation/tokenizer/encoding commands above. Use `configs\base.json` for the larger model only after confirming that the data volume and available disk space are sufficient; it is configured for 10,000 steps and is intentionally not launched by the downloader.
 
+## Simple GUI
+
+Launch the local Tkinter interface:
+
+```powershell
+cd D:\LLM
+& .\.venv\Scripts\python.exe -m mini_gpt.gui
+```
+
+The window supports checkpoint/tokenizer selection, prompt entry, maximum generated tokens, temperature, top-k, and a status/output area. Generation runs in a background thread so the window remains responsive.
+
 ## Replacing the corpus
 
 Put UTF-8 `.txt` documents under `data/raw`. A document can begin with `VI:` or `EN:` to contribute to the language report. Use only public-domain, openly licensed, or user-provided data with permission. Re-run preparation, tokenizer training, and encoding after changing the corpus.

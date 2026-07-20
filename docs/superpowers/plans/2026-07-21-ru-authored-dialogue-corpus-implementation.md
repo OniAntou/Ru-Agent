@@ -2,11 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace V3's unsuitable external Q&A corpus with a locally authored, validated Vietnamese-English dialogue corpus that teaches Ru to address the user as `anh` and itself as `em`.
+**Goal:** Replace V3's unsuitable external Q&A corpus with a locally authored, validated 120-example Vietnamese-English dialogue corpus that teaches Ru to address the user as `anh` and itself as `em` without synthetic repetition.
 
 **Architecture:** A versioned Python source module owns the hand-authored dialogue frames and emits canonical Qwen JSONL records. A pure corpus builder validates those records, calculates a reproducible source checksum, splits them deterministically, and atomically writes ignored runtime artifacts under `data/conversations/ru_v3`. The build CLI is local-only: it downloads nothing and does not read V2/open-source conversation data.
 
 **Tech Stack:** Python 3.11, existing `mini_gpt.data.normalize_text`, JSONL, pytest, standard-library `hashlib` and `random`.
+
+> **Execution status (2026-07-21):** Tasks 1 through 4 are complete. The corpus
+> passed its 24-row manual audit and produced 120 examples (60 Vietnamese, 60
+> English), including 30 contextual examples. QLoRA download/training remains a
+> separate unfinished phase.
 
 ---
 
@@ -99,9 +104,9 @@ from mini_gpt.ru_authored_dialogues import authored_dialogue_records
 def test_authored_dialogues_cover_both_languages_and_contextual_turn_taking():
     records = authored_dialogue_records()
 
-    assert len(records) >= 600
+    assert len(records) == 120
     assert {record["language"] for record in records} == {"vi", "en"}
-    assert sum(len(record["messages"]) > 2 for record in records) >= 150
+    assert sum(len(record["messages"]) > 2 for record in records) >= 30
     assert {record["source"] for record in records} == {"ru_project_seed"}
     assert {record["license"] for record in records} == {"project-owned"}
 
@@ -144,22 +149,21 @@ LICENSE = "project-owned"
 class DialogueFrame:
     language: Language
     messages: tuple[tuple[str, str], ...]
-    responses: tuple[str, str, str, str, str]
+    response: str
 
 
 def authored_dialogue_records() -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
     for frame in ALL_FRAMES:
-        for response in frame.responses:
-            records.append(
-                {
-                    "messages": [{"role": "system", "content": RU_SYSTEM_PROMPT}, *({"role": role, "content": content} for role, content in frame.messages)],
-                    "response": response,
-                    "language": frame.language,
-                    "source": SOURCE,
-                    "license": LICENSE,
-                }
-            )
+        records.append(
+            {
+                "messages": [{"role": "system", "content": RU_SYSTEM_PROMPT}, *({"role": role, "content": content} for role, content in frame.messages)],
+                "response": frame.response,
+                "language": frame.language,
+                "source": SOURCE,
+                "license": LICENSE,
+            }
+        )
     return records
 ```
 
@@ -169,32 +173,31 @@ must use the actual conversational lines below as its style contract:
 
 ```python
 CASUAL_FRAMES = (
-    DialogueFrame("vi", (("user", "Xin chào em."),), ("Chào anh. Hôm nay của anh thế nào rồi?", "Chào anh, em ở đây. Ngày của anh ổn chứ?", "Chào anh. Có chuyện gì anh muốn kể em nghe không?", "Em chào anh. Anh vừa làm gì xong vậy?", "Chào anh, gặp anh là vui rồi.")),
-    DialogueFrame("vi", (("user", "Anh hơi mệt sau một ngày dài."),), ("Vậy anh nghỉ một chút nhé. Nếu muốn kể thêm, em ở đây nghe anh.", "Nghe anh vất vả quá. Anh uống nước rồi thả lỏng một chút nha.", "Em hiểu. Hôm nay anh không cần cố gắng thêm đâu, nghỉ đã nhé.", "Anh đã làm nhiều rồi. Giờ mình cho đầu óc nghỉ một lát nha.", "Mệt thì cứ chậm lại một chút, em vẫn ở đây với anh.")),
-    DialogueFrame("en", (("user", "Hi Ru, I just got home."),), ("Welcome back. Was your day more tiring or more fun?", "Hi. I hope getting home feels like a small reset.", "Welcome home. Do you feel like talking or just relaxing?", "Glad you are back. What was the best part of your day?", "Hi again. Take a breath first, then tell me how it went.")),
-    DialogueFrame("en", (("user", "Thanks for listening."),), ("Any time. I am glad you told me.", "You are welcome. I am here whenever you want to talk.", "Of course. Thanks for trusting me with it.", "Always. I hope saying it out loud helped a little.", "You do not have to carry everything alone.")),
+    DialogueFrame("vi", (("user", "Xin chào em."),), "Chào anh, hôm nay của anh thế nào rồi?"),
+    DialogueFrame("vi", (("user", "Anh hơi mệt sau một ngày dài."),), "Vậy anh nghỉ một chút nhé. Nếu muốn kể thêm, em ở đây nghe anh."),
+    DialogueFrame("en", (("user", "Hi Ru, I just got home."),), "Welcome back. Was your day more tiring or more fun?"),
+    DialogueFrame("en", (("user", "Thanks for listening."),), "Any time. I am glad you told me."),
 )
 
 CONTEXTUAL_FRAMES = (
     DialogueFrame(
         "vi",
         (("user", "Anh vừa chơi game xong."), ("assistant", "Nghe vui đấy. Anh chơi gì vậy?"), ("user", "Anh chơi một trận bóng đá.")),
-        ("Chắc trận đó khá căng thẳng nhỉ? Anh thắng không?", "Nghe kịch tính đấy. Trận của anh kết thúc thế nào?", "Bóng đá sau một ngày dài hợp lý đó anh. Anh thấy trận này vui không?", "Vậy là anh xả stress được rồi. Có pha nào anh nhớ nhất không?", "Em tò mò quá, đội của anh có ghi bàn đẹp không?"),
+        "Chắc trận đó khá căng thẳng nhỉ? Anh thắng không?",
     ),
     DialogueFrame(
         "en",
         (("user", "I am making dinner."), ("assistant", "Nice. What are you cooking?"), ("user", "Just noodles and vegetables.")),
-        ("That sounds comforting. I hope it turns out exactly how you want it.", "Simple dinners can be the nicest ones. Are you hungry already?", "Noodles and vegetables sound perfect for a quiet evening.", "That sounds warm and easy. I hope you enjoy cooking it.", "Nice choice. Tell me if the vegetables turned out especially good."),
+        "That sounds comforting. I hope it turns out exactly how you want it.",
     ),
 )
 ```
 
-Expand the literal catalog to 120 distinct frames: 54 casual, 30 contextual,
-24 bilingual, and 12 everyday-help frames. Each frame may produce only its own
-written response; do not combine independent prompt and response lists. Emit
-five paraphrase variants per frame using a frame-owned tuple of five complete
-response phrasings, not string substitution. That produces exactly 600 records
-whose response wording remains authored and semantically matched.
+Expand the literal catalog to 120 distinct frames: 60 casual, 30 contextual,
+12 bilingual, and 18 everyday-help frames. Each frame has exactly one complete,
+individually written response; do not combine independent prompt and response
+lists and do not generate paraphrase variants. That produces exactly 120 records
+whose wording is reviewed rather than mechanically inflated.
 
 For every record, prepend `{"role": "system", "content": RU_SYSTEM_PROMPT}`
 to the frame's messages and emit `response`, `language`, `source`, and
@@ -205,7 +208,7 @@ variants.
 - [ ] **Step 4: Run the source tests**
 
 Run the Step 2 command. Expected: PASS with both language coverage and at least
-150 records containing an earlier assistant message.
+30 records containing an earlier assistant message.
 
 - [ ] **Step 5: Commit the versioned authored source**
 
@@ -230,10 +233,10 @@ from mini_gpt.ru_qwen_corpus import build_ru_qwen_corpus
 def test_builds_authored_corpus_with_reproducible_project_provenance(tmp_path):
     report = build_ru_qwen_corpus(authored_dialogue_records(), tmp_path, seed=7)
 
-    assert report["total_examples"] == 600
-    assert report["contextual_examples"] >= 150
-    assert report["source_counts"] == {"ru_project_seed": 600}
-    assert report["licenses"] == {"project-owned": 600}
+    assert report["total_examples"] == 120
+    assert report["contextual_examples"] >= 30
+    assert report["source_counts"] == {"ru_project_seed": 120}
+    assert report["licenses"] == {"project-owned": 120}
     assert len(report["source_sha256"]) == 64
     assert (tmp_path / "train.jsonl").is_file()
     assert (tmp_path / "val.jsonl").is_file()
@@ -263,8 +266,8 @@ def build_ru_qwen_corpus(
     output_dir: str | Path,
     validation_ratio: float = 0.1,
     seed: int = 42,
-    minimum_examples: int = 600,
-    minimum_contextual_examples: int = 150,
+    minimum_examples: int = 120,
+    minimum_contextual_examples: int = 30,
 ) -> dict[str, object]:
 ```
 
@@ -281,7 +284,7 @@ Calculate `source_sha256` by serializing normalized input records with
 joining lines with `"\n"`, and applying `hashlib.sha256` to UTF-8 bytes. Globally
 deduplicate on `(messages, response)`; count contextual records as records with
 an assistant message before the final user turn. Require exactly `vi` and `en`,
-at least 600 accepted records, and at least 150 contextual records before
+exactly 120 accepted records, and at least 30 contextual records before
 creating the destination directory.
 
 Manifest keys must be `generated_at_utc`, `total_examples`, `train_examples`,
@@ -296,7 +299,7 @@ behavior. Do not write a file when any quality threshold fails.
 def test_rejects_authored_records_that_break_the_voice_or_context_gate(tmp_path):
     broken = authored_dialogue_records()[:-1]
 
-    with pytest.raises(ValueError, match="at least 600"):
+    with pytest.raises(ValueError, match="exactly 120"):
         build_ru_qwen_corpus(broken, tmp_path)
     assert not tmp_path.exists()
 
@@ -390,8 +393,8 @@ Run:
 ```
 
 Expected: tests PASS; the audit has 24 plain conversation rows with both
-languages and contextual examples; the build reports 600 records, both
-languages, at least 150 contextual records, project-only provenance, and no
+languages and contextual examples; the build reports 120 records, both
+languages, at least 30 contextual records, project-only provenance, and no
 partial files.
 
 - [ ] **Step 5: Conduct the manual quality gate**
@@ -428,7 +431,7 @@ Include these commands:
 & .\.venv\Scripts\python.exe scripts\build_ru_qwen_v3_data.py --output-dir data\conversations\ru_v3
 ```
 
-State the 600/150/both-language/project-owned gates and Ru's default `em`/`anh`
+State the 120/30/both-language/project-owned gates and Ru's default `em`/`anh`
 Vietnamese voice. Do not add a QLoRA training command until its implementation
 and CUDA smoke test exist.
 
@@ -445,7 +448,7 @@ tasks complete.
 Run:
 
 ```powershell
-rg -n "external-source|ru_project_seed|project-owned|600|150|em.*anh|--audit" README.md TODO.md docs\superpowers\plans docs\superpowers\specs
+rg -n "external-source|ru_project_seed|project-owned|120|30|em.*anh|--audit" README.md TODO.md docs\superpowers\plans docs\superpowers\specs
 & .\.venv\Scripts\python.exe -m pytest -q
 git diff --check
 ```
@@ -462,16 +465,16 @@ git commit -m "docs: record Ru authored corpus workflow"
 
 ## Plan self-review
 
-- **Spec coverage:** Task 1 centralizes default `em`/`anh`; Task 2 supplies at
-  least 600 project-authored Vietnamese-English records and 150 contextual
+- **Spec coverage:** Task 1 centralizes default `em`/`anh`; Task 2 supplies 120
+  individually written project-authored Vietnamese-English records and 30 contextual
   records; Task 3 validates, hashes, splits, and atomically publishes them;
   Task 4 supplies the 24-row audit and prevents network ingestion; Task 5
   documents the decision while preserving the unfinished natural-conversation
   acceptance gate.
 - **Placeholder scan:** No implementation step delegates a vague filter, source,
   count, provenance, command, or acceptance condition. The 120 frame literals
-  are a deliberately bounded authored catalog, with five complete response
-  variants per frame for exactly 600 records.
+  are a deliberately bounded authored catalog with one reviewed response per
+  frame and no generated paraphrase variants.
 - **Type consistency:** The shared schema is `messages`, `response`,
   `language`, `source`, and `license` throughout. `authored_dialogue_records()`
   produces the `list[dict[str, object]]` accepted by `build_ru_qwen_corpus()`;

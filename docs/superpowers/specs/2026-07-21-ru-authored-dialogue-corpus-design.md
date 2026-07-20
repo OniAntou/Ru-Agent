@@ -35,7 +35,7 @@ the behavior is available before and after adapter training.
 
 ## Corpus shape
 
-The tracked authored source contains at least 600 unique examples split
+The tracked authored source contains exactly 120 individually written examples split
 deterministically 90/10. It is balanced as follows:
 
 | Share | Content |
@@ -47,7 +47,7 @@ deterministically 90/10. It is balanced as follows:
 
 Every response is one to four ordinary sentences, has no list, URL, code,
 template label, AI identity disclaimer, or unsupported claim. The build rejects
-duplicates and verifies that both languages and at least 150 contextual records
+duplicates and verifies that both languages and at least 30 contextual records
 are present. The manifest identifies every row as `ru_project_seed` under the
 project-owned licence and records the source checksum, counts, filters, and
 pronoun policy.
@@ -65,7 +65,8 @@ pronoun policy.
    smoke run. Two clear failures stop the train.
 5. Qwen's own 12-prompt baseline is evaluated before training. The adapter is
    adopted only if it is at least as natural as that baseline and passes the
-   existing 10/12 conversation gate.
+   existing 10/12 conversation gate. The small corpus is a voice/style adapter,
+   not a source of general knowledge; training starts with one low-rate epoch.
 
 ## Boundaries
 

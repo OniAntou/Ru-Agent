@@ -115,6 +115,29 @@ Its validation-best checkpoint was step 1,150 with assistant-token loss
 produced repetitive or nonsensical responses. The V2 artifacts are retained for
 comparison only; they do not meet Ru's natural-conversation goal.
 
+## Ru V3 authored conversation corpus
+
+The open V2/V3 seed data was rejected after manual quality review because it
+contained too many exercises, factual Q&A answers, and artificial-assistant
+phrases. Qwen V3 therefore uses 120 individually authored Vietnamese-English
+dialogue examples to teach Ru's tone and turn-taking; it does not use them as a
+source of general knowledge.
+
+Ru defaults to calling the user `anh` and referring to itself as `em` in
+Vietnamese. The local-only build requires exactly 120 examples, both languages,
+30 contextual examples, and project-owned provenance before it writes data.
+
+```powershell
+cd D:\LLM
+& .\.venv\Scripts\python.exe scripts\build_ru_qwen_v3_data.py --audit
+& .\.venv\Scripts\python.exe scripts\build_ru_qwen_v3_data.py --output-dir data\conversations\ru_v3
+```
+
+Review the 24-row audit before training. If two or more rows have an unnatural
+reply, an instruction/exercise, a list, an AI self-description, or broken
+context, correct the authored source and rebuild. The V3 training command is
+added only after its QLoRA implementation and CUDA smoke test exist.
+
 ## Replacing the corpus
 
 Put UTF-8 `.txt` documents under `data/raw`. A document can begin with `VI:` or `EN:` to contribute to the language report. Use only public-domain, openly licensed, or user-provided data with permission. Re-run preparation, tokenizer training, and encoding after changing the corpus.

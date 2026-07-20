@@ -299,6 +299,10 @@ git commit -m "feat: add Qwen response-only data encoding"
 
 ### Task 4: Build a short, licensed Ru V3 corpus from local sources
 
+> **Superseded (2026-07-21):** The external-source manual audit failed. Use
+> `2026-07-21-ru-authored-dialogue-corpus-implementation.md` instead; it builds
+> the project-authored 120-example/30-contextual V3 corpus with no network input.
+
 **Files:**
 - Create: `D:\LLM\src\mini_gpt\ru_qwen_corpus.py`
 - Create: `D:\LLM\scripts\build_ru_qwen_v3_data.py`

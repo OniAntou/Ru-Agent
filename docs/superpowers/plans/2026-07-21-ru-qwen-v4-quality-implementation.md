@@ -187,7 +187,7 @@ Expected: tests pass without a model download.
 - Create: scripts/build_ru_qwen_v4_data.py
 - Create: tests/test_ru_v4_corpus.py
 
-- [ ] **Step 1: Write failing corpus-shape tests**
+- [x] **Step 1: Write failing corpus-shape tests**
 
 Create tests/test_ru_v4_corpus.py with this primary test:
 
@@ -209,7 +209,7 @@ def test_v4_corpus_has_the_approved_shape(tmp_path):
 
 Add tests that reject 399 rows, a duplicate dialogue, an invalid response mode, a row without alternating roles, and a Vietnamese default-voice response containing toi/mình/bạn rather than em/anh. Add a split test that reads all three JSONL files and proves each messages-plus-response key occurs exactly once.
 
-- [ ] **Step 2: Run the failing test**
+- [x] **Step 2: Run the failing test**
 
 Run:
 
@@ -219,7 +219,7 @@ Run:
 
 Expected: collection fails because the V4 modules do not exist.
 
-- [ ] **Step 3: Implement the V4 schema and deterministic builder**
+- [x] **Step 3: Implement the V4 schema and deterministic builder**
 
 Use these constants in src/mini_gpt/ru_v4_corpus.py:
 
@@ -239,7 +239,7 @@ Each source record contains exactly messages, response, language, mode, source, 
 
 Validate every count before creating the output directory. Shuffle a copied record list with Random(seed), assign rows 0..39 to held_out, 40..79 to validation, and 80..399 to train. Write train.jsonl, val.jsonl, held_out.jsonl, and manifest.json atomically with partial files and os.replace. The manifest stores split counts, language counts, mode counts, three minimum counters, source counts, licenses, source checksum, and seed.
 
-- [ ] **Step 4: Author the literal reviewed data source**
+- [x] **Step 4: Author the reviewed data source**
 
 Implement v4_dialogue_records() in src/mini_gpt/ru_v4_dialogues.py. Store every retained dialogue explicitly in the tracked source file; no template-generated text is allowed at build time.
 
@@ -257,7 +257,7 @@ The exact final source contract is:
 
 Use at least 100 acknowledge, 100 follow_up, 60 everyday_help, 60 story, 40 light_humour, and 40 correction rows. All Vietnamese default rows use em for Ru and anh for the user. Each language includes greetings, routine daily life, tiredness, a game, food, weather, quiet evenings, a small success, light frustration, and an ongoing conversation. Check every reply for direct relevance and vary endings so questions are not a default pattern.
 
-- [ ] **Step 5: Add local build/audit CLI and verify**
+- [x] **Step 5: Add local build/audit CLI and verify**
 
 Create scripts/build_ru_qwen_v4_data.py with --output-dir defaulting to data/conversations/ru_v4, --seed defaulting to 42, and --audit. Audit prints all 40 held-out rows and a deterministic stratified sample from the other splits; it never downloads data.
 
@@ -272,7 +272,7 @@ git diff --check
 
 Expected: all tests pass; audit shows 40 held-out rows, 400 unique rows, and no prohibited content.
 
-- [ ] **Step 6: Commit the corpus**
+- [x] **Step 6: Commit the corpus**
 
 Run:
 

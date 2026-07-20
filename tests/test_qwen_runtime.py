@@ -39,3 +39,27 @@ def test_qwen_base_downloader_exposes_help_without_downloading():
 
     assert result.returncode == 0
     assert "Download and verify Ru's local Qwen base" in result.stdout
+
+
+def test_v4_profile_is_the_registered_local_qwen_1_5b_base():
+    from mini_gpt.qwen_runtime import QWEN_V4_BASE, qwen_base_profile
+
+    assert QWEN_V4_BASE.model_id == "Qwen/Qwen2.5-1.5B-Instruct"
+    assert QWEN_V4_BASE.local_path == "models/qwen2.5-1.5b-instruct"
+    assert qwen_base_profile(QWEN_V4_BASE.model_id) == QWEN_V4_BASE
+
+
+def test_unknown_qwen_profile_is_rejected():
+    from mini_gpt.qwen_runtime import qwen_base_profile
+
+    with pytest.raises(ValueError, match="registered Ru Qwen base"):
+        qwen_base_profile("other/model")
+
+
+def test_v4_qwen_base_downloader_exposes_help_without_downloading():
+    script = Path(__file__).resolve().parents[1] / "scripts" / "download_ru_qwen_v4_base.py"
+
+    result = subprocess.run([sys.executable, str(script), "--help"], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 0
+    assert "Download and verify Ru's V4 Qwen 1.5B base" in result.stdout

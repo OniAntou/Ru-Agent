@@ -2,11 +2,38 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
 
-QWEN_MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct"
+
+@dataclass(frozen=True)
+class QwenBaseProfile:
+    model_id: str
+    local_path: str
+    label: str
+
+
+QWEN_V3_BASE = QwenBaseProfile(
+    model_id="Qwen/Qwen2.5-0.5B-Instruct",
+    local_path="models/qwen2.5-0.5b-instruct",
+    label="Ru V3 Qwen 0.5B",
+)
+QWEN_V4_BASE = QwenBaseProfile(
+    model_id="Qwen/Qwen2.5-1.5B-Instruct",
+    local_path="models/qwen2.5-1.5b-instruct",
+    label="Ru V4 Qwen 1.5B",
+)
+QWEN_MODEL_ID = QWEN_V3_BASE.model_id
+QWEN_BASE_PROFILES = {profile.model_id: profile for profile in (QWEN_V3_BASE, QWEN_V4_BASE)}
 REQUIRED_QWEN_PACKAGES = ("transformers", "accelerate", "peft", "bitsandbytes")
+
+
+def qwen_base_profile(model_id: str) -> QwenBaseProfile:
+    try:
+        return QWEN_BASE_PROFILES[model_id]
+    except KeyError as error:
+        raise ValueError(f"model_id must be a registered Ru Qwen base, got {model_id!r}") from error
 
 
 def qwen_dependency_status(

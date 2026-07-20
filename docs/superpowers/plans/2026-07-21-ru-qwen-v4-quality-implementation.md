@@ -37,7 +37,7 @@
 - Create: scripts/download_ru_qwen_v4_base.py
 - Modify: tests/test_qwen_runtime.py
 
-- [ ] **Step 1: Write failing registered-profile tests**
+- [x] **Step 1: Write failing registered-profile tests**
 
 Add these imports and tests to tests/test_qwen_runtime.py:
 
@@ -64,7 +64,7 @@ def test_v4_qwen_base_downloader_exposes_help_without_downloading():
     assert "Download and verify Ru's V4 Qwen 1.5B base" in result.stdout
 ~~~
 
-- [ ] **Step 2: Run the failing tests**
+- [x] **Step 2: Run the failing tests**
 
 Run:
 
@@ -74,7 +74,7 @@ Run:
 
 Expected: collection fails because the V4 profile, profile resolver, and V4 downloader do not exist.
 
-- [ ] **Step 3: Implement registered profiles**
+- [x] **Step 3: Implement registered profiles**
 
 Replace the one fixed Qwen model-ID surface with this exact immutable profile API in src/mini_gpt/qwen_runtime.py. Retain QWEN_MODEL_ID as the V3 compatibility alias because existing V3 code imports it.
 
@@ -112,7 +112,7 @@ def qwen_base_profile(model_id: str) -> QwenBaseProfile:
 
 Keep verify_local_qwen_base responsible only for validating a local Qwen2 configuration and safetensors files. It must not infer a Hugging Face repository name from the artifact.
 
-- [ ] **Step 4: Implement a V4-only downloader**
+- [x] **Step 4: Implement a V4-only downloader**
 
 Create scripts/download_ru_qwen_v4_base.py:
 
@@ -166,7 +166,7 @@ if __name__ == "__main__":
 
 The script has no model-ID flag. It can only download the registered V4 base and never overwrites the V3 directory.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 

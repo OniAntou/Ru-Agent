@@ -1,6 +1,10 @@
 import pytest
 
-from mini_gpt.gui import ModelRunner, default_paths, parse_generation_settings
+from mini_gpt.gui import MODEL_NAME, ModelRunner, default_paths, parse_generation_settings
+
+
+def test_model_name_is_ru():
+    assert MODEL_NAME == "Ru"
 
 
 def test_generation_settings_are_parsed_and_validated():

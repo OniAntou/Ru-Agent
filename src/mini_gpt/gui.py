@@ -19,6 +19,7 @@ from .tokenizer import load_tokenizer
 from .train import resolve_device
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MODEL_NAME = "Ru"
 
 
 def default_paths() -> tuple[Path, Path]:
@@ -153,7 +154,7 @@ class MiniGPTApp:
         self._build()
 
     def _build(self) -> None:
-        self.root.title("Bilingual Mini-GPT")
+        self.root.title(f"{MODEL_NAME} — Bilingual Mini-GPT")
         self.root.geometry("900x700")
         self.root.minsize(700, 520)
         self.root.columnconfigure(0, weight=1)
@@ -177,7 +178,7 @@ class MiniGPTApp:
         content.rowconfigure(1, weight=3)
         content.rowconfigure(3, weight=1)
 
-        ttk.Label(content, text="Conversation").grid(row=0, column=0, sticky="w")
+        ttk.Label(content, text=f"Conversation with {MODEL_NAME}").grid(row=0, column=0, sticky="w")
         transcript_frame = ttk.Frame(content)
         transcript_frame.grid(row=1, column=0, sticky="nsew", pady=(4, 8))
         transcript_frame.columnconfigure(0, weight=1)
@@ -242,7 +243,7 @@ class MiniGPTApp:
         self.transcript_text.configure(state="normal")
         self.transcript_text.insert(
             tk.END,
-            f"User:\n{turn.prompt}\n\nAssistant:\n{turn.response}\n\n",
+            f"User:\n{turn.prompt}\n\n{MODEL_NAME}:\n{turn.response}\n\n",
         )
         self.transcript_text.see(tk.END)
         self.transcript_text.configure(state="disabled")

@@ -1,4 +1,4 @@
-# Bilingual Mini-GPT
+# Ru — Bilingual Mini-GPT
 
 An educational Vietnamese-English decoder-only Transformer trained from random initialization. The project is intentionally small enough to run experiments on an RTX 4050 Laptop GPU with approximately 6 GB VRAM.
 
@@ -62,7 +62,7 @@ cd D:\LLM
 & .\.venv\Scripts\python.exe -m mini_gpt.gui
 ```
 
-The window supports checkpoint/tokenizer selection, a multi-turn conversation, maximum generated tokens, temperature, and top-k. Generation runs in a background thread so the window remains responsive.
+The local model is named **Ru**. The window supports checkpoint/tokenizer selection, a multi-turn conversation, maximum generated tokens, temperature, and top-k. Generation runs in a background thread so the window remains responsive.
 
 Use `Send` to continue the current in-memory chat. `New chat` clears only that session. After a useful answer, press `Mark last response useful`; only that user/assistant pair is appended to the local UTF-8 JSONL file:
 

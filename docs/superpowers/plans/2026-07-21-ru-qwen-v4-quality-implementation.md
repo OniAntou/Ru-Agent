@@ -524,7 +524,7 @@ Expected: tests pass without CUDA or a local Qwen model.
 - Runtime create: checkpoints/ru-qwen-v4/adapter/* (ignored)
 - Runtime create: checkpoints/ru-qwen-v4/base_evaluation.json and evaluation.json (ignored)
 
-- [ ] **Step 1: Measure the machine before downloading**
+- [x] **Step 1: Measure the machine before downloading**
 
 Run:
 
@@ -535,7 +535,7 @@ Get-PSDrive -Name D | Select-Object Name,Free
 
 Expected: CUDA is available and at least 5 GB remains on D after the V4 base download. Stop and report if CUDA is unavailable, the download leaves less than 5 GB free, or the later smoke run exceeds 5500 MiB. Never delete V3 artifacts to make room.
 
-- [ ] **Step 2: Download and verify only the V4 base**
+- [x] **Step 2: Download and verify only the V4 base**
 
 Run:
 
@@ -546,7 +546,7 @@ Run:
 
 Expected: the report names Qwen/Qwen2.5-1.5B-Instruct, has positive safetensors bytes, and local validation prints qwen2.
 
-- [ ] **Step 3: Build data and record the base baseline**
+- [x] **Step 3: Build data and record the base baseline**
 
 Run:
 
@@ -558,7 +558,7 @@ Run:
 
 Expected: the audit includes all 40 held-out records; base evaluation writes all 32 cases. If the base itself fails an automatic check, retain that evidence and stop before training to inspect the profile or prompt.
 
-- [ ] **Step 4: Run the bounded CUDA smoke test**
+- [x] **Step 4: Run the bounded CUDA smoke test**
 
 Run:
 
@@ -568,7 +568,7 @@ Run:
 
 Expected: adapter_config.json and ru_manifest.json exist under checkpoints/ru-qwen-v4/adapter and peak_vram_mb is at most 5500. Stop on OOM, an incomplete adapter, or an over-limit peak.
 
-- [ ] **Step 5: Train once and evaluate side by side**
+- [x] **Step 5: Train once and evaluate side by side**
 
 Run:
 
@@ -579,7 +579,7 @@ Run:
 
 Expected: a validation-best manifest and a 32-case base/adapter JSON. Any automatic adapter failure means not adopted; the GUI remains unchanged.
 
-- [ ] **Step 6: Perform manual quality review**
+- [x] **Step 6: Perform manual quality review**
 
 Score every adapter response in evaluation.json natural or not-natural for relevance, flow, warmth, language choice, and Vietnamese anh/em voice. Adopt only if every automatic check passes, at least 28 of 32 responses are natural, and the adapter is no worse than the base in the remaining cases. Record adopted or not_adopted in the evaluation JSON; never use validation loss as the adoption verdict.
 
@@ -590,15 +590,15 @@ Score every adapter response in evaluation.json natural or not-natural for relev
 - Modify: TODO.md
 - Modify: docs/superpowers/specs/2026-07-21-ru-qwen-v4-quality-design.md only if measured conditions require a factual correction
 
-- [ ] **Step 1: Update README with facts only**
+- [x] **Step 1: Update README with facts only**
 
 Add a Ru V4 result subsection under the Qwen section after Task 5. Include the exact model ID, dataset split counts, measured peak VRAM, base and adapter evaluation artifact paths, and one exact verdict: adopted or not adopted. Do not claim a V4 GUI exists unless a separate later task implements and tests it.
 
-- [ ] **Step 2: Make TODO current and retain diagnostic history**
+- [x] **Step 2: Make TODO current and retain diagnostic history**
 
 Leave V2 and V3 marked as quality-gate failures. Mark V4 complete only after the real evaluation. If V4 fails, leave Improve Ru from recorded V4 evaluation failures unchecked. If V4 passes, leave Add a Qwen V4 GUI runner after a separate runtime smoke test unchecked. Do not delete older design documents; they record rejected paths and remain useful evidence.
 
-- [ ] **Step 3: Verify docs, test suite, and commit**
+- [x] **Step 3: Verify docs, test suite, and commit**
 
 Run:
 

@@ -154,6 +154,37 @@ and verification command is:
 & .\.venv\Scripts\python.exe scripts\download_ru_qwen_base.py --output-dir D:\LLM\models\qwen2.5-0.5b-instruct
 ```
 
+## Ru V4 Qwen 1.5B result (not adopted)
+
+V4 used the local `Qwen/Qwen2.5-1.5B-Instruct` base in 4-bit NF4 mode and a
+curated 400-row Vietnamese-English corpus: 320 train rows, 40 validation rows,
+and 40 held-out rows. Its one-epoch QLoRA candidate completed 40 optimizer
+updates with validation-best loss `3.552138698101044` and peak VRAM
+`1,989.86572265625 MiB`.
+
+The fixed 32-prompt evaluation rejected the adapter: it still produced wrong
+Vietnamese forms of address, role reversals, generic replies, and language
+mixing that did not follow the user's prompt. Manual review was well below the
+required 28 natural replies, so the V4 adapter is retained only for diagnosis.
+The GUI remains unchanged.
+
+Runtime evidence is intentionally ignored by Git:
+
+- `models\qwen2.5-1.5b-instruct`
+- `data\conversations\ru_v4`
+- `checkpoints\ru-qwen-v4\base_evaluation.json`
+- `checkpoints\ru-qwen-v4\evaluation.json`
+- `checkpoints\ru-qwen-v4\adapter\ru_manifest.json`
+
+The local commands used for a future candidate are:
+
+```powershell
+& .\.venv\Scripts\python.exe scripts\build_ru_qwen_v4_data.py --audit
+& .\.venv\Scripts\python.exe scripts\build_ru_qwen_v4_data.py --output-dir data\conversations\ru_v4
+& .\.venv\Scripts\python.exe scripts\train_ru_qwen_v4.py --config configs\ru_qwen_v4_1_5b.json --max-steps 2
+& .\.venv\Scripts\python.exe scripts\evaluate_ru_qwen_v4.py --config configs\ru_qwen_v4_1_5b.json --adapter-dir checkpoints\ru-qwen-v4\adapter --output checkpoints\ru-qwen-v4\evaluation.json
+```
+
 ## Replacing the corpus
 
 Put UTF-8 `.txt` documents under `data/raw`. A document can begin with `VI:` or `EN:` to contribute to the language report. Use only public-domain, openly licensed, or user-provided data with permission. Re-run preparation, tokenizer training, and encoding after changing the corpus.

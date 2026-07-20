@@ -62,7 +62,7 @@ def _load_qwen_for_generation(profile: QwenBaseProfile, adapter_dir: str | Path 
     model = AutoModelForCausalLM.from_pretrained(
         base_path,
         quantization_config=quantization,
-        torch_dtype=torch.float16,
+        dtype=torch.float16,
         device_map="cuda",
     )
     if adapter_dir is not None:
@@ -110,8 +110,10 @@ def generate_qwen_response(
         add_generation_prompt=True,
         return_tensors="pt",
     ).to("cuda")
+    attention_mask = input_ids.new_ones(input_ids.shape)
     generated = model.generate(
         input_ids=input_ids,
+        attention_mask=attention_mask,
         do_sample=False,
         max_new_tokens=96,
         repetition_penalty=1.05,

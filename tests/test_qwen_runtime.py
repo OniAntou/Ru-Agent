@@ -93,6 +93,10 @@ def test_qwen_generation_uses_deterministic_conversation_settings(monkeypatch):
             assert device == "cuda"
             return self
 
+        def new_ones(self, shape):
+            assert shape == self.shape
+            return self
+
     class FakeTokenizer:
         def apply_chat_template(self, messages, **kwargs):
             assert messages[-1] == {"role": "user", "content": "Hello Ru"}
@@ -107,6 +111,7 @@ def test_qwen_generation_uses_deterministic_conversation_settings(monkeypatch):
     class FakeModel:
         def generate(self, **kwargs):
             assert kwargs["input_ids"].shape == (1, 3)
+            assert kwargs["attention_mask"].shape == (1, 3)
             assert kwargs["do_sample"] is False
             assert kwargs["max_new_tokens"] == 96
             assert kwargs["repetition_penalty"] == 1.05

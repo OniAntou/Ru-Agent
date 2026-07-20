@@ -57,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         base_response = generate_qwen_response(profile, case.messages)
         base_assessment = assess_response(case.prompt, base_response, case.language)
         base_results[case.case_id] = (base_response, base_assessment)
+    base_automatic_gate_passed = all(assessment.passed for _, assessment in base_results.values())
     clear_qwen_generation_cache()
     adapter_results: dict[str, tuple[str, object]] = {}
     adapter_failed = False
@@ -96,7 +97,18 @@ def main(argv: list[str] | None = None) -> int:
     partial = destination.with_suffix(destination.suffix + ".partial")
     partial.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(partial, destination)
-    print(json.dumps({"output": str(destination), "cases": len(cases), "adapter_automatic_gate_passed": not adapter_failed}, indent=2))
+    print(
+        json.dumps(
+            {
+                "output": str(destination),
+                "cases": len(cases),
+                "base_automatic_gate_passed": base_automatic_gate_passed,
+                "adapter_automatic_gate_passed": not adapter_failed,
+                "peak_allocated_mib": payload["peak_allocated_mib"],
+            },
+            indent=2,
+        )
+    )
     return 1 if args.adapter_dir and adapter_failed else 0
 
 

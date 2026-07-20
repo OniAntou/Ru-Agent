@@ -29,6 +29,11 @@ def test_assess_response_accepts_a_natural_default_vietnamese_reply():
     assert assessment.failures == ()
 
 
+def test_vietnamese_voice_check_allows_lam_ban_but_rejects_ban_as_an_address():
+    assert assess_response("Xin chào", "Rất vui được làm bạn với anh.", "vi").passed
+    assert not assess_response("Xin chào", "Em có thể giúp bạn nghỉ ngơi.", "vi").passed
+
+
 def test_evaluator_cli_exposes_base_and_adapter_arguments_without_loading_a_model():
     result = subprocess.run([sys.executable, str(SCRIPT), "--help"], capture_output=True, text=True, check=False)
 

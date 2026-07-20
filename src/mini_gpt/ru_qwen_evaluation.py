@@ -7,7 +7,8 @@ from .data import normalize_text
 from .ru_style import RU_SYSTEM_PROMPT
 
 _AI_DISCLAIMER = re.compile(r"\b(as an ai language model|i cannot access|i do not have a physical body)\b", re.IGNORECASE)
-_VI_DEFAULT_VOICE = re.compile(r"\b(?:tôi|mình|bạn)\b", re.IGNORECASE)
+_VI_WRONG_SELF_REFERENCE = re.compile(r"\b(?:tôi|mình)\b", re.IGNORECASE)
+_VI_WRONG_USER_ADDRESS = re.compile(r"(?<!làm\s)\bbạn\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,6 @@ def assess_response(prompt: str, response: str, language: str) -> ResponseAssess
         failures.append("ai_disclaimer")
     if _has_repeated_sentence(normalized_response):
         failures.append("self_repetition")
-    if language == "vi" and _VI_DEFAULT_VOICE.search(normalized_response):
+    if language == "vi" and (_VI_WRONG_SELF_REFERENCE.search(normalized_response) or _VI_WRONG_USER_ADDRESS.search(normalized_response)):
         failures.append("vietnamese_voice")
     return ResponseAssessment(passed=not failures, failures=tuple(failures))

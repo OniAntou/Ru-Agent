@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from .data import normalize_text
@@ -23,6 +24,51 @@ class ConversationCase:
 class ResponseAssessment:
     passed: bool
     failures: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ManualReview:
+    case_id: str
+    natural: bool
+    relevant: bool
+    expected_language: bool
+    voice: bool
+    notes: str
+
+
+def record_base_only_decision(
+    *,
+    profile_name: str,
+    assessments: Mapping[str, ResponseAssessment],
+    reviews: Sequence[ManualReview],
+    reviewer_notes: str,
+    manual_required_count: int = 24,
+) -> dict[str, object]:
+    assessment_ids = set(assessments)
+    review_ids = [review.case_id for review in reviews]
+    if len(review_ids) != len(set(review_ids)):
+        raise ValueError("manual review contains duplicate case ids")
+    if set(review_ids) != assessment_ids:
+        raise ValueError("manual review must cover every evaluated case exactly once")
+    automatic_disqualifier_count = sum(not assessment.passed for assessment in assessments.values())
+    manual_natural_count = sum(
+        review.natural and review.relevant and review.expected_language and review.voice for review in reviews
+    )
+    failure_reasons: list[str] = []
+    if automatic_disqualifier_count:
+        failure_reasons.append("automatic_disqualifiers")
+    if manual_natural_count < manual_required_count:
+        failure_reasons.append("manual_score_below_required")
+    return {
+        "profile_name": profile_name,
+        "phase": "base_only",
+        "automatic_disqualifier_count": automatic_disqualifier_count,
+        "manual_natural_count": manual_natural_count,
+        "manual_required_count": manual_required_count,
+        "verdict": "passed" if not failure_reasons else "not_adopted",
+        "failure_reasons": failure_reasons,
+        "reviewer_notes": reviewer_notes,
+    }
 
 
 def _case(case_id: str, language: str, *turns: tuple[str, str]) -> ConversationCase:

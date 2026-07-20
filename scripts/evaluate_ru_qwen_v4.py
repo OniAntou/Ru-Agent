@@ -13,20 +13,45 @@ from mini_gpt.qwen_runtime import clear_qwen_generation_cache, generate_qwen_res
 from mini_gpt.ru_qwen_evaluation import V4_CONVERSATION_SUITE, assess_response  # noqa: E402
 
 
+def bytes_to_mib(value: int) -> float:
+    return round(value / (1024 * 1024), 3)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Evaluate Ru V4 base and adapter conversation quality")
+    parser = argparse.ArgumentParser(description="Evaluate Ru local Qwen base and optional adapter conversation quality")
     parser.add_argument("--config", default=str(PROJECT_ROOT / "configs" / "ru_qwen_v4_1_5b.json"))
     parser.add_argument("--adapter-dir")
     parser.add_argument("--output", default=str(PROJECT_ROOT / "checkpoints" / "ru-qwen-v4" / "evaluation.json"))
     return parser
 
 
+def load_evaluation_config(path: str | Path) -> dict[str, object]:
+    config = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(config, dict):
+        raise ValueError("evaluation config must be a JSON object")
+    base_model_id = config.get("base_model_id")
+    if not isinstance(base_model_id, str) or not base_model_id:
+        raise ValueError("evaluation config must include a non-empty base_model_id")
+    profile_name = config.get("profile_name", base_model_id)
+    phase = config.get("phase", "comparison")
+    if not isinstance(profile_name, str) or not profile_name:
+        raise ValueError("evaluation config profile_name must be a non-empty string")
+    if not isinstance(phase, str) or not phase:
+        raise ValueError("evaluation config phase must be a non-empty string")
+    return {**config, "profile_name": profile_name, "phase": phase}
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    config = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    config = load_evaluation_config(args.config)
     profile = qwen_base_profile(config["base_model_id"])
+    import torch
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
     base_results: dict[str, tuple[str, object]] = {}
     for case in V4_CONVERSATION_SUITE:
         base_response = generate_qwen_response(profile, case.messages)
@@ -58,9 +83,12 @@ def main(argv: list[str] | None = None) -> int:
             row["adapter_assessment"] = {"passed": adapter_assessment.passed, "failures": adapter_assessment.failures}
         cases.append(row)
     payload = {
+        "profile_name": config["profile_name"],
+        "phase": config["phase"],
         "base_model_id": profile.model_id,
         "adapter_dir": args.adapter_dir,
         "cases": cases,
+        "peak_allocated_mib": bytes_to_mib(torch.cuda.max_memory_allocated()) if torch.cuda.is_available() else None,
         "verdict": "not_reviewed",
     }
     destination = Path(args.output)

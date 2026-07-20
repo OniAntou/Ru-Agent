@@ -2,7 +2,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from mini_gpt.ru_qwen_evaluation import V4_CONVERSATION_SUITE, assess_response
+import pytest
+
+from mini_gpt.ru_qwen_evaluation import (
+    V4_CONVERSATION_SUITE,
+    ManualReview,
+    assess_response,
+    record_base_only_decision,
+)
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_ru_qwen_v4.py"
 
@@ -34,9 +41,75 @@ def test_vietnamese_voice_check_allows_lam_ban_but_rejects_ban_as_an_address():
     assert not assess_response("Xin chào", "Em có thể giúp bạn nghỉ ngơi.", "vi").passed
 
 
+def test_base_only_decision_passes_only_when_every_case_has_a_natural_human_review():
+    assessments = {case.case_id: assess_response(case.prompt, "A helpful reply.", case.language) for case in V4_CONVERSATION_SUITE}
+    reviews = tuple(
+        ManualReview(
+            case_id=case.case_id,
+            natural=True,
+            relevant=True,
+            expected_language=True,
+            voice=True,
+            notes="Natural and on-topic.",
+        )
+        for case in V4_CONVERSATION_SUITE
+    )
+
+    decision = record_base_only_decision(
+        profile_name="ru_qwen_v5_3b",
+        assessments=assessments,
+        reviews=reviews,
+        reviewer_notes="All cases reviewed.",
+    )
+
+    assert decision == {
+        "profile_name": "ru_qwen_v5_3b",
+        "phase": "base_only",
+        "automatic_disqualifier_count": 0,
+        "manual_natural_count": 32,
+        "manual_required_count": 24,
+        "verdict": "passed",
+        "failure_reasons": [],
+        "reviewer_notes": "All cases reviewed.",
+    }
+
+
+def test_base_only_decision_rejects_an_automatic_disqualifier():
+    assessments = {case.case_id: assess_response(case.prompt, "A helpful reply.", case.language) for case in V4_CONVERSATION_SUITE}
+    first_case = V4_CONVERSATION_SUITE[0]
+    assessments[first_case.case_id] = assess_response(first_case.prompt, first_case.prompt, first_case.language)
+    reviews = tuple(
+        ManualReview(case.case_id, True, True, True, True, "Reviewed.") for case in V4_CONVERSATION_SUITE
+    )
+
+    decision = record_base_only_decision(
+        profile_name="ru_qwen_v5_3b",
+        assessments=assessments,
+        reviews=reviews,
+        reviewer_notes="One automatic failure.",
+    )
+
+    assert decision["automatic_disqualifier_count"] == 1
+    assert decision["verdict"] == "not_adopted"
+    assert decision["failure_reasons"] == ["automatic_disqualifiers"]
+
+
+def test_base_only_decision_requires_one_human_review_for_every_case():
+    assessments = {case.case_id: assess_response(case.prompt, "A helpful reply.", case.language) for case in V4_CONVERSATION_SUITE}
+    incomplete_reviews = (ManualReview(V4_CONVERSATION_SUITE[0].case_id, True, True, True, True, "Only one."),)
+
+    with pytest.raises(ValueError, match="cover every evaluated case exactly once"):
+        record_base_only_decision(
+            profile_name="ru_qwen_v5_3b",
+            assessments=assessments,
+            reviews=incomplete_reviews,
+            reviewer_notes="Incomplete.",
+        )
+
+
 def test_evaluator_cli_exposes_base_and_adapter_arguments_without_loading_a_model():
     result = subprocess.run([sys.executable, str(SCRIPT), "--help"], capture_output=True, text=True, check=False)
 
     assert result.returncode == 0
-    assert "Evaluate Ru V4 base and adapter conversation quality" in result.stdout
+    assert "Evaluate Ru local Qwen base and optional adapter conversation quality" in result.stdout
     assert "--adapter-dir" in result.stdout

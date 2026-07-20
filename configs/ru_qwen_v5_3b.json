@@ -1,0 +1,6 @@
+{
+  "profile_name": "ru_qwen_v5_3b",
+  "base_model_id": "Qwen/Qwen2.5-3B-Instruct",
+  "base_model_path": "models/qwen2.5-3b-instruct",
+  "phase": "base_only"
+}

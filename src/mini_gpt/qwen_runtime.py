@@ -14,6 +14,7 @@ class QwenBaseProfile:
     model_id: str
     local_path: str
     label: str
+    disable_thinking: bool = False
 
 
 QWEN_V3_BASE = QwenBaseProfile(
@@ -31,8 +32,15 @@ QWEN_V5_BASE = QwenBaseProfile(
     local_path="models/qwen2.5-3b-instruct",
     label="Ru V5 Qwen 3B",
 )
+QWEN3_4B_BASE = QwenBaseProfile(
+    model_id="Qwen/Qwen3-4B",
+    local_path="models/qwen3-4b",
+    label="Ru Qwen3 4B",
+    disable_thinking=True,
+)
 QWEN_MODEL_ID = QWEN_V3_BASE.model_id
-QWEN_BASE_PROFILES = {profile.model_id: profile for profile in (QWEN_V3_BASE, QWEN_V4_BASE, QWEN_V5_BASE)}
+QWEN_BASE_PROFILES = {profile.model_id: profile for profile in (QWEN_V3_BASE, QWEN_V4_BASE, QWEN_V5_BASE, QWEN3_4B_BASE)}
+SUPPORTED_QWEN_MODEL_TYPES = frozenset({"qwen2", "qwen3"})
 REQUIRED_QWEN_PACKAGES = ("transformers", "accelerate", "peft", "bitsandbytes")
 _GENERATION_CACHE: dict[tuple[str, str | None], tuple[object, object]] = {}
 
@@ -104,12 +112,14 @@ def generate_qwen_response(
     if cache_key not in _GENERATION_CACHE:
         _GENERATION_CACHE[cache_key] = _load_qwen_for_generation(profile, adapter_dir)
     tokenizer, model = _GENERATION_CACHE[cache_key]
-    input_ids = tokenizer.apply_chat_template(
-        serialized,
-        tokenize=True,
-        add_generation_prompt=True,
-        return_tensors="pt",
-    ).to("cuda")
+    template_kwargs: dict[str, object] = {
+        "tokenize": True,
+        "add_generation_prompt": True,
+        "return_tensors": "pt",
+    }
+    if profile.disable_thinking:
+        template_kwargs["enable_thinking"] = False
+    input_ids = tokenizer.apply_chat_template(serialized, **template_kwargs).to("cuda")
     attention_mask = input_ids.new_ones(input_ids.shape)
     generated = model.generate(
         input_ids=input_ids,
@@ -141,8 +151,8 @@ def verify_local_qwen_base(path: str | Path) -> dict[str, object]:
     if not config_path.is_file():
         raise FileNotFoundError(f"Qwen config not found: {config_path}")
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    if not isinstance(config, dict) or config.get("model_type") != "qwen2":
-        raise ValueError("local base model_type must be qwen2")
+    if not isinstance(config, dict) or config.get("model_type") not in SUPPORTED_QWEN_MODEL_TYPES:
+        raise ValueError("local base model_type must be qwen2 or qwen3")
     if not any(model_path.glob("*.safetensors")):
         raise FileNotFoundError("local Qwen safetensors weights not found")
     return config

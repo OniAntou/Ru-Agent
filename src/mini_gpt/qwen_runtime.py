@@ -26,8 +26,13 @@ QWEN_V4_BASE = QwenBaseProfile(
     local_path="models/qwen2.5-1.5b-instruct",
     label="Ru V4 Qwen 1.5B",
 )
+QWEN_V5_BASE = QwenBaseProfile(
+    model_id="Qwen/Qwen2.5-3B-Instruct",
+    local_path="models/qwen2.5-3b-instruct",
+    label="Ru V5 Qwen 3B",
+)
 QWEN_MODEL_ID = QWEN_V3_BASE.model_id
-QWEN_BASE_PROFILES = {profile.model_id: profile for profile in (QWEN_V3_BASE, QWEN_V4_BASE)}
+QWEN_BASE_PROFILES = {profile.model_id: profile for profile in (QWEN_V3_BASE, QWEN_V4_BASE, QWEN_V5_BASE)}
 REQUIRED_QWEN_PACKAGES = ("transformers", "accelerate", "peft", "bitsandbytes")
 _GENERATION_CACHE: dict[tuple[str, str | None], tuple[object, object]] = {}
 

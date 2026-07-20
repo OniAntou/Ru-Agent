@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sys
 import threading
 import tkinter as tk
@@ -10,9 +9,11 @@ from typing import Any
 
 import torch
 
+from .chat import ChatTurn, format_chat_prompt
 from .checkpointing import load_checkpoint
 from .config import ModelConfig
-from .evaluate import generate
+from .conversation_store import ConversationStore
+from .evaluate import generate, generate_completion
 from .model import MiniGPT
 from .tokenizer import load_tokenizer
 from .train import resolve_device
@@ -104,12 +105,37 @@ class ModelRunner:
             top_k=top_k,
         )
 
+    def generate_reply(
+        self,
+        prompt: str,
+        max_new_tokens: int,
+        temperature: float,
+        top_k: int,
+    ) -> str:
+        if self.model is None or self.tokenizer is None or self.device is None:
+            raise RuntimeError("load a checkpoint before generating")
+        return generate_completion(
+            self.model,
+            self.tokenizer,
+            prompt,
+            self.device,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_k=top_k,
+        )
+
 
 class MiniGPTApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.runner = ModelRunner()
         self.worker: threading.Thread | None = None
+        self.session_turns: list[ChatTurn] = []
+        self.last_turn: ChatTurn | None = None
+        self.last_turn_saved = False
+        self.conversation_store = ConversationStore(
+            PROJECT_ROOT / "data" / "conversations" / "approved.jsonl"
+        )
         checkpoint, tokenizer = default_paths()
         self.checkpoint_var = tk.StringVar(value=str(checkpoint))
         self.tokenizer_var = tk.StringVar(value=str(tokenizer))
@@ -120,8 +146,10 @@ class MiniGPTApp:
             value=f"CUDA available: {'yes' if torch.cuda.is_available() else 'no'} | Ready"
         )
         self.generate_button: ttk.Button
+        self.new_chat_button: ttk.Button
+        self.mark_button: ttk.Button
         self.prompt_text: tk.Text
-        self.output_text: tk.Text
+        self.transcript_text: tk.Text
         self._build()
 
     def _build(self) -> None:
@@ -146,24 +174,42 @@ class MiniGPTApp:
         content = ttk.Frame(self.root)
         content.grid(row=1, column=0, sticky="nsew", padx=12, pady=6)
         content.columnconfigure(0, weight=1)
-        content.rowconfigure(1, weight=1)
-        content.rowconfigure(4, weight=2)
+        content.rowconfigure(1, weight=3)
+        content.rowconfigure(3, weight=1)
 
-        ttk.Label(content, text="Prompt").grid(row=0, column=0, sticky="w")
-        self.prompt_text = tk.Text(content, height=5, wrap="word")
-        self.prompt_text.grid(row=1, column=0, sticky="nsew", pady=(4, 8))
+        ttk.Label(content, text="Conversation").grid(row=0, column=0, sticky="w")
+        transcript_frame = ttk.Frame(content)
+        transcript_frame.grid(row=1, column=0, sticky="nsew", pady=(4, 8))
+        transcript_frame.columnconfigure(0, weight=1)
+        transcript_frame.rowconfigure(0, weight=1)
+        self.transcript_text = tk.Text(transcript_frame, wrap="word", state="disabled")
+        self.transcript_text.grid(row=0, column=0, sticky="nsew")
+        transcript_scrollbar = ttk.Scrollbar(
+            transcript_frame,
+            orient="vertical",
+            command=self.transcript_text.yview,
+        )
+        transcript_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.transcript_text.configure(yscrollcommand=transcript_scrollbar.set)
+
+        ttk.Label(content, text="Message").grid(row=2, column=0, sticky="w")
+        self.prompt_text = tk.Text(content, height=4, wrap="word")
+        self.prompt_text.grid(row=3, column=0, sticky="nsew", pady=(4, 8))
 
         actions = ttk.Frame(content)
-        actions.grid(row=2, column=0, sticky="w", pady=(0, 8))
-        self.generate_button = ttk.Button(actions, text="Generate", command=self._start_generation)
+        actions.grid(row=4, column=0, sticky="w", pady=(0, 8))
+        self.generate_button = ttk.Button(actions, text="Send", command=self._start_generation)
         self.generate_button.grid(row=0, column=0, padx=(0, 6))
-        ttk.Button(actions, text="Clear output", command=self._clear_output).grid(row=0, column=1)
-        ttk.Label(content, textvariable=self.status_var).grid(row=3, column=0, sticky="w", pady=(0, 4))
-
-        ttk.Label(content, text="Output").grid(row=4, column=0, sticky="nw")
-        self.output_text = tk.Text(content, height=15, wrap="word", state="disabled")
-        self.output_text.grid(row=5, column=0, sticky="nsew", pady=(4, 0))
-        content.rowconfigure(5, weight=2)
+        self.new_chat_button = ttk.Button(actions, text="New chat", command=self._new_chat)
+        self.new_chat_button.grid(row=0, column=1, padx=(0, 6))
+        self.mark_button = ttk.Button(
+            actions,
+            text="Mark last response useful",
+            command=self._mark_last_response,
+            state="disabled",
+        )
+        self.mark_button.grid(row=0, column=2)
+        ttk.Label(content, textvariable=self.status_var).grid(row=5, column=0, sticky="w", pady=(0, 4))
 
     @staticmethod
     def _labeled_entry(parent: ttk.Frame, column: int, label: str, variable: tk.StringVar, width: int) -> None:
@@ -192,10 +238,48 @@ class MiniGPTApp:
         if selected:
             self.tokenizer_var.set(selected)
 
-    def _clear_output(self) -> None:
-        self.output_text.configure(state="normal")
-        self.output_text.delete("1.0", tk.END)
-        self.output_text.configure(state="disabled")
+    def _append_turn(self, turn: ChatTurn) -> None:
+        self.transcript_text.configure(state="normal")
+        self.transcript_text.insert(
+            tk.END,
+            f"User:\n{turn.prompt}\n\nAssistant:\n{turn.response}\n\n",
+        )
+        self.transcript_text.see(tk.END)
+        self.transcript_text.configure(state="disabled")
+
+    def _new_chat(self) -> None:
+        if self.worker is not None and self.worker.is_alive():
+            return
+        self.session_turns.clear()
+        self.last_turn = None
+        self.last_turn_saved = False
+        self.transcript_text.configure(state="normal")
+        self.transcript_text.delete("1.0", tk.END)
+        self.transcript_text.configure(state="disabled")
+        self._update_mark_button()
+        self.status_var.set("New chat started")
+
+    def _update_mark_button(self) -> None:
+        state = "normal" if self.last_turn is not None and not self.last_turn_saved else "disabled"
+        self.mark_button.configure(state=state)
+
+    def _mark_last_response(self) -> None:
+        if self.last_turn is None or self.last_turn_saved:
+            self.status_var.set("There is no new response to save")
+            return
+        checkpoint = self.runner.checkpoint_path or Path(self.checkpoint_var.get())
+        try:
+            self.conversation_store.save(
+                self.last_turn.prompt,
+                self.last_turn.response,
+                checkpoint,
+            )
+        except (OSError, ValueError) as error:
+            self.status_var.set(f"Error saving example: {error}")
+            return
+        self.last_turn_saved = True
+        self._update_mark_button()
+        self.status_var.set(f"Saved useful response to {self.conversation_store.path}")
 
     def _start_generation(self) -> None:
         if self.worker is not None and self.worker.is_alive():
@@ -211,43 +295,64 @@ class MiniGPTApp:
         except ValueError as error:
             self.status_var.set(str(error))
             return
+        context_prompt = format_chat_prompt(self.session_turns, prompt)
         self.generate_button.configure(state="disabled")
+        self.new_chat_button.configure(state="disabled")
+        self.mark_button.configure(state="disabled")
         self.status_var.set("Loading model / generating...")
         checkpoint = self.checkpoint_var.get()
         tokenizer = self.tokenizer_var.get()
         self.worker = threading.Thread(
             target=self._generate_worker,
-            args=(prompt, settings, checkpoint, tokenizer),
+            args=(context_prompt, prompt, settings, checkpoint, tokenizer),
             daemon=True,
         )
         self.worker.start()
 
     def _generate_worker(
         self,
-        prompt: str,
+        context_prompt: str,
+        original_prompt: str,
         settings: tuple[int, float, int],
         checkpoint: str,
         tokenizer: str,
     ) -> None:
         try:
             status = self.runner.load(checkpoint, tokenizer)
-            result = self.runner.generate_text(prompt, *settings)
-            self.root.after(0, lambda: self._generation_finished(result, status))
+            result = self.runner.generate_reply(context_prompt, *settings)
+            self.root.after(
+                0,
+                lambda result=result, status=status, original_prompt=original_prompt: self._generation_finished(
+                    result,
+                    status,
+                    original_prompt,
+                ),
+            )
         except Exception as error:  # UI boundary: show any inference failure without killing the window.
             message = str(error)
             self.root.after(0, lambda message=message: self._generation_failed(message))
 
-    def _generation_finished(self, result: str, status: str) -> None:
-        self.output_text.configure(state="normal")
-        self.output_text.delete("1.0", tk.END)
-        self.output_text.insert("1.0", result)
-        self.output_text.configure(state="disabled")
+    def _generation_finished(self, result: str, status: str, original_prompt: str) -> None:
+        if not result.strip():
+            self._generation_failed("model returned an empty response")
+            return
+        turn = ChatTurn(original_prompt, result)
+        self.session_turns.append(turn)
+        self.last_turn = turn
+        self.last_turn_saved = False
+        self._append_turn(turn)
         self.status_var.set(status)
         self.generate_button.configure(state="normal")
+        self.new_chat_button.configure(state="normal")
+        self._update_mark_button()
+        self.prompt_text.delete("1.0", tk.END)
+        self.prompt_text.focus_set()
 
     def _generation_failed(self, message: str) -> None:
         self.status_var.set(f"Error: {message}")
         self.generate_button.configure(state="normal")
+        self.new_chat_button.configure(state="normal")
+        self._update_mark_button()
 
 
 def main() -> int:

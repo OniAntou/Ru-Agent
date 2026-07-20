@@ -49,7 +49,7 @@ def evaluate_language_losses(
 
 
 @torch.no_grad()
-def generate(
+def _sample_tokens(
     model: MiniGPT,
     tokenizer: Tokenizer,
     prompt: str,
@@ -57,7 +57,7 @@ def generate(
     max_new_tokens: int = 50,
     temperature: float = 0.8,
     top_k: int = 50,
-) -> str:
+) -> tuple[torch.Tensor, int]:
     if temperature <= 0:
         raise ValueError("temperature must be positive")
     input_ids = tokenizer.encode(prompt).ids
@@ -66,6 +66,7 @@ def generate(
     if bos_id is not None:
         input_ids = [bos_id, *input_ids]
     generated = torch.tensor([input_ids], dtype=torch.long, device=device)
+    input_length = generated.size(1)
     model.eval()
     for _ in range(max_new_tokens):
         context = generated[:, -model.config.context_length :]
@@ -81,7 +82,51 @@ def generate(
         generated = torch.cat([generated, next_token], dim=1)
         if eos_id is not None and int(next_token.item()) == eos_id:
             break
+    return generated, input_length
+
+
+@torch.no_grad()
+def generate(
+    model: MiniGPT,
+    tokenizer: Tokenizer,
+    prompt: str,
+    device: torch.device,
+    max_new_tokens: int = 50,
+    temperature: float = 0.8,
+    top_k: int = 50,
+) -> str:
+    generated, _ = _sample_tokens(
+        model,
+        tokenizer,
+        prompt,
+        device,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_k=top_k,
+    )
     return tokenizer.decode(generated[0].tolist(), skip_special_tokens=True)
+
+
+@torch.no_grad()
+def generate_completion(
+    model: MiniGPT,
+    tokenizer: Tokenizer,
+    prompt: str,
+    device: torch.device,
+    max_new_tokens: int = 50,
+    temperature: float = 0.8,
+    top_k: int = 50,
+) -> str:
+    generated, input_length = _sample_tokens(
+        model,
+        tokenizer,
+        prompt,
+        device,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_k=top_k,
+    )
+    return tokenizer.decode(generated[0, input_length:].tolist(), skip_special_tokens=True)
 
 
 def checkpoint_model_config(payload: dict[str, Any]) -> dict[str, Any]:

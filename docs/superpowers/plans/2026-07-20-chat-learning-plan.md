@@ -16,7 +16,7 @@
 - Create: `D:\LLM\src\mini_gpt\chat.py`
 - Create: `D:\LLM\tests\test_chat.py`
 
-- [ ] **Step 1: Write failing tests for chat turns and prompt formatting**
+- [x] **Step 1: Write failing tests for chat turns and prompt formatting**
 
 Create tests that assert:
 
@@ -44,11 +44,11 @@ Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_chat.py -q`
 
 Expected: FAIL because `mini_gpt.chat` does not exist yet.
 
-- [ ] **Step 2: Implement the minimal pure chat module**
+- [x] **Step 2: Implement the minimal pure chat module**
 
 Implement a frozen `ChatTurn` dataclass with non-empty `prompt` and `response` validation, plus `format_chat_prompt(turns, latest_prompt, max_turns=4)`. Strip surrounding whitespace from each message, use the exact `User:`/`Assistant:` format, and raise `ValueError` for an empty latest prompt or non-positive `max_turns`.
 
-- [ ] **Step 3: Run the focused tests**
+- [x] **Step 3: Run the focused tests**
 
 Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_chat.py -q`
 
@@ -61,7 +61,7 @@ Expected: PASS.
 - Create: `D:\LLM\tests\test_conversation_store.py`
 - Modify: `D:\LLM\.gitignore`
 
-- [ ] **Step 1: Write failing JSONL storage tests**
+- [x] **Step 1: Write failing JSONL storage tests**
 
 Test Unicode, required fields, parent-directory creation, and append behavior:
 
@@ -90,11 +90,11 @@ Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_conversation_store.
 
 Expected: FAIL because the store module does not exist yet.
 
-- [ ] **Step 2: Implement the store**
+- [x] **Step 2: Implement the store**
 
 Add `ConversationExample` as a frozen dataclass and `ConversationStore(path)`. `save()` must trim and validate prompt/response, create `path.parent`, create a UUID and UTC ISO timestamp, append one `json.dumps(..., ensure_ascii=False)` line using UTF-8, flush by closing the context manager, and return the dataclass. `read_all()` must return parsed JSON objects in file order and return an empty list when the file does not exist. Do not delete or rewrite existing records.
 
-- [ ] **Step 3: Ignore local approved chat data**
+- [x] **Step 3: Ignore local approved chat data**
 
 Add this line to `D:\LLM\.gitignore`:
 
@@ -102,7 +102,7 @@ Add this line to `D:\LLM\.gitignore`:
 data/conversations/
 ```
 
-- [ ] **Step 4: Run focused storage tests**
+- [x] **Step 4: Run focused storage tests**
 
 Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_conversation_store.py -q`
 
@@ -115,7 +115,7 @@ Expected: PASS.
 - Modify: `D:\LLM\src\mini_gpt\gui.py`
 - Modify: `D:\LLM\tests\test_gui.py`
 
-- [ ] **Step 1: Add a focused generation test for completion-only output**
+- [x] **Step 1: Add a focused generation test for completion-only output**
 
 Add a deterministic fake tokenizer and fake model to `D:\LLM\tests\test_evaluate.py`. The fake tokenizer returns prompt ids `[1, 2]`, reports BOS id `1`, no EOS id, and decodes `[7]` as `"NEW"` and any prompt ids as `"PROMPT"`. The fake model exposes `config.context_length = 8`, returns logits that make token `7` overwhelmingly likely, and supports `.eval()`. Assert:
 
@@ -130,15 +130,15 @@ def test_generate_completion_decodes_only_new_tokens():
 
 The test must fail before the new function exists.
 
-- [ ] **Step 2: Implement completion-only generation**
+- [x] **Step 2: Implement completion-only generation**
 
 Refactor generation through a shared internal sampler and add `generate_completion(...)` that decodes only tokens generated after the prompt. Preserve the existing `generate(...)` behavior for the CLI. In `D:\LLM\src\mini_gpt\evaluate.py`, preserve BOS handling, context truncation, temperature, top-k, EOS stopping, and `@torch.no_grad()`. Record the input token length before sampling and decode only `generated[0, input_length:]` in `generate_completion`.
 
-- [ ] **Step 3: Extend `ModelRunner` with reply generation**
+- [x] **Step 3: Extend `ModelRunner` with reply generation**
 
 Import `generate_completion` and add `generate_reply(prompt, max_new_tokens, temperature, top_k)` to `ModelRunner`. Keep `generate_text` available for the existing behavior, and make the GUI call `generate_reply`.
 
-- [ ] **Step 4: Replace the single output box with a session transcript**
+- [x] **Step 4: Replace the single output box with a session transcript**
 
 In `MiniGPTApp`:
 
@@ -151,11 +151,11 @@ self.conversation_store = ConversationStore(PROJECT_ROOT / "data" / "conversatio
 
 Add a scrollable, read-only transcript; retain the prompt input and model controls. Add `Send`, `New chat`, and `Mark last response useful` actions. On send, format recent session turns with `format_chat_prompt`, run generation on the existing worker thread, append a `ChatTurn`, and render both messages. On new chat, clear only in-memory turns and the transcript. On mark, call `ConversationStore.save()` with the original latest prompt, reply, and loaded/selected checkpoint, then disable the button for that turn and show the saved path.
 
-- [ ] **Step 5: Handle GUI errors and busy state**
+- [x] **Step 5: Handle GUI errors and busy state**
 
 Disable Send/New chat/Mark while generation is active as appropriate, re-enable controls in both success and failure callbacks, and display file-write or inference errors in the status label. Capture exception text before scheduling `root.after` so the callback remains valid after the worker exits.
 
-- [ ] **Step 6: Add non-Tk integration tests**
+- [x] **Step 6: Add non-Tk integration tests**
 
 Test that `default_paths()` remains unchanged, `ModelRunner` missing-file validation remains intact, and `format_chat_prompt` is used for a multi-turn prompt. Keep tests independent of an actual Tk window.
 
@@ -165,11 +165,11 @@ Test that `default_paths()` remains unchanged, `ModelRunner` missing-file valida
 - Modify: `D:\LLM\README.md`
 - Modify: `D:\LLM\docs\superpowers\plans\2026-07-20-chat-learning-plan.md`
 
-- [ ] **Step 1: Document the chat workflow**
+- [x] **Step 1: Document the chat workflow**
 
 Explain the GUI command, session behavior, `Mark last response useful`, the local JSONL path, and that saving examples does not train the model automatically. State that a later explicit fine-tuning workflow is required.
 
-- [ ] **Step 2: Run all verification commands**
+- [x] **Step 2: Run all verification commands**
 
 Run:
 
@@ -182,11 +182,11 @@ git diff --check
 
 Expected: compile succeeds, all tests pass, and `git diff --check` is clean.
 
-- [ ] **Step 3: Smoke-test the real GUI and data path**
+- [x] **Step 3: Smoke-test the real GUI and data path**
 
 Start `& .\.venv\Scripts\python.exe -m mini_gpt.gui` as the task-owned visible process, verify the event loop stays alive, then close that exact process. Separately use `ConversationStore` with `D:\LLM\data\conversations\approved.jsonl` to verify one UTF-8 record is appended; do not commit that generated user-data file.
 
-- [ ] **Step 4: Inspect documents and commit**
+- [x] **Step 4: Inspect documents and commit**
 
 Review `README.md` and all files under `D:\LLM\docs` for stale commands or paths, remove no current design/plan documents, mark this plan complete, run staged `git diff --check`, and commit:
 

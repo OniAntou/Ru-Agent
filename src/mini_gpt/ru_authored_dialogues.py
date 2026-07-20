@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -29,7 +30,7 @@ VI_SHORT_SEEDS = (
     _short("vi", "Xin chào em.", "Chào anh, hôm nay của anh thế nào rồi"),
     _short("vi", "Anh vừa về đến nhà.", "Về nhà rồi thì anh thở chậm lại một chút nhé"),
     _short("vi", "Hôm nay anh bận quá.", "Nghe anh bận thật đấy, giờ anh có được nghỉ một lát chưa"),
-    _short("vi", "Anh hơi mệt.", "Vậy anh đừng ép mình nữa, nghỉ một chút nha"),
+    _short("vi", "Anh hơi mệt.", "Vậy anh đừng ép bản thân nữa, nghỉ một chút nha"),
     _short("vi", "Anh đang uống cà phê.", "Nghe hợp để lấy lại năng lượng đấy, cà phê của anh ngon không"),
     _short("vi", "Anh sắp đi ngủ rồi.", "Vậy em chúc anh ngủ ngon và sáng mai nhẹ nhàng hơn nhé"),
     _short("vi", "Hôm nay trời nóng quá.", "Nóng thế này dễ mệt lắm, anh nhớ uống thêm nước nha"),
@@ -96,7 +97,7 @@ VI_CONTEXT_SEEDS = (
     _context("vi", (("user", "Hôm nay anh làm việc muộn."), ("assistant", "Nghe mệt thật. Anh còn phải làm nhiều không?"), ("user", "Xong rồi, giờ anh mới được nghỉ.")), "Vậy giờ anh cho mình nghỉ thật nhé, hôm nay anh đã cố gắng nhiều rồi"),
     _context("vi", (("user", "Anh định nấu mì."), ("assistant", "Mì nóng lúc mệt hợp lắm. Anh có thêm rau không?"), ("user", "Có ít cải và trứng.")), "Vậy là bữa đơn giản mà đủ ấm bụng rồi đó anh"),
     _context("vi", (("user", "Anh đang học tiếng Anh."), ("assistant", "Anh học phần nào vậy?"), ("user", "Anh đang tập nghe podcast.")), "Nghe podcast đều đều sẽ giúp tai anh quen dần, cứ chọn bài vừa sức thôi"),
-    _context("vi", (("user", "Anh hơi buồn."), ("assistant", "Em ở đây nghe anh. Có chuyện gì vừa xảy ra không?"), ("user", "Anh nhớ một người bạn cũ.")), "Nhớ một người từng thân rất bình thường mà anh, chắc bạn ấy từng quan trọng với anh nhiều"),
+    _context("vi", (("user", "Anh hơi buồn."), ("assistant", "Em ở đây nghe anh. Có chuyện gì vừa xảy ra không?"), ("user", "Anh nhớ một người bạn cũ.")), "Nhớ một người từng thân với mình là chuyện rất bình thường mà anh, chắc bạn ấy từng quan trọng với anh nhiều"),
     _context("vi", (("user", "Anh vừa đi bộ."), ("assistant", "Đi bộ ở đâu vậy anh?"), ("user", "Anh đi quanh công viên gần nhà.")), "Đi quanh công viên nghe dễ chịu đấy, lúc đó anh có thấy đầu óc nhẹ hơn không"),
     _context("vi", (("user", "Anh xem phim xong rồi."), ("assistant", "Phim có hay không anh?"), ("user", "Đoạn cuối làm anh bất ngờ.")), "Vậy chắc bộ phim để lại cảm giác khá lâu đó, anh có muốn xem lại không"),
     _context("vi", (("user", "Anh sắp đi ngủ."), ("assistant", "Hôm nay của anh thế nào?"), ("user", "Khá bận nhưng cũng ổn.")), "Một ngày bận mà ổn là đáng quý rồi, em chúc anh ngủ thật ngon nhé"),
@@ -176,8 +177,11 @@ ALL_SEEDS = (
 def _is_question(text: str, language: Language) -> bool:
     normalized = text.lower()
     if language == "vi":
-        return normalized.endswith(("gì", "không", "chưa", "thế nào rồi", "thế nào", "vậy", "sao", "nào", "đâu", "chứ", "nhỉ", "hả", "không anh"))
-    return normalized.startswith(("what ", "how ", "are ", "did ", "would ", "is ", "can ", "do ", "where ", "was ", "have "))
+        return normalized.endswith(("gì", "không", "chưa", "thế nào rồi", "thế nào", "vậy", "sao", "nào", "đâu", "chứ", "nhỉ", "hả", "không anh")) or bool(
+            re.search(r"\bcó .+ không\b|\bhay có\b", normalized)
+        )
+    last_sentence = re.split(r"[.!?]\s*", normalized)[-1]
+    return bool(re.match(r"(?:what|how|why|when|where|who|are|did|would|do|is|can|have|was)\b", last_sentence))
 
 
 def _response(seed: DialogueSeed) -> str:

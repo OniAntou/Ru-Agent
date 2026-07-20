@@ -33,3 +33,14 @@ def test_authored_vietnamese_records_model_the_default_anh_em_voice():
     vietnamese = [record for record in authored_dialogue_records() if record["language"] == "vi"]
 
     assert any("anh" in record["response"].lower() and "em" in record["response"].lower() for record in vietnamese)
+
+
+def test_authored_questions_end_with_question_marks():
+    from mini_gpt.ru_authored_dialogues import authored_dialogue_records
+
+    records = {record["messages"][-1]["content"]: record["response"] for record in authored_dialogue_records()}
+
+    assert records["I am making dinner."].endswith("?")
+    assert records["I just finished work."].endswith("?")
+    assert records["Just noodles and vegetables."].endswith(".")
+    assert records["My friend invited me out this weekend."].endswith(".")

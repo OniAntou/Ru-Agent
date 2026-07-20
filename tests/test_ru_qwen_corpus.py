@@ -1,9 +1,24 @@
 import json
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
 from mini_gpt.ru_authored_dialogues import authored_dialogue_records
 from mini_gpt.ru_qwen_corpus import build_ru_qwen_corpus
+
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "build_ru_qwen_v3_data.py"
+
+
+def test_authored_corpus_cli_help_has_no_external_dataset_flags():
+    result = subprocess.run([sys.executable, str(SCRIPT), "--help"], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 0
+    assert "Build the local authored Ru Qwen V3 conversation corpus" in result.stdout
+    assert "--input" not in result.stdout
+    assert "--cache-dir" not in result.stdout
+    assert "--audit" in result.stdout
 
 
 def test_builds_authored_corpus_with_reproducible_project_provenance(tmp_path):

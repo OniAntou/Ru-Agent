@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .qwen_runtime import QWEN_MODEL_ID
+from .qwen_runtime import qwen_base_profile
 
 
 @dataclass(frozen=True)
 class QwenTrainingConfig:
     base_model_id: str
-    base_model_path: str = "models/qwen2.5-0.5b-instruct"
+    base_model_path: str | None = None
     dataset_dir: str = "data/conversations/ru_v3"
     adapter_dir: str = "checkpoints/ru-qwen-v3/adapter"
     max_length: int = 512
@@ -28,10 +28,17 @@ class QwenTrainingConfig:
     lora_alpha: int = 32
     lora_dropout: float = 0.05
     target_modules: tuple[str, ...] = ("q_proj", "k_proj", "v_proj", "o_proj")
+    backend: str = "qwen-qlora-v3"
+    profile_name: str = "ru_qwen_v3"
 
     def __post_init__(self) -> None:
-        if self.base_model_id != QWEN_MODEL_ID:
-            raise ValueError(f"base_model_id must be {QWEN_MODEL_ID}")
+        profile = qwen_base_profile(self.base_model_id)
+        if self.base_model_path is None:
+            object.__setattr__(self, "base_model_path", profile.local_path)
+        elif self.base_model_path.replace("\\", "/") != profile.local_path:
+            raise ValueError("base_model_path must match the registered Ru Qwen base path")
+        if not self.backend or not self.profile_name:
+            raise ValueError("Qwen backend and profile_name cannot be empty")
 
     @classmethod
     def from_json(cls, path: str | Path) -> "QwenTrainingConfig":
@@ -43,8 +50,8 @@ class QwenTrainingConfig:
         return cls(**payload)
 
 
-def write_adapter_manifest(adapter_dir: str | Path, *, base_model_id: str, base_model_path: str, dataset_sha256: str, best_validation_loss: float, peak_vram_mb: float, seed: int, max_length: int) -> dict[str, object]:
-    manifest = {"backend": "qwen-qlora-v3", "base_model_id": base_model_id, "base_model_path": base_model_path, "dataset_sha256": dataset_sha256, "best_validation_loss": best_validation_loss, "peak_vram_mb": peak_vram_mb, "seed": seed, "max_length": max_length, "generated_at_utc": datetime.now(timezone.utc).isoformat()}
+def write_adapter_manifest(adapter_dir: str | Path, *, backend: str, profile_name: str, base_model_id: str, base_model_path: str, dataset_sha256: str, best_validation_loss: float, peak_vram_mb: float, seed: int, max_length: int, optimizer_updates: int = 0) -> dict[str, object]:
+    manifest = {"backend": backend, "profile_name": profile_name, "base_model_id": base_model_id, "base_model_path": base_model_path, "dataset_sha256": dataset_sha256, "best_validation_loss": best_validation_loss, "peak_vram_mb": peak_vram_mb, "seed": seed, "max_length": max_length, "optimizer_updates": optimizer_updates, "generated_at_utc": datetime.now(timezone.utc).isoformat()}
     destination = Path(adapter_dir)
     destination.mkdir(parents=True, exist_ok=True)
     (destination / "ru_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -64,7 +71,7 @@ def train_ru_adapter(config: QwenTrainingConfig, max_steps: int | None = None) -
     require_qwen_dependencies()
     if not torch.cuda.is_available():
         raise RuntimeError("Qwen QLoRA training requires CUDA")
-    base_path = Path(config.base_model_path)
+    base_path = Path(config.base_model_path or "")
     verify_local_qwen_base(base_path)
     dataset_dir = Path(config.dataset_dir)
     train_path, validation_path, manifest_path = dataset_dir / "train.jsonl", dataset_dir / "val.jsonl", dataset_dir / "manifest.json"
@@ -90,8 +97,21 @@ def train_ru_adapter(config: QwenTrainingConfig, max_steps: int | None = None) -
     limit = max_steps if max_steps is not None else len(train_rows) * config.epochs
     if limit <= 0:
         raise ValueError("max_steps must be positive")
+    def validation_loss() -> float:
+        model.eval()
+        losses = []
+        with torch.inference_mode():
+            for row in validation_rows:
+                batch = {key: value.to("cuda") for key, value in collator([row]).items()}
+                losses.append(float(model(**batch).loss))
+        model.train()
+        return sum(losses) / len(losses)
+
+    adapter_dir = Path(config.adapter_dir)
     model.train()
     optimizer.zero_grad(set_to_none=True)
+    best_loss = float("inf")
+    optimizer_updates = 0
     for step in range(limit):
         batch = collator([train_rows[step % len(train_rows)]])
         batch = {key: value.to("cuda") for key, value in batch.items()}
@@ -100,16 +120,13 @@ def train_ru_adapter(config: QwenTrainingConfig, max_steps: int | None = None) -
         if (step + 1) % config.gradient_accumulation_steps == 0 or step + 1 == limit:
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
-    model.eval()
-    losses = []
-    with torch.inference_mode():
-        for row in validation_rows:
-            batch = {key: value.to("cuda") for key, value in collator([row]).items()}
-            losses.append(float(model(**batch).loss))
-    best_loss = sum(losses) / len(losses)
+            optimizer_updates += 1
+            if optimizer_updates % config.evaluation_steps == 0 or step + 1 == limit:
+                candidate_loss = validation_loss()
+                if candidate_loss < best_loss:
+                    best_loss = candidate_loss
+                    model.save_pretrained(adapter_dir)
     peak_vram_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
     if peak_vram_mb > 5500:
         raise RuntimeError(f"peak VRAM {peak_vram_mb:.1f} MiB exceeds 5500 MiB safety limit")
-    adapter_dir = Path(config.adapter_dir)
-    model.save_pretrained(adapter_dir)
-    return write_adapter_manifest(adapter_dir, base_model_id=config.base_model_id, base_model_path=str(base_path), dataset_sha256=dataset_sha256, best_validation_loss=best_loss, peak_vram_mb=peak_vram_mb, seed=config.seed, max_length=config.max_length)
+    return write_adapter_manifest(adapter_dir, backend=config.backend, profile_name=config.profile_name, base_model_id=config.base_model_id, base_model_path=str(base_path), dataset_sha256=dataset_sha256, best_validation_loss=best_loss, peak_vram_mb=peak_vram_mb, seed=config.seed, max_length=config.max_length, optimizer_updates=optimizer_updates)

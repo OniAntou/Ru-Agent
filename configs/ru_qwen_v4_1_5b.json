@@ -1,0 +1,21 @@
+{
+  "backend": "qwen-qlora-v4",
+  "profile_name": "ru_qwen_v4_1_5b",
+  "base_model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+  "base_model_path": "models/qwen2.5-1.5b-instruct",
+  "dataset_dir": "data/conversations/ru_v4",
+  "adapter_dir": "checkpoints/ru-qwen-v4/adapter",
+  "max_length": 512,
+  "seed": 42,
+  "epochs": 1,
+  "learning_rate": 0.00001,
+  "batch_size": 1,
+  "gradient_accumulation_steps": 8,
+  "evaluation_steps": 5,
+  "save_steps": 5,
+  "logging_steps": 1,
+  "lora_rank": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.05,
+  "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"]
+}

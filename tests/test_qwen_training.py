@@ -2,19 +2,25 @@ import json
 
 import pytest
 
+from mini_gpt.qwen_runtime import QWEN_V4_BASE
 from mini_gpt.qwen_training import QwenTrainingConfig, write_adapter_manifest
 
 
-def test_qwen_training_config_rejects_a_model_other_than_the_approved_base():
-    with pytest.raises(ValueError, match="Qwen/Qwen2.5-0.5B-Instruct"):
+def test_training_config_accepts_registered_v4_base_and_rejects_unknown_model():
+    config = QwenTrainingConfig(base_model_id=QWEN_V4_BASE.model_id)
+
+    assert config.base_model_path == QWEN_V4_BASE.local_path
+    with pytest.raises(ValueError, match="registered Ru Qwen base"):
         QwenTrainingConfig(base_model_id="other/model")
 
 
 def test_adapter_manifest_records_reproducible_identity(tmp_path):
     manifest = write_adapter_manifest(
         tmp_path,
-        base_model_id="Qwen/Qwen2.5-0.5B-Instruct",
-        base_model_path="D:/LLM/models/qwen2.5-0.5b-instruct",
+        backend="qwen-qlora-v4",
+        profile_name="ru_qwen_v4_1_5b",
+        base_model_id=QWEN_V4_BASE.model_id,
+        base_model_path="D:/LLM/models/qwen2.5-1.5b-instruct",
         dataset_sha256="abc",
         best_validation_loss=1.25,
         peak_vram_mb=1200.0,
@@ -22,5 +28,6 @@ def test_adapter_manifest_records_reproducible_identity(tmp_path):
         max_length=512,
     )
 
-    assert manifest["backend"] == "qwen-qlora-v3"
+    assert manifest["backend"] == "qwen-qlora-v4"
+    assert manifest["profile_name"] == "ru_qwen_v4_1_5b"
     assert json.loads((tmp_path / "ru_manifest.json").read_text(encoding="utf-8")) == manifest

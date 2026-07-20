@@ -397,7 +397,7 @@ Expected: pure tests pass and no model download occurs.
 - Create: scripts/train_ru_qwen_v4.py
 - Modify: tests/test_qwen_training.py
 
-- [ ] **Step 1: Write failing V4 training tests**
+- [x] **Step 1: Write failing V4 training tests**
 
 Replace the V3-only rejection test with:
 
@@ -431,7 +431,7 @@ def test_adapter_manifest_records_the_candidate_backend_and_profile(tmp_path):
     assert manifest["profile_name"] == "ru_qwen_v4_1_5b"
 ~~~
 
-- [ ] **Step 2: Run the failing tests**
+- [x] **Step 2: Run the failing tests**
 
 Run:
 
@@ -441,7 +441,7 @@ Run:
 
 Expected: current V3-only model validation and manifest signature fail.
 
-- [ ] **Step 3: Implement profile validation and optimizer-boundary evaluation**
+- [x] **Step 3: Implement profile validation and optimizer-boundary evaluation**
 
 Change the frozen config field to base_model_path: str | None = None and add
 backend: str = "qwen-qlora-v3" and profile_name: str = "ru_qwen_v3". Use this
@@ -475,7 +475,7 @@ def validation_loss() -> float:
 
 Run validation after every completed optimizer update whose count is divisible by evaluation_steps and once at the final update. Save the adapter only when the newly measured validation loss improves the current best. Continue to divide loss by gradient_accumulation_steps exactly once before backward.
 
-- [ ] **Step 4: Add the isolated V4 config and entrypoint**
+- [x] **Step 4: Add the isolated V4 config and entrypoint**
 
 Create configs/ru_qwen_v4_1_5b.json:
 
@@ -503,7 +503,7 @@ Create configs/ru_qwen_v4_1_5b.json:
 
 Create scripts/train_ru_qwen_v4.py as the V3 CLI equivalent, defaulting to this config and retaining --max-steps for the CUDA smoke run.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 

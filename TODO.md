@@ -10,6 +10,7 @@ Mục tiêu dài hạn: Ru giao tiếp tự nhiên bằng tiếng Việt và ti�
 - [x] Build and audit the local V3 authored conversation corpus (120 Vietnamese-English examples, 30 contextual).
 - [x] Run the first V3 QLoRA adapter (quality gate failed; do not use it as Ru's final backend).
 - [x] Build, train, and evaluate the local V4 Qwen 1.5B candidate (quality gate failed; do not use it as Ru's final backend).
+- [x] Evaluate the local V5 Qwen 3B base (hardware gate passed at 2,034.184 MiB; conversation gate failed on four Vietnamese anh/em voice errors; do not fine-tune it).
 - [ ] Make Ru consistently natural in short Vietnamese-English conversations.
 - [ ] Thu thập các lượt chat được đánh dấu hữu ích.
 - [ ] Fine-tune hội thoại từ `data/conversations/approved.jsonl`.

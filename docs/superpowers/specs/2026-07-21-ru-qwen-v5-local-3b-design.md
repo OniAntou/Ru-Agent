@@ -25,6 +25,13 @@ friendly Vietnamese-English conversation remains the only adoption target.
 
 ### Phase 1: Base-only decision gate
 
+**Result (2026-07-21): not adopted.** The local 3B safetensors download
+completed at `6,171,926,992` bytes and the valid 32-case evaluation peaked at
+`2,034.184 MiB`, below the 5,500 MiB hardware stop gate. The base nevertheless
+triggered four automatic Vietnamese voice failures by addressing the user as
+`bạn` or referring to Ru as `tôi`. Manual review was skipped as required by the
+hard automatic gate. No V5 corpus, adapter, training run, or GUI change exists.
+
 V5 first adds a separate registered base profile, downloader, config, and
 runtime paths:
 

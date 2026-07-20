@@ -168,6 +168,23 @@ mixing that did not follow the user's prompt. Manual review was well below the
 required 28 natural replies, so the V4 adapter is retained only for diagnosis.
 The GUI remains unchanged.
 
+## Ru V5 Qwen 3B baseline result (not adopted)
+
+V5 tested the fully local `Qwen/Qwen2.5-3B-Instruct` base in 4-bit NF4 before
+creating any V5 corpus or adapter. The downloaded safetensors weigh
+`6,171,926,992` bytes. The valid 32-case base-only evaluation used
+`2,034.184 MiB` peak allocated VRAM, so the 5,500 MiB hardware gate passed.
+
+The conversation gate did not pass: four Vietnamese answers automatically
+failed the required voice check by using `bạn` for the user or `tôi` for Ru.
+Manual review was deliberately skipped because the automatic gate is a hard
+requirement. V5 is not adopted; no V5 data, adapter, training run, or GUI
+backend change was created.
+
+The ignored runtime evidence is kept locally at
+`models\qwen2.5-3b-instruct` and
+`checkpoints\ru-qwen-v5\base_evaluation.json`.
+
 Runtime evidence is intentionally ignored by Git:
 
 - `models\qwen2.5-1.5b-instruct`

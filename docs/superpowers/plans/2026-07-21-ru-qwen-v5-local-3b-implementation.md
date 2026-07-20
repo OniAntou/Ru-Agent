@@ -27,7 +27,7 @@
 - Create: scripts/download_ru_qwen_v5_base.py
 - Modify: tests/test_qwen_runtime.py
 
-- [ ] **Step 1: Write failing profile tests.**
+- [x] **Step 1: Write failing profile tests.**
 
 Add coverage beside the V3/V4 profile tests. It must resolve V5 by name and assert these immutable values:
 
@@ -39,7 +39,7 @@ assert profile.label == "Ru V5 Qwen 3B"
 
 Add a downloader-module test which imports the script without downloading and confirms it targets the V5 profile, not a copied old model id.
 
-- [ ] **Step 2: Run focused tests and confirm failure.**
+- [x] **Step 2: Run focused tests and confirm failure.**
 
 ~~~powershell
 python -m pytest tests/test_qwen_runtime.py -q
@@ -47,7 +47,7 @@ python -m pytest tests/test_qwen_runtime.py -q
 
 Expected: the new profile test fails because the V5 profile is absent.
 
-- [ ] **Step 3: Register the immutable profile.**
+- [x] **Step 3: Register the immutable profile.**
 
 Define the V5 profile next to V3/V4:
 
@@ -61,11 +61,11 @@ QWEN_V5_BASE = QwenBaseProfile(
 
 Register it in the profile mapping. Do not alter the current GUI or V4 defaults.
 
-- [ ] **Step 4: Add the explicit downloader.**
+- [x] **Step 4: Add the explicit downloader.**
 
 Copy the V4 downloader structure, but import and use the V5 profile. It must resolve the repository root, download to models/qwen2.5-3b-instruct, print the absolute target, model id, and total safetensors bytes, and exit non-zero if config/tokenizer/weight files are missing. No CLI override may substitute another repository or destination.
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
 
 ~~~powershell
 python -m pytest tests/test_qwen_runtime.py -q
@@ -86,7 +86,7 @@ Expected: focused tests pass.
 - Modify: tests/test_ru_qwen_evaluation.py
 - Create: tests/test_evaluate_ru_qwen_script.py
 
-- [ ] **Step 1: Write failing tests for a baseline decision record.**
+- [x] **Step 1: Write failing tests for a baseline decision record.**
 
 Add a pure decision-record function test. Given an evaluated result and all human reviews, it must emit JSON-safe output including this shape:
 
@@ -104,13 +104,13 @@ Add a pure decision-record function test. Given an evaluated result and all huma
 
 Add negative tests: any automatic disqualifier or fewer than 24 manual-natural cases produces not_adopted; a review list that does not cover all 32 cases raises a clear validation error. Add a script-level test that the V5 config runs an adapter-free evaluation.
 
-- [ ] **Step 2: Run focused tests and confirm failure.**
+- [x] **Step 2: Run focused tests and confirm failure.**
 
 ~~~powershell
 python -m pytest tests/test_ru_qwen_evaluation.py tests/test_evaluate_ru_qwen_script.py -q
 ~~~
 
-- [ ] **Step 3: Add the baseline-safe configuration.**
+- [x] **Step 3: Add the baseline-safe configuration.**
 
 Create configs/ru_qwen_v5_3b.json:
 
@@ -125,7 +125,7 @@ Create configs/ru_qwen_v5_3b.json:
 
 Do not add dataset, LoRA, optimizer, epochs, or adapter fields. Their absence prevents accidental training during the gate.
 
-- [ ] **Step 4: Implement the decision record.**
+- [x] **Step 4: Implement the decision record.**
 
 Keep the fixed 32 prompts and existing automatic guards. Add a pure function that requires exactly one review per evaluated case, aggregates automatic flags, requires at least 24 manual-natural cases, and emits passed only when both conditions hold. Otherwise it must emit not_adopted plus machine-readable failure reasons.
 
@@ -144,7 +144,7 @@ Each review item must contain:
 
 Count a response as manual-natural only when all four booleans are true. Do not add a brittle language detector; explicit human review decides expected language. Update the evaluator CLI to consume profile_name and phase from config and write the full baseline report to the requested output while retaining V4 compatibility.
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
 
 ~~~powershell
 python -m pytest tests/test_ru_qwen_evaluation.py tests/test_evaluate_ru_qwen_script.py -q
@@ -163,7 +163,7 @@ Expected: focused tests pass without V4 regressions.
 - Create: checkpoints/ru-qwen-v5/base_evaluation.json (ignored)
 - Create: checkpoints/ru-qwen-v5/base_review.json (ignored)
 
-- [ ] **Step 1: Preflight environment.**
+- [x] **Step 1: Preflight environment.**
 
 ~~~powershell
 Get-PSDrive -Name D
@@ -173,7 +173,7 @@ git status --short
 
 Record free D: space and GPU identity. Stop if CUDA is unavailable, unexpected overlapping edits exist, or the 5 GB post-download requirement cannot be met.
 
-- [ ] **Step 2: Download and verify model.**
+- [x] **Step 2: Download and verify model.**
 
 ~~~powershell
 python scripts/download_ru_qwen_v5_base.py
@@ -184,7 +184,7 @@ python -c "from pathlib import Path; p=Path('models/qwen2.5-3b-instruct'); print
 
 Expected: config, tokenizer, and weights exist with non-zero total safetensors bytes and at least 5 GB free remains. If not, do not run inference.
 
-- [ ] **Step 3: Run exactly one adapter-free baseline evaluation.**
+- [x] **Step 3: Run exactly one adapter-free baseline evaluation.**
 
 ~~~powershell
 python scripts/evaluate_ru_qwen_v4.py --config configs\ru_qwen_v5_3b.json --output checkpoints\ru-qwen-v5\base_evaluation.json
@@ -192,11 +192,11 @@ python scripts/evaluate_ru_qwen_v4.py --config configs\ru_qwen_v5_3b.json --outp
 
 Do not pass an adapter. Capture peak allocated GPU memory. Stop on CUDA OOM or peak allocated VRAM above 5,500 MiB and record not_adopted rather than retrying with changed prompts or hidden quality settings.
 
-- [ ] **Step 4: Review every response.**
+- [x] **Step 4: Review every response (skipped because the automatic gate failed).**
 
 Read all 32 prompt/response pairs in the evaluation artifact. Mark natural, relevant, expected_language, and voice for every case. Voice means Ru calls itself em and user anh whenever Vietnamese address is needed. Write 32 review items with short notes to checkpoints/ru-qwen-v5/base_review.json.
 
-- [ ] **Step 5: Record the phase decision.**
+- [x] **Step 5: Record the phase decision.**
 
 Use the decision-record API to add manual result, failure reasons, and verdict to base_evaluation.json.
 
@@ -207,7 +207,7 @@ Use the decision-record API to add manual result, failure reasons, and verdict t
 | Zero automatic flags plus 24+/32 | passed | Draft a separate Phase 2 plan. |
 | OOM or VRAM above 5,500 MiB | not_adopted | Stop V5 and report hardware evidence. |
 
-- [ ] **Step 6: Run the full non-training regression suite.**
+- [x] **Step 6: Run the full non-training regression suite.**
 
 ~~~powershell
 python -m pytest -q
@@ -224,13 +224,13 @@ Keep downloaded weights, checkpoints, and review artifacts out of Git.
 - Modify: docs/superpowers/specs/2026-07-21-ru-qwen-v5-local-3b-design.md
 - Review: all V5 documents for stale planned-tense statements
 
-- [ ] **Step 1: Update docs only from measured evidence.**
+- [x] **Step 1: Update docs only from measured evidence.**
 
 After Task 3, add actual download state, peak VRAM, automatic result, manual score, and final verdict. Do not claim V5 is better unless the saved evaluation supports it.
 
 On failure, state it was not adopted and no V5 corpus, adapter, or GUI change was created. On success, state only that Phase 1 passed and Phase 2 requires a separate approved design and implementation plan.
 
-- [ ] **Step 2: Check for contradictory documentation.**
+- [x] **Step 2: Check for contradictory documentation.**
 
 ~~~powershell
 rg -n "V5|Qwen2.5-3B|Phase 1|Phase 2|pending|planned" README.md TODO.md docs
@@ -240,7 +240,7 @@ git status --short
 
 Keep the approved design and this implementation plan as history; delete a document only if it is wholly superseded.
 
-- [ ] **Step 3: Commit the observed documentation.**
+- [x] **Step 3: Commit the observed documentation.**
 
 ~~~powershell
 git add README.md TODO.md docs/superpowers/specs/2026-07-21-ru-qwen-v5-local-3b-design.md
@@ -257,7 +257,7 @@ Do not stage models, checkpoints, or evaluation JSON.
 - Create only after a passed baseline: docs/superpowers/specs/2026-07-21-ru-qwen-v5-phase2-design.md
 - Create implementation plan only after the Phase 2 design is approved
 
-- [ ] **Step 1: Read the recorded verdict.**
+- [x] **Step 1: Read the recorded verdict.**
 
 Proceed only when base_evaluation.json says passed and includes all 32 human review items.
 
@@ -265,6 +265,6 @@ Proceed only when base_evaluation.json says passed and includes all 32 human rev
 
 The new design must retain the approved constraints: 240 literal individually reviewed project-owned rows (Vietnamese 110, English 100, mixed 30); at least 100 contextual rows; one low-rate QLoRA smoke; no template-generated samples; 5,500 MiB VRAM stop gate; adapter adoption only with automatic checks passing, at least 28/32 manual quality, and no regression against base.
 
-- [ ] **Step 3: If not passed, close V5 without training.**
+- [x] **Step 3: If not passed, close V5 without training.**
 
 Do not create a Phase 2 corpus, adapter, training command, or GUI option. Summarize failure evidence and propose a distinct hypothesis rather than fine-tuning a failed base by inertia.

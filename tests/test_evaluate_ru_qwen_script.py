@@ -7,6 +7,7 @@ import sys
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_ru_qwen_v4.py"
 V5_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "ru_qwen_v5_3b.json"
+QWEN3_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "ru_qwen3_4b.json"
 REVIEW_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "record_ru_qwen_base_review.py"
 
 
@@ -32,6 +33,22 @@ def test_evaluator_reports_cuda_memory_in_mebibytes():
     spec.loader.exec_module(module)
 
     assert module.bytes_to_mib(5_500 * 1024 * 1024) == 5500.0
+
+
+def test_qwen3_base_only_config_loads_without_an_adapter_or_training_settings():
+    spec = importlib.util.spec_from_file_location("evaluate_ru_qwen_qwen3", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    config = module.load_evaluation_config(QWEN3_CONFIG)
+
+    assert config["profile_name"] == "ru_qwen3_4b"
+    assert config["base_model_id"] == "Qwen/Qwen3-4B"
+    assert config["base_model_path"] == "models/qwen3-4b"
+    assert config["phase"] == "base_only"
+    assert "adapter_dir" not in config
+    assert "dataset_dir" not in config
 
 
 def test_base_review_recorder_exposes_help_without_changing_an_evaluation():

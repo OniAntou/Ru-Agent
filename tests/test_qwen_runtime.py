@@ -100,6 +100,15 @@ def test_v5_qwen_base_downloader_exposes_help_without_downloading():
     assert "Download and verify Ru's V5 Qwen 3B base" in result.stdout
 
 
+def test_qwen3_base_downloader_exposes_help_without_downloading():
+    script = Path(__file__).resolve().parents[1] / "scripts" / "download_ru_qwen3_4b_base.py"
+
+    result = subprocess.run([sys.executable, str(script), "--help"], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 0
+    assert "Download and verify Ru's Qwen3 4B base" in result.stdout
+
+
 def test_qwen_generation_uses_deterministic_conversation_settings(monkeypatch):
     import mini_gpt.qwen_runtime as runtime
 

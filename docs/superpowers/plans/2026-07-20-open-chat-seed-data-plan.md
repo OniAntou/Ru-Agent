@@ -26,7 +26,7 @@
 - Create: `D:\LLM\tests\test_chat_sources.py`
 - Create: `D:\LLM\src\mini_gpt\chat_sources.py`
 
-- [ ] **Step 1: Write failing record-extraction and filter tests**
+- [x] **Step 1: Write failing record-extraction and filter tests**
 
 Create `tests/test_chat_sources.py` with minimal source records and these assertions:
 
@@ -82,7 +82,7 @@ Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_chat_sources.py -q`
 
 Expected: FAIL because `mini_gpt.chat_sources` does not exist.
 
-- [ ] **Step 2: Implement focused source-pair and quality functions**
+- [x] **Step 2: Implement focused source-pair and quality functions**
 
 Create `src/mini_gpt/chat_sources.py` with an immutable record and explicit metadata:
 
@@ -126,13 +126,13 @@ return None
 
 Do not strip friendly short greetings beyond the two-character response guard. Do not generate or translate examples.
 
-- [ ] **Step 3: Run focused extraction tests**
+- [x] **Step 3: Run focused extraction tests**
 
 Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_chat_sources.py -q`
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit the extraction layer**
+- [x] **Step 4: Commit the extraction layer**
 
 Run:
 
@@ -152,7 +152,7 @@ Expected: a commit containing only the new extractor module and its tests.
 - Modify: `D:\LLM\tests\test_chat_sources.py`
 - Create: `D:\LLM\scripts\download_open_chat_data.py`
 
-- [ ] **Step 1: Write failing importer and script-help tests**
+- [x] **Step 1: Write failing importer and script-help tests**
 
 Add this importer test using a fake `datasets.load_dataset` module through `monkeypatch.setitem(sys.modules, "datasets", ...)`:
 
@@ -205,7 +205,7 @@ Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_chat_sources.py -q`
 
 Expected: FAIL because `download_open_chat_seed` and the script do not exist.
 
-- [ ] **Step 2: Implement deterministic streaming, quota, and atomic-output behavior**
+- [x] **Step 2: Implement deterministic streaming, quota, and atomic-output behavior**
 
 Add this public function to `chat_sources.py`:
 
@@ -247,7 +247,7 @@ Create `scripts/download_open_chat_data.py` following the existing Wikipedia-scr
 
 Call `download_open_chat_seed(...)`, print its manifest with `ensure_ascii=False`, and call `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` when available.
 
-- [ ] **Step 3: Run importer tests and script help**
+- [x] **Step 3: Run importer tests and script help**
 
 Run:
 
@@ -259,7 +259,7 @@ cd D:\LLM
 
 Expected: tests pass and help lists all six arguments.
 
-- [ ] **Step 4: Commit the downloader**
+- [x] **Step 4: Commit the downloader**
 
 Run:
 
@@ -278,7 +278,7 @@ Expected: a commit containing the bounded importer, script, and expanded tests.
 - Modify: `D:\LLM\tests\test_gui.py`
 - Modify: `D:\LLM\README.md`
 
-- [ ] **Step 1: Write a failing checkpoint-priority test**
+- [x] **Step 1: Write a failing checkpoint-priority test**
 
 Add to `tests/test_gui.py`:
 
@@ -303,7 +303,7 @@ Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_gui.py::test_defaul
 
 Expected: FAIL because the GUI currently checks base first.
 
-- [ ] **Step 2: Make the priority change and update README commands**
+- [x] **Step 2: Make the priority change and update README commands**
 
 Put this first in `default_paths()`:
 
@@ -324,7 +324,7 @@ cd D:\LLM
 
 Replace the statement that the user must manually select the chat checkpoint with the fact that the GUI uses it automatically when it exists and still allows manual selection for rollback.
 
-- [ ] **Step 3: Run GUI and documentation verification**
+- [x] **Step 3: Run GUI and documentation verification**
 
 Run:
 
@@ -337,7 +337,7 @@ git diff --check
 
 Expected: all focused tests pass, compilation has no output, and `git diff --check` has no output.
 
-- [ ] **Step 4: Commit integration and documentation**
+- [x] **Step 4: Commit integration and documentation**
 
 Run:
 

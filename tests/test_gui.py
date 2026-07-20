@@ -1,5 +1,6 @@
 import pytest
 
+from mini_gpt import gui
 from mini_gpt.gui import MODEL_NAME, ModelRunner, default_paths, parse_generation_settings
 
 
@@ -19,6 +20,20 @@ def test_default_paths_point_inside_project():
     checkpoint, tokenizer = default_paths()
     assert str(checkpoint).startswith("D:\\LLM")
     assert str(tokenizer).endswith("data\\tokenizer.json")
+
+
+def test_default_paths_prefer_completed_chat_finetune(tmp_path, monkeypatch):
+    monkeypatch.setattr(gui, "PROJECT_ROOT", tmp_path)
+    chat_checkpoint = tmp_path / "checkpoints" / "chat-finetune" / "latest.pt"
+    chat_checkpoint.parent.mkdir(parents=True)
+    chat_checkpoint.touch()
+    base_checkpoint = tmp_path / "checkpoints" / "base" / "latest.pt"
+    base_checkpoint.parent.mkdir(parents=True)
+    base_checkpoint.touch()
+
+    checkpoint, _ = gui.default_paths()
+
+    assert checkpoint == chat_checkpoint
 
 
 def test_runner_reports_missing_checkpoint():

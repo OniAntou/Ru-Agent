@@ -24,6 +24,7 @@ MODEL_NAME = "Ru"
 
 def default_paths() -> tuple[Path, Path]:
     checkpoint_candidates = (
+        PROJECT_ROOT / "checkpoints" / "chat-finetune" / "latest.pt",
         PROJECT_ROOT / "checkpoints" / "base" / "latest.pt",
         PROJECT_ROOT / "checkpoints" / "base-smoke" / "latest.pt",
         PROJECT_ROOT / "checkpoints" / "latest.pt",

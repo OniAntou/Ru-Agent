@@ -72,11 +72,25 @@ D:\LLM\data\conversations\approved.jsonl
 
 The model does not update its weights automatically when an example is saved. Review the approved examples before using them in a future explicit fine-tuning run.
 
+## Open conversation seed data
+
+Ru can start its conversational fine-tuning from a bounded, openly licensed seed set while keeping user-approved chat separate. The downloader streams a deterministic sample from [UltraChat](https://huggingface.co/datasets/HuggingFaceH4/ultrachat_200k) (MIT), [OpenAssistant OASST2](https://huggingface.co/datasets/OpenAssistant/oasst2) (Apache-2.0), and [Vietnamese Dataset](https://huggingface.co/datasets/hoanghai2110/vietnamese-dataset) (Apache-2.0). It keeps the Hugging Face cache, the normalized data, and its manifest on D:.
+
+The generated `data/conversations/open_seed.jsonl` records the prompt, response, language, source, and licence for every example. It is separate from the local, user-owned `approved.jsonl` produced by the GUI.
+
+```powershell
+cd D:\LLM
+& .\.venv\Scripts\python.exe scripts\download_open_chat_data.py
+& .\.venv\Scripts\python.exe -m mini_gpt.cli prepare-chat --input data/conversations/open_seed.jsonl --output-dir data/conversations/processed
+& .\.venv\Scripts\python.exe -m mini_gpt.cli encode --text data/conversations/processed/train.txt --tokenizer data/tokenizer.json --output data/conversations/processed/train.bin
+& .\.venv\Scripts\python.exe -m mini_gpt.cli encode --text data/conversations/processed/val.txt --tokenizer data/tokenizer.json --output data/conversations/processed/val.bin
+```
+
 ## Fine-tuning for natural conversation
 
-Complete base training first. Then collect and review a substantial set of useful chat turns with the GUI; the command requires at least two unique examples, but a useful conversational improvement needs many more high-quality examples.
+Complete base training first. Use the open seed-data commands above for the initial conversational checkpoint, then keep collecting and reviewing useful chat turns with the GUI for later fine-tuning. The chat preprocessor accepts either JSONL file; it requires at least two unique examples, but useful conversational improvement needs many more high-quality examples.
 
-Prepare and encode the approved examples without changing the Wikipedia corpus or tokenizer:
+To fine-tune from manually approved examples instead, prepare and encode `approved.jsonl` without changing the Wikipedia corpus or tokenizer:
 
 ```powershell
 cd D:\LLM
@@ -91,7 +105,7 @@ Fine-tune from the completed base model with a fresh optimizer and checkpoint di
 & .\.venv\Scripts\python.exe -m mini_gpt.cli train --config configs/chat_finetune.json --processed-dir data/conversations/processed --tokenizer data/tokenizer.json --checkpoint-dir checkpoints/chat-finetune --init-checkpoint checkpoints/base/latest.pt
 ```
 
-`--init-checkpoint` copies only compatible model weights; it does not continue the base optimizer, scheduler, or step counter. Use `--resume checkpoints/chat-finetune/latest.pt` only to continue an interrupted chat fine-tuning run. When it finishes, select `checkpoints/chat-finetune/latest.pt` in the GUI.
+`--init-checkpoint` copies only compatible model weights; it does not continue the base optimizer, scheduler, or step counter. Use `--resume checkpoints/chat-finetune/latest.pt` only to continue an interrupted chat fine-tuning run. When it finishes, the GUI automatically prefers `checkpoints/chat-finetune/latest.pt`; use Browse to select the base checkpoint if a rollback is needed.
 
 ## Replacing the corpus
 

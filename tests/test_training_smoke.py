@@ -30,6 +30,7 @@ def test_short_cpu_training_writes_checkpoint(tmp_path):
     )
     assert result["step"] == 2
     assert (tmp_path / "checkpoints" / "latest.pt").is_file()
+    assert (tmp_path / "checkpoints" / "best.pt").is_file()
 
 
 def test_initial_checkpoint_starts_a_new_local_training_run(tmp_path):

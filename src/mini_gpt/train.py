@@ -143,7 +143,19 @@ def run_training(
                 training_config.max_validation_batches,
                 training_config.amp,
             )
-            best_validation_loss = min(best_validation_loss, latest_validation_loss)
+            improved = latest_validation_loss < best_validation_loss
+            if improved:
+                best_validation_loss = latest_validation_loss
+                save_checkpoint(
+                    Path(checkpoint_dir) / "best.pt",
+                    model,
+                    optimizer,
+                    scheduler,
+                    completed_step,
+                    best_validation_loss,
+                    model_config,
+                    training_config,
+                )
             print(f"validation step={completed_step} loss={latest_validation_loss:.4f}", flush=True)
         if completed_step % training_config.checkpoint_interval == 0 or completed_step == training_config.total_steps:
             save_checkpoint(

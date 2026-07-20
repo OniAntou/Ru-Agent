@@ -8,6 +8,11 @@ from pathlib import Path
 import torch
 
 from .chat_finetune_data import prepare_chat_corpus
+from .chat_supervision import (
+    SupervisedTokenWindowDataset,
+    encode_response_chat_split,
+    prepare_response_chat_corpus,
+)
 from .checkpointing import load_checkpoint
 from .config import ModelConfig, TrainingConfig
 from .data import TokenWindowDataset, encode_split, prepare_corpus
@@ -39,6 +44,14 @@ def _build_parser() -> argparse.ArgumentParser:
     prepare_chat.add_argument("--output-dir", default="data/conversations/processed")
     prepare_chat.add_argument("--validation-ratio", type=float, default=0.1)
 
+    prepare_response_chat = subparsers.add_parser(
+        "prepare-response-chat",
+        help="split V2 chat examples for response-only fine-tuning",
+    )
+    prepare_response_chat.add_argument("--input", default="data/conversations/response_v2_seed.jsonl")
+    prepare_response_chat.add_argument("--output-dir", default="data/conversations/response_v2_processed")
+    prepare_response_chat.add_argument("--validation-ratio", type=float, default=0.1)
+
     tokenizer = subparsers.add_parser("tokenizer", help="train a byte-level BPE tokenizer")
     tokenizer.add_argument("--text-dir", default="data/processed")
     tokenizer.add_argument("--output", default="data/tokenizer.json")
@@ -49,11 +62,21 @@ def _build_parser() -> argparse.ArgumentParser:
     encode.add_argument("--tokenizer", default="data/tokenizer.json")
     encode.add_argument("--output", required=True)
 
+    encode_response_chat = subparsers.add_parser(
+        "encode-response-chat",
+        help="encode a V2 chat split with labels only for assistant responses",
+    )
+    encode_response_chat.add_argument("--input", required=True)
+    encode_response_chat.add_argument("--tokenizer", default="data/tokenizer.json")
+    encode_response_chat.add_argument("--tokens-output", required=True)
+    encode_response_chat.add_argument("--labels-output", required=True)
+
     train = subparsers.add_parser("train", help="train or resume a model")
     train.add_argument("--config", required=True)
     train.add_argument("--processed-dir", default="data/processed")
     train.add_argument("--tokenizer", default="data/tokenizer.json")
     train.add_argument("--checkpoint-dir", default="checkpoints")
+    train.add_argument("--response-only", action="store_true", help="use assistant-token labels from response chat encoding")
     train_start = train.add_mutually_exclusive_group()
     train_start.add_argument("--resume")
     train_start.add_argument("--init-checkpoint")
@@ -95,6 +118,10 @@ def main(argv: list[str] | None = None) -> int:
         report = prepare_chat_corpus(_path(args.input), _path(args.output_dir), args.validation_ratio)
         print(json.dumps(report.__dict__, ensure_ascii=False, indent=2))
         return 0
+    if args.command == "prepare-response-chat":
+        report = prepare_response_chat_corpus(_path(args.input), _path(args.output_dir), args.validation_ratio)
+        print(json.dumps(report.__dict__, ensure_ascii=False, indent=2))
+        return 0
     if args.command == "tokenizer":
         text_files = sorted(_path(args.text_dir).glob("*.txt"))
         actual_size = train_tokenizer(text_files, _path(args.output), args.vocab_size)
@@ -104,12 +131,33 @@ def main(argv: list[str] | None = None) -> int:
         count = encode_split(_path(args.text), _path(args.tokenizer), _path(args.output))
         print(f"saved {count} tokens to {_path(args.output)}")
         return 0
+    if args.command == "encode-response-chat":
+        count = encode_response_chat_split(
+            _path(args.input),
+            _path(args.tokenizer),
+            _path(args.tokens_output),
+            _path(args.labels_output),
+        )
+        print(f"saved {count} response-supervised tokens to {_path(args.tokens_output)}")
+        return 0
     if args.command == "train":
         tokenizer = load_tokenizer(_path(args.tokenizer))
         model_config, training_config = _load_config(_path(args.config), tokenizer.get_vocab_size())
         processed = _path(args.processed_dir)
-        train_dataset = TokenWindowDataset(processed / "train.bin", model_config.context_length)
-        validation_dataset = TokenWindowDataset(processed / "val.bin", model_config.context_length)
+        if args.response_only:
+            train_dataset = SupervisedTokenWindowDataset(
+                processed / "train.bin",
+                processed / "train.labels.bin",
+                model_config.context_length,
+            )
+            validation_dataset = SupervisedTokenWindowDataset(
+                processed / "val.bin",
+                processed / "val.labels.bin",
+                model_config.context_length,
+            )
+        else:
+            train_dataset = TokenWindowDataset(processed / "train.bin", model_config.context_length)
+            validation_dataset = TokenWindowDataset(processed / "val.bin", model_config.context_length)
         result = run_training(
             model_config,
             training_config,

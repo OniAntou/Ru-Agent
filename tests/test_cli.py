@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from mini_gpt.cli import main
+from mini_gpt.cli import _build_parser, main
 
 
 def test_cli_help_is_available(capsys):
@@ -30,6 +30,32 @@ def test_prepare_chat_cli_writes_a_train_and_validation_split(tmp_path):
     assert main(["prepare-chat", "--input", str(source), "--output-dir", str(output_dir)]) == 0
     assert (output_dir / "train.txt").is_file()
     assert (output_dir / "val.txt").is_file()
+
+
+def test_prepare_response_chat_cli_writes_jsonl_splits(tmp_path):
+    source = tmp_path / "seed.jsonl"
+    source.write_text(
+        "\n".join(
+            json.dumps(record, ensure_ascii=False)
+            for record in (
+                {"prompt": "Xin chào", "response": "Chào anh"},
+                {"prompt": "Hello", "response": "Hi there"},
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "response-processed"
+
+    assert main(["prepare-response-chat", "--input", str(source), "--output-dir", str(output_dir)]) == 0
+    assert (output_dir / "train.jsonl").is_file()
+    assert (output_dir / "val.jsonl").is_file()
+
+
+def test_train_parser_accepts_response_only_dataset_mode():
+    args = _build_parser().parse_args(["train", "--config", "configs/chat_response_v2.json", "--response-only"])
+
+    assert args.response_only is True
 
 
 def test_train_parser_rejects_resume_and_initial_checkpoint_together():

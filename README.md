@@ -181,9 +181,8 @@ Manual review was deliberately skipped because the automatic gate is a hard
 requirement. V5 is not adopted; no V5 data, adapter, training run, or GUI
 backend change was created.
 
-The ignored runtime evidence is kept locally at
-`models\qwen2.5-3b-instruct` and
-`checkpoints\ru-qwen-v5\base_evaluation.json`.
+The ignored V5 model and evaluation files were removed in the 2026-07-21 local
+cleanup; this recorded result remains for comparison.
 
 ## Ru Qwen3 4B baseline result (not adopted)
 
@@ -200,9 +199,8 @@ answered every English prompt in Vietnamese and sometimes reversed roles or
 invented shared experiences. It is not adopted; no Qwen3 corpus, adapter,
 training run, or GUI backend change was created.
 
-The ignored runtime evidence is kept locally at
-`models\qwen3-4b`, `checkpoints\ru-qwen3-4b\base_evaluation.json`, and
-`checkpoints\ru-qwen3-4b\base_review.json`.
+The ignored Qwen3 model and evaluation files were removed in the 2026-07-21
+local cleanup; this recorded result remains for comparison.
 
 ## Ru Qwen3 4B prompt-routing smoke result (not adopted)
 
@@ -214,9 +212,8 @@ and both mixed cases answered in Vietnamese only instead of a natural bilingual
 mix. Qwen3 remains not adopted; the 32-case routed run, fine-tuning, corpus,
 adapter, and GUI changes were not run.
 
-The ignored runtime evidence is kept locally at
-`checkpoints\ru-qwen3-4b\prompt_routing_smoke.json` and
-`checkpoints\ru-qwen3-4b\prompt_routing_smoke_review.json`.
+The ignored prompt-routing smoke artifacts were removed in the 2026-07-21
+local cleanup; this recorded result remains for comparison.
 
 Runtime evidence is intentionally ignored by Git:
 
@@ -226,7 +223,8 @@ Runtime evidence is intentionally ignored by Git:
 - `checkpoints\ru-qwen-v4\evaluation.json`
 - `checkpoints\ru-qwen-v4\adapter\ru_manifest.json`
 
-The local commands used for a future candidate are:
+The following are historical V4 commands only; that retired candidate would
+need its model downloaded again before they can run:
 
 ```powershell
 & .\.venv\Scripts\python.exe scripts\build_ru_qwen_v4_data.py --audit

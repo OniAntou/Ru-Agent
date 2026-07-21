@@ -20,7 +20,7 @@
 - Modify: `tests/test_qwen_runtime.py`
 - Modify: `tests/test_evaluate_ru_qwen_script.py`
 
-- [ ] **Step 1: Write failing registration and config tests.**
+- [x] **Step 1: Write failing registration and config tests.**
 
 Add these tests:
 
@@ -41,7 +41,7 @@ Add a config-load test asserting `profile_name == "ru_qwen_v6_7b"`,
 "base_only"`. Add a downloader help test requiring `Download and verify Ru's
 V6 Qwen 7B base`.
 
-- [ ] **Step 2: Confirm RED.**
+- [x] **Step 2: Confirm RED.**
 
 Run:
 
@@ -51,7 +51,7 @@ Run:
 
 Expected: imports/config/script are absent.
 
-- [ ] **Step 3: Add the profile, config, and downloader.**
+- [x] **Step 3: Add the profile, config, and downloader.**
 
 Add this profile alongside V3/V4/V5 and include it in `QWEN_BASE_PROFILES`:
 
@@ -81,7 +81,7 @@ sum of top-level `*.safetensors` bytes. `main()` attempts `report()`, calls
 local_dir=str(PROJECT_ROOT / QWEN_V6_BASE.local_path))` only when verification
 raises `FileNotFoundError` or `ValueError`, then prints the verified JSON.
 
-- [ ] **Step 4: Confirm GREEN and commit.**
+- [x] **Step 4: Confirm GREEN and commit.**
 
 Run:
 
@@ -99,7 +99,7 @@ git commit -m "feat: register Ru Qwen 7B candidate"
 - Modify: `scripts/evaluate_ru_qwen_prompt_routing.py`
 - Modify: `tests/test_evaluate_ru_qwen_script.py`
 
-- [ ] **Step 1: Write failing pure hardware-gate tests.**
+- [x] **Step 1: Write failing pure hardware-gate tests.**
 
 Import `hardware_gate` from the smoke script and add:
 
@@ -115,7 +115,7 @@ assert hardware_gate(5500.001, 5500.0)["passed"] is False
 Add parser tests that assert `--max-peak-mib` defaults to `5500.0` and help
 still contains `Prompt-routing smoke`.
 
-- [ ] **Step 2: Confirm RED.**
+- [x] **Step 2: Confirm RED.**
 
 Run:
 
@@ -125,7 +125,7 @@ Run:
 
 Expected: `hardware_gate` and `--max-peak-mib` are absent.
 
-- [ ] **Step 3: Add the hardware-gate function and bounded smoke flow.**
+- [x] **Step 3: Add the hardware-gate function and bounded smoke flow.**
 
 Add:
 
@@ -153,7 +153,7 @@ or retry at another quantization. A complete smoke below the limit writes
 `hardware_gate.passed: true` and preserves the existing `verdict:
 "not_reviewed"` path for manual review.
 
-- [ ] **Step 4: Confirm GREEN and commit.**
+- [x] **Step 4: Confirm GREEN and commit.**
 
 Run:
 
@@ -176,7 +176,7 @@ git commit -m "feat: gate Ru smoke by GPU memory"
 - Modify: `docs/superpowers/specs/2026-07-21-ru-qwen2-5-7b-local-smoke-design.md`
 - Modify: `docs/superpowers/plans/2026-07-21-ru-qwen2-5-7b-local-smoke-implementation.md`
 
-- [ ] **Step 1: Verify available disk and download one model.**
+- [x] **Step 1: Verify available disk and download one model.**
 
 Run:
 
@@ -190,7 +190,7 @@ Require at least 20 GiB free before download. Verify the printed `model_id` is
 `local_path` is `D:\LLM\models\qwen2.5-7b-instruct`. Do not download any
 other model in this task.
 
-- [ ] **Step 2: Run the eight-case hardware and conversation smoke.**
+- [x] **Step 2: Run the eight-case hardware and conversation smoke.**
 
 Run:
 
@@ -202,7 +202,7 @@ If the command returns `1`, inspect the persisted hardware decision and stop:
 do not manually review, offload to RAM, fine-tune, download another model, or
 run the 32-case suite.
 
-- [ ] **Step 3: Perform the complete manual review after hardware passes.**
+- [x] **Step 3: Perform the complete manual review after hardware passes.**
 
 Write exactly eight review objects to
 `checkpoints/ru-qwen-v6-7b/prompt_routing_smoke_review.json`, each with
@@ -216,7 +216,7 @@ the user's experience as its own or swaps speakers. Then run:
 & .\.venv\Scripts\python.exe scripts\record_ru_prompt_routing_smoke_review.py --evaluation checkpoints\ru-qwen-v6-7b\prompt_routing_smoke.json --review checkpoints\ru-qwen-v6-7b\prompt_routing_smoke_review.json
 ```
 
-- [ ] **Step 4: Enforce the decision boundary.**
+- [x] **Step 4: Enforce the decision boundary.**
 
 For a `passed` decision, document that only a new approved plan may run the
 full 32-case routed evaluation. For `not_adopted`, document the exact hardware
@@ -224,7 +224,7 @@ or conversation failures and stop: no training, adapter, corpus, GUI, full
 suite, or fallback-model action. Ask the user whether to retain a failed 7B
 model before deleting it.
 
-- [ ] **Step 5: Run full regression, update documentation, and commit.**
+- [x] **Step 5: Run full regression, update documentation, and commit.**
 
 Run:
 

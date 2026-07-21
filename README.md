@@ -215,6 +215,23 @@ adapter, and GUI changes were not run.
 The ignored prompt-routing smoke artifacts were removed in the 2026-07-21
 local cleanup; this recorded result remains for comparison.
 
+## Ru Qwen2.5 7B local smoke result (not adopted)
+
+The local `Qwen/Qwen2.5-7B-Instruct` candidate used `15,231,271,888` bytes of
+safetensors in 4-bit NF4 mode. Its eight-case routed smoke passed automatic
+checks and all four English cases, while peak allocated VRAM was `5,471.782
+MiB`, under the `5,500 MiB` gate. Manual review still scored only `5/8`: the
+Vietnamese greeting switched into Chinese, one mixed reply switched into
+Chinese, and the other mixed reply was Vietnamese-only with inconsistent
+self-reference. It is not adopted; no 32-case evaluation, fine-tuning,
+adapter, corpus, or GUI change was run.
+
+The ignored runtime evidence is kept locally at
+`models\qwen2.5-7b-instruct`,
+`checkpoints\ru-qwen-v6-7b\prompt_routing_smoke.json`, and
+`checkpoints\ru-qwen-v6-7b\prompt_routing_smoke_review.json` until the user
+decides whether to retain or remove the failed candidate.
+
 Runtime evidence is intentionally ignored by Git:
 
 - `models\qwen2.5-1.5b-instruct`

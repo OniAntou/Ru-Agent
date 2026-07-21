@@ -13,6 +13,7 @@ Mục tiêu dài hạn: Ru giao tiếp tự nhiên bằng tiếng Việt và ti�
 - [x] Evaluate the local V5 Qwen 3B base (hardware gate passed at 2,034.184 MiB; conversation gate failed on four Vietnamese anh/em voice errors; do not fine-tune it).
 - [x] Evaluate local Qwen3 4B in non-thinking mode (hardware gate passed at 2,635.017 MiB; manual bilingual conversation score 11/32; do not fine-tune it).
 - [x] Run the Qwen3 4B language-specific prompt-routing smoke (automatic 8/8 and English 4/4 passed at 2,628.293 MiB; manual score 5/8 with a role reversal and Vietnamese-only mixed replies; do not continue Qwen3).
+- [x] Evaluate local Qwen2.5 7B-Instruct with the routed smoke (automatic 8/8, English 4/4, and hardware gate passed at 5,471.782 MiB; manual score 5/8 with Chinese-language contamination and mixed-language failures; do not continue it).
 - [ ] Make Ru consistently natural in short Vietnamese-English conversations.
 - [ ] Thu thập các lượt chat được đánh dấu hữu ích.
 - [ ] Fine-tune hội thoại từ `data/conversations/approved.jsonl`.

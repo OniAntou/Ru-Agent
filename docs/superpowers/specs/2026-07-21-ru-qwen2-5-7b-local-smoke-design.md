@@ -58,6 +58,16 @@ falling back to one language.
 
 ## Outcomes
 
+### Recorded result
+
+Qwen2.5 7B passed the local hardware gate at `5,471.782 MiB`, all automatic
+checks, and all four English cases. Manual review scored only `5/8`: the
+Vietnamese greeting and one mixed reply switched into Chinese, while the other
+mixed reply was Vietnamese-only and used inconsistent self-reference. Qwen2.5
+7B is not adopted; no 32-case evaluation, fine-tuning, adapter, corpus, GUI,
+or fallback-model action was run. The local failed candidate remains only until
+the user decides whether to retain or remove it.
+
 If the smoke passes, create a new approved plan for one full 32-case routed
 evaluation. Do not start that full evaluation in this experiment.
 

@@ -78,6 +78,29 @@ def test_prompt_routing_smoke_evaluator_exposes_help_without_loading_a_model():
     assert "Prompt-routing smoke" in result.stdout
 
 
+def test_prompt_routing_smoke_hardware_gate_accepts_the_peak_limit_boundary():
+    spec = importlib.util.spec_from_file_location("evaluate_ru_qwen_prompt_routing", PROMPT_ROUTING_SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.hardware_gate(5500.0, 5500.0) == {
+        "passed": True,
+        "peak_allocated_mib": 5500.0,
+        "peak_limit_mib": 5500.0,
+    }
+
+
+def test_prompt_routing_smoke_hardware_gate_rejects_excess_vram_and_parser_defaults_to_5500_mib():
+    spec = importlib.util.spec_from_file_location("evaluate_ru_qwen_prompt_routing_limit", PROMPT_ROUTING_SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.hardware_gate(5500.001, 5500.0)["passed"] is False
+    assert module.build_parser().parse_args([]).max_peak_mib == 5500.0
+
+
 def test_prompt_routing_smoke_recorder_exposes_help_without_changing_an_evaluation():
     result = subprocess.run([sys.executable, str(PROMPT_ROUTING_REVIEW_SCRIPT), "--help"], capture_output=True, text=True, check=False)
 

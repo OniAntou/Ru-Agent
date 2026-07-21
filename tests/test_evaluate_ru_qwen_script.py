@@ -8,6 +8,7 @@ import sys
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_ru_qwen_v4.py"
 V5_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "ru_qwen_v5_3b.json"
 QWEN3_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "ru_qwen3_4b.json"
+V6_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "ru_qwen_v6_7b.json"
 REVIEW_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "record_ru_qwen_base_review.py"
 REASSESS_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "reassess_ru_qwen_evaluation.py"
 PROMPT_ROUTING_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_ru_qwen_prompt_routing.py"
@@ -49,6 +50,22 @@ def test_qwen3_base_only_config_loads_without_an_adapter_or_training_settings():
     assert config["profile_name"] == "ru_qwen3_4b"
     assert config["base_model_id"] == "Qwen/Qwen3-4B"
     assert config["base_model_path"] == "models/qwen3-4b"
+    assert config["phase"] == "base_only"
+    assert "adapter_dir" not in config
+    assert "dataset_dir" not in config
+
+
+def test_v6_base_only_config_loads_without_an_adapter_or_training_settings():
+    spec = importlib.util.spec_from_file_location("evaluate_ru_qwen_v6", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    config = module.load_evaluation_config(V6_CONFIG)
+
+    assert config["profile_name"] == "ru_qwen_v6_7b"
+    assert config["base_model_id"] == "Qwen/Qwen2.5-7B-Instruct"
+    assert config["base_model_path"] == "models/qwen2.5-7b-instruct"
     assert config["phase"] == "base_only"
     assert "adapter_dir" not in config
     assert "dataset_dir" not in config

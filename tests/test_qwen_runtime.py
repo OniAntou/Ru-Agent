@@ -65,6 +65,16 @@ def test_v5_profile_is_the_registered_local_qwen_3b_base():
     assert qwen_base_profile(QWEN_V5_BASE.model_id) == QWEN_V5_BASE
 
 
+def test_v6_profile_is_the_registered_local_qwen_7b_base():
+    from mini_gpt.qwen_runtime import QWEN_V6_BASE, qwen_base_profile
+
+    assert QWEN_V6_BASE.model_id == "Qwen/Qwen2.5-7B-Instruct"
+    assert QWEN_V6_BASE.local_path == "models/qwen2.5-7b-instruct"
+    assert QWEN_V6_BASE.label == "Ru V6 Qwen 7B"
+    assert QWEN_V6_BASE.disable_thinking is False
+    assert qwen_base_profile(QWEN_V6_BASE.model_id) == QWEN_V6_BASE
+
+
 def test_qwen3_profile_is_registered_with_non_thinking_generation():
     from mini_gpt.qwen_runtime import QWEN3_4B_BASE, qwen_base_profile
 
@@ -107,6 +117,15 @@ def test_qwen3_base_downloader_exposes_help_without_downloading():
 
     assert result.returncode == 0
     assert "Download and verify Ru's Qwen3 4B base" in result.stdout
+
+
+def test_v6_qwen_base_downloader_exposes_help_without_downloading():
+    script = Path(__file__).resolve().parents[1] / "scripts" / "download_ru_qwen_v6_7b_base.py"
+
+    result = subprocess.run([sys.executable, str(script), "--help"], capture_output=True, text=True, check=False)
+
+    assert result.returncode == 0
+    assert "Download and verify Ru's V6 Qwen 7B base" in result.stdout
 
 
 def test_qwen_generation_uses_deterministic_conversation_settings(monkeypatch):

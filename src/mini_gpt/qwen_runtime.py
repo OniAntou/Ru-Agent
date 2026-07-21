@@ -32,6 +32,11 @@ QWEN_V5_BASE = QwenBaseProfile(
     local_path="models/qwen2.5-3b-instruct",
     label="Ru V5 Qwen 3B",
 )
+QWEN_V6_BASE = QwenBaseProfile(
+    model_id="Qwen/Qwen2.5-7B-Instruct",
+    local_path="models/qwen2.5-7b-instruct",
+    label="Ru V6 Qwen 7B",
+)
 QWEN3_4B_BASE = QwenBaseProfile(
     model_id="Qwen/Qwen3-4B",
     local_path="models/qwen3-4b",
@@ -39,7 +44,9 @@ QWEN3_4B_BASE = QwenBaseProfile(
     disable_thinking=True,
 )
 QWEN_MODEL_ID = QWEN_V3_BASE.model_id
-QWEN_BASE_PROFILES = {profile.model_id: profile for profile in (QWEN_V3_BASE, QWEN_V4_BASE, QWEN_V5_BASE, QWEN3_4B_BASE)}
+QWEN_BASE_PROFILES = {
+    profile.model_id: profile for profile in (QWEN_V3_BASE, QWEN_V4_BASE, QWEN_V5_BASE, QWEN_V6_BASE, QWEN3_4B_BASE)
+}
 SUPPORTED_QWEN_MODEL_TYPES = frozenset({"qwen2", "qwen3"})
 REQUIRED_QWEN_PACKAGES = ("transformers", "accelerate", "peft", "bitsandbytes")
 _GENERATION_CACHE: dict[tuple[str, str | None], tuple[object, object]] = {}

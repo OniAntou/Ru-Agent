@@ -289,10 +289,13 @@ Use this exact mode-by-language inventory for all 120 explicit rows:
 
 `ru_v7_1_corpus.py` must import the unchanged `v7_dialogue_records()` and the
 new repair records, normalize both sources, validate roles/provenance/length,
-reject the existing v7 safety and self-focus patterns plus duplicate final
-prompts, and build exactly 300 combined rows. Preserve each row's `source`
-and add manifest fields `base_source_sha256`, `repair_source_sha256`, and
-`combined_source_sha256`. Write `train.jsonl`, `val.jsonl`,
+reject the existing v7 safety and self-focus patterns, duplicate final prompts
+within either source, and exact duplicate prompt/response pairs across the
+combined source, then build exactly 300 combined rows. Permit only the three
+known cross-source repair prompt overlaps when their responses differ, and
+record the overlap count. Preserve each row's `source` and add manifest fields
+`base_source_sha256`, `repair_source_sha256`, and `combined_source_sha256`.
+Write `train.jsonl`, `val.jsonl`,
 `held_out.jsonl`, and `manifest.json` to `data\conversations\ru_v7_1` with
 split counts `228/36/36` and seed `42`.
 

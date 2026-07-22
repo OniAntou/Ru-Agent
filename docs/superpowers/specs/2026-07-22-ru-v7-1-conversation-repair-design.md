@@ -76,9 +76,12 @@ Create `src/mini_gpt/ru_v7_1_dialogues.py` with exactly 120 new repair rows:
 The build step combines the unchanged 180-row v7 source with these 120 repair
 rows into a 300-row v7.1 corpus. It writes deterministic `228/36/36`
 train/validation/held-out splits using seed `42`, records the combined source
-hash, and rejects duplicate final prompts and duplicate prompt/response pairs.
-The original v7 source hash and repair-source hash are both recorded in the
-manifest so provenance cannot be confused with the v7 artifact.
+hash, rejects duplicate final prompts within either source, and rejects exact
+duplicate prompt/response pairs across the combined corpus. A cross-source
+duplicate final prompt is allowed only when the repair response differs; this
+is the explicit correction path for v7's three known short/generic prompts.
+The manifest records that overlap count alongside the original v7 source hash
+and repair-source hash so provenance cannot be confused with the v7 artifact.
 
 Every repair response must:
 

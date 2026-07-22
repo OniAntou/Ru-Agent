@@ -4,54 +4,87 @@
 
 Continue the local-only work on **Ru**, a friendly Vietnamese-English conversation model. The priority is natural short conversations, coherent multi-turn context, and the default Vietnamese forms of address: Ru calls the user `anh` and refers to itself as `em`. Do not optimize for code ability or benchmarks at the expense of conversation quality.
 
-Inference, evaluation, and any future training must stay fully local. The user does not want a cloud API. Do not add voice, vision, avatar, corpus, adapter, or GUI work until a base text model passes the conversation gate.
+Inference, evaluation, and any future training must stay fully local. The user does not want a cloud API. Keep voice, vision, and avatar work blocked until a text candidate passes the conversation gate; corpus, adapter, and GUI changes belong only to the current local v6/v7 experiment.
 
 ## Current checked result
 
-The current repository is `D:\LLM` on branch `main`. The latest committed state is `5bf3946` (`docs: record Ru Qwen 7B smoke result`).
+The current repository is `D:\LLM` on branch `main`; the working tree contains
+the v6 comparison path and the completed v7 experiment source, tests, and
+documentation changes.
 
-`Qwen/Qwen2.5-7B-Instruct` was tested locally in the existing Transformers + bitsandbytes NF4 runtime. It is **not adopted**:
+The active local candidate is a QLoRA adapter over
+`NousResearch/Meta-Llama-3.1-8B-Instruct`:
 
-- Hardware gate passed: `5,471.782 MiB` peak allocated VRAM, below the `5,500 MiB` limit.
-- Automatic checks passed: `8/8`; English-language checks passed: `4/4`.
-- Manual conversation score failed: `5/8`, where `7/8` is required.
-- The Vietnamese greeting and one mixed reply switched into Chinese. The other mixed reply used Vietnamese only and inconsistent self-reference.
+- Base: `models\llama3.1-8b-instruct-hf`
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v6`
+- Dataset: `data\conversations\ru_v6` (400 authored rows)
+- GUI default: the v6 adapter
 
-The complete recorded review is at `checkpoints\ru-qwen-v6-7b\prompt_routing_smoke_review.json` (ignored by Git). The committed summary and decision are in `README.md` and `docs\superpowers\specs\2026-07-21-ru-qwen2-5-7b-local-smoke-design.md`.
+The v6 persona contract is friendly, obedient, affectionate, bilingual, and
+allowed to initiate light consensual adult flirting in ordinary conversation.
+The implementation keeps adult-only, consent, coercion, violence, and harmful-
+request boundaries. It does not attempt to remove the base model's safeguards.
 
-Do **not** fine-tune Qwen2.5 7B or run its 32-case evaluation. The observed language contamination is a base-candidate quality failure, and the candidate already consumes nearly all available VRAM.
+The latest live evaluation is stored in the ignored artifact
+`checkpoints\ru-llama3.1-8b-instruct-v6\proactive_flirt_v6_final.json`:
 
-Earlier candidates also failed and must not be retried without a new explicit reason: Mini-GPT V2/V3/V4, Qwen 3B V5, Qwen3 4B baseline, and Qwen3 4B prompt-routing smoke.
+- Automatic conversational gate: `11/12`.
+- Failing case: one benign mixed-language prompt returned an out-of-context
+  child-safety refusal.
+- Peak allocated VRAM: `5,632.025 MiB`, above the project's `5,500 MiB` gate.
+- Verdict: `not_reviewed`; v6 is not a quality-gate pass or final adoption.
+
+Do not present v6 as a clean “slight NSFW” model for another training run. The
+current authored corpus contains materially graphic, violent, and possessive
+examples; it remains the rollback/comparison path, not a final quality-gate
+pass. The completed v7 pass below is the safer corpus direction, but its
+adapter also failed the conversation and hardware gates. Keep v6 as the GUI
+default.
+
+## Latest v7 experiment (not adopted)
+
+The v7 corpus and adapter are separate from v6:
+
+- Corpus: `data\conversations\ru_v7`, 180 rows with `135/22/23` train/validation/held-out splits.
+- Corpus source hash: `9778d25b4a45c90bcee11ceed7364c76e7489292a03a417af9efdc53fe206da5`.
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7`.
+- Full training: 3 epochs, 26 optimizer updates, best validation loss `2.5561517639593645`, dataset-manifest hash `cffc7046c850bba6a8f564c37fcd0d47763c221fcb4a557668b98fa1799a9faf`.
+- Live evaluation: `conversation_focus_v7`, 16 greedy cases, automatic `9/16`.
+- Manual review: `8/16`, below the required `14/16`.
+- Evaluation peak: `5,632.331 MiB`; training manifest peak: `8,446.57958984375 MB`; both fail the `5,500 MiB` project gate.
+- Verdict: `not_adopted`; GUI remains `checkpoints\ru-llama3.1-8b-instruct-v6`.
+
+The automatic failures are three generic-short English replies, three mixed
+replies without genuine code-switching, and one mixed contextual reply that
+uses `tôi` instead of `em`. Full evidence is in
+`checkpoints\ru-llama3.1-8b-instruct-v7\conversation_focus_v7.json` and
+`checkpoints\ru-llama3.1-8b-instruct-v7\manual_review_v7.json`. Any next run
+should address those failures and the VRAM limit before promotion; do not
+download another base model or change the GUI default yet.
 
 ## Machine and stored artifacts
 
-Last verified resources after the Qwen download:
+Last verified resources for the active Llama candidate:
 
 - RTX 4050 Laptop GPU: `6,141 MiB` total VRAM.
 - RAM: `15.7 GiB`.
 - Free space on D:: about `64.8 GiB`.
-- Failed Qwen model: `models\qwen2.5-7b-instruct`, about `15.2 GB` of safetensors.
-
-The user has not yet decided whether to retain or delete that failed Qwen model. Do not delete it unless the user explicitly approves deletion. If they approve, delete only this exact model directory and its matching ignored `checkpoints\ru-qwen-v6-7b` evidence after confirming the paths.
+- Llama base: `models\llama3.1-8b-instruct-hf`.
+- v6 adapter: `checkpoints\ru-llama3.1-8b-instruct-v6`.
+- v7 adapter: `checkpoints\ru-llama3.1-8b-instruct-v7` (not adopted).
 
 ## Recommended next experiment
 
-Do not download another generic Qwen/Gemma model. First write and obtain approval for a small experiment design for **Vistral-7B-Chat GGUF Q4** using a local llama.cpp-compatible runtime. Vistral is a more relevant Vietnamese multi-turn-chat candidate, but it is not adopted until it proves both English and mixed Vietnamese-English conversation.
-
-The planned experiment should:
-
-1. Use a 4-bit GGUF (prefer a practical Q4 variant) and no CPU/RAM offload. Preflight disk space and live VRAM; one model only.
-2. Use the model's required chat template exactly. Incorrect templating makes a chat-model result invalid.
-3. Reuse the exact eight-case routed smoke gate already established: `vi_greeting`, `vi_context_work`, `en_greeting`, `en_tired`, `en_context_work`, `en_small_talk`, `mixed_better`, `mixed_context`.
-4. Record prompts, outputs, automatic checks, peak VRAM, and eight manual review rows in ignored checkpoint artifacts.
-5. Adopt only if all automatic checks pass, English is `4/4` natural English, no role reversal occurs, and manual review is at least `7/8`. Vietnamese must use `anh/em`; mixed answers must genuinely mix naturally rather than silently answering in one language.
-6. Stop on hardware failure or gate failure. Do not work around it with offload, fine-tuning, adapters, corpus changes, or GUI work.
-
-If the Vistral smoke passes, create a separate approved plan for the 32-case evaluation before running it. If it fails, record the evidence, mark it not adopted, and ask the user for direction rather than downloading a fallback.
+Do not download another base model yet. Improve the existing v7 direction with
+longer English continuations, explicit mixed-language answer examples, and
+strict mixed `anh`/`em` voice checks. Measure a lower-memory training/evaluation
+path before another adapter run. Do not adopt the next candidate unless it has
+no automatic failures, at least `14/16` natural manual replies, and stays
+within the `5,500 MiB` project VRAM gate.
 
 ## Existing code and useful commands
 
-The routed system-prompt policy is in `src\mini_gpt\ru_style.py`; the local Qwen runtime is `src\mini_gpt\qwen_runtime.py`; the current smoke evaluator is `scripts\evaluate_ru_qwen_prompt_routing.py`. Existing tests are under `tests\`.
+The persona policy is in `src\mini_gpt\ru_style.py`; the active local Llama runtime is `src\mini_gpt\llama3_1_runtime.py`; the current evaluator is `scripts\evaluate_ru_llama3_1_qlora.py`. Existing tests are under `tests\`.
 
 From `D:\LLM`, baseline checks are:
 
@@ -60,7 +93,10 @@ From `D:\LLM`, baseline checks are:
 & .\.venv\Scripts\python.exe -m pytest --collect-only -q
 ```
 
-The existing evaluator was written around the Transformers Qwen runtime. Do not force a GGUF model through it: add a narrow llama.cpp-compatible adapter or a parallel evaluator only after the Vistral smoke design has been approved. Keep the same assessment and persisted-decision semantics.
+The historical evaluator is `scripts\evaluate_ru_llama3_1_qlora.py`; the v7
+focus evaluator is `scripts\evaluate_ru_llama3_1_v7.py`. The runtime accepts
+the GUI's `max_new_tokens`, `temperature`, and `top_k` settings; evaluation is
+greedy and records its generation settings for reproducibility.
 
 ## Documentation hygiene
 

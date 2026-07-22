@@ -14,6 +14,15 @@ Mục tiêu dài hạn: Ru giao tiếp tự nhiên bằng tiếng Việt và ti�
 - [x] Evaluate local Qwen3 4B in non-thinking mode (hardware gate passed at 2,635.017 MiB; manual bilingual conversation score 11/32; do not fine-tune it).
 - [x] Run the Qwen3 4B language-specific prompt-routing smoke (automatic 8/8 and English 4/4 passed at 2,628.293 MiB; manual score 5/8 with a role reversal and Vietnamese-only mixed replies; do not continue Qwen3).
 - [x] Evaluate local Qwen2.5 7B-Instruct with the routed smoke (automatic 8/8, English 4/4, and hardware gate passed at 5,471.782 MiB; manual score 5/8 with Chinese-language contamination and mixed-language failures; do not continue it).
+- [x] Evaluate local Vistral-7B-Chat GGUF Q4 with the routed smoke (hardware gate passed; automatic 7/8 passed; failed English echo and Vietnamese point-of-view; do not continue it).
+- [x] Evaluate local Llama-3.1-8B-Instruct GGUF Q4 with the routed smoke (hardware gate passed; automatic 8/8 passed; manual score failed due to Vietnamese point-of-view error and failing to mix languages naturally; do not continue it).
+- [x] Build and train the local Llama-3.1-8B-Instruct v6 QLoRA candidate from the 400-row Ru v6 corpus.
+- [x] Implement the v6 friendly adult persona and GUI-controlled Llama generation settings.
+- [x] Run the live 12-case `proactive_flirt_v6` adapter evaluation (automatic 11/12; one benign mixed-language refusal; peak 5,632.025 MiB).
+- [ ] Manually review the saved v6 replies; do not call v6 adopted while the automatic and VRAM gates fail.
+- [x] Curate, validate, and split the v7 conversation-focus corpus (180 rows; 135 train, 22 validation, 23 held-out; no graphic, violent, coercive, or possessive targets).
+- [x] Train and live-evaluate the separate v7 Llama QLoRA adapter (validation loss 2.5561517639593645; automatic 9/16; manual 8/16; VRAM gate failed; not adopted; GUI remains v6).
+- [ ] Improve v7's English response depth, mixed-language code-switching, mixed `anh`/`em` voice, and VRAM footprint before a next adapter run.
 - [ ] Make Ru consistently natural in short Vietnamese-English conversations.
 - [ ] Thu thập các lượt chat được đánh dấu hữu ích.
 - [ ] Fine-tune hội thoại từ `data/conversations/approved.jsonl`.

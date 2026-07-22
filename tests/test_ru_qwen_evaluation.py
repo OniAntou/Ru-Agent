@@ -104,6 +104,41 @@ def test_focus_assessment_accepts_user_focused_reply():
     assert assessment.passed
 
 
+def test_response_assessment_requires_genuine_mixing_for_mixed_cases():
+    english_only = assess_conversation_focus_response(
+        "Today was hơi stressful.",
+        "That sounds tough. What made today feel so stressful?",
+        "mixed",
+    )
+    mixed_reply = assess_conversation_focus_response(
+        "Today was hơi stressful.",
+        "Nghe tough đó anh. What made today feel stressful?",
+        "mixed",
+    )
+
+    assert not english_only.passed
+    assert "mixed_language" in english_only.failures
+    assert mixed_reply.passed
+
+
+def test_focus_assessment_rejects_generic_short_reply_and_wrong_mixed_voice():
+    generic = assess_conversation_focus_response(
+        "I feel a little tired today.",
+        "You can take a break.",
+        "en",
+    )
+    wrong_voice = assess_conversation_focus_response(
+        "Today was hơi stressful.",
+        "Nghe anh rồi, tôi sẽ giúp anh nghỉ ngơi. What do you need?",
+        "mixed",
+    )
+
+    assert not generic.passed
+    assert "generic_short_reply" in generic.failures
+    assert not wrong_voice.passed
+    assert "vietnamese_voice" in wrong_voice.failures
+
+
 def test_prompt_routing_smoke_uses_the_eight_fixed_cases_with_language_specific_prompts():
     assert tuple(case.case_id for case in PROMPT_ROUTING_SMOKE_SUITE) == (
         "vi_greeting",

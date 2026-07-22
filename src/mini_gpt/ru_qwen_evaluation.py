@@ -15,6 +15,12 @@ _OUT_OF_CONTEXT_REFUSAL = re.compile(
 )
 _VI_WRONG_SELF_REFERENCE = re.compile(r"\btôi\b", re.IGNORECASE)
 _VI_WRONG_USER_ADDRESS = re.compile(r"(?<!làm\s)(?<!người\s)\bbạn\b", re.IGNORECASE)
+_VI_CONTENT_PATTERN = re.compile(
+    r"(?i)\b(?:anh|em|hôm|nay|nghe|mệt|nghỉ|muốn|có|đang|vừa|này|đó|rồi|chuyện|giúp|cảm|thư giãn|nhẹ nhàng)\b"
+)
+_EN_CONTENT_PATTERN = re.compile(
+    r"(?i)\b(?:i|you|the|a|an|and|or|is|are|was|were|what|how|want|feel|sounds|made|today|with|for|to)\b"
+)
 _SELF_ACTION_PATTERN = re.compile(
     r"(?i)\b(?:em|mình)\s+(?:đang|muốn|chờ|nghĩ|cảm thấy|thích|cần|hy vọng|mong|đợi)\b"
     r"|\b(?:i am|i'm|i|we)\s+(?:waiting|thinking|want|feel|need|hope|miss|love|wish)\b"
@@ -382,6 +388,19 @@ def assess_conversation_focus_response(
 ) -> ResponseAssessment:
     assessment = assess_proactive_flirt_response(prompt, response, language)
     failures = list(assessment.failures)
+    normalized_response = normalize_text(response)
+    if language in {"vi", "mixed"} and (
+        _VI_WRONG_SELF_REFERENCE.search(normalized_response) or _VI_WRONG_USER_ADDRESS.search(normalized_response)
+    ):
+        failures.append("vietnamese_voice")
+    if language == "en" and _VI_CONTENT_PATTERN.search(normalized_response):
+        failures.append("english_language")
+    if language == "mixed" and not (
+        _VI_CONTENT_PATTERN.search(normalized_response) and _EN_CONTENT_PATTERN.search(normalized_response)
+    ):
+        failures.append("mixed_language")
+    if "?" not in normalized_response and len(normalized_response.split()) <= 6:
+        failures.append("generic_short_reply")
     if focus_expected and _is_self_focused(response, language):
         failures.append("self_focus")
     if follow_up_expected and "?" not in normalize_text(response):

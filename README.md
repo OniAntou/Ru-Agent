@@ -105,7 +105,7 @@ Fine-tune from the completed base model with a fresh optimizer and checkpoint di
 & .\.venv\Scripts\python.exe -m mini_gpt.cli train --config configs/chat_finetune.json --processed-dir data/conversations/processed --tokenizer data/tokenizer.json --checkpoint-dir checkpoints/chat-finetune --init-checkpoint checkpoints/base/latest.pt
 ```
 
-`--init-checkpoint` copies only compatible model weights; it does not continue the base optimizer, scheduler, or step counter. Use `--resume checkpoints/chat-finetune/latest.pt` only to continue an interrupted chat fine-tuning run. When a validation-selected `checkpoints/chat-finetune/best.pt` exists, the GUI prefers it; otherwise it falls back to `latest.pt`. Use Browse to select the base checkpoint if a rollback is needed.
+`--init-checkpoint` copies only compatible model weights; it does not continue the base optimizer, scheduler, or step counter. Use `--resume checkpoints/chat-finetune/latest.pt` only to continue an interrupted MiniGPT fine-tuning run. For the MiniGPT fallback, a validation-selected `checkpoints/chat-finetune/best.pt` is preferred over `latest.pt`; the GUI checks the local Llama v6 adapter first.
 
 ### V2 result (not adopted)
 
@@ -226,11 +226,91 @@ Chinese, and the other mixed reply was Vietnamese-only with inconsistent
 self-reference. It is not adopted; no 32-case evaluation, fine-tuning,
 adapter, corpus, or GUI change was run.
 
-The ignored runtime evidence is kept locally at
-`models\qwen2.5-7b-instruct`,
-`checkpoints\ru-qwen-v6-7b\prompt_routing_smoke.json`, and
-`checkpoints\ru-qwen-v6-7b\prompt_routing_smoke_review.json` until the user
-decides whether to retain or remove the failed candidate.
+The ignored Qwen2.5 7B model and evaluation files were removed in the 2026-07-21 local cleanup; this recorded result remains for comparison.
+
+## Ru Vistral-7B-Chat GGUF local smoke result (not adopted)
+
+The local `QuantFactory/Vistral-7B-Chat-GGUF` candidate (Q4_K_M) was evaluated using `llama.cpp` to respect the `5,500 MiB` hardware gate. While VRAM usage remained well within limits (handled entirely by Llama.cpp offloading), the model failed the 8-case routed smoke.
+
+### 2. Vistral-7B-Chat (Fine-tuned for Vietnamese)
+- **Status**: ❌ `not_adopted`
+- **Reason**: Tự xưng hô loạn xạ (Tôi/Mình/Em), không giữ được persona, không hiểu prompt tiếng Anh mượt mà.
+
+### Historical Llama-3.1-8B-Instruct QLoRA note (pre-v6)
+- **Status**: ❌ `not_adopted`
+- **Reason**: Dù đã fine-tune QLoRA thành công (nhét vừa 5.5GB VRAM nhờ Gradient Checkpointing + 4-bit) và đã học được cách xưng "Anh/Em", nhưng vẫn bị bias dịch "you" thành "bạn" (ví dụ: "Em chào anh! Bạn đã có chuyến đi dài không?"). Chưa đạt độ tự nhiên 100%.
+
+### Vistral runtime evidence
+
+It is not adopted; no 32-case evaluation, fine-tuning, adapter, corpus, or GUI change was run. The ignored runtime evidence is kept locally at `models\vistral-7b-chat-gguf` and `checkpoints\ru-vistral-7b-gguf\prompt_routing_smoke.json`.
+
+## Ru Llama-3.1-8B-Instruct GGUF local smoke result (not adopted)
+
+The local `bartowski/Meta-Llama-3.1-8B-Instruct-GGUF` candidate (Q4_K_M) was evaluated via `llama.cpp`. It passed the hardware gate via offloading and scored a perfect 8/8 in the automatic language gate. The English responses were flawless.
+
+However, it failed the manual review. In the Vietnamese greeting, the model experienced a point-of-view error and addressed the user as "em" ("Em đang làm gì hôm nay?"). Furthermore, in the mixed-language scenarios, it answered completely in Vietnamese rather than naturally mixing both languages as instructed.
+
+It is not adopted; no further evaluation or integration was run. The runtime evidence is kept at `models\llama3.1-8b-instruct-gguf` and `checkpoints\ru-llama3.1-8b-gguf\prompt_routing_smoke.json`.
+
+## Active local Ru Llama-3.1-8B-Instruct v6 GUI candidate
+
+The current local candidate is a QLoRA adapter over the Hugging Face
+`NousResearch/Meta-Llama-3.1-8B-Instruct` base:
+
+- Base: `models\llama3.1-8b-instruct-hf`
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v6`
+- Dataset: `data\conversations\ru_v6` (400 authored rows: 320 train, 40 validation, 40 held-out)
+- Evaluation suite: `proactive_flirt_v6` (12 cases: 4 Vietnamese, 4 English, 4 mixed)
+
+The v6 persona is friendly, obedient, affectionate, and bilingual. In ordinary
+adult conversation it may initiate light, playful flirting when it fits the
+context. Intimate content must remain consensual and adult-only; the minimum
+hard boundaries for minors, coercion, violence, and harmful instructions stay
+in place.
+
+The GUI defaults to the v6 adapter and passes its token, temperature, and
+top-k controls to the Llama runtime. Re-run the local evaluation with:
+
+```powershell
+& .\.venv\Scripts\python.exe scripts\evaluate_ru_llama3_1_qlora.py `
+  --base-model models\llama3.1-8b-instruct-hf `
+  --adapter-dir checkpoints\ru-llama3.1-8b-instruct-v6 `
+  --output checkpoints\ru-llama3.1-8b-instruct-v6\evaluation.json
+```
+
+The evaluator records automatic results but leaves `verdict` as
+`not_reviewed` until the saved replies receive manual bilingual-quality review.
+The latest live run (greedy, `max_new_tokens=64`) passed `11/12` automatic
+cases but one benign mixed-language prompt still triggered an out-of-context
+child-safety refusal. Peak allocated VRAM was `5,632.025 MiB`, above the
+project's `5,500 MiB` gate, so v6 remains an experimental local candidate and
+is not a final quality-gate adoption.
+
+## Ru Llama-3.1-8B-Instruct v7 conversation-focus experiment (not adopted)
+
+V7 was trained as a separate local QLoRA adapter without changing the v6
+corpus, adapter, or GUI default:
+
+- Dataset: `data\conversations\ru_v7` — 180 rows, split `135/22/23` train/validation/held-out, source hash `9778d25b4a45c90bcee11ceed7364c76e7489292a03a417af9efdc53fe206da5`
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7`
+- Training: 3 epochs, 26 optimizer updates, best validation loss `2.5561517639593645`, dataset-manifest hash `cffc7046c850bba6a8f564c37fcd0d47763c221fcb4a557668b98fa1799a9faf`
+- Evaluation: `conversation_focus_v7` (16 cases, greedy, `max_new_tokens=64`)
+
+The live automatic result was `9/16`. Seven cases failed the stricter v7
+quality gate: three English replies were generic-short, three mixed replies
+did not genuinely code-switch, and one mixed contextual reply used `tôi`
+instead of Ru's `em` and did not code-switch. Manual review scored `8/16`,
+below the required `14/16`. Evaluation peak allocated VRAM was `5,632.331
+MiB`, above the project's `5,500 MiB` gate; the training manifest reported
+`8,446.57958984375 MB`. The v7 verdict is `not_adopted`.
+
+The saved evidence is
+`checkpoints\ru-llama3.1-8b-instruct-v7\conversation_focus_v7.json` and
+`checkpoints\ru-llama3.1-8b-instruct-v7\manual_review_v7.json`. The GUI
+continues to use `checkpoints\ru-llama3.1-8b-instruct-v6`. The next model
+iteration must improve English conversational length, enforce genuine mixed
+turn-taking, preserve `anh`/`em` in mixed contexts, and address the VRAM gate
+before any adapter promotion.
 
 Runtime evidence is intentionally ignored by Git:
 

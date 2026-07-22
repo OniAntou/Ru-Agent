@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import random
+import subprocess
+import threading
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +29,92 @@ class LlamaMessage:
 class EncodedLlamaResponse:
     input_ids: list[int]
     labels: list[int]
+
+
+def read_nvidia_smi_memory_mib() -> float | None:
+    try:
+        completed = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.used",
+                "--format=csv,noheader,nounits",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    values: list[float] = []
+    for line in completed.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            values.append(float(stripped))
+        except ValueError:
+            return None
+    return values[0] if values else None
+
+
+class PhysicalVramMonitor:
+    def __init__(self, cap_mib: float, poll_seconds: float) -> None:
+        if cap_mib <= 0:
+            raise ValueError("physical VRAM cap must be positive")
+        if poll_seconds <= 0:
+            raise ValueError("physical VRAM poll interval must be positive")
+        self.cap_mib = cap_mib
+        self.poll_seconds = poll_seconds
+        self._stop = threading.Event()
+        self._exceeded = threading.Event()
+        self._lock = threading.Lock()
+        self._peak_mib: float | None = None
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._poll, daemon=True, name="ru-vram-monitor")
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=max(2.0, self.poll_seconds * 4))
+
+    def _poll(self) -> None:
+        while not self._stop.is_set():
+            current = read_nvidia_smi_memory_mib()
+            if current is not None:
+                with self._lock:
+                    self._peak_mib = max(self._peak_mib or current, current)
+                if current > self.cap_mib:
+                    self._exceeded.set()
+            self._stop.wait(self.poll_seconds)
+
+    @property
+    def peak_mib(self) -> float | None:
+        with self._lock:
+            return self._peak_mib
+
+    @property
+    def exceeded(self) -> bool:
+        return self._exceeded.is_set()
+
+
+def validate_v7_1_adapter_dir(path: str | Path) -> Path:
+    adapter_dir = Path(path)
+    if adapter_dir.name in {
+        "ru-llama3.1-8b-instruct-v6",
+        "ru-llama3.1-8b-instruct-v7",
+    }:
+        raise ValueError("v7.1 output cannot overwrite a comparison adapter")
+    if adapter_dir.name != "ru-llama3.1-8b-instruct-v7.1":
+        raise ValueError("v7.1 output must use the ru-llama3.1-8b-instruct-v7.1 adapter directory")
+    return adapter_dir
 
 class LlamaResponseCollator:
     def __init__(self, pad_token_id: int) -> None:
@@ -107,6 +195,8 @@ class LlamaTrainingConfig:
     target_modules: tuple[str, ...] = ("q_proj", "k_proj", "v_proj", "o_proj")
     backend: str = "llama3.1-qlora"
     profile_name: str = "ru_llama3_1"
+    physical_vram_cap_mib: float | None = None
+    physical_vram_poll_seconds: float = 0.5
 
     @classmethod
     def from_json(cls, path: str | Path) -> "LlamaTrainingConfig":
@@ -117,8 +207,39 @@ class LlamaTrainingConfig:
             payload["target_modules"] = tuple(payload["target_modules"])
         return cls(**payload)
 
-def write_adapter_manifest(adapter_dir: str | Path, *, backend: str, profile_name: str, base_model_id: str, base_model_path: str, dataset_sha256: str, best_validation_loss: float, peak_vram_mb: float, seed: int, max_length: int, optimizer_updates: int = 0) -> dict[str, object]:
-    manifest = {"backend": backend, "profile_name": profile_name, "base_model_id": base_model_id, "base_model_path": base_model_path, "dataset_sha256": dataset_sha256, "best_validation_loss": best_validation_loss, "peak_vram_mb": peak_vram_mb, "seed": seed, "max_length": max_length, "optimizer_updates": optimizer_updates, "generated_at_utc": datetime.now(timezone.utc).isoformat()}
+def write_adapter_manifest(
+    adapter_dir: str | Path,
+    *,
+    backend: str,
+    profile_name: str,
+    base_model_id: str,
+    base_model_path: str,
+    dataset_sha256: str,
+    best_validation_loss: float,
+    peak_vram_mb: float,
+    seed: int,
+    max_length: int,
+    optimizer_updates: int = 0,
+    physical_peak_mib: float | None = None,
+    physical_cap_mib: float | None = None,
+    physical_cap_passed: bool | None = None,
+) -> dict[str, object]:
+    manifest = {
+        "backend": backend,
+        "profile_name": profile_name,
+        "base_model_id": base_model_id,
+        "base_model_path": base_model_path,
+        "dataset_sha256": dataset_sha256,
+        "best_validation_loss": best_validation_loss,
+        "peak_vram_mb": peak_vram_mb,
+        "physical_peak_mib": physical_peak_mib,
+        "physical_cap_mib": physical_cap_mib,
+        "physical_cap_passed": physical_cap_passed,
+        "seed": seed,
+        "max_length": max_length,
+        "optimizer_updates": optimizer_updates,
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
     destination = Path(adapter_dir)
     destination.mkdir(parents=True, exist_ok=True)
     (destination / "ru_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -185,23 +306,60 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
     optimizer.zero_grad(set_to_none=True)
     best_loss = float("inf")
     optimizer_updates = 0
-    
-    for step in range(limit):
-        batch = collator([train_rows[step % len(train_rows)]])
-        batch = {key: value.to("cuda") for key, value in batch.items()}
-        loss = model(**batch).loss / config.gradient_accumulation_steps
-        loss.backward()
-        if (step + 1) % config.gradient_accumulation_steps == 0 or step + 1 == limit:
-            optimizer.step()
-            optimizer.zero_grad(set_to_none=True)
-            optimizer_updates += 1
-            if optimizer_updates % config.evaluation_steps == 0 or step + 1 == limit:
-                candidate_loss = validation_loss()
-                if candidate_loss < best_loss:
-                    best_loss = candidate_loss
-                    model.save_pretrained(adapter_dir)
-                    
+    monitor = (
+        PhysicalVramMonitor(config.physical_vram_cap_mib, config.physical_vram_poll_seconds)
+        if config.physical_vram_cap_mib is not None
+        else None
+    )
+    if monitor is not None:
+        monitor.start()
+
+    try:
+        for step in range(limit):
+            if monitor is not None and monitor.exceeded:
+                raise RuntimeError("physical VRAM cap exceeded")
+            batch = collator([train_rows[step % len(train_rows)]])
+            batch = {key: value.to("cuda") for key, value in batch.items()}
+            loss = model(**batch).loss / config.gradient_accumulation_steps
+            loss.backward()
+            if (step + 1) % config.gradient_accumulation_steps == 0 or step + 1 == limit:
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                optimizer_updates += 1
+                if optimizer_updates % config.evaluation_steps == 0 or step + 1 == limit:
+                    candidate_loss = validation_loss()
+                    if monitor is not None and monitor.exceeded:
+                        raise RuntimeError("physical VRAM cap exceeded")
+                    if candidate_loss < best_loss:
+                        best_loss = candidate_loss
+                        model.save_pretrained(adapter_dir)
+    finally:
+        if monitor is not None:
+            monitor.stop()
+
+    physical_peak_mib = monitor.peak_mib if monitor is not None else None
+    physical_cap_passed = None
+    if monitor is not None:
+        if physical_peak_mib is None:
+            raise RuntimeError("physical VRAM measurement unavailable")
+        if monitor.exceeded or physical_peak_mib > config.physical_vram_cap_mib:
+            raise RuntimeError("physical VRAM cap exceeded")
+        physical_cap_passed = True
+
     peak_vram_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
-    # Don't strictly crash if it exceeds 5500 because the user said it's ok, but log it
-    
-    return write_adapter_manifest(adapter_dir, backend=config.backend, profile_name=config.profile_name, base_model_id=config.base_model_id, base_model_path=str(base_path), dataset_sha256=dataset_sha256, best_validation_loss=best_loss, peak_vram_mb=peak_vram_mb, seed=config.seed, max_length=config.max_length, optimizer_updates=optimizer_updates)
+    return write_adapter_manifest(
+        adapter_dir,
+        backend=config.backend,
+        profile_name=config.profile_name,
+        base_model_id=config.base_model_id,
+        base_model_path=str(base_path),
+        dataset_sha256=dataset_sha256,
+        best_validation_loss=best_loss,
+        peak_vram_mb=peak_vram_mb,
+        physical_peak_mib=physical_peak_mib,
+        physical_cap_mib=config.physical_vram_cap_mib,
+        physical_cap_passed=physical_cap_passed,
+        seed=config.seed,
+        max_length=config.max_length,
+        optimizer_updates=optimizer_updates,
+    )

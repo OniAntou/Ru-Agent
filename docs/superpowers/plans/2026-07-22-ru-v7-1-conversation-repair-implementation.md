@@ -31,7 +31,7 @@ must stage only the paths named in that task.
 - Create: `D:\LLM\tests\test_llama3_1_v7_1_config.py`
 - Create: `D:\LLM\tests\test_llama3_1_training_guards.py`
 
-- [ ] **Step 1: Write failing config and output-isolation tests.**
+- [x] **Step 1: Write failing config and output-isolation tests.**
 
 Add tests that load the new JSON and exercise the pure
 `validate_v7_1_adapter_dir(path)` guard exported from
@@ -69,10 +69,10 @@ Run:
 & D:\LLM\.venv\Scripts\python.exe -m pytest D:\LLM\tests\test_llama3_1_v7_1_config.py D:\LLM\tests\test_llama3_1_training_guards.py -q
 ```
 
-Expected: FAIL because the v7.1 config, guard, and physical monitor seam do
-not exist yet.
+Historical TDD checkpoint: this initially failed before the v7.1 config, guard,
+and physical monitor seam existed; the focused tests now pass.
 
-- [ ] **Step 2: Add the v7.1 config and a dedicated training entry point.**
+- [x] **Step 2: Add the v7.1 config and a dedicated training entry point.**
 
 Create `configs\ru_llama3_1_8b_v7_1.json` with these exact values:
 
@@ -109,7 +109,7 @@ comparison path. The script calls the existing
 `train_ru_adapter_llama(LlamaTrainingConfig.from_json(args.config),
 args.max_steps)` function and prints the returned manifest as UTF-8 JSON.
 
-- [ ] **Step 3: Add an opt-in physical VRAM monitor and manifest fields.**
+- [x] **Step 3: Add an opt-in physical VRAM monitor and manifest fields.**
 
 Extend `LlamaTrainingConfig` with optional fields
 `physical_vram_cap_mib: float | None = None` and
@@ -185,14 +185,14 @@ Extend `write_adapter_manifest()` and its call site with
 existing `peak_vram_mb` field as the PyTorch allocator metric. When the cap is
 unset, the monitor is disabled and the new manifest fields are `None`.
 
-- [ ] **Step 4: Test the monitor and run focused tests.**
+- [x] **Step 4: Test the monitor and run focused tests.**
 
 Use monkeypatched `subprocess.run` and a short poll interval to test numeric
 parsing, malformed output, peak retention, and cap detection without CUDA.
 Test that a config with no cap leaves the old training API behavior unchanged.
 Run the two focused test files again and expect PASS.
 
-- [ ] **Step 5: Commit the isolated training seam.**
+- [x] **Step 5: Commit the isolated training seam.**
 
 ```powershell
 git add -- src/mini_gpt/llama3_1_training.py configs/ru_llama3_1_8b_v7_1.json scripts/train_ru_llama3_1_v7_1.py tests/test_llama3_1_v7_1_config.py tests/test_llama3_1_training_guards.py
@@ -209,7 +209,7 @@ git commit -m "feat: add isolated Ru v7.1 training guard"
 - Create: `D:\LLM\tests\test_ru_v7_1_corpus.py`
 - Create: `D:\LLM\tests\test_build_ru_llama_v7_1_data.py`
 
-- [ ] **Step 1: Write failing repair-source shape tests.**
+- [x] **Step 1: Write failing repair-source shape tests.**
 
 Require `v7_1_repair_records()` to return exactly 120 rows with language
 counts `vi=24`, `en=48`, `mixed=48`, mode counts
@@ -224,9 +224,10 @@ seven known failures, including `I feel a little tired today.`,
 `Ru, hôm nay I feel better.`, `Today was hơi stressful.`,
 `Anh đang having coffee với em.`, and `I am home now, but my head is still busy.`
 
-Run the focused source tests and expect FAIL before the module exists.
+Historical TDD checkpoint: these tests initially failed before the module
+existed; the focused source tests now pass.
 
-- [ ] **Step 2: Author the 120 repair rows as explicit UTF-8 dialogue records.**
+- [x] **Step 2: Author the 120 repair rows as explicit UTF-8 dialogue records.**
 
 Use the existing `_record()`/`_entry()` pattern, but keep the repair module's
 metadata independent of the v7 constants. The first rows must directly repair
@@ -285,7 +286,7 @@ Use this exact mode-by-language inventory for all 120 explicit rows:
 | `light_flirt_context` | 2 | 4 | 6 | 12 |
 | **total** | **24** | **48** | **48** | **120** |
 
-- [ ] **Step 3: Implement a fail-closed combined corpus builder.**
+- [x] **Step 3: Implement a fail-closed combined corpus builder.**
 
 `ru_v7_1_corpus.py` must import the unchanged `v7_dialogue_records()` and the
 new repair records, normalize both sources, validate roles/provenance/length,
@@ -302,7 +303,7 @@ split counts `228/36/36` and seed `42`.
 Use `.partial` files followed by `os.replace`, and remove all partial files on
 any exception. The builder must never write to `data\conversations\ru_v7`.
 
-- [ ] **Step 4: Add the v7.1 builder CLI and test the corpus.**
+- [x] **Step 4: Add the v7.1 builder CLI and test the corpus.**
 
 `build_ru_llama_v7_1_data.py` must default to
 `data\conversations\ru_v7_1`, accept `--seed` and `--audit`, and use a
@@ -321,7 +322,7 @@ Run:
 Expected audit result: `total_examples=300`, split counts `228/36/36`,
 language counts `vi=96`, `en=120`, `mixed=84`, and non-empty source hashes.
 
-- [ ] **Step 5: Commit the corpus and builder.**
+- [x] **Step 5: Commit the corpus and builder.**
 
 ```powershell
 git add -- src/mini_gpt/ru_v7_1_dialogues.py src/mini_gpt/ru_v7_1_corpus.py scripts/build_ru_llama_v7_1_data.py tests/test_ru_v7_1_dialogues.py tests/test_ru_v7_1_corpus.py tests/test_build_ru_llama_v7_1_data.py
@@ -337,7 +338,7 @@ git commit -m "feat: author Ru v7.1 repair corpus"
 - Create: `D:\LLM\tests\test_ru_v7_1_evaluation.py`
 - Create: `D:\LLM\tests\test_evaluate_ru_llama3_1_v7_1.py`
 
-- [ ] **Step 1: Define the eight repair cases and gate tests.**
+- [x] **Step 1: Define the eight repair cases and gate tests.**
 
 Reuse `ConversationCase` and `assess_conversation_focus_response` from
 `mini_gpt.ru_qwen_evaluation`, but keep the eight new cases in the new module.
@@ -354,15 +355,15 @@ the original 16 and at least 21 of 24 reviews satisfy
 no `severe_failure` flag is true, and physical peak is at most 6,144 MiB.
 Without manual reviews it must return `not_reviewed` rather than `passed`.
 
-- [ ] **Step 2: Run gate tests before implementing the seam.**
+- [x] **Step 2: Run gate tests before implementing the seam.**
 
 Test full 24-case coverage, duplicate/missing manual IDs, failure when an
 automatic assessment fails, the original-16 threshold, the overall-21/24
 threshold, severe-failure rejection, physical-cap rejection, and the
-`not_reviewed` result when reviews are absent. Expect FAIL before the module
-exists.
+`not_reviewed` result when reviews are absent. Historical TDD checkpoint: the
+tests initially failed before the module existed; the evaluator tests now pass.
 
-- [ ] **Step 3: Implement the evaluator CLI.**
+- [x] **Step 3: Implement the evaluator CLI.**
 
 `evaluate_ru_llama3_1_v7_1.py` must default to the local Llama base, adapter
 `checkpoints\ru-llama3.1-8b-instruct-v7.1`, and output
@@ -374,7 +375,7 @@ physical device peak with the same `nvidia-smi` parser used by training, and
 write `verdict=not_reviewed` until the review command is run. Return exit code
 1 for any automatic failure.
 
-- [ ] **Step 4: Implement the manual-review command.**
+- [x] **Step 4: Implement the manual-review command.**
 
 `review_ru_llama3_1_v7_1.py` accepts an automatic evaluation JSON and a
 review JSON containing exactly these fields per case:
@@ -385,7 +386,7 @@ calls `record_v7_1_decision()`, and writes
 and atomic replace. The agent must inspect every saved response before
 authoring this review; no score may be inferred from the automatic check.
 
-- [ ] **Step 5: Run evaluator tests and commit the evaluation seam.**
+- [x] **Step 5: Run evaluator tests and commit the evaluation seam.**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest D:\LLM\tests\test_ru_v7_1_evaluation.py D:\LLM\tests\test_evaluate_ru_llama3_1_v7_1.py -q
@@ -400,7 +401,7 @@ git commit -m "feat: add Ru v7.1 conversation repair gate"
 - Create ignored: `D:\LLM\checkpoints\ru-llama3.1-8b-instruct-v7.1\*`
 - Create ignored: `D:\LLM\checkpoints\ru-llama3.1-8b-instruct-v7.1\conversation_focus_v7_1.json`
 
-- [ ] **Step 1: Rebuild the deterministic v7.1 corpus.**
+- [x] **Step 1: Rebuild the deterministic v7.1 corpus.**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\build_ru_llama_v7_1_data.py --output-dir D:\LLM\data\conversations\ru_v7_1 --seed 42
@@ -410,7 +411,14 @@ Get-Content D:\LLM\data\conversations\ru_v7_1\manifest.json | ConvertFrom-Json |
 Confirm `300` rows, `228/36/36` splits, and that the v7 manifest hash and
 files are byte-for-byte unchanged after the build.
 
-- [ ] **Step 2: Verify the machine and release the GPU before training.**
+Observed: `300` rows with `228/36/36` splits, language counts `vi=96`,
+`en=120`, `mixed=84`, and source hashes base
+`9778d25b4a45c90bcee11ceed7364c76e7489292a03a417af9efdc53fe206da5`, repair
+`27a785ab956213d5372bee4edfa2f35d5081b307fa700d77a6abfdeb8a766bcc`, and
+combined `b4eb7bca4841ed3bdfcab56f25ce9126869d0e7a28749f734855fafbeeb73905`.
+The v7 source remained unchanged.
+
+- [x] **Step 2: Verify the machine and release the GPU before training.**
 
 Close the temporary v7 GUI process used for manual testing, then run:
 
@@ -423,7 +431,11 @@ Do not start training while another Llama process owns the GPU. Stop and
 report instead of changing quantization or downloading another model if the
 base path is missing or free VRAM is insufficient.
 
-- [ ] **Step 3: Run the full v7.1 training command.**
+Observed: the local base was present, the RTX 4050 Laptop GPU reported
+`6,141 MiB` total, and no competing Llama process owned the GPU before the
+run.
+
+- [x] **Step 3: Run the full v7.1 training command.**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\train_ru_llama3_1_v7_1.py --config D:\LLM\configs\ru_llama3_1_8b_v7_1.json
@@ -436,7 +448,13 @@ the allocator peak, the physical peak, `physical_cap_mib=6144`, and
 `physical_cap_passed=true`. A CUDA OOM or physical peak above the cap stops the
 run and leaves v6/v7 untouched.
 
-- [ ] **Step 4: Run the deterministic 24-case evaluator.**
+Observed manifest: 2 epochs, 29 optimizer updates, best validation loss
+`2.5795224606990814`, dataset-manifest hash
+`b9262441633f492007cd16ed30479bf174dcc656a7109437f4f103f52d2c8582`,
+allocator peak `8,446.57958984375 MiB` (diagnostic), physical peak `5,874 MiB`,
+physical cap `6,144 MiB`, and `physical_cap_passed=true`.
+
+- [x] **Step 4: Run the deterministic 24-case evaluator.**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\evaluate_ru_llama3_1_v7_1.py --base-model D:\LLM\models\llama3.1-8b-instruct-hf --adapter-dir D:\LLM\checkpoints\ru-llama3.1-8b-instruct-v7.1 --output D:\LLM\checkpoints\ru-llama3.1-8b-instruct-v7.1\conversation_focus_v7_1.json
@@ -446,7 +464,13 @@ Record all automatic failures and both VRAM metrics. Do not run manual review
 if the evaluator failed to save all 24 replies; do not change the GUI default
 based on this result.
 
-- [ ] **Step 5: Manually review every saved reply and record the decision.**
+Observed: all 24 replies were saved. Automatic evaluation passed `10/24`,
+with physical allocator peak `5,632.331 MiB`, physical peak `5,850 MiB`, and
+the physical cap passing. The automatic failure IDs are recorded in the
+evaluation and manual-review artifacts; the dominant categories are
+generic-short English, mixed-language collapse, and missing follow-ups.
+
+- [x] **Step 5: Manually review every saved reply and record the decision.**
 
 Read all 24 responses from the saved evaluation artifact. Create a review JSON
 with a short evidence-based note for each case, then run:
@@ -459,6 +483,11 @@ The resulting verdict is `passed` only when every spec threshold is met.
 Otherwise record `not_adopted`, keep v6 as the GUI default, and document the
 exact remaining failure categories.
 
+Observed: manual review scored `14/24` overall and `10/16` on the original v7
+slice. The final verdict is `not_adopted` because of automatic disqualifiers,
+the overall manual threshold, and the original-v7 manual threshold. The GUI
+default remains v6.
+
 ### Task 5: Update evidence-backed documents and finish verification
 
 **Files:**
@@ -468,7 +497,7 @@ exact remaining failure categories.
 - Modify: `D:\LLM\docs\superpowers\plans\2026-07-22-ru-v7-1-conversation-repair-implementation.md`
 - Create ignored: `D:\LLM\checkpoints\ru-llama3.1-8b-instruct-v7.1\manual_review_v7_1.json`
 
-- [ ] **Step 1: Record only measured v7.1 evidence.**
+- [x] **Step 1: Record only measured v7.1 evidence.**
 
 Add the exact corpus counts/hash, training loss and updates, automatic/manual
 counts, allocator and physical VRAM measurements, and final verdict. If the
@@ -476,7 +505,10 @@ gate fails, explicitly state `not_adopted` and that the GUI remains on v6. If
 the gate passes, document the separate promotion decision but do not change
 the GUI in this plan unless the evaluation artifact proves every gate.
 
-- [ ] **Step 2: Check documentation hygiene.**
+Recorded in `README.md`, `TODO.md`, and `docs/ANTIGRAVITY_HANDOFF.md`; no GUI
+promotion was made.
+
+- [x] **Step 2: Check documentation hygiene.**
 
 Search all project Markdown for stale claims that v7.1 is adopted, stale
 paths, or commands that overwrite v7. Run:
@@ -488,7 +520,11 @@ rg -n "v7\.1|ru_v7_1|ru-llama3\.1-8b-instruct-v7\.1|GUI default|not_adopted" D:\
 Retain historical v7 documents, but mark their measured result as v7 and
 `not_adopted`; remove no user-authored document solely because it is old.
 
-- [ ] **Step 3: Run the complete verification set.**
+Observed: the historical v7 result remains labeled separately, and the new
+v7.1 paths, failure state, and v6 GUI default are documented without changing
+older experiment evidence.
+
+- [x] **Step 3: Run the complete verification set.**
 
 ```powershell
 Set-Location D:\LLM
@@ -503,7 +539,7 @@ errors, v6/v7 files remain unchanged, and no unrelated dirty files are
 staged. Commit only the v7.1 source/tests/config/docs that belong to this
 implementation.
 
-- [ ] **Step 4: Commit the evidence handoff.**
+- [x] **Step 4: Commit the evidence handoff.**
 
 ```powershell
 git add -- README.md TODO.md docs/ANTIGRAVITY_HANDOFF.md docs/superpowers/plans/2026-07-22-ru-v7-1-conversation-repair-implementation.md

@@ -22,7 +22,8 @@ Mục tiêu dài hạn: Ru giao tiếp tự nhiên bằng tiếng Việt và ti�
 - [ ] Manually review the saved v6 replies; do not call v6 adopted while the automatic and VRAM gates fail.
 - [x] Curate, validate, and split the v7 conversation-focus corpus (180 rows; 135 train, 22 validation, 23 held-out; no graphic, violent, coercive, or possessive targets).
 - [x] Train and live-evaluate the separate v7 Llama QLoRA adapter (validation loss 2.5561517639593645; automatic 9/16; manual 8/16; physical 6 GiB VRAM cap passed; not adopted; GUI remains v6).
-- [ ] Improve v7's English response depth, mixed-language code-switching, mixed `anh`/`em` voice, and PyTorch VRAM instrumentation before a next adapter run.
+- [x] Build, train, and review the isolated v7.1 repair adapter (300 rows; validation loss 2.5795224606990814; automatic 10/24; manual 14/24; original v7 slice 10/16; physical peak 5,874 MiB during training and 5,850 MiB during evaluation; not adopted; GUI remains v6).
+- [ ] Repair v7.1's remaining mixed-language collapse, generic-short English replies, and missing follow-ups before another adapter run.
 - [ ] Make Ru consistently natural in short Vietnamese-English conversations.
 - [ ] Thu thập các lượt chat được đánh dấu hữu ích.
 - [ ] Fine-tune hội thoại từ `data/conversations/approved.jsonl`.

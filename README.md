@@ -315,6 +315,32 @@ iteration must improve English conversational length, enforce genuine mixed
 turn-taking, preserve `anh`/`em` in mixed contexts, and keep measured physical
 VRAM under the current 6 GiB cap before any adapter promotion.
 
+## Ru Llama-3.1-8B-Instruct v7.1 repair experiment (not adopted)
+
+V7.1 kept the v7 source immutable and added a separate 120-row repair source:
+
+- Dataset: `data\conversations\ru_v7_1` — 300 rows, split `228/36/36` train/validation/held-out; total language counts `vi=96`, `en=120`, `mixed=84`.
+- Dataset hashes: base `9778d25b4a45c90bcee11ceed7364c76e7489292a03a417af9efdc53fe206da5`, repair `27a785ab956213d5372bee4edfa2f35d5081b307fa700d77a6abfdeb8a766bcc`, combined `b4eb7bca4841ed3bdfcab56f25ce9126869d0e7a28749f734855fafbeeb73905`.
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7.1`.
+- Training: 2 epochs, 29 optimizer updates, best validation loss `2.5795224606990814`, dataset-manifest hash `b9262441633f492007cd16ed30479bf174dcc656a7109437f4f103f52d2c8582`.
+- Training physical peak: `5,874 MiB` on the `6,141 MiB` device, below the `6,144 MiB` cap; `physical_cap_passed=true`.
+- Evaluation: `conversation_focus_v7_1` (24 greedy cases, `max_new_tokens=64`), allocator peak `5,632.331 MiB`, physical peak `5,850 MiB`, physical cap passed.
+
+The automatic result was `10/24`; the original v7 slice was `7/16`. The main
+failures were generic-short English replies (`en_tired_flirt`,
+`en_coffee_flirt`, `en_context_work_flirt`, `en_focus_completion`), mixed
+responses that collapsed to one language, and missing follow-ups in several
+short/contextual replies. Manual review scored `14/24` overall and `10/16` on
+the original v7 slice, below the required `21/24` and `14/16`. The saved
+decision is `not_adopted`; the GUI remains on v6. Full evidence is in
+`checkpoints\ru-llama3.1-8b-instruct-v7.1\conversation_focus_v7_1.json` and
+`checkpoints\ru-llama3.1-8b-instruct-v7.1\manual_review_v7_1.json`.
+
+V7.1 is useful as a measured failure-driven experiment, not as proof that it
+is better than v6. The next iteration should specifically address mixed
+language preservation and short English conversational depth before another
+adapter promotion.
+
 Runtime evidence is intentionally ignored by Git:
 
 - `models\qwen2.5-1.5b-instruct`

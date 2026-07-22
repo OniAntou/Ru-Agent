@@ -5,16 +5,20 @@ from pathlib import Path
 import pytest
 
 from mini_gpt.ru_qwen_evaluation import (
+    PROACTIVE_FLIRT_SUITE,
     PROMPT_ROUTING_SMOKE_SUITE,
     PromptRoutingReview,
     ResponseAssessment,
     V4_CONVERSATION_SUITE,
+    V7_CONVERSATION_SUITE,
     ManualReview,
     assess_response,
+    assess_conversation_focus_response,
+    assess_proactive_flirt_response,
     record_base_only_decision,
     record_prompt_routing_smoke_decision,
 )
-from mini_gpt.ru_style import ru_system_prompt_for
+from mini_gpt.ru_style import RU_SYSTEM_PROMPT, ru_system_prompt_for
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_ru_qwen_v4.py"
 
@@ -25,6 +29,79 @@ def test_v4_suite_has_a_fixed_bilingual_shape():
     assert sum(case.language == "en" for case in V4_CONVERSATION_SUITE) == 14
     assert sum(case.language == "mixed" for case in V4_CONVERSATION_SUITE) == 4
     assert len({case.case_id for case in V4_CONVERSATION_SUITE}) == 32
+
+
+def test_proactive_flirt_suite_has_a_fixed_bilingual_shape_and_marks_flirt_cases():
+    assert len(PROACTIVE_FLIRT_SUITE) == 12
+    assert sum(case.language == "vi" for case in PROACTIVE_FLIRT_SUITE) == 4
+    assert sum(case.language == "en" for case in PROACTIVE_FLIRT_SUITE) == 4
+    assert sum(case.language == "mixed" for case in PROACTIVE_FLIRT_SUITE) == 4
+    assert all(case.flirt_expected for case in PROACTIVE_FLIRT_SUITE)
+    assert all(case.messages[0] == ("system", RU_SYSTEM_PROMPT) for case in PROACTIVE_FLIRT_SUITE)
+
+
+def test_proactive_flirt_assessment_rejects_an_out_of_context_refusal():
+    english = assess_proactive_flirt_response(
+        "I just got home.",
+        "I cannot create that kind of content. Is there anything else I can help with?",
+        "en",
+    )
+    vietnamese = assess_proactive_flirt_response(
+        "Hôm nay anh hơi mệt.",
+        "Em không thể trả lời nội dung này.",
+        "vi",
+    )
+
+    assert not english.passed
+    assert "out_of_context_refusal" in english.failures
+    assert not vietnamese.passed
+    assert "out_of_context_refusal" in vietnamese.failures
+
+
+def test_proactive_flirt_assessment_accepts_a_warm_relevant_reply():
+    assessment = assess_proactive_flirt_response(
+        "Hôm nay anh hơi mệt.",
+        "Em hiểu rồi, để em dỗ anh nghỉ một chút nha.",
+        "vi",
+    )
+
+    assert assessment.passed
+    assert assessment.failures == ()
+
+
+def test_v7_focus_suite_has_the_approved_language_shape():
+    assert len(V7_CONVERSATION_SUITE) == 16
+    assert sum(case.language == "vi" for case in V7_CONVERSATION_SUITE) == 5
+    assert sum(case.language == "en" for case in V7_CONVERSATION_SUITE) == 5
+    assert sum(case.language == "mixed" for case in V7_CONVERSATION_SUITE) == 6
+    assert sum(case.focus_expected for case in V7_CONVERSATION_SUITE) == 4
+    assert all(case.messages[0] == ("system", RU_SYSTEM_PROMPT) for case in V7_CONVERSATION_SUITE)
+
+
+def test_focus_assessment_rejects_self_only_reply():
+    assessment = assess_conversation_focus_response(
+        "Anh vừa về đến nhà.",
+        "Em đang chờ anh, em đang nghĩ về em, em muốn được ôm.",
+        "vi",
+        focus_expected=True,
+        follow_up_expected=True,
+    )
+
+    assert not assessment.passed
+    assert "self_focus" in assessment.failures
+    assert "missing_follow_up" in assessment.failures
+
+
+def test_focus_assessment_accepts_user_focused_reply():
+    assessment = assess_conversation_focus_response(
+        "Anh vừa về đến nhà.",
+        "Mừng anh về nhà, hôm nay chắc mệt rồi. Anh muốn nghỉ yên tĩnh hay kể em nghe một chút?",
+        "vi",
+        focus_expected=True,
+        follow_up_expected=True,
+    )
+
+    assert assessment.passed
 
 
 def test_prompt_routing_smoke_uses_the_eight_fixed_cases_with_language_specific_prompts():

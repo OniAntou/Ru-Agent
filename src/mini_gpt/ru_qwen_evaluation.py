@@ -8,8 +8,24 @@ from .data import normalize_text
 from .ru_style import RU_SYSTEM_PROMPT, ru_system_prompt_for
 
 _AI_DISCLAIMER = re.compile(r"\b(as an ai language model|i cannot access|i do not have a physical body)\b", re.IGNORECASE)
+_OUT_OF_CONTEXT_REFUSAL = re.compile(
+    r"\b(?:i\s+(?:cannot|can't)|i(?:\s+am|'m)\s+not\s+sure|could you repeat)\b"
+    r"|\b(?:em không (?:hiểu|biết anh)|em không thể|tôi không thể)\b",
+    re.IGNORECASE,
+)
 _VI_WRONG_SELF_REFERENCE = re.compile(r"\btôi\b", re.IGNORECASE)
 _VI_WRONG_USER_ADDRESS = re.compile(r"(?<!làm\s)(?<!người\s)\bbạn\b", re.IGNORECASE)
+_SELF_ACTION_PATTERN = re.compile(
+    r"(?i)\b(?:em|mình)\s+(?:đang|muốn|chờ|nghĩ|cảm thấy|thích|cần|hy vọng|mong|đợi)\b"
+    r"|\b(?:i am|i'm|i|we)\s+(?:waiting|thinking|want|feel|need|hope|miss|love|wish)\b"
+)
+_DIRECT_USER_SIGNAL_PATTERN = re.compile(
+    r"(?i)\b(?:anh|bạn)\s+(?:đã|đang|vừa|muốn|có|cần|thấy|nhớ|nghĩ|thích|mệt|vui|buồn)\b"
+    r"|\b(?:you|your)\s+(?:are|were|have|just|want|need|feel|like|remember|think)\b"
+)
+_ANSWER_SIGNAL_PATTERN = re.compile(
+    r"(?i)\b(?:đúng|ừ|vâng|mừng|nghe|chúc mừng|yes|no|sure|okay|glad|nice|sorry|congratulations)\b"
+)
 
 
 @dataclass(frozen=True)
@@ -18,6 +34,9 @@ class ConversationCase:
     language: str
     messages: tuple[tuple[str, str], ...]
     prompt: str
+    flirt_expected: bool = False
+    focus_expected: bool = False
+    follow_up_expected: bool = False
 
 
 @dataclass(frozen=True)
@@ -163,10 +182,25 @@ def record_base_only_decision(
     }
 
 
-def _case(case_id: str, language: str, *turns: tuple[str, str]) -> ConversationCase:
+def _case(
+    case_id: str,
+    language: str,
+    *turns: tuple[str, str],
+    flirt_expected: bool = False,
+    focus_expected: bool = False,
+    follow_up_expected: bool = False,
+) -> ConversationCase:
     if not turns or turns[-1][0] != "user":
         raise ValueError("conversation suite case must end with a user turn")
-    return ConversationCase(case_id, language, (("system", RU_SYSTEM_PROMPT), *turns), turns[-1][1])
+    return ConversationCase(
+        case_id=case_id,
+        language=language,
+        messages=(("system", RU_SYSTEM_PROMPT), *turns),
+        prompt=turns[-1][1],
+        flirt_expected=flirt_expected,
+        focus_expected=focus_expected,
+        follow_up_expected=follow_up_expected,
+    )
 
 
 V4_CONVERSATION_SUITE = (
@@ -205,6 +239,70 @@ V4_CONVERSATION_SUITE = (
 )
 
 
+PROACTIVE_FLIRT_SUITE = (
+    _case("vi_tired_flirt", "vi", ("user", "Hôm nay anh hơi mệt."), flirt_expected=True),
+    _case("vi_home_flirt", "vi", ("user", "Anh vừa về đến nhà."), flirt_expected=True),
+    _case(
+        "vi_context_work_flirt",
+        "vi",
+        ("user", "Hôm nay anh làm việc muộn."),
+        ("assistant", "Nghe mệt thật. Giờ anh xong chưa?"),
+        ("user", "Xong rồi, giờ anh mới được nghỉ."),
+        flirt_expected=True,
+    ),
+    _case("vi_learning_flirt", "vi", ("user", "Anh đang tập nghe podcast tiếng Anh."), flirt_expected=True),
+    _case("en_tired_flirt", "en", ("user", "I feel a little tired today."), flirt_expected=True),
+    _case("en_home_flirt", "en", ("user", "I just got home."), flirt_expected=True),
+    _case("en_coffee_flirt", "en", ("user", "I am having coffee right now."), flirt_expected=True),
+    _case(
+        "en_context_work_flirt",
+        "en",
+        ("user", "I worked late today."),
+        ("assistant", "That sounds tiring. Are you done now?"),
+        ("user", "Yes, I can finally rest."),
+        flirt_expected=True,
+    ),
+    _case("mixed_better_flirt", "mixed", ("user", "Ru, hôm nay I feel better."), flirt_expected=True),
+    _case("mixed_rest_flirt", "mixed", ("user", "Anh wants to rest a little tonight."), flirt_expected=True),
+    _case("mixed_context_flirt", "mixed", ("user", "Today was hơi stressful."), flirt_expected=True),
+    _case("mixed_coffee_flirt", "mixed", ("user", "Anh đang having coffee với em."), flirt_expected=True),
+)
+
+
+V7_CONVERSATION_SUITE = PROACTIVE_FLIRT_SUITE + (
+    _case(
+        "vi_focus_arrival",
+        "vi",
+        ("user", "Anh vừa xong việc, giờ muốn nghỉ một chút."),
+        focus_expected=True,
+        follow_up_expected=True,
+    ),
+    _case(
+        "en_focus_completion",
+        "en",
+        ("user", "I finally finished the task and want to rest."),
+        focus_expected=True,
+        follow_up_expected=True,
+    ),
+    _case(
+        "mixed_focus_evening",
+        "mixed",
+        ("user", "Anh vừa finished work and feels a bit empty."),
+        focus_expected=True,
+        follow_up_expected=True,
+    ),
+    _case(
+        "mixed_focus_context",
+        "mixed",
+        ("user", "Anh just finished a long day."),
+        ("assistant", "Nghe mệt đó anh. Anh đã về nhà chưa?"),
+        ("user", "I am home now, but my head is still busy."),
+        focus_expected=True,
+        follow_up_expected=True,
+    ),
+)
+
+
 SMOKE_CASE_IDS = (
     "vi_greeting",
     "vi_context_work",
@@ -223,6 +321,9 @@ def routed_case(case: ConversationCase) -> ConversationCase:
         language=case.language,
         messages=(("system", ru_system_prompt_for(case.language)), *case.messages[1:]),
         prompt=case.prompt,
+        flirt_expected=case.flirt_expected,
+        focus_expected=case.focus_expected,
+        follow_up_expected=case.follow_up_expected,
     )
 
 
@@ -250,3 +351,39 @@ def assess_response(prompt: str, response: str, language: str) -> ResponseAssess
     if language == "vi" and (_VI_WRONG_SELF_REFERENCE.search(normalized_response) or _VI_WRONG_USER_ADDRESS.search(normalized_response)):
         failures.append("vietnamese_voice")
     return ResponseAssessment(passed=not failures, failures=tuple(failures))
+
+
+def assess_proactive_flirt_response(prompt: str, response: str, language: str) -> ResponseAssessment:
+    assessment = assess_response(prompt, response, language)
+    failures = list(assessment.failures)
+    if _OUT_OF_CONTEXT_REFUSAL.search(normalize_text(response)):
+        failures.append("out_of_context_refusal")
+    return ResponseAssessment(passed=not failures, failures=tuple(dict.fromkeys(failures)))
+
+
+def _is_self_focused(response: str, language: str) -> bool:
+    del language
+    normalized_response = normalize_text(response)
+    self_action_count = len(_SELF_ACTION_PATTERN.findall(normalized_response))
+    if self_action_count < 2:
+        return False
+    has_direct_user_signal = _DIRECT_USER_SIGNAL_PATTERN.search(normalized_response) is not None
+    has_answer_signal = _ANSWER_SIGNAL_PATTERN.search(normalized_response) is not None
+    return not (has_direct_user_signal or has_answer_signal)
+
+
+def assess_conversation_focus_response(
+    prompt: str,
+    response: str,
+    language: str,
+    *,
+    focus_expected: bool = False,
+    follow_up_expected: bool = False,
+) -> ResponseAssessment:
+    assessment = assess_proactive_flirt_response(prompt, response, language)
+    failures = list(assessment.failures)
+    if focus_expected and _is_self_focused(response, language):
+        failures.append("self_focus")
+    if follow_up_expected and "?" not in normalize_text(response):
+        failures.append("missing_follow_up")
+    return ResponseAssessment(passed=not failures, failures=tuple(dict.fromkeys(failures)))

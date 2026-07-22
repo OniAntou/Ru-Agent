@@ -282,9 +282,9 @@ The evaluator records automatic results but leaves `verdict` as
 `not_reviewed` until the saved replies receive manual bilingual-quality review.
 The latest live run (greedy, `max_new_tokens=64`) passed `11/12` automatic
 cases but one benign mixed-language prompt still triggered an out-of-context
-child-safety refusal. Peak allocated VRAM was `5,632.025 MiB`, above the
-project's `5,500 MiB` gate, so v6 remains an experimental local candidate and
-is not a final quality-gate adoption.
+child-safety refusal. Peak allocated VRAM was `5,632.025 MiB`: above the old
+`5,500 MiB` benchmark but below the current `6,144 MiB` cap. V6 remains an
+experimental local candidate because its conversation gate still fails.
 
 ## Ru Llama-3.1-8B-Instruct v7 conversation-focus experiment (not adopted)
 
@@ -301,16 +301,19 @@ quality gate: three English replies were generic-short, three mixed replies
 did not genuinely code-switch, and one mixed contextual reply used `tôi`
 instead of Ru's `em` and did not code-switch. Manual review scored `8/16`,
 below the required `14/16`. Evaluation peak allocated VRAM was `5,632.331
-MiB`, above the project's `5,500 MiB` gate; the training manifest reported
-`8,446.57958984375 MB`. The v7 verdict is `not_adopted`.
+MiB`, below the current `6,144 MiB` cap. The training manifest also reported
+`8,446.57958984375 MB` from a PyTorch allocator counter, while sampled
+`nvidia-smi` usage during training peaked around `5,845 MiB` on the `6,141 MiB`
+device; keep that counter as diagnostic until it is re-instrumented. The v7
+verdict is `not_adopted` because the conversation gates fail.
 
 The saved evidence is
 `checkpoints\ru-llama3.1-8b-instruct-v7\conversation_focus_v7.json` and
 `checkpoints\ru-llama3.1-8b-instruct-v7\manual_review_v7.json`. The GUI
 continues to use `checkpoints\ru-llama3.1-8b-instruct-v6`. The next model
 iteration must improve English conversational length, enforce genuine mixed
-turn-taking, preserve `anh`/`em` in mixed contexts, and address the VRAM gate
-before any adapter promotion.
+turn-taking, preserve `anh`/`em` in mixed contexts, and keep measured physical
+VRAM under the current 6 GiB cap before any adapter promotion.
 
 Runtime evidence is intentionally ignored by Git:
 

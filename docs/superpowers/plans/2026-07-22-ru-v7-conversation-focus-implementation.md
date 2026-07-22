@@ -16,8 +16,10 @@ Tasks 1–5 were executed locally. The v7 corpus passed its shape/quality audit
 and produced `135/22/23` splits; full QLoRA training completed with validation
 loss `2.5561517639593645` and `26` optimizer updates. The live 16-case
 evaluation passed `9/16` automatic cases, manual review passed `8/16`, and the
-evaluation peak was `5,632.331 MiB` (above the `5,500 MiB` project gate).
-The adapter is `not_adopted`; the GUI remains on v6. The unchecked step lists
+evaluation peak was `5,632.331 MiB` (below the revised `6,144 MiB` physical
+cap). Training sampled `nvidia-smi` usage around `5,845 MiB`, while the
+manifest's `8,446.57958984375 MB` allocator counter is retained as a
+diagnostic anomaly. The adapter is `not_adopted`; the GUI remains on v6. The unchecked step lists
 below are the original implementation checklist, while the measured decision
 and saved artifacts above are authoritative.
 

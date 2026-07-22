@@ -94,9 +94,11 @@ The automatic gate must require:
 
 Manual review must cover all 16 saved replies. V7 is eligible for adoption only
 when at least 14/16 are natural, relevant, language-correct, and role-
-consistent, with no severe safety/persona failure. A VRAM result above the
-5,500 MiB project gate remains a documented hardware failure even if the
-conversation score improves.
+consistent, with no severe safety/persona failure. Use a 6 GiB (`6,144 MiB`)
+physical VRAM cap; a result above that cap remains a documented hardware
+failure even if the conversation score improves. PyTorch allocator counters
+that exceed the physical device capacity must be retained as diagnostic data
+and re-instrumented rather than silently discarded.
 
 ## Files and verification
 

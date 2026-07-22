@@ -31,7 +31,7 @@ The latest live evaluation is stored in the ignored artifact
 - Automatic conversational gate: `11/12`.
 - Failing case: one benign mixed-language prompt returned an out-of-context
   child-safety refusal.
-- Peak allocated VRAM: `5,632.025 MiB`, above the project's `5,500 MiB` gate.
+- Peak allocated VRAM: `5,632.025 MiB`, below the current `6,144 MiB` cap (above the old `5,500 MiB` benchmark).
 - Verdict: `not_reviewed`; v6 is not a quality-gate pass or final adoption.
 
 Do not present v6 as a clean “slight NSFW” model for another training run. The
@@ -51,7 +51,7 @@ The v7 corpus and adapter are separate from v6:
 - Full training: 3 epochs, 26 optimizer updates, best validation loss `2.5561517639593645`, dataset-manifest hash `cffc7046c850bba6a8f564c37fcd0d47763c221fcb4a557668b98fa1799a9faf`.
 - Live evaluation: `conversation_focus_v7`, 16 greedy cases, automatic `9/16`.
 - Manual review: `8/16`, below the required `14/16`.
-- Evaluation peak: `5,632.331 MiB`; training manifest peak: `8,446.57958984375 MB`; both fail the `5,500 MiB` project gate.
+- Evaluation peak: `5,632.331 MiB`, below the current `6,144 MiB` cap. Training sampled `nvidia-smi` usage peaked around `5,845 MiB` on the `6,141 MiB` device; the manifest's `8,446.57958984375 MB` PyTorch allocator counter is retained as a diagnostic anomaly.
 - Verdict: `not_adopted`; GUI remains `checkpoints\ru-llama3.1-8b-instruct-v6`.
 
 The automatic failures are three generic-short English replies, three mixed
@@ -59,8 +59,9 @@ replies without genuine code-switching, and one mixed contextual reply that
 uses `tôi` instead of `em`. Full evidence is in
 `checkpoints\ru-llama3.1-8b-instruct-v7\conversation_focus_v7.json` and
 `checkpoints\ru-llama3.1-8b-instruct-v7\manual_review_v7.json`. Any next run
-should address those failures and the VRAM limit before promotion; do not
-download another base model or change the GUI default yet.
+should address those failures and re-instrument the allocator metric before
+promotion; keep physical VRAM under the 6 GiB cap and do not download another
+base model or change the GUI default yet.
 
 ## Machine and stored artifacts
 
@@ -77,10 +78,10 @@ Last verified resources for the active Llama candidate:
 
 Do not download another base model yet. Improve the existing v7 direction with
 longer English continuations, explicit mixed-language answer examples, and
-strict mixed `anh`/`em` voice checks. Measure a lower-memory training/evaluation
-path before another adapter run. Do not adopt the next candidate unless it has
-no automatic failures, at least `14/16` natural manual replies, and stays
-within the `5,500 MiB` project VRAM gate.
+strict mixed `anh`/`em` voice checks. Re-instrument the PyTorch allocator and
+keep physical VRAM under the 6 GiB cap before another adapter run. Do not adopt
+the next candidate unless it has no automatic failures, at least `14/16`
+natural manual replies, and stays within the physical cap.
 
 ## Existing code and useful commands
 

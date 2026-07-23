@@ -72,6 +72,12 @@ D:\LLM\data\conversations\approved.jsonl
 
 The model does not update its weights automatically when an example is saved. Review the approved examples before using them in a future explicit fine-tuning run.
 
+### Gemma 4 E4B test GUI (historical)
+
+The temporary Gemma base and light-adapter Tkinter test windows were removed
+after comparison on 2026-07-23. The active GUI remains the Llama v6 adapter;
+the Gemma experiment details are retained below as historical notes.
+
 ## Open conversation seed data
 
 Ru can start its conversational fine-tuning from a bounded, openly licensed seed set while keeping user-approved chat separate. The downloader streams a deterministic sample from [UltraChat](https://huggingface.co/datasets/HuggingFaceH4/ultrachat_200k) (MIT), [OpenAssistant OASST2](https://huggingface.co/datasets/OpenAssistant/oasst2) (Apache-2.0), and [Vietnamese Dataset](https://huggingface.co/datasets/hoanghai2110/vietnamese-dataset) (Apache-2.0). It keeps the Hugging Face cache, the normalized data, and its manifest on D:.
@@ -215,6 +221,121 @@ adapter, and GUI changes were not run.
 The ignored prompt-routing smoke artifacts were removed in the 2026-07-21
 local cleanup; this recorded result remains for comparison.
 
+## Ru Qwen3.5-9B text-only baseline result (not adopted)
+
+Qwen3.5-9B was tested as a base-only candidate in 4-bit NF4 mode with
+thinking disabled. The full checkpoint contains `19,306,216,416` bytes of
+safetensors. The evaluator loaded the official `Qwen3_5ForCausalLM`
+text-only class, so the vision tower was not loaded for this conversation
+comparison. The isolated Transformers-main runtime was kept under
+`vendor\qwen35-transformers` because the repository's stable Transformers
+version does not yet expose the Qwen3.5 classes.
+
+The Qwen3.5 model, isolated runtime, and generated JSON results were removed
+from the local machine on 2026-07-23 after this comparison. The source
+evaluator remains only as historical experiment code; it requires the model
+and isolated runtime to be restored before it can run again.
+
+The same 24-case `conversation_focus_v7_1` suite produced `7/24` automatic
+passes. Eight English cases failed the strict English-language gate because
+the replies inserted Vietnamese `anh`/`em` terms, and nine mixed cases failed
+because they did not contain both language signals. The model produced warm,
+relevant replies and preserved the Vietnamese voice in many Vietnamese cases,
+but it is not a drop-in replacement for the current Ru candidate under the
+project's bilingual gate. No Qwen3.5 corpus, adapter, training run, or GUI
+backend change was created.
+
+Physical VRAM peaked at `5,812 MiB` on the `6,141 MiB` device, so the physical
+hardware gate passed. The PyTorch allocator counters reached `7,477.979 MiB`
+and are retained as a diagnostic anomaly; the physical `nvidia-smi` reading is
+the gate used for this experiment. The measured result is retained in this
+README and the project handoff; the runtime JSON was removed with the model.
+The historical evaluator is
+`scripts\evaluate_qwen35_9b_base.py`. The GUI remains on the Llama v6 adapter.
+
+## Ru Llama-3.2-3B-Instruct base result (not adopted)
+
+Llama 3.2 3B Instruct was downloaded as a text-only baseline candidate. The
+official Meta repository requires gated access in this environment, so the
+local copy came from the accessible `unsloth/Llama-3.2-3B-Instruct` repack of
+the Meta model:
+
+- Local path: `models\llama3.2-3b-instruct-hf`
+- Safetensors: `6,425,529,048` bytes in two shards
+- Verification: `LlamaForCausalLM` config, 254 indexed tensors, and a working
+  local tokenizer/chat template
+- Source cards: [Meta official model card](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct) and [Unsloth repack](https://huggingface.co/unsloth/Llama-3.2-3B-Instruct)
+
+The base-only run used the existing 24-case `conversation_focus_v7_1` suite,
+greedy generation with `max_new_tokens=64`, and no adapter. It passed only
+`5/24` automatic cases: the Vietnamese cases passed, while all English cases
+failed the English-language gate and all mixed cases failed the mixed-language
+gate. Physical VRAM peaked at `2,911 MiB`, so the `6,144 MiB` hardware gate
+passed. The saved evidence was `eval_results\llama3_2_3b_base_v7_1.json`.
+
+The checkpoint and generated JSON were removed on 2026-07-23 after the
+comparison. The evaluator source is retained as historical code and requires
+the model to be downloaded again before it can run. The candidate is
+`not_adopted`; no fine-tuning or GUI change was made. The current GUI remains
+on the Llama v6 adapter. Re-run it after restoring the model with:
+
+```powershell
+& .\.venv\Scripts\python.exe scripts\evaluate_ru_llama3_2_base.py
+```
+
+## Gemma 4 E4B Instruct isolated text-only baseline (promising, not adopted)
+
+The official `google/gemma-4-E4B-it` any-to-any checkpoint was downloaded for a
+local trial. Google describes Gemma 4 E4B as supporting text, image, and audio
+inputs; this project has not enabled those modalities or changed the GUI:
+
+- Historical local path: `models\gemma-4-e4b-it-hf` (removed 2026-07-23)
+- Model file: `15,992,595,884` bytes (`14.894 GiB`)
+- Integrity check: `gemma4` config, `Gemma4ForConditionalGeneration`, and
+  `2,130` safetensors tensors
+- Source: [official Gemma 4 E4B model card](https://huggingface.co/google/gemma-4-E4B-it)
+
+The project runtime still uses Transformers `4.57.6`, so Gemma 4 was tested in
+the package-isolated runtime `vendor\gemma4-transformers` with Transformers
+`5.14.1`, using the text-only `Gemma4ForCausalLM` path. The local checkpoint,
+isolated runtime, light adapter, and generated JSON evidence were removed on
+2026-07-23 after the comparison. The official multimodal checkpoint's text
+backbone loaded with no missing text weights; vision/audio weights were
+intentionally ignored. The historical evaluator source is
+`scripts\evaluate_gemma4_e4b_base.py` and requires restoring the local model
+and isolated runtime before it can run again.
+
+The working configuration is 4-bit NF4 for the Linear layers, all 42 text
+decoder layers and `lm_head` on the GPU, and the large per-layer embedding on
+the CPU. With the project's language-routed system prompt and
+`max_new_tokens=64`, the full `conversation_focus_v7_1` run reached `20/24`
+automatic passes after correcting one evaluator false positive for the natural
+Vietnamese phrase `bầu bạn`. The remaining four failures are mixed-language
+preservation cases. Physical VRAM peaked at `5,901 MiB` against the `6,144 MiB`
+cap. The generated evidence JSON was removed during cleanup; the measured
+result is retained in this README and the project handoff.
+
+This untouched base is below the project's adoption gate of no automatic
+failures and at least `21/24`, so it was not integrated. A bounded adapter
+experiment was then run from the existing `data\conversations\ru_v7_1`
+corpus without changing the GUI:
+
+- Historical adapter: `checkpoints\gemma4-e4b-ru-light` (removed 2026-07-23)
+- Profile: 4-bit NF4, rank-4 LoRA on `q_proj`, `k_proj`, `v_proj`, and `o_proj`
+- Training: 64 microsteps, 8 optimizer updates, validation loss `8.879111991988289`
+- Training peak: `5,797 MiB` allocated and `5,874 MiB` physical VRAM; the
+  `6,144 MiB` cap passed
+- Routed 24-case adapter evaluation with `max_new_tokens=64`: `11/24`
+  automatic passes, physical peak `4,336 MiB`
+- Adapter failures: 13 cases, including all four remaining base mixed-language
+  failures plus additional Vietnamese, English, and mixed follow-up failures
+- Generated adapter evidence and manifest were removed during cleanup; the
+  measured result is retained in this README and the project handoff.
+
+Spot inspection showed severe token/emoji repetition and malformed mixed
+language output. The adapter is therefore `not_adopted`; it is retained only
+for diagnosis, and the GUI remains on the Llama v6 adapter.
+
 ## Ru Qwen2.5 7B local smoke result (not adopted)
 
 The local `Qwen/Qwen2.5-7B-Instruct` candidate used `15,231,271,888` bytes of
@@ -337,9 +458,74 @@ decision is `not_adopted`; the GUI remains on v6. Full evidence is in
 `checkpoints\ru-llama3.1-8b-instruct-v7.1\manual_review_v7_1.json`.
 
 V7.1 is useful as a measured failure-driven experiment, not as proof that it
-is better than v6. The next iteration should specifically address mixed
-language preservation and short English conversational depth before another
-adapter promotion.
+is better than v6. The v8 section below records the first continuation attempt;
+its remaining mixed-language and follow-up failures are still open before
+another adapter promotion.
+
+## Ru Llama-3.1-8B-Instruct v8 true continuation (not adopted)
+
+V8 is the first continuation run that loads the v6 LoRA adapter as trainable
+weights instead of creating another adapter from the base model:
+
+- Corpus: `data\conversations\ru_v8` — 336 rows, split `262/37/37`; 48 clean v6 replay rows and 288 v7.1 correction rows.
+- Corpus manifest hash: `31d6f09e4351bbb0d8a8ffd5005c638e50c9ef5255db99a007d216e8c64296a0`.
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v8`, source `checkpoints\ru-llama3.1-8b-instruct-v6`.
+- Training: one epoch, 17 optimizer updates, `max_length=512`, learning rate `1e-5`, best validation loss `2.902062905801309`.
+- Training physical peak: `5,865 MiB` on the `6,141 MiB` device; the physical `6,144 MiB` cap passed.
+- Common evaluation: `conversation_focus_v7_1`, 24 greedy cases, `max_new_tokens=64`.
+
+On the same common suite, v8 reached `14/24` automatic passes versus v6's
+`11/24`. It improved three v6 failures and introduced no automatic regression
+on a case that v6 had passed. The original v7 slice reached `12/16`
+automatically. The remaining failures are dominated by mixed-language collapse
+and missing follow-ups, with one generic-short English reply. V8 therefore
+improves on v6 but does not meet the adoption gate of zero automatic failures,
+at least `21/24` overall, and at least `14/16` on the original slice.
+
+V8 is `not_adopted`; the GUI remains on the v6 adapter. Evidence is in
+`eval_results\ru_llama3_1_v6_common_v7_1.json`,
+`eval_results\ru_llama3_1_v8_common_v7_1.json`, and
+`checkpoints\ru-llama3.1-8b-instruct-v8\ru_manifest.json`; the gate-status
+record is `checkpoints\ru-llama3.1-8b-instruct-v8\manual_review_v8.json`. The training
+manifest's `8,446.57958984375 MiB` PyTorch allocator counter remains a
+diagnostic anomaly because sampled `nvidia-smi` physical readings stayed below
+the cap, matching the earlier v7/v7.1 discrepancy.
+
+## Ru Llama-3.1-8B-Instruct v6.1 natural-style continuation (not adopted)
+
+V6.1 was a bounded style-only continuation from the v6 adapter. It kept the
+GUI default unchanged and used a fresh project-owned corpus rather than
+replaying the older v6/v7/v8 target responses:
+
+- Dataset: `data\conversations\ru_v6_1` — 120 rows, split `84/18/18`, with
+  `vi=60`, `mixed=36`, `en=24`, 72 contextual rows, 18 identity-correction
+  rows, and 7 light-flirt rows.
+- Dataset source hash: `7b0abe74daf3be33678791cac38d6760ef660b709e8725cd2a9ead0ce9680359`.
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v6.1`, source
+  `checkpoints\ru-llama3.1-8b-instruct-v6`.
+- Training: 3 epochs, 16 optimizer updates, learning rate `5e-6`,
+  `max_length=512`, best validation loss `3.156519373257955`.
+- Training physical peak: `5,841 MiB` against the `6,144 MiB` cap;
+  `physical_cap_passed=true`. The manifest's `8,446.57958984375 MiB`
+  allocator counter remains diagnostic only.
+
+The shared greedy evaluator used 30 case summaries plus the exact four-turn
+screenshot replay with `max_new_tokens=64`. V6.1 reached `13/30` case-summary
+passes and `11/24` on the common suite; v6 reached `12/30` and `11/24` under
+the same evaluator. V6.1 improved two case summaries but regressed one, and
+both candidates failed the first screenshot replay turn with a generic-short
+reply. V6.1 also retained mixed-language collapse and missing-follow-up
+failures. Evaluation physical peak was `5,837 MiB` for v6.1 and `5,833 MiB`
+for v6; both hardware checks passed, but the automatic conversation gate did
+not.
+
+The v6.1 verdict is `not_adopted`; manual review was skipped after the hard
+automatic failure. Evidence is in
+`eval_results\ru_llama3_1_v6_style.json`,
+`eval_results\ru_llama3_1_v6_1_style.json`,
+`checkpoints\ru-llama3.1-8b-instruct-v6.1\ru_manifest.json`, and
+`checkpoints\ru-llama3.1-8b-instruct-v6.1\manual_review_v6_1.json`. The GUI
+continues to use `checkpoints\ru-llama3.1-8b-instruct-v6`.
 
 Runtime evidence is intentionally ignored by Git:
 

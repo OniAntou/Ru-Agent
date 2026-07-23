@@ -116,6 +116,61 @@ def validate_v7_1_adapter_dir(path: str | Path) -> Path:
         raise ValueError("v7.1 output must use the ru-llama3.1-8b-instruct-v7.1 adapter directory")
     return adapter_dir
 
+
+_CHECKPOINT_ROOT = (Path(__file__).resolve().parents[2] / "checkpoints").resolve()
+_V8_OUTPUT_NAMES = frozenset(
+    {
+        "ru-llama3.1-8b-instruct-v8",
+        "ru-llama3.1-8b-instruct-v8-smoke",
+    }
+)
+_V8_SOURCE_NAME = "ru-llama3.1-8b-instruct-v6"
+_V6_1_OUTPUT_NAMES = frozenset(
+    {
+        "ru-llama3.1-8b-instruct-v6.1",
+        "ru-llama3.1-8b-instruct-v6.1-smoke",
+    }
+)
+_V6_1_SOURCE_NAME = "ru-llama3.1-8b-instruct-v6"
+
+
+def validate_v8_adapter_dir(path: str | Path) -> Path:
+    adapter_dir = Path(path)
+    if adapter_dir.name not in _V8_OUTPUT_NAMES:
+        raise ValueError(
+            "v8 output must use ru-llama3.1-8b-instruct-v8 or "
+            "ru-llama3.1-8b-instruct-v8-smoke"
+        )
+    if adapter_dir.resolve().parent != _CHECKPOINT_ROOT:
+        raise ValueError("v8 output must be directly inside the D:/LLM/checkpoints directory")
+    return adapter_dir
+
+
+def validate_v8_source_adapter_dir(path: str | Path) -> Path:
+    source_dir = Path(path)
+    if source_dir.name != _V8_SOURCE_NAME or source_dir.resolve().parent != _CHECKPOINT_ROOT:
+        raise ValueError("v8 source adapter must be the v6 adapter inside D:/LLM/checkpoints")
+    return source_dir
+
+
+def validate_v6_1_adapter_dir(path: str | Path) -> Path:
+    adapter_dir = Path(path)
+    if adapter_dir.name not in _V6_1_OUTPUT_NAMES:
+        raise ValueError(
+            "v6.1 output must use ru-llama3.1-8b-instruct-v6.1 or "
+            "ru-llama3.1-8b-instruct-v6.1-smoke"
+        )
+    if adapter_dir.resolve().parent != _CHECKPOINT_ROOT:
+        raise ValueError("v6.1 output must be directly inside the D:/LLM/checkpoints directory")
+    return adapter_dir
+
+
+def validate_v6_1_source_adapter_dir(path: str | Path) -> Path:
+    source_dir = Path(path)
+    if source_dir.name != _V6_1_SOURCE_NAME or source_dir.resolve().parent != _CHECKPOINT_ROOT:
+        raise ValueError("v6.1 source adapter must be the v6 adapter inside D:/LLM/checkpoints")
+    return source_dir
+
 class LlamaResponseCollator:
     def __init__(self, pad_token_id: int) -> None:
         self.pad_token_id = pad_token_id
@@ -178,6 +233,7 @@ def encode_llama_response(
 class LlamaTrainingConfig:
     base_model_id: str
     base_model_path: str
+    source_adapter_dir: str | None = None
     dataset_dir: str = "data/conversations/ru_v3"
     adapter_dir: str = "checkpoints/ru-llama3.1-8b-instruct"
     max_length: int = 512
@@ -214,6 +270,7 @@ def write_adapter_manifest(
     profile_name: str,
     base_model_id: str,
     base_model_path: str,
+    source_adapter_dir: str | None = None,
     dataset_sha256: str,
     best_validation_loss: float,
     peak_vram_mb: float,
@@ -224,11 +281,14 @@ def write_adapter_manifest(
     physical_cap_mib: float | None = None,
     physical_cap_passed: bool | None = None,
 ) -> dict[str, object]:
+    destination = Path(adapter_dir)
     manifest = {
+        "adapter_dir": str(destination),
         "backend": backend,
         "profile_name": profile_name,
         "base_model_id": base_model_id,
         "base_model_path": base_model_path,
+        "source_adapter_dir": source_adapter_dir,
         "dataset_sha256": dataset_sha256,
         "best_validation_loss": best_validation_loss,
         "peak_vram_mb": peak_vram_mb,
@@ -240,7 +300,6 @@ def write_adapter_manifest(
         "optimizer_updates": optimizer_updates,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
-    destination = Path(adapter_dir)
     destination.mkdir(parents=True, exist_ok=True)
     (destination / "ru_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest
@@ -248,7 +307,7 @@ def write_adapter_manifest(
 def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = None) -> dict[str, object]:
     from hashlib import sha256
     import torch
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+    from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
     if not torch.cuda.is_available():
@@ -276,7 +335,23 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
     model.gradient_checkpointing_enable()
     
     model = prepare_model_for_kbit_training(model)
-    model = get_peft_model(model, LoraConfig(r=config.lora_rank, lora_alpha=config.lora_alpha, lora_dropout=config.lora_dropout, target_modules=list(config.target_modules), bias="none", task_type="CAUSAL_LM"))
+    if config.source_adapter_dir is not None:
+        source_adapter = Path(config.source_adapter_dir)
+        if not source_adapter.is_dir():
+            raise FileNotFoundError(f"Source adapter {source_adapter} not found")
+        model = PeftModel.from_pretrained(model, source_adapter, is_trainable=True)
+    else:
+        model = get_peft_model(
+            model,
+            LoraConfig(
+                r=config.lora_rank,
+                lora_alpha=config.lora_alpha,
+                lora_dropout=config.lora_dropout,
+                target_modules=list(config.target_modules),
+                bias="none",
+                task_type="CAUSAL_LM",
+            ),
+        )
 
     def encode(path: Path):
         rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -353,6 +428,7 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
         profile_name=config.profile_name,
         base_model_id=config.base_model_id,
         base_model_path=str(base_path),
+        source_adapter_dir=config.source_adapter_dir,
         dataset_sha256=dataset_sha256,
         best_validation_loss=best_loss,
         peak_vram_mb=peak_vram_mb,

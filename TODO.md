@@ -13,6 +13,16 @@ Mục tiêu dài hạn: Ru giao tiếp tự nhiên bằng tiếng Việt và ti�
 - [x] Evaluate the local V5 Qwen 3B base (hardware gate passed at 2,034.184 MiB; conversation gate failed on four Vietnamese anh/em voice errors; do not fine-tune it).
 - [x] Evaluate local Qwen3 4B in non-thinking mode (hardware gate passed at 2,635.017 MiB; manual bilingual conversation score 11/32; do not fine-tune it).
 - [x] Run the Qwen3 4B language-specific prompt-routing smoke (automatic 8/8 and English 4/4 passed at 2,628.293 MiB; manual score 5/8 with a role reversal and Vietnamese-only mixed replies; do not continue Qwen3).
+- [x] Evaluate the local Qwen3.5-9B text-only base (physical peak 5,812 MiB; automatic 7/24 with English-language and mixed-language failures; do not fine-tune or adopt it; GUI remains v6).
+- [x] Download and verify the local Llama-3.2-3B-Instruct text-only trial (two safetensors shards, 6,425,529,048 bytes; removed after comparison; GUI remains v6).
+- [x] Evaluate the Llama-3.2-3B-Instruct trial with the bilingual conversation gate (automatic 5/24; physical peak 2,911 MiB; not adopted; GUI remains v6).
+- [x] Download and integrity-check the official Gemma-4-E4B-Instruct checkpoint (15,992,595,884-byte safetensors; GUI remains v6).
+- [x] Add an isolated current Transformers runtime and run the Gemma-4-E4B text-only routed baseline (automatic 20/24 after the `bầu bạn` gate correction; physical peak 5,901 MiB; four mixed-language failures; GUI remains v6).
+- [x] Add a separate Tkinter Gemma-4-E4B base test GUI with the verified 4-bit CPU-embedding/GPU-decoder placement; keep the Llama v6 GUI default unchanged.
+- [x] Harden the Gemma base test GUI against interactive repetition with EOS-aware decoding, repetition penalty, and 3-gram blocking; keep the measured evaluator path unchanged.
+- [x] Add a separate Tkinter GUI for the diagnostic Gemma light adapter using the evaluator's shared-KV-safe PEFT/manual-greedy path; keep the v6 GUI default unchanged.
+- [x] Run the bounded Gemma 4 Ru light QLoRA experiment (64 microsteps; validation loss 8.879111991988289; training physical peak 5,874 MiB; adapter evaluation 11/24 with 13 failures and 4,336 MiB physical peak); not adopted, GUI remains v6.
+- [x] Retire the Gemma 4 line after comparison: remove local weights, adapters, runtime, generated evidence, and temporary GUIs; keep historical measurements and source notes, then focus on Llama.
 - [x] Evaluate local Qwen2.5 7B-Instruct with the routed smoke (automatic 8/8, English 4/4, and hardware gate passed at 5,471.782 MiB; manual score 5/8 with Chinese-language contamination and mixed-language failures; do not continue it).
 - [x] Evaluate local Vistral-7B-Chat GGUF Q4 with the routed smoke (hardware gate passed; automatic 7/8 passed; failed English echo and Vietnamese point-of-view; do not continue it).
 - [x] Evaluate local Llama-3.1-8B-Instruct GGUF Q4 with the routed smoke (hardware gate passed; automatic 8/8 passed; manual score failed due to Vietnamese point-of-view error and failing to mix languages naturally; do not continue it).
@@ -23,7 +33,12 @@ Mục tiêu dài hạn: Ru giao tiếp tự nhiên bằng tiếng Việt và ti�
 - [x] Curate, validate, and split the v7 conversation-focus corpus (180 rows; 135 train, 22 validation, 23 held-out; no graphic, violent, coercive, or possessive targets).
 - [x] Train and live-evaluate the separate v7 Llama QLoRA adapter (validation loss 2.5561517639593645; automatic 9/16; manual 8/16; physical 6 GiB VRAM cap passed; not adopted; GUI remains v6).
 - [x] Build, train, and review the isolated v7.1 repair adapter (300 rows; validation loss 2.5795224606990814; automatic 10/24; manual 14/24; original v7 slice 10/16; physical peak 5,874 MiB during training and 5,850 MiB during evaluation; not adopted; GUI remains v6).
-- [ ] Repair v7.1's remaining mixed-language collapse, generic-short English replies, and missing follow-ups before another adapter run.
+- [x] Build the quality-aware v8 corpus (336 rows; 262/37/37 split; 48 clean v6 replay rows and 288 v7.1 correction rows; no common-suite prompt leakage across splits).
+- [x] Train the true v8 continuation from the v6 adapter (one epoch; 17 optimizer updates; validation loss 2.902062905801309; physical peak 5,865 MiB; allocator counter retained as diagnostic).
+- [x] Evaluate v8 against v6 on the same 24-case suite (v6 11/24, v8 14/24; original v7 slice 12/16 automatic; v8 not adopted; GUI remains v6).
+- [x] Build, train, and evaluate the bounded v6.1 natural-style continuation (120 rows; 3 epochs; validation loss 3.156519373257955; physical peak 5,841 MiB; common suite tied v6 at 11/24; not adopted; GUI remains v6).
+- [x] Add the exact four-turn screenshot replay gate for v6.1 and record its failure (first turn generic-short on both v6 and v6.1).
+- [ ] Repair v8's remaining mixed-language collapse, generic-short English replies, and missing follow-ups before another adapter run.
 - [ ] Make Ru consistently natural in short Vietnamese-English conversations.
 - [ ] Thu thập các lượt chat được đánh dấu hữu ích.
 - [ ] Fine-tune hội thoại từ `data/conversations/approved.jsonl`.

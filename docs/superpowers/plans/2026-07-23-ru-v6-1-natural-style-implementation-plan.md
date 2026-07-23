@@ -37,7 +37,7 @@ The generated dataset lives under `data/conversations/ru_v6_1`; the trained cand
 - Create: `tests/test_ru_v6_1_corpus.py`
 - Create later: `src/mini_gpt/ru_v6_1_corpus.py`, `src/mini_gpt/ru_v6_1_dialogues.py`
 
-- [ ] **Step 1: Add the corpus contract tests.**
+- [x] **Step 1: Add the corpus contract tests.**
 
 Test these exact invariants:
 
@@ -54,7 +54,7 @@ def test_v6_1_corpus_has_120_rows_and_required_shape(tmp_path):
 
 Add tests that every row starts with `RU_SYSTEM_PROMPT`, has alternating `user`/`assistant` turns ending in `user`, contains the exact project-owned source/license values, and has no Vietnamese assistant self-reference matching `tớ`, `tôi`, or `mình`. Add a determinism test that calls the builder twice with seed 42 and compares reports plus file bytes, and an audit test that calls `build_ru_v6_1_corpus(output_dir, write=False)` and asserts that `output_dir` is not created.
 
-- [ ] **Step 2: Run the focused tests and verify the contract is red.**
+- [x] **Step 2: Run the focused tests and verify the contract is red.**
 
 Run:
 
@@ -73,7 +73,7 @@ Expected result: collection fails because the v6.1 corpus module does not exist 
 - Create: `scripts/build_ru_llama_v6_1_data.py`
 - Modify: `tests/test_ru_v6_1_corpus.py`
 
-- [ ] **Step 1: Author 120 records with the approved distribution.**
+- [x] **Step 1: Author 120 records with the approved distribution.**
 
 Use a `_record(language, mode, turns, response, flirt_level="none")` helper that always inserts `RU_SYSTEM_PROMPT` as the first message and returns the fields `messages`, `response`, `language`, `mode`, `source`, `license`, and `flirt_level`.
 
@@ -81,7 +81,7 @@ Author exactly 60 Vietnamese, 36 mixed, and 24 English records. Include 48 or mo
 
 Use the following modes and counts so the distribution is deterministic: `acknowledge=24`, `follow_up=30`, `everyday_help=20`, `emotion=16`, `light_humour=12`, and `identity_repair=18`. Keep ordinary responses to one or two natural sentences unless the context needs a short third sentence. Put light flirt only where the prompt supports it; do not use graphic, violent, possessive, coercive, or stage-direction targets in this style corpus.
 
-- [ ] **Step 2: Implement corpus validation and splitting.**
+- [x] **Step 2: Implement corpus validation and splitting.**
 
 Implement `build_ru_v6_1_corpus(output_dir, *, seed=42, write=True)` in `src/mini_gpt/ru_v6_1_corpus.py`. It must:
 
@@ -96,11 +96,11 @@ Implement `build_ru_v6_1_corpus(output_dir, *, seed=42, write=True)` in `src/min
 
 Expose constants for `EXPECTED_TOTAL`, `EXPECTED_SPLIT_COUNTS`, `EXPECTED_LANGUAGE_COUNTS`, and `EXPECTED_IDENTITY_CORRECTION_EXAMPLES` so tests and the CLI share the same contract.
 
-- [ ] **Step 3: Add the builder CLI.**
+- [x] **Step 3: Add the builder CLI.**
 
 Implement `scripts/build_ru_llama_v6_1_data.py` with `--output-dir`, `--seed`, and `--audit` arguments. Its default output is `D:/LLM/data/conversations/ru_v6_1`. The command prints the manifest as UTF-8 JSON and never writes when `--audit` is supplied.
 
-- [ ] **Step 4: Run corpus tests and the audit.**
+- [x] **Step 4: Run corpus tests and the audit.**
 
 Run:
 
@@ -121,7 +121,7 @@ Expected result: all focused tests pass; the audit reports 120 examples without 
 - Modify: `src/mini_gpt/llama3_1_training.py`
 - Create: `scripts/train_ru_llama3_1_v6_1.py`
 
-- [ ] **Step 1: Write failing config and guard tests.**
+- [x] **Step 1: Write failing config and guard tests.**
 
 Assert that the config uses:
 
@@ -141,7 +141,7 @@ Assert that the config uses:
 
 Test that `validate_v6_1_adapter_dir` accepts only `ru-llama3.1-8b-instruct-v6.1` and `ru-llama3.1-8b-instruct-v6.1-smoke` directly below the checkpoint root, rejects v6/v7/v8 and outside paths, and that `validate_v6_1_source_adapter_dir` accepts only the v6 adapter. Test that an output equal to the source is rejected.
 
-- [ ] **Step 2: Run the focused tests and verify they fail.**
+- [x] **Step 2: Run the focused tests and verify they fail.**
 
 Run:
 
@@ -151,15 +151,15 @@ Run:
 
 Expected result: collection or assertions fail because the v6.1 config and guards do not exist yet.
 
-- [ ] **Step 3: Implement the guards and config.**
+- [x] **Step 3: Implement the guards and config.**
 
-Add v6.1-specific constants and validators next to the existing v7.1/v8 guards without changing their accepted paths. The validators must resolve paths, enforce the checkpoint root, and raise messages containing `v6.1 output` or `v6.1 source` respectively. Add the exact JSON config above plus the existing LoRA target modules and backend `llama3.1-qlora-continuation`.
+Add v6.1-specific constants and validators next to the existing v7.1/v8 guards without changing their accepted paths. The validators must resolve paths, enforce the checkpoint root, and raise messages containing `v6.1 output` or `v6.1 source` respectively. Add the exact JSON config above plus the existing LoRA target modules and backend `llama3.1-qlora-style-continuation`.
 
-- [ ] **Step 4: Implement the safe training wrapper.**
+- [x] **Step 4: Implement the safe training wrapper.**
 
 Follow `scripts/train_ru_llama3_1_v8.py` but call the v6.1 validators, default to the v6.1 config, reject a non-empty output directory, reject output equal to the v6 source, replace resolved source/output paths in `LlamaTrainingConfig`, and print the JSON manifest. The wrapper must accept `--output-adapter-dir` and `--max-steps` for smoke runs.
 
-- [ ] **Step 5: Run the config and guard tests.**
+- [x] **Step 5: Run the config and guard tests.**
 
 Run:
 
@@ -177,7 +177,7 @@ Expected result: all config/guard tests pass and the existing v8 guard behavior 
 - Use: `checkpoints/ru-llama3.1-8b-instruct-v6.1-smoke/`
 - Use: `checkpoints/ru-llama3.1-8b-instruct-v6.1/` only for the full run
 
-- [ ] **Step 1: Verify the source and output paths before training.**
+- [x] **Step 1: Verify the source and output paths before training.**
 
 Run:
 
@@ -189,7 +189,11 @@ Test-Path D:\LLM\data\conversations\ru_v6_1\train.jsonl
 
 Expected result: all commands return `True`. If the smoke output directory is non-empty, stop rather than deleting it.
 
-- [ ] **Step 2: Run a two-update smoke with the physical cap.**
+- [x] **Step 2: Run a two-update smoke with the physical cap.**
+
+The retained smoke artifact was created before the final screenshot-row edit;
+the full run below used the final dataset hash. The smoke still validated the
+QLoRA load/save path and the physical cap.
 
 Run:
 
@@ -201,7 +205,7 @@ Run:
 
 Expected result: the v6 source loads, trainable LoRA parameters are present, a manifest is written, and the physical peak is at or below 6,144 MiB. Keep the smoke artifact for inspection; do not replace v6.
 
-- [ ] **Step 3: Run the full three-epoch training job.**
+- [x] **Step 3: Run the full three-epoch training job.**
 
 After the smoke passes and the destination is confirmed absent or empty, run:
 
@@ -220,11 +224,11 @@ Expected result: `checkpoints/ru-llama3.1-8b-instruct-v6.1/ru_manifest.json` rec
 - Create: `scripts/evaluate_ru_llama3_1_v6_1.py`
 - Create: `tests/test_ru_v6_1_evaluation.py`
 
-- [ ] **Step 1: Write tests for the fixed evaluation suite.**
+- [x] **Step 1: Write tests for the fixed evaluation suite.**
 
 Assert that the suite contains the existing 24 common conversation cases plus a four-turn identity case with these user prompts in order: `chào em`, `phải xưng là em chứ`, `sao em vẫn xưng là tôi vậy.`, and `nói cái gì?`. Assert that all cases use `RU_SYSTEM_PROMPT`, that identity cases mark `identity_expected=True`, and that the assessor fails responses containing a Vietnamese self-reference `tớ`, `tôi`, or `mình`.
 
-- [ ] **Step 2: Run the evaluation tests and verify they fail.**
+- [x] **Step 2: Run the evaluation tests and verify they fail.**
 
 Run:
 
@@ -234,29 +238,29 @@ Run:
 
 Expected result: collection fails until the suite module exists.
 
-- [ ] **Step 3: Implement deterministic assessments.**
+- [x] **Step 3: Implement deterministic assessments.**
 
 Create immutable `ConversationCase` values and an `assess_v6_1_response` function. Reuse the existing relevance/follow-up assessment where applicable, then add explicit identity checks for Vietnamese output. Keep automatic checks deterministic and leave naturalness/style scoring to the manual review artifact.
 
-- [ ] **Step 4: Implement the evaluation CLI.**
+- [x] **Step 4: Implement the evaluation CLI.**
 
 Evaluate the v6.1 adapter with `do_sample=False`, `max_new_tokens=64`, and the existing `PhysicalVramMonitor`. Clear the generation cache in `finally`, write an atomic JSON result containing every prompt, response, assessment, peak memory, physical cap status, and `verdict: "not_reviewed"`, then return a non-zero exit code on automatic or VRAM failure.
 
-- [ ] **Step 5: Run v6 and v6.1 with identical settings.**
+- [x] **Step 5: Run v6 and v6.1 with identical settings.**
 
 Run the evaluator for v6 first into a comparison file, then v6.1 into its own file:
 
 ```powershell
 & .\.venv\Scripts\python.exe scripts/evaluate_ru_llama3_1_v6_1.py `
   --adapter-dir checkpoints/ru-llama3.1-8b-instruct-v6 `
-  --output eval_results/ru_llama3_1_v6_style_baseline.json
+  --output eval_results/ru_llama3_1_v6_style.json
 
 & .\.venv\Scripts\python.exe scripts/evaluate_ru_llama3_1_v6_1.py `
   --adapter-dir checkpoints/ru-llama3.1-8b-instruct-v6.1 `
   --output eval_results/ru_llama3_1_v6_1_style.json
 ```
 
-Expected result: both artifacts contain the same case IDs and generation settings; v6.1 must pass the identity automatic gate and the physical VRAM cap before manual review.
+Actual result: both artifacts contain the same case IDs and generation settings; both physical caps passed, but both failed the automatic conversation gate and the first screenshot replay turn.
 
 ## Task 6: Manual review, GUI smoke, and documentation
 
@@ -265,21 +269,27 @@ Expected result: both artifacts contain the same case IDs and generation setting
 - Create: `checkpoints/ru-llama3.1-8b-instruct-v6.1/manual_review_v6_1.json`
 - Update after evidence: `README.md`, `docs/ANTIGRAVITY_HANDOFF.md`
 
-- [ ] **Step 1: Review the fixed cases against v6.**
+- [x] **Step 1: Review the fixed cases against v6.**
+
+The automatic gate failed, so manual naturalness scoring was skipped. The gate
+decision records the failed case IDs, screenshot turn, and v6 comparison.
 
 For each common-suite and identity case, record naturalness, relevance, language, voice, role consistency, and severe failure. Mark the candidate `not_adopted` if any identity failure remains, if ordinary naturalness is not better than v6, or if a severe output appears.
 
-- [ ] **Step 2: Launch the candidate through the existing Tkinter GUI without changing its default.**
+- [x] **Step 2: Launch the candidate through the existing Tkinter GUI without changing its default.**
+
+Candidate GUI smoke was intentionally skipped after the hard automatic failure;
+the GUI default remained v6 and no promotion path was opened.
 
 Use a one-off `pythonw.exe` launch that sets the checkpoint field to `D:/LLM/checkpoints/ru-llama3.1-8b-instruct-v6.1`, or use the GUI Browse button. Verify the status line names `ru-llama3.1-8b-instruct-v6.1`; verify that a fresh normal conversation and the screenshot sequence do not silently use v6.
 
-- [ ] **Step 3: Update the project documents with actual results.**
+- [x] **Step 3: Update the project documents with actual results.**
 
 Add only the v6.1 facts that occurred: adapter path, source v6, dataset/manifest hash, training metrics, VRAM peak, automatic result, manual verdict, and whether GUI default remains v6. Do not claim adoption if any gate failed. Remove no historical document solely because it describes an earlier candidate.
 
 ## Task 7: Final verification and handoff
 
-- [ ] **Step 1: Run the focused regression suite.**
+- [x] **Step 1: Run the focused regression suite.**
 
 ```powershell
 & .\.venv\Scripts\python.exe -m pytest `
@@ -291,7 +301,7 @@ Add only the v6.1 facts that occurred: adapter path, source v6, dataset/manifest
 
 Expected result: all focused tests pass.
 
-- [ ] **Step 2: Run the full test suite and source checks.**
+- [x] **Step 2: Run the full test suite and source checks.**
 
 ```powershell
 & .\.venv\Scripts\python.exe -m pytest -q
@@ -300,11 +310,11 @@ git diff --check
 
 Expected result: the full suite passes and `git diff --check` reports no whitespace errors. Existing unrelated dirty files remain untouched.
 
-- [ ] **Step 3: Verify adoption state and rollback.**
+- [x] **Step 3: Verify adoption state and rollback.**
 
 Confirm that `src/mini_gpt/gui.py` still lists v6 first, that v6 files and adapter hashes are unchanged, and that the final handoff states either `adopted` with explicit evidence or `not_adopted` with v6 retained as the active baseline.
 
-- [ ] **Step 4: Commit only the v6.1 implementation/docs surface.**
+- [x] **Step 4: Commit only the v6.1 implementation/docs surface.**
 
 Stage the new v6.1 modules, tests, config, scripts, result metadata, and intentional README/handoff changes by exact path. Do not stage the pre-existing unrelated modifications shown by `git status`. Commit with:
 
@@ -330,6 +340,6 @@ git commit -m "feat: add Ru v6.1 natural style candidate"
 
 - The design's 120-row corpus, language split, contextual minimum, identity count, flirt cap, and deterministic output are covered by Tasks 1 and 2.
 - v6 immutability, v6-only source validation, v6.1 output isolation, fresh optimizer, and VRAM cap are covered by Tasks 3 and 4.
-- The exact four-turn screenshot sequence, greedy evaluation, GUI sampling smoke, manual review, and adoption decision are covered by Tasks 5 and 6.
+- The exact four-turn screenshot sequence, greedy evaluation, automatic gate decision, GUI-default preservation, and rollback state are covered by Tasks 5 and 6; candidate GUI sampling was skipped after the hard automatic failure.
 - Full tests, document checks, rollback verification, and exact-path staging are covered by Task 7.
 - No incomplete markers or unresolved file names are used in the plan.

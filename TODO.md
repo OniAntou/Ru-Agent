@@ -33,6 +33,7 @@ Mục tiêu dài hạn: Ru giao tiếp tự nhiên bằng tiếng Việt và ti�
 - [x] Curate, validate, and split the v7 conversation-focus corpus (180 rows; 135 train, 22 validation, 23 held-out; no graphic, violent, coercive, or possessive targets).
 - [x] Train and live-evaluate the separate v7 Llama QLoRA adapter (validation loss 2.5561517639593645; automatic 9/16; manual 8/16; physical 6 GiB VRAM cap passed; not adopted; GUI remains v6).
 - [x] Build, train, and review the isolated v7.1 repair adapter (300 rows; validation loss 2.5795224606990814; automatic 10/24; manual 14/24; original v7 slice 10/16; physical peak 5,874 MiB during training and 5,850 MiB during evaluation; not adopted; GUI remains v6).
+- [x] Retire the local v7 and v7.1 adapter directories on 2026-07-23 by sending them to the Recycle Bin; preserve source code, datasets, metrics, and evaluators for history.
 - [x] Build the quality-aware v8 corpus (336 rows; 262/37/37 split; 48 clean v6 replay rows and 288 v7.1 correction rows; no common-suite prompt leakage across splits).
 - [x] Train the true v8 continuation from the v6 adapter (one epoch; 17 optimizer updates; validation loss 2.902062905801309; physical peak 5,865 MiB; allocator counter retained as diagnostic).
 - [x] Evaluate v8 against v6 on the same 24-case suite (v6 11/24, v8 14/24; original v7 slice 12/16 automatic; v8 not adopted; GUI remains v6).

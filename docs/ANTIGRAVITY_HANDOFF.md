@@ -47,7 +47,7 @@ The v7 corpus and adapter are separate from v6:
 
 - Corpus: `data\conversations\ru_v7`, 180 rows with `135/22/23` train/validation/held-out splits.
 - Corpus source hash: `9778d25b4a45c90bcee11ceed7364c76e7489292a03a417af9efdc53fe206da5`.
-- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7`.
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7` (removed 2026-07-23; source and metrics retained).
 - Full training: 3 epochs, 26 optimizer updates, best validation loss `2.5561517639593645`, dataset-manifest hash `cffc7046c850bba6a8f564c37fcd0d47763c221fcb4a557668b98fa1799a9faf`.
 - Live evaluation: `conversation_focus_v7`, 16 greedy cases, automatic `9/16`.
 - Manual review: `8/16`, below the required `14/16`.
@@ -57,9 +57,9 @@ The v7 corpus and adapter are separate from v6:
 The automatic failures were three generic-short English replies, three mixed
 replies without genuine code-switching, and one mixed contextual reply that
 uses `tôi` instead of `em`. Full evidence is in
-`checkpoints\ru-llama3.1-8b-instruct-v7\conversation_focus_v7.json` and
-`checkpoints\ru-llama3.1-8b-instruct-v7\manual_review_v7.json`. Any next run
-should address those failures and re-instrument the allocator metric before
+The local v7 adapter and checkpoint-local evidence were removed on 2026-07-23
+and sent to the Recycle Bin; source, metrics, and evaluator code remain. Any
+next run should address those failures and re-instrument the allocator metric before
 promotion; keep physical VRAM under the 6 GiB cap. At that checkpoint no other
 base model had been downloaded; the later Llama 3.2 trial is recorded below,
 while the GUI default remains unchanged.
@@ -71,15 +71,15 @@ and trained into a separate adapter:
 
 - Corpus: `data\conversations\ru_v7_1`, 300 rows with `228/36/36` train/validation/held-out splits; language counts `vi=96`, `en=120`, `mixed=84`.
 - Source hashes: base `9778d25b4a45c90bcee11ceed7364c76e7489292a03a417af9efdc53fe206da5`, repair `27a785ab956213d5372bee4edfa2f35d5081b307fa700d77a6abfdeb8a766bcc`, combined `b4eb7bca4841ed3bdfcab56f25ce9126869d0e7a28749f734855fafbeeb73905`.
-- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7.1`.
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7.1` (removed 2026-07-23; source and metrics retained).
 - Training: 2 epochs, 29 optimizer updates, best validation loss `2.5795224606990814`, dataset-manifest hash `b9262441633f492007cd16ed30479bf174dcc656a7109437f4f103f52d2c8582`.
 - Physical training peak: `5,874 MiB`; evaluation peak: `5,850 MiB`; both passed the `6,144 MiB` cap on the `6,141 MiB` GPU. The training manifest's `8,446.57958984375 MiB` PyTorch allocator value remains diagnostic only.
 - Evaluation: `conversation_focus_v7_1`, 24 greedy cases; automatic `10/24` and manual `14/24`. The original v7 slice scored `10/16` manually.
 - Verdict: `not_adopted`; GUI remains `checkpoints\ru-llama3.1-8b-instruct-v6`.
 
-The exact automatic failure IDs are recorded in
-`checkpoints\ru-llama3.1-8b-instruct-v7.1\manual_review_v7_1.json`. They are
-dominated by one-language collapse on mixed prompts, generic-short English
+The exact automatic failure IDs were recorded in the checkpoint-local
+evidence before the adapter was removed on 2026-07-23 and sent to the Recycle
+Bin. They are dominated by one-language collapse on mixed prompts, generic-short English
 replies, and missing follow-ups. Do not promote v7.1 or describe it as better
 than v6. The next permitted direction at that point was focused error analysis
 and a bounded repair for mixed-language preservation and English response
@@ -280,8 +280,8 @@ Last verified resources for the active Llama candidate:
   20/24; light adapter 11/24; both not adopted).
 - Qwen3.5 base probe: removed on 2026-07-23 (not adopted).
 - v6 adapter: `checkpoints\ru-llama3.1-8b-instruct-v6`.
-- v7 adapter: `checkpoints\ru-llama3.1-8b-instruct-v7` (not adopted).
-- v7.1 adapter: `checkpoints\ru-llama3.1-8b-instruct-v7.1` (not adopted).
+- v7 adapter: removed 2026-07-23 (not adopted; source and metrics retained).
+- v7.1 adapter: removed 2026-07-23 (not adopted; source and metrics retained).
 - v8 adapter: `checkpoints\ru-llama3.1-8b-instruct-v8` (not adopted; GUI stays v6).
 - v6.1 style adapter: `checkpoints\ru-llama3.1-8b-instruct-v6.1` (not adopted; GUI stays v6).
 

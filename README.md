@@ -413,7 +413,7 @@ V7 was trained as a separate local QLoRA adapter without changing the v6
 corpus, adapter, or GUI default:
 
 - Dataset: `data\conversations\ru_v7` — 180 rows, split `135/22/23` train/validation/held-out, source hash `9778d25b4a45c90bcee11ceed7364c76e7489292a03a417af9efdc53fe206da5`
-- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7`
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7` (removed 2026-07-23; historical source and metrics retained)
 - Training: 3 epochs, 26 optimizer updates, best validation loss `2.5561517639593645`, dataset-manifest hash `cffc7046c850bba6a8f564c37fcd0d47763c221fcb4a557668b98fa1799a9faf`
 - Evaluation: `conversation_focus_v7` (16 cases, greedy, `max_new_tokens=64`)
 
@@ -428,10 +428,10 @@ MiB`, below the current `6,144 MiB` cap. The training manifest also reported
 device; keep that counter as diagnostic until it is re-instrumented. The v7
 verdict is `not_adopted` because the conversation gates fail.
 
-The saved evidence is
-`checkpoints\ru-llama3.1-8b-instruct-v7\conversation_focus_v7.json` and
-`checkpoints\ru-llama3.1-8b-instruct-v7\manual_review_v7.json`. The GUI
-continues to use `checkpoints\ru-llama3.1-8b-instruct-v6`. The next model
+The local v7 adapter and its checkpoint-local evidence were removed on
+2026-07-23 and sent to the Recycle Bin; the source, metrics, and evaluator
+remain for historical comparison. The GUI continues to use
+`checkpoints\ru-llama3.1-8b-instruct-v6`. The next model
 iteration must improve English conversational length, enforce genuine mixed
 turn-taking, preserve `anh`/`em` in mixed contexts, and keep measured physical
 VRAM under the current 6 GiB cap before any adapter promotion.
@@ -442,7 +442,7 @@ V7.1 kept the v7 source immutable and added a separate 120-row repair source:
 
 - Dataset: `data\conversations\ru_v7_1` — 300 rows, split `228/36/36` train/validation/held-out; total language counts `vi=96`, `en=120`, `mixed=84`.
 - Dataset hashes: base `9778d25b4a45c90bcee11ceed7364c76e7489292a03a417af9efdc53fe206da5`, repair `27a785ab956213d5372bee4edfa2f35d5081b307fa700d77a6abfdeb8a766bcc`, combined `b4eb7bca4841ed3bdfcab56f25ce9126869d0e7a28749f734855fafbeeb73905`.
-- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7.1`.
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7.1` (removed 2026-07-23; historical source and metrics retained).
 - Training: 2 epochs, 29 optimizer updates, best validation loss `2.5795224606990814`, dataset-manifest hash `b9262441633f492007cd16ed30479bf174dcc656a7109437f4f103f52d2c8582`.
 - Training physical peak: `5,874 MiB` on the `6,141 MiB` device, below the `6,144 MiB` cap; `physical_cap_passed=true`.
 - Evaluation: `conversation_focus_v7_1` (24 greedy cases, `max_new_tokens=64`), allocator peak `5,632.331 MiB`, physical peak `5,850 MiB`, physical cap passed.
@@ -453,9 +453,9 @@ failures were generic-short English replies (`en_tired_flirt`,
 responses that collapsed to one language, and missing follow-ups in several
 short/contextual replies. Manual review scored `14/24` overall and `10/16` on
 the original v7 slice, below the required `21/24` and `14/16`. The saved
-decision is `not_adopted`; the GUI remains on v6. Full evidence is in
-`checkpoints\ru-llama3.1-8b-instruct-v7.1\conversation_focus_v7_1.json` and
-`checkpoints\ru-llama3.1-8b-instruct-v7.1\manual_review_v7_1.json`.
+decision is `not_adopted`; the GUI remains on v6. The local v7.1 adapter and
+its checkpoint-local evidence were removed on 2026-07-23 and sent to the
+Recycle Bin; source and evaluation history remain in the repository.
 
 V7.1 is useful as a measured failure-driven experiment, not as proof that it
 is better than v6. The v8 section below records the first continuation attempt;

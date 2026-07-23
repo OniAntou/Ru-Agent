@@ -527,6 +527,41 @@ automatic failure. Evidence is in
 `checkpoints\ru-llama3.1-8b-instruct-v6.1\manual_review_v6_1.json`. The GUI
 continues to use `checkpoints\ru-llama3.1-8b-instruct-v6`.
 
+## Ru Llama-3.1-8B-Instruct v6.2 dataset preparation (training deferred)
+
+The v6.2 dataset was authored as a new continuation candidate from v6, not
+from v6.1. This step prepares and audits the corpus only; no v6.2 adapter was
+trained, no checkpoint was created, and the GUI remains on v6.
+
+- Dataset: `data\conversations\ru_v6_2` — 2,400 rows split into
+  `1680/360/360` train/validation/held-out files.
+- Language counts: `vi=1200`, `mixed=720`, `en=480`.
+- Mode counts: everyday/follow-up `900`, story/context `480`, emotion/support
+  `360`, language-switch `240`, identity/repair `180`, humour `120`, and
+  light-flirt `120`.
+- Intensity counts: neutral `2040`, light `288`, adult-boundary `72`; target
+  responses contain no graphic sexual, violent, coercive, minor-related, or
+  possessive content.
+- Conversation shape: short `480`, medium `1200`, long `720`; all long rows
+  retain an earlier context signal and all 2,400 rows have alternating history.
+- Source SHA-256: `ad509760b8e87c7a6f0e11c4c1ee309a257a9766e265ee153ec170a42c450eb1`.
+- Split SHA-256: train
+  `f49de33139cd017535fc656857e8afbc0cae68474082b63d512a396613fe786d`,
+  validation `8668d19090b8cc6eba654b90546968873e6071ee7ad4ad64fd27508bf7719e16`,
+  held-out `e104780ae475dc59f481ad05327b95af970c8c50b4ce58e86cdaf9f12bce0311`.
+
+Build or audit it with:
+
+```powershell
+& .\.venv\Scripts\python.exe scripts\build_ru_llama_v6_2_data.py --audit
+& .\.venv\Scripts\python.exe scripts\build_ru_llama_v6_2_data.py
+```
+
+The explicit current status is: **dataset prepared; training not run; GUI
+remains v6**. No v6.2 quality or adoption claim is valid until a later
+isolated training and evaluation run passes the existing conversation and
+hardware gates.
+
 Runtime evidence is intentionally ignored by Git:
 
 - `models\qwen2.5-1.5b-instruct`

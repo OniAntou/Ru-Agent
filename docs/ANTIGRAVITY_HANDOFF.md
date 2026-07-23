@@ -154,6 +154,36 @@ failure, and no candidate GUI smoke was promoted. Evidence is in
 `checkpoints\ru-llama3.1-8b-instruct-v6.1\manual_review_v6_1.json`. Keep the
 GUI on `checkpoints\ru-llama3.1-8b-instruct-v6`.
 
+## Latest v6.2 dataset preparation (training not run)
+
+The v6.2 corpus is a new, dataset-only continuation candidate authored from
+the v6 adapter path. It deliberately does not inherit v6.1's source corpus or
+sexual prior. The build and quality gates passed on 2026-07-23:
+
+- Dataset: `data\conversations\ru_v6_2`, exactly 2,400 rows with
+  `1680/360/360` train/validation/held-out splits.
+- Language counts: `vi=1200`, `mixed=720`, `en=480`.
+- Mode counts: everyday/follow-up `900`, story/context `480`, emotion/support
+  `360`, language-switch `240`, identity/repair `180`, humour `120`, and
+  light-flirt `120`.
+- Intensity counts: neutral `2040`, light `288`, adult-boundary `72`; no
+  graphic sexual, violent, coercive, minor-related, or possessive assistant
+  targets passed into the corpus.
+- Turn bands: short `480`, medium `1200`, long `720`; all long rows retain an
+  earlier context signal, and all rows have alternating history.
+- Source SHA-256: `ad509760b8e87c7a6f0e11c4c1ee309a257a9766e265ee153ec170a42c450eb1`.
+- Split SHA-256: train
+  `f49de33139cd017535fc656857e8afbc0cae68474082b63d512a396613fe786d`,
+  validation `8668d19090b8cc6eba654b90546968873e6071ee7ad4ad64fd27508bf7719e16`,
+  held-out `e104780ae475dc59f481ad05327b95af970c8c50b4ce58e86cdaf9f12bce0311`.
+- Builder: `scripts\build_ru_llama_v6_2_data.py`; manifest and generated JSONL
+  remain local/ignored.
+
+Current status is explicitly **dataset prepared; training not run; GUI remains
+v6**. There is no v6.2 adapter, training result, evaluation result, or
+adoption decision yet. Do not open or promote a v6.2 GUI until a later isolated
+training run passes the conversation and physical-VRAM gates.
+
 ## Latest Qwen3.5-9B text-only baseline (not adopted)
 
 Qwen3.5-9B was downloaded locally and evaluated without an adapter or any

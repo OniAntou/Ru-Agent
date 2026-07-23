@@ -2,8 +2,8 @@
 
 ## Status
 
-Design approved by the user on 2026-07-23. This document is the design-review
-artifact; implementation starts only after the user reviews this written spec.
+Design approved by the user on 2026-07-23. The dataset phase was implemented
+and verified on 2026-07-23; training remains deliberately deferred.
 
 ## Goal
 
@@ -87,7 +87,7 @@ counts, and the seed.
 
 ## Training design
 
-The first v6.2 candidate uses:
+The future first v6.2 candidate uses:
 
 - base model: local Llama 3.1 8B Instruct;
 - source adapter: `checkpoints/ru-llama3.1-8b-instruct-v6`;
@@ -130,11 +130,11 @@ existing v6 GUI remains the default during the experiment.
 
 ## Deliverables
 
-Implementation will add a v6.2 dialogue source, corpus builder/validator,
-training config and safe launcher, expanded evaluator, focused tests, and a
-handoff entry with dataset hash, training manifest, evaluation result, and
-adoption decision. Generated datasets, checkpoints, and evaluation JSON remain
-local/ignored; source code and decision artifacts are committed.
+The completed dataset phase adds the v6.2 dialogue source, corpus
+builder/validator, dataset-only CLI, focused tests, and handoff documentation.
+The generated dataset and manifest are local/ignored. Training config, safe
+launcher, expanded evaluator, adapter, training manifest, and adoption
+decision remain deferred; no v6.2 model result is claimed.
 
 Out of scope: changing the base model, removing safeguards, adding voice or
 vision, redesigning the GUI, or deleting the v6 fallback.

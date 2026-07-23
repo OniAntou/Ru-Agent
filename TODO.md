@@ -39,6 +39,7 @@ Mục tiêu dài hạn: Ru giao tiếp tự nhiên bằng tiếng Việt và ti�
 - [x] Evaluate v8 against v6 on the same 24-case suite (v6 11/24, v8 14/24; original v7 slice 12/16 automatic; v8 not adopted; GUI remains v6).
 - [x] Build, train, and evaluate the bounded v6.1 natural-style continuation (120 rows; 3 epochs; validation loss 3.156519373257955; physical peak 5,841 MiB; common suite tied v6 at 11/24; not adopted; GUI remains v6).
 - [x] Add the exact four-turn screenshot replay gate for v6.1 and record its failure (first turn generic-short on both v6 and v6.1).
+- [x] Prepare the Ru v6.2 dataset-only candidate (2,400 rows; `1680/360/360` split; `vi=1200`, `mixed=720`, `en=480`; long-context and lower-NSFW quality gates pass; training not run; GUI remains v6).
 - [ ] Repair v8's remaining mixed-language collapse, generic-short English replies, and missing follow-ups before another adapter run.
 - [ ] Make Ru consistently natural in short Vietnamese-English conversations.
 - [ ] Thu thập các lượt chat được đánh dấu hữu ích.

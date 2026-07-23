@@ -17,7 +17,7 @@
 - Create: `tests/test_ru_v6_2_corpus.py`
 - Use: `src/mini_gpt/ru_style.py`, `src/mini_gpt/ru_qwen_corpus.py`
 
-- [ ] **Step 1: Write the failing shape tests.**
+- [x] **Step 1: Write the failing shape tests.**
 
   Import `v6_2_dialogue_records`, `V6_2_TOTAL_ROWS`, the expected count
   dictionaries, and `build_ru_v6_2_corpus`. Assert:
@@ -46,7 +46,7 @@
   }
   ```
 
-- [ ] **Step 2: Add failing quality and split tests.**
+- [x] **Step 2: Add failing quality and split tests.**
 
   Assert every row has exactly the fields `messages`, `response`, `language`,
   `mode`, `intensity`, `turn_band`, `source`, and `license`; starts with the
@@ -59,7 +59,7 @@
   `held_out.jsonl`, and `manifest.json` with split counts `1680/360/360`, and
   that final prompts do not overlap between splits.
 
-- [ ] **Step 3: Run the focused tests and confirm they fail for missing modules.**
+- [x] **Step 3: Run the focused tests and confirm they fail for missing modules.**
 
   Run:
 
@@ -76,7 +76,7 @@
 - Create: `src/mini_gpt/ru_v6_2_dialogues.py`
 - Use: `src/mini_gpt/ru_v6_1_dialogues.py` for schema conventions only
 
-- [ ] **Step 1: Define the source constants and row constructor.**
+- [x] **Step 1: Define the source constants and row constructor.**
 
   Define `SOURCE`, `LICENSE`, `V6_2_TOTAL_ROWS`, the language/mode/intensity/
   turn-band count dictionaries, and:
@@ -89,35 +89,35 @@
   `_record(...)` must always place `RU_SYSTEM_PROMPT` first and attach the
   `intensity` and `turn_band` labels in addition to the existing metadata.
 
-- [ ] **Step 2: Add curated Vietnamese, mixed, and English topic banks.**
+- [x] **Step 2: Add curated Vietnamese, mixed, and English topic banks.**
 
   Cover arrival/home, work/study, food/coffee, music/film, games, travel,
   weather, routines, learning, small wins, uncertainty, loneliness, plans,
   humour, and gentle adult affection. Every bank must contain enough distinct
   prompts to avoid reusing a final prompt across languages or splits.
 
-- [ ] **Step 3: Add context builders for 2–3, 4–8, and 9–14 user-turn rows.**
+- [x] **Step 3: Add context builders for 2–3, 4–8, and 9–14 user-turn rows.**
 
   Long builders must carry a named earlier detail such as a task, drink,
   person, plan, or mood into the final user turn and response. The assistant
   history must not be a repeated `I am listening` stock phrase. Follow-up
   targets must ask a question only when the topic has a natural continuation.
 
-- [ ] **Step 4: Add the lower-NSFW intensity lanes.**
+- [x] **Step 4: Add the lower-NSFW intensity lanes.**
 
   Generate exactly 2,040 `neutral`, 288 `light`, and 72 `adult_boundary` rows.
   `adult_boundary` rows may acknowledge adult intent and consent, but their
   target text must remain non-graphic. Ordinary rows must not escalate a
   benign prompt into sexual content. Do not add raw graphic v6 targets.
 
-- [ ] **Step 5: Add repair, mixed-language, and identity examples.**
+- [x] **Step 5: Add repair, mixed-language, and identity examples.**
 
   Include 180 identity/repair records that correct `anh`/`em`, recover from a
   misunderstanding, or continue after a topic shift. Mixed records must use
   both languages naturally and must not merely append an English sentence to a
   Vietnamese template.
 
-- [ ] **Step 6: Run source-only shape tests.**
+- [x] **Step 6: Run source-only shape tests.**
 
   Run:
 
@@ -134,28 +134,28 @@
 - Create: `src/mini_gpt/ru_v6_2_corpus.py`
 - Use: `src/mini_gpt/ru_v6_1_corpus.py`, `src/mini_gpt/ru_qwen_corpus.py`
 
-- [ ] **Step 1: Implement `_normalize_row` and metadata validation.**
+- [x] **Step 1: Implement `_normalize_row` and metadata validation.**
 
   Normalize Unicode with the existing `normalize_text`, reject invalid role
   order, wrong system prompt, empty content, unsupported labels, bad
   provenance, forbidden self-reference, and forbidden target patterns. Call
   `casual_rejection_reason` for the existing generic/self-focus/refusal gates.
 
-- [ ] **Step 2: Implement v6.2-specific intensity and length gates.**
+- [x] **Step 2: Implement v6.2-specific intensity and length gates.**
 
   Reject a target labelled `neutral` or `light` if it contains graphic sexual
   language. Reject any target containing violence, coercion, minors, or
   possessive threats. Verify the number of user turns matches `turn_band` and
   verify long rows contain a retained context signal in the final response.
 
-- [ ] **Step 3: Implement duplicate and prompt-group isolation.**
+- [x] **Step 3: Implement duplicate and prompt-group isolation.**
 
   Compute canonical pair hashes and final-prompt groups, reject duplicate pairs
   and duplicate final prompts in the source, then assign each prompt group to
   `train`, `validation`, or `held_out` with `Random(42)` while preserving the
   exact split counts.
 
-- [ ] **Step 4: Implement atomic output and manifest reporting.**
+- [x] **Step 4: Implement atomic output and manifest reporting.**
 
   Expose:
 
@@ -174,7 +174,7 @@
   counts in `manifest.json`. `write=False` must return the report without
   creating the destination directory.
 
-- [ ] **Step 5: Run corpus tests and confirm deterministic output.**
+- [x] **Step 5: Run corpus tests and confirm deterministic output.**
 
   Run:
 
@@ -190,13 +190,13 @@
 **Files:**
 - Create: `scripts/build_ru_llama_v6_2_data.py`
 
-- [ ] **Step 1: Add the CLI parser.**
+- [x] **Step 1: Add the CLI parser.**
 
   Support `--output-dir`, `--seed`, and `--audit`, defaulting to
   `data/conversations/ru_v6_2`. Audit mode must use `TemporaryDirectory` and
   print the report plus held-out rows without writing the real dataset.
 
-- [ ] **Step 2: Run audit mode.**
+- [x] **Step 2: Run audit mode.**
 
   Run:
 
@@ -208,7 +208,7 @@
   approved language/mode/intensity/turn-band counts, and no real output
   directory created by audit mode.
 
-- [ ] **Step 3: Build the ignored local dataset.**
+- [x] **Step 3: Build the ignored local dataset.**
 
   Run:
 
@@ -226,7 +226,7 @@
 - Modify: `TODO.md`
 - Modify: `docs/ANTIGRAVITY_HANDOFF.md`
 
-- [ ] **Step 1: Run the dataset verification commands.**
+- [x] **Step 1: Run the dataset verification commands.**
 
   Run:
 
@@ -239,13 +239,13 @@
   Expected: focused tests pass, audit reports the exact contract, and there is
   no whitespace error. Confirm no `train_*.py` process is running.
 
-- [ ] **Step 2: Record dataset-only status in project docs.**
+- [x] **Step 2: Record dataset-only status in project docs.**
 
   Add the final dataset hash, split/count report, output path, and the explicit
   status `dataset prepared; training not run; GUI remains v6`. Do not claim a
   v6.2 model result or adoption decision.
 
-- [ ] **Step 3: Commit only the dataset source, builder, tests, CLI, and docs.**
+- [x] **Step 3: Commit only the dataset source, builder, tests, CLI, and docs.**
 
   Stage the exact v6.2 paths and commit:
 

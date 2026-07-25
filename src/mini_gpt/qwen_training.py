@@ -9,7 +9,7 @@ from pathlib import Path
 from .qwen_runtime import qwen_base_profile
 
 
-@dataclass(frozen=True)
+@dataclass
 class QwenTrainingConfig:
     base_model_id: str
     base_model_path: str | None = None
@@ -34,7 +34,7 @@ class QwenTrainingConfig:
     def __post_init__(self) -> None:
         profile = qwen_base_profile(self.base_model_id)
         if self.base_model_path is None:
-            object.__setattr__(self, "base_model_path", profile.local_path)
+            self.base_model_path = profile.local_path
         elif self.base_model_path.replace("\\", "/") != profile.local_path:
             raise ValueError("base_model_path must match the registered Ru Qwen base path")
         if not self.backend or not self.profile_name:

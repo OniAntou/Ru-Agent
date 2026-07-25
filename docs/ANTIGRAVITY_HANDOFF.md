@@ -4,14 +4,15 @@
 
 Continue the local-only work on **Ru**, a friendly Vietnamese-English conversation model. The priority is natural short conversations, coherent multi-turn context, and the default Vietnamese forms of address: Ru calls the user `anh` and refers to itself as `em`. Do not optimize for code ability or benchmarks at the expense of conversation quality.
 
-Inference, evaluation, and any future training must stay fully local. The user does not want a cloud API. Keep voice, vision, and avatar work blocked until a text candidate passes the conversation gate; corpus, adapter, and GUI changes belong only to a candidate that passes the local bilingual gate. The current comparison set includes the Llama v6/v7/v7.1/v8 work, the Llama 3.2 base-only probe, the Gemma 4 E4B isolated text-only baseline, and the Qwen3.5 base-only probe.
+Inference, evaluation, and any future training must stay fully local. The user does not want a cloud API. Keep voice, vision, and avatar work blocked until a text candidate passes the conversation gate; corpus, adapter, and GUI changes belong only to a candidate that passes the local bilingual gate. The current comparison set includes the Llama v6/v6.1/v6.2 work, the historical v7/v7.1/v8 experiments (corpus source cleaned from working tree 2026-07-26; retained in git history), the Llama 3.2 base-only probe, the Gemma 4 E4B isolated text-only baseline, and the Qwen3.5 base-only probe.
 
 ## Current checked result
 
 The current repository is `D:\LLM` on branch `main`; the working tree contains
-the v6 GUI comparison path, the completed v7/v7.1 experiment source, the v8
-true-continuation source and adapter, and the historical base-only evaluator
-and documentation changes.
+the v6 GUI comparison path, the v6.1/v6.2 experiment sources, and the
+historical base-only evaluator and documentation changes. The v7/v7.1/v8 corpus
+source files, build scripts, and tests were cleaned from the working tree on
+2026-07-26 during a refactoring pass; they remain in git history.
 
 The active local candidate is a QLoRA adapter over
 `NousResearch/Meta-Llama-3.1-8B-Instruct`:
@@ -47,7 +48,7 @@ The v7 corpus and adapter are separate from v6:
 
 - Corpus: `data\conversations\ru_v7`, 180 rows with `135/22/23` train/validation/held-out splits.
 - Corpus source hash: `9778d25b4a45c90bcee11ceed7364c76e7489292a03a417af9efdc53fe206da5`.
-- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7` (removed 2026-07-23; source and metrics retained).
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7` (removed 2026-07-23; corpus source, build scripts, and tests cleaned 2026-07-26; retained in git history).
 - Full training: 3 epochs, 26 optimizer updates, best validation loss `2.5561517639593645`, dataset-manifest hash `cffc7046c850bba6a8f564c37fcd0d47763c221fcb4a557668b98fa1799a9faf`.
 - Live evaluation: `conversation_focus_v7`, 16 greedy cases, automatic `9/16`.
 - Manual review: `8/16`, below the required `14/16`.
@@ -71,7 +72,7 @@ and trained into a separate adapter:
 
 - Corpus: `data\conversations\ru_v7_1`, 300 rows with `228/36/36` train/validation/held-out splits; language counts `vi=96`, `en=120`, `mixed=84`.
 - Source hashes: base `9778d25b4a45c90bcee11ceed7364c76e7489292a03a417af9efdc53fe206da5`, repair `27a785ab956213d5372bee4edfa2f35d5081b307fa700d77a6abfdeb8a766bcc`, combined `b4eb7bca4841ed3bdfcab56f25ce9126869d0e7a28749f734855fafbeeb73905`.
-- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7.1` (removed 2026-07-23; source and metrics retained).
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7.1` (removed 2026-07-23; corpus source, build scripts, and tests cleaned 2026-07-26; retained in git history).
 - Training: 2 epochs, 29 optimizer updates, best validation loss `2.5795224606990814`, dataset-manifest hash `b9262441633f492007cd16ed30479bf174dcc656a7109437f4f103f52d2c8582`.
 - Physical training peak: `5,874 MiB`; evaluation peak: `5,850 MiB`; both passed the `6,144 MiB` cap on the `6,141 MiB` GPU. The training manifest's `8,446.57958984375 MiB` PyTorch allocator value remains diagnostic only.
 - Evaluation: `conversation_focus_v7_1`, 24 greedy cases; automatic `10/24` and manual `14/24`. The original v7 slice scored `10/16` manually.
@@ -95,9 +96,10 @@ LoRA adapter from the base model:
 - Corpus: `data\conversations\ru_v8`, 336 rows with `262/37/37` splits.
 - Corpus composition: 48 quality-filtered v6 replay rows and 288 v7.1
   correction rows; common-suite prompts were excluded and final prompts were
-  kept within one split.
+  kept within one split (corpus source, build script, and tests cleaned from
+  working tree 2026-07-26; retained in git history).
 - Corpus manifest hash: `31d6f09e4351bbb0d8a8ffd5005c638e50c9ef5255db99a007d216e8c64296a0`.
-- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v8`; source adapter is v6.
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v8`; source adapter is v6 (corpus source, build script, and tests cleaned 2026-07-26; retained in git history).
 - Training: one epoch, 17 optimizer updates, `max_length=512`, learning rate
   `1e-5`, best validation loss `2.902062905801309`.
 - Training physical peak: `5,865 MiB`; the `6,144 MiB` physical cap passed.
@@ -296,23 +298,36 @@ replies during spot inspection. It is `not_adopted`; do not replace v6 or change
 the GUI. Before another Gemma run, diagnose this degradation and use a targeted
 repair objective rather than repeating the same 64-step profile.
 
+## Project structure changes (2026-07-26)
+
+The MiniGPT from-scratch transformer has been removed from the project:
+- **Deleted source files**: `model.py`, `train.py`, `tokenizer.py`, `data.py`, `data_sources.py`, `evaluate.py`, `cli.py`, `config.py`, `checkpointing.py`, `chat_supervision.py`, `chat_sources.py`, `chat_finetune_data.py`
+- **Deleted tests**: 12 MiniGPT-specific test files
+- **Deleted data**: `data/raw/`, `data/tokenizer.json`, `data/conversations/processed/`, `data/conversations/response_v2_processed/`, open seed data files
+- **Deleted configs**: `base.json`, `tiny.json`, `chat_finetune.json`, `chat_response_v2.json`
+- **Deleted scripts**: `download_wikipedia.py`, `download_open_chat_data.py`, `download_response_chat_data.py`
+- **Kept**: All Llama/corpus/runtime files, `ChatTurn` dataclass, `normalize_text` utility moved to `_text_utils.py`
+- **GUI simplified**: Llama-only path, no more MiniGPT checkpoint/tokenizer selection
+
 ## Machine and stored artifacts
 
 Last verified resources for the active Llama candidate:
 
+- OS/Language: Windows, **Python 3.13.14** (upgraded from 3.11.15 on 2026-07-26; venv recreated)
 - RTX 4050 Laptop GPU: `6,141 MiB` total VRAM.
 - RAM: `15.7 GiB`.
 - Free space on D:: about `50.41 GiB` after removing the Gemma 4 artifacts.
 - Llama base: `models\llama3.1-8b-instruct-hf`.
+- Llama GGUF (alternate path): `models\llama3.1-8b-instruct-gguf\Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf`
 - Llama 3.2 trial: `models\llama3.2-3b-instruct-hf` (removed after evaluation;
   result retained, not adopted).
 - Gemma 4 E4B trial: removed on 2026-07-23 after comparison (routed base
   20/24; light adapter 11/24; both not adopted).
 - Qwen3.5 base probe: removed on 2026-07-23 (not adopted).
 - v6 adapter: `checkpoints\ru-llama3.1-8b-instruct-v6`.
-- v7 adapter: removed 2026-07-23 (not adopted; source and metrics retained).
-- v7.1 adapter: removed 2026-07-23 (not adopted; source and metrics retained).
-- v8 adapter: `checkpoints\ru-llama3.1-8b-instruct-v8` (not adopted; GUI stays v6).
+- v7 adapter: removed 2026-07-23 (not adopted; corpus source, build scripts, and tests cleaned 2026-07-26; retained in git history).
+- v7.1 adapter: removed 2026-07-23 (not adopted; corpus source, build scripts, and tests cleaned 2026-07-26; retained in git history).
+- v8 adapter: `checkpoints\ru-llama3.1-8b-instruct-v8` (not adopted; corpus source, build scripts, and tests cleaned 2026-07-26; retained in git history; GUI stays v6).
 - v6.1 style adapter: `checkpoints\ru-llama3.1-8b-instruct-v6.1` (not adopted; GUI stays v6).
 
 ## Recommended next experiment
@@ -332,7 +347,16 @@ the cap before promotion.
 
 ## Existing code and useful commands
 
-The persona policy is in `src\mini_gpt\ru_style.py`; the active local Llama runtime is `src\mini_gpt\llama3_1_runtime.py`; the current v6/v6.1 comparison evaluator is `scripts\evaluate_ru_llama3_1_v6_1.py`. Existing tests are under `tests\`.
+The persona policy is in `src\mini_gpt\ru_style.py`; the active local Llama runtime is `src\mini_gpt\llama3_1_runtime.py`; the v6/v6.1 comparison evaluator is `scripts\evaluate_ru_llama3_1_v6_1.py`. Existing tests are under `tests\`.
+
+### Inference optimizations (2026-07-26)
+
+The Llama runtime now enables two PyTorch-native optimizations:
+
+- `attn_implementation="sdpa"` in `AutoModelForCausalLM.from_pretrained` — uses PyTorch's native SDPA backend (Flash Attention / Memory-Efficient / Math auto-select)
+- `torch.compile(model, mode="reduce-overhead")` — JIT-compiles the model graph; first inference compiles (~3-5s), subsequent calls benefit from the fused graph
+
+Both are compatible with 4-bit NF4 bitsandbytes quantization and require no extra dependencies. The model load + compile is cached in `_GENERATION_CACHE` and paid once per session. A pre-downloaded GGUF Q4_K_M checkpoint exists at `models\llama3.1-8b-instruct-gguf` for an alternative `llama-cpp-python` inference path (no QLoRA adapter in PEFT format).
 
 From `D:\LLM`, baseline checks are:
 
@@ -342,15 +366,15 @@ From `D:\LLM`, baseline checks are:
 ```
 
 The historical evaluator is `scripts\evaluate_ru_llama3_1_qlora.py`; the v6/v6.1
-comparison evaluator is `scripts\evaluate_ru_llama3_1_v6_1.py`; the v7
-focus evaluator is `scripts\evaluate_ru_llama3_1_v7.py`, the current isolated
-repair evaluator is `scripts\evaluate_ru_llama3_1_v7_1.py`, the Llama 3.2
-base-only evaluator is `scripts\evaluate_ru_llama3_2_base.py`, and the Qwen3.5
-base-only evaluator is `scripts\evaluate_qwen35_9b_base.py`. The historical
-Gemma evaluator is `scripts\evaluate_gemma4_e4b_base.py`; its model/runtime
-artifacts were removed and must be restored before it can run. The runtime accepts
-the GUI's `max_new_tokens`, `temperature`, and `top_k` settings; evaluation is
-greedy and records its generation settings for reproducibility.
+comparison evaluator is `scripts\evaluate_ru_llama3_1_v6_1.py`; the historical
+v7/v7.1/v8 evaluators were cleaned from the working tree on 2026-07-26 (retained
+in git history). The Llama 3.2 base-only evaluator is
+`scripts\evaluate_ru_llama3_2_base.py`, and the Qwen3.5 base-only evaluator is
+`scripts\evaluate_qwen35_9b_base.py`. The historical Gemma evaluator is
+`scripts\evaluate_gemma4_e4b_base.py`; its model/runtime artifacts were removed
+and must be restored before it can run. The runtime accepts the GUI's
+`max_new_tokens`, `temperature`, and `top_k` settings; evaluation is greedy and
+records its generation settings for reproducibility.
 
 ## Documentation hygiene
 

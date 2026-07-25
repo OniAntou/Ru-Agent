@@ -6,7 +6,11 @@ import time
 import pytest
 
 import mini_gpt.llama3_1_training as training
-from mini_gpt.llama3_1_training import PhysicalVramMonitor, read_nvidia_smi_memory_mib
+from mini_gpt.llama3_1_training import (
+    PhysicalVramMonitor,
+    read_nvidia_smi_memory_mib,
+    write_adapter_manifest,
+)
 
 
 def test_read_nvidia_smi_memory_mib_parses_first_gpu(monkeypatch):
@@ -48,3 +52,22 @@ def test_physical_vram_monitor_records_peak_and_cap_breach(monkeypatch):
 
     assert monitor.peak_mib == 6200.0
     assert monitor.exceeded is True
+
+
+def test_adapter_manifest_records_continuation_source(tmp_path):
+    manifest = write_adapter_manifest(
+        tmp_path / "adapter",
+        backend="llama3.1-qlora-continuation",
+        profile_name="ru_llama3_1_v8_from_v6",
+        base_model_id="test-base",
+        base_model_path="D:/LLM/models/llama3.1-8b-instruct-hf",
+        source_adapter_dir="D:/LLM/checkpoints/ru-llama3.1-8b-instruct-v6",
+        dataset_sha256="dataset-hash",
+        best_validation_loss=1.25,
+        peak_vram_mb=5120.0,
+        seed=42,
+        max_length=512,
+    )
+
+    assert manifest["adapter_dir"].endswith("adapter")
+    assert manifest["source_adapter_dir"].endswith("ru-llama3.1-8b-instruct-v6")

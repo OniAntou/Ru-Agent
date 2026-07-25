@@ -17,55 +17,17 @@ def test_generation_settings_are_parsed_and_validated():
 
 
 def test_default_paths_point_inside_project():
-    checkpoint, tokenizer = default_paths()
+    checkpoint = default_paths()
     assert str(checkpoint).startswith("D:\\LLM")
-    assert str(tokenizer).endswith("data\\tokenizer.json")
 
 
-def test_default_paths_prefer_completed_chat_finetune(tmp_path, monkeypatch):
+def test_default_paths_fall_back_to_last_candidate(tmp_path, monkeypatch):
     monkeypatch.setattr(gui, "PROJECT_ROOT", tmp_path)
-    chat_checkpoint = tmp_path / "checkpoints" / "chat-finetune" / "latest.pt"
-    chat_checkpoint.parent.mkdir(parents=True)
-    chat_checkpoint.touch()
-    base_checkpoint = tmp_path / "checkpoints" / "base" / "latest.pt"
-    base_checkpoint.parent.mkdir(parents=True)
-    base_checkpoint.touch()
-
-    checkpoint, _ = gui.default_paths()
-
-    assert checkpoint == chat_checkpoint
-
-
-def test_default_paths_prefer_best_chat_finetune_over_latest(tmp_path, monkeypatch):
-    monkeypatch.setattr(gui, "PROJECT_ROOT", tmp_path)
-    checkpoint_dir = tmp_path / "checkpoints" / "chat-finetune"
-    checkpoint_dir.mkdir(parents=True)
-    latest_checkpoint = checkpoint_dir / "latest.pt"
-    latest_checkpoint.touch()
-    best_checkpoint = checkpoint_dir / "best.pt"
-    best_checkpoint.touch()
-
-    checkpoint, _ = gui.default_paths()
-
-    assert checkpoint == best_checkpoint
-
-
-def test_default_paths_prefer_response_only_v2_best_checkpoint(tmp_path, monkeypatch):
-    monkeypatch.setattr(gui, "PROJECT_ROOT", tmp_path)
-    v2_dir = tmp_path / "checkpoints" / "chat-response-v2"
-    v2_dir.mkdir(parents=True)
-    v2_best = v2_dir / "best.pt"
-    v2_best.touch()
-    v1_dir = tmp_path / "checkpoints" / "chat-finetune"
-    v1_dir.mkdir(parents=True)
-    (v1_dir / "best.pt").touch()
-
-    checkpoint, _ = gui.default_paths()
-
-    assert checkpoint == v2_best
+    checkpoint = gui.default_paths()
+    assert str(checkpoint).endswith("ru-llama3.1-8b-instruct-v5")
 
 
 def test_runner_reports_missing_checkpoint():
     runner = ModelRunner()
-    with pytest.raises(FileNotFoundError, match="checkpoint"):
-        runner.load("D:\\LLM\\missing.pt", "D:\\LLM\\data\\tokenizer.json")
+    with pytest.raises(FileNotFoundError, match="adapter directory"):
+        runner.load("D:\\LLM\\nonexistent")

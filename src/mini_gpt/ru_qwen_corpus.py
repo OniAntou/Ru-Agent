@@ -10,7 +10,7 @@ from pathlib import Path
 from random import Random
 from typing import Any
 
-from .data import normalize_text
+from ._text_utils import normalize_text
 from .ru_style import RU_SYSTEM_PROMPT
 
 EXPECTED_EXAMPLES = 120

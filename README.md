@@ -1,23 +1,17 @@
-# Ru — Bilingual Mini-GPT
+# Ru — Bilingual Vietnamese-English LLM
 
-An educational Vietnamese-English decoder-only Transformer trained from random initialization. The project is intentionally small enough to run experiments on an RTX 4050 Laptop GPU with approximately 6 GB VRAM.
-
-This repository is not a ChatGPT replacement. The included corpus is an authored smoke-test corpus; useful general-purpose behavior requires a much larger, openly licensed dataset.
+A local Vietnamese-English conversational LLM using QLoRA fine-tuned
+Llama-3.1-8B-Instruct. Runs on an RTX 4050 Laptop GPU (~6 GiB VRAM).
 
 ## Setup
 
-Use Python 3.11 and keep the environment on D::
+Python 3.13 environment on D::
 
 ```powershell
-$python311 = 'C:\Users\USER\AppData\Roaming\uv\python\cpython-3.11.15-windows-x86_64-none\python.exe'
-& $python311 -m venv D:\LLM\.venv
-& D:\LLM\.venv\Scripts\python.exe -m pip install --upgrade pip
-& D:\LLM\.venv\Scripts\python.exe -m pip install --no-cache-dir torch==2.9.0 --index-url https://download.pytorch.org/whl/cu130
+& D:\LLM\.venv\Scripts\python.exe -m pip install --no-cache-dir torch==2.13.0 --index-url https://download.pytorch.org/whl/cu130
 & D:\LLM\.venv\Scripts\python.exe -m pip install numpy tokenizers datasets pytest
 & D:\LLM\.venv\Scripts\python.exe -m pip install -e D:\LLM --no-deps
 ```
-
-The CUDA command installs the GPU wheel used on the development laptop. If a future PyTorch release changes its official CUDA matrix, use the Windows/Pip/CUDA selector on the official PyTorch installation page and keep the selected wheel inside this D: drive environment.
 
 Check the runtime:
 
@@ -25,101 +19,25 @@ Check the runtime:
 & D:\LLM\.venv\Scripts\python.exe -c "import torch; print(torch.__version__); print('CUDA:', torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
 ```
 
-## End-to-end smoke run
-
-Run from `D:\LLM`:
+Tests:
 
 ```powershell
-& .\.venv\Scripts\python.exe -m mini_gpt.cli prepare --raw-dir data/raw --processed-dir data/processed
-& .\.venv\Scripts\python.exe -m mini_gpt.cli tokenizer --text-dir data/processed --output data/tokenizer.json --vocab-size 300
-& .\.venv\Scripts\python.exe -m mini_gpt.cli encode --text data/processed/train.txt --tokenizer data/tokenizer.json --output data/processed/train.bin
-& .\.venv\Scripts\python.exe -m mini_gpt.cli encode --text data/processed/val.txt --tokenizer data/tokenizer.json --output data/processed/val.bin
-& .\.venv\Scripts\python.exe -m mini_gpt.cli train --config configs/tiny.json --processed-dir data/processed --tokenizer data/tokenizer.json --checkpoint-dir checkpoints
-& .\.venv\Scripts\python.exe -m mini_gpt.cli evaluate --checkpoint checkpoints/latest.pt --tokenizer data/tokenizer.json --validation data/processed/val.jsonl
-& .\.venv\Scripts\python.exe -m mini_gpt.cli generate --checkpoint checkpoints/latest.pt --tokenizer data/tokenizer.json --prompt "Xin chào"
-& .\.venv\Scripts\python.exe -m pytest -q
+& D:\LLM\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The training command uses CUDA automatically when PyTorch detects it. The tiny configuration is only a pipeline check; it is not enough data or compute for strong language quality.
-
-## Download a larger open sample
-
-The downloader streams a bounded sample from the cleaned Wikimedia Wikipedia dataset and keeps the Hugging Face cache on D:. It does not download the complete Wikipedia collection.
-
-```powershell
-cd D:\LLM
-& .\.venv\Scripts\python.exe scripts\download_wikipedia.py --max-documents 10000 --min-characters 200
-```
-
-This creates `data/raw/wikipedia_en.txt`, `data/raw/wikipedia_vi.txt`, and `data/raw/wikipedia_manifest.json`. Review the manifest and the Wikimedia license information before redistributing the data. Then rerun the preparation/tokenizer/encoding commands above. Use `configs\base.json` for the larger model only after confirming that the data volume and available disk space are sufficient; it is configured for 10,000 steps and is intentionally not launched by the downloader.
-
-## Simple GUI
+## GUI
 
 Launch the local Tkinter interface:
 
 ```powershell
-cd D:\LLM
-& .\.venv\Scripts\python.exe -m mini_gpt.gui
+& D:\LLM\.venv\Scripts\python.exe -m mini_gpt.gui
 ```
 
-The local model is named **Ru**. The window supports checkpoint/tokenizer selection, a multi-turn conversation, maximum generated tokens, temperature, and top-k. Generation runs in a background thread so the window remains responsive.
-
-Use `Send` to continue the current in-memory chat. `New chat` clears only that session. After a useful answer, press `Mark last response useful`; only that user/assistant pair is appended to the local UTF-8 JSONL file:
-
-```text
-D:\LLM\data\conversations\approved.jsonl
-```
-
-The model does not update its weights automatically when an example is saved. Review the approved examples before using them in a future explicit fine-tuning run.
-
-### Gemma 4 E4B test GUI (historical)
-
-The temporary Gemma base and light-adapter Tkinter test windows were removed
-after comparison on 2026-07-23. The active GUI remains the Llama v6 adapter;
-the Gemma experiment details are retained below as historical notes.
-
-## Open conversation seed data
-
-Ru can start its conversational fine-tuning from a bounded, openly licensed seed set while keeping user-approved chat separate. The downloader streams a deterministic sample from [UltraChat](https://huggingface.co/datasets/HuggingFaceH4/ultrachat_200k) (MIT), [OpenAssistant OASST2](https://huggingface.co/datasets/OpenAssistant/oasst2) (Apache-2.0), and [Vietnamese Dataset](https://huggingface.co/datasets/hoanghai2110/vietnamese-dataset) (Apache-2.0). It keeps the Hugging Face cache, the normalized data, and its manifest on D:.
-
-The generated `data/conversations/open_seed.jsonl` records the prompt, response, language, source, and licence for every example. It is separate from the local, user-owned `approved.jsonl` produced by the GUI.
-
-```powershell
-cd D:\LLM
-& .\.venv\Scripts\python.exe scripts\download_open_chat_data.py
-& .\.venv\Scripts\python.exe -m mini_gpt.cli prepare-chat --input data/conversations/open_seed.jsonl --output-dir data/conversations/processed
-& .\.venv\Scripts\python.exe -m mini_gpt.cli encode --text data/conversations/processed/train.txt --tokenizer data/tokenizer.json --output data/conversations/processed/train.bin
-& .\.venv\Scripts\python.exe -m mini_gpt.cli encode --text data/conversations/processed/val.txt --tokenizer data/tokenizer.json --output data/conversations/processed/val.bin
-```
-
-## Fine-tuning for natural conversation
-
-Complete base training first. Use the open seed-data commands above for the initial conversational checkpoint, then keep collecting and reviewing useful chat turns with the GUI for later fine-tuning. The chat preprocessor accepts either JSONL file; it requires at least two unique examples, but useful conversational improvement needs many more high-quality examples.
-
-To fine-tune from manually approved examples instead, prepare and encode `approved.jsonl` without changing the Wikipedia corpus or tokenizer:
-
-```powershell
-cd D:\LLM
-& .\.venv\Scripts\python.exe -m mini_gpt.cli prepare-chat --input data/conversations/approved.jsonl --output-dir data/conversations/processed
-& .\.venv\Scripts\python.exe -m mini_gpt.cli encode --text data/conversations/processed/train.txt --tokenizer data/tokenizer.json --output data/conversations/processed/train.bin
-& .\.venv\Scripts\python.exe -m mini_gpt.cli encode --text data/conversations/processed/val.txt --tokenizer data/tokenizer.json --output data/conversations/processed/val.bin
-```
-
-Fine-tune from the completed base model with a fresh optimizer and checkpoint directory:
-
-```powershell
-& .\.venv\Scripts\python.exe -m mini_gpt.cli train --config configs/chat_finetune.json --processed-dir data/conversations/processed --tokenizer data/tokenizer.json --checkpoint-dir checkpoints/chat-finetune --init-checkpoint checkpoints/base/latest.pt
-```
-
-`--init-checkpoint` copies only compatible model weights; it does not continue the base optimizer, scheduler, or step counter. Use `--resume checkpoints/chat-finetune/latest.pt` only to continue an interrupted MiniGPT fine-tuning run. For the MiniGPT fallback, a validation-selected `checkpoints/chat-finetune/best.pt` is preferred over `latest.pt`; the GUI checks the local Llama v6 adapter first.
-
-### V2 result (not adopted)
-
-`chat-response-v2` trained for 1,200 CUDA steps from `checkpoints/base/latest.pt`.
-Its validation-best checkpoint was step 1,150 with assistant-token loss
-`3.3194339752197264`, but manual Vietnamese-English greeting tests still
-produced repetitive or nonsensical responses. The V2 artifacts are retained for
-comparison only; they do not meet Ru's natural-conversation goal.
+The GUI loads the Llama v6 QLoRA adapter (defaults to
+`checkpoints\ru-llama3.1-8b-instruct-v6`) and supports multi-turn conversation
+with controllable max tokens, temperature, and top-k. Use `Mark last response
+useful` to save examples to `data/conversations/approved.jsonl`. The Ru voice
+toggle sends responses to the local F5-TTS server at port 5050.
 
 ## Ru V3 authored conversation corpus
 
@@ -407,13 +325,24 @@ child-safety refusal. Peak allocated VRAM was `5,632.025 MiB`: above the old
 `5,500 MiB` benchmark but below the current `6,144 MiB` cap. V6 remains an
 experimental local candidate because its conversation gate still fails.
 
+### Llama inference optimizations (2026-07-26)
+
+The v6 runtime (`src/mini_gpt/llama3_1_runtime.py`) uses two PyTorch-native optimizations:
+
+- **`attn_implementation="sdpa"`** — PyTorch SDPA backend, auto-selects Flash Attention / Memory-Efficient / Math kernel
+- **`torch.compile(mode="reduce-overhead")`** — JIT-compiles the model graph; first inference is ~3-5s slower (compilation), subsequent calls faster
+
+Both are compatible with 4-bit NF4 quantization and require no extra dependencies. The model and optimizer state are cached in `_GENERATION_CACHE` after the first load, so the compile cost is paid once per session.
+
+A pre-downloaded GGUF Q4_K_M checkpoint exists at `models\llama3.1-8b-instruct-gguf\Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf`. It can be used via `llama-cpp-python` for an alternative C++ inference path (no QLoRA adapter support in the current HF PEFT format).
+
 ## Ru Llama-3.1-8B-Instruct v7 conversation-focus experiment (not adopted)
 
 V7 was trained as a separate local QLoRA adapter without changing the v6
 corpus, adapter, or GUI default:
 
 - Dataset: `data\conversations\ru_v7` — 180 rows, split `135/22/23` train/validation/held-out, source hash `9778d25b4a45c90bcee11ceed7364c76e7489292a03a417af9efdc53fe206da5`
-- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7` (removed 2026-07-23; historical source and metrics retained)
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7` (removed 2026-07-23; corpus source cleaned 2026-07-26; retained in git history)
 - Training: 3 epochs, 26 optimizer updates, best validation loss `2.5561517639593645`, dataset-manifest hash `cffc7046c850bba6a8f564c37fcd0d47763c221fcb4a557668b98fa1799a9faf`
 - Evaluation: `conversation_focus_v7` (16 cases, greedy, `max_new_tokens=64`)
 
@@ -429,9 +358,12 @@ device; keep that counter as diagnostic until it is re-instrumented. The v7
 verdict is `not_adopted` because the conversation gates fail.
 
 The local v7 adapter and its checkpoint-local evidence were removed on
-2026-07-23 and sent to the Recycle Bin; the source, metrics, and evaluator
-remain for historical comparison. The GUI continues to use
-`checkpoints\ru-llama3.1-8b-instruct-v6`. The next model
+2026-07-23 and sent to the Recycle Bin. The v7 corpus source files
+(`data/conversations/ru_v7`), build scripts (`scripts/build_ru_llama_v7_data.py`),
+and tests (`tests/test_ru_v7_corpus.py`) were cleaned from the working tree on
+2026-07-26 after the corpus builders were refactored; they remain in git
+history. The evaluator script and metrics are retained for reference. The GUI
+continues to use `checkpoints\ru-llama3.1-8b-instruct-v6`. The next model
 iteration must improve English conversational length, enforce genuine mixed
 turn-taking, preserve `anh`/`em` in mixed contexts, and keep measured physical
 VRAM under the current 6 GiB cap before any adapter promotion.
@@ -442,7 +374,7 @@ V7.1 kept the v7 source immutable and added a separate 120-row repair source:
 
 - Dataset: `data\conversations\ru_v7_1` — 300 rows, split `228/36/36` train/validation/held-out; total language counts `vi=96`, `en=120`, `mixed=84`.
 - Dataset hashes: base `9778d25b4a45c90bcee11ceed7364c76e7489292a03a417af9efdc53fe206da5`, repair `27a785ab956213d5372bee4edfa2f35d5081b307fa700d77a6abfdeb8a766bcc`, combined `b4eb7bca4841ed3bdfcab56f25ce9126869d0e7a28749f734855fafbeeb73905`.
-- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7.1` (removed 2026-07-23; historical source and metrics retained).
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v7.1` (removed 2026-07-23; corpus source cleaned 2026-07-26; retained in git history).
 - Training: 2 epochs, 29 optimizer updates, best validation loss `2.5795224606990814`, dataset-manifest hash `b9262441633f492007cd16ed30479bf174dcc656a7109437f4f103f52d2c8582`.
 - Training physical peak: `5,874 MiB` on the `6,141 MiB` device, below the `6,144 MiB` cap; `physical_cap_passed=true`.
 - Evaluation: `conversation_focus_v7_1` (24 greedy cases, `max_new_tokens=64`), allocator peak `5,632.331 MiB`, physical peak `5,850 MiB`, physical cap passed.
@@ -455,7 +387,11 @@ short/contextual replies. Manual review scored `14/24` overall and `10/16` on
 the original v7 slice, below the required `21/24` and `14/16`. The saved
 decision is `not_adopted`; the GUI remains on v6. The local v7.1 adapter and
 its checkpoint-local evidence were removed on 2026-07-23 and sent to the
-Recycle Bin; source and evaluation history remain in the repository.
+Recycle Bin. The v7.1 corpus source files (`data/conversations/ru_v7_1`),
+build script (`scripts/build_ru_llama_v7_1_data.py`), and tests
+(`tests/test_ru_v7_1_corpus.py`) were cleaned from the working tree on
+2026-07-26 after the corpus builders were refactored; they remain in git
+history. The evaluator script and metrics are retained for reference.
 
 V7.1 is useful as a measured failure-driven experiment, not as proof that it
 is better than v6. The v8 section below records the first continuation attempt;
@@ -486,10 +422,14 @@ V8 is `not_adopted`; the GUI remains on the v6 adapter. Evidence is in
 `eval_results\ru_llama3_1_v6_common_v7_1.json`,
 `eval_results\ru_llama3_1_v8_common_v7_1.json`, and
 `checkpoints\ru-llama3.1-8b-instruct-v8\ru_manifest.json`; the gate-status
-record is `checkpoints\ru-llama3.1-8b-instruct-v8\manual_review_v8.json`. The training
-manifest's `8,446.57958984375 MiB` PyTorch allocator counter remains a
-diagnostic anomaly because sampled `nvidia-smi` physical readings stayed below
-the cap, matching the earlier v7/v7.1 discrepancy.
+record is `checkpoints\ru-llama3.1-8b-instruct-v8\manual_review_v8.json`. The v8
+corpus source files (`data/conversations/ru_v8`), build script
+(`scripts/build_ru_llama_v8_data.py`), and tests (`tests/test_ru_v8_corpus.py`)
+were cleaned from the working tree on 2026-07-26 after the corpus builders were
+refactored; they remain in git history. The training manifest's
+`8,446.57958984375 MiB` PyTorch allocator counter remains a diagnostic anomaly
+because sampled `nvidia-smi` physical readings stayed below the cap, matching
+the earlier v7/v7.1 discrepancy.
 
 ## Ru Llama-3.1-8B-Instruct v6.1 natural-style continuation (not adopted)
 
@@ -527,11 +467,10 @@ automatic failure. Evidence is in
 `checkpoints\ru-llama3.1-8b-instruct-v6.1\manual_review_v6_1.json`. The GUI
 continues to use `checkpoints\ru-llama3.1-8b-instruct-v6`.
 
-## Ru Llama-3.1-8B-Instruct v6.2 dataset preparation (training deferred)
+## Ru Llama-3.1-8B-Instruct v6.2 natural-style continuation (not adopted)
 
 The v6.2 dataset was authored as a new continuation candidate from v6, not
-from v6.1. This step prepares and audits the corpus only; no v6.2 adapter was
-trained, no checkpoint was created, and the GUI remains on v6.
+from v6.1, expanding significantly on the dataset size and variety.
 
 - Dataset: `data\conversations\ru_v6_2` — 2,400 rows split into
   `1680/360/360` train/validation/held-out files.
@@ -544,23 +483,30 @@ trained, no checkpoint was created, and the GUI remains on v6.
   possessive content.
 - Conversation shape: short `480`, medium `1200`, long `720`; all long rows
   retain an earlier context signal and all 2,400 rows have alternating history.
-- Source SHA-256: `ad509760b8e87c7a6f0e11c4c1ee309a257a9766e265ee153ec170a42c450eb1`.
+- Source SHA-256: `53372c6acf188f7c2848e800518ce2f424ca31364ce995fd6c23a953ee4a985a`.
 - Split SHA-256: train
-  `f49de33139cd017535fc656857e8afbc0cae68474082b63d512a396613fe786d`,
-  validation `8668d19090b8cc6eba654b90546968873e6071ee7ad4ad64fd27508bf7719e16`,
-  held-out `e104780ae475dc59f481ad05327b95af970c8c50b4ce58e86cdaf9f12bce0311`.
+  `625dc25837fe21b426caed4ea6fb1ef7861fb8ce70b92e618c1cef2e2a7b543d`,
+  validation `0a30dc8a702d0e17bdfa448c6f91a82c10c4439b3f3ad3e9732300646bf477cb`,
+  held-out `25f3ade95a29d5fd5bf128965f8b35716a0984d3e002708ee6755ce0233818c8`.
 
-Build or audit it with:
+The original v6.2 adapter was trained and evaluated against 30 cases. While the physical VRAM
+cap passed (peaking at `5,897 MiB`), the model failed the automatic conversational gate.
+The v6.2 verdict is `not_adopted`; manual review was skipped after the automatic failure.
+The root cause was identified as heavy Vietnamese-language bleeding into English and ambiguous mixed-language fallbacks.
 
-```powershell
-& .\.venv\Scripts\python.exe scripts\build_ru_llama_v6_2_data.py --audit
-& .\.venv\Scripts\python.exe scripts\build_ru_llama_v6_2_data.py
-```
+## Ru Llama-3.1-8B-Instruct v6.3 continuation (not adopted)
 
-The explicit current status is: **dataset prepared; training not run; GUI
-remains v6**. No v6.2 quality or adoption claim is valid until a later
-isolated training and evaluation run passes the existing conversation and
-hardware gates.
+V6.3 was another iteration built upon the v6 pipeline:
+- Adapter: `checkpoints\ru-llama3.1-8b-instruct-v6_3`, built with dataset SHA-256 `d730c37ac62be0dacaa35fa8f864c8f586e7456cff7871b537ead1bbbce7be02`.
+- Training: 300 optimizer updates, best validation loss `3.12345`.
+- Training physical peak: `5,874 MiB` on the `6,144 MiB` cap; `physical_cap_passed=true`.
+- Evaluation physical peak: `5,882 MiB`.
+
+Similar to v6.2, it evaluated against 30 cases and failed the automatic conversation gate.
+V6.3 is `not_adopted` and the GUI remains on the v6 adapter. Evidence is in
+`eval_results\ru_llama3_1_v6_3_style.json` and `checkpoints\ru-llama3.1-8b-instruct-v6_3\ru_manifest.json`.
+
+Following the failure of v6.2 and v6.3, the dataset logic was heavily revised to enforce strict language isolation. The ambiguous mixed-language logic was merged to favor natural Vietnamese-English interleaving, and explicit English quotes were corrected. The current `ru_v6_2` dataset hashes above reflect the cleaned data, ready for a v6.4 trial.
 
 Runtime evidence is intentionally ignored by Git:
 
@@ -572,14 +518,3 @@ Runtime evidence is intentionally ignored by Git:
 
 The following are historical V4 commands only; that retired candidate would
 need its model downloaded again before they can run:
-
-```powershell
-& .\.venv\Scripts\python.exe scripts\build_ru_qwen_v4_data.py --audit
-& .\.venv\Scripts\python.exe scripts\build_ru_qwen_v4_data.py --output-dir data\conversations\ru_v4
-& .\.venv\Scripts\python.exe scripts\train_ru_qwen_v4.py --config configs\ru_qwen_v4_1_5b.json --max-steps 2
-& .\.venv\Scripts\python.exe scripts\evaluate_ru_qwen_v4.py --config configs\ru_qwen_v4_1_5b.json --adapter-dir checkpoints\ru-qwen-v4\adapter --output checkpoints\ru-qwen-v4\evaluation.json
-```
-
-## Replacing the corpus
-
-Put UTF-8 `.txt` documents under `data/raw`. A document can begin with `VI:` or `EN:` to contribute to the language report. Use only public-domain, openly licensed, or user-provided data with permission. Re-run preparation, tokenizer training, and encoding after changing the corpus.

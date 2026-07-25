@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 import torch
 
-from .data import normalize_text
+from ._text_utils import normalize_text
 
 IGNORE_LABEL = -100
 

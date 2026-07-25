@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
 
-from .data import normalize_text
+from ._text_utils import normalize_text
 
 
 @dataclass(frozen=True)

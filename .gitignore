@@ -12,4 +12,6 @@ data/raw/wikipedia_*.txt
 data/raw/wikipedia_manifest.json
 checkpoints/
 models/
+eval_results/
+vendor/gemma4-transformers/
 *.egg-info/

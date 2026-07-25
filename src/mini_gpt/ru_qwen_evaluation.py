@@ -4,7 +4,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from .data import normalize_text
+from ._text_utils import normalize_text
 from .ru_style import RU_SYSTEM_PROMPT, ru_system_prompt_for
 
 _AI_DISCLAIMER = re.compile(r"\b(as an ai language model|i cannot access|i do not have a physical body)\b", re.IGNORECASE)
@@ -14,7 +14,9 @@ _OUT_OF_CONTEXT_REFUSAL = re.compile(
     re.IGNORECASE,
 )
 _VI_WRONG_SELF_REFERENCE = re.compile(r"\btôi\b", re.IGNORECASE)
-_VI_WRONG_USER_ADDRESS = re.compile(r"(?<!làm\s)(?<!người\s)\bbạn\b", re.IGNORECASE)
+# "bầu bạn" is a natural companionship phrase, not a switch to the user-facing
+# "bạn" pronoun. Keep the voice gate focused on standalone address usage.
+_VI_WRONG_USER_ADDRESS = re.compile(r"(?<!làm\s)(?<!người\s)(?<!bầu\s)\bbạn\b", re.IGNORECASE)
 _VI_CONTENT_PATTERN = re.compile(
     r"(?i)\b(?:anh|em|hôm|nay|nghe|mệt|nghỉ|muốn|có|đang|vừa|này|đó|rồi|chuyện|giúp|cảm|thư giãn|nhẹ nhàng)\b"
 )

@@ -1,7 +1,10 @@
 """Educational bilingual mini-GPT package."""
 
-from .config import ModelConfig, TrainingConfig
-from .model import MiniGPT
+import logging
 
-__all__ = ["MiniGPT", "ModelConfig", "TrainingConfig"]
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    force=True,
+)
 

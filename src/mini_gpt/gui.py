@@ -1,39 +1,40 @@
 from __future__ import annotations
 
+import re
 import sys
 import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, ttk
-from typing import Any
+
+import tempfile
+import os
+import speech_recognition as sr
+import asyncio
+from .vts_manager import VTSManager
+import pygame
 
 import torch
 
-from .chat import ChatTurn, format_chat_prompt
-from .checkpointing import load_checkpoint
-from .config import ModelConfig
+from .chat import ChatTurn
 from .conversation_store import ConversationStore
-from .evaluate import generate, generate_completion
-from .model import MiniGPT
-from .tokenizer import load_tokenizer
-from .train import resolve_device
+from .llama3_1_runtime import generate_llama_response_hf
+from .ru_style import RU_SYSTEM_PROMPT
+from .memory import MemoryStore
+from .search import perform_web_search
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODEL_NAME = "Ru"
 
 
-def default_paths() -> tuple[Path, Path]:
-    checkpoint_candidates = (
-        PROJECT_ROOT / "checkpoints" / "chat-response-v2" / "best.pt",
-        PROJECT_ROOT / "checkpoints" / "chat-response-v2" / "latest.pt",
-        PROJECT_ROOT / "checkpoints" / "chat-finetune" / "best.pt",
-        PROJECT_ROOT / "checkpoints" / "chat-finetune" / "latest.pt",
-        PROJECT_ROOT / "checkpoints" / "base" / "latest.pt",
-        PROJECT_ROOT / "checkpoints" / "base-smoke" / "latest.pt",
-        PROJECT_ROOT / "checkpoints" / "latest.pt",
+def default_paths() -> Path:
+    candidates = (
+        PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6_2",
+        PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6_3",
+        PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6",
+        PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v5",
     )
-    checkpoint = next((path for path in checkpoint_candidates if path.is_file()), checkpoint_candidates[-1])
-    return checkpoint, PROJECT_ROOT / "data" / "tokenizer.json"
+    return next((path for path in candidates if path.exists()), candidates[-1])
 
 
 def parse_generation_settings(max_new_tokens: str, temperature: str, top_k: str) -> tuple[int, float, int]:
@@ -49,66 +50,17 @@ def parse_generation_settings(max_new_tokens: str, temperature: str, top_k: str)
     return max_tokens, temp, top
 
 
-def _load_payload(path: Path, device: torch.device) -> dict[str, Any]:
-    try:
-        return torch.load(path, map_location=device, weights_only=False)
-    except TypeError:
-        return torch.load(path, map_location=device)
-
-
 class ModelRunner:
     def __init__(self) -> None:
-        self.model: MiniGPT | None = None
-        self.tokenizer: Any | None = None
-        self.device: torch.device | None = None
         self.checkpoint_path: Path | None = None
-        self.tokenizer_path: Path | None = None
+        self.base_model_path: Path = PROJECT_ROOT / "models" / "llama3.1-8b-instruct-hf"
 
-    def load(self, checkpoint_path: str | Path, tokenizer_path: str | Path, device_name: str = "auto") -> str:
-        checkpoint = Path(checkpoint_path)
-        tokenizer_file = Path(tokenizer_path)
-        if not checkpoint.is_file():
-            raise FileNotFoundError(f"checkpoint not found: {checkpoint}")
-        if not tokenizer_file.is_file():
-            raise FileNotFoundError(f"tokenizer not found: {tokenizer_file}")
-        device = resolve_device(device_name)
-        if (
-            self.model is not None
-            and self.device == device
-            and self.checkpoint_path == checkpoint
-            and self.tokenizer_path == tokenizer_file
-        ):
-            return f"Ready | {device} | {self.model.parameter_count():,} parameters"
-        payload = _load_payload(checkpoint, device)
-        model_config = ModelConfig.from_dict(payload["model_config"])
-        model = MiniGPT(model_config).to(device)
-        load_checkpoint(checkpoint, model, device=device, restore_rng=False)
-        model.eval()
-        self.model = model
-        self.tokenizer = load_tokenizer(tokenizer_file)
-        self.device = device
-        self.checkpoint_path = checkpoint
-        self.tokenizer_path = tokenizer_file
-        return f"Ready | {device} | {model.parameter_count():,} parameters"
-
-    def generate_text(
-        self,
-        prompt: str,
-        max_new_tokens: int,
-        temperature: float,
-        top_k: int,
-    ) -> str:
-        if self.model is None or self.tokenizer is None or self.device is None:
-            raise RuntimeError("load a checkpoint before generating")
-        return generate(
-            self.model,
-            self.tokenizer,
-            prompt,
-            self.device,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            top_k=top_k,
-        )
+    def load(self, checkpoint_path: str | Path) -> str:
+        adapter_dir = Path(checkpoint_path)
+        if not adapter_dir.is_dir():
+            raise FileNotFoundError(f"adapter directory not found: {adapter_dir}")
+        self.checkpoint_path = adapter_dir
+        return f"Ready (Llama 3.1 8B QLoRA) | {adapter_dir.name}"
 
     def generate_reply(
         self,
@@ -116,18 +68,45 @@ class ModelRunner:
         max_new_tokens: int,
         temperature: float,
         top_k: int,
+        turns_history: list[ChatTurn] | None = None,
+        memory_context: str | None = None,
     ) -> str:
-        if self.model is None or self.tokenizer is None or self.device is None:
-            raise RuntimeError("load a checkpoint before generating")
-        return generate_completion(
-            self.model,
-            self.tokenizer,
-            prompt,
-            self.device,
+        messages: list[tuple[str, str]] = [("system", RU_SYSTEM_PROMPT)]
+        if memory_context:
+            messages.append(("system", f"Past memories:\n{memory_context}\n\nUse this to answer if relevant."))
+        if turns_history:
+            for turn in turns_history:
+                messages.append(("user", turn.prompt))
+                messages.append(("assistant", turn.response))
+        messages.append(("user", prompt))
+
+        response = generate_llama_response_hf(
+            str(self.base_model_path),
+            tuple(messages),
+            self.checkpoint_path,
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             top_k=top_k,
+            do_sample=True,
         )
+
+        search_match = re.search(r"\[SEARCH:\s*(.*?)\]", response)
+        if search_match:
+            query = search_match.group(1).strip()
+            search_results = perform_web_search(query)
+            last_user_msg = messages.pop()
+            messages.append(("user", f"{last_user_msg[1]}\n\n[System note: Web search results for '{query}':\n{search_results}]"))
+
+            response = generate_llama_response_hf(
+                str(self.base_model_path),
+                tuple(messages),
+                self.checkpoint_path,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_k=top_k,
+                do_sample=True,
+            )
+        return response
 
 
 class MiniGPTApp:
@@ -141,15 +120,25 @@ class MiniGPTApp:
         self.conversation_store = ConversationStore(
             PROJECT_ROOT / "data" / "conversations" / "approved.jsonl"
         )
-        checkpoint, tokenizer = default_paths()
+        self.memory_store = MemoryStore(
+            PROJECT_ROOT / "data" / "conversations" / "memory_index.faiss",
+            PROJECT_ROOT / "data" / "conversations" / "memory_texts.json"
+        )
+        checkpoint = default_paths()
         self.checkpoint_var = tk.StringVar(value=str(checkpoint))
-        self.tokenizer_var = tk.StringVar(value=str(tokenizer))
-        self.max_tokens_var = tk.StringVar(value="50")
-        self.temperature_var = tk.StringVar(value="0.8")
+        self.max_tokens_var = tk.StringVar(value="512")
+        self.temperature_var = tk.StringVar(value="0.7")
         self.top_k_var = tk.StringVar(value="20")
         self.status_var = tk.StringVar(
             value=f"CUDA available: {'yes' if torch.cuda.is_available() else 'no'} | Ready"
         )
+        self.tts_enabled_var = tk.BooleanVar(value=True)
+        self.voice_name = "vi-VN-HoaiMyNeural" # Vietnamese female voice from edge-tts
+        pygame.mixer.init()
+        self.vts_manager = VTSManager()
+        threading.Thread(target=lambda: asyncio.run(self.vts_manager.connect()), daemon=True).start()
+        self.is_recording = False
+        self.recognizer = sr.Recognizer()
         self.generate_button: ttk.Button
         self.new_chat_button: ttk.Button
         self.mark_button: ttk.Button
@@ -158,20 +147,19 @@ class MiniGPTApp:
         self._build()
 
     def _build(self) -> None:
-        self.root.title(f"{MODEL_NAME} — Bilingual Mini-GPT")
-        self.root.geometry("900x700")
+        self.root.title(f"{MODEL_NAME} — Llama 3.1 GUI")
+        self.root.geometry("900x720")
         self.root.minsize(700, 520)
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(1, weight=1)
 
-        settings = ttk.LabelFrame(self.root, text="Model")
+        settings = ttk.LabelFrame(self.root, text="Model Settings")
         settings.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
         settings.columnconfigure(1, weight=1)
-        self._path_row(settings, 0, "Checkpoint", self.checkpoint_var, self._browse_checkpoint)
-        self._path_row(settings, 1, "Tokenizer", self.tokenizer_var, self._browse_tokenizer)
+        self._path_row(settings, 0, "Checkpoint/Adapter", self.checkpoint_var, self._browse_checkpoint)
 
         controls = ttk.Frame(settings)
-        controls.grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=6)
+        controls.grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=6)
         self._labeled_entry(controls, 0, "Max tokens", self.max_tokens_var, 70)
         self._labeled_entry(controls, 2, "Temperature", self.temperature_var, 70)
         self._labeled_entry(controls, 4, "Top-k", self.top_k_var, 70)
@@ -205,15 +193,24 @@ class MiniGPTApp:
         actions.grid(row=4, column=0, sticky="w", pady=(0, 8))
         self.generate_button = ttk.Button(actions, text="Send", command=self._start_generation)
         self.generate_button.grid(row=0, column=0, padx=(0, 6))
+        
+        self.speak_button = ttk.Button(actions, text="🎤 Speak", command=self._toggle_recording)
+        self.speak_button.grid(row=0, column=1, padx=(0, 6))
+        
         self.new_chat_button = ttk.Button(actions, text="New chat", command=self._new_chat)
-        self.new_chat_button.grid(row=0, column=1, padx=(0, 6))
+        self.new_chat_button.grid(row=0, column=2, padx=(0, 6))
+        
         self.mark_button = ttk.Button(
             actions,
             text="Mark last response useful",
             command=self._mark_last_response,
             state="disabled",
         )
-        self.mark_button.grid(row=0, column=2)
+        self.mark_button.grid(row=0, column=3, padx=(0, 6))
+        
+        self.tts_checkbox = ttk.Checkbutton(actions, text="Ru Voice", variable=self.tts_enabled_var)
+        self.tts_checkbox.grid(row=0, column=4, padx=(0, 6))
+        
         ttk.Label(content, textvariable=self.status_var).grid(row=5, column=0, sticky="w", pady=(0, 4))
 
     @staticmethod
@@ -234,14 +231,9 @@ class MiniGPTApp:
         ttk.Button(parent, text="Browse", command=browse_command).grid(row=row, column=2, padx=6, pady=4)
 
     def _browse_checkpoint(self) -> None:
-        selected = filedialog.askopenfilename(filetypes=[("PyTorch checkpoint", "*.pt"), ("All files", "*.*")])
+        selected = filedialog.askdirectory(title="Select Llama Adapter Directory")
         if selected:
             self.checkpoint_var.set(selected)
-
-    def _browse_tokenizer(self) -> None:
-        selected = filedialog.askopenfilename(filetypes=[("Tokenizer JSON", "*.json"), ("All files", "*.*")])
-        if selected:
-            self.tokenizer_var.set(selected)
 
     def _append_turn(self, turn: ChatTurn) -> None:
         self.transcript_text.configure(state="normal")
@@ -286,6 +278,48 @@ class MiniGPTApp:
         self._update_mark_button()
         self.status_var.set(f"Saved useful response to {self.conversation_store.path}")
 
+    def _toggle_recording(self) -> None:
+        if self.is_recording:
+            return  # Already recording, let it finish or wait
+        self.is_recording = True
+        self.speak_button.configure(state="disabled", text="🎤 Listening...")
+        self.status_var.set("Listening to your voice...")
+        threading.Thread(target=self._record_worker, daemon=True).start()
+
+    def _record_worker(self) -> None:
+        try:
+            with sr.Microphone() as source:
+                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=15)
+            self.root.after(0, lambda: self.status_var.set("Recognizing..."))
+            
+            # Using Google Web Speech API (free, no key required)
+            text = self.recognizer.recognize_google(audio, language="vi-VN")
+            
+            self.root.after(0, lambda t=text: self._on_record_success(t))
+        except sr.WaitTimeoutError:
+            self.root.after(0, lambda: self._on_record_error("Listening timed out."))
+        except sr.UnknownValueError:
+            self.root.after(0, lambda: self._on_record_error("Could not understand audio."))
+        except sr.RequestError as e:
+            self.root.after(0, lambda: self._on_record_error(f"Speech API error: {e}"))
+        except Exception as e:
+            self.root.after(0, lambda: self._on_record_error(f"Error: {e}"))
+            
+    def _on_record_success(self, text: str) -> None:
+        self.is_recording = False
+        self.speak_button.configure(state="normal", text="🎤 Speak")
+        self.status_var.set(f"Heard: {text}")
+        current_text = self.prompt_text.get("1.0", tk.END).strip()
+        new_text = f"{current_text} {text}".strip() if current_text else text
+        self.prompt_text.delete("1.0", tk.END)
+        self.prompt_text.insert(tk.END, new_text)
+        
+    def _on_record_error(self, msg: str) -> None:
+        self.is_recording = False
+        self.speak_button.configure(state="normal", text="🎤 Speak")
+        self.status_var.set(msg)
+
     def _start_generation(self) -> None:
         if self.worker is not None and self.worker.is_alive():
             return
@@ -300,41 +334,53 @@ class MiniGPTApp:
         except ValueError as error:
             self.status_var.set(str(error))
             return
-        context_prompt = format_chat_prompt(self.session_turns, prompt)
+
         self.generate_button.configure(state="disabled")
+        self.speak_button.configure(state="disabled")
         self.new_chat_button.configure(state="disabled")
         self.mark_button.configure(state="disabled")
         self.status_var.set("Loading model / generating...")
         checkpoint = self.checkpoint_var.get()
-        tokenizer = self.tokenizer_var.get()
         self.worker = threading.Thread(
             target=self._generate_worker,
-            args=(context_prompt, prompt, settings, checkpoint, tokenizer),
+            args=(prompt, settings, checkpoint),
             daemon=True,
         )
         self.worker.start()
 
     def _generate_worker(
         self,
-        context_prompt: str,
-        original_prompt: str,
+        prompt: str,
         settings: tuple[int, float, int],
         checkpoint: str,
-        tokenizer: str,
     ) -> None:
         try:
-            status = self.runner.load(checkpoint, tokenizer)
-            result = self.runner.generate_reply(context_prompt, *settings)
+            status = self.runner.load(checkpoint)
+            
+            memory_context = None
+            if self.memory_store:
+                past_memories = self.memory_store.search_memory(prompt, k=2)
+                if past_memories:
+                    memory_context = "\n---\n".join(past_memories)
+
+            result = self.runner.generate_reply(
+                prompt,
+                *settings,
+                turns_history=list(self.session_turns),
+                memory_context=memory_context,
+            )
             self.root.after(
                 0,
-                lambda result=result, status=status, original_prompt=original_prompt: self._generation_finished(
+                lambda result=result, status=status, prompt=prompt: self._generation_finished(
                     result,
                     status,
-                    original_prompt,
+                    prompt,
                 ),
             )
-        except Exception as error:  # UI boundary: show any inference failure without killing the window.
-            message = str(error)
+        except Exception as error:
+            import traceback
+            traceback.print_exc()
+            message = str(error) if str(error) else repr(error)
             self.root.after(0, lambda message=message: self._generation_failed(message))
 
     def _generation_finished(self, result: str, status: str, original_prompt: str) -> None:
@@ -346,16 +392,81 @@ class MiniGPTApp:
         self.last_turn = turn
         self.last_turn_saved = False
         self._append_turn(turn)
+
+        if hasattr(self, 'memory_store') and self.memory_store:
+            self.memory_store.add_memory(f"User: {original_prompt}\nAssistant: {result}")
+            
         self.status_var.set(status)
         self.generate_button.configure(state="normal")
+        self.speak_button.configure(state="normal")
         self.new_chat_button.configure(state="normal")
         self._update_mark_button()
         self.prompt_text.delete("1.0", tk.END)
         self.prompt_text.focus_set()
+        
+        # Trigger VTS expressions if any *emotion* found
+        import re
+        emotions = re.findall(r"\*(.*?)\*", result)
+        if emotions and hasattr(self, 'vts_manager'):
+            for emotion in emotions:
+                self.vts_manager.trigger_hotkey_sync(emotion)
+
+        if self.tts_enabled_var.get():
+            threading.Thread(target=self._play_tts, args=(result,), daemon=True).start()
+
+    def _play_tts(self, text: str) -> None:
+        try:
+            # We strip out [SEARCH: ...] tags from spoken text
+            clean_text = re.sub(r"\[SEARCH:.*?\]", "", text).strip()
+            # Also strip thought blocks if any (between <thought> or <think> tags)
+            clean_text = re.sub(r"<thought>.*?</thought>", "", clean_text, flags=re.DOTALL)
+            clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL)
+            clean_text = clean_text.replace("*", "") # Remove markdown asterisks
+            if not clean_text:
+                return
+
+            audio_file = None
+            try:
+                import requests
+                resp = requests.post("http://127.0.0.1:5050/tts", json={"text": clean_text}, timeout=60)
+                if resp.status_code == 200:
+                    audio_file = resp.json().get("audio_path")
+                else:
+                    print(f"F5-TTS server error: {resp.text}")
+            except Exception as e:
+                print(f"F5-TTS local server not running or failed: {e}")
+            
+            if not audio_file:
+                print("Skipping TTS because F5-TTS server is not available.")
+                return
+            
+            # Stop any playing audio before playing new one
+            if pygame.mixer.music.get_busy():
+                pygame.mixer.music.stop()
+                pygame.mixer.music.unload()
+
+            pygame.mixer.music.load(audio_file)
+            pygame.mixer.music.play()
+            
+            # Wait for playback to finish to clean up file
+            def wait_and_clean():
+                while pygame.mixer.music.get_busy():
+                    pygame.time.Clock().tick(10)
+                pygame.mixer.music.unload()
+                try:
+                    os.remove(audio_file)
+                except Exception:
+                    pass
+
+            threading.Thread(target=wait_and_clean, daemon=True).start()
+
+        except Exception as e:
+            self.root.after(0, lambda: self.status_var.set(f"TTS Error: {e}"))
 
     def _generation_failed(self, message: str) -> None:
         self.status_var.set(f"Error: {message}")
         self.generate_button.configure(state="normal")
+        self.speak_button.configure(state="normal")
         self.new_chat_button.configure(state="normal")
         self._update_mark_button()
 

@@ -4,8 +4,7 @@
 
 Let the existing Ru GUI automatically speak each completed reply with the
 locally tested Gwen voice-cloning model. This is an experiment, not a permanent
-voice-provider adoption: the existing F5 safety guard remains intact and the
-chat response must remain usable if speech fails.
+voice-provider adoption; the chat response must remain usable if speech fails.
 
 ## Chosen approach
 
@@ -17,6 +16,15 @@ transcript in `reference_text.txt`.
 The GUI changes its TTS endpoint to Gwen during this experiment. It keeps the
 existing automatic voice toggle and its playback/cleanup flow; no new UI
 control is needed. A `run_gwen_tts_server.bat` command starts the service.
+
+## F5 removal
+
+F5 is not a viable fallback for the intended Japanese-reference Vietnamese
+speech and is removed completely. After the Gwen path is implemented and
+verified, remove the F5 server, launcher, `f5_env`, the local Hugging Face
+`SWivid/F5-TTS` cache, and the F5-only test WAVs. Preserve `tyc_talk.wav`,
+`tyc_calm.wav`, `reference_text.txt`, the Gwen environment/weights, and Llama
+assets.
 
 ## VRAM lifecycle
 
@@ -54,8 +62,6 @@ removes it after playback finishes.
 
 ## Non-goals
 
-- Do not alter F5-TTS, remove its unsupported-language guard, or delete its
-  diagnostic launcher.
 - Do not add CPU offload, persistent dual-model GPU residency, remote APIs, or
   automatic learning.
 - Do not claim that Gwen's Vietnamese pronunciation has passed the quality

@@ -83,6 +83,16 @@ def test_generate_llama_response_omits_sampling_only_settings_for_greedy_generat
     assert "top_k" not in model.kwargs
 
 
+def test_dependency_status_lists_missing_runtime_packages(monkeypatch):
+    monkeypatch.setattr(
+        runtime,
+        "find_spec",
+        lambda name: None if name == "peft" else object(),
+    )
+
+    assert runtime.dependency_status() == ("peft",)
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     (("max_new_tokens", 0), ("temperature", 0), ("top_k", -1)),

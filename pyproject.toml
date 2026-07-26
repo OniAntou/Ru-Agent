@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bilingual-mini-gpt"
+name = "ru-local-llama"
 version = "0.1.0"
-description = "An educational Vietnamese-English decoder-only language model trained from scratch."
+description = "Local Vietnamese-English Ru conversational runtime using Llama 3.1 8B QLoRA."
 requires-python = ">=3.11,<3.15"
 dependencies = [
     "numpy>=1.26",
@@ -20,17 +20,15 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
-qwen = [
+runtime = [
     "accelerate>=1.0,<2",
     "bitsandbytes>=0.48,<1",
     "ddgs>=9.0",
     "faiss-cpu>=1.7",
     "peft>=0.14,<1",
-    "safetensors>=0.4",
     "sentence-transformers>=2.2",
     "transformers>=5,<6",
 ]
-
 [tool.setuptools.packages.find]
 where = ["src"]
 

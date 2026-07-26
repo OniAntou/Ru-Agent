@@ -1,6 +1,0 @@
-{
-  "profile_name": "ru_qwen3_4b",
-  "base_model_id": "Qwen/Qwen3-4B",
-  "base_model_path": "models/qwen3-4b",
-  "phase": "base_only"
-}

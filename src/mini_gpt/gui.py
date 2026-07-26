@@ -5,7 +5,7 @@ import sys
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 import tempfile
 import os
@@ -17,8 +17,9 @@ import pygame
 import torch
 
 from .chat import ChatTurn
+from .conversation_context import build_conversation_messages
 from .conversation_store import ConversationStore
-from .llama3_1_runtime import generate_llama_response_hf
+from .llama3_1_runtime import dependency_status, generate_llama_response_hf
 from .ru_style import RU_SYSTEM_PROMPT
 from .memory import MemoryStore
 from .search import perform_web_search
@@ -29,8 +30,6 @@ MODEL_NAME = "Ru"
 
 def default_paths() -> Path:
     candidates = (
-        PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6_2",
-        PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6_3",
         PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6",
         PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v5",
     )
@@ -56,6 +55,13 @@ class ModelRunner:
         self.base_model_path: Path = PROJECT_ROOT / "models" / "llama3.1-8b-instruct-hf"
 
     def load(self, checkpoint_path: str | Path) -> str:
+        missing_dependencies = dependency_status()
+        if missing_dependencies:
+            packages = ", ".join(missing_dependencies)
+            raise RuntimeError(
+                f"Missing Ru runtime dependencies: {packages}. "
+                "Install the runtime extra before starting the model."
+            )
         adapter_dir = Path(checkpoint_path)
         if not adapter_dir.is_dir():
             raise FileNotFoundError(f"adapter directory not found: {adapter_dir}")
@@ -70,15 +76,14 @@ class ModelRunner:
         top_k: int,
         turns_history: list[ChatTurn] | None = None,
         memory_context: str | None = None,
+        allow_web_search: bool = False,
     ) -> str:
-        messages: list[tuple[str, str]] = [("system", RU_SYSTEM_PROMPT)]
-        if memory_context:
-            messages.append(("system", f"Past memories:\n{memory_context}\n\nUse this to answer if relevant."))
-        if turns_history:
-            for turn in turns_history:
-                messages.append(("user", turn.prompt))
-                messages.append(("assistant", turn.response))
-        messages.append(("user", prompt))
+        messages = build_conversation_messages(
+            RU_SYSTEM_PROMPT,
+            prompt,
+            turns_history or (),
+            memory_context=memory_context,
+        )
 
         response = generate_llama_response_hf(
             str(self.base_model_path),
@@ -91,11 +96,15 @@ class ModelRunner:
         )
 
         search_match = re.search(r"\[SEARCH:\s*(.*?)\]", response)
-        if search_match:
+        if allow_web_search and search_match:
             query = search_match.group(1).strip()
             search_results = perform_web_search(query)
-            last_user_msg = messages.pop()
-            messages.append(("user", f"{last_user_msg[1]}\n\n[System note: Web search results for '{query}':\n{search_results}]"))
+            messages = messages[:-1] + (
+                (
+                    "user",
+                    f"{prompt}\n\n[Untrusted web reference for '{query}':\n{search_results}]",
+                ),
+            )
 
             response = generate_llama_response_hf(
                 str(self.base_model_path),
@@ -109,7 +118,7 @@ class ModelRunner:
         return response
 
 
-class MiniGPTApp:
+class RuApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.runner = ModelRunner()
@@ -120,10 +129,9 @@ class MiniGPTApp:
         self.conversation_store = ConversationStore(
             PROJECT_ROOT / "data" / "conversations" / "approved.jsonl"
         )
-        self.memory_store = MemoryStore(
-            PROJECT_ROOT / "data" / "conversations" / "memory_index.faiss",
-            PROJECT_ROOT / "data" / "conversations" / "memory_texts.json"
-        )
+        self.memory_index_path = PROJECT_ROOT / "data" / "conversations" / "memory_index.faiss"
+        self.memory_texts_path = PROJECT_ROOT / "data" / "conversations" / "memory_texts.json"
+        self.memory_store: MemoryStore | None = None
         checkpoint = default_paths()
         self.checkpoint_var = tk.StringVar(value=str(checkpoint))
         self.max_tokens_var = tk.StringVar(value="512")
@@ -133,6 +141,8 @@ class MiniGPTApp:
             value=f"CUDA available: {'yes' if torch.cuda.is_available() else 'no'} | Ready"
         )
         self.tts_enabled_var = tk.BooleanVar(value=True)
+        self.remember_conversations_var = tk.BooleanVar(value=False)
+        self.allow_web_search_var = tk.BooleanVar(value=False)
         self.voice_name = "vi-VN-HoaiMyNeural" # Vietnamese female voice from edge-tts
         pygame.mixer.init()
         self.vts_manager = VTSManager()
@@ -210,6 +220,22 @@ class MiniGPTApp:
         
         self.tts_checkbox = ttk.Checkbutton(actions, text="Ru Voice", variable=self.tts_enabled_var)
         self.tts_checkbox.grid(row=0, column=4, padx=(0, 6))
+
+        ttk.Checkbutton(
+            actions,
+            text="Remember conversations",
+            variable=self.remember_conversations_var,
+        ).grid(row=0, column=5, padx=(0, 6))
+        ttk.Checkbutton(
+            actions,
+            text="Allow online search",
+            variable=self.allow_web_search_var,
+        ).grid(row=0, column=6, padx=(0, 6))
+        ttk.Button(actions, text="Clear saved memory", command=self._clear_saved_memory).grid(
+            row=0,
+            column=7,
+            padx=(0, 6),
+        )
         
         ttk.Label(content, textvariable=self.status_var).grid(row=5, column=0, sticky="w", pady=(0, 4))
 
@@ -259,6 +285,26 @@ class MiniGPTApp:
     def _update_mark_button(self) -> None:
         state = "normal" if self.last_turn is not None and not self.last_turn_saved else "disabled"
         self.mark_button.configure(state=state)
+
+    def _memory_store_for_session(self) -> MemoryStore:
+        if self.memory_store is None:
+            self.memory_store = MemoryStore(self.memory_index_path, self.memory_texts_path)
+        return self.memory_store
+
+    def _clear_saved_memory(self) -> None:
+        if not messagebox.askyesno(
+            title="Clear saved memory",
+            message="Delete locally saved conversation memory? This cannot be undone.",
+            parent=self.root,
+        ):
+            return
+        try:
+            MemoryStore.clear_artifacts(self.memory_index_path, self.memory_texts_path)
+        except OSError as error:
+            self.status_var.set(f"Could not clear saved memory: {error}")
+            return
+        self.memory_store = None
+        self.status_var.set("Saved conversation memory cleared")
 
     def _mark_last_response(self) -> None:
         if self.last_turn is None or self.last_turn_saved:
@@ -341,9 +387,11 @@ class MiniGPTApp:
         self.mark_button.configure(state="disabled")
         self.status_var.set("Loading model / generating...")
         checkpoint = self.checkpoint_var.get()
+        remember_conversations = self.remember_conversations_var.get()
+        allow_web_search = self.allow_web_search_var.get()
         self.worker = threading.Thread(
             target=self._generate_worker,
-            args=(prompt, settings, checkpoint),
+            args=(prompt, settings, checkpoint, remember_conversations, allow_web_search),
             daemon=True,
         )
         self.worker.start()
@@ -353,13 +401,16 @@ class MiniGPTApp:
         prompt: str,
         settings: tuple[int, float, int],
         checkpoint: str,
+        remember_conversations: bool,
+        allow_web_search: bool,
     ) -> None:
         try:
             status = self.runner.load(checkpoint)
             
             memory_context = None
-            if self.memory_store:
-                past_memories = self.memory_store.search_memory(prompt, k=2)
+            memory_store = self._memory_store_for_session() if remember_conversations else None
+            if memory_store:
+                past_memories = memory_store.search_memory(prompt, k=2)
                 if past_memories:
                     memory_context = "\n---\n".join(past_memories)
 
@@ -368,13 +419,15 @@ class MiniGPTApp:
                 *settings,
                 turns_history=list(self.session_turns),
                 memory_context=memory_context,
+                allow_web_search=allow_web_search,
             )
             self.root.after(
                 0,
-                lambda result=result, status=status, prompt=prompt: self._generation_finished(
+                lambda result=result, status=status, prompt=prompt, remember_conversations=remember_conversations: self._generation_finished(
                     result,
                     status,
                     prompt,
+                    remember_conversations,
                 ),
             )
         except Exception as error:
@@ -383,7 +436,13 @@ class MiniGPTApp:
             message = str(error) if str(error) else repr(error)
             self.root.after(0, lambda message=message: self._generation_failed(message))
 
-    def _generation_finished(self, result: str, status: str, original_prompt: str) -> None:
+    def _generation_finished(
+        self,
+        result: str,
+        status: str,
+        original_prompt: str,
+        remember_conversations: bool,
+    ) -> None:
         if not result.strip():
             self._generation_failed("model returned an empty response")
             return
@@ -393,7 +452,11 @@ class MiniGPTApp:
         self.last_turn_saved = False
         self._append_turn(turn)
 
-        if hasattr(self, 'memory_store') and self.memory_store:
+        if (
+            remember_conversations
+            and self.remember_conversations_var.get()
+            and self.memory_store
+        ):
             self.memory_store.add_memory(f"User: {original_prompt}\nAssistant: {result}")
             
         self.status_var.set(status)
@@ -475,7 +538,7 @@ def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     root = tk.Tk()
-    MiniGPTApp(root)
+    RuApp(root)
     root.mainloop()
     return 0
 

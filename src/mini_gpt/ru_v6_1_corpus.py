@@ -23,7 +23,7 @@ from ._safety_patterns import (
     VI_SIGNAL as _VI_SIGNAL_PATTERN,
 )
 from ._text_utils import normalize_text
-from .ru_qwen_corpus import casual_rejection_reason
+from ._corpus_quality import casual_rejection_reason
 from .ru_style import RU_SYSTEM_PROMPT
 from .ru_v6_1_dialogues import (
     EXPECTED_INTENSITY_COUNTS,

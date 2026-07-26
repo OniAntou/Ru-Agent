@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import logging
 
-from ddgs import DDGS
-
 logger = logging.getLogger(__name__)
 _SEARCH_TIMEOUT_SECONDS = 15
 
 
 def perform_web_search(query: str, max_results: int = 3) -> str:
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        return "Online search is unavailable because DDGS is not installed."
+
     try:
         import concurrent.futures
 

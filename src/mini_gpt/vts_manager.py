@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class VTSManager:
     def __init__(self):
         plugin_info = {
-            "plugin_name": "Mini-GPT Ru",
+            "plugin_name": "Ru Local Llama",
             "developer": "Antigravity",
             "authentication_token_path": "./vts_token.txt",
         }

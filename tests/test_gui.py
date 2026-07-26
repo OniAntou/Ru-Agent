@@ -31,3 +31,33 @@ def test_runner_reports_missing_checkpoint():
     runner = ModelRunner()
     with pytest.raises(FileNotFoundError, match="adapter directory"):
         runner.load("D:\\LLM\\nonexistent")
+
+
+def test_runner_reports_missing_runtime_dependencies(monkeypatch, tmp_path):
+    monkeypatch.setattr(gui, "dependency_status", lambda: ("peft", "transformers"))
+
+    with pytest.raises(RuntimeError, match="peft, transformers"):
+        ModelRunner().load(tmp_path)
+
+
+def test_model_runner_does_not_search_without_explicit_opt_in(monkeypatch):
+    monkeypatch.setattr(
+        gui,
+        "generate_llama_response_hf",
+        lambda *_args, **_kwargs: "[SEARCH: weather]",
+    )
+    monkeypatch.setattr(
+        gui,
+        "perform_web_search",
+        lambda _query: pytest.fail("search must not run"),
+    )
+
+    response = ModelRunner().generate_reply(
+        "hi",
+        32,
+        0.7,
+        20,
+        allow_web_search=False,
+    )
+
+    assert response == "[SEARCH: weather]"

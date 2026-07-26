@@ -1,4 +1,4 @@
-"""Educational bilingual mini-GPT package."""
+"""Local Vietnamese-English Ru runtime built on Llama."""
 
 import logging
 
@@ -7,4 +7,3 @@ logging.basicConfig(
     format="%(message)s",
     force=True,
 )
-

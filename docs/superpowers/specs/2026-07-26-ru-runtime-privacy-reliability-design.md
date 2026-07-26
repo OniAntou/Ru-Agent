@@ -8,11 +8,12 @@ current Llama v6 model or training any adapter.
 
 ## Scope
 
-This design changes only the tracked Tkinter GUI, its local runtime helpers,
-packaging metadata, tests, and active documentation. It does not delete local
-audio artifacts, models, checkpoints, historical experiment source, or design
-records. It does not modify model weights, corpus data, TTS, VTube Studio, or
-the untracked Flask experiment.
+This design changes the tracked Tkinter GUI, its local runtime helpers,
+packaging metadata, tests, and active documentation. The later Llama-only
+consolidation removes obsolete non-Llama experiment source, configurations,
+tests, corpus data, and outdated documents while preserving local audio
+artifacts, Llama models/checkpoints, TTS, VTube Studio, and the untracked Flask
+experiment.
 
 ## Decisions
 
@@ -46,11 +47,10 @@ growth while leaving the model's tokenizer and generation API unchanged.
 ### Reproducible runtime
 
 The project metadata describes Ru as a local Llama QLoRA conversational
-runtime rather than a decoder-only MiniGPT trained from scratch. Dependencies
-needed by the tracked GUI/runtime are grouped into an explicit runtime extra;
-historical Qwen/Gemma tooling stays optional. README setup installs the runtime
-extra and documents the feature defaults, model path, dependency preflight,
-and the fact that a GPU smoke is a separate manual step.
+runtime. Dependencies needed by the tracked GUI/runtime are grouped into an
+explicit runtime extra; obsolete Qwen/Gemma tooling is removed. README setup
+installs the runtime extra and documents the feature defaults, model path,
+dependency preflight, and the fact that a GPU smoke is a separate manual step.
 
 ### Health checks and errors
 

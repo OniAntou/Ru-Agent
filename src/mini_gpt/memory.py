@@ -13,6 +13,12 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 class MemoryStore:
+    @staticmethod
+    def clear_artifacts(index_path: str | Path, texts_path: str | Path) -> None:
+        for path in (Path(index_path), Path(texts_path)):
+            if path.is_file():
+                path.unlink()
+
     def __init__(self, index_path: str | Path, texts_path: str | Path):
         self.index_path = Path(index_path)
         self.texts_path = Path(texts_path)

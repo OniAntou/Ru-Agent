@@ -1,7 +1,3 @@
-import subprocess
-import sys
-from pathlib import Path
-
 import pytest
 
 from mini_gpt.ru_qwen_evaluation import (
@@ -19,9 +15,6 @@ from mini_gpt.ru_qwen_evaluation import (
     record_prompt_routing_smoke_decision,
 )
 from mini_gpt.ru_style import RU_SYSTEM_PROMPT, ru_system_prompt_for
-
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_ru_qwen_v4.py"
-
 
 def test_v4_suite_has_a_fixed_bilingual_shape():
     assert len(V4_CONVERSATION_SUITE) == 32
@@ -356,11 +349,3 @@ def test_base_only_decision_requires_one_human_review_for_every_case():
             reviews=incomplete_reviews,
             reviewer_notes="Incomplete.",
         )
-
-
-def test_evaluator_cli_exposes_base_and_adapter_arguments_without_loading_a_model():
-    result = subprocess.run([sys.executable, str(SCRIPT), "--help"], capture_output=True, text=True, check=False)
-
-    assert result.returncode == 0
-    assert "Evaluate Ru local Qwen base and optional adapter conversation quality" in result.stdout
-    assert "--adapter-dir" in result.stdout

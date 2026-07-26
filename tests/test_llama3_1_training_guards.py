@@ -58,7 +58,7 @@ def test_adapter_manifest_records_continuation_source(tmp_path):
     manifest = write_adapter_manifest(
         tmp_path / "adapter",
         backend="llama3.1-qlora-continuation",
-        profile_name="ru_llama3_1_v8_from_v6",
+        profile_name="ru_llama3_1_v6_1_from_v6",
         base_model_id="test-base",
         base_model_path="D:/LLM/models/llama3.1-8b-instruct-hf",
         source_adapter_dir="D:/LLM/checkpoints/ru-llama3.1-8b-instruct-v6",

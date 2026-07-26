@@ -6,10 +6,8 @@ from mini_gpt.ru_qwen_evaluation import (
     PromptRoutingReview,
     ResponseAssessment,
     V4_CONVERSATION_SUITE,
-    V7_CONVERSATION_SUITE,
     ManualReview,
     assess_response,
-    assess_conversation_focus_response,
     assess_proactive_flirt_response,
     record_base_only_decision,
     record_prompt_routing_smoke_decision,
@@ -60,76 +58,6 @@ def test_proactive_flirt_assessment_accepts_a_warm_relevant_reply():
 
     assert assessment.passed
     assert assessment.failures == ()
-
-
-def test_v7_focus_suite_has_the_approved_language_shape():
-    assert len(V7_CONVERSATION_SUITE) == 16
-    assert sum(case.language == "vi" for case in V7_CONVERSATION_SUITE) == 5
-    assert sum(case.language == "en" for case in V7_CONVERSATION_SUITE) == 5
-    assert sum(case.language == "mixed" for case in V7_CONVERSATION_SUITE) == 6
-    assert sum(case.focus_expected for case in V7_CONVERSATION_SUITE) == 4
-    assert all(case.messages[0] == ("system", RU_SYSTEM_PROMPT) for case in V7_CONVERSATION_SUITE)
-
-
-def test_focus_assessment_rejects_self_only_reply():
-    assessment = assess_conversation_focus_response(
-        "Anh vừa về đến nhà.",
-        "Em đang chờ anh, em đang nghĩ về em, em muốn được ôm.",
-        "vi",
-        focus_expected=True,
-        follow_up_expected=True,
-    )
-
-    assert not assessment.passed
-    assert "self_focus" in assessment.failures
-    assert "missing_follow_up" in assessment.failures
-
-
-def test_focus_assessment_accepts_user_focused_reply():
-    assessment = assess_conversation_focus_response(
-        "Anh vừa về đến nhà.",
-        "Mừng anh về nhà, hôm nay chắc mệt rồi. Anh muốn nghỉ yên tĩnh hay kể em nghe một chút?",
-        "vi",
-        focus_expected=True,
-        follow_up_expected=True,
-    )
-
-    assert assessment.passed
-
-
-def test_response_assessment_requires_genuine_mixing_for_mixed_cases():
-    english_only = assess_conversation_focus_response(
-        "Today was hơi stressful.",
-        "That sounds tough. What made today feel so stressful?",
-        "mixed",
-    )
-    mixed_reply = assess_conversation_focus_response(
-        "Today was hơi stressful.",
-        "Nghe tough đó anh. What made today feel stressful?",
-        "mixed",
-    )
-
-    assert not english_only.passed
-    assert "mixed_language" in english_only.failures
-    assert mixed_reply.passed
-
-
-def test_focus_assessment_rejects_generic_short_reply_and_wrong_mixed_voice():
-    generic = assess_conversation_focus_response(
-        "I feel a little tired today.",
-        "You can take a break.",
-        "en",
-    )
-    wrong_voice = assess_conversation_focus_response(
-        "Today was hơi stressful.",
-        "Nghe anh rồi, tôi sẽ giúp anh nghỉ ngơi. What do you need?",
-        "mixed",
-    )
-
-    assert not generic.passed
-    assert "generic_short_reply" in generic.failures
-    assert not wrong_voice.passed
-    assert "vietnamese_voice" in wrong_voice.failures
 
 
 def test_prompt_routing_smoke_uses_the_eight_fixed_cases_with_language_specific_prompts():

@@ -105,26 +105,7 @@ class PhysicalVramMonitor:
         return self._exceeded.is_set()
 
 
-def validate_v7_1_adapter_dir(path: str | Path) -> Path:
-    adapter_dir = Path(path)
-    if adapter_dir.name in {
-        "ru-llama3.1-8b-instruct-v6",
-        "ru-llama3.1-8b-instruct-v7",
-    }:
-        raise ValueError("v7.1 output cannot overwrite a comparison adapter")
-    if adapter_dir.name != "ru-llama3.1-8b-instruct-v7.1":
-        raise ValueError("v7.1 output must use the ru-llama3.1-8b-instruct-v7.1 adapter directory")
-    return adapter_dir
-
-
 _CHECKPOINT_ROOT = (Path(__file__).resolve().parents[2] / "checkpoints").resolve()
-_V8_OUTPUT_NAMES = frozenset(
-    {
-        "ru-llama3.1-8b-instruct-v8",
-        "ru-llama3.1-8b-instruct-v8-smoke",
-    }
-)
-_V8_SOURCE_NAME = "ru-llama3.1-8b-instruct-v6"
 _V6_1_OUTPUT_NAMES = frozenset(
     {
         "ru-llama3.1-8b-instruct-v6.1",
@@ -132,25 +113,6 @@ _V6_1_OUTPUT_NAMES = frozenset(
     }
 )
 _V6_1_SOURCE_NAME = "ru-llama3.1-8b-instruct-v6"
-
-
-def validate_v8_adapter_dir(path: str | Path) -> Path:
-    adapter_dir = Path(path)
-    if adapter_dir.name not in _V8_OUTPUT_NAMES:
-        raise ValueError(
-            "v8 output must use ru-llama3.1-8b-instruct-v8 or "
-            "ru-llama3.1-8b-instruct-v8-smoke"
-        )
-    if adapter_dir.resolve().parent != _CHECKPOINT_ROOT:
-        raise ValueError("v8 output must be directly inside the D:/LLM/checkpoints directory")
-    return adapter_dir
-
-
-def validate_v8_source_adapter_dir(path: str | Path) -> Path:
-    source_dir = Path(path)
-    if source_dir.name != _V8_SOURCE_NAME or source_dir.resolve().parent != _CHECKPOINT_ROOT:
-        raise ValueError("v8 source adapter must be the v6 adapter inside D:/LLM/checkpoints")
-    return source_dir
 
 
 def validate_v6_1_adapter_dir(path: str | Path) -> Path:

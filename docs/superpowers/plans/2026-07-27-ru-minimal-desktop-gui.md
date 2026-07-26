@@ -9,7 +9,7 @@
 **Tech Stack:** Python 3.13, Tkinter/ttk, pygame, SpeechRecognition, PyTorch CUDA, local Llama 3.1 QLoRA, local Gwen TTS, pytest.
 
 **Implementation status (2026-07-27):** The conversation-first layout,
-settings dialog, keyboard submit, 192-token default, cache-aware status, and
+settings dialog, keyboard submit, 128-token default, cache-aware status, and
 Llama/Gwen GPU transition lock are implemented. The focused GUI/runtime suite
 passes with 23 tests. The full project suite currently has 79 passing tests and
 two pre-existing Gwen service collection failures because the project `.venv`
@@ -22,6 +22,13 @@ This implementation does not mask or bypass those failures.
 text-only generation completed without that native crash. The transcript also
 renders each completed turn in chronological order: user message, then Ru
 reply.
+
+**Latency follow-up (2026-07-27):** The default is now 128 tokens to keep
+ordinary dialogue and its speech short. FlashAttention was evaluated in
+`gwen_env` (Python 3.11, Torch 2.7.1+cu128, RTX 4050) but no compatible Windows
+wheel exists and the machine has no CUDA Toolkit (`nvcc`) for a source build.
+Gwen therefore remains on the supported SDPA path; no dependency was forced
+into the voice environment.
 
 ---
 
@@ -125,7 +132,7 @@ def test_submit_from_keyboard_starts_generation_and_consumes_event():
 
 
 def test_default_generation_limit_is_short_conversation_length():
-    assert gui.DEFAULT_MAX_NEW_TOKENS == "192"
+    assert gui.DEFAULT_MAX_NEW_TOKENS == "128"
 ~~~
 
 - [ ] **Step 2: Run those tests to prove they fail**
@@ -137,7 +144,7 @@ Expected: FAIL because \`_submit_from_keyboard\` and \`DEFAULT_MAX_NEW_TOKENS\` 
 - [ ] **Step 3: Introduce visual constants and replace the top-level layout**
 
 ~~~python
-DEFAULT_MAX_NEW_TOKENS = "192"
+DEFAULT_MAX_NEW_TOKENS = "128"
 
 
 def _submit_from_keyboard(self, _event: object) -> str:

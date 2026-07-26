@@ -34,7 +34,7 @@ from .search import perform_web_search
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODEL_NAME = "Ru"
 GWEN_TTS_SERVER_URL = "http://127.0.0.1:5051/tts"
-DEFAULT_MAX_NEW_TOKENS = "192"
+DEFAULT_MAX_NEW_TOKENS = "128"
 
 
 def clean_tts_text(text: str) -> str:

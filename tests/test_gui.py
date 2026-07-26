@@ -25,7 +25,7 @@ def test_submit_from_keyboard_starts_generation_and_consumes_event():
 
 
 def test_default_generation_limit_is_short_conversation_length():
-    assert gui.DEFAULT_MAX_NEW_TOKENS == "192"
+    assert gui.DEFAULT_MAX_NEW_TOKENS == "128"
 
 
 def test_generation_settings_are_parsed_and_validated():

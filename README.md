@@ -29,7 +29,11 @@ Verify the environment:
 
 The GUI defaults to `checkpoints\ru-llama3.1-8b-instruct-v6`, keeps a bounded
 recent conversation context, and validates runtime dependencies before loading
-the model. Persistent memory and online search are disabled by default.
+the model. Its default screen is conversation-first; open **Settings** to
+change the adapter, sampler, saved-memory option, or online-search permission.
+Send with the button or `Ctrl+Enter`; plain Enter adds a line. The status line
+shows whether the Llama model was already resident and how long the completed
+local reply took. Persistent memory and online search are disabled by default.
 
 - Enable **Remember conversations** only to persist completed pairs locally in
   `data\conversations\memory_*`.

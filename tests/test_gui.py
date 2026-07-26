@@ -15,6 +15,19 @@ def test_model_name_is_ru():
     assert MODEL_NAME == "Ru"
 
 
+def test_submit_from_keyboard_starts_generation_and_consumes_event():
+    app = object.__new__(gui.RuApp)
+    calls: list[str] = []
+    app._start_generation = lambda: calls.append("generate")
+
+    assert app._submit_from_keyboard(object()) == "break"
+    assert calls == ["generate"]
+
+
+def test_default_generation_limit_is_short_conversation_length():
+    assert gui.DEFAULT_MAX_NEW_TOKENS == "192"
+
+
 def test_generation_settings_are_parsed_and_validated():
     assert parse_generation_settings("50", "0.8", "20") == (50, 0.8, 20)
     with pytest.raises(ValueError, match="temperature"):

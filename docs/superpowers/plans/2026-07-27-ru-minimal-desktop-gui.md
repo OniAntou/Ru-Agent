@@ -8,6 +8,14 @@
 
 **Tech Stack:** Python 3.13, Tkinter/ttk, pygame, SpeechRecognition, PyTorch CUDA, local Llama 3.1 QLoRA, local Gwen TTS, pytest.
 
+**Implementation status (2026-07-27):** The conversation-first layout,
+settings dialog, keyboard submit, 192-token default, cache-aware status, and
+Llama/Gwen GPU transition lock are implemented. The focused GUI/runtime suite
+passes with 23 tests. The full project suite currently has 79 passing tests and
+two pre-existing Gwen service collection failures because the project `.venv`
+does not install Flask; Flask is isolated in `gwen_env`, where the service runs.
+This implementation does not mask or bypass those failures.
+
 ---
 
 ## File map
@@ -291,4 +299,3 @@ git commit -m "docs: describe Ru desktop chat controls"
 - Spec coverage: Task 2 covers the calm chat-first screen, hidden technical controls, secondary actions, keyboard action, accessible labels, and future replaceable stage. Task 3 covers measured status, worker-thread updates, and safe Llama/Gwen GPU turnover. Task 4 preserves and refreshes user documentation.
 - Placeholder scan: every task names source files, tests, commands, and an expected result. The only runtime-specific action is a non-inference Tkinter construction check.
 - Type consistency: `format_generation_status(cache_hit, seconds)`, `ModelRunner.is_cached(checkpoint)`, and `_generation_finished(result, cache_hit, elapsed, prompt, remember_conversations)` are introduced once and used consistently.
-

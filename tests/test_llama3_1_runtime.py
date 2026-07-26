@@ -93,6 +93,16 @@ def test_dependency_status_lists_missing_runtime_packages(monkeypatch):
     assert runtime.dependency_status() == ("peft",)
 
 
+def test_cache_query_uses_the_same_resolved_adapter_key(tmp_path):
+    adapter = tmp_path / "adapter"
+    adapter.mkdir()
+    runtime._GENERATION_CACHE.clear()
+    runtime._GENERATION_CACHE[("base", str(adapter.resolve()))] = (object(), object())
+
+    assert runtime.is_llama_generation_cached("base", adapter)
+    assert not runtime.is_llama_generation_cached("other-base", adapter)
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     (("max_new_tokens", 0), ("temperature", 0), ("top_k", -1)),

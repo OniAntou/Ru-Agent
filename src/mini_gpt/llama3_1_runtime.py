@@ -60,6 +60,16 @@ def clear_llama_generation_cache() -> None:
     except ImportError:
         pass
 
+
+def _generation_cache_key(base_path: str | Path, adapter_dir: str | Path | None) -> tuple[str, str | None]:
+    adapter_key = str(Path(adapter_dir).resolve()) if adapter_dir is not None else None
+    return str(base_path), adapter_key
+
+
+def is_llama_generation_cached(base_path: str | Path, adapter_dir: str | Path | None) -> bool:
+    """Return cache residency without importing model packages or allocating GPU memory."""
+    return _generation_cache_key(base_path, adapter_dir) in _GENERATION_CACHE
+
 def generate_llama_response_hf(
     base_path: str,
     messages: tuple[tuple[str, str], ...],
@@ -81,8 +91,7 @@ def generate_llama_response_hf(
         
     serialized = [{"role": role, "content": normalize_text(content)} for role, content in messages]
     
-    adapter_key = str(Path(adapter_dir).resolve()) if adapter_dir is not None else None
-    cache_key = (base_path, adapter_key)
+    cache_key = _generation_cache_key(base_path, adapter_dir)
     
     if cache_key not in _GENERATION_CACHE:
         _GENERATION_CACHE[cache_key] = _load_llama_for_generation(base_path, adapter_dir)

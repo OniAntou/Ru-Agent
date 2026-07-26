@@ -92,3 +92,18 @@ def test_v6_1_rejects_invalid_source_row(tmp_path, monkeypatch):
 
     with pytest.raises(ValueError, match="vietnamese_voice|ai_disclaimer"):
         corpus.build_ru_v6_1_corpus(tmp_path)
+
+
+def test_v6_1_rejects_casefold_prompt_collision(tmp_path, monkeypatch):
+    import mini_gpt.ru_v6_1_corpus as corpus
+
+    broken = [dict(row) for row in corpus.V6_1_ROWS]
+    broken[1] = dict(broken[1])
+    broken[1]["messages"] = [
+        *broken[1]["messages"][:-1],
+        {"role": "user", "content": broken[0]["messages"][-1]["content"].swapcase()},
+    ]
+    monkeypatch.setattr(corpus, "V6_1_ROWS", broken)
+
+    with pytest.raises(ValueError, match="casefold duplicate final prompts"):
+        corpus.build_ru_v6_1_corpus(tmp_path)

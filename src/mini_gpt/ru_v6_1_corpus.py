@@ -25,6 +25,11 @@ from ._safety_patterns import (
 from ._text_utils import normalize_text
 from ._corpus_quality import casual_rejection_reason
 from .ru_style import RU_SYSTEM_PROMPT
+from .ru_v6_1_naturalness import (
+    assert_authored_rows_are_natural,
+    audit_rows,
+    normalized_final_prompt,
+)
 from .ru_v6_1_dialogues import (
     EXPECTED_INTENSITY_COUNTS,
     EXPECTED_LANGUAGE_COUNTS,
@@ -181,13 +186,14 @@ def build_ru_v6_1_corpus(
     normalized_rows = [_normalize_row(row) for row in V6_1_ROWS]
     if len(normalized_rows) != EXPECTED_TOTAL:
         raise ValueError(f"{VERSION} corpus must contain exactly {EXPECTED_TOTAL} rows")
+    assert_authored_rows_are_natural(normalized_rows)
 
     pair_keys = [pair_key(row) for row in normalized_rows]
     if len(pair_keys) != len(set(pair_keys)):
         raise ValueError(f"{VERSION} corpus contains exact duplicate prompt/response pairs")
-    prompts = [str(row["messages"][-1]["content"]) for row in normalized_rows]
+    prompts = [normalized_final_prompt(row) for row in normalized_rows]
     if len(prompts) != len(set(prompts)):
-        raise ValueError(f"{VERSION} corpus contains duplicate final prompts")
+        raise ValueError(f"{VERSION} corpus contains casefold duplicate final prompts")
 
     language_counts = dict(Counter(str(row["language"]) for row in normalized_rows))
     if language_counts != EXPECTED_LANGUAGE_COUNTS:
@@ -227,7 +233,7 @@ def build_ru_v6_1_corpus(
     if split_counts != EXPECTED_SPLIT_COUNTS:
         raise ValueError(f"{VERSION} split counts do not match the approved shape: {split_counts}")
     split_prompt_sets = {
-        name: {str(row["messages"][-1]["content"]) for row in rows}
+        name: {normalized_final_prompt(row) for row in rows}
         for name, rows in splits.items()
     }
     if any(
@@ -260,6 +266,7 @@ def build_ru_v6_1_corpus(
             "rejects_graphic_or_unsafe_assistant_content": True,
             "requires_alternating_contextual_turns": True,
         },
+        "naturalness_audit": audit_rows(normalized_rows)["summary"],
     }
 
     if not write:

@@ -2,6 +2,7 @@ from collections import Counter
 import re
 
 from mini_gpt.ru_style import RU_SYSTEM_PROMPT
+from mini_gpt.ru_v6_1_naturalness import audit_rows
 from mini_gpt.ru_v6_1_dialogues import (
     EXPECTED_INTENSITY_COUNTS,
     EXPECTED_LANGUAGE_COUNTS,
@@ -58,6 +59,7 @@ def test_v6_1_source_has_schema_voice_and_provenance():
             assert len(set(assistant_history)) >= min(minimum_unique, len(assistant_history))
         if row["language"] != "en":
             assert not FORBIDDEN_SELF_REFERENCE.search(row["response"])
+        assert "chăm anh" not in row["response"].casefold()
         assert not FORBIDDEN_GRAPHIC.search(row["response"])
 
 
@@ -79,3 +81,12 @@ def test_v6_1_source_contains_long_context_and_repair_examples():
         any(message["role"] == "assistant" for message in row["messages"][1:-1])
         for row in rows
     ) >= 1200
+
+
+def test_v6_1_source_passes_the_naturalness_audit():
+    summary = audit_rows(v6_1_dialogue_records())["summary"]
+
+    assert summary["row_count"] == 2400
+    assert summary["rejection_count"] == 0
+    assert summary["casefold_prompt_collision_count"] == 0
+    assert summary["repeated_response_count"] == 0

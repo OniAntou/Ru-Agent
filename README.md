@@ -39,6 +39,23 @@ the model. Persistent memory and online search are disabled by default.
 - **Mark last response useful** writes a reviewed example to
   `data\conversations\approved.jsonl`; it never changes model weights.
 
+## v6.1 dataset
+
+`data\conversations\ru_v6_1` contains an audited authored base of 2,400
+rows plus three train-only reviewed local examples, for 1,683 train rows and
+360 rows each in validation and held-out. The audit report is
+`naturalness_audit.json`; it rejects AI-meta wording, case-insensitive prompt
+collisions, repeated full replies, and an overused response opening.
+
+Recreate the authored base and then explicitly reapply the reviewed rows:
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe scripts\build_ru_llama_v6_1_data.py --output-dir data\conversations\ru_v6_1 --seed 42
+& D:\LLM\.venv\Scripts\python.exe scripts\merge_approved_into_ru_v6_1.py --dataset-dir data\conversations\ru_v6_1 --approved-file data\conversations\approved.jsonl
+```
+
+Dataset preparation does not start training or promote a v6.1 adapter.
+
 ## Experimental voice output
 
 The GUI automatically sends each completed reply to the local Gwen service on

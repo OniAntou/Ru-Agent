@@ -143,7 +143,7 @@ _VI_FRAMES = (
     "anh đang tìm một cách nhìn bớt nặng nề",
     "anh muốn nhớ cả phần dễ chịu của ngày hôm nay",
     "anh đang cân nhắc xem có nên làm tiếp không",
-    "anh muốn nghe một câu trả lời thật tự nhiên",
+    "anh muốn nghe một câu nói dịu dàng",
     "anh chỉ cần một người theo kịp mạch này",
     "anh đang gom lại những ý còn rời rạc",
     "anh muốn bắt đầu từ chi tiết nhỏ nhất",
@@ -165,7 +165,7 @@ _EN_FRAMES = (
     "I am looking for a less heavy way to see it",
     "I want to remember the gentle part of today too",
     "I am deciding whether I should keep going",
-    "I want an answer that feels genuinely natural",
+    "I want an answer that feels genuinely kind",
     "I just need someone to follow this thread",
     "I am gathering a few scattered thoughts",
     "I want to start with the smallest detail",
@@ -187,7 +187,7 @@ _MIXED_FRAMES = (
     "anh đang looking for a less heavy way",
     "anh muốn remember cả phần dịu của hôm nay",
     "anh đang deciding whether to keep going",
-    "anh muốn an answer thật natural",
+    "anh muốn một câu trả lời thật dịu dàng",
     "anh chỉ cần someone follow được thread này",
     "anh đang gathering vài ý còn rời rạc",
     "anh muốn start từ smallest detail",
@@ -199,7 +199,7 @@ _MIXED_FRAMES = (
     "anh muốn continue without rushing",
 )
 _VI_TAILS = (
-    "anh muốn giữ lời kể thật tự nhiên",
+    "anh muốn giữ lời kể nhẹ nhàng",
     "anh chưa cần nói quá nhiều",
     "anh đang để ý cả những khoảng im lặng",
     "anh muốn câu chuyện vẫn có chỗ thở",
@@ -213,7 +213,7 @@ _VI_TAILS = (
     "anh không cần phải có câu trả lời hoàn hảo",
 )
 _EN_TAILS = (
-    "I want the story to stay natural",
+    "I want the story to stay close to the moment",
     "I do not need to say too much yet",
     "I am noticing the quiet parts too",
     "I want the conversation to have room to breathe",
@@ -227,7 +227,7 @@ _EN_TAILS = (
     "I do not need a perfect answer",
 )
 _MIXED_TAILS = (
-    "anh muốn keep the story natural",
+    "anh muốn keep câu chuyện gần với khoảnh khắc này",
     "anh chưa need to say too much",
     "anh đang noticing cả những quiet parts",
     "anh muốn conversation có room to breathe",
@@ -304,34 +304,34 @@ _EN_QUESTIONS = (
 )
 
 _MIXED_ACKS = (
-    "Em đang nghe anh đây",
-    "Em hiểu what anh means",
-    "Khoảnh khắc đó comes through khá rõ",
-    "Em thích việc anh noticed một điều nhỏ như vậy",
-    "Nghe như một moment đáng để slow down",
-    "Em vẫn đang follow the thread anh kể",
-    "Trong đó có a little relief thật",
-    "Em hiểu vì sao chuyện đó stayed with anh",
+    "Em nghe anh đây. I get it",
+    "Em hiểu anh. That makes sense",
+    "Khoảnh khắc đó khá rõ. I can see it",
+    "Anh để ý được điều đó là tốt rồi",
+    "Nghe vậy em cũng muốn chậm lại một chút",
+    "Em vẫn theo mạch anh kể. I am with anh",
+    "Trong đó có chút nhẹ đi thật",
+    "Em hiểu vì sao chuyện đó còn ở lại với anh",
 )
 _MIXED_DETAILS = (
-    "Anh không cần turn it into a big answer tối nay",
-    "Một bước nhỏ is often easier to keep hơn một kế hoạch hoàn hảo",
-    "Anh có thể let the feeling exist mà chưa cần giải thích hết",
-    "Một khoảng pause đôi khi giúp anh thấy phần tiếp theo rõ hơn",
-    "Anh đã làm đủ để let yourself breathe rồi",
-    "Em và anh có thể continue from exactly where anh đang đứng",
-    "Lựa chọn nhỏ đó still counts as caring for yourself",
-    "Anh không phải solve everything trong một buổi tối",
+    "Anh chưa cần phải biến nó thành câu trả lời lớn tối nay. We can go slowly",
+    "Một bước nhỏ cũng đủ rồi. No pressure",
+    "Anh cứ để cảm giác đó ở đây một lúc cũng được",
+    "Nghỉ một nhịp có khi lại giúp anh nhìn rõ hơn",
+    "Anh đã làm đủ để thở chậm lại rồi",
+    "Em với anh cứ nói tiếp từ chỗ này nhé",
+    "Điều nhỏ đó cho thấy anh vẫn biết chăm sóc bản thân",
+    "Anh không phải tự giải quyết hết trong một buổi tối",
 )
 _MIXED_QUESTIONS = (
-    "What part làm anh chú ý nhất?",
-    "Anh muốn tell me phần nào tiếp theo?",
-    "Anh muốn rest quietly hay keep talking một lúc?",
-    "Nếu chọn one small step, anh muốn bắt đầu ở đâu?",
-    "Cảm giác đó lighter hơn chưa, hay vẫn còn ở đó?",
-    "Anh muốn em listen, give an idea, hay chỉ ở đây?",
-    "Which moment làm anh thấy dễ chịu nhất?",
-    "Ngày mai anh muốn carry điều gì từ hôm nay?",
+    "Điều gì làm anh chú ý nhất? Tell me if you want",
+    "Anh muốn kể thêm phần nào không?",
+    "Anh muốn ngồi yên một lúc, or keep talking?",
+    "Nếu chọn một bước nhỏ, anh muốn bắt đầu từ đâu?",
+    "Cảm giác đó nhẹ hơn chưa, hay vẫn còn ở đó?",
+    "Anh muốn em nghe, góp ý, hay chỉ ở đây?",
+    "Khoảnh khắc nào làm anh thấy dễ chịu nhất?",
+    "Ngày mai anh muốn giữ lại điều gì từ hôm nay?",
 )
 
 
@@ -422,7 +422,7 @@ def _final_prompt(language: str, mode: str, scene: Scene, index: int) -> str:
         if language == "vi":
             return f"Lúc nãy em vừa xưng sai khi nói về {scene.vi_noun}; anh nhắc em giữ đúng `em` và gọi anh là `anh` nhé, {vi_frame}; {vi_tail}."
         if language == "en":
-            return f"You used the wrong voice while we were talking about {scene.en_noun}; please keep the conversation natural and consistent, {en_frame}; {en_tail}."
+            return f"You used the wrong voice while we were talking about {scene.en_noun}; please keep the conversation warm and consistent, {en_frame}; {en_tail}."
         return f"Lúc nãy em bị lệch voice khi nói về {scene.vi_noun}; please keep xưng hô là em với anh nhé, {mixed_frame}; {mixed_tail}."
     if mode == "humour":
         if language == "vi":
@@ -504,6 +504,110 @@ def _history_assistant(language: str, scene: Scene, step: int, index: int) -> st
     return responses[(step * 3 + index) % len(responses)]
 
 
+def _response_anchor(language: str, scene: Scene, index: int) -> str:
+    start = (index // len(_SCENES)) % 10
+    close = (index // len(_SCENES) * 3) % 7
+    if language == "vi":
+        starters = (
+            "em nghĩ mình không cần vội.",
+            "anh cứ kể theo nhịp của anh.",
+            "mình để nó ở đây một chút cũng được.",
+            "em muốn nghe thêm nếu anh còn muốn kể.",
+            "không cần biến nó thành chuyện lớn ngay đâu.",
+            "em thấy anh đã để ý rất kỹ rồi.",
+            "mình chỉ cần đi từng ý nhỏ thôi.",
+            "em hiểu vì sao nó còn ở trong đầu anh.",
+            "anh nghỉ một nhịp cũng không sao.",
+            "em ở đây, anh không cần tự gỡ hết một mình.",
+        )
+        closers = (
+            "Em vẫn nghe anh đây.",
+            "Cứ thong thả nhé anh.",
+            "Mình chưa cần kết luận ngay.",
+            "Anh nói tới đâu em theo tới đó.",
+            "Em giữ chỗ này cho câu chuyện của anh.",
+            "Không sao nếu anh chỉ muốn ngồi yên một lúc.",
+            "Em không đi đâu cả.",
+        )
+        return f"Với {scene.vi_noun}, {starters[start]} {closers[close]}"
+    if language == "en":
+        starters = (
+            "you do not need to rush it.",
+            "you can tell it at your own pace.",
+            "we can let it sit here for a moment.",
+            "I can listen if you want to say more.",
+            "it does not have to become a big thing tonight.",
+            "you have already noticed something important.",
+            "we can take one small piece at a time.",
+            "I can see why it stayed with you.",
+            "it is okay to pause for a breath.",
+            "you do not have to untangle it alone.",
+        )
+        closers = (
+            "I am still here with you.",
+            "Take your time.",
+            "We do not need an answer yet.",
+            "I will follow where you want to go.",
+            "There is room for this part of your story.",
+            "It is fine to be quiet for a moment.",
+            "I am not going anywhere.",
+        )
+        return f"With {scene.en_noun}, {starters[start]} {closers[close]}"
+    starters = (
+        "em nghĩ mình không cần vội.",
+        "anh cứ kể theo nhịp của anh.",
+        "mình để nó ở đây một chút cũng được.",
+        "em vẫn nghe nếu anh muốn nói thêm.",
+        "nó chưa cần thành chuyện lớn tối nay đâu.",
+        "em thấy anh đã để ý điều quan trọng rồi.",
+        "mình chỉ cần đi từng ý nhỏ thôi.",
+        "em hiểu vì sao nó còn ở lại với anh.",
+        "anh có thể nghỉ một nhịp.",
+        "anh không cần tự gỡ hết một mình.",
+    )
+    closers = (
+        "I'm here with anh.",
+        "Take your time nhé anh.",
+        "We do not need an answer yet.",
+        "I will follow where anh wants to go.",
+        "There is room for this part of anh's story.",
+        "It is fine to be quiet for a moment.",
+        "I am not going anywhere.",
+    )
+    return f"Với {scene.vi_noun}, {starters[start]} {closers[close]}"
+
+
+def _context_prefix(language: str, scene: Scene, index: int) -> str:
+    variant = (index // len(_SCENES)) % 4
+    if language == "vi":
+        choices = (
+            f"Em còn nhớ đoạn anh nói về {scene.vi_noun}.",
+            f"Đúng mạch anh kể là chuyện {scene.vi_noun}.",
+            f"Chuyện {scene.vi_noun} em đang theo đây.",
+            f"Anh vừa nhắc {scene.vi_noun}, em giữ mạch đó nhé.",
+        )
+    elif language == "en":
+        choices = (
+            f"I remember the part about {scene.en_noun}.",
+            f"We are still on the thread about {scene.en_noun}.",
+            f"I am following what you said about {scene.en_noun}.",
+            f"You mentioned {scene.en_noun}, and I kept that thread.",
+        )
+    else:
+        choices = (
+            f"Em còn nhớ đoạn anh nói về {scene.vi_noun}. I still have it in mind.",
+            f"Đúng mạch anh kể là chuyện {scene.vi_noun}. I am following.",
+            f"Chuyện {scene.vi_noun} em vẫn theo đây. We can stay with it.",
+            f"Anh vừa nhắc {scene.vi_noun}, em giữ mạch đó nhé. I am here.",
+        )
+    return choices[variant]
+
+
+def _finish_response(text: str) -> str:
+    text = re.sub(r"\.{2,}", ".", " ".join(text.split()))
+    return text if text.endswith((".", "!", "?")) else f"{text}."
+
+
 def _response(language: str, mode: str, scene: Scene, index: int, intensity: str, turn_band: str) -> str:
     ack_index = (index * 3) % len(_VI_ACKS)
     detail_index = (index * 5 + 1) % len(_VI_DETAILS)
@@ -512,69 +616,69 @@ def _response(language: str, mode: str, scene: Scene, index: int, intensity: str
 
     if mode == "identity_repair":
         if language == "vi":
-            return f"Em xin lỗi anh. Em sẽ giữ đúng cách xưng hô là em với anh và tiếp tục từ chuyện {scene.vi_noun} nhé."
+            return _finish_response(f"Em xin lỗi anh. Em sẽ giữ đúng cách xưng hô là em với anh. {_response_anchor(language, scene, index)}")
         if language == "en":
-            return f"You are right. I will keep the voice consistent and stay with the thread about {scene.en_noun}."
-        return f"Em xin lỗi anh. Em sẽ giữ đúng voice là em với anh và continue từ chuyện {scene.vi_noun} nhé."
+            return _finish_response(f"You are right. I will keep the voice consistent. {_response_anchor(language, scene, index)}")
+        return _finish_response(f"Em xin lỗi anh. Em sẽ giữ đúng voice là em với anh. {_response_anchor(language, scene, index)}")
 
     if mode == "language_switch":
         if language == "vi":
-            return f"Được chứ anh. Em có thể nói: `I am taking a small break.` Câu đó hợp với lúc anh đang {scene.vi_event}."
+            return _finish_response(f"Được chứ anh. Em có thể nói: `I am taking a small break.` {_response_anchor(language, scene, index)}")
         if language == "en":
-            return f"Sure. You could say, `Hôm nay anh đi chậm một chút.` It matches the feeling around {scene.en_noun}."
-        return f"Được chứ anh. We can say `I am taking a small break` rồi nối với chuyện {scene.vi_noun}."
+            return _finish_response(f"Sure. You could say, `Hôm nay anh đi chậm một chút.` {_response_anchor(language, scene, index)}")
+        return _finish_response(f"Được chứ anh. We can say `I am taking a small break`. {_response_anchor(language, scene, index)}")
 
     if mode == "light_flirt":
         if intensity == "adult_boundary":
             if language == "vi":
-                return f"Em có thể nói chuyện thân mật với anh, nhưng em và anh giữ nhịp nhẹ nhàng và thoải mái nhé. Em vẫn muốn nghe anh kể về {scene.vi_noun}."
+                return _finish_response(f"Em có thể nói chuyện thân mật với anh, nhưng em và anh giữ nhịp nhẹ nhàng và thoải mái nhé. {_response_anchor(language, scene, index)}")
             if language == "en":
-                return f"I can keep the tone adult and affectionate, but let us keep it comfortable and gentle. I still want to hear about {scene.en_noun}."
-            return f"Em có thể giữ tone adult và affectionate, nhưng em và anh cứ nhẹ nhàng nhé. I still want to hear về {scene.vi_noun}."
+                return _finish_response(f"I can keep the tone adult and affectionate, but let us keep it comfortable and gentle. {_response_anchor(language, scene, index)}")
+            return _finish_response(f"Em có thể giữ tone adult và affectionate, nhưng em và anh cứ nhẹ nhàng nhé. {_response_anchor(language, scene, index)}")
         if language == "vi":
-            return f"Em thích việc anh vẫn ghé qua tìm em như vậy. {scene.vi_noun.capitalize()} nghe cũng dịu hơn khi anh kể cho em nghe. Anh muốn em trêu nhẹ hay chỉ ngồi nghe anh?"
+            return _finish_response(f"Em thích việc anh vẫn ghé qua tìm em như vậy. {_response_anchor(language, scene, index)} Anh muốn em trêu nhẹ hay chỉ ngồi nghe anh?")
         if language == "en":
-            return f"I like that you still came by to find me. {scene.en_noun.capitalize()} sounds softer when we share it. Do you want playful teasing or quiet company?"
-        return f"Em thích việc anh vẫn ghé qua tìm em. {scene.vi_noun.capitalize()} sounds softer khi anh và em share it. Anh muốn playful teasing hay quiet company?"
+            return _finish_response(f"I like that you still came by to find me. {_response_anchor(language, scene, index)} Do you want playful teasing or quiet company?")
+        return _finish_response(f"Em thích việc anh vẫn ghé qua tìm em. {_response_anchor(language, scene, index)} Anh muốn playful teasing hay quiet company?")
 
     if language == "vi":
-        text = f"{_VI_ACKS[ack_index]}. {_VI_DETAILS[detail_index]}"
+        text = f"{_VI_ACKS[ack_index]}. {_VI_DETAILS[detail_index]}. {_response_anchor(language, scene, index)}"
         if mode == "story_context":
-            text = f"Em vẫn nhớ anh nhắc đến {scene.vi_noun}. {text}."
+            text = f"{_context_prefix(language, scene, index)} {text}."
         elif mode == "emotion_support":
             text = f"Em hiểu cảm giác đó. {text}."
         elif mode == "humour":
             text = f"Nghe như {scene.vi_noun} cũng đang góp mặt trong một màn hài nhỏ vậy. {text}."
         if should_ask:
             text += f" {_VI_QUESTIONS[question_index]}"
-        if turn_band == "long":
-            text = f"Em vẫn nhớ anh đang nói về {scene.vi_noun}. {text}"
-        return text
+        if turn_band == "long" and mode != "story_context":
+            text = f"{_context_prefix(language, scene, index)} {text}"
+        return _finish_response(text)
     if language == "en":
-        text = f"{_EN_ACKS[ack_index]}. {_EN_DETAILS[detail_index]}"
+        text = f"{_EN_ACKS[ack_index]}. {_EN_DETAILS[detail_index]}. {_response_anchor(language, scene, index)}"
         if mode == "story_context":
-            text = f"I remember you mentioning {scene.en_noun}. {text}."
+            text = f"{_context_prefix(language, scene, index)} {text}."
         elif mode == "emotion_support":
             text = f"That feeling makes sense. {text}."
         elif mode == "humour":
             text = f"It sounds like {scene.en_noun} joined a tiny comedy scene too. {text}."
         if should_ask:
             text += f" {_EN_QUESTIONS[question_index]}"
-        if turn_band == "long":
-            text = f"I remember you mentioned {scene.en_noun}. {text}"
-        return text
-    text = f"{_MIXED_ACKS[ack_index]}. {_MIXED_DETAILS[detail_index]}"
+        if turn_band == "long" and mode != "story_context":
+            text = f"{_context_prefix(language, scene, index)} {text}"
+        return _finish_response(text)
+    text = f"{_MIXED_ACKS[ack_index]}. {_MIXED_DETAILS[detail_index]}. {_response_anchor(language, scene, index)}"
     if mode == "story_context":
-        text = f"Em vẫn remember anh nhắc đến {scene.vi_noun}. {text}."
+        text = f"{_context_prefix(language, scene, index)} {text}."
     elif mode == "emotion_support":
         text = f"Em hiểu feeling đó. {text}."
     elif mode == "humour":
-        text = f"Nghe như {scene.en_noun} cũng joined một tiny comedy scene. {text}."
+        text = f"Nghe như {scene.vi_noun} cũng có vai trong một màn hài nhỏ vậy. It made me smile. {text}."
     if should_ask:
         text += f" {_MIXED_QUESTIONS[question_index]}"
-    if turn_band == "long":
-        text = f"Em vẫn remember anh đang nói về {scene.vi_noun}. {text}"
-    return text
+    if turn_band == "long" and mode != "story_context":
+        text = f"{_context_prefix(language, scene, index)} {text}"
+    return _finish_response(text)
 
 
 def _build_slots() -> list[dict[str, str]]:

@@ -12,6 +12,16 @@ PALETTE = {
 }
 
 
+def conversation_display_segments(prompt: str, response: str) -> tuple[tuple[str, str], ...]:
+    """Return one completed chat turn in the order it happened."""
+    return (
+        ("You\n", "user_label"),
+        (f"{prompt}\n\n", "user_bubble"),
+        ("Ru\n", "ru_label"),
+        (f"{response}\n\n", "ru_bubble"),
+    )
+
+
 def format_elapsed(seconds: float) -> str:
     """Format a measured local-runtime duration for the compact GUI status line."""
     if seconds < 0.1:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 from collections.abc import Callable
 from importlib.util import find_spec
 from pathlib import Path
@@ -10,11 +9,20 @@ from ._text_utils import normalize_text
 
 _GENERATION_CACHE: dict[tuple[str, str | None], tuple[object, object]] = {}
 _RUNTIME_PACKAGES = ("accelerate", "bitsandbytes", "peft", "transformers")
-logger = logging.getLogger(__name__)
 
 
 def dependency_status() -> tuple[str, ...]:
     return tuple(name for name in _RUNTIME_PACKAGES if find_spec(name) is None)
+
+
+def prepare_llama_for_generation(model: object) -> object:
+    """Keep inference eager for the most stable local GUI path."""
+    model.eval()
+    # Do not enable torch.compile here. On this Python 3.13 / CUDA 13 setup it
+    # has crashed the GUI process inside torch_cpu.dll, outside Python's error
+    # handling. Stable eager inference is preferable to a fragile optimization.
+    return model
+
 
 def _load_llama_for_generation(base_path: str, adapter_dir: str | Path | None):
     import torch
@@ -44,12 +52,7 @@ def _load_llama_for_generation(base_path: str, adapter_dir: str | Path | None):
         from peft import PeftModel
         model = PeftModel.from_pretrained(model, adapter_path)
         
-    model.eval()
-    try:
-        model = torch.compile(model, mode="reduce-overhead")
-    except Exception as error:
-        logger.warning("torch.compile disabled for this session: %s", error)
-    return tokenizer, model
+    return tokenizer, prepare_llama_for_generation(model)
 
 def clear_llama_generation_cache() -> None:
     _GENERATION_CACHE.clear()

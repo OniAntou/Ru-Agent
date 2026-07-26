@@ -34,6 +34,9 @@ change the adapter, sampler, saved-memory option, or online-search permission.
 Send with the button or `Ctrl+Enter`; plain Enter adds a line. The status line
 shows whether the Llama model was already resident and how long the completed
 local reply took. Persistent memory and online search are disabled by default.
+The local GUI deliberately uses eager Llama inference: do not re-enable
+`torch.compile` on this Python 3.13/CUDA setup, because it caused native
+`torch_cpu.dll` process crashes during chat generation.
 
 - Enable **Remember conversations** only to persist completed pairs locally in
   `data\conversations\memory_*`.

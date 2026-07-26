@@ -41,6 +41,22 @@ class FakeModel:
         return [[1, 2, 7]]
 
 
+class FakeEvalModel:
+    def __init__(self):
+        self.evaluated = False
+
+    def eval(self):
+        self.evaluated = True
+        return self
+
+
+def test_generation_setup_keeps_the_loaded_model_eager():
+    model = FakeEvalModel()
+
+    assert runtime.prepare_llama_for_generation(model) is model
+    assert model.evaluated is True
+
+
 def test_generate_llama_response_passes_interactive_generation_settings():
     base_path = "fake-base"
     tokenizer = FakeTokenizer()

@@ -26,7 +26,7 @@ from .llama3_1_runtime import (
     generate_llama_response_hf,
     is_llama_generation_cached,
 )
-from .gui_presentation import PALETTE, format_generation_status
+from .gui_presentation import PALETTE, conversation_display_segments, format_generation_status
 from .ru_style import RU_SYSTEM_PROMPT
 from .memory import MemoryStore
 from .search import perform_web_search
@@ -414,14 +414,8 @@ class RuApp:
         if self._has_empty_state:
             self.transcript_text.delete("1.0", tk.END)
             self._has_empty_state = False
-        self.transcript_text.insert(
-            tk.END,
-            f"{MODEL_NAME}\n",
-            "ru_label",
-        )
-        self.transcript_text.insert(tk.END, f"{turn.response}\n\n", "ru_bubble")
-        self.transcript_text.insert(tk.END, "You\n", "user_label")
-        self.transcript_text.insert(tk.END, f"{turn.prompt}\n\n", "user_bubble")
+        for text, tag in conversation_display_segments(turn.prompt, turn.response):
+            self.transcript_text.insert(tk.END, text, tag)
         self.transcript_text.see(tk.END)
         self.transcript_text.configure(state="disabled")
 

@@ -1,4 +1,4 @@
-from mini_gpt.gui_presentation import format_elapsed, format_generation_status
+from mini_gpt.gui_presentation import conversation_display_segments, format_elapsed, format_generation_status
 
 
 def test_format_elapsed_is_compact_and_stable():
@@ -12,4 +12,13 @@ def test_generation_status_describes_cache_and_elapsed_time():
     assert (
         format_generation_status(cache_hit=False, seconds=12.2)
         == "Ru replied in 12.2 s (model loaded)"
+    )
+
+
+def test_conversation_segments_place_user_message_before_ru_reply():
+    assert conversation_display_segments("Anh khoe khong?", "Em khoe.") == (
+        ("You\n", "user_label"),
+        ("Anh khoe khong?\n\n", "user_bubble"),
+        ("Ru\n", "ru_label"),
+        ("Em khoe.\n\n", "ru_bubble"),
     )

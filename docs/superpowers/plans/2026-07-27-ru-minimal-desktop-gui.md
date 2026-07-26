@@ -16,6 +16,13 @@ two pre-existing Gwen service collection failures because the project `.venv`
 does not install Flask; Flask is isolated in `gwen_env`, where the service runs.
 This implementation does not mask or bypass those failures.
 
+**Stability follow-up (2026-07-27):** Windows Event Log captured an
+`APPCRASH` in `torch_cpu.dll` (`0xc0000005`) from the GUI process while
+`torch.compile` was enabled. The runtime now stays eager and a short real v6
+text-only generation completed without that native crash. The transcript also
+renders each completed turn in chronological order: user message, then Ru
+reply.
+
 ---
 
 ## File map

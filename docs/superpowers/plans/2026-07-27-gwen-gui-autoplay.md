@@ -4,7 +4,11 @@
 
 **Goal:** Automatically speak each completed Ru reply with Gwen while sharing the 6 GiB GPU safely, then remove all F5 artifacts.
 
-**Architecture:** A lazy local Flask service on port 5051 uses the isolated `gwen_env` and releases its model after each request. The GUI clears the cached Llama model before it calls the service, then retains its current pygame playback and cleanup flow.
+**Architecture:** A lightweight local Flask service on port 5051 starts a fresh
+`gwen_tts_worker.py` process in the isolated `gwen_env` for each request. The
+worker exits after creating the WAV, fully releasing its CUDA context. The GUI
+clears the cached Llama model before it calls the service, then retains its
+current pygame playback and cleanup flow.
 
 **Tech Stack:** Python 3.11, Flask, Qwen-TTS, PyTorch CUDA, Tkinter, pytest, pygame.
 
@@ -220,4 +224,3 @@ git add -u README.md TODO.md docs f5_tts_server.py run_f5_tts_server.bat src tes
 git add gwen_tts_server.py run_gwen_tts_server.bat
 git commit -m "chore: replace F5 with Gwen voice experiment"
 ```
-

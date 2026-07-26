@@ -39,6 +39,38 @@ the model. Persistent memory and online search are disabled by default.
 - **Mark last response useful** writes a reviewed example to
   `data\conversations\approved.jsonl`; it never changes model weights.
 
+## Experimental voice output
+
+The GUI automatically sends each completed reply to the local Gwen service on
+port 5051. Its reference is `tyc_talk.wav`, the official Tsukuyomi-chan sample,
+with the matching Japanese transcript in `reference_text.txt`. Do not change
+one without changing the other: Gwen voice cloning needs an exact transcript of
+the reference audio.
+
+`g-group-ai-lab/gwen-tts-0.6B` runs in the separate `gwen_env` environment.
+Before speaking, the GUI releases its cached Llama model; the Gwen service then
+starts a short-lived worker for the request. The worker exits before the WAV is
+returned, fully releasing its CUDA context. This avoids simultaneous-model VRAM
+exhaustion on the 6 GB GPU, at the cost of a short delay before each reply
+starts speaking. Gwen is experimental: its voice identity and short Vietnamese
+phrases passed manual listening, while pronunciation still needs user evaluation.
+
+Start the service before opening the GUI:
+
+```powershell
+& D:\LLM\run_gwen_tts_server.bat
+```
+
+The voice sample is used under the Tsukuyomi-chan sample-voice terms. Any
+distributed synthesis using only these samples must include the required
+Tsukuyomi-chan attribution from the official source:
+https://tyc.rei-yumesaki.net/material/voice/sample-voice/
+
+The local stack has no API fee, but its model and sample-voice licenses still
+apply. Do not redistribute the Tsukuyomi-chan source WAV files; follow its
+character and sample-voice terms, including attribution when required for
+published output.
+
 ## Project boundaries
 
 All model weights, checkpoints, data, and caches stay on `D:\LLM`. Llama v6

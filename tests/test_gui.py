@@ -1,7 +1,14 @@
 import pytest
 
 from mini_gpt import gui
-from mini_gpt.gui import MODEL_NAME, ModelRunner, default_paths, parse_generation_settings
+from mini_gpt.gui import (
+    MODEL_NAME,
+    ModelRunner,
+    clean_tts_text,
+    default_paths,
+    parse_generation_settings,
+    request_tts_audio,
+)
 
 
 def test_model_name_is_ru():
@@ -61,3 +68,59 @@ def test_model_runner_does_not_search_without_explicit_opt_in(monkeypatch):
     )
 
     assert response == "[SEARCH: weather]"
+
+
+def test_clean_tts_text_removes_internal_markup():
+    assert clean_tts_text("*Hi* [SEARCH: weather] <think>hidden</think>") == "Hi"
+
+
+def test_request_tts_audio_explains_offline_server():
+    def offline(*_args, **_kwargs):
+        raise OSError("connection refused")
+
+    with pytest.raises(RuntimeError, match="Voice server is offline"):
+        request_tts_audio("hello", post=offline)
+
+
+def test_request_tts_audio_uses_gwen_endpoint(tmp_path):
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"RIFF")
+    requested_urls: list[str] = []
+
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"audio_path": str(audio)}
+
+    def post(url, **_kwargs):
+        requested_urls.append(url)
+        return Response()
+
+    assert request_tts_audio("hello", post=post) == str(audio)
+    assert requested_urls == [gui.GWEN_TTS_SERVER_URL]
+
+
+def test_request_tts_audio_requires_a_playable_file(tmp_path):
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"audio_path": str(tmp_path / "missing.wav")}
+
+    with pytest.raises(RuntimeError, match="playable audio"):
+        request_tts_audio("hello", post=lambda *_args, **_kwargs: Response())
+
+
+def test_request_tts_audio_surfaces_server_error_detail():
+    class Response:
+        status_code = 400
+
+        @staticmethod
+        def json():
+            return {"error": "Reference transcript is empty."}
+
+    with pytest.raises(RuntimeError, match="Reference transcript is empty"):
+        request_tts_audio("hello", post=lambda *_args, **_kwargs: Response())

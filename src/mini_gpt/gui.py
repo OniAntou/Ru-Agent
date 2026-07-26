@@ -19,13 +19,50 @@ import torch
 from .chat import ChatTurn
 from .conversation_context import build_conversation_messages
 from .conversation_store import ConversationStore
-from .llama3_1_runtime import dependency_status, generate_llama_response_hf
+from .llama3_1_runtime import (
+    clear_llama_generation_cache,
+    dependency_status,
+    generate_llama_response_hf,
+)
 from .ru_style import RU_SYSTEM_PROMPT
 from .memory import MemoryStore
 from .search import perform_web_search
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODEL_NAME = "Ru"
+GWEN_TTS_SERVER_URL = "http://127.0.0.1:5051/tts"
+
+
+def clean_tts_text(text: str) -> str:
+    clean_text = re.sub(r"\[SEARCH:.*?\]", "", text).strip()
+    clean_text = re.sub(r"<thought>.*?</thought>", "", clean_text, flags=re.DOTALL)
+    clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL)
+    return clean_text.replace("*", "").strip()
+
+
+def request_tts_audio(text: str, *, post=None) -> str:
+    if post is None:
+        import requests
+
+        post = requests.post
+    try:
+        response = post(GWEN_TTS_SERVER_URL, json={"text": text}, timeout=90)
+    except Exception as error:
+        raise RuntimeError("Voice server is offline. Start Gwen TTS and try again.") from error
+    if response.status_code != 200:
+        try:
+            detail = response.json().get("error")
+        except Exception:
+            detail = None
+        suffix = f": {detail}" if isinstance(detail, str) and detail else ""
+        raise RuntimeError(f"Voice server failed (HTTP {response.status_code}){suffix}")
+    try:
+        audio_file = response.json().get("audio_path")
+    except Exception as error:
+        raise RuntimeError("Voice server returned an invalid response.") from error
+    if not isinstance(audio_file, str) or not Path(audio_file).is_file():
+        raise RuntimeError("Voice server did not return a playable audio file.")
+    return audio_file
 
 
 def default_paths() -> Path:
@@ -479,29 +516,13 @@ class RuApp:
 
     def _play_tts(self, text: str) -> None:
         try:
-            # We strip out [SEARCH: ...] tags from spoken text
-            clean_text = re.sub(r"\[SEARCH:.*?\]", "", text).strip()
-            # Also strip thought blocks if any (between <thought> or <think> tags)
-            clean_text = re.sub(r"<thought>.*?</thought>", "", clean_text, flags=re.DOTALL)
-            clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL)
-            clean_text = clean_text.replace("*", "") # Remove markdown asterisks
+            clean_text = clean_tts_text(text)
             if not clean_text:
                 return
 
-            audio_file = None
-            try:
-                import requests
-                resp = requests.post("http://127.0.0.1:5050/tts", json={"text": clean_text}, timeout=60)
-                if resp.status_code == 200:
-                    audio_file = resp.json().get("audio_path")
-                else:
-                    print(f"F5-TTS server error: {resp.text}")
-            except Exception as e:
-                print(f"F5-TTS local server not running or failed: {e}")
-            
-            if not audio_file:
-                print("Skipping TTS because F5-TTS server is not available.")
-                return
+            self.root.after(0, lambda: self.status_var.set("Preparing Gwen voice..."))
+            clear_llama_generation_cache()
+            audio_file = request_tts_audio(clean_text)
             
             # Stop any playing audio before playing new one
             if pygame.mixer.music.get_busy():
@@ -523,8 +544,8 @@ class RuApp:
 
             threading.Thread(target=wait_and_clean, daemon=True).start()
 
-        except Exception as e:
-            self.root.after(0, lambda: self.status_var.set(f"TTS Error: {e}"))
+        except Exception as error:
+            self.root.after(0, lambda: self.status_var.set(f"Voice unavailable: {error}"))
 
     def _generation_failed(self, message: str) -> None:
         self.status_var.set(f"Error: {message}")

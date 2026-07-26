@@ -8,8 +8,9 @@ voice-provider adoption; the chat response must remain usable if speech fails.
 
 ## Chosen approach
 
-Run Gwen behind a separate local Flask service on `127.0.0.1:5051`. The
-service uses `D:\LLM\gwen_env`, the locally downloaded
+Run Gwen behind a separate local Flask service on `127.0.0.1:5051`. For each
+request, that lightweight service starts a short-lived `gwen_tts_worker.py`
+process in `D:\LLM\gwen_env`; the worker uses the locally downloaded
 `models\gwen-tts-0.6b` weights, `tyc_talk.wav`, and its matching Japanese
 transcript in `reference_text.txt`.
 
@@ -20,19 +21,18 @@ control is needed. A `run_gwen_tts_server.bat` command starts the service.
 ## F5 removal
 
 F5 is not a viable fallback for the intended Japanese-reference Vietnamese
-speech and is removed completely. After the Gwen path is implemented and
-verified, remove the F5 server, launcher, `f5_env`, the local Hugging Face
-`SWivid/F5-TTS` cache, and the F5-only test WAVs. Preserve `tyc_talk.wav`,
-`tyc_calm.wav`, `reference_text.txt`, the Gwen environment/weights, and Llama
-assets.
+speech and was removed completely on 2026-07-27: its server, launcher,
+`f5_env`, local Hugging Face `SWivid/F5-TTS` cache, and F5-only test WAVs are
+gone. `tyc_talk.wav`, `tyc_calm.wav`, `reference_text.txt`, the Gwen
+environment/weights, and Llama assets remain.
 
 ## VRAM lifecycle
 
 The Llama runtime caches a 4-bit model on the 6 GiB GPU. Gwen cannot coexist
 with it reliably. Before starting automatic speech, the GUI calls the existing
-Llama cache-clear function. The Gwen service loads the model only for a request
-and deletes it, then empties its CUDA cache before returning. The next chat
-turn reloads Llama normally.
+Llama cache-clear function. The Gwen worker loads the model only for that
+request and then exits, releasing the CUDA context before the service returns.
+The next chat turn reloads Llama normally.
 
 This trades a short voice-start delay for predictable VRAM use and avoids CPU
 offload or simultaneous model residency.

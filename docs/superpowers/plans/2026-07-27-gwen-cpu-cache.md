@@ -8,6 +8,13 @@
 
 **Tech Stack:** Python 3.11, Flask, PyTorch CUDA, Qwen TTS, soundfile, pytest.
 
+**Experiment status (2026-07-27):** Not adopted. A real CPU-cache trial created
+an abnormally long 1.07 MB WAV and took about 75 seconds for the short test
+sentence, compared with about 15 seconds for the existing worker. CUDA memory
+returned to the 553 MiB idle baseline after the trial, but its performance and
+audio behavior failed the acceptance gate. The uncommitted cache implementation
+was removed; the current worker-per-request service remains active.
+
 ---
 
 ## File map

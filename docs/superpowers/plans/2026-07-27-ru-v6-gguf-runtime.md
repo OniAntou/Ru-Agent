@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.13 standard library, Tkinter, pytest, local llama.cpp Windows CUDA binary, local Llama 3.1 8B HF base, PEFT v6 adapter.
 
-**Implementation status (2026-07-27):** Completed. The verified local build uses llama.cpp `b10142`, Q4_K_M base plus a separate Ru v6 LoRA GGUF. Automated tests and a two-prompt local benchmark passed; keeping GGUF as the default still depends on the manual Vietnamese conversation-quality gate.
+**Implementation status (2026-07-27):** Completed. The verified local build uses llama.cpp `b10142`, Q4_K_M base plus a separate Ru v6 LoRA GGUF. Automated tests and a two-prompt local benchmark passed; GGUF became the GUI default after the user's manual Vietnamese conversation-quality approval. Transformers remains a selectable fallback and its HF base remains required for training.
 
 ---
 
@@ -221,7 +221,7 @@ class ModelRunner:
         self.gguf_runtime.stop()
 ~~~
 
-The settings dialog uses a readonly combobox labelled Backend with Transformers (default) and GGUF (experimental). _start_generation passes its selected backend into ModelRunner; is_cached and generate_reply dispatch to the selected runtime. The existing search retry continues to use the same selected backend. _play_tts calls self.runner.release_gpu under the existing transition lock before Gwen.
+The settings dialog uses a readonly combobox labelled Backend with GGUF (default) and Transformers (fallback). _start_generation passes its selected backend into ModelRunner; is_cached and generate_reply dispatch to the selected runtime. The existing search retry continues to use the same selected backend. _play_tts calls self.runner.release_gpu under the existing transition lock before Gwen.
 
 - [ ] **Step 4: Run focused GUI/runtime tests.**
 

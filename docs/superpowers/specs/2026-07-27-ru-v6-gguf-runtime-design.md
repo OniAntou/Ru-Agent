@@ -1,5 +1,11 @@
 # Ru v6 GGUF Runtime
 
+**Implementation status (2026-07-27):** GGUF was promoted from the initial
+experiment to the GUI default after local performance testing and the user's
+manual conversation-quality approval. The HF base remains on disk exclusively
+for training, evaluation, and conversion; Transformers remains a selectable
+fallback.
+
 ## Goal
 
 Evaluate Ru's retained Llama 3.1 8B v6 adapter through a CUDA-enabled

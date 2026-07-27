@@ -51,19 +51,22 @@ def test_default_paths_fall_back_to_last_candidate(tmp_path, monkeypatch):
 
 def test_runner_reports_missing_checkpoint():
     runner = ModelRunner()
+    runner.select_backend(BACKEND_TRANSFORMERS)
     with pytest.raises(FileNotFoundError, match="adapter directory"):
         runner.load("D:\\LLM\\nonexistent")
 
 
 def test_runner_reports_missing_runtime_dependencies(monkeypatch, tmp_path):
     monkeypatch.setattr(gui, "dependency_status", lambda: ("peft", "transformers"))
+    runner = ModelRunner()
+    runner.select_backend(BACKEND_TRANSFORMERS)
 
     with pytest.raises(RuntimeError, match="peft, transformers"):
-        ModelRunner().load(tmp_path)
+        runner.load(tmp_path)
 
 
-def test_model_runner_defaults_to_transformers_backend():
-    assert ModelRunner().backend == BACKEND_TRANSFORMERS
+def test_model_runner_defaults_to_gguf_backend():
+    assert ModelRunner().backend == BACKEND_GGUF
 
 
 def test_model_runner_uses_gguf_only_when_selected():
@@ -86,7 +89,9 @@ def test_model_runner_does_not_search_without_explicit_opt_in(monkeypatch):
         lambda _query: pytest.fail("search must not run"),
     )
 
-    response = ModelRunner().generate_reply(
+    runner = ModelRunner()
+    runner.select_backend(BACKEND_TRANSFORMERS)
+    response = runner.generate_reply(
         "hi",
         32,
         0.7,

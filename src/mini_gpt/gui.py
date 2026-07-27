@@ -45,8 +45,8 @@ DEFAULT_MAX_NEW_TOKENS = "128"
 BACKEND_TRANSFORMERS = "transformers"
 BACKEND_GGUF = "gguf"
 BACKEND_LABELS = {
-    "Transformers (default)": BACKEND_TRANSFORMERS,
-    "GGUF (experimental)": BACKEND_GGUF,
+    "GGUF (default)": BACKEND_GGUF,
+    "Transformers (fallback)": BACKEND_TRANSFORMERS,
 }
 
 
@@ -139,7 +139,7 @@ class ModelRunner:
     def __init__(self) -> None:
         self.checkpoint_path: Path | None = None
         self.base_model_path: Path = PROJECT_ROOT / "models" / "llama3.1-8b-instruct-hf"
-        self.backend = BACKEND_TRANSFORMERS
+        self.backend = BACKEND_GGUF
         self.gguf_runtime = LlamaCppRuntime(project_root=PROJECT_ROOT)
 
     def select_backend(self, backend: str) -> None:
@@ -244,7 +244,7 @@ class RuApp:
         self.memory_store: MemoryStore | None = None
         checkpoint = default_paths()
         self.checkpoint_var = tk.StringVar(value=str(checkpoint))
-        self.backend_var = tk.StringVar(value="Transformers (default)")
+        self.backend_var = tk.StringVar(value="GGUF (default)")
         self.max_tokens_var = tk.StringVar(value=DEFAULT_MAX_NEW_TOKENS)
         self.temperature_var = tk.StringVar(value="0.7")
         self.top_k_var = tk.StringVar(value="20")

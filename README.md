@@ -38,13 +38,14 @@ The local GUI deliberately uses eager Llama inference: do not re-enable
 `torch.compile` on this Python 3.13/CUDA setup, because it caused native
 `torch_cpu.dll` process crashes during chat generation.
 
-## Experimental GGUF runtime
+## GGUF runtime
 
-Ru v6 can also run through a local CUDA llama.cpp experiment. It uses a
-separate Q4_K_M base GGUF and a separate v6 LoRA GGUF; the adapter is loaded
-by llama.cpp and is not merged into the HF base. Transformers remains the GUI
-default. Select **GGUF (experimental)** in **Settings** only after the two
-GGUF files have been built.
+Ru v6 runs by default through local CUDA llama.cpp. It uses a separate Q4_K_M
+base GGUF and a separate v6 LoRA GGUF; the adapter is loaded by llama.cpp and
+is not merged into the HF base. Select **Transformers (fallback)** in
+**Settings** only when diagnosing or evaluating the HF runtime. Keep the HF
+base on disk: it is required for v6.1 training, evaluation, and future GGUF
+conversions.
 
 The one-time conversion needs at least 24 GiB free on D:, a local llama.cpp
 source checkout at `tools\llama.cpp`, and the matching CUDA 12.4 Windows
@@ -79,10 +80,9 @@ generated tokens/s; a resident 2,048-context probe used 5,417 MiB of the
 approval. Gwen speech stops the owned GGUF server before synthesis so the two
 models never compete for the 6 GiB GPU.
 
-Before making GGUF the default, manually test natural Vietnamese-English
-turn-taking, coherent context, friendly `anh`/`em` voice, and absence of a
-regression from the current v6 fallback. Quantization and timing alone do not
-promote the runtime.
+GGUF was promoted to the default after manual testing of natural
+Vietnamese-English turn-taking, coherent context, and the friendly `anh`/`em`
+voice. Quantization and timing alone never replace that quality gate.
 
 - Enable **Remember conversations** only to persist completed pairs locally in
   `data\conversations\memory_*`.

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import re
+import socket
+import subprocess
 import sys
 import threading
 import tkinter as tk
-from time import perf_counter
+from time import monotonic, perf_counter, sleep
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -35,6 +37,10 @@ from .search import perform_web_search
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODEL_NAME = "Ru"
 GWEN_TTS_SERVER_URL = "http://127.0.0.1:5051/tts"
+GWEN_TTS_HOST = "127.0.0.1"
+GWEN_TTS_PORT = 5051
+GWEN_TTS_PYTHON = PROJECT_ROOT / "gwen_env" / "Scripts" / "python.exe"
+GWEN_TTS_SERVER_SCRIPT = PROJECT_ROOT / "gwen_tts_server.py"
 DEFAULT_MAX_NEW_TOKENS = "128"
 BACKEND_TRANSFORMERS = "transformers"
 BACKEND_GGUF = "gguf"
@@ -49,6 +55,38 @@ def clean_tts_text(text: str) -> str:
     clean_text = re.sub(r"<thought>.*?</thought>", "", clean_text, flags=re.DOTALL)
     clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL)
     return clean_text.replace("*", "").strip()
+
+
+def gwen_tts_server_available() -> bool:
+    try:
+        with socket.create_connection((GWEN_TTS_HOST, GWEN_TTS_PORT), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
+def ensure_gwen_tts_server(*, process_factory=None, sleep=sleep, monotonic=monotonic) -> None:
+    if gwen_tts_server_available():
+        return
+    if not GWEN_TTS_PYTHON.is_file() or not GWEN_TTS_SERVER_SCRIPT.is_file():
+        raise RuntimeError("Gwen runtime is missing. Reinstall the local voice environment.")
+
+    process_factory = process_factory or subprocess.Popen
+    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+    process_factory(
+        [str(GWEN_TTS_PYTHON), str(GWEN_TTS_SERVER_SCRIPT)],
+        cwd=str(PROJECT_ROOT),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=creation_flags,
+    )
+
+    deadline = monotonic() + 12
+    while monotonic() < deadline:
+        if gwen_tts_server_available():
+            return
+        sleep(0.2)
+    raise RuntimeError("Gwen voice service did not start. Check the local voice environment.")
 
 
 def request_tts_audio(text: str, *, post=None) -> str:
@@ -702,6 +740,7 @@ class RuApp:
             self.root.after(0, lambda: self.status_var.set("Preparing voice..."))
             with self.gpu_transition_lock:
                 self.runner.release_gpu()
+                ensure_gwen_tts_server()
                 audio_file = request_tts_audio(clean_text)
 
             if pygame.mixer.music.get_busy():

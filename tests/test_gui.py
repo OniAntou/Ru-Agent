@@ -109,6 +109,37 @@ def test_request_tts_audio_explains_offline_server():
         request_tts_audio("hello", post=offline)
 
 
+def test_ensure_gwen_tts_server_starts_local_service_when_offline(monkeypatch, tmp_path):
+    availability = iter((False, False, True))
+    started: list[tuple[list[str], dict]] = []
+    runtime = tmp_path / "python.exe"
+    server = tmp_path / "server.py"
+    runtime.touch()
+    server.touch()
+
+    monkeypatch.setattr(gui, "gwen_tts_server_available", lambda: next(availability))
+    monkeypatch.setattr(gui, "GWEN_TTS_PYTHON", runtime)
+    monkeypatch.setattr(gui, "GWEN_TTS_SERVER_SCRIPT", server)
+
+    gui.ensure_gwen_tts_server(
+        process_factory=lambda command, **kwargs: started.append((command, kwargs)) or object(),
+        sleep=lambda _seconds: None,
+        monotonic=iter((0.0, 0.1, 0.2)).__next__,
+    )
+
+    assert started[0][0] == [str(runtime), str(server)]
+    assert started[0][1]["cwd"] == str(gui.PROJECT_ROOT)
+
+
+def test_ensure_gwen_tts_server_reports_missing_runtime(monkeypatch, tmp_path):
+    monkeypatch.setattr(gui, "gwen_tts_server_available", lambda: False)
+    monkeypatch.setattr(gui, "GWEN_TTS_PYTHON", tmp_path / "missing-python.exe")
+    monkeypatch.setattr(gui, "GWEN_TTS_SERVER_SCRIPT", tmp_path / "missing-server.py")
+
+    with pytest.raises(RuntimeError, match="Gwen runtime is missing"):
+        gui.ensure_gwen_tts_server()
+
+
 def test_request_tts_audio_uses_gwen_endpoint(tmp_path):
     audio = tmp_path / "voice.wav"
     audio.write_bytes(b"RIFF")

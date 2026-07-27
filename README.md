@@ -125,7 +125,9 @@ exhaustion on the 6 GB GPU, at the cost of a short delay before each reply
 starts speaking. Gwen is experimental: its voice identity and short Vietnamese
 phrases passed manual listening, while pronunciation still needs user evaluation.
 
-Start the service before opening the GUI:
+The GUI starts and waits for the local service automatically the first time it
+needs to speak. The service continues in the background for later replies. Use
+the command below only to inspect the voice service manually:
 
 ```powershell
 & D:\LLM\run_gwen_tts_server.bat

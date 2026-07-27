@@ -2,6 +2,8 @@ import pytest
 
 from mini_gpt import gui
 from mini_gpt.gui import (
+    BACKEND_GGUF,
+    BACKEND_TRANSFORMERS,
     MODEL_NAME,
     ModelRunner,
     clean_tts_text,
@@ -58,6 +60,18 @@ def test_runner_reports_missing_runtime_dependencies(monkeypatch, tmp_path):
 
     with pytest.raises(RuntimeError, match="peft, transformers"):
         ModelRunner().load(tmp_path)
+
+
+def test_model_runner_defaults_to_transformers_backend():
+    assert ModelRunner().backend == BACKEND_TRANSFORMERS
+
+
+def test_model_runner_uses_gguf_only_when_selected():
+    runner = ModelRunner()
+    runner.backend = BACKEND_GGUF
+    runner.gguf_runtime = type("Runtime", (), {"generate": lambda *_args: "GGUF reply"})()
+
+    assert runner.generate_reply("hi", 32, 0.7, 20) == "GGUF reply"
 
 
 def test_model_runner_does_not_search_without_explicit_opt_in(monkeypatch):

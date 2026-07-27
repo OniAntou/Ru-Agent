@@ -14,4 +14,7 @@ checkpoints/
 models/
 eval_results/
 vendor/gemma4-transformers/
+tools/llama.cpp/
+tools/llama.cpp-bin/
+tools/llama.cpp-bin*.zip
 *.egg-info/

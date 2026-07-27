@@ -26,6 +26,7 @@ from .llama3_1_runtime import (
     generate_llama_response_hf,
     is_llama_generation_cached,
 )
+from .llama_cpp_runtime import LlamaCppRuntime
 from .gui_presentation import PALETTE, conversation_display_segments, format_generation_status
 from .ru_style import RU_SYSTEM_PROMPT
 from .memory import MemoryStore
@@ -35,6 +36,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODEL_NAME = "Ru"
 GWEN_TTS_SERVER_URL = "http://127.0.0.1:5051/tts"
 DEFAULT_MAX_NEW_TOKENS = "128"
+BACKEND_TRANSFORMERS = "transformers"
+BACKEND_GGUF = "gguf"
+BACKEND_LABELS = {
+    "Transformers (default)": BACKEND_TRANSFORMERS,
+    "GGUF (experimental)": BACKEND_GGUF,
+}
 
 
 def clean_tts_text(text: str) -> str:
@@ -94,8 +101,19 @@ class ModelRunner:
     def __init__(self) -> None:
         self.checkpoint_path: Path | None = None
         self.base_model_path: Path = PROJECT_ROOT / "models" / "llama3.1-8b-instruct-hf"
+        self.backend = BACKEND_TRANSFORMERS
+        self.gguf_runtime = LlamaCppRuntime(project_root=PROJECT_ROOT)
+
+    def select_backend(self, backend: str) -> None:
+        if backend not in (BACKEND_TRANSFORMERS, BACKEND_GGUF):
+            raise ValueError(f"unsupported backend: {backend}")
+        self.backend = backend
 
     def load(self, checkpoint_path: str | Path) -> str:
+        if self.backend == BACKEND_GGUF:
+            self.gguf_runtime.validate_assets()
+            self.checkpoint_path = Path(checkpoint_path)
+            return "Ready (llama.cpp GGUF experiment) | Ru v6 LoRA"
         missing_dependencies = dependency_status()
         if missing_dependencies:
             packages = ", ".join(missing_dependencies)
@@ -110,7 +128,32 @@ class ModelRunner:
         return f"Ready (Llama 3.1 8B QLoRA) | {adapter_dir.name}"
 
     def is_cached(self, checkpoint_path: str | Path) -> bool:
+        if self.backend == BACKEND_GGUF:
+            return self.gguf_runtime.is_cached()
         return is_llama_generation_cached(self.base_model_path, checkpoint_path)
+
+    def release_gpu(self) -> None:
+        clear_llama_generation_cache()
+        self.gguf_runtime.stop()
+
+    def _generate(
+        self,
+        messages: tuple[tuple[str, str], ...],
+        max_new_tokens: int,
+        temperature: float,
+        top_k: int,
+    ) -> str:
+        if self.backend == BACKEND_GGUF:
+            return self.gguf_runtime.generate(messages, max_new_tokens, temperature, top_k)
+        return generate_llama_response_hf(
+            str(self.base_model_path),
+            messages,
+            self.checkpoint_path,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_k=top_k,
+            do_sample=True,
+        )
 
     def generate_reply(
         self,
@@ -129,15 +172,7 @@ class ModelRunner:
             memory_context=memory_context,
         )
 
-        response = generate_llama_response_hf(
-            str(self.base_model_path),
-            tuple(messages),
-            self.checkpoint_path,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            top_k=top_k,
-            do_sample=True,
-        )
+        response = self._generate(tuple(messages), max_new_tokens, temperature, top_k)
 
         search_match = re.search(r"\[SEARCH:\s*(.*?)\]", response)
         if allow_web_search and search_match:
@@ -150,15 +185,7 @@ class ModelRunner:
                 ),
             )
 
-            response = generate_llama_response_hf(
-                str(self.base_model_path),
-                tuple(messages),
-                self.checkpoint_path,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_k=top_k,
-                do_sample=True,
-            )
+            response = self._generate(tuple(messages), max_new_tokens, temperature, top_k)
         return response
 
 
@@ -179,6 +206,7 @@ class RuApp:
         self.memory_store: MemoryStore | None = None
         checkpoint = default_paths()
         self.checkpoint_var = tk.StringVar(value=str(checkpoint))
+        self.backend_var = tk.StringVar(value="Transformers (default)")
         self.max_tokens_var = tk.StringVar(value=DEFAULT_MAX_NEW_TOKENS)
         self.temperature_var = tk.StringVar(value="0.7")
         self.top_k_var = tk.StringVar(value="20")
@@ -365,8 +393,18 @@ class RuApp:
         model.grid(row=0, column=0, sticky="ew")
         model.columnconfigure(1, weight=1)
         self._path_row(model, 0, "Checkpoint / adapter", self.checkpoint_var, self._browse_checkpoint)
+        backend = ttk.Frame(model)
+        backend.grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 4))
+        ttk.Label(backend, text="Backend").grid(row=0, column=0, padx=(0, 6))
+        ttk.Combobox(
+            backend,
+            textvariable=self.backend_var,
+            values=tuple(BACKEND_LABELS),
+            state="readonly",
+            width=24,
+        ).grid(row=0, column=1)
         controls = ttk.Frame(model)
-        controls.grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
+        controls.grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
         self._labeled_entry(controls, 0, "Max tokens", self.max_tokens_var, 8)
         self._labeled_entry(controls, 2, "Temperature", self.temperature_var, 8)
         self._labeled_entry(controls, 4, "Top-k", self.top_k_var, 8)
@@ -534,8 +572,12 @@ class RuApp:
             settings = parse_generation_settings(
                 self.max_tokens_var.get(), self.temperature_var.get(), self.top_k_var.get()
             )
+            backend = BACKEND_LABELS[self.backend_var.get()]
         except ValueError as error:
             self.status_var.set(str(error))
+            return
+        except KeyError:
+            self.status_var.set("Select a valid backend")
             return
 
         self._set_controls_enabled(False)
@@ -545,7 +587,7 @@ class RuApp:
         allow_web_search = self.allow_web_search_var.get()
         self.worker = threading.Thread(
             target=self._generate_worker,
-            args=(prompt, settings, checkpoint, remember_conversations, allow_web_search),
+            args=(prompt, settings, checkpoint, backend, remember_conversations, allow_web_search),
             daemon=True,
         )
         self.worker.start()
@@ -565,6 +607,7 @@ class RuApp:
         prompt: str,
         settings: tuple[int, float, int],
         checkpoint: str,
+        backend: str,
         remember_conversations: bool,
         allow_web_search: bool,
     ) -> None:
@@ -577,6 +620,7 @@ class RuApp:
                     memory_context = "\n---\n".join(past_memories)
 
             with self.gpu_transition_lock:
+                self.runner.select_backend(backend)
                 cache_hit = self.runner.is_cached(checkpoint)
                 self.root.after(
                     0,
@@ -657,7 +701,7 @@ class RuApp:
 
             self.root.after(0, lambda: self.status_var.set("Preparing voice..."))
             with self.gpu_transition_lock:
-                clear_llama_generation_cache()
+                self.runner.release_gpu()
                 audio_file = request_tts_audio(clean_text)
 
             if pygame.mixer.music.get_busy():
@@ -693,8 +737,11 @@ def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     root = tk.Tk()
-    RuApp(root)
-    root.mainloop()
+    app = RuApp(root)
+    try:
+        root.mainloop()
+    finally:
+        app.runner.release_gpu()
     return 0
 
 

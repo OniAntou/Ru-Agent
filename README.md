@@ -38,6 +38,52 @@ The local GUI deliberately uses eager Llama inference: do not re-enable
 `torch.compile` on this Python 3.13/CUDA setup, because it caused native
 `torch_cpu.dll` process crashes during chat generation.
 
+## Experimental GGUF runtime
+
+Ru v6 can also run through a local CUDA llama.cpp experiment. It uses a
+separate Q4_K_M base GGUF and a separate v6 LoRA GGUF; the adapter is loaded
+by llama.cpp and is not merged into the HF base. Transformers remains the GUI
+default. Select **GGUF (experimental)** in **Settings** only after the two
+GGUF files have been built.
+
+The one-time conversion needs at least 24 GiB free on D:, a local llama.cpp
+source checkout at `tools\llama.cpp`, and the matching CUDA 12.4 Windows
+release files at `tools\llama.cpp-bin`. The directory must contain
+`llama-server.exe`, `llama-quantize.exe`, and the CUDA DLLs from the official
+release. Install the converter extra, then validate before starting:
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe -m pip install -e "D:\LLM[runtime,gguf,dev]"
+& D:\LLM\.venv\Scripts\python.exe scripts\build_ru_v6_gguf.py --dry-run
+& D:\LLM\.venv\Scripts\python.exe scripts\build_ru_v6_gguf.py
+```
+
+The guarded script refuses to run below 24 GiB free, never overwrites an
+existing candidate, prevents concurrent conversion, preserves the HF base and
+adapter, and removes only its verified temporary F16 GGUF after success. It
+creates:
+
+- `models\gguf\llama3.1-8b-instruct-q4_k_m.gguf`
+- `models\gguf\ru-llama3.1-8b-instruct-v6-lora.gguf`
+
+Run the live benchmark after conversion:
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe scripts\benchmark_ru_v6_gguf.py
+```
+
+On 2026-07-27, this RTX 4050 Laptop GPU measured 3.36 s cold and 0.75 s warm
+for the two bounded 128-token dialogue probes. llama.cpp reported about 35
+generated tokens/s; a resident 2,048-context probe used 5,417 MiB of the
+6,141 MiB GPU. These are machine-specific measurements, not a quality
+approval. Gwen speech stops the owned GGUF server before synthesis so the two
+models never compete for the 6 GiB GPU.
+
+Before making GGUF the default, manually test natural Vietnamese-English
+turn-taking, coherent context, friendly `anh`/`em` voice, and absence of a
+regression from the current v6 fallback. Quantization and timing alone do not
+promote the runtime.
+
 - Enable **Remember conversations** only to persist completed pairs locally in
   `data\conversations\memory_*`.
 - Enable **Allow online search** only to permit a model-directed DDGS lookup.

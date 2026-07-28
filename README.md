@@ -146,8 +146,9 @@ behavior and GPU lifecycle.
 `g-group-ai-lab/gwen-tts-0.6B` runs in the separate `gwen_env` environment.
 For OpenCode cloud replies, Ru warms and retains its Gwen model plus the fixed
 voice-clone prompt on CUDA while the cloud model is composing the reply. The
-reply is then synthesized sentence-by-sentence through a one-WAV prefetch
-queue, so the first sentence can play before later sentences are ready. The
+reply is then synthesized sentence-by-sentence through an up-to-two-WAV
+prefetch queue, so the first sentence can play before later sentences are ready
+without an avoidable gap. The
 first cloud reply after opening the GUI can still be slower because it performs
 that warmup.
 

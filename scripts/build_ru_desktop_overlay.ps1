@@ -21,12 +21,17 @@ if (-not (Test-Path -LiteralPath $cmake)) {
     throw 'The Visual Studio CMake component is required. Add it in Visual Studio Installer, then rerun this script.'
 }
 
-if (-not $env:VCPKG_ROOT) {
+$vcpkgRoot = if ($env:VCPKG_ROOT) {
+    $env:VCPKG_ROOT
+} else {
+    Join-Path $PSScriptRoot '..\.tmp\vcpkg'
+}
+$vcpkgExecutable = Join-Path $vcpkgRoot 'vcpkg.exe'
+if (-not (Test-Path -LiteralPath $vcpkgExecutable)) {
     if (-not $BootstrapVcpkg) {
-        throw 'Set VCPKG_ROOT or rerun with -BootstrapVcpkg to clone vcpkg into .tmp.'
+        throw 'Set VCPKG_ROOT or rerun with -BootstrapVcpkg to create vcpkg in .tmp.'
     }
 
-    $vcpkgRoot = Join-Path $PSScriptRoot '..\.tmp\vcpkg'
     if (-not (Test-Path -LiteralPath $vcpkgRoot)) {
         git clone https://github.com/microsoft/vcpkg $vcpkgRoot
         if ($LASTEXITCODE -ne 0) {
@@ -39,8 +44,8 @@ if (-not $env:VCPKG_ROOT) {
     if ($LASTEXITCODE -ne 0) {
         throw "vcpkg bootstrap failed with exit code $LASTEXITCODE."
     }
-    $env:VCPKG_ROOT = (Resolve-Path -LiteralPath $vcpkgRoot).Path
 }
+$env:VCPKG_ROOT = (Resolve-Path -LiteralPath $vcpkgRoot).Path
 
 $source = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\tools\ru_desktop_overlay')).Path
 $build = Join-Path $source 'out\build'
@@ -49,7 +54,7 @@ if (-not (Test-Path -LiteralPath $toolchain)) {
     throw "vcpkg toolchain was not found: $toolchain"
 }
 
-& $cmake -S $source -B $build -DCMAKE_TOOLCHAIN_FILE=$toolchain
+& $cmake -S $source -B $build "-DCMAKE_TOOLCHAIN_FILE=$toolchain"
 if ($LASTEXITCODE -ne 0) {
     throw "CMake configure failed with exit code $LASTEXITCODE."
 }

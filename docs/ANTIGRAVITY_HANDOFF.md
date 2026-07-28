@@ -64,8 +64,9 @@ Japanese transcript, and Vietnamese target text to produce valid 24 kHz mono
 WAV output. The disposable smoke-test files were intentionally cleared after
 listening. For cloud replies, the GUI warms the local service on port 5051
 while the cloud backend composes the answer, retaining the CUDA model and its
-fixed clone prompt. Speech is then queued sentence-by-sentence with one WAV
-prefetched; before local inference, the GUI asks Gwen to release CUDA so the
+fixed clone prompt. Speech is then queued sentence-by-sentence with up to two
+WAV files prefetched; before local inference, the GUI asks Gwen to release
+CUDA so the
 two models never compete for VRAM. The short greeting passed manual listening,
 but Vietnamese pronunciation remains an experimental quality gate. The legacy
 voice runtime and all of its cache artifacts were removed on 2026-07-27.

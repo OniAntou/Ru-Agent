@@ -101,6 +101,7 @@ an unnecessary quality loss before a Q4 result is known.
 ## Non-goals
 
 - No v6.1 training, checkpoint promotion, or dataset modification.
-- No online TTS, Edge TTS, or change to the Gwen reference voice.
+- No online or third-party TTS provider. Local Gwen reference profiles are
+  managed separately from the GGUF runtime.
 - No automatic replacement of the GUI's default backend.
 - No source build of llama.cpp or installation of the CUDA Toolkit.

@@ -46,9 +46,9 @@ one model instance and one CUDA generation at a time. The GUI treats the full
 audio queue as one speaking session so VTube lip-sync stays active across small
 gaps between chunks.
 
-Changing back to a local LLM backend, disabling Gwen, closing the GUI, or a
-warmup failure releases the Gwen CUDA model and keeps the existing fallback
-behaviour. Edge TTS remains independent and does not prewarm Gwen.
+Changing back to a local LLM backend, disabling speech, closing the GUI, or a
+warmup failure releases the Gwen CUDA model. Voice choices remain local Gwen
+profiles and do not use a separate fallback TTS engine.
 
 ## Failure handling
 

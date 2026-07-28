@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "flask>=3.1,<4"]
 runtime = [
     "accelerate>=1.0,<2",
     "bitsandbytes>=0.48,<1",

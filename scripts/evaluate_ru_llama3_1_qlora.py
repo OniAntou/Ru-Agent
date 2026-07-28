@@ -10,7 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from mini_gpt.llama3_1_runtime import clear_llama_generation_cache, generate_llama_response_hf  # noqa: E402
-from mini_gpt.ru_qwen_evaluation import (  # noqa: E402
+from mini_gpt.ru_llama_evaluation import (  # noqa: E402
     PROACTIVE_FLIRT_SUITE,
     assess_proactive_flirt_response,
 )

@@ -12,7 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from evaluation_support import bytes_to_mib, load_evaluation_config  # noqa: E402
 from mini_gpt.llama3_1_runtime import clear_llama_generation_cache, generate_llama_response_hf  # noqa: E402
-from mini_gpt.ru_qwen_evaluation import PROMPT_ROUTING_SMOKE_SUITE, assess_response  # noqa: E402
+from mini_gpt.ru_llama_evaluation import PROMPT_ROUTING_SMOKE_SUITE, assess_response  # noqa: E402
 
 BASE_MODEL_PATH = PROJECT_ROOT / "models" / "llama3.1-8b-instruct-hf"
 BASE_MODEL_ID = "meta-llama/Meta-Llama-3.1-8B-Instruct"

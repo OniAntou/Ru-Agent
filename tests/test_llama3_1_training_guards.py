@@ -22,7 +22,7 @@ def test_read_nvidia_smi_memory_mib_parses_first_gpu(monkeypatch):
         return subprocess.CompletedProcess(
             args=["nvidia-smi"],
             returncode=0,
-            stdout="5845\n",
+            stdout="5845, 6144\n",
             stderr="",
         )
 
@@ -86,6 +86,14 @@ def test_training_step_limit_prefers_cli_then_configured_budget():
 
     assert resolve_training_step_limit(config, train_row_count=1680) == 640
     assert resolve_training_step_limit(config, train_row_count=1680, cli_max_steps=32) == 32
+
+
+def test_v6_2_fresh_config_is_loadable_and_bounded():
+    config = LlamaTrainingConfig.from_json("configs/ru_llama3_1_v6_2_fresh.json")
+
+    assert config.max_steps == 480
+    assert config.wall_clock_seconds == 9600
+    assert config.physical_vram_cap_mib == 6144
 
 
 def test_training_step_limit_falls_back_to_full_epochs_and_rejects_nonpositive_budget():

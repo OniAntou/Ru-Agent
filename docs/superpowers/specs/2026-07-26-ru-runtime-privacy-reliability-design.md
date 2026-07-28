@@ -1,5 +1,10 @@
 # Ru Runtime Privacy and Reliability Design
 
+> Superseded for the memory default on 2026-07-28: persistent memory is now
+> enabled by default at the user's direction, while remaining local and
+> controllable in Settings. The rest of this historical design is retained for
+> its runtime reliability decisions.
+
 ## Goal
 
 Make the active local Ru GUI safe to use by default, reproducible on a clean

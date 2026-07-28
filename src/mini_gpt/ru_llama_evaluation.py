@@ -16,7 +16,7 @@ _OUT_OF_CONTEXT_REFUSAL = re.compile(
 _VI_WRONG_SELF_REFERENCE = re.compile(r"\btôi\b", re.IGNORECASE)
 # "bầu bạn" is a natural companionship phrase, not a switch to the user-facing
 # "bạn" pronoun. Keep the voice gate focused on standalone address usage.
-_VI_WRONG_USER_ADDRESS = re.compile(r"(?<!làm\s)(?<!người\s)(?<!bầu\s)\bbạn\b", re.IGNORECASE)
+_VI_WRONG_USER_ADDRESS = re.compile(r"(?<!làm\s)(?<!người\s)(?<!bầu\s)\b(bạn|cậu)\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)

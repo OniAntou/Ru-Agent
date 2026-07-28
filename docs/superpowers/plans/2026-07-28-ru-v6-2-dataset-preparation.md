@@ -1,4 +1,9 @@
-# Ru v6.2 Dataset Preparation Implementation Plan
+# Ru v6.2 Dataset Preparation Implementation Plan (historical)
+
+> Superseded for the current candidate by
+> `2026-07-28-ru-v6-2-fresh-memory-approved.md`. This plan describes the old
+> restored `ru_v6_2` corpus and must not be used to overwrite the fresh
+> `ru_v6_2_fresh` dataset.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

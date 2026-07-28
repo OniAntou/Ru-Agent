@@ -26,7 +26,6 @@ def test_english_and_mixed_personas_keep_language_routing():
     assert "Reply only in natural English" in english
     assert "witty and lightly tease" in english
     assert "Reply naturally mixing Vietnamese and English as appropriate." in mixed
-    assert "Reply only in natural Vietnamese" in mixed
 
 
 def test_ru_system_prompt_for_rejects_unknown_language():

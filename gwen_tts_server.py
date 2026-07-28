@@ -84,9 +84,9 @@ def release_model() -> None:
 
 
 def synthesize_fast(text: str, profile: str = "ru") -> str:
+    warm_model(profile)
     import torch
     import soundfile as sf
-    warm_model(profile)
     model = get_model()
     with torch.inference_mode():
         wavs, sample_rate = model.generate_voice_clone(

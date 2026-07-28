@@ -33,7 +33,11 @@ relationship state, not for copying its explicit wording.
 The new candidate lives at `data/conversations/ru_v6_2_fresh` and is separate
 from the historical `ru_v6_2` candidate.
 
-- 1,200 target rows from approximately 300 named mini-scenes.
+- 1,200 authored target rows from approximately 300 named mini-scenes.
+- Filtered rows imported from the current project-owned `approved.jsonl` and
+  `memory_texts.json` are appended to **train only** as a separately counted
+  calibration slice. They never enter validation or held-out splits, and they
+  do not replace the authored core's language/mode quotas.
 - Language distribution: `vi=840`, `mixed=240`, `en=120`.
 - Every mini-scene has a persistent relationship state and at least one concrete
   callback; target rows may expose different turns from the same scene.
@@ -66,6 +70,13 @@ Mixed-language rows must switch language because the character or relationship
 moment calls for it, not because a Vietnamese and English sentence were joined
 mechanically. English-only rows remain natural English; Vietnamese rows preserve
 Ru's `em` voice and address the user as `anh`.
+
+The current `ru_style.py` personality is the source of truth for system
+messages. Each authored/imported row uses the language-specific prompt from
+`ru_system_prompt_for(language)`: Vietnamese keeps the `anh`/`em` voice,
+English stays English-only, and mixed rows contain a purposeful switch. Every
+assistant target ends in `Nya~` to match the current personality. VTS control
+markers remain outside displayed training text; the runtime may add them later.
 
 ## Safety boundary
 
@@ -117,12 +128,33 @@ step and leave a manifest stating whether the run completed, timed out, or was
 aborted. A timed-out adapter is not an adoption candidate. Training and adoption
 remain separate from this dataset task.
 
+## Memory and approved import
+
+The builder reads `data/conversations/approved.jsonl` through its structured
+`id/prompt/response` records and reads `data/conversations/memory_texts.json`
+as `User:`/`Assistant:` blocks. Both sources are treated as project-owned
+calibration material, not as style-reference material. The importer repairs
+the known UTF-8 mojibake before filtering, normalizes whitespace, and removes
+case-fold duplicate prompt/response pairs and duplicate final prompts.
+
+Import gates reject malformed blocks, empty turns, links/code/list-heavy text,
+AI/meta disclaimers, VTS control markers, explicit sexual content, sexual
+anatomy or acts, coercive sexual language, minors, animal sexualization,
+graphic violence, and real-world harm threats. The importer emits a rejection
+reason for every dropped source row; it never copies rejected text into the
+candidate. Accepted rows are marked `source=memory-import` or
+`source=approved-import`, use `license=project-owned`, and are appended only to
+`train.jsonl`. The manifest records source SHA-256 values, accepted/rejected
+counts, and the final train hash.
+
 ## Planned files
 
 - `src/mini_gpt/ru_v6_2_fresh_dialogues.py` — authored scenes and target rows.
 - `src/mini_gpt/ru_v6_2_fresh_corpus.py` — normalization, safety, context, and
   deterministic split gates.
 - `scripts/build_ru_llama_v6_2_fresh_data.py` — audit/build CLI.
+- `src/mini_gpt/ru_v6_2_fresh_import.py` — safe memory/approved parsing and
+  train-only merge.
 - `tests/test_ru_v6_2_fresh_dialogues.py` and
   `tests/test_ru_v6_2_fresh_corpus.py` — structural and naturalness regression.
 - `configs/ru_llama3_1_v6_2_fresh.json` — bounded future training config.

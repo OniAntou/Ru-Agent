@@ -1,6 +1,6 @@
 import pytest
 
-from mini_gpt.ru_qwen_evaluation import (
+from mini_gpt.ru_llama_evaluation import (
     PROACTIVE_FLIRT_SUITE,
     PROMPT_ROUTING_SMOKE_SUITE,
     PromptRoutingReview,
@@ -84,14 +84,14 @@ def test_prompt_routing_smoke_decision_passes_only_with_all_english_cases_and_co
     )
 
     decision = record_prompt_routing_smoke_decision(
-        profile_name="ru_qwen3_4b",
+        profile_name="llama3_1_8b_instruct",
         assessments=assessments,
         reviews=reviews,
         reviewer_notes="All smoke cases reviewed.",
     )
 
     assert decision == {
-        "profile_name": "ru_qwen3_4b",
+        "profile_name": "llama3_1_8b_instruct",
         "phase": "prompt_routing_smoke",
         "automatic_disqualifier_count": 0,
         "manual_natural_count": 8,
@@ -122,7 +122,7 @@ def test_prompt_routing_smoke_decision_rejects_a_non_english_english_response():
     )
 
     decision = record_prompt_routing_smoke_decision(
-        profile_name="ru_qwen3_4b",
+        profile_name="llama3_1_8b_instruct",
         assessments=assessments,
         reviews=reviews,
         reviewer_notes="One English response used Vietnamese.",
@@ -151,7 +151,7 @@ def test_prompt_routing_smoke_decision_rejects_role_reversal():
     )
 
     decision = record_prompt_routing_smoke_decision(
-        profile_name="ru_qwen3_4b",
+        profile_name="llama3_1_8b_instruct",
         assessments=assessments,
         reviews=reviews,
         reviewer_notes="One reply reversed the roles.",
@@ -211,14 +211,14 @@ def test_base_only_decision_passes_only_when_every_case_has_a_natural_human_revi
     )
 
     decision = record_base_only_decision(
-        profile_name="ru_qwen_v5_3b",
+        profile_name="llama3_1_8b_instruct",
         assessments=assessments,
         reviews=reviews,
         reviewer_notes="All cases reviewed.",
     )
 
     assert decision == {
-        "profile_name": "ru_qwen_v5_3b",
+        "profile_name": "llama3_1_8b_instruct",
         "phase": "base_only",
         "automatic_disqualifier_count": 0,
         "manual_natural_count": 32,
@@ -238,7 +238,7 @@ def test_base_only_decision_rejects_an_automatic_disqualifier():
     )
 
     decision = record_base_only_decision(
-        profile_name="ru_qwen_v5_3b",
+        profile_name="llama3_1_8b_instruct",
         assessments=assessments,
         reviews=reviews,
         reviewer_notes="One automatic failure.",
@@ -255,7 +255,7 @@ def test_base_only_decision_stops_before_manual_review_when_the_automatic_gate_f
     assessments[first_case.case_id] = assess_response(first_case.prompt, first_case.prompt, first_case.language)
 
     decision = record_base_only_decision(
-        profile_name="ru_qwen_v5_3b",
+        profile_name="llama3_1_8b_instruct",
         assessments=assessments,
         reviews=None,
         reviewer_notes="Automatic gate failed; manual review skipped.",
@@ -272,7 +272,7 @@ def test_base_only_decision_requires_one_human_review_for_every_case():
 
     with pytest.raises(ValueError, match="cover every evaluated case exactly once"):
         record_base_only_decision(
-            profile_name="ru_qwen_v5_3b",
+            profile_name="llama3_1_8b_instruct",
             assessments=assessments,
             reviews=incomplete_reviews,
             reviewer_notes="Incomplete.",

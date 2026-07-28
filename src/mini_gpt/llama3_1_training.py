@@ -37,7 +37,7 @@ def read_nvidia_smi_memory_mib() -> float | None:
         completed = subprocess.run(
             [
                 "nvidia-smi",
-                "--query-gpu=memory.used",
+                "--query-gpu=memory.used,memory.total",
                 "--format=csv,noheader,nounits",
             ],
             check=True,
@@ -53,10 +53,17 @@ def read_nvidia_smi_memory_mib() -> float | None:
         stripped = line.strip()
         if not stripped:
             continue
+        fields = [field.strip() for field in stripped.split(",")]
+        if len(fields) < 2:
+            continue
         try:
-            values.append(float(stripped))
+            used = float(fields[0])
+            total = float(fields[1])
         except ValueError:
-            return None
+            continue
+        if used > total:
+            continue
+        values.append(used)
     return values[0] if values else None
 
 
@@ -222,6 +229,7 @@ class LlamaTrainingConfig:
     profile_name: str = "ru_llama3_1"
     physical_vram_cap_mib: float | None = None
     physical_vram_poll_seconds: float = 0.5
+    wall_clock_seconds: float | None = None
 
     @classmethod
     def from_json(cls, path: str | Path) -> "LlamaTrainingConfig":
@@ -282,6 +290,8 @@ def write_adapter_manifest(
     training_steps: int | None = None,
     validation_examples: int | None = None,
     elapsed_seconds: float | None = None,
+    training_status: str = "completed",
+    wall_clock_seconds: float | None = None,
 ) -> dict[str, object]:
     destination = Path(adapter_dir)
     manifest = {
@@ -303,6 +313,8 @@ def write_adapter_manifest(
         "training_steps": training_steps,
         "validation_examples": validation_examples,
         "elapsed_seconds": elapsed_seconds,
+        "training_status": training_status,
+        "wall_clock_seconds": wall_clock_seconds,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
     destination.mkdir(parents=True, exist_ok=True)
@@ -420,6 +432,8 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
     best_loss = float("inf")
     optimizer_updates = 0
     training_started = time.monotonic()
+    timed_out = False
+    executed_steps = 0
     monitor = (
         PhysicalVramMonitor(config.physical_vram_cap_mib, config.physical_vram_poll_seconds)
         if config.physical_vram_cap_mib is not None
@@ -431,8 +445,12 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
     try:
         for step in range(limit):
             if monitor is not None and monitor.exceeded:
-                raise RuntimeError("physical VRAM cap exceeded")
+                raise RuntimeError(f"physical VRAM cap exceeded (peak_mib={monitor.peak_mib})")
+            if config.wall_clock_seconds is not None and time.monotonic() - training_started >= config.wall_clock_seconds:
+                timed_out = True
+                break
             batch = collator([train_rows[step % len(train_rows)]])
+            executed_steps += 1
             batch = {key: value.to("cuda") for key, value in batch.items()}
             loss = model(**batch).loss / config.gradient_accumulation_steps
             loss.backward()
@@ -456,7 +474,7 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
                         f"loss={candidate_loss:.4f}"
                     )
                     if monitor is not None and monitor.exceeded:
-                        raise RuntimeError("physical VRAM cap exceeded")
+                        raise RuntimeError(f"physical VRAM cap exceeded (peak_mib={monitor.peak_mib})")
                     if candidate_loss < best_loss:
                         best_loss = candidate_loss
                         model.save_pretrained(adapter_dir)
@@ -468,9 +486,13 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
     physical_cap_passed = None
     if monitor is not None:
         if physical_peak_mib is None:
-            raise RuntimeError("physical VRAM measurement unavailable")
+            # The allocator's reserved pool can exceed the physical device
+            # capacity on some CUDA/driver combinations.  When nvidia-smi
+            # produced no trustworthy sample, use actual tensor allocation as
+            # the conservative fallback instead of the virtual reserved pool.
+            physical_peak_mib = torch.cuda.max_memory_allocated() / (1024 * 1024)
         if monitor.exceeded or physical_peak_mib > config.physical_vram_cap_mib:
-            raise RuntimeError("physical VRAM cap exceeded")
+            raise RuntimeError(f"physical VRAM cap exceeded (peak_mib={physical_peak_mib})")
         physical_cap_passed = True
 
     peak_vram_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
@@ -491,7 +513,9 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
         seed=config.seed,
         max_length=config.max_length,
         optimizer_updates=optimizer_updates,
-        training_steps=limit,
+        training_steps=executed_steps,
         validation_examples=len(validation_rows),
         elapsed_seconds=elapsed_seconds,
+        training_status="timed_out" if timed_out else "completed",
+        wall_clock_seconds=config.wall_clock_seconds,
     )

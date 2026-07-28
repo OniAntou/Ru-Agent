@@ -3,16 +3,25 @@
 ## Active Llama path
 
 - [x] Retain the Llama 3.1 8B v6 QLoRA GUI fallback.
-- [x] Bound GUI conversation context and make persistent memory/search opt-in.
-- [x] Remove Qwen, Gemma, MiniGPT, and other non-Llama experiment code and data.
+- [x] Bound GUI conversation context; persistent memory and search can be
+  disabled in Settings.
+- [x] Remove discontinued Qwen LLM, Gemma, MiniGPT, and V5 corpus code/data
+  from the supported runtime surface. Gwen's isolated Qwen TTS dependency remains active.
 - [ ] Collect reviewed useful conversation examples.
-- [ ] Prepare and evaluate the next Llama-only adapter with the bilingual
-  conversation and physical-VRAM gates.
-- [ ] Start the bounded v6.1 candidate only on the user's next explicit
-  request (planned for 2026-07-27): 640 steps, 32 deterministic validation
-  rows every 20 updates. The 32-step smoke took 543 seconds and passed the
-  6,144 MiB physical cap; keep the full held-out bilingual/VRAM gate for
-  promotion and do not revert to full validation every 10 updates.
+- [x] Prepare a fresh v6.2 roleplay candidate with train-only, safety-filtered
+  imports from approved conversations and local memory (1,200 authored + 39
+  accepted calibration rows; 44 rejected).
+- [x] Train the bounded v6.2 candidate: 480 steps, 2,630 seconds, validation
+  loss 0.2060; adapter is recorded but physical-VRAM sampling was unavailable.
+- [x] Run the deterministic 12-case comparison: v6 `11/12`, v6.1 `12/12`,
+  v6.2 `12/12`; v6 failed one Vietnamese context-work case.
+- [x] Run the harder 36-case comparison: v6 `158/360` (13 hard fails), v6.1
+  `180/360` (11 hard fails), v6.2 `205/360` (7 hard fails); all strict gates
+  failed, so no adapter was promoted.
+- [ ] Complete manual bilingual/held-out review and verified physical-VRAM
+  gate for v6.2 before any promotion (v6 remains fallback).
+- [x] Finish the bounded v6.1 candidate and its comparison evaluation; its
+  training manifest reports a 5,900 MiB physical peak under the 6,144 MiB cap.
 - [ ] Make short Vietnamese-English conversations consistently natural before
   promoting any adapter.
 

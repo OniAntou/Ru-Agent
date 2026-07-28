@@ -13,10 +13,57 @@ Gemma, MiniGPT, and other non-Llama experiments were removed on 2026-07-26.
 - Launch: `& .\.venv\Scripts\python.exe -m mini_gpt.gui`
 - Tests: `& .\.venv\Scripts\python.exe -m pytest -q`
 
-Persistent memory is disabled by default and requires a visible opt-in in the
-GUI. Online search is enabled by default and can be turned off in **Settings**;
+Persistent memory is enabled by default and remains local; users can turn it
+off in the GUI. Online search is enabled by default and can be turned off in **Settings**;
 clearing saved memory affects only local memory artifacts. The GUI bounds
 retained chat history before inference.
+
+## v6.2 fresh dataset status
+
+The fresh candidate is at `data\conversations\ru_v6_2_fresh`. It has 1,200
+authored rows and 39 accepted train-only calibration imports from
+`approved.jsonl` plus `memory_texts.json`; validation and held-out remain
+authored-only (759/240/240 final split). Forty-four source rows were rejected
+with recorded reasons, including duplicates, malformed/noisy text, AI-meta,
+VTS control markers, links/lists, and unsafe explicit content. The historical
+`ru_v6_2` directory was not modified.
+
+The bounded v6.2 run completed 480/480 steps on 2026-07-28 in about 2,630
+seconds, with final validation loss 0.2060. Its adapter and manifest are at
+checkpoints\\ru-llama3.1-8b-instruct-v6.2-fresh. The manifest records the
+driver-side physical-VRAM sample as unavailable and the CUDA allocator peak as
+8,445 MiB, so the physical-VRAM gate is unverified, not passed. No adapter
+promotion has happened.
+
+The original launch command was:
+
+```powershell
+& .\.venv\Scripts\python.exe scripts\train_ru_llama3_1.py --config configs\ru_llama3_1_v6_2_fresh.json
+```
+
+The 12-case bilingual runtime/held-out gate and a verified hardware measurement
+remain required; v6 remains the GUI fallback.
+
+## Current comparison
+
+The deterministic 12-case QLoRA suite was rerun with greedy decoding and 64
+new tokens per case. Results: v6 `11/12` (one Vietnamese context-work
+out-of-context refusal), v6.1 `12/12`, and v6.2 `12/12`. v6.2 is noticeably
+shorter and consistently ends with `Nya~`; its mixed-language turns still need
+manual naturalness review. The inference allocator peak was 5,686.78 MiB in
+each run. These automatic results do not promote v6.2 because its training
+physical-VRAM measurement remains unverified.
+
+The harder `ru_hard_v1` suite contains 36 authored cases across context,
+bilingual switching, and personality repair (SHA-256
+`648d5522a4d8096e33a4f06a7346e96693e7241633cc6ac628ea1bd421c0e84c`). It was
+run with greedy decoding and 128 new tokens, one adapter process at a time.
+Scores: v6 `158/360` with 13 hard fails, v6.1 `180/360` with 11 hard fails,
+and v6.2 `205/360` with 7 hard fails. Automatic ranking is v6.1, v6.2, v6,
+but all three fail the strict zero-hard-fail/80%-per-stratum gate. v6.2 has the
+strongest repair-stratum score and no explicit-content hard fail, while v6
+shows explicit-content and context failures. Keep v6 as fallback; the reports
+are in `checkpoints\\ru-hard-evaluation-v1` and manual review is still required.
 
 ## Promotion rule
 
@@ -25,6 +72,12 @@ conversation gate, preserve Ru's Vietnamese `anh`/`em` voice, and stay within
 the physical VRAM cap. Leave v6 as the fallback until that evidence exists.
 
 ## v6.1 training status
+
+Current status (2026-07-28): the bounded continuation completed 640 steps (40
+optimizer updates) in 8,329.9 seconds. Its manifest reports validation loss
+0.8862 and a 5,900 MiB physical peak under the 6,144 MiB cap; the comparison
+suite passed all 12 cases. The older interruption notes below are historical
+and must not be used as the current v6.1 status.
 
 The v6.1 continuation run was deliberately stopped on 2026-07-26 after about
 three hours because the current loop would take roughly two days: it performs

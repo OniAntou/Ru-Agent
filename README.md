@@ -33,8 +33,9 @@ the model. Its default screen is conversation-first; open **Settings** to
 change the adapter, sampler, saved-memory option, or online-search permission.
 Send with the button or `Ctrl+Enter`; plain Enter adds a line. The status line
 shows whether the Llama model was already resident and how long the completed
-local reply took. Persistent memory is disabled by default; online search is
-enabled by default and can be turned off in **Settings**. The default reply
+local reply took. Persistent memory is enabled by default and can be turned off
+in **Settings**; online search is enabled by default and can also be turned off.
+The default reply
 limit is 512 tokens.
 The local GUI deliberately uses eager Llama inference: do not re-enable
 `torch.compile` on this Python 3.13/CUDA setup, because it caused native
@@ -131,6 +132,57 @@ Recreate the authored base and then explicitly reapply the reviewed rows:
 ```
 
 Dataset preparation does not start training or promote a v6.1 adapter.
+
+## v6.2 fresh roleplay dataset
+
+`data\conversations\ru_v6_2_fresh` is a new authored candidate, separate from
+the historical `ru_v6_2` data. It contains 1,200 authored rows plus 39 safe
+train-only calibration rows imported from `approved.jsonl` and
+`memory_texts.json`: 759 train, 240 validation, and 240 held-out. The import
+audit rejected 44 rows for duplicates, malformed/noisy content, AI-meta text,
+control markers, links/lists, or unsafe explicit material. Rejected source text
+is not written to the candidate. Authored and imported rows now use the
+language-specific `ru_style.py` personality prompts, preserve the `anh`/`em`
+or English-only voice, add the natural `Nya~` personality suffix, and keep VTS
+control markers out of the training text.
+
+Rebuild it deterministically with:
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe scripts\build_ru_llama_v6_2_fresh_data.py
+```
+
+The candidate was trained from the v6 adapter with the bounded config. It ran
+480 steps in 2,630 seconds and reached final validation loss 0.2060. The
+adapter manifest is `checkpoints\ru-llama3.1-8b-instruct-v6.2-fresh\ru_manifest.json`.
+The bounded config was `configs\ru_llama3_1_v6_2_fresh.json` with a 9,600-second
+wall-clock guard and 6,144 MiB physical cap. The CUDA allocator reported 8,445 MiB
+while the driver-side physical sample
+was unavailable, so the physical-VRAM gate is recorded as unverified; v6
+remains the GUI fallback until that hardware check and the bilingual runtime
+gate pass.
+
+The same deterministic 12-case QLoRA evaluation was rerun for all three
+adapters (`comparison_v6.json`, `comparison_v6_1.json`, and
+`comparison_v6_2.json`). Automatic results were v6 `11/12`, v6.1 `12/12`, and
+v6.2 `12/12`; v6 alone failed the Vietnamese context-work case with an
+out-of-context refusal. v6.2 responses are shorter and consistently end with
+`Nya~`, but mixed-language grammar still needs manual review. The evaluation
+allocator peak was 5,686.78 MiB for each run. This does not override v6.2's
+unverified physical-training VRAM gate or the required manual bilingual/held-out
+review.
+
+### v6 hard evaluation
+
+The harder suite is `data\\evaluations\\ru_hard_v1.json` (36 authored cases,
+SHA-256 `648d5522a4d8096e33a4f06a7346e96693e7241633cc6ac628ea1bd421c0e84c`).
+It was run with greedy decoding and 128 new tokens in isolated adapter
+processes. Results were v6 `158/360` with 13 hard fails, v6.1 `180/360` with
+11 hard fails, and v6.2 `205/360` with 7 hard fails. Automatic ranking by
+strict/pass-rate is v6.1, v6.2, v6; none passed the strict gate. v6.2 had the
+best repair-stratum score and no explicit-content hard fail, but still failed
+several repair cases and needs manual review. Reports are under
+`checkpoints\\ru-hard-evaluation-v1`.
 
 ## Experimental voice output
 

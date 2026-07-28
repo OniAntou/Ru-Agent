@@ -8,9 +8,10 @@ existing private VTS, memory, TTS, and completed-turn boundaries.
 ## Scope
 
 - Stream only direct OpenCode completions.
+- Change the GUI default completion limit from 128 to 512 tokens.
+- Enable online search by default for new GUI sessions.
 - Do not add a fast-mode setting or change the selected cloud model.
-- Keep local GGUF/Transformers generation and opted-in web-search turns on
-  their existing completed-response path.
+- Keep local GGUF/Transformers generation unchanged.
 
 ## Transport
 
@@ -35,10 +36,17 @@ private suffix appears only when the final cleaned bubble replaces the pending
 text.
 
 When online search is enabled, the initial model response can be an internal
-`[SEARCH: ...]` instruction followed by a second completion. That path stays
-non-streamed so internal search control text never flashes in chat. On a stream
-error, the pending bubble is removed and the existing error status is shown;
-no partial text is saved or spoken.
+`[SEARCH: ...]` instruction followed by a second completion. The streaming
+view withholds a partial `[SEARCH:` prefix as it does VTS metadata. If the
+complete search instruction arrives, it is never displayed and only the second
+completion streams to the pending bubble. A normal reply continues streaming
+as soon as it is no longer a possible search prefix. Search is enabled by
+default for new GUI sessions.
+
+The default 512-token limit applies to both local and OpenCode replies. Users
+may still lower it in Settings; no provider request is made merely to change
+the default. On a stream error, the pending bubble is removed and the existing
+error status is shown; no partial text is saved or spoken.
 
 ## Acceptance
 
@@ -47,4 +55,6 @@ no partial text is saved or spoken.
   examples.
 - VTS dispatch and Gwen playback begin only after the final response is parsed.
 - A streamed final reply produces one transcript bubble and one history turn.
-- Local and web-search behavior remains unchanged.
+- Search control text remains private while a second completion still streams.
+- New GUI sessions default to 512 tokens and online search enabled.
+- Local inference behavior remains otherwise unchanged.

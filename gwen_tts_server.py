@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import gc
 from pathlib import Path
 from typing import Callable
 
@@ -11,7 +12,76 @@ from flask import Flask, jsonify, request
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 WORKER_SCRIPT = PROJECT_ROOT / "gwen_tts_worker.py"
+MODEL_DIR = PROJECT_ROOT / "models" / "gwen-tts-0.6b"
+REFERENCE_AUDIO = PROJECT_ROOT / "tyc_talk.wav"
+REFERENCE_TEXT = PROJECT_ROOT / "reference_text.txt"
 
+_model = None
+_voice_clone_prompt = None
+
+def get_model():
+    global _model
+    if _model is None:
+        import torch
+        from qwen_tts import Qwen3TTSModel
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA is required for the local Gwen voice service.")
+        _model = Qwen3TTSModel.from_pretrained(
+            str(MODEL_DIR),
+            device_map="cuda:0",
+            dtype=torch.bfloat16,
+            attn_implementation="sdpa",
+        )
+    return _model
+
+
+def warm_model() -> dict[str, bool]:
+    global _voice_clone_prompt
+    try:
+        model = get_model()
+        if _voice_clone_prompt is None:
+            _voice_clone_prompt = model.create_voice_clone_prompt(
+                ref_audio=str(REFERENCE_AUDIO),
+                ref_text=REFERENCE_TEXT.read_text(encoding="utf-8").strip(),
+            )
+    except Exception:
+        release_model()
+        raise
+    return {"ready": True}
+
+
+def release_model() -> None:
+    global _model, _voice_clone_prompt
+    _voice_clone_prompt = None
+    _model = None
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+
+
+def synthesize_fast(text: str) -> str:
+    import torch
+    import soundfile as sf
+    warm_model()
+    model = get_model()
+    with torch.inference_mode():
+        wavs, sample_rate = model.generate_voice_clone(
+            text=text,
+            language="Vietnamese",
+            voice_clone_prompt=_voice_clone_prompt,
+            non_streaming_mode=True,
+        )
+    if not wavs:
+        raise RuntimeError("Gwen returned no audio.")
+    output = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+    output.close()
+    sf.write(output.name, wavs[0], sample_rate)
+    return output.name
 
 def synthesize_gwen(text: str) -> str:
     if not WORKER_SCRIPT.is_file():
@@ -39,17 +109,33 @@ def synthesize_gwen(text: str) -> str:
         Path(output.name).unlink(missing_ok=True)
         raise
 
-
 def create_app(synthesize: Callable[[str], str] | None = None) -> Flask:
     app = Flask(__name__)
 
+    @app.post("/warmup")
+    def warmup():
+        try:
+            return jsonify(warm_model())
+        except Exception as error:
+            return jsonify({"error": str(error) or type(error).__name__}), 500
+
+    @app.post("/release")
+    def release():
+        release_model()
+        return jsonify({"released": True})
+
     @app.post("/tts")
     def tts():
-        text = (request.get_json(silent=True) or {}).get("text", "").strip()
+        data = request.get_json(silent=True) or {}
+        text = data.get("text", "").strip()
+        fast_mode = data.get("fast_mode", True)
         if not text:
             return jsonify({"error": "No text provided"}), 400
         try:
-            audio_path = (synthesize or synthesize_gwen)(text)
+            if synthesize is not None:
+                audio_path = synthesize(text)
+            else:
+                audio_path = synthesize_fast(text) if fast_mode else synthesize_gwen(text)
             if not Path(audio_path).is_file():
                 raise RuntimeError("Gwen did not create a playable audio file.")
             return jsonify({"audio_path": audio_path})
@@ -61,4 +147,3 @@ def create_app(synthesize: Callable[[str], str] | None = None) -> Flask:
 
 if __name__ == "__main__":
     create_app().run(host="127.0.0.1", port=5051, threaded=False)
-

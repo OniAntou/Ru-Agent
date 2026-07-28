@@ -19,7 +19,12 @@ def build_conversation_messages(
     messages: list[tuple[str, str]] = [("system", system_prompt)]
     if memory_context:
         messages.append(
-            ("system", f"Past memories:\n{memory_context}\n\nUse this only when relevant.")
+            (
+                "system",
+                "Relevant saved memory:\n"
+                f"{memory_context}\n\n"
+                "Use it only when relevant; do not claim to remember anything not listed.",
+            )
         )
 
     retained: list[ChatTurn] = []

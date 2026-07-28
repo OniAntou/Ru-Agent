@@ -263,6 +263,29 @@ class StructuredMemoryStore:
             used_chars += len(line) + (1 if lines else 0)
         return "\n".join(lines)
 
+    def remember_turn(self, prompt: str, response: str) -> tuple[MemoryRecord, ...]:
+        from .memory_extraction import extract_candidates
+
+        return tuple(
+            self.upsert(
+                candidate.kind,
+                candidate.content,
+                candidate.scope,
+                candidate.evidence,
+                candidate.confidence,
+                candidate.importance,
+            )
+            for candidate in extract_candidates(prompt, response)
+        )
+
+    def clear(self) -> None:
+        with self._connection:
+            self._connection.execute("DELETE FROM memories")
+            self._connection.execute("DELETE FROM memories_fts")
+            self._connection.execute("DELETE FROM legacy_memory_migrations")
+        if self.index_path.is_file():
+            self.index_path.unlink()
+
     def migrate_legacy_transcripts(self, legacy_texts_path: str | Path) -> dict[str, int]:
         legacy_path = Path(legacy_texts_path)
         if not legacy_path.is_file():

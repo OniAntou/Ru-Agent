@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 import tempfile
 import gc
 from pathlib import Path
@@ -12,7 +9,6 @@ from typing import Callable
 from flask import Flask, jsonify, request
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-WORKER_SCRIPT = PROJECT_ROOT / "gwen_tts_worker.py"
 MODEL_DIR = PROJECT_ROOT / "models" / "gwen-tts-0.6b"
 REFERENCE_AUDIO = PROJECT_ROOT / "tyc_talk.wav"
 REFERENCE_TEXT = PROJECT_ROOT / "reference_text.txt"
@@ -105,32 +101,6 @@ def synthesize_fast(text: str, profile: str = "ru") -> str:
     output.close()
     sf.write(output.name, wavs[0], sample_rate)
     return output.name
-
-def synthesize_gwen(text: str) -> str:
-    if not WORKER_SCRIPT.is_file():
-        raise FileNotFoundError(f"Gwen worker not found: {WORKER_SCRIPT}")
-    output = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-    output.close()
-    try:
-        completed = subprocess.run(
-            [sys.executable, str(WORKER_SCRIPT), "--text", text, "--output", output.name],
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=120,
-            check=False,
-            env={**os.environ, "PYTHONUTF8": "1"},
-        )
-        if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip() or "Gwen worker failed."
-            raise RuntimeError(detail)
-        output_path = Path(output.name)
-        if not output_path.is_file() or output_path.stat().st_size == 0:
-            raise RuntimeError("Gwen did not create a playable audio file.")
-        return output.name
-    except Exception:
-        Path(output.name).unlink(missing_ok=True)
-        raise
 
 def create_app(synthesize: Callable[[str], str] | None = None) -> Flask:
     app = Flask(__name__)

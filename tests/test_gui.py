@@ -1,6 +1,8 @@
 import pytest
 
 from mini_gpt import gui
+from mini_gpt.vts_actions import VtsActions
+from mini_gpt.vts_catalog import build_catalog
 from mini_gpt.gui import (
     BACKEND_GGUF,
     BACKEND_TRANSFORMERS,
@@ -77,6 +79,22 @@ def test_model_runner_uses_gguf_only_when_selected():
     assert runner.generate_reply("hi", 32, 0.7, 20) == "GGUF reply"
 
 
+def test_model_runner_adds_current_vtube_catalog_to_private_system_instruction():
+    captured_messages = []
+
+    class Runtime:
+        def generate(self, messages, *_args):
+            captured_messages.extend(messages)
+            return "Ru reply"
+
+    runner = ModelRunner()
+    runner.backend = BACKEND_GGUF
+    runner.gguf_runtime = Runtime()
+
+    assert runner.generate_reply("hi", 32, 0.7, 20, vts_instruction="\nvts_01 = Wave") == "Ru reply"
+    assert "vts_01 = Wave" in captured_messages[0][1]
+
+
 def test_model_runner_does_not_search_without_explicit_opt_in(monkeypatch):
     monkeypatch.setattr(
         gui,
@@ -104,6 +122,102 @@ def test_model_runner_does_not_search_without_explicit_opt_in(monkeypatch):
 
 def test_clean_tts_text_removes_internal_markup():
     assert clean_tts_text("*Hi* [SEARCH: weather] <think>hidden</think>") == "Hi"
+
+
+def test_generation_finished_hides_vts_metadata_before_every_output(monkeypatch):
+    app = object.__new__(gui.RuApp)
+    app.session_turns = []
+    app.last_turn = None
+    app.last_turn_saved = True
+    displayed = []
+    spoken = []
+    dispatched = []
+    catalog_dispatched = []
+    app._append_turn = displayed.append
+    app._set_controls_enabled = lambda _enabled: None
+    app._update_mark_button = lambda: None
+    app.status_var = type("Status", (), {"set": lambda _self, _text: None})()
+    app.prompt_text = type(
+        "Prompt",
+        (),
+        {"delete": lambda _self, *_args: None, "focus_set": lambda _self: None},
+    )()
+    app.tts_enabled_var = type("Enabled", (), {"get": lambda _self: True})()
+    app.vts_manager = type(
+        "VtsManager",
+        (),
+        {
+            "trigger_actions_sync": lambda _self, actions: dispatched.append(actions),
+            "trigger_catalog_actions_sync": lambda _self, catalog, codes: catalog_dispatched.append(
+                (catalog, codes)
+            ),
+        },
+    )()
+    app._play_tts = spoken.append
+    catalog = build_catalog(
+        model_id="model-a",
+        model_name="Model A",
+        hotkeys=[{"hotkeyID": "hotkey-wave", "name": "Wave"}],
+        expressions=[],
+    )
+
+    class ImmediateThread:
+        def __init__(self, *, target, args, daemon):
+            self.target = target
+            self.args = args
+
+        def start(self):
+            self.target(*self.args)
+
+    monkeypatch.setattr(gui.threading, "Thread", ImmediateThread)
+
+    app._generation_finished(
+        "Em vui qua! [[VTS:vts_01]]",
+        cache_hit=True,
+        elapsed=0.2,
+        original_prompt="Tin vui ne",
+        remember_conversations=False,
+        vts_catalog=catalog,
+    )
+
+    assert app.last_turn.response == "Em vui qua!"
+    assert displayed[0].response == "Em vui qua!"
+    assert spoken == ["Em vui qua!"]
+    assert catalog_dispatched == [(catalog, ("vts_01",))]
+    assert dispatched == [VtsActions()]
+
+
+def test_generation_finished_dispatches_direct_avatar_command_despite_text_only_reply():
+    app = object.__new__(gui.RuApp)
+    app.session_turns = []
+    app.last_turn = None
+    app.last_turn_saved = True
+    dispatched = []
+    app._append_turn = lambda _turn: None
+    app._set_controls_enabled = lambda _enabled: None
+    app._update_mark_button = lambda: None
+    app.status_var = type("Status", (), {"set": lambda _self, _text: None})()
+    app.prompt_text = type(
+        "Prompt",
+        (),
+        {"delete": lambda _self, *_args: None, "focus_set": lambda _self: None},
+    )()
+    app.tts_enabled_var = type("Enabled", (), {"get": lambda _self: False})()
+    app.vts_manager = type(
+        "VtsManager",
+        (),
+        {"trigger_actions_sync": lambda _self, actions: dispatched.append(actions)},
+    )()
+
+    app._generation_finished(
+        "Em khong the gio tay vi em la tro ly ao.",
+        cache_hit=True,
+        elapsed=0.2,
+        original_prompt="Hay gio tay chao anh di",
+        remember_conversations=False,
+    )
+
+    assert dispatched == [VtsActions(body="raise_hand")]
 
 
 def test_request_tts_audio_explains_offline_server():
@@ -187,3 +301,41 @@ def test_request_tts_audio_surfaces_server_error_detail():
 
     with pytest.raises(RuntimeError, match="Reference transcript is empty"):
         request_tts_audio("hello", post=lambda *_args, **_kwargs: Response())
+
+
+def test_gwen_control_posts_to_warmup() -> None:
+    requested: list[str] = []
+
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"ready": True}
+
+    assert gui.request_gwen_control(
+        "/warmup",
+        post=lambda url, **_kwargs: requested.append(url) or Response(),
+    ) == {"ready": True}
+    assert requested == ["http://127.0.0.1:5051/warmup"]
+
+
+def test_play_gwen_chunks_requests_audio_in_order(monkeypatch, tmp_path) -> None:
+    app = object.__new__(gui.RuApp)
+    app._speech_generation = 1
+    app.root = type("Root", (), {"after": lambda _self, _delay, callback: callback()})()
+    app.status_var = type("Status", (), {"set": lambda _self, _text: None})()
+    app.vts_manager = type("Vts", (), {"is_speaking": False})()
+    requested: list[str] = []
+
+    def synthesize(text: str, **_kwargs) -> str:
+        requested.append(text)
+        return str(tmp_path / f"{len(requested)}.wav")
+
+    monkeypatch.setattr(gui, "request_tts_audio", synthesize)
+    monkeypatch.setattr(gui, "play_wav_blocking", lambda *_args, **_kwargs: None)
+
+    app._play_gwen_chunks(["Cau dau.", "Cau sau."], fast_mode=True)
+
+    assert requested == ["Cau dau.", "Cau sau."]
+    assert app.vts_manager.is_speaking is False

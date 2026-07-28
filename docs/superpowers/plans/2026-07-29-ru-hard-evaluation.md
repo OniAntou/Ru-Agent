@@ -51,7 +51,7 @@ def test_hard_suite_rejects_reference_quotes_and_unsafe_content():
     assert all("roleplay_chat.md" not in " ".join(text for _, text in case.messages) for case in suite.cases)
 ```
 
-Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_ru_hard_evaluation.py`  
+Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_ru_hard_evaluation.py`
 Expected: FAIL because the loader and JSON suite do not exist yet.
 
 - [x] **Step 2: Author the exact 36 cases in JSON**
@@ -124,7 +124,7 @@ UTF-8 suite bytes and preserve it in the returned object.
 
 - [x] **Step 4: Run the structural tests**
 
-Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_ru_hard_evaluation.py -k 'suite or schema'`  
+Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_ru_hard_evaluation.py -k 'suite or schema'`
 Expected: PASS for the 36-case count, 12/12/12 strata, language coverage,
 alternating histories, safety metadata, and deterministic suite hash.
 
@@ -213,7 +213,7 @@ each stratum score at least 80% of its maximum.
 
 - [x] **Step 4: Run scorer/summary tests**
 
-Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_ru_hard_evaluation.py`  
+Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_ru_hard_evaluation.py`
 Expected: PASS for scorer hard-fails, dimension totals, 80% stratum threshold,
 missing/duplicate results, and reproducible suite hash.
 
@@ -284,7 +284,7 @@ directory.
 
 - [x] **Step 4: Run evaluator unit tests**
 
-Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_ru_hard_evaluation.py -k evaluator`  
+Run: `& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_ru_hard_evaluation.py -k evaluator`
 Expected: PASS without loading CUDA or modifying checkpoints.
 
 ### Task 4: Execute, review, and document the comparison

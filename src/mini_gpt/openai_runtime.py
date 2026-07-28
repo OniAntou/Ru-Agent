@@ -57,6 +57,65 @@ class OpenAIRuntime:
     def release_gpu(self) -> None:
         pass
 
+    @staticmethod
+    def _event_content(decoded: object, *, has_content: bool) -> str | None:
+        if not isinstance(decoded, dict):
+            return None
+        choices = decoded.get("choices")
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            return None
+        choice = choices[0]
+        delta = choice.get("delta")
+        if isinstance(delta, dict) and isinstance(delta.get("content"), str):
+            return delta["content"]
+        message = choice.get("message")
+        if not has_content and isinstance(message, dict) and isinstance(message.get("content"), str):
+            return message["content"]
+        return None
+
+    @staticmethod
+    def _stream_error(decoded: object) -> str | None:
+        if not isinstance(decoded, dict):
+            return None
+        error = decoded.get("error")
+        if isinstance(error, str) and error.strip():
+            return error.strip()
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+        return None
+
+    def _read_stream(self, request: Request, on_delta: Callable[[str], None] | None) -> str:
+        parts: list[str] = []
+        with urlopen(request, timeout=120) as response:
+            for raw_line in response:
+                line = raw_line.decode("utf-8").strip()
+                if not line.startswith("data: "):
+                    continue
+                payload = line[6:]
+                if payload == "[DONE]":
+                    break
+                try:
+                    decoded = json.loads(payload)
+                except json.JSONDecodeError as error:
+                    raise RuntimeError("OpenCode returned invalid JSON") from error
+                error_detail = self._stream_error(decoded)
+                if error_detail:
+                    raise RuntimeError(f"OpenCode stream error: {error_detail}")
+                content = self._event_content(decoded, has_content=bool(parts))
+                if content:
+                    accumulated = "".join(parts)
+                    if content.startswith(accumulated):
+                        new_content = content[len(accumulated) :]
+                        parts = [content]
+                    else:
+                        new_content = content
+                        parts.append(content)
+                    if new_content and on_delta is not None:
+                        on_delta("".join(parts))
+        return "".join(parts)
+
     def generate(
         self,
         messages: Sequence[tuple[str, str]],
@@ -64,6 +123,7 @@ class OpenAIRuntime:
         temperature: float,
         top_k: int,
         *,
+        on_delta: Callable[[str], None] | None = None,
         on_complete_timing: Callable[[float], None] | None = None,
     ) -> str:
         if not messages or messages[-1][0] != "user":
@@ -76,6 +136,7 @@ class OpenAIRuntime:
             "messages": [{"role": role, "content": normalize_text(text)} for role, text in messages],
             "max_tokens": max_new_tokens,
             "temperature": temperature,
+            "stream": True,
         }
         
         url = f"{self.base_url}/chat/completions"
@@ -88,8 +149,9 @@ class OpenAIRuntime:
         request = Request(url, data=data, headers=headers, method="POST")
         started = perf_counter()
         try:
-            with urlopen(request, timeout=120) as response:
-                response_body = response.read().decode("utf-8")
+            content = self._read_stream(request, on_delta)
+            if not content.strip():
+                content = self._read_stream(request, on_delta)
         except HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"OpenCode HTTP {error.code}: {detail}") from error
@@ -99,14 +161,6 @@ class OpenAIRuntime:
         if on_complete_timing is not None:
             on_complete_timing(max(0.0, perf_counter() - started))
             
-        try:
-            decoded = json.loads(response_body)
-        except json.JSONDecodeError as error:
-            raise RuntimeError("OpenCode returned invalid JSON") from error
-            
-        choices = decoded.get("choices", [])
-        content = choices[0].get("message", {}).get("content") if choices else None
-        
-        if not isinstance(content, str) or not content.strip():
-            raise RuntimeError("OpenCode returned an empty chat completion")
+        if not content.strip():
+            raise RuntimeError("OpenCode returned two empty chat completions; please try again")
         return normalize_text(content)

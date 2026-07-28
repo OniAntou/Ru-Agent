@@ -31,7 +31,13 @@ from .llama3_1_runtime import (
     is_llama_generation_cached,
 )
 from .llama_cpp_runtime import LlamaCppRuntime
-from .gui_presentation import PALETTE, conversation_display_segments, format_generation_status
+from .gui_presentation import (
+    PALETTE,
+    append_stream_text,
+    conversation_display_segments,
+    format_generation_status,
+    safe_streamed_response,
+)
 from .ru_style import RU_SYSTEM_PROMPT
 from .memory import MemoryStore
 from .search import perform_web_search
@@ -51,7 +57,8 @@ VOICE_PROFILE_OPTIONS = {
     "Yến Nhi (Gwen)": "yen_nhi",
 }
 DEFAULT_VOICE_PROFILE = "ru"
-DEFAULT_MAX_NEW_TOKENS = "128"
+DEFAULT_MAX_NEW_TOKENS = "512"
+DEFAULT_ALLOW_WEB_SEARCH = True
 TTS_PREFETCH_WAVS = 2
 BACKEND_TRANSFORMERS = "transformers"
 BACKEND_GGUF = "gguf"
@@ -249,15 +256,21 @@ class ModelRunner:
         temperature: float,
         top_k: int,
         *,
+        on_stream_delta=None,
         on_complete_timing=None,
     ) -> str:
         if self.backend == BACKEND_OPENCODE and self.openai_runtime:
+            kwargs = {
+                "on_complete_timing": on_complete_timing,
+            }
+            if on_stream_delta is not None:
+                kwargs["on_delta"] = on_stream_delta
             return self.openai_runtime.generate(
                 messages,
                 max_new_tokens,
                 temperature,
                 top_k,
-                on_complete_timing=on_complete_timing,
+                **kwargs,
             )
         if self.backend == BACKEND_GGUF:
             return self.gguf_runtime.generate(messages, max_new_tokens, temperature, top_k)
@@ -282,6 +295,8 @@ class ModelRunner:
         allow_web_search: bool = False,
         vts_instruction: str = "",
         *,
+        on_stream_delta=None,
+        on_stream_reset=None,
         on_complete_timing=None,
     ) -> str:
         messages = build_conversation_messages(
@@ -296,6 +311,7 @@ class ModelRunner:
             max_new_tokens,
             temperature,
             top_k,
+            on_stream_delta=on_stream_delta,
             on_complete_timing=on_complete_timing,
         )
 
@@ -309,12 +325,15 @@ class ModelRunner:
                     f"{prompt}\n\n[Untrusted web reference for '{query}':\n{search_results}]",
                 ),
             )
+            if on_stream_reset is not None:
+                on_stream_reset()
 
             response = self._generate(
                 tuple(messages),
                 max_new_tokens,
                 temperature,
                 top_k,
+                on_stream_delta=on_stream_delta,
                 on_complete_timing=on_complete_timing,
             )
         return response
@@ -327,6 +346,8 @@ class RuApp:
         self.worker: threading.Thread | None = None
         self.gpu_transition_lock = threading.Lock()
         self._speech_generation = 0
+        self._stream_response_start: str | None = None
+        self._stream_raw_response = ""
         self.session_turns: list[ChatTurn] = []
         self.last_turn: ChatTurn | None = None
         self.last_turn_saved = False
@@ -395,7 +416,7 @@ class RuApp:
         self.api_models_list: list[str] = [self.api_model_var.get()]
         self.tts_enabled_var = tk.BooleanVar(value=True)
         self.remember_conversations_var = tk.BooleanVar(value=True)
-        self.allow_web_search_var = tk.BooleanVar(value=False)
+        self.allow_web_search_var = tk.BooleanVar(value=DEFAULT_ALLOW_WEB_SEARCH)
         pygame.mixer.init()
         self.vts_manager = VTSManager()
         threading.Thread(target=self.vts_manager.run, daemon=True).start()
@@ -680,6 +701,52 @@ class RuApp:
         self.transcript_text.see(tk.END)
         self.transcript_text.configure(state="disabled")
 
+    def _begin_streaming_turn(self, prompt: str) -> None:
+        self.transcript_text.configure(state="normal")
+        if self._has_empty_state:
+            self.transcript_text.delete("1.0", tk.END)
+            self._has_empty_state = False
+        self.transcript_text.insert(tk.END, "You\n", "user_label")
+        self.transcript_text.insert(tk.END, f"{prompt}\n\n", "user_bubble")
+        self.transcript_text.insert(tk.END, "Ru\n", "ru_label")
+        self._stream_response_start = self.transcript_text.index(tk.END)
+        self.transcript_text.insert(tk.END, "\n\n", "ru_bubble")
+        self.transcript_text.see(tk.END)
+        self.transcript_text.configure(state="disabled")
+
+    def _replace_streaming_response(self, response: str) -> None:
+        if self._stream_response_start is None:
+            return
+        self.transcript_text.configure(state="normal")
+        self.transcript_text.delete(self._stream_response_start, tk.END)
+        self.transcript_text.insert(tk.END, f"{response}\n\n", "ru_bubble")
+        self.transcript_text.see(tk.END)
+        self.transcript_text.configure(state="disabled")
+
+    def _append_stream_delta(self, delta: str) -> None:
+        self._stream_raw_response = append_stream_text(
+            getattr(self, "_stream_raw_response", ""), delta
+        )
+        self._replace_streaming_response(safe_streamed_response(self._stream_raw_response))
+
+    def _reset_streaming_turn(self) -> None:
+        self._stream_raw_response = ""
+        self._replace_streaming_response("")
+
+    def _finish_streaming_turn(self, response: str) -> None:
+        self._replace_streaming_response(response)
+        self._stream_response_start = None
+        self._stream_raw_response = ""
+
+    def _discard_streaming_turn(self) -> None:
+        if getattr(self, "_stream_response_start", None) is None:
+            return
+        self.transcript_text.configure(state="normal")
+        self.transcript_text.delete("%s - 1 lines" % self._stream_response_start, tk.END)
+        self.transcript_text.configure(state="disabled")
+        self._stream_response_start = None
+        self._stream_raw_response = ""
+
     def _new_chat(self) -> None:
         if self.worker is not None and self.worker.is_alive():
             return
@@ -869,8 +936,15 @@ class RuApp:
                 nonlocal api_seconds
                 api_seconds += seconds
 
+            is_cloud = backend == BACKEND_OPENCODE
+
+            def stream_delta(delta: str) -> None:
+                self.root.after(0, lambda delta=delta: self._append_stream_delta(delta))
+
+            def reset_stream() -> None:
+                self.root.after(0, self._reset_streaming_turn)
+
             with self.gpu_transition_lock:
-                is_cloud = backend == BACKEND_OPENCODE
                 uses_gwen = is_cloud and self.tts_enabled_var.get()
                 if uses_gwen:
                     self.runner.release_gpu()
@@ -897,6 +971,8 @@ class RuApp:
                     self.api_key_var.get(),
                     model_name=self.api_model_var.get(),
                 )
+                if is_cloud:
+                    self.root.after(0, lambda prompt=prompt: self._begin_streaming_turn(prompt))
                 result = self.runner.generate_reply(
                     prompt,
                     *settings,
@@ -904,12 +980,14 @@ class RuApp:
                     memory_context=memory_context,
                     allow_web_search=allow_web_search,
                     vts_instruction=catalog_instruction(vts_catalog),
+                    on_stream_delta=stream_delta if is_cloud else None,
+                    on_stream_reset=reset_stream if is_cloud else None,
                     on_complete_timing=record_api_timing if is_cloud else None,
                 )
                 elapsed = perf_counter() - started
             self.root.after(
                 0,
-                lambda result=result, cache_hit=cache_hit, elapsed=elapsed, prompt=prompt, remember_conversations=remember_conversations, vts_catalog=vts_catalog, api_seconds=api_seconds, gwen_warm_seconds=gwen_warm_seconds: self._generation_finished(
+                lambda result=result, cache_hit=cache_hit, elapsed=elapsed, prompt=prompt, remember_conversations=remember_conversations, vts_catalog=vts_catalog, api_seconds=api_seconds, gwen_warm_seconds=gwen_warm_seconds, is_cloud=is_cloud: self._generation_finished(
                     result,
                     cache_hit,
                     elapsed,
@@ -918,6 +996,7 @@ class RuApp:
                     vts_catalog,
                     api_seconds=api_seconds if is_cloud else None,
                     gwen_warm_seconds=gwen_warm_seconds,
+                    streamed=is_cloud,
                 ),
             )
         except Exception as error:
@@ -938,6 +1017,7 @@ class RuApp:
         *,
         api_seconds: float | None = None,
         gwen_warm_seconds: float | None = None,
+        streamed: bool = False,
     ) -> None:
         if not result.strip():
             self._generation_failed("model returned an empty response")
@@ -951,7 +1031,10 @@ class RuApp:
         self.session_turns.append(turn)
         self.last_turn = turn
         self.last_turn_saved = False
-        self._append_turn(turn)
+        if streamed:
+            self._finish_streaming_turn(clean_result)
+        else:
+            self._append_turn(turn)
 
         if (
             remember_conversations
@@ -1108,6 +1191,7 @@ class RuApp:
                 self.root.after(500, self._toggle_recording)
 
     def _generation_failed(self, message: str) -> None:
+        self._discard_streaming_turn()
         self.status_var.set(f"Error: {message}")
         self._set_controls_enabled(True)
         self._update_mark_button()

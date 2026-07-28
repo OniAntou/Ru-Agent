@@ -12,6 +12,33 @@ PALETTE = {
 }
 
 
+_PRIVATE_STREAM_MARKERS = ("[[VTS:", "[SEARCH:")
+
+
+def append_stream_text(existing: str, incoming: str) -> str:
+    """Accept either an incremental chunk or a provider's cumulative snapshot."""
+    if incoming.startswith(existing):
+        return incoming
+    if existing.startswith(incoming):
+        return existing
+    return existing + incoming
+
+
+def safe_streamed_response(raw: str) -> str:
+    """Hide private control markers, including a marker still being typed."""
+    folded = raw.casefold()
+    marker_positions = [folded.find(marker.casefold()) for marker in _PRIVATE_STREAM_MARKERS]
+    completed_positions = [position for position in marker_positions if position >= 0]
+    if completed_positions:
+        return raw[: min(completed_positions)]
+
+    for length in range(max(map(len, _PRIVATE_STREAM_MARKERS)) - 1, 0, -1):
+        tail = raw[-length:].casefold()
+        if any(marker.casefold().startswith(tail) for marker in _PRIVATE_STREAM_MARKERS):
+            return raw[:-length]
+    return raw
+
+
 def conversation_display_segments(prompt: str, response: str) -> tuple[tuple[str, str], ...]:
     """Return one completed chat turn in the order it happened."""
     return (

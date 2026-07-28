@@ -31,8 +31,9 @@ def test_submit_from_keyboard_starts_generation_and_consumes_event():
     assert calls == ["generate"]
 
 
-def test_default_generation_limit_is_short_conversation_length():
-    assert gui.DEFAULT_MAX_NEW_TOKENS == "128"
+def test_default_generation_limit_and_search_are_ready_for_cloud_replies():
+    assert gui.DEFAULT_MAX_NEW_TOKENS == "512"
+    assert gui.DEFAULT_ALLOW_WEB_SEARCH is True
 
 
 def test_generation_settings_are_parsed_and_validated():
@@ -100,6 +101,42 @@ def test_model_runner_reports_each_opencode_completion_timing():
         "hi", 32, 0.7, 20, on_complete_timing=received.append
     ) == "OpenCode reply"
     assert received == [1.25, 0.75]
+
+
+def test_model_runner_resets_the_stream_before_the_search_follow_up(monkeypatch):
+    calls: list[tuple[str, object]] = []
+
+    class Runtime:
+        def __init__(self):
+            self.replies = iter(("[SEARCH: weather]", "Troi dep day anh."))
+
+        def generate(self, _messages, *_args, on_delta=None, **_kwargs):
+            reply = next(self.replies)
+            if on_delta is not None:
+                on_delta(reply)
+            return reply
+
+    monkeypatch.setattr(gui, "perform_web_search", lambda query: f"ket qua cho {query}")
+    runner = ModelRunner()
+    runner.backend = BACKEND_OPENCODE
+    runner.openai_runtime = Runtime()
+
+    result = runner.generate_reply(
+        "Thoi tiet sao?",
+        32,
+        0.7,
+        20,
+        allow_web_search=True,
+        on_stream_delta=lambda delta: calls.append(("delta", delta)),
+        on_stream_reset=lambda: calls.append(("reset", None)),
+    )
+
+    assert result == "Troi dep day anh."
+    assert calls == [
+        ("delta", "[SEARCH: weather]"),
+        ("reset", None),
+        ("delta", "Troi dep day anh."),
+    ]
 
 
 def test_backend_labels_offer_opencode_but_not_openai() -> None:

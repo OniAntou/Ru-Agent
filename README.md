@@ -33,7 +33,9 @@ the model. Its default screen is conversation-first; open **Settings** to
 change the adapter, sampler, saved-memory option, or online-search permission.
 Send with the button or `Ctrl+Enter`; plain Enter adds a line. The status line
 shows whether the Llama model was already resident and how long the completed
-local reply took. Persistent memory and online search are disabled by default.
+local reply took. Persistent memory is disabled by default; online search is
+enabled by default and can be turned off in **Settings**. The default reply
+limit is 512 tokens.
 The local GUI deliberately uses eager Llama inference: do not re-enable
 `torch.compile` on this Python 3.13/CUDA setup, because it caused native
 `torch_cpu.dll` process crashes during chat generation.
@@ -45,14 +47,18 @@ OpenCode API key and choose a model; the service URL is fixed by the app. A
 previously saved `OpenAI API` selection migrates to OpenCode once and its URL
 field is removed from saved settings.
 
-For an OpenCode reply with voice enabled, the status line can show `API`,
-`Gwen warm`, and `first voice` durations. `API` measures the existing request
-from send until its complete JSON response is read, so it is not first-token
-latency. `Gwen warm` measures the local warmup request, while `first voice`
+OpenCode responses stream into the in-progress Ru bubble. Private VTube Studio
+metadata and model-directed `[SEARCH: ...]` commands stay hidden during the
+stream; a search command clears that provisional bubble before the grounded
+follow-up streams. For an OpenCode reply with voice enabled, the status line
+can show `API`, `Gwen warm`, and `first voice` durations. `API` measures the
+existing request from send until its streamed completion is received, so it is
+not first-token latency. `Gwen warm` measures the local warmup request, while `first voice`
 measures the first synthesis request until its WAV is ready; playback itself
 is not included. These measurements create no extra API requests. If an
 opted-in web-search reply performs two OpenCode completions, the displayed API
-duration is their total.
+duration is their total. A protocol-valid but empty stream is retried once
+before the GUI reports a failure.
 
 ## GGUF runtime
 
@@ -102,7 +108,8 @@ voice. Quantization and timing alone never replace that quality gate.
 
 - Enable **Remember conversations** only to persist completed pairs locally in
   `data\conversations\memory_*`.
-- Enable **Allow online search** only to permit a model-directed DDGS lookup.
+- **Allow online search** is enabled by default to permit a model-directed
+  DDGS lookup; disable it to keep replies fully offline.
 - **Clear saved memory** removes only those local memory files after
   confirmation.
 - **Mark last response useful** writes a reviewed example to

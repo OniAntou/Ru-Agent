@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 import uuid
 from hashlib import sha256
@@ -202,6 +203,65 @@ class StructuredMemoryStore:
             (now,),
         ).fetchone()
         return int(row["count"])
+
+    def list_active(self, query: str = "") -> tuple[MemoryRecord, ...]:
+        now = _serialize_datetime(_utc_now())
+        rows = self._connection.execute(
+            """
+            SELECT * FROM memories
+            WHERE status = 'active' AND (expires_at IS NULL OR expires_at > ? OR pinned = 1)
+            ORDER BY pinned DESC, updated_at DESC
+            """,
+            (now,),
+        ).fetchall()
+        records = tuple(self._record_from_row(row) for row in rows)
+        needle = query.strip().casefold()
+        if not needle:
+            return records
+        return tuple(record for record in records if needle in f"{record.content} {record.scope or ''}".casefold())
+
+    @staticmethod
+    def _tokens(text: str) -> set[str]:
+        return set(re.findall(r"[\wÀ-ỹ]+", text.casefold()))
+
+    def retrieve(self, query: str, *, limit: int = 5, max_chars: int = 1200) -> tuple[MemoryRecord, ...]:
+        query_tokens = self._tokens(query)
+        query_scopes = re.findall(r"[A-Za-z]:\\[^\s,.;!?]+", query)
+        ranked: list[tuple[float, MemoryRecord]] = []
+        for record in self.list_active():
+            scope_match = bool(record.scope and any(scope.casefold() == record.scope.casefold() for scope in query_scopes))
+            if query_scopes and record.scope and not scope_match:
+                continue
+            overlap = len(query_tokens & self._tokens(f"{record.content} {record.scope or ''}"))
+            lexical_score = overlap / max(1, len(query_tokens))
+            score = 0.55 * lexical_score + 0.15 * float(scope_match) + 0.05 * record.importance + 0.03 * record.confidence + 0.02 * float(record.pinned)
+            if score >= 0.18:
+                ranked.append((score, record))
+        ranked.sort(key=lambda item: (item[0], item[1].updated_at), reverse=True)
+        selected: list[MemoryRecord] = []
+        used_chars = 0
+        for _, record in ranked:
+            line = self._render_record(record)
+            if len(selected) >= limit or used_chars + len(line) + (1 if selected else 0) > max_chars:
+                continue
+            selected.append(record)
+            used_chars += len(line) + (1 if selected else 0)
+        return tuple(selected)
+
+    @staticmethod
+    def _render_record(record: MemoryRecord) -> str:
+        return f"- [{record.kind.value} | {record.scope or 'global'}] {record.content}"
+
+    def render_context(self, records: tuple[MemoryRecord, ...], *, max_chars: int = 1200) -> str:
+        lines: list[str] = []
+        used_chars = 0
+        for record in records:
+            line = self._render_record(record)
+            if used_chars + len(line) + (1 if lines else 0) > max_chars:
+                break
+            lines.append(line)
+            used_chars += len(line) + (1 if lines else 0)
+        return "\n".join(lines)
 
     def migrate_legacy_transcripts(self, legacy_texts_path: str | Path) -> dict[str, int]:
         legacy_path = Path(legacy_texts_path)

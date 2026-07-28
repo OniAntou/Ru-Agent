@@ -92,3 +92,21 @@ def test_migration_imports_only_safe_legacy_blocks(tmp_path):
     assert store.migrate_legacy_transcripts(legacy_path) == {"imported": 1, "rejected": 1}
     assert store.count_active() == 1
     assert legacy_path.exists()
+
+
+def test_retrieve_prefers_exact_project_scope_and_obeys_context_budget(tmp_path):
+    store = StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "memory.faiss")
+    store.upsert(MemoryKind.PROJECT, "D:\\LLM uses a local GGUF runtime.", "D:\\LLM", "project note", 1.0, 0.9)
+    store.upsert(MemoryKind.PROJECT, "D:\\Other uses a hosted runtime.", "D:\\Other", "other note", 1.0, 0.9)
+
+    records = store.retrieve("Trong D:\\LLM runtime memory đang dùng gì?", limit=3, max_chars=140)
+
+    assert [record.scope for record in records] == ["D:\\LLM"]
+    assert len(store.render_context(records, max_chars=140)) <= 140
+
+
+def test_retrieve_returns_no_irrelevant_memory(tmp_path):
+    store = StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "memory.faiss")
+    store.upsert(MemoryKind.PREFERENCE, "Anh prefers brief replies.", None, "explicit", 1.0, 0.9)
+
+    assert store.retrieve("Thời tiết trên Sao Hoả thế nào?", limit=3, max_chars=400) == ()

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+import json
 
 from mini_gpt.memory import MemoryKind, MemoryStore, StructuredMemoryStore
 
@@ -72,3 +73,22 @@ def test_expired_unpinned_record_is_not_active(tmp_path):
     )
 
     assert store.count_active() == 0
+
+
+def test_migration_imports_only_safe_legacy_blocks(tmp_path):
+    legacy_path = tmp_path / "memory_texts.json"
+    legacy_path.write_text(
+        json.dumps(
+            [
+                "User: Anh thích Ru tự động hoá.\nAssistant: Em nhớ rồi.",
+                "User: API key là sk-secret.\nAssistant: Đã nhận.",
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    store = StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "memory.faiss")
+
+    assert store.migrate_legacy_transcripts(legacy_path) == {"imported": 1, "rejected": 1}
+    assert store.count_active() == 1
+    assert legacy_path.exists()

@@ -4,6 +4,7 @@ import json
 import logging
 import sqlite3
 import uuid
+from hashlib import sha256
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -91,6 +92,9 @@ class StructuredMemoryStore:
                 );
                 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(id UNINDEXED, content, scope);
                 CREATE INDEX IF NOT EXISTS idx_memories_active_scope ON memories(status, kind, scope);
+                CREATE TABLE IF NOT EXISTS legacy_memory_migrations (
+                    source_hash TEXT PRIMARY KEY
+                );
                 """
             )
 
@@ -198,6 +202,50 @@ class StructuredMemoryStore:
             (now,),
         ).fetchone()
         return int(row["count"])
+
+    def migrate_legacy_transcripts(self, legacy_texts_path: str | Path) -> dict[str, int]:
+        legacy_path = Path(legacy_texts_path)
+        if not legacy_path.is_file():
+            return {"imported": 0, "rejected": 0}
+        source = legacy_path.read_bytes()
+        source_hash = sha256(source).hexdigest()
+        already_imported = self._connection.execute(
+            "SELECT 1 FROM legacy_memory_migrations WHERE source_hash = ?", (source_hash,)
+        ).fetchone()
+        if already_imported is not None:
+            return {"imported": 0, "rejected": 0}
+        from .memory_extraction import extract_candidates
+
+        imported = 0
+        rejected = 0
+        try:
+            blocks = json.loads(source.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return {"imported": 0, "rejected": 1}
+        for block in blocks if isinstance(blocks, list) else []:
+            if not isinstance(block, str) or "\nAssistant:" not in block or not block.startswith("User: "):
+                rejected += 1
+                continue
+            prompt, response = block[6:].split("\nAssistant:", 1)
+            candidates = extract_candidates(prompt, response)
+            if not candidates:
+                rejected += 1
+                continue
+            for candidate in candidates:
+                self.upsert(
+                    candidate.kind,
+                    candidate.content,
+                    candidate.scope,
+                    candidate.evidence,
+                    candidate.confidence,
+                    candidate.importance,
+                )
+                imported += 1
+        with self._connection:
+            self._connection.execute(
+                "INSERT INTO legacy_memory_migrations (source_hash) VALUES (?)", (source_hash,)
+            )
+        return {"imported": imported, "rejected": rejected}
 
 
 class MemoryStore:

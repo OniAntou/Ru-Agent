@@ -20,7 +20,10 @@ def test_tts_returns_generated_audio_path(tmp_path) -> None:
     response = app.test_client().post("/tts", json={"text": "hello"})
 
     assert response.status_code == 200
-    assert response.get_json() == {"audio_path": str(output)}
+    payload = response.get_json()
+    assert payload["audio_path"] == str(output)
+    assert isinstance(payload["synthesis_ms"], int)
+    assert payload["synthesis_ms"] >= 0
 
 
 def test_warmup_reuses_cached_voice_clone_prompt(monkeypatch) -> None:

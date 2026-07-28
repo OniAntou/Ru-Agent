@@ -118,12 +118,18 @@ one without changing the other: Gwen voice cloning needs an exact transcript of
 the reference audio.
 
 `g-group-ai-lab/gwen-tts-0.6B` runs in the separate `gwen_env` environment.
-Before speaking, the GUI releases its cached Llama model; the Gwen service then
-starts a short-lived worker for the request. The worker exits before the WAV is
-returned, fully releasing its CUDA context. This avoids simultaneous-model VRAM
-exhaustion on the 6 GB GPU, at the cost of a short delay before each reply
-starts speaking. Gwen is experimental: its voice identity and short Vietnamese
-phrases passed manual listening, while pronunciation still needs user evaluation.
+For cloud backends only, Ru warms and retains its Gwen model plus the fixed
+voice-clone prompt on CUDA while the cloud model is composing the reply. The
+reply is then synthesized sentence-by-sentence through a one-WAV prefetch
+queue, so the first sentence can play before later sentences are ready. The
+first cloud reply after opening the GUI can still be slower because it performs
+that warmup.
+
+Before local GGUF or Transformers inference, Ru asks Gwen to release its model
+and CUDA cache; this keeps the two models from competing for the 6 GB GPU.
+Local replies load Gwen only when speech begins. Gwen is experimental: its
+voice identity and short Vietnamese phrases passed manual listening, while
+pronunciation still needs user evaluation.
 
 The GUI starts and waits for the local service automatically the first time it
 needs to speak. The service continues in the background for later replies. Use
@@ -132,6 +138,74 @@ the command below only to inspect the voice service manually:
 ```powershell
 & D:\LLM\run_gwen_tts_server.bat
 ```
+
+To measure a warm service directly, make a short request five times and inspect
+the returned `synthesis_ms` value. The relevant interactive target is the time
+from completed reply text to the first audible sentence, which also includes
+audio playback setup:
+
+```powershell
+$body = @{ text = 'Em chao anh, em da san sang roi.'; fast_mode = $true } | ConvertTo-Json
+1..5 | ForEach-Object {
+    Invoke-RestMethod http://127.0.0.1:5051/tts -Method Post -ContentType 'application/json' -Body $body
+}
+```
+
+## VTube Studio actions
+
+For every reply, the GUI reads the current VTube Studio model, its hotkeys,
+and its `.exp3.json` expressions. It supplies that model-scoped catalog to Ru
+as private `vts_XX` and `expr_XX` codes, so switching models changes the
+available actions without editing source code. Ru may use any listed hotkey,
+including appearance, hair, and clothing changes that belong to the current
+model.
+
+Ru emits chosen actions only as a terminal `[[VTS:...]]` suffix. The GUI
+removes that metadata before showing chat text, generating TTS, saving memory,
+or saving a reviewed example. It rechecks the current model before dispatch;
+codes from a previous model are discarded safely. An expression activated by
+Ru is deactivated after a short interval, while expressions that were already
+active from the user are never touched.
+
+Direct Vietnamese avatar requests such as `giơ tay`, `vẫy tay`, `vui lên`,
+`nhắm mắt`, and `dựng đuôi` remain a compatibility fallback even if the
+language model answers as a text-only assistant.
+
+VTube Studio `VoiceVolume` remains the only mouth/lip-sync input. Do not map
+or recreate `LLM_MouthOpen`.
+
+## Desktop overlay (Spout2)
+
+`RuDesktopOverlay` is a separate transparent desktop window. It receives the
+existing `VTubeStudioSpout` output, so it does not change Ru, the active VTube
+Studio model, `VoiceVolume`, `LLM_Sway`, or any model hotkeys.
+
+1. In VTube Studio, enable its Windows **Spout2** sender. Use **Color Picker
+   Background** and enable transparency in capture. Do not use the earlier
+   green desktop-window workaround.
+2. Build the receiver once:
+
+   ```powershell
+   .\scripts\build_ru_desktop_overlay.ps1
+   ```
+
+3. Start it without click-through first, then drag it into place:
+
+   ```powershell
+   .\scripts\start_ru_desktop_overlay.ps1
+   ```
+
+4. Only after confirming that the avatar has no green background, close it and
+   restart with mouse input passing to the desktop beneath the model:
+
+   ```powershell
+   .\scripts\start_ru_desktop_overlay.ps1 -ClickThrough
+   ```
+
+While the non-click-through overlay has focus, `C` toggles click-through, `T`
+keeps it topmost, and `Esc` closes it. Closing this overlay does not close Ru
+or VTube Studio. If it says it is waiting for `VTubeStudioSpout`, enable the
+Spout2 sender in VTube Studio and leave that app running.
 
 The voice sample is used under the Tsukuyomi-chan sample-voice terms. Any
 distributed synthesis using only these samples must include the required

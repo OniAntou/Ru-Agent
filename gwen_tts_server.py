@@ -6,6 +6,7 @@ import sys
 import tempfile
 import gc
 from pathlib import Path
+from time import perf_counter
 from typing import Callable
 
 from flask import Flask, jsonify, request
@@ -132,13 +133,15 @@ def create_app(synthesize: Callable[[str], str] | None = None) -> Flask:
         if not text:
             return jsonify({"error": "No text provided"}), 400
         try:
+            started = perf_counter()
             if synthesize is not None:
                 audio_path = synthesize(text)
             else:
                 audio_path = synthesize_fast(text) if fast_mode else synthesize_gwen(text)
             if not Path(audio_path).is_file():
                 raise RuntimeError("Gwen did not create a playable audio file.")
-            return jsonify({"audio_path": audio_path})
+            elapsed_ms = round((perf_counter() - started) * 1000)
+            return jsonify({"audio_path": audio_path, "synthesis_ms": elapsed_ms})
         except Exception as error:
             return jsonify({"error": str(error) or type(error).__name__}), 500
 

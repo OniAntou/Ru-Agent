@@ -27,10 +27,14 @@ Verify the environment:
 & D:\LLM\.venv\Scripts\python.exe -m mini_gpt.gui
 ```
 
-The GUI defaults to `checkpoints\ru-llama3.1-8b-instruct-v6`, keeps a bounded
-recent conversation context, and validates runtime dependencies before loading
-the model. Its default screen is conversation-first; open **Settings** to
-change the adapter, sampler, saved-memory option, or online-search permission.
+The GUI defaults to the v6.2 LoRA GGUF at
+`models\gguf\ru-llama3.1-8b-instruct-v6.2-lora.gguf`, with v6.1 and v6 GGUF
+fallbacks if the preferred file is unavailable. The Transformers fallback
+selector prefers `checkpoints\ru-llama3.1-8b-instruct-v6.2-fresh`, then v6.1
+and v6. The app keeps a bounded recent conversation context and validates
+runtime dependencies before loading the model. Its default screen is
+conversation-first; open **Settings** to change the adapter, sampler,
+saved-memory option, or online-search permission.
 Send with the button or `Ctrl+Enter`; plain Enter adds a line. The status line
 shows whether the Llama model was already resident and how long the completed
 local reply took. Persistent memory is enabled by default and can be turned off
@@ -63,9 +67,9 @@ before the GUI reports a failure.
 
 ## GGUF runtime
 
-Ru v6 runs by default through local CUDA llama.cpp. It uses a separate Q4_K_M
-base GGUF and a separate v6 LoRA GGUF; the adapter is loaded by llama.cpp and
-is not merged into the HF base. Select **Transformers (fallback)** in
+Ru v6.2 runs by default through local CUDA llama.cpp. It uses a separate
+Q4_K_M base GGUF and a separate v6.2 LoRA GGUF; the adapter is loaded by
+llama.cpp and is not merged into the HF base. Select **Transformers (fallback)** in
 **Settings** only when diagnosing or evaluating the HF runtime. Keep the HF
 base on disk: it is required for v6.1 training, evaluation, and future GGUF
 conversions.
@@ -89,6 +93,11 @@ creates:
 
 - `models\gguf\llama3.1-8b-instruct-q4_k_m.gguf`
 - `models\gguf\ru-llama3.1-8b-instruct-v6-lora.gguf`
+- `models\gguf\ru-llama3.1-8b-instruct-v6.2-lora.gguf` (preferred)
+
+The v6.2 LoRA GGUF was converted from
+`checkpoints\ru-llama3.1-8b-instruct-v6.2-fresh` on 2026-07-29. Its SHA-256 is
+`F991F730EF5D89A5C0C187FD36A6FEC5CA958B99710244F48AADC36572F80DB6`.
 
 Run the live benchmark after conversion:
 
@@ -103,9 +112,24 @@ generated tokens/s; a resident 2,048-context probe used 5,417 MiB of the
 approval. Gwen speech stops the owned GGUF server before synthesis so the two
 models never compete for the 6 GiB GPU.
 
-GGUF was promoted to the default after manual testing of natural
+The original v6 GGUF path was promoted to the default after manual testing of natural
 Vietnamese-English turn-taking, coherent context, and the friendly `anh`/`em`
 voice. Quantization and timing alone never replace that quality gate.
+
+The v6.2 GGUF is the current operational GUI default by explicit user choice.
+The hard quality gate is still recorded as failed, so this default selection
+does not mean v6.2 has passed promotion review.
+
+## v6.3 targeted dataset
+
+The new dataset is `data\conversations\ru_v6_3`, with 180 authored rows split
+108/36/36 into train/validation/held-out. It contains repair, bilingual bridge,
+and context-recall strata, with 90 Vietnamese, 60 mixed, and 30 English rows.
+Manifest authored SHA-256: `4ced5766d226678c876fcf4c4b7311224869af0d5b00401a05b8c0c1b388d53b`.
+It is new project-owned data targeted from the hard-suite failures; no v6.2
+rows were copied. Training has not started. The bounded config is
+`configs\ru_llama3_1_v6_3.json` with 360 steps and a 9,600-second wall-clock
+cap.
 
 - Enable **Remember conversations** only to persist completed pairs locally in
   `data\conversations\memory_*`.
@@ -158,9 +182,9 @@ adapter manifest is `checkpoints\ru-llama3.1-8b-instruct-v6.2-fresh\ru_manifest.
 The bounded config was `configs\ru_llama3_1_v6_2_fresh.json` with a 9,600-second
 wall-clock guard and 6,144 MiB physical cap. The CUDA allocator reported 8,445 MiB
 while the driver-side physical sample
-was unavailable, so the physical-VRAM gate is recorded as unverified; v6
-remains the GUI fallback until that hardware check and the bilingual runtime
-gate pass.
+was unavailable, so the physical-VRAM gate is recorded as unverified; the v6.2
+GGUF remains an operational default only until that hardware check and the
+bilingual runtime gate pass.
 
 The same deterministic 12-case QLoRA evaluation was rerun for all three
 adapters (`comparison_v6.json`, `comparison_v6_1.json`, and
@@ -305,7 +329,8 @@ published output.
 
 ## Project boundaries
 
-All model weights, checkpoints, data, and caches stay on `D:\LLM`. Llama v6
-remains the GUI fallback. Training or promoting a later Llama adapter requires
-the existing bilingual conversation and physical-VRAM gates; validation loss
-alone is not an adoption decision.
+All model weights, checkpoints, data, and caches stay on `D:\LLM`. The v6.2
+GGUF is the operational GUI default and v6 remains the HF fallback. Training or
+calling a later Llama adapter quality-gate promoted requires the existing
+bilingual conversation and physical-VRAM gates; validation loss alone is not an
+adoption decision.

@@ -5,7 +5,7 @@ import pytest
 from mini_gpt.llama_cpp_runtime import LlamaCppRuntime
 
 
-def test_server_command_loads_the_base_and_v6_lora(tmp_path):
+def test_server_command_prefers_the_v6_2_lora(tmp_path):
     runtime = LlamaCppRuntime(project_root=tmp_path)
     command = runtime.server_command()
 
@@ -13,7 +13,15 @@ def test_server_command_loads_the_base_and_v6_lora(tmp_path):
     assert "--lora" in command
     assert command[command.index("--ctx-size") + 1] == "2048"
     assert command[command.index("--n-gpu-layers") + 1] == "all"
-    assert str(tmp_path / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6-lora.gguf") in command
+    assert str(tmp_path / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6.2-lora.gguf") in command
+
+
+def test_lora_adapter_falls_back_to_v6_when_newer_ggufs_are_missing(tmp_path):
+    fallback = tmp_path / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6-lora.gguf"
+    fallback.parent.mkdir(parents=True)
+    fallback.write_bytes(b"gguf")
+
+    assert LlamaCppRuntime(project_root=tmp_path).lora_adapter == fallback
 
 
 def test_chat_completion_parses_openai_response(tmp_path):

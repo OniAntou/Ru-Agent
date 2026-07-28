@@ -2,7 +2,7 @@
 
 ## Active Llama path
 
-- [x] Retain the Llama 3.1 8B v6 QLoRA GUI fallback.
+- [x] Retain the Llama 3.1 8B v6 QLoRA HF fallback.
 - [x] Bound GUI conversation context; persistent memory and search can be
   disabled in Settings.
 - [x] Remove discontinued Qwen LLM, Gemma, MiniGPT, and V5 corpus code/data
@@ -18,12 +18,16 @@
 - [x] Run the harder 36-case comparison: v6 `158/360` (13 hard fails), v6.1
   `180/360` (11 hard fails), v6.2 `205/360` (7 hard fails); all strict gates
   failed, so no adapter was promoted.
+- [x] Make the v6.2 LoRA GGUF the operational GUI default with v6.1/v6
+  fallback; the strict quality gate remains visibly failed.
+- [x] Prepare the new v6.3 targeted dataset: 180 authored rows, 108/36/36
+  train/validation/held-out, 360-step and 9,600-second training cap.
 - [ ] Complete manual bilingual/held-out review and verified physical-VRAM
-  gate for v6.2 before any promotion (v6 remains fallback).
+  gate for v6.2 before calling it quality-gate promoted.
 - [x] Finish the bounded v6.1 candidate and its comparison evaluation; its
   training manifest reports a 5,900 MiB physical peak under the 6,144 MiB cap.
 - [ ] Make short Vietnamese-English conversations consistently natural before
-  promoting any adapter.
+  calling any adapter quality-gate promoted.
 
 ## Deferred capabilities
 

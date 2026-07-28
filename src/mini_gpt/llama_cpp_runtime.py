@@ -46,7 +46,12 @@ class LlamaCppRuntime:
 
     @property
     def lora_adapter(self) -> Path:
-        return self.project_root / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6-lora.gguf"
+        candidates = (
+            self.project_root / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6.2-lora.gguf",
+            self.project_root / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6.1-lora.gguf",
+            self.project_root / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6-lora.gguf",
+        )
+        return next((path for path in candidates if path.is_file() and path.stat().st_size), candidates[0])
 
     @property
     def log_path(self) -> Path:
@@ -79,7 +84,7 @@ class LlamaCppRuntime:
         for path, label in (
             (self.server_executable, "llama-server"),
             (self.base_model, "base GGUF"),
-            (self.lora_adapter, "v6 LoRA GGUF"),
+            (self.lora_adapter, "Ru LoRA GGUF (v6.2, v6.1, or v6)"),
         ):
             if not path.is_file() or path.stat().st_size == 0:
                 raise FileNotFoundError(f"{label} not found: {path}")

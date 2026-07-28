@@ -9,7 +9,9 @@ Gemma, MiniGPT, and other non-Llama experiments were removed on 2026-07-26.
 ## Current runtime
 
 - Base: `models\llama3.1-8b-instruct-hf`
-- GUI fallback: `checkpoints\ru-llama3.1-8b-instruct-v6`
+- GUI default: `models\gguf\ru-llama3.1-8b-instruct-v6.2-lora.gguf`
+- GUI GGUF fallback order: v6.1 LoRA, then v6 LoRA
+- Transformers fallback checkpoint order: v6.2 fresh, v6.1, then v6
 - Launch: `& .\.venv\Scripts\python.exe -m mini_gpt.gui`
 - Tests: `& .\.venv\Scripts\python.exe -m pytest -q`
 
@@ -42,7 +44,18 @@ The original launch command was:
 ```
 
 The 12-case bilingual runtime/held-out gate and a verified hardware measurement
-remain required; v6 remains the GUI fallback.
+remain required before calling v6.2 quality-gate promoted. The v6.2 GGUF is the
+operational GUI default by explicit user choice; v6 remains the HF fallback.
+
+## v6.3 targeted dataset status
+
+The new project-owned dataset is at `data\conversations\ru_v6_3`. It contains
+180 authored rows split 108/36/36 into train/validation/held-out, with repair,
+bilingual-bridge, and context-recall strata. Its authored SHA-256 is
+`4ced5766d226678c876fcf4c4b7311224869af0d5b00401a05b8c0c1b388d53b`.
+The corpus is new and does not copy v6.2 rows. Training has not started; use
+`configs\ru_llama3_1_v6_3.json`, which caps the run at 360 steps and 9,600
+seconds.
 
 ## Current comparison
 
@@ -67,9 +80,11 @@ are in `checkpoints\\ru-hard-evaluation-v1` and manual review is still required.
 
 ## Promotion rule
 
-Do not promote a new adapter based on loss alone. It must pass the bilingual
-conversation gate, preserve Ru's Vietnamese `anh`/`em` voice, and stay within
-the physical VRAM cap. Leave v6 as the fallback until that evidence exists.
+Do not call a new adapter quality-gate promoted based on loss alone. It must
+pass the bilingual conversation gate, preserve Ru's Vietnamese `anh`/`em`
+voice, and stay within the physical VRAM cap. The v6.2 GGUF is nevertheless
+the current operational GUI default by explicit user choice, while v6 remains
+the HF fallback until that evidence exists.
 
 ## v6.1 training status
 
@@ -87,7 +102,7 @@ confirmed released after it stopped.
 
 `checkpoints\ru-llama3.1-8b-instruct-v6.1` contains an interrupted,
 best-validation adapter snapshot from 18:17. It is not a completed candidate
-and must not replace the v6 GUI fallback.
+and must not replace the current v6.2 GGUF GUI default.
 
 The next v6.1 candidate is bounded to 640 single-example steps (40 optimizer
 updates). During training it evaluates a deterministic 32-row validation

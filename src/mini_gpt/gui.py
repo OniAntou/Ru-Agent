@@ -175,6 +175,7 @@ def play_wav_blocking(audio_file: str) -> None:
 
 def default_paths() -> Path:
     candidates = (
+        PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6.2-fresh",
         PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6.1",
         PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6",
         PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v5",

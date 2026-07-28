@@ -11,11 +11,9 @@ from time import monotonic, perf_counter, sleep
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-import tempfile
 import os
 import json
 import speech_recognition as sr
-import asyncio
 from .vts_manager import VTSManager
 from .vts_actions import VTS_ACTION_INSTRUCTION, requested_vts_actions
 from .vts_catalog import VtsCatalog, catalog_instruction, parse_catalog_reply
@@ -48,6 +46,11 @@ GWEN_TTS_HOST = "127.0.0.1"
 GWEN_TTS_PORT = 5051
 GWEN_TTS_PYTHON = PROJECT_ROOT / "gwen_env" / "Scripts" / "python.exe"
 GWEN_TTS_SERVER_SCRIPT = PROJECT_ROOT / "gwen_tts_server.py"
+VOICE_PROFILE_OPTIONS = {
+    "Ru (Tsukuyomi)": "ru",
+    "Yến Nhi (Gwen)": "yen_nhi",
+}
+DEFAULT_VOICE_PROFILE = "ru"
 DEFAULT_MAX_NEW_TOKENS = "128"
 BACKEND_TRANSFORMERS = "transformers"
 BACKEND_GGUF = "gguf"
@@ -102,13 +105,23 @@ def ensure_gwen_tts_server(*, process_factory=None, sleep=sleep, monotonic=monot
     raise RuntimeError("Gwen voice service did not start. Check the local voice environment.")
 
 
-def request_tts_audio(text: str, fast_mode: bool = False, *, post=None) -> str:
+def request_tts_audio(
+    text: str,
+    fast_mode: bool = False,
+    voice_profile: str = DEFAULT_VOICE_PROFILE,
+    *,
+    post=None,
+) -> str:
     if post is None:
         import requests
 
         post = requests.post
     try:
-        response = post(GWEN_TTS_SERVER_URL, json={"text": text, "fast_mode": fast_mode}, timeout=90)
+        response = post(
+            GWEN_TTS_SERVER_URL,
+            json={"text": text, "fast_mode": fast_mode, "voice_profile": voice_profile},
+            timeout=90,
+        )
     except Exception as error:
         raise RuntimeError("Voice server is offline. Start Gwen TTS and try again.") from error
     if response.status_code != 200:
@@ -127,13 +140,13 @@ def request_tts_audio(text: str, fast_mode: bool = False, *, post=None) -> str:
     return audio_file
 
 
-def request_gwen_control(path: str, *, post=None) -> dict[str, bool]:
+def request_gwen_control(path: str, payload: dict[str, str] | None = None, *, post=None) -> dict[str, bool]:
     if post is None:
         import requests
 
         post = requests.post
     try:
-        response = post(f"{GWEN_TTS_BASE_URL}{path}", timeout=30)
+        response = post(f"{GWEN_TTS_BASE_URL}{path}", json=payload or {}, timeout=30)
     except Exception as error:
         raise RuntimeError("Voice server is offline. Start Gwen TTS and try again.") from error
     if response.status_code != 200:
@@ -311,7 +324,13 @@ class RuApp:
         self.api_url_var = tk.StringVar(value=saved_settings.get("api_url", "https://api.openai.com/v1"))
         self.api_model_var = tk.StringVar(value=saved_settings.get("api_model", "gpt-4o-mini"))
         self.backend_var = tk.StringVar(value=saved_settings.get("backend", "GGUF (default)"))
-        self.tts_engine_var = tk.StringVar(value=saved_settings.get("tts_engine", "Gwen TTS (Voice Clone)"))
+        saved_profile = saved_settings.get("voice_profile", DEFAULT_VOICE_PROFILE)
+        if saved_profile not in VOICE_PROFILE_OPTIONS.values():
+            saved_profile = DEFAULT_VOICE_PROFILE
+        saved_profile_label = next(
+            label for label, profile in VOICE_PROFILE_OPTIONS.items() if profile == saved_profile
+        )
+        self.voice_profile_var = tk.StringVar(value=saved_profile_label)
 
         def _save_settings(*args) -> None:
             settings = {
@@ -319,7 +338,7 @@ class RuApp:
                 "api_url": self.api_url_var.get(),
                 "api_model": self.api_model_var.get(),
                 "backend": self.backend_var.get(),
-                "tts_engine": self.tts_engine_var.get(),
+                "voice_profile": self._selected_voice_profile(),
             }
             try:
                 GUI_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -332,7 +351,7 @@ class RuApp:
         self.api_url_var.trace_add("write", _save_settings)
         self.api_model_var.trace_add("write", _save_settings)
         self.backend_var.trace_add("write", _save_settings)
-        self.tts_engine_var.trace_add("write", _save_settings)
+        self.voice_profile_var.trace_add("write", _save_settings)
         
         def _on_backend_changed(*args):
             backend = self.backend_var.get()
@@ -354,7 +373,6 @@ class RuApp:
         self.tts_enabled_var = tk.BooleanVar(value=True)
         self.remember_conversations_var = tk.BooleanVar(value=True)
         self.allow_web_search_var = tk.BooleanVar(value=False)
-        self.voice_name = "vi-VN-HoaiMyNeural" # Vietnamese female voice from edge-tts
         pygame.mixer.init()
         self.vts_manager = VTSManager()
         threading.Thread(target=self.vts_manager.run, daemon=True).start()
@@ -555,11 +573,11 @@ class RuApp:
         self.model_combo = ttk.Combobox(backend, textvariable=self.api_model_var, values=self.api_models_list, width=22)
         self.model_combo.grid(row=2, column=3, pady=4)
         
-        ttk.Label(backend, text="TTS Engine").grid(row=1, column=0, padx=(0, 6))
+        ttk.Label(backend, text="Voice").grid(row=1, column=0, padx=(0, 6))
         ttk.Combobox(
             backend,
-            textvariable=self.tts_engine_var,
-            values=("Gwen TTS (Voice Clone)", "Edge TTS (Siêu Tốc)"),
+            textvariable=self.voice_profile_var,
+            values=tuple(VOICE_PROFILE_OPTIONS),
             state="readonly",
             width=24,
         ).grid(row=1, column=1)
@@ -768,6 +786,10 @@ class RuApp:
         return "break"
 
 
+    def _selected_voice_profile(self) -> str:
+        return VOICE_PROFILE_OPTIONS.get(self.voice_profile_var.get(), DEFAULT_VOICE_PROFILE)
+
+
     def _start_generation(self) -> None:
         if self.worker is not None and self.worker.is_alive():
             return
@@ -830,16 +852,14 @@ class RuApp:
 
             with self.gpu_transition_lock:
                 is_cloud = backend in (BACKEND_OPENAI, BACKEND_OPENCODE)
-                uses_gwen = (
-                    is_cloud
-                    and self.tts_enabled_var.get()
-                    and self.tts_engine_var.get() == "Gwen TTS (Voice Clone)"
-                )
+                uses_gwen = is_cloud and self.tts_enabled_var.get()
                 if uses_gwen:
                     self.runner.release_gpu()
                     self.root.after(0, lambda: self.status_var.set("Warming Gwen voice..."))
                     ensure_gwen_tts_server()
-                    request_gwen_control("/warmup")
+                    request_gwen_control(
+                        "/warmup", {"voice_profile": self._selected_voice_profile()}
+                    )
                 elif not is_cloud and gwen_tts_server_available():
                     request_gwen_control("/release")
                 self.runner.select_backend(backend)
@@ -931,52 +951,28 @@ class RuApp:
 
             self.root.after(0, lambda: self.status_var.set("Preparing voice..."))
             
-            tts_engine = self.tts_engine_var.get()
-            if tts_engine == "Edge TTS (Siêu Tốc)":
-                import asyncio
-                import edge_tts
-                audio_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
-                async def _edge_tts_task():
-                    communicate = edge_tts.Communicate(clean_text, self.voice_name)
-                    await communicate.save(audio_file)
-                asyncio.run(_edge_tts_task())
-                
-                sound = pygame.mixer.Sound(audio_file)
-                duration = sound.get_length()
-                sound.play()
-                self.root.after(0, lambda: self.status_var.set("Ru is speaking"))
-    
-                def wait_and_clean() -> None:
-                    if hasattr(self, "vts_manager"):
-                        self.vts_manager.is_speaking = True
-                    pygame.time.wait(int(duration * 1000))
-                    if hasattr(self, "vts_manager"):
-                        self.vts_manager.is_speaking = False
-                    try:
-                        os.remove(audio_file)
-                    except OSError:
-                        pass
-                    if getattr(self, "voice_mode_active", False):
-                        self.root.after(500, self._toggle_recording)
-    
-                threading.Thread(target=wait_and_clean, daemon=True).start()
-                return
-
             # Gwen replies are split so playback can begin before the full reply is synthesized.
-            backend_label = self.backend_var.get()
-            is_cloud = backend_label in ("OpenAI API", "OpenCode Zen API")
-
             with self.gpu_transition_lock:
                 self.runner.release_gpu()
                 ensure_gwen_tts_server()
-            self._play_gwen_chunks(split_tts_chunks(clean_text), fast_mode=is_cloud)
+            self._play_gwen_chunks(
+                split_tts_chunks(clean_text),
+                fast_mode=True,
+                voice_profile=self._selected_voice_profile(),
+            )
 
         except Exception as error:
             self.root.after(0, lambda e=str(error): self.status_var.set(f"Voice unavailable: {e}"))
             if getattr(self, "voice_mode_active", False):
                 self.root.after(1000, self._toggle_recording)
 
-    def _play_gwen_chunks(self, chunks: list[str], *, fast_mode: bool) -> None:
+    def _play_gwen_chunks(
+        self,
+        chunks: list[str],
+        *,
+        fast_mode: bool,
+        voice_profile: str = DEFAULT_VOICE_PROFILE,
+    ) -> None:
         if not chunks:
             return
 
@@ -1006,7 +1002,9 @@ class RuApp:
                 for chunk in chunks:
                     if stop_requested.is_set() or generation != self._speech_generation:
                         return
-                    audio_file = request_tts_audio(chunk, fast_mode=fast_mode)
+                    audio_file = request_tts_audio(
+                        chunk, fast_mode=fast_mode, voice_profile=voice_profile
+                    )
                     if not publish(audio_file):
                         remove_audio_file(audio_file)
                         return

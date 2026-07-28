@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from mini_gpt import gui
@@ -277,6 +279,38 @@ def test_request_tts_audio_uses_gwen_endpoint(tmp_path):
 
     assert request_tts_audio("hello", post=post) == str(audio)
     assert requested_urls == [gui.GWEN_TTS_SERVER_URL]
+
+
+def test_request_tts_audio_sends_selected_voice_profile(tmp_path) -> None:
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"RIFF")
+    captured: dict[str, object] = {}
+
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"audio_path": str(audio)}
+
+    assert gui.request_tts_audio(
+        "Xin chao",
+        voice_profile="yen_nhi",
+        post=lambda _url, **kwargs: captured.update(kwargs) or Response(),
+    ) == str(audio)
+    assert captured["json"] == {
+        "text": "Xin chao",
+        "fast_mode": False,
+        "voice_profile": "yen_nhi",
+    }
+
+
+def test_gui_offers_only_gwen_voice_profiles() -> None:
+    assert gui.VOICE_PROFILE_OPTIONS == {
+        "Ru (Tsukuyomi)": "ru",
+        "Yến Nhi (Gwen)": "yen_nhi",
+    }
+    assert "Edge TTS" not in Path(gui.__file__).read_text(encoding="utf-8")
 
 
 def test_request_tts_audio_requires_a_playable_file(tmp_path):

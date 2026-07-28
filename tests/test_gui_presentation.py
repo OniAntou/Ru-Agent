@@ -15,6 +15,18 @@ def test_generation_status_describes_cache_and_elapsed_time():
     )
 
 
+def test_cloud_status_includes_latency_breakdown():
+    assert (
+        format_generation_status(
+            cache_hit=True,
+            seconds=2.4,
+            api_seconds=2.1,
+            gwen_warm_seconds=0.2,
+        )
+        == "Ru replied in 2.4 s | API 2.1 s | Gwen warm 0.2 s"
+    )
+
+
 def test_conversation_segments_place_user_message_before_ru_reply():
     assert conversation_display_segments("Anh khoe khong?", "Em khoe.") == (
         ("You\n", "user_label"),

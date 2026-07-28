@@ -7,6 +7,7 @@ from mini_gpt.vts_actions import VtsActions
 from mini_gpt.vts_catalog import build_catalog
 from mini_gpt.gui import (
     BACKEND_GGUF,
+    BACKEND_OPENCODE,
     BACKEND_TRANSFORMERS,
     MODEL_NAME,
     ModelRunner,
@@ -79,6 +80,31 @@ def test_model_runner_uses_gguf_only_when_selected():
     runner.gguf_runtime = type("Runtime", (), {"generate": lambda *_args: "GGUF reply"})()
 
     assert runner.generate_reply("hi", 32, 0.7, 20) == "GGUF reply"
+
+
+def test_model_runner_reports_each_opencode_completion_timing():
+    received: list[float] = []
+
+    class Runtime:
+        def generate(self, _messages, *_args, on_complete_timing=None):
+            assert on_complete_timing is not None
+            on_complete_timing(1.25)
+            on_complete_timing(0.75)
+            return "OpenCode reply"
+
+    runner = ModelRunner()
+    runner.backend = BACKEND_OPENCODE
+    runner.openai_runtime = Runtime()
+
+    assert runner.generate_reply(
+        "hi", 32, 0.7, 20, on_complete_timing=received.append
+    ) == "OpenCode reply"
+    assert received == [1.25, 0.75]
+
+
+def test_backend_labels_offer_opencode_but_not_openai() -> None:
+    assert "OpenCode Zen API" in gui.BACKEND_LABELS
+    assert "OpenAI API" not in gui.BACKEND_LABELS
 
 
 def test_model_runner_adds_current_vtube_catalog_to_private_system_instruction():
@@ -155,7 +181,7 @@ def test_generation_finished_hides_vts_metadata_before_every_output(monkeypatch)
             ),
         },
     )()
-    app._play_tts = spoken.append
+    app._play_tts = lambda text, *_args: spoken.append(text)
     catalog = build_catalog(
         model_id="model-a",
         model_name="Model A",
@@ -373,3 +399,29 @@ def test_play_gwen_chunks_requests_audio_in_order(monkeypatch, tmp_path) -> None
 
     assert requested == ["Cau dau.", "Cau sau."]
     assert app.vts_manager.is_speaking is False
+
+
+def test_play_gwen_chunks_reports_first_wav_timing(monkeypatch, tmp_path) -> None:
+    app = object.__new__(gui.RuApp)
+    app._speech_generation = 1
+    app.root = type("Root", (), {"after": lambda _self, _delay, callback: callback()})()
+    app.status_var = type("Status", (), {"set": lambda _self, _text: None})()
+    app.vts_manager = type("Vts", (), {"is_speaking": False})()
+    ticks = iter((20.0, 20.8))
+    reported: list[float] = []
+
+    monkeypatch.setattr(gui, "perf_counter", ticks.__next__)
+    monkeypatch.setattr(
+        gui,
+        "request_tts_audio",
+        lambda *_args, **_kwargs: str(tmp_path / "voice.wav"),
+    )
+    monkeypatch.setattr(gui, "play_wav_blocking", lambda *_args, **_kwargs: None)
+
+    app._play_gwen_chunks(
+        ["Cau dau."],
+        fast_mode=True,
+        on_first_audio_timing=reported.append,
+    )
+
+    assert reported == pytest.approx([0.8])

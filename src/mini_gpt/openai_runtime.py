@@ -8,11 +8,18 @@ from urllib.request import Request, urlopen
 
 from ._text_utils import normalize_text
 
+OPENCODE_BASE_URL = "https://opencode.ai/zen/v1"
+
 
 class OpenAIRuntime:
     """Uses the OpenCode OpenAI-compatible API to generate responses."""
 
-    def __init__(self, api_key: str, base_url: str = "https://api.openai.com/v1", model_name: str = "gpt-4o-mini") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = OPENCODE_BASE_URL,
+        model_name: str = "deepseek-v4-flash-free",
+    ) -> None:
         self.api_key = api_key
         self.model_name = model_name
         self.base_url = base_url.rstrip('/')
@@ -62,7 +69,7 @@ class OpenAIRuntime:
         if not messages or messages[-1][0] != "user":
             raise ValueError("messages must end with a user turn")
         if not self.api_key:
-            raise ValueError("API Key is missing for OpenAI API. Please set it in Settings.")
+            raise ValueError("OpenCode API Key is missing. Please set it in Settings.")
         
         body = {
             "model": self.model_name,
@@ -85,9 +92,9 @@ class OpenAIRuntime:
                 response_body = response.read().decode("utf-8")
         except HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"OpenAI HTTP {error.code}: {detail}") from error
+            raise RuntimeError(f"OpenCode HTTP {error.code}: {detail}") from error
         except URLError as error:
-            raise RuntimeError(f"OpenAI is not reachable: {error.reason}") from error
+            raise RuntimeError(f"OpenCode is not reachable: {error.reason}") from error
 
         if on_complete_timing is not None:
             on_complete_timing(max(0.0, perf_counter() - started))
@@ -95,11 +102,11 @@ class OpenAIRuntime:
         try:
             decoded = json.loads(response_body)
         except json.JSONDecodeError as error:
-            raise RuntimeError("OpenAI returned invalid JSON") from error
+            raise RuntimeError("OpenCode returned invalid JSON") from error
             
         choices = decoded.get("choices", [])
         content = choices[0].get("message", {}).get("content") if choices else None
         
         if not isinstance(content, str) or not content.strip():
-            raise RuntimeError("OpenAI returned an empty chat completion")
+            raise RuntimeError("OpenCode returned an empty chat completion")
         return normalize_text(content)

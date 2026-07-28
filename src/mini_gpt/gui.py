@@ -54,16 +54,14 @@ DEFAULT_VOICE_PROFILE = "ru"
 DEFAULT_MAX_NEW_TOKENS = "128"
 BACKEND_TRANSFORMERS = "transformers"
 BACKEND_GGUF = "gguf"
-BACKEND_OPENAI = "openai"
 BACKEND_OPENCODE = "opencode"
 BACKEND_LABELS = {
     "GGUF (default)": BACKEND_GGUF,
     "Transformers (fallback)": BACKEND_TRANSFORMERS,
-    "OpenAI API": BACKEND_OPENAI,
     "OpenCode Zen API": BACKEND_OPENCODE,
 }
 
-from .openai_runtime import OpenAIRuntime
+from .openai_runtime import OPENCODE_BASE_URL, OpenAIRuntime
 
 
 def clean_tts_text(text: str) -> str:
@@ -197,17 +195,23 @@ class ModelRunner:
         self.openai_runtime: OpenAIRuntime | None = None
 
     def select_backend(self, backend: str) -> None:
-        if backend not in (BACKEND_TRANSFORMERS, BACKEND_GGUF, BACKEND_OPENAI, BACKEND_OPENCODE):
+        if backend not in (BACKEND_TRANSFORMERS, BACKEND_GGUF, BACKEND_OPENCODE):
             raise ValueError(f"unsupported backend: {backend}")
         self.backend = backend
 
-    def load(self, checkpoint_path: str | Path, api_key: str = "", api_url: str = "https://api.openai.com/v1", model_name: str = "gpt-4o-mini") -> str:
+    def load(
+        self,
+        checkpoint_path: str | Path,
+        api_key: str = "",
+        model_name: str = "deepseek-v4-flash-free",
+    ) -> str:
         if self.backend == BACKEND_OPENCODE:
-            self.openai_runtime = OpenAIRuntime(api_key, base_url="https://opencode.ai/zen/v1", model_name=model_name)
+            self.openai_runtime = OpenAIRuntime(
+                api_key,
+                base_url=OPENCODE_BASE_URL,
+                model_name=model_name,
+            )
             return "Ready (OpenCode Zen API)"
-        if self.backend == BACKEND_OPENAI:
-            self.openai_runtime = OpenAIRuntime(api_key, base_url=api_url, model_name=model_name)
-            return "Ready (External API)"
         if self.backend == BACKEND_GGUF:
             self.gguf_runtime.validate_assets()
             self.checkpoint_path = Path(checkpoint_path)
@@ -226,7 +230,7 @@ class ModelRunner:
         return f"Ready (Llama 3.1 8B QLoRA) | {adapter_dir.name}"
 
     def is_cached(self, checkpoint_path: str | Path) -> bool:
-        if self.backend in (BACKEND_OPENAI, BACKEND_OPENCODE):
+        if self.backend == BACKEND_OPENCODE:
             return True
         if self.backend == BACKEND_GGUF:
             return self.gguf_runtime.is_cached()
@@ -242,9 +246,17 @@ class ModelRunner:
         max_new_tokens: int,
         temperature: float,
         top_k: int,
+        *,
+        on_complete_timing=None,
     ) -> str:
-        if self.backend in (BACKEND_OPENAI, BACKEND_OPENCODE) and self.openai_runtime:
-            return self.openai_runtime.generate(messages, max_new_tokens, temperature, top_k)
+        if self.backend == BACKEND_OPENCODE and self.openai_runtime:
+            return self.openai_runtime.generate(
+                messages,
+                max_new_tokens,
+                temperature,
+                top_k,
+                on_complete_timing=on_complete_timing,
+            )
         if self.backend == BACKEND_GGUF:
             return self.gguf_runtime.generate(messages, max_new_tokens, temperature, top_k)
         return generate_llama_response_hf(
@@ -267,6 +279,8 @@ class ModelRunner:
         memory_context: str | None = None,
         allow_web_search: bool = False,
         vts_instruction: str = "",
+        *,
+        on_complete_timing=None,
     ) -> str:
         messages = build_conversation_messages(
             RU_SYSTEM_PROMPT + VTS_ACTION_INSTRUCTION + vts_instruction,
@@ -275,7 +289,13 @@ class ModelRunner:
             memory_context=memory_context,
         )
 
-        response = self._generate(tuple(messages), max_new_tokens, temperature, top_k)
+        response = self._generate(
+            tuple(messages),
+            max_new_tokens,
+            temperature,
+            top_k,
+            on_complete_timing=on_complete_timing,
+        )
 
         search_match = re.search(r"\[SEARCH:\s*(.*?)\]", response)
         if allow_web_search and search_match:
@@ -288,7 +308,13 @@ class ModelRunner:
                 ),
             )
 
-            response = self._generate(tuple(messages), max_new_tokens, temperature, top_k)
+            response = self._generate(
+                tuple(messages),
+                max_new_tokens,
+                temperature,
+                top_k,
+                on_complete_timing=on_complete_timing,
+            )
         return response
 
 
@@ -320,10 +346,16 @@ class RuApp:
             except Exception:
                 pass
                 
+        saved_backend = saved_settings.get("backend", "GGUF (default)")
+        if saved_backend == "OpenAI API":
+            saved_backend = "OpenCode Zen API"
+        if saved_backend not in BACKEND_LABELS:
+            saved_backend = "GGUF (default)"
         self.api_key_var = tk.StringVar(value=saved_settings.get("api_key", ""))
-        self.api_url_var = tk.StringVar(value=saved_settings.get("api_url", "https://api.openai.com/v1"))
-        self.api_model_var = tk.StringVar(value=saved_settings.get("api_model", "gpt-4o-mini"))
-        self.backend_var = tk.StringVar(value=saved_settings.get("backend", "GGUF (default)"))
+        self.api_model_var = tk.StringVar(
+            value=saved_settings.get("api_model", "deepseek-v4-flash-free")
+        )
+        self.backend_var = tk.StringVar(value=saved_backend)
         saved_profile = saved_settings.get("voice_profile", DEFAULT_VOICE_PROFILE)
         if saved_profile not in VOICE_PROFILE_OPTIONS.values():
             saved_profile = DEFAULT_VOICE_PROFILE
@@ -335,7 +367,6 @@ class RuApp:
         def _save_settings(*args) -> None:
             settings = {
                 "api_key": self.api_key_var.get(),
-                "api_url": self.api_url_var.get(),
                 "api_model": self.api_model_var.get(),
                 "backend": self.backend_var.get(),
                 "voice_profile": self._selected_voice_profile(),
@@ -348,20 +379,10 @@ class RuApp:
                 pass
 
         self.api_key_var.trace_add("write", _save_settings)
-        self.api_url_var.trace_add("write", _save_settings)
         self.api_model_var.trace_add("write", _save_settings)
         self.backend_var.trace_add("write", _save_settings)
         self.voice_profile_var.trace_add("write", _save_settings)
-        
-        def _on_backend_changed(*args):
-            backend = self.backend_var.get()
-            if backend == "OpenCode Zen API":
-                self.api_url_var.set("https://opencode.ai/zen/v1")
-            elif backend == "OpenAI API":
-                if "opencode.ai" in self.api_url_var.get():
-                    self.api_url_var.set("https://api.openai.com/v1")
-                    
-        self.backend_var.trace_add("write", _on_backend_changed)
+        _save_settings()
         
         self.max_tokens_var = tk.StringVar(value=DEFAULT_MAX_NEW_TOKENS)
         self.temperature_var = tk.StringVar(value="0.7")
@@ -369,7 +390,7 @@ class RuApp:
         self.status_var = tk.StringVar(
             value=f"CUDA available: {'yes' if torch.cuda.is_available() else 'no'} | Ready"
         )
-        self.api_models_list: list[str] = ["gpt-4o-mini"]
+        self.api_models_list: list[str] = [self.api_model_var.get()]
         self.tts_enabled_var = tk.BooleanVar(value=True)
         self.remember_conversations_var = tk.BooleanVar(value=True)
         self.allow_web_search_var = tk.BooleanVar(value=False)
@@ -561,17 +582,12 @@ class RuApp:
             state="readonly",
             width=24,
         ).grid(row=0, column=1)
-        ttk.Label(backend, text="API Key").grid(row=0, column=2, padx=(12, 6))
+        ttk.Label(backend, text="OpenCode API Key").grid(row=0, column=2, padx=(12, 6))
         ttk.Entry(backend, textvariable=self.api_key_var, show="*", width=24).grid(row=0, column=3)
-        
-        ttk.Label(backend, text="API URL").grid(row=1, column=2, padx=(12, 6), pady=4)
-        ttk.Entry(backend, textvariable=self.api_url_var, width=24).grid(row=1, column=3, pady=4)
 
-        ttk.Label(backend, text="API Model").grid(row=2, column=2, padx=(12, 6), pady=4)
-        
-        self.api_models_list = ["gpt-4o-mini", "gpt-4o", "opencode-zen-2", "opencode-zen-1"]
+        ttk.Label(backend, text="OpenCode model").grid(row=1, column=2, padx=(12, 6), pady=4)
         self.model_combo = ttk.Combobox(backend, textvariable=self.api_model_var, values=self.api_models_list, width=22)
-        self.model_combo.grid(row=2, column=3, pady=4)
+        self.model_combo.grid(row=1, column=3, pady=4)
         
         ttk.Label(backend, text="Voice").grid(row=1, column=0, padx=(0, 6))
         ttk.Combobox(
@@ -582,7 +598,7 @@ class RuApp:
             width=24,
         ).grid(row=1, column=1)
         
-        ttk.Button(backend, text="Fetch", command=self._fetch_models, width=6).grid(row=2, column=4, padx=(4, 0))
+        ttk.Button(backend, text="Fetch", command=self._fetch_models, width=6).grid(row=1, column=4, padx=(4, 0))
 
         controls = ttk.Frame(model)
         controls.grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
@@ -607,14 +623,8 @@ class RuApp:
 
     def _fetch_models(self) -> None:
         api_key = self.api_key_var.get().strip()
-        backend = self.backend_var.get()
-        api_url = self.api_url_var.get().strip()
-        
-        if BACKEND_LABELS.get(backend) == BACKEND_OPENCODE:
-            api_url = "https://opencode.ai/zen/v1"
-            
         if not api_key:
-            self.status_var.set("Please enter API Key first")
+            self.status_var.set("Please enter OpenCode API Key first")
             return
             
         self.status_var.set("Fetching models...")
@@ -622,7 +632,7 @@ class RuApp:
         
         def fetch_task():
             try:
-                models = OpenAIRuntime.fetch_models(api_key, api_url)
+                models = OpenAIRuntime.fetch_models(api_key, OPENCODE_BASE_URL)
                 self.root.after(0, lambda: self._on_fetch_models_success(models))
             except Exception as e:
                 self.root.after(0, lambda e=e: self.status_var.set(f"Fetch models error: {e}"))
@@ -850,16 +860,25 @@ class RuApp:
                     memory_context = "\n---\n".join(past_memories)
             vts_catalog = self.vts_manager.current_catalog_sync() if hasattr(self, "vts_manager") else None
 
+            api_seconds = 0.0
+            gwen_warm_seconds: float | None = None
+
+            def record_api_timing(seconds: float) -> None:
+                nonlocal api_seconds
+                api_seconds += seconds
+
             with self.gpu_transition_lock:
-                is_cloud = backend in (BACKEND_OPENAI, BACKEND_OPENCODE)
+                is_cloud = backend == BACKEND_OPENCODE
                 uses_gwen = is_cloud and self.tts_enabled_var.get()
                 if uses_gwen:
                     self.runner.release_gpu()
                     self.root.after(0, lambda: self.status_var.set("Warming Gwen voice..."))
                     ensure_gwen_tts_server()
+                    gwen_warm_started = perf_counter()
                     request_gwen_control(
                         "/warmup", {"voice_profile": self._selected_voice_profile()}
                     )
+                    gwen_warm_seconds = max(0.0, perf_counter() - gwen_warm_started)
                 elif not is_cloud and gwen_tts_server_available():
                     request_gwen_control("/release")
                 self.runner.select_backend(backend)
@@ -871,7 +890,11 @@ class RuApp:
                     ),
                 )
                 started = perf_counter()
-                self.runner.load(checkpoint, self.api_key_var.get(), self.api_url_var.get(), model_name=self.api_model_var.get())
+                self.runner.load(
+                    checkpoint,
+                    self.api_key_var.get(),
+                    model_name=self.api_model_var.get(),
+                )
                 result = self.runner.generate_reply(
                     prompt,
                     *settings,
@@ -879,17 +902,20 @@ class RuApp:
                     memory_context=memory_context,
                     allow_web_search=allow_web_search,
                     vts_instruction=catalog_instruction(vts_catalog),
+                    on_complete_timing=record_api_timing if is_cloud else None,
                 )
                 elapsed = perf_counter() - started
             self.root.after(
                 0,
-                lambda result=result, cache_hit=cache_hit, elapsed=elapsed, prompt=prompt, remember_conversations=remember_conversations, vts_catalog=vts_catalog: self._generation_finished(
+                lambda result=result, cache_hit=cache_hit, elapsed=elapsed, prompt=prompt, remember_conversations=remember_conversations, vts_catalog=vts_catalog, api_seconds=api_seconds, gwen_warm_seconds=gwen_warm_seconds: self._generation_finished(
                     result,
                     cache_hit,
                     elapsed,
                     prompt,
                     remember_conversations,
                     vts_catalog,
+                    api_seconds=api_seconds if is_cloud else None,
+                    gwen_warm_seconds=gwen_warm_seconds,
                 ),
             )
         except Exception as error:
@@ -907,6 +933,9 @@ class RuApp:
         original_prompt: str,
         remember_conversations: bool,
         vts_catalog: VtsCatalog | None = None,
+        *,
+        api_seconds: float | None = None,
+        gwen_warm_seconds: float | None = None,
     ) -> None:
         if not result.strip():
             self._generation_failed("model returned an empty response")
@@ -929,7 +958,13 @@ class RuApp:
         ):
             self.memory_store.add_memory(f"User: {original_prompt}\nAssistant: {clean_result}")
 
-        self.status_var.set(format_generation_status(cache_hit=cache_hit, seconds=elapsed))
+        status_kwargs = {
+            "cache_hit": cache_hit,
+            "seconds": elapsed,
+            "api_seconds": api_seconds,
+            "gwen_warm_seconds": gwen_warm_seconds,
+        }
+        self.status_var.set(format_generation_status(**status_kwargs))
         self._set_controls_enabled(True)
         self._update_mark_button()
         self.prompt_text.delete("1.0", tk.END)
@@ -941,9 +976,24 @@ class RuApp:
             self.vts_manager.trigger_actions_sync(vts_actions)
 
         if self.tts_enabled_var.get():
-            threading.Thread(target=self._play_tts, args=(clean_result,), daemon=True).start()
+            def update_first_voice(seconds: float) -> None:
+                self.root.after(
+                    0,
+                    lambda: self.status_var.set(
+                        format_generation_status(
+                            **status_kwargs,
+                            first_voice_seconds=seconds,
+                        )
+                    ),
+                )
 
-    def _play_tts(self, text: str) -> None:
+            threading.Thread(
+                target=self._play_tts,
+                args=(clean_result, update_first_voice),
+                daemon=True,
+            ).start()
+
+    def _play_tts(self, text: str, on_first_audio_timing=None) -> None:
         try:
             clean_text = clean_tts_text(text)
             if not clean_text:
@@ -959,6 +1009,7 @@ class RuApp:
                 split_tts_chunks(clean_text),
                 fast_mode=True,
                 voice_profile=self._selected_voice_profile(),
+                on_first_audio_timing=on_first_audio_timing,
             )
 
         except Exception as error:
@@ -972,6 +1023,7 @@ class RuApp:
         *,
         fast_mode: bool,
         voice_profile: str = DEFAULT_VOICE_PROFILE,
+        on_first_audio_timing=None,
     ) -> None:
         if not chunks:
             return
@@ -980,6 +1032,7 @@ class RuApp:
         files: queue.Queue[object] = queue.Queue(maxsize=1)
         stop_requested = threading.Event()
         end_of_queue = object()
+        first_audio_reported = False
 
         def remove_audio_file(audio_file: object) -> None:
             if isinstance(audio_file, str):
@@ -998,13 +1051,19 @@ class RuApp:
             return False
 
         def synthesize_chunks() -> None:
+            nonlocal first_audio_reported
             try:
                 for chunk in chunks:
                     if stop_requested.is_set() or generation != self._speech_generation:
                         return
+                    started = perf_counter()
                     audio_file = request_tts_audio(
                         chunk, fast_mode=fast_mode, voice_profile=voice_profile
                     )
+                    if not first_audio_reported:
+                        first_audio_reported = True
+                        if on_first_audio_timing is not None:
+                            on_first_audio_timing(max(0.0, perf_counter() - started))
                     if not publish(audio_file):
                         remove_audio_file(audio_file)
                         return
@@ -1031,7 +1090,6 @@ class RuApp:
                 if not isinstance(item, str):
                     continue
                 try:
-                    self.root.after(0, lambda: self.status_var.set("Ru is speaking"))
                     play_wav_blocking(item)
                 finally:
                     remove_audio_file(item)

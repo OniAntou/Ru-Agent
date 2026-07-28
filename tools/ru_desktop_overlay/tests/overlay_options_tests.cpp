@@ -1,4 +1,6 @@
 #include "overlay_options.h"
+#include "frame_pixels.h"
+#include "spout_overlay.h"
 #include "window_styles.h"
 
 #include <cassert>
@@ -16,5 +18,17 @@ int main() {
 
     assert((OverlayExStyle(false) & WS_EX_TRANSPARENT) == 0);
     assert((OverlayExStyle(true) & WS_EX_TRANSPARENT) != 0);
+
+    unsigned char pixel[] = {100, 200, 50, 128};
+    PremultiplyBgra(pixel, 1);
+    assert(pixel[0] == 50);
+    assert(pixel[1] == 100);
+    assert(pixel[2] == 25);
+    assert(pixel[3] == 128);
+
+    SpoutOverlay unavailable{"RuDesktopOverlayTestMissingSender"};
+    assert(unavailable.Start());
+    assert(!unavailable.Tick());
+    assert(unavailable.Status() == "Waiting for RuDesktopOverlayTestMissingSender");
     return 0;
 }

@@ -38,6 +38,22 @@ The local GUI deliberately uses eager Llama inference: do not re-enable
 `torch.compile` on this Python 3.13/CUDA setup, because it caused native
 `torch_cpu.dll` process crashes during chat generation.
 
+## OpenCode cloud replies
+
+**OpenCode Zen API** is Ru's only cloud backend. In **Settings**, provide an
+OpenCode API key and choose a model; the service URL is fixed by the app. A
+previously saved `OpenAI API` selection migrates to OpenCode once and its URL
+field is removed from saved settings.
+
+For an OpenCode reply with voice enabled, the status line can show `API`,
+`Gwen warm`, and `first voice` durations. `API` measures the existing request
+from send until its complete JSON response is read, so it is not first-token
+latency. `Gwen warm` measures the local warmup request, while `first voice`
+measures the first synthesis request until its WAV is ready; playback itself
+is not included. These measurements create no extra API requests. If an
+opted-in web-search reply performs two OpenCode completions, the displayed API
+duration is their total.
+
 ## GGUF runtime
 
 Ru v6 runs by default through local CUDA llama.cpp. It uses a separate Q4_K_M
@@ -128,7 +144,7 @@ Both choices use local Gwen, so they retain the same VTube Studio lip-sync
 behavior and GPU lifecycle.
 
 `g-group-ai-lab/gwen-tts-0.6B` runs in the separate `gwen_env` environment.
-For cloud backends only, Ru warms and retains its Gwen model plus the fixed
+For OpenCode cloud replies, Ru warms and retains its Gwen model plus the fixed
 voice-clone prompt on CUDA while the cloud model is composing the reply. The
 reply is then synthesized sentence-by-sentence through a one-WAV prefetch
 queue, so the first sentence can play before later sentences are ready. The

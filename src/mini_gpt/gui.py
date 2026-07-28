@@ -52,6 +52,7 @@ VOICE_PROFILE_OPTIONS = {
 }
 DEFAULT_VOICE_PROFILE = "ru"
 DEFAULT_MAX_NEW_TOKENS = "128"
+TTS_PREFETCH_WAVS = 2
 BACKEND_TRANSFORMERS = "transformers"
 BACKEND_GGUF = "gguf"
 BACKEND_OPENCODE = "opencode"
@@ -68,7 +69,8 @@ def clean_tts_text(text: str) -> str:
     clean_text = re.sub(r"\[SEARCH:.*?\]", "", text).strip()
     clean_text = re.sub(r"<thought>.*?</thought>", "", clean_text, flags=re.DOTALL)
     clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL)
-    return clean_text.replace("*", "").strip()
+    clean_text = re.sub(r"\s*\[\[VTS:[^\]]*\]\]", "", clean_text, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", clean_text.replace("*", "")).strip()
 
 
 def gwen_tts_server_available() -> bool:
@@ -1029,7 +1031,7 @@ class RuApp:
             return
 
         generation = self._speech_generation
-        files: queue.Queue[object] = queue.Queue(maxsize=1)
+        files: queue.Queue[object] = queue.Queue(maxsize=TTS_PREFETCH_WAVS)
         stop_requested = threading.Event()
         end_of_queue = object()
         first_audio_reported = False

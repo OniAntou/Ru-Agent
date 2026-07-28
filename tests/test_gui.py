@@ -152,6 +152,10 @@ def test_clean_tts_text_removes_internal_markup():
     assert clean_tts_text("*Hi* [SEARCH: weather] <think>hidden</think>") == "Hi"
 
 
+def test_clean_tts_text_removes_vts_metadata_when_parser_did_not():
+    assert clean_tts_text("Em vay tay. [[VTS:vts_04]] Nya~") == "Em vay tay. Nya~"
+
+
 def test_generation_finished_hides_vts_metadata_before_every_output(monkeypatch):
     app = object.__new__(gui.RuApp)
     app.session_turns = []
@@ -399,6 +403,10 @@ def test_play_gwen_chunks_requests_audio_in_order(monkeypatch, tmp_path) -> None
 
     assert requested == ["Cau dau.", "Cau sau."]
     assert app.vts_manager.is_speaking is False
+
+
+def test_gwen_speech_prefetches_two_wavs():
+    assert gui.TTS_PREFETCH_WAVS == 2
 
 
 def test_play_gwen_chunks_reports_first_wav_timing(monkeypatch, tmp_path) -> None:

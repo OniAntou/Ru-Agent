@@ -286,6 +286,9 @@ class StructuredMemoryStore:
         if self.index_path.is_file():
             self.index_path.unlink()
 
+    def close(self) -> None:
+        self._connection.close()
+
     def migrate_legacy_transcripts(self, legacy_texts_path: str | Path) -> dict[str, int]:
         legacy_path = Path(legacy_texts_path)
         if not legacy_path.is_file():

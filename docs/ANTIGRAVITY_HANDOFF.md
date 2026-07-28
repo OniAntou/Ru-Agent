@@ -15,10 +15,13 @@ Gemma, MiniGPT, and other non-Llama experiments were removed on 2026-07-26.
 - Launch: `& .\.venv\Scripts\python.exe -m mini_gpt.gui`
 - Tests: `& .\.venv\Scripts\python.exe -m pytest -q`
 
-Persistent memory is enabled by default and remains local; users can turn it
-off in the GUI. Online search is enabled by default and can be turned off in **Settings**;
-clearing saved memory affects only local memory artifacts. The GUI bounds
-retained chat history before inference.
+Persistent memory is enabled by default and remains local in
+`data\conversations\memory.db`; users can turn it off in the GUI. It extracts
+only explicit preferences and scoped project decisions, rejects credentials,
+URLs, sensitive data, and VTube control metadata, then provides bounded relevant
+facts to inference. Clearing saved memory affects only local memory artifacts
+and never trains the adapter. Verify this behavior with
+`& .\.venv\Scripts\python.exe scripts\evaluate_ru_memory.py`.
 
 ## v6.2 fresh dataset status
 

@@ -22,7 +22,6 @@ import pygame
 import torch
 
 from .chat import ChatTurn
-from .conversation_context import build_conversation_messages
 from .conversation_store import ConversationStore
 from .llama3_1_runtime import (
     clear_llama_generation_cache,
@@ -39,8 +38,10 @@ from .gui_presentation import (
     safe_streamed_response,
 )
 from .ru_style import RU_SYSTEM_PROMPT
-from .memory import MemoryStore
+from .memory import MemoryStore, StructuredMemoryStore
 from .search import perform_web_search
+from .reply_orchestration import execute_reply
+from .gpu_lifecycle import GpuLifecycle
 from .tts_chunks import split_tts_chunks
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -178,7 +179,6 @@ def default_paths() -> Path:
         PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6.2-fresh",
         PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6.1",
         PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6",
-        PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v5",
     )
     return next((path for path in candidates if path.exists()), candidates[-1])
 
@@ -300,44 +300,21 @@ class ModelRunner:
         on_stream_reset=None,
         on_complete_timing=None,
     ) -> str:
-        messages = build_conversation_messages(
-            RU_SYSTEM_PROMPT + VTS_ACTION_INSTRUCTION + vts_instruction,
-            prompt,
-            turns_history or (),
+        return execute_reply(
+            self._generate,
+            prompt=prompt,
+            system_instruction=RU_SYSTEM_PROMPT + VTS_ACTION_INSTRUCTION + vts_instruction,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_k=top_k,
+            turns_history=turns_history or (),
             memory_context=memory_context,
-        )
-
-        response = self._generate(
-            tuple(messages),
-            max_new_tokens,
-            temperature,
-            top_k,
+            allow_web_search=allow_web_search,
+            web_search=perform_web_search,
             on_stream_delta=on_stream_delta,
+            on_stream_reset=on_stream_reset,
             on_complete_timing=on_complete_timing,
         )
-
-        search_match = re.search(r"\[SEARCH:\s*(.*?)\]", response)
-        if allow_web_search and search_match:
-            query = search_match.group(1).strip()
-            search_results = perform_web_search(query)
-            messages = messages[:-1] + (
-                (
-                    "user",
-                    f"{prompt}\n\n[Untrusted web reference for '{query}':\n{search_results}]",
-                ),
-            )
-            if on_stream_reset is not None:
-                on_stream_reset()
-
-            response = self._generate(
-                tuple(messages),
-                max_new_tokens,
-                temperature,
-                top_k,
-                on_stream_delta=on_stream_delta,
-                on_complete_timing=on_complete_timing,
-            )
-        return response
 
 
 class RuApp:
@@ -345,7 +322,14 @@ class RuApp:
         self.root = root
         self.runner = ModelRunner()
         self.worker: threading.Thread | None = None
-        self.gpu_transition_lock = threading.Lock()
+        self.gpu_transition_lock = threading.RLock()
+        self.gpu_lifecycle = GpuLifecycle(
+            self.gpu_transition_lock,
+            release_local_runtime=self.runner.release_gpu,
+            voice_server_available=gwen_tts_server_available,
+            ensure_voice_server=ensure_gwen_tts_server,
+            request_voice_control=request_gwen_control,
+        )
         self._speech_generation = 0
         self._stream_response_start: str | None = None
         self._stream_raw_response = ""
@@ -358,7 +342,8 @@ class RuApp:
         )
         self.memory_index_path = PROJECT_ROOT / "data" / "conversations" / "memory_index.faiss"
         self.memory_texts_path = PROJECT_ROOT / "data" / "conversations" / "memory_texts.json"
-        self.memory_store: MemoryStore | None = None
+        self.memory_db_path = PROJECT_ROOT / "data" / "conversations" / "memory.db"
+        self.memory_store: StructuredMemoryStore | None = None
         checkpoint = default_paths()
         self.checkpoint_var = tk.StringVar(value=str(checkpoint))
         
@@ -766,9 +751,10 @@ class RuApp:
         state = "normal" if self.last_turn is not None and not self.last_turn_saved else "disabled"
         self.mark_button.configure(state=state)
 
-    def _memory_store_for_session(self) -> MemoryStore:
+    def _memory_store_for_session(self) -> StructuredMemoryStore:
         if self.memory_store is None:
-            self.memory_store = MemoryStore(self.memory_index_path, self.memory_texts_path)
+            self.memory_store = StructuredMemoryStore(self.memory_db_path, index_path=self.memory_index_path)
+            self.memory_store.migrate_legacy_transcripts(self.memory_texts_path)
         return self.memory_store
 
     def _clear_saved_memory(self) -> None:
@@ -779,7 +765,11 @@ class RuApp:
         ):
             return
         try:
+            if self.memory_store is not None:
+                self.memory_store.clear()
             MemoryStore.clear_artifacts(self.memory_index_path, self.memory_texts_path)
+            if self.memory_db_path.is_file():
+                self.memory_db_path.unlink()
         except OSError as error:
             self.status_var.set(f"Could not clear saved memory: {error}")
             return
@@ -925,9 +915,9 @@ class RuApp:
             memory_context = None
             memory_store = self._memory_store_for_session() if remember_conversations else None
             if memory_store:
-                past_memories = memory_store.search_memory(prompt, k=2)
-                if past_memories:
-                    memory_context = "\n---\n".join(past_memories)
+                memory_context = memory_store.render_context(
+                    memory_store.retrieve(prompt, limit=5, max_chars=1200), max_chars=1200
+                ) or None
             vts_catalog = self.vts_manager.current_catalog_sync() if hasattr(self, "vts_manager") else None
 
             api_seconds = 0.0
@@ -948,16 +938,14 @@ class RuApp:
             with self.gpu_transition_lock:
                 uses_gwen = is_cloud and self.tts_enabled_var.get()
                 if uses_gwen:
-                    self.runner.release_gpu()
-                    self.root.after(0, lambda: self.status_var.set("Warming Gwen voice..."))
-                    ensure_gwen_tts_server()
-                    gwen_warm_started = perf_counter()
-                    request_gwen_control(
-                        "/warmup", {"voice_profile": self._selected_voice_profile()}
+                    gwen_warm_seconds = self.gpu_lifecycle.warm_voice_for_cloud(
+                        self._selected_voice_profile(),
+                        lambda status: self.root.after(
+                            0, lambda status=status: self.status_var.set(status)
+                        ),
                     )
-                    gwen_warm_seconds = max(0.0, perf_counter() - gwen_warm_started)
-                elif not is_cloud and gwen_tts_server_available():
-                    request_gwen_control("/release")
+                elif not is_cloud:
+                    self.gpu_lifecycle.prepare_local_generation()
                 self.runner.select_backend(backend)
                 cache_hit = self.runner.is_cached(checkpoint)
                 self.root.after(
@@ -1042,7 +1030,7 @@ class RuApp:
             and self.remember_conversations_var.get()
             and self.memory_store
         ):
-            self.memory_store.add_memory(f"User: {original_prompt}\nAssistant: {clean_result}")
+            self.memory_store.remember_turn(original_prompt, clean_result)
 
         status_kwargs = {
             "cache_hit": cache_hit,
@@ -1088,9 +1076,7 @@ class RuApp:
             self.root.after(0, lambda: self.status_var.set("Preparing voice..."))
             
             # Gwen replies are split so playback can begin before the full reply is synthesized.
-            with self.gpu_transition_lock:
-                self.runner.release_gpu()
-                ensure_gwen_tts_server()
+            self.gpu_lifecycle.prepare_speech()
             self._play_gwen_chunks(
                 split_tts_chunks(clean_text),
                 fast_mode=True,

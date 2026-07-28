@@ -131,12 +131,15 @@ rows were copied. Training has not started. The bounded config is
 `configs\ru_llama3_1_v6_3.json` with 360 steps and a 9,600-second wall-clock
 cap.
 
-- Enable **Remember conversations** only to persist completed pairs locally in
-  `data\conversations\memory_*`.
+- Enable **Remember conversations** to let Ru automatically save safe, structured
+  local preferences and project decisions in `data\conversations\memory.db`.
+  Credentials, URLs, sensitive data, and VTube Studio metadata are rejected.
 - **Allow online search** is enabled by default to permit a model-directed
   DDGS lookup; disable it to keep replies fully offline.
-- **Clear saved memory** removes only those local memory files after
-  confirmation.
+- **Clear saved memory** removes only the local SQLite/vector memory artifacts
+  after confirmation; it never changes approved examples or model weights.
+- Evaluate the deterministic memory gate with
+  `& D:\LLM\.venv\Scripts\python.exe scripts\evaluate_ru_memory.py`.
 - **Mark last response useful** writes a reviewed example to
   `data\conversations\approved.jsonl`; it never changes model weights.
 

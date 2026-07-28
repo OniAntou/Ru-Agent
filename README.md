@@ -112,10 +112,20 @@ Dataset preparation does not start training or promote a v6.1 adapter.
 ## Experimental voice output
 
 The GUI automatically sends each completed reply to the local Gwen service on
-port 5051. Its reference is `tyc_talk.wav`, the official Tsukuyomi-chan sample,
-with the matching Japanese transcript in `reference_text.txt`. Do not change
-one without changing the other: Gwen voice cloning needs an exact transcript of
-the reference audio.
+port 5051. Its **Voice** selector provides two local Gwen clone profiles:
+`Ru (Tsukuyomi)`, using `tyc_talk.wav` with the matching transcript in
+`reference_text.txt`, and `Yến Nhi (Gwen)`, using the upstream Gwen reference
+audio and its exact transcript. Do not change a reference audio without its
+matching transcript.
+
+Set up Yến Nhi once before selecting it:
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\download_gwen_yen_nhi_voice.py
+```
+
+Both choices use local Gwen, so they retain the same VTube Studio lip-sync
+behavior and GPU lifecycle.
 
 `g-group-ai-lab/gwen-tts-0.6B` runs in the separate `gwen_env` environment.
 For cloud backends only, Ru warms and retains its Gwen model plus the fixed
@@ -145,7 +155,7 @@ from completed reply text to the first audible sentence, which also includes
 audio playback setup:
 
 ```powershell
-$body = @{ text = 'Em chao anh, em da san sang roi.'; fast_mode = $true } | ConvertTo-Json
+$body = @{ text = 'Em chao anh, em da san sang roi.'; fast_mode = $true; voice_profile = 'yen_nhi' } | ConvertTo-Json
 1..5 | ForEach-Object {
     Invoke-RestMethod http://127.0.0.1:5051/tts -Method Post -ContentType 'application/json' -Body $body
 }

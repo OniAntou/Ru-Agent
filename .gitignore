@@ -1,4 +1,6 @@
 .venv/
+.venv311/
+gwen_env/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -7,6 +9,12 @@ pip-cache/
 .hf/
 data/processed/
 data/conversations/
+data/gui_settings.json
+data/voices/
+data/gguf/
+data/gui_diagnose_*/
+data/gwen/
+data/v6_1_training/
 data/tokenizer.json
 data/raw/wikipedia_*.txt
 data/raw/wikipedia_manifest.json
@@ -17,4 +25,9 @@ vendor/gemma4-transformers/
 tools/llama.cpp/
 tools/llama.cpp-bin/
 tools/llama.cpp-bin*.zip
+tools/ru_desktop_overlay/out/
+VBCABLE_Setup/
+logs/
+vts_token.txt
+*.wav
 *.egg-info/

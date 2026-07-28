@@ -7,8 +7,11 @@ import pytest
 
 import mini_gpt.llama3_1_training as training
 from mini_gpt.llama3_1_training import (
+    LlamaTrainingConfig,
     PhysicalVramMonitor,
     read_nvidia_smi_memory_mib,
+    resolve_training_step_limit,
+    select_validation_rows,
     write_adapter_manifest,
 )
 
@@ -71,3 +74,40 @@ def test_adapter_manifest_records_continuation_source(tmp_path):
 
     assert manifest["adapter_dir"].endswith("adapter")
     assert manifest["source_adapter_dir"].endswith("ru-llama3.1-8b-instruct-v6")
+
+
+def test_training_step_limit_prefers_cli_then_configured_budget():
+    config = LlamaTrainingConfig(
+        base_model_id="test-base",
+        base_model_path="D:/LLM/models/test-base",
+        epochs=3,
+        max_steps=640,
+    )
+
+    assert resolve_training_step_limit(config, train_row_count=1680) == 640
+    assert resolve_training_step_limit(config, train_row_count=1680, cli_max_steps=32) == 32
+
+
+def test_training_step_limit_falls_back_to_full_epochs_and_rejects_nonpositive_budget():
+    config = LlamaTrainingConfig(
+        base_model_id="test-base",
+        base_model_path="D:/LLM/models/test-base",
+        epochs=3,
+    )
+
+    assert resolve_training_step_limit(config, train_row_count=1680) == 5040
+    with pytest.raises(ValueError, match="max_steps must be positive"):
+        resolve_training_step_limit(config, train_row_count=1680, cli_max_steps=0)
+
+
+def test_validation_sample_is_bounded_deterministic_and_keeps_source_order():
+    rows = list(range(360))
+
+    selected = select_validation_rows(rows, max_examples=32, seed=42)
+
+    assert len(selected) == 32
+    assert selected == select_validation_rows(rows, max_examples=32, seed=42)
+    assert selected == sorted(selected)
+    assert select_validation_rows(rows, max_examples=400, seed=42) == rows
+    with pytest.raises(ValueError, match="validation_max_examples must be positive"):
+        select_validation_rows(rows, max_examples=0, seed=42)

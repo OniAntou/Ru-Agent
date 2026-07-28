@@ -1,5 +1,10 @@
 # Ru automatic VTube Studio actions
 
+> **Superseded for runtime behavior:** The active implementation is specified
+> in `2026-07-28-ru-vtube-all-hotkey-control-design.md`. This document records
+> the original allowlist design and must not be used to infer the current set
+> of actions Ru may call.
+
 ## Goal
 
 Let Ru select a small, safe set of facial expressions and body movements that
@@ -45,6 +50,15 @@ action from this fixed vocabulary:
 No suffix means no animation. Invalid, repeated, or unknown actions are
 discarded rather than passed through to VTube Studio.
 
+### Direct user gesture requests
+
+The GUI also recognizes explicit Vietnamese commands for the same safe actions
+from the user's prompt. For example, `giơ tay`, `vẫy tay`, `vui lên`, and
+`dựng đuôi` dispatch their corresponding allowlisted action even if the model
+does not emit a suffix. An explicit user command takes precedence over an
+optional model-selected action in the same facial/body category. This protects
+the avatar-control experience from a text-only refusal learned by the adapter.
+
 ### Rendering and persistence boundary
 
 The GUI parses and removes the suffix before it creates a `ChatTurn`, writes
@@ -68,8 +82,9 @@ text reply, TTS, and remaining valid action continue normally.
 ## Data flow
 
 ```text
-Llama reply with optional [[VTS:...]] suffix
-  -> strict parser and allowlist
+User prompt -> explicit safe-command recognizer
+Llama reply with optional [[VTS:...]] suffix -> strict parser and allowlist
+  -> command action takes precedence over same-category model action
   -> clean reply -> transcript / TTS / memory / approved examples
   -> validated actions -> VTSManager -> selected VTube Studio hotkeys
 ```

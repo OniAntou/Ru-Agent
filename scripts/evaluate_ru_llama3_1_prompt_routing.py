@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Prompt-routing smoke evaluation for Ru local Llama 3.1 8B Instruct conversation quality")
     parser.add_argument(
         "--output",
-        default=str(PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-gguf" / "prompt_routing_smoke.json"),
+        default=str(PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6" / "prompt_routing_smoke.json"),
     )
     parser.add_argument("--max-peak-mib", type=positive_float, default=5500.0)
     return parser

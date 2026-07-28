@@ -10,10 +10,10 @@ single Live2D renderer, and does not change the current `VoiceVolume`,
 ## Decision
 
 Build a small project-local Windows receiver named `RuDesktopOverlay`. It
-receives VTube Studio's `VTubeStudioSpout` sender through Spout2 and presents
-the received alpha texture in a borderless Direct3D 11 window. The receiver,
-not VTube Studio's normal window, is made topmost and optionally mouse
-click-through.
+receives VTube Studio's `VTubeStudioSpout` sender through the supported
+SpoutLibrary API, then presents its alpha pixels in a borderless Win32 layered
+window. The receiver, not VTube Studio's normal window, is made topmost and
+optionally mouse click-through.
 
 This replaces the rejected direct-window color-key approach. VTube Studio's
 ordinary GPU-rendered window cannot be made transparent through an external
@@ -23,9 +23,9 @@ Spout2.
 ## Architecture
 
 `VTube Studio` produces the existing transparent Spout2 stream. The local
-receiver opens the sender named `VTubeStudioSpout`, copies its shared texture
-into a Direct3D 11 swap chain with alpha, and renders it in a transparent,
-always-on-top Win32 window.
+receiver opens the sender named `VTubeStudioSpout`, receives a BGRA frame with
+alpha through SpoutLibrary, and presents it with `UpdateLayeredWindow` in a
+transparent, always-on-top Win32 window.
 
 ```text
 VTube Studio model + Ru controls
@@ -58,14 +58,15 @@ LLM access. Closing it leaves VTube Studio and Ru unchanged.
 
 - Target: Windows desktop use over normal, windowed applications. Exclusive
   fullscreen games are explicitly out of scope for this first version.
-- Use the upstream Spout2 SDK's native receiver path and Direct3D 11 rather
-  than an outdated managed wrapper. The executable can be built and run from
-  the workspace without a separate overlay product or virtual-camera driver.
+- Use the upstream Spout2 SDK's native SpoutLibrary receiver path rather than
+  an outdated managed wrapper. It provides a supported CPU-frame fallback that
+  is appropriate for the initial ordinary-desktop scope, without a separate
+  overlay product or virtual-camera driver.
 - VTube Studio must have its Spout2 sender enabled and its Color Picker
   background configured for transparency in capture. The receiver validates
   the sender name rather than attempting to manipulate VTube Studio's window.
-- Preserve premultiplied alpha through the receive and render path; do not
-  color-key pixels. This avoids removing green details from an avatar.
+- Preserve alpha through the receive and layered-window path; do not color-key
+  pixels. This avoids removing green details from an avatar.
 
 ## Failure handling and cleanup
 

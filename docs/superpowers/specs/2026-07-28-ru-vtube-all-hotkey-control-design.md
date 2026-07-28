@@ -48,9 +48,9 @@ the returned `hotkeyID` and triggers those hotkeys; it resolves valid `expr_`
 codes to the returned `.exp3.json` file and activates those expressions.
 
 Expression activation uses a short fade-in and tracks only expressions that Ru
-activated. When a later action replaces an expression or a bounded timeout
-expires, Ru deactivates its own tracked expression. It never attempts to turn
-off expressions that were already active before the current action.
+activated. After a bounded timeout, Ru deactivates its own tracked expression.
+It never attempts to turn off expressions that were already active before the
+current action.
 
 No per-model mapping file is necessary: after an avatar switch, the next reply
 automatically receives the new model's complete hotkey catalog. A missing

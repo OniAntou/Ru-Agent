@@ -4,6 +4,7 @@ import json
 import random
 import subprocess
 import threading
+import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -176,6 +177,10 @@ def encode_llama_response(
         tokenize=True,
         add_generation_prompt=True,
     )
+    if hasattr(prompt_ids, "__contains__") and "input_ids" in prompt_ids:
+        prompt_ids = prompt_ids["input_ids"]
+    elif hasattr(prompt_ids, "ids"):
+        prompt_ids = prompt_ids.ids
     
     # Llama 3 specific: response ends with <|eot_id|>
     eot_token_id = tokenizer.convert_tokens_to_ids("<|eot_id|>")
@@ -201,10 +206,12 @@ class LlamaTrainingConfig:
     max_length: int = 512
     seed: int = 42
     epochs: int = 1
+    max_steps: int | None = None
     learning_rate: float = 5e-5
     batch_size: int = 1
     gradient_accumulation_steps: int = 8
     evaluation_steps: int = 4
+    validation_max_examples: int | None = None
     save_steps: int = 4
     logging_steps: int = 1
     lora_rank: int = 8
@@ -225,6 +232,36 @@ class LlamaTrainingConfig:
             payload["target_modules"] = tuple(payload["target_modules"])
         return cls(**payload)
 
+
+def resolve_training_step_limit(
+    config: LlamaTrainingConfig,
+    *,
+    train_row_count: int,
+    cli_max_steps: int | None = None,
+) -> int:
+    if train_row_count <= 0:
+        raise ValueError("training data cannot be empty")
+    limit = cli_max_steps if cli_max_steps is not None else config.max_steps
+    if limit is None:
+        limit = train_row_count * config.epochs
+    if limit <= 0:
+        raise ValueError("max_steps must be positive")
+    return limit
+
+
+def select_validation_rows(
+    rows: list[EncodedLlamaResponse],
+    *,
+    max_examples: int | None,
+    seed: int,
+) -> list[EncodedLlamaResponse]:
+    if max_examples is None or max_examples >= len(rows):
+        return rows
+    if max_examples <= 0:
+        raise ValueError("validation_max_examples must be positive")
+    selected_indexes = sorted(random.Random(seed).sample(range(len(rows)), max_examples))
+    return [rows[index] for index in selected_indexes]
+
 def write_adapter_manifest(
     adapter_dir: str | Path,
     *,
@@ -242,6 +279,9 @@ def write_adapter_manifest(
     physical_peak_mib: float | None = None,
     physical_cap_mib: float | None = None,
     physical_cap_passed: bool | None = None,
+    training_steps: int | None = None,
+    validation_examples: int | None = None,
+    elapsed_seconds: float | None = None,
 ) -> dict[str, object]:
     destination = Path(adapter_dir)
     manifest = {
@@ -260,6 +300,9 @@ def write_adapter_manifest(
         "seed": seed,
         "max_length": max_length,
         "optimizer_updates": optimizer_updates,
+        "training_steps": training_steps,
+        "validation_examples": validation_examples,
+        "elapsed_seconds": elapsed_seconds,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
     destination.mkdir(parents=True, exist_ok=True)
@@ -270,7 +313,7 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
     from hashlib import sha256
     import torch
     from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, modeling_utils
 
     if not torch.cuda.is_available():
         raise RuntimeError("QLoRA training requires CUDA")
@@ -289,7 +332,20 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
         tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids("<|finetune_right_pad_id|>") or tokenizer.eos_token_id
         
     quantization = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.float16)
-    model = AutoModelForCausalLM.from_pretrained(base_path, quantization_config=quantization, torch_dtype=torch.float16, device_map="cuda")
+    # Transformers 5 warms CUDA's allocator with a multi-gigabyte temporary
+    # buffer before loading. That preallocation OOMs on Ru's 6 GiB GPU even
+    # though the 4-bit model itself fits, so omit only that load-time shortcut.
+    allocator_warmup = modeling_utils.caching_allocator_warmup
+    modeling_utils.caching_allocator_warmup = lambda *args, **kwargs: None
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            base_path,
+            quantization_config=quantization,
+            torch_dtype=torch.float16,
+            device_map="cuda",
+        )
+    finally:
+        modeling_utils.caching_allocator_warmup = allocator_warmup
     
     model.config.use_cache = False
     
@@ -324,9 +380,29 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
     optimizer = torch.optim.AdamW((parameter for parameter in model.parameters() if parameter.requires_grad), lr=config.learning_rate)
     random.Random(config.seed).shuffle(train_rows)
     
-    limit = max_steps if max_steps is not None else len(train_rows) * config.epochs
-    if limit <= 0:
-        raise ValueError("max_steps must be positive")
+    limit = resolve_training_step_limit(
+        config,
+        train_row_count=len(train_rows),
+        cli_max_steps=max_steps,
+    )
+    if config.gradient_accumulation_steps <= 0:
+        raise ValueError("gradient_accumulation_steps must be positive")
+    if config.evaluation_steps <= 0:
+        raise ValueError("evaluation_steps must be positive")
+    if config.logging_steps <= 0:
+        raise ValueError("logging_steps must be positive")
+    validation_rows = select_validation_rows(
+        validation_rows,
+        max_examples=config.validation_max_examples,
+        seed=config.seed,
+    )
+    if not validation_rows:
+        raise ValueError("validation data cannot be empty")
+    print(
+        "[train] "
+        f"steps={limit} train_rows={len(train_rows)} "
+        f"validation_rows={len(validation_rows)}"
+    )
         
     def validation_loss() -> float:
         model.eval()
@@ -343,6 +419,7 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
     optimizer.zero_grad(set_to_none=True)
     best_loss = float("inf")
     optimizer_updates = 0
+    training_started = time.monotonic()
     monitor = (
         PhysicalVramMonitor(config.physical_vram_cap_mib, config.physical_vram_poll_seconds)
         if config.physical_vram_cap_mib is not None
@@ -363,8 +440,21 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
                 optimizer_updates += 1
+                if optimizer_updates % config.logging_steps == 0:
+                    elapsed = time.monotonic() - training_started
+                    print(
+                        "[train] "
+                        f"step={step + 1}/{limit} update={optimizer_updates} "
+                        f"loss={float(loss) * config.gradient_accumulation_steps:.4f} "
+                        f"elapsed_s={elapsed:.1f}"
+                    )
                 if optimizer_updates % config.evaluation_steps == 0 or step + 1 == limit:
                     candidate_loss = validation_loss()
+                    print(
+                        "[validation] "
+                        f"update={optimizer_updates} rows={len(validation_rows)} "
+                        f"loss={candidate_loss:.4f}"
+                    )
                     if monitor is not None and monitor.exceeded:
                         raise RuntimeError("physical VRAM cap exceeded")
                     if candidate_loss < best_loss:
@@ -384,6 +474,7 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
         physical_cap_passed = True
 
     peak_vram_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
+    elapsed_seconds = time.monotonic() - training_started
     return write_adapter_manifest(
         adapter_dir,
         backend=config.backend,
@@ -400,4 +491,7 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
         seed=config.seed,
         max_length=config.max_length,
         optimizer_updates=optimizer_updates,
+        training_steps=limit,
+        validation_examples=len(validation_rows),
+        elapsed_seconds=elapsed_seconds,
     )

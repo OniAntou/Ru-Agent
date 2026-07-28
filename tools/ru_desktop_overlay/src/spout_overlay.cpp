@@ -2,22 +2,17 @@
 
 #include "frame_pixels.h"
 
-#include <SpoutLibrary/SpoutLibrary.h>
+#include <SpoutDX/SpoutDX.h>
 
 #include <utility>
 
-namespace {
-constexpr GLenum kGlBgra = 0x80E1;
-}
-
 class SpoutOverlay::Impl {
 public:
-    SPOUTHANDLE receiver{nullptr};
+    spoutDX receiver;
 
     ~Impl() {
-        if (receiver) {
-            receiver->ReleaseReceiver();
-        }
+        receiver.ReleaseReceiver();
+        receiver.CloseDirectX11();
     }
 };
 
@@ -30,51 +25,55 @@ SpoutOverlay::~SpoutOverlay() {
 bool SpoutOverlay::Start() {
     Stop();
     impl_ = std::make_unique<Impl>();
-    impl_->receiver = GetSpout();
-    if (!impl_->receiver) {
-        status_ = "SpoutLibrary is unavailable";
+    if (!impl_->receiver.OpenDirectX11()) {
+        status_ = "SpoutDX could not create a DirectX 11 device";
         return false;
     }
 
-    impl_->receiver->SetReceiverName(sender_name_.c_str());
+    impl_->receiver.SetReceiverName(sender_name_.c_str());
     status_ = "Waiting for " + sender_name_;
     return true;
 }
 
 bool SpoutOverlay::Tick() {
-    if (!impl_ || !impl_->receiver) {
-        status_ = "SpoutLibrary is unavailable";
+    if (!impl_) {
+        status_ = "SpoutDX is unavailable";
         return false;
     }
 
-    unsigned int sender_width = 0;
-    unsigned int sender_height = 0;
-    HANDLE sender_handle = nullptr;
-    DWORD sender_format = 0;
-    if (!impl_->receiver->GetSenderInfo(sender_name_.c_str(), sender_width, sender_height, sender_handle, sender_format) ||
-        sender_width == 0 || sender_height == 0) {
-        status_ = "Waiting for " + sender_name_;
-        return false;
+    bool received = false;
+    if (pixels_.empty()) {
+        impl_->receiver.ReceiveImage(nullptr, 0, 0, false, true);
+    } else {
+        received = impl_->receiver.ReceiveImage(pixels_.data(), width_, height_, false, true);
     }
 
-    if (sender_width != width_ || sender_height != height_) {
-        width_ = sender_width;
-        height_ = sender_height;
+    if (impl_->receiver.IsUpdated()) {
+        width_ = impl_->receiver.GetSenderWidth();
+        height_ = impl_->receiver.GetSenderHeight();
         pixels_.assign(static_cast<std::size_t>(width_) * height_ * 4, 0);
+        status_ = "Connected: " + std::string(impl_->receiver.GetSenderName());
+        return false;
     }
 
-    if (!impl_->receiver->ReceiveImage(pixels_.data(), kGlBgra, true)) {
+    if (!received) {
         status_ = "Waiting for " + sender_name_;
         return false;
     }
 
-    PremultiplyBgra(pixels_.data(), static_cast<std::size_t>(width_) * height_);
-    status_ = "Connected: " + std::string(impl_->receiver->GetSenderName());
+    const auto pixel_count = static_cast<std::size_t>(width_) * height_;
+    if (impl_->receiver.GetSenderFormat() != DXGI_FORMAT_B8G8R8A8_UNORM &&
+        impl_->receiver.GetSenderFormat() != DXGI_FORMAT_B8G8R8X8_UNORM) {
+        RemoveGreenMatteRgba(pixels_.data(), pixel_count);
+        ConvertRgbaToBgra(pixels_.data(), pixel_count);
+    }
+    PremultiplyBgra(pixels_.data(), pixel_count);
+    status_ = "Connected: " + std::string(impl_->receiver.GetSenderName());
     return true;
 }
 
 bool SpoutOverlay::IsConnected() const {
-    return impl_ && impl_->receiver && impl_->receiver->IsConnected();
+    return impl_ && impl_->receiver.IsConnected();
 }
 
 const std::string& SpoutOverlay::Status() const {

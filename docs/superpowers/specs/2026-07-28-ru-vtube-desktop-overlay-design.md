@@ -1,5 +1,9 @@
 # Ru transparent VTube Studio desktop overlay
 
+> **Status (2026-07-28):** Blocked before setup. The official Sprout Gumroad
+> page currently reports that the product is not for sale, so no executable was
+> downloaded or run. A replacement approach requires a new approval.
+
 ## Goal
 
 Show Ru's current VTube Studio model as a transparent, always-on-top, desktop

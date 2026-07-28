@@ -2,6 +2,9 @@
   "name": "ru-desktop-overlay",
   "version-string": "0.1.0",
   "dependencies": [
-    "spout2"
+    {
+      "name": "spout2",
+      "features": ["dx"]
+    }
   ]
 }

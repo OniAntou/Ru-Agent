@@ -23,6 +23,10 @@ facts to inference. Clearing saved memory affects only local memory artifacts
 and never trains the adapter. Verify this behavior with
 `& .\.venv\Scripts\python.exe scripts\evaluate_ru_memory.py`.
 
+The GUI worker and Tk thread access structured memory through thread-local
+SQLite connections guarded by the store lock. Do not pass a raw SQLite
+connection between those threads.
+
 ## v6.2 fresh dataset status
 
 The fresh candidate is at `data\conversations\ru_v6_2_fresh`. It has 1,200

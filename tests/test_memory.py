@@ -1,7 +1,31 @@
 from datetime import UTC, datetime, timedelta
 import json
+import threading
 
 from mini_gpt.memory import MemoryKind, MemoryStore, StructuredMemoryStore
+
+
+def test_structured_store_can_be_created_in_worker_then_read_from_gui_thread(tmp_path):
+    created: list[StructuredMemoryStore] = []
+
+    worker = threading.Thread(
+        target=lambda: created.append(
+            StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "memory.faiss")
+        )
+    )
+    worker.start()
+    worker.join()
+
+    record = created[0].upsert(
+        MemoryKind.PREFERENCE,
+        "Anh prefers automatic memory.",
+        None,
+        "explicit preference",
+        1.0,
+        0.9,
+    )
+
+    assert created[0].get(record.id) == record
 
 
 def test_clear_removes_only_memory_artifacts(tmp_path):

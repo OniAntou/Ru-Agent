@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import sqlite3
+import threading
 import uuid
 from hashlib import sha256
 from dataclasses import dataclass
@@ -68,12 +69,21 @@ class StructuredMemoryStore:
         self.database_path = Path(database_path)
         self.index_path = Path(index_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(self.database_path)
-        self._connection.row_factory = sqlite3.Row
+        self._connection_local = threading.local()
+        self._database_lock = threading.RLock()
         self._initialize_schema()
 
+    @property
+    def _connection(self) -> sqlite3.Connection:
+        connection = getattr(self._connection_local, "connection", None)
+        if connection is None:
+            connection = sqlite3.connect(self.database_path)
+            connection.row_factory = sqlite3.Row
+            self._connection_local.connection = connection
+        return connection
+
     def _initialize_schema(self) -> None:
-        with self._connection:
+        with self._database_lock, self._connection:
             self._connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS memories (
@@ -118,7 +128,8 @@ class StructuredMemoryStore:
         )
 
     def get(self, record_id: str) -> MemoryRecord | None:
-        row = self._connection.execute("SELECT * FROM memories WHERE id = ?", (record_id,)).fetchone()
+        with self._database_lock:
+            row = self._connection.execute("SELECT * FROM memories WHERE id = ?", (record_id,)).fetchone()
         return self._record_from_row(row) if row is not None else None
 
     def upsert(
@@ -158,7 +169,7 @@ class StructuredMemoryStore:
             status="active",
             pinned=False,
         )
-        with self._connection:
+        with self._database_lock, self._connection:
             if supersedes_id is not None:
                 self._connection.execute(
                     "UPDATE memories SET status = 'superseded', updated_at = ? WHERE id = ?",
@@ -195,25 +206,27 @@ class StructuredMemoryStore:
 
     def count_active(self) -> int:
         now = _serialize_datetime(_utc_now())
-        row = self._connection.execute(
-            """
-            SELECT COUNT(*) AS count FROM memories
-            WHERE status = 'active' AND (expires_at IS NULL OR expires_at > ? OR pinned = 1)
-            """,
-            (now,),
-        ).fetchone()
+        with self._database_lock:
+            row = self._connection.execute(
+                """
+                SELECT COUNT(*) AS count FROM memories
+                WHERE status = 'active' AND (expires_at IS NULL OR expires_at > ? OR pinned = 1)
+                """,
+                (now,),
+            ).fetchone()
         return int(row["count"])
 
     def list_active(self, query: str = "") -> tuple[MemoryRecord, ...]:
         now = _serialize_datetime(_utc_now())
-        rows = self._connection.execute(
-            """
-            SELECT * FROM memories
-            WHERE status = 'active' AND (expires_at IS NULL OR expires_at > ? OR pinned = 1)
-            ORDER BY pinned DESC, updated_at DESC
-            """,
-            (now,),
-        ).fetchall()
+        with self._database_lock:
+            rows = self._connection.execute(
+                """
+                SELECT * FROM memories
+                WHERE status = 'active' AND (expires_at IS NULL OR expires_at > ? OR pinned = 1)
+                ORDER BY pinned DESC, updated_at DESC
+                """,
+                (now,),
+            ).fetchall()
         records = tuple(self._record_from_row(row) for row in rows)
         needle = query.strip().casefold()
         if not needle:
@@ -279,7 +292,7 @@ class StructuredMemoryStore:
         )
 
     def clear(self) -> None:
-        with self._connection:
+        with self._database_lock, self._connection:
             self._connection.execute("DELETE FROM memories")
             self._connection.execute("DELETE FROM memories_fts")
             self._connection.execute("DELETE FROM legacy_memory_migrations")
@@ -287,7 +300,10 @@ class StructuredMemoryStore:
             self.index_path.unlink()
 
     def close(self) -> None:
-        self._connection.close()
+        connection = getattr(self._connection_local, "connection", None)
+        if connection is not None:
+            connection.close()
+            del self._connection_local.connection
 
     def migrate_legacy_transcripts(self, legacy_texts_path: str | Path) -> dict[str, int]:
         legacy_path = Path(legacy_texts_path)

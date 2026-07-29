@@ -23,6 +23,7 @@ def test_runner_defines_the_full_d_only_pronunciation_matrix() -> None:
     assert "[switch]$ConfirmRun" in script
     assert "[switch]$WhatIf" in script
     assert "[switch]$OverwriteOutput" in script
+    assert "[string]$GwenReport" in script
     assert "--voice-profile $profile" in script
     assert "--omnivoice-config $configId" in script
 
@@ -57,3 +58,12 @@ def test_runner_records_the_manual_review_gate_without_adopting_runtime_settings
     assert "failed_records" in script
     assert "manual_decision" not in script
     assert "omnivoice_tts_server.py" not in script
+
+
+def test_runner_can_use_a_verified_existing_gwen_report_without_starting_the_service() -> None:
+    script = _script()
+
+    assert "if ($GwenReport)" in script
+    assert "Could not read Gwen baseline report" in script
+    assert "Gwen baseline report did not produce a finite" in script
+    assert "Gwen service start is skipped when -GwenReport is supplied" in script

@@ -264,6 +264,39 @@ $body = @{ text = 'Em chao anh, em da san sang roi.'; fast_mode = $true; voice_p
 }
 ```
 
+## Experimental voice input
+
+Voice input defaults to the existing Google recognizer (`vi-VN`). The
+**Speech input** settings section can instead select **Sherpa-ONNX (offline)**.
+That choice never falls back to Google: microphone audio stays local for the
+recognition request, and no model is downloaded automatically.
+
+Install the optional runtime only after supplying a compatible local model:
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe -m pip install -e '.[speech-offline]'
+```
+
+Select a folder containing exactly the files required by the initial
+transducer proof of concept: `tokens.txt`, `encoder.onnx`, `decoder.onnx`, and
+`joiner.onnx`. The GUI stores only the selected recognizer and this model
+folder; it does not save microphone recordings or transcripts.
+
+Benchmark supplied samples before considering Sherpa-ONNX as a default. Each
+JSONL manifest row contains an `audio_path` and `expected_text`; paths may be
+relative to the manifest. Samples must be uncompressed, mono, 16-bit, 16 kHz
+WAV files.
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\benchmark_stt.py --engine sherpa-onnx --model-dir D:\LLM\models\sherpa --manifest D:\LLM\data\stt_samples.jsonl --output D:\LLM\data\stt_benchmark.jsonl
+```
+
+Keep Google as the default unless an explicit 20-sample manual gate covers
+Vietnamese, English, and Vietnamese-English turns; record recognition success,
+final-transcript latency, and whether local LLM replies plus Gwen playback
+remain stable. A failed gate is a non-adoption result, not a reason to weaken
+the fallback or privacy behavior.
+
 ## VTube Studio actions
 
 For every reply, the GUI reads the current VTube Studio model, its hotkeys,

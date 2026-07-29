@@ -1,6 +1,6 @@
 # Ru Offline STT Proof-of-Concept Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** Add a selectable Sherpa-ONNX offline speech recognizer, keep Google as the unchanged default fallback, and supply a local WAV benchmark without automatic model downloads.
 
@@ -43,7 +43,7 @@
 - Produces build_speech_recognizer(config: SpeechEngineConfig, *, google_recognizer: object | None = None) -> SpeechRecognizer and normalize_transcript(text: str) -> str.
 - Consumes CapturedAudio and returns a non-empty normalized string through SpeechRecognizer.recognize(audio: CapturedAudio) -> str.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ~~~python
 from pathlib import Path
@@ -98,13 +98,13 @@ def test_empty_recognition_is_a_no_match_error() -> None:
         normalize_transcript(" \n ")
 ~~~
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: & .\.venv\Scripts\python.exe -m pytest tests\test_speech_runtime.py -q
 
 Expected: FAIL with ModuleNotFoundError for mini_gpt.speech_runtime.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 ~~~python
 @dataclass(frozen=True, slots=True)
@@ -141,13 +141,13 @@ joiner=..., provider="cpu", sample_rate=16000, feature_dim=80), then
 create_stream, accept_waveform, decode_stream, and get_result. Map a missing
 import to SpeechEngineUnavailable("Sherpa-ONNX is not installed. Install Ru with the speech-offline extra.").
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: & .\.venv\Scripts\python.exe -m pytest tests\test_speech_runtime.py -q
 
 Expected: PASS; no optional Sherpa package or network request is required.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ~~~powershell
 git add -- src/mini_gpt/speech_runtime.py tests/test_speech_runtime.py
@@ -166,7 +166,7 @@ git commit -m "feat: add selectable speech recognizer runtime"
 - Produces speech_settings_from_mapping(settings: Mapping[str, object]) -> SpeechEngineConfig and speech_settings_for_persistence(config: SpeechEngineConfig) -> dict[str, str] in speech_runtime.py.
 - Produces GUI variables speech_engine_var and speech_model_dir_var, whose persisted keys are exactly speech_engine and speech_model_dir.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ~~~python
 from mini_gpt.speech_runtime import (
@@ -196,13 +196,13 @@ def test_gui_speech_settings_round_trip_the_explicit_offline_directory() -> None
     assert str(selected.model_dir).endswith("models\\sherpa")
 ~~~
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: & .\.venv\Scripts\python.exe -m pytest tests\test_gui_speech_settings.py -q
 
 Expected: FAIL with an import error for speech_settings_for_persistence.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Add settings serializer/parser functions in speech_runtime.py. In RuApp.__init__,
 create tk.StringVar values from them and extend _save_settings with only the two
@@ -229,14 +229,14 @@ Catch only Task 1 typed recognition errors and pass their message to
 _on_record_error; retain the existing capture timeout branch. Do not call
 Google when the chosen Sherpa adapter fails.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: & .\.venv\Scripts\python.exe -m pytest tests\test_speech_runtime.py tests\test_gui_speech_settings.py -q
 
 Expected: PASS. Inspect data/gui_settings.json only through a temporary test
 path; no real Tk window, microphone, key, or transcript is used.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ~~~powershell
 git add -- src/mini_gpt/speech_runtime.py src/mini_gpt/gui.py tests/test_gui_speech_settings.py tests/test_speech_runtime.py
@@ -255,7 +255,7 @@ git commit -m "feat: configure offline speech input in Ru GUI"
 - Produces BenchmarkItem(audio_path: Path, expected_text: str) and run_benchmark(items, recognizer, *, clock=perf_counter) -> list[dict[str, object]].
 - Emits JSONL records with exactly engine_id, audio_path, expected_text, transcript, latency_ms, status, and optional error.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ~~~python
 from pathlib import Path
@@ -288,31 +288,31 @@ def test_benchmark_records_transcript_latency_and_expected_text(tmp_path: Path) 
     }]
 ~~~
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: & .\.venv\Scripts\python.exe -m pytest tests\test_benchmark_stt.py -q
 
 Expected: FAIL with ModuleNotFoundError for scripts.benchmark_stt.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Add speech-offline = ["sherpa-onnx>=1.12,<2"] under optional dependencies.
-Implement a standard-library WAV loader that rejects non-PCM, non-mono, or
-unsupported-width input and converts supported input to CapturedAudio at
-16 kHz/16-bit. run_benchmark catches SpeechRecognitionError and emits a
+Implement a standard-library WAV loader that accepts only uncompressed PCM,
+mono, 16-bit, 16 kHz input and converts it to CapturedAudio. run_benchmark
+catches SpeechRecognitionError and emits a
 status: "error" record without a transcript; it never retries through another
 engine. The argparse CLI accepts --engine, --model-dir, --manifest, and
 --output, reads JSONL manifest items, and writes JSONL records only to the
 explicit --output path.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: & .\.venv\Scripts\python.exe -m pytest tests\test_benchmark_stt.py -q
 
 Expected: PASS. Confirm the test uses only its temporary path and never imports
 or downloads Sherpa-ONNX.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ~~~powershell
 git add -- pyproject.toml scripts/benchmark_stt.py tests/test_benchmark_stt.py
@@ -331,7 +331,7 @@ git commit -m "feat: add offline speech benchmark"
 - Consumes the install extra, model layout, GUI settings, and CLI defined by Tasks 1-3.
 - Produces a reproducible manual test procedure and an explicit non-adoption outcome if Sherpa does not pass it.
 
-- [ ] **Step 1: Write the failing documentation assertion**
+- [x] **Step 1: Write the failing documentation assertion**
 
 ~~~powershell
 rg -n --fixed-strings 'speech-offline' README.md
@@ -340,13 +340,13 @@ rg -n --fixed-strings 'benchmark_stt.py' README.md
 
 Expected: FAIL before editing because neither exact command is documented.
 
-- [ ] **Step 2: Run the assertion to verify it fails**
+- [x] **Step 2: Run the assertion to verify it fails**
 
 Run: rg -n --fixed-strings 'speech-offline' README.md; rg -n --fixed-strings 'benchmark_stt.py' README.md
 
 Expected: no matching lines and non-zero status.
 
-- [ ] **Step 3: Write the minimal documentation**
+- [x] **Step 3: Write the minimal documentation**
 
 Add a Voice input section documenting:
 
@@ -361,7 +361,7 @@ to Google, that no models are downloaded, and that it remains opt-in until a
 success rate, final-transcript latency, and whether LLM/Gwen remain stable; it
 must explicitly retain Google as default on failure.
 
-- [ ] **Step 4: Run verification**
+- [x] **Step 4: Run verification**
 
 Run: & .\.venv\Scripts\python.exe -m pytest -q
 
@@ -375,7 +375,7 @@ Run: rg -n --fixed-strings 'speech-offline' README.md; rg -n --fixed-strings 'be
 
 Expected: both commands locate the new documentation.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ~~~powershell
 git add -- README.md

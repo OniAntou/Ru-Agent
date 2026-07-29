@@ -42,6 +42,17 @@ from .memory import MemoryStore, StructuredMemoryStore
 from .search import perform_web_search
 from .reply_orchestration import execute_reply
 from .gpu_lifecycle import GpuLifecycle
+from .speech_runtime import (
+    SPEECH_ENGINE_GOOGLE,
+    SPEECH_ENGINE_LABELS,
+    CapturedAudio,
+    SpeechEngineConfig,
+    SpeechRecognitionError,
+    SpeechRecognizer,
+    build_speech_recognizer,
+    speech_settings_for_persistence,
+    speech_settings_from_mapping,
+)
 from .tts_chunks import split_tts_chunks
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -372,6 +383,16 @@ class RuApp:
             label for label, profile in VOICE_PROFILE_OPTIONS.items() if profile == saved_profile
         )
         self.voice_profile_var = tk.StringVar(value=saved_profile_label)
+        saved_speech_config = speech_settings_from_mapping(saved_settings)
+        saved_speech_label = next(
+            label
+            for label, engine_id in SPEECH_ENGINE_LABELS.items()
+            if engine_id == saved_speech_config.engine_id
+        )
+        self.speech_engine_var = tk.StringVar(value=saved_speech_label)
+        self.speech_model_dir_var = tk.StringVar(
+            value=str(saved_speech_config.model_dir) if saved_speech_config.model_dir else ""
+        )
 
         def _save_settings(*args) -> None:
             settings = {
@@ -380,6 +401,7 @@ class RuApp:
                 "backend": self.backend_var.get(),
                 "voice_profile": self._selected_voice_profile(),
             }
+            settings.update(speech_settings_for_persistence(self._speech_config()))
             try:
                 GUI_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
                 with open(GUI_SETTINGS_PATH, "w", encoding="utf-8") as f:
@@ -387,10 +409,13 @@ class RuApp:
             except Exception:
                 pass
 
+        self._save_gui_settings = _save_settings
         self.api_key_var.trace_add("write", _save_settings)
         self.api_model_var.trace_add("write", _save_settings)
         self.backend_var.trace_add("write", _save_settings)
         self.voice_profile_var.trace_add("write", _save_settings)
+        self.speech_engine_var.trace_add("write", self._on_speech_settings_changed)
+        self.speech_model_dir_var.trace_add("write", self._on_speech_settings_changed)
         _save_settings()
         
         self.max_tokens_var = tk.StringVar(value=DEFAULT_MAX_NEW_TOKENS)
@@ -407,7 +432,9 @@ class RuApp:
         self.vts_manager = VTSManager()
         threading.Thread(target=self.vts_manager.run, daemon=True).start()
         self.is_recording = False
-        self.recognizer = sr.Recognizer()
+        self.microphone_recognizer = sr.Recognizer()
+        self._speech_runtime: SpeechRecognizer | None = None
+        self._speech_runtime_config: SpeechEngineConfig | None = None
         self.generate_button: ttk.Button
         self.new_chat_button: ttk.Button
         self.mark_button: ttk.Button
@@ -615,8 +642,21 @@ class RuApp:
         self._labeled_entry(controls, 2, "Temperature", self.temperature_var, 8)
         self._labeled_entry(controls, 4, "Top-k", self.top_k_var, 8)
 
+        speech = ttk.LabelFrame(content, text="Speech input")
+        speech.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        speech.columnconfigure(1, weight=1)
+        ttk.Label(speech, text="Recognizer").grid(row=0, column=0, sticky="w", padx=6, pady=4)
+        ttk.Combobox(
+            speech,
+            textvariable=self.speech_engine_var,
+            values=tuple(SPEECH_ENGINE_LABELS),
+            state="readonly",
+            width=24,
+        ).grid(row=0, column=1, sticky="w", padx=4, pady=4)
+        self._path_row(speech, 1, "Offline model folder", self.speech_model_dir_var, self._browse_speech_model)
+
         privacy = ttk.LabelFrame(content, text="Privacy and memory")
-        privacy.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        privacy.grid(row=2, column=0, sticky="ew", pady=(12, 0))
         ttk.Checkbutton(privacy, text="Remember conversations", variable=self.remember_conversations_var).grid(
             row=0, column=0, sticky="w", padx=8, pady=(8, 4)
         )
@@ -627,7 +667,7 @@ class RuApp:
             row=2, column=0, sticky="w", padx=8, pady=(4, 8)
         )
         ttk.Button(content, text="Close", command=dialog.destroy, style="Ru.Primary.TButton").grid(
-            row=2, column=0, sticky="e", pady=(14, 0)
+            row=3, column=0, sticky="e", pady=(14, 0)
         )
 
     def _fetch_models(self) -> None:
@@ -676,6 +716,11 @@ class RuApp:
         selected = filedialog.askdirectory(title="Select Llama Adapter Directory")
         if selected:
             self.checkpoint_var.set(selected)
+
+    def _browse_speech_model(self) -> None:
+        selected = filedialog.askdirectory(title="Select Sherpa-ONNX Model Directory")
+        if selected:
+            self.speech_model_dir_var.set(selected)
 
     def _append_turn(self, turn: ChatTurn) -> None:
         self.transcript_text.configure(state="normal")
@@ -816,22 +861,38 @@ class RuApp:
     def _record_worker(self) -> None:
         try:
             with sr.Microphone() as source:
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=15)
+                self.microphone_recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                audio = self.microphone_recognizer.listen(source, timeout=5, phrase_time_limit=15)
             self.root.after(0, lambda: self.status_var.set("Recognizing..."))
-            
-            # Using Google Web Speech API (free, no key required)
-            text = self.recognizer.recognize_google(audio, language="vi-VN")
-            
+            raw_audio = audio.get_raw_data(convert_rate=16_000, convert_width=2)
+            text = self._selected_speech_recognizer().recognize(CapturedAudio(raw_audio))
             self.root.after(0, lambda t=text: self._on_record_success(t))
         except sr.WaitTimeoutError:
             self.root.after(0, lambda: self._on_record_error("Listening timed out."))
-        except sr.UnknownValueError:
-            self.root.after(0, lambda: self._on_record_error("Could not understand audio."))
-        except sr.RequestError as e:
-            self.root.after(0, lambda: self._on_record_error(f"Speech API error: {e}"))
-        except Exception as e:
-            self.root.after(0, lambda: self._on_record_error(f"Error: {e}"))
+        except SpeechRecognitionError as error:
+            self.root.after(0, lambda: self._on_record_error(str(error)))
+        except Exception:
+            self.root.after(0, lambda: self._on_record_error("Voice input failed."))
+
+    def _speech_config(self) -> SpeechEngineConfig:
+        engine_id = SPEECH_ENGINE_LABELS.get(self.speech_engine_var.get(), SPEECH_ENGINE_GOOGLE)
+        model_dir = self.speech_model_dir_var.get().strip()
+        return SpeechEngineConfig(engine_id=engine_id, model_dir=Path(model_dir) if model_dir else None)
+
+    def _on_speech_settings_changed(self, *_args: object) -> None:
+        self._speech_runtime = None
+        self._speech_runtime_config = None
+        self._save_gui_settings()
+
+    def _selected_speech_recognizer(self) -> SpeechRecognizer:
+        config = self._speech_config()
+        if self._speech_runtime is None or self._speech_runtime_config != config:
+            self._speech_runtime = build_speech_recognizer(
+                config,
+                google_recognizer=self.microphone_recognizer,
+            )
+            self._speech_runtime_config = config
+        return self._speech_runtime
             
     def _on_record_success(self, text: str) -> None:
         self.is_recording = False

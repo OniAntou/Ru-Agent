@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Protocol
+from typing import Mapping, Protocol
 
 import numpy as np
 import speech_recognition as sr
@@ -140,6 +140,22 @@ def build_speech_recognizer(
     if config.engine_id == SPEECH_ENGINE_SHERPA_ONNX:
         return SherpaOnnxRecognizer(config)
     raise SpeechConfigurationError("Select a valid speech input engine.")
+
+
+def speech_settings_from_mapping(settings: Mapping[str, object]) -> SpeechEngineConfig:
+    engine_id = settings.get("speech_engine")
+    if engine_id not in (SPEECH_ENGINE_GOOGLE, SPEECH_ENGINE_SHERPA_ONNX):
+        engine_id = SPEECH_ENGINE_GOOGLE
+    model_dir_value = settings.get("speech_model_dir")
+    model_dir = Path(model_dir_value) if isinstance(model_dir_value, str) and model_dir_value.strip() else None
+    return SpeechEngineConfig(engine_id=engine_id, model_dir=model_dir)
+
+
+def speech_settings_for_persistence(config: SpeechEngineConfig) -> dict[str, str]:
+    return {
+        "speech_engine": config.engine_id,
+        "speech_model_dir": str(config.model_dir) if config.model_dir is not None else "",
+    }
 
 
 def _validate_sherpa_model_dir(model_dir: Path | None) -> Path:

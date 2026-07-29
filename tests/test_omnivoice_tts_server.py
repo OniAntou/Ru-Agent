@@ -27,11 +27,11 @@ def test_warm_model_caches_one_prompt_per_profile(monkeypatch) -> None:
 
     server.warm_model("ru")
     server.warm_model("ru")
-    server.warm_model("yen_nhi")
+    server.warm_model("ai_vy")
 
     assert [prompt["ref_text"] for prompt in model.prompts] == [
         "ru transcript",
-        "yen_nhi transcript",
+        "ai_vy transcript",
     ]
     server.release_model()
 
@@ -46,7 +46,7 @@ def test_profile_validation_and_release_clear_runtime() -> None:
 
     server._model = object()
     server._voice_clone_prompts["ru"] = object()
-    server._voice_clone_prompts["yen_nhi"] = object()
+    server._voice_clone_prompts["ai_vy"] = object()
     server.release_model()
 
     assert server._model is None
@@ -57,13 +57,13 @@ def test_http_contract_does_not_load_for_status_and_validates_tts(tmp_path, monk
     server.release_model()
     audio = tmp_path / "speech.wav"
     audio.write_bytes(b"RIFF")
-    app = server.create_app(synthesize=lambda text, profile: str(audio))
+    app = server.create_app(synthesize=lambda text, profile, speed: str(audio))
     client = app.test_client()
 
     assert client.get("/status").get_json() == {"model_loaded": False, "pid": server.os.getpid()}
     assert client.post("/tts", json={"voice_profile": "ru"}).status_code == 400
 
-    response = client.post("/tts", json={"text": "xin chào", "voice_profile": "yen_nhi"})
+    response = client.post("/tts", json={"text": "xin chào", "voice_profile": "ai_vy"})
 
     assert response.status_code == 200
     assert response.get_json()["audio_path"] == str(audio)
@@ -71,7 +71,7 @@ def test_http_contract_does_not_load_for_status_and_validates_tts(tmp_path, monk
 
 
 def test_http_reports_synthesis_error() -> None:
-    app = server.create_app(synthesize=lambda text, profile: (_ for _ in ()).throw(RuntimeError("broken")))
+    app = server.create_app(synthesize=lambda text, profile, speed: (_ for _ in ()).throw(RuntimeError("broken")))
     response = app.test_client().post("/tts", json={"text": "xin chào", "voice_profile": "ru"})
 
     assert response.status_code == 500
@@ -109,17 +109,18 @@ def test_synthesis_uses_the_selected_16_step_vietnamese_trial_settings(tmp_path,
     monkeypatch.setitem(sys.modules, "soundfile", FakeSoundFile())
     monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
     monkeypatch.setattr(server, "get_model", lambda: model)
+    monkeypatch.setattr(server, "apply_voice_speed", lambda audio, speed: audio)
     monkeypatch.setattr(server.tempfile, "NamedTemporaryFile", lambda **kwargs: type("Output", (), {
         "name": str(tmp_path / "speech.wav"), "close": lambda self: None,
     })())
     server._voice_clone_prompts.clear()
-    server._voice_clone_prompts.update({"ru": "ru-prompt", "yen_nhi": "yen-prompt"})
+    server._voice_clone_prompts.update({"ru": "ru-prompt", "ai_vy": "ai-vy-prompt"})
 
     ru_audio = server.synthesize_fast("Chào anh.", "ru")
-    yen_audio = server.synthesize_fast("Chào em.", "yen_nhi")
+    ai_vy_audio = server.synthesize_fast("Chào em.", "ai_vy")
 
     assert Path(ru_audio).is_file()
-    assert Path(yen_audio).is_file()
+    assert Path(ai_vy_audio).is_file()
     assert model.calls == [
         {
             "text": "Chào anh.",
@@ -130,7 +131,7 @@ def test_synthesis_uses_the_selected_16_step_vietnamese_trial_settings(tmp_path,
         },
         {
             "text": "Chào em.",
-            "voice_clone_prompt": "yen-prompt",
+            "voice_clone_prompt": "ai-vy-prompt",
             "language": "Vietnamese",
             "normalize_text": True,
             "num_step": 16,

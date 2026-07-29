@@ -133,44 +133,32 @@ run:
 
 ## Voice status
 
-`g-group-ai-lab/gwen-tts-0.6B` was smoke-tested locally on 2026-07-27 in the
-isolated `D:\LLM\gwen_env` environment. It used `tyc_talk.wav`, the matching
-Japanese transcript, and Vietnamese target text to produce valid 24 kHz mono
-WAV output. The disposable smoke-test files were intentionally cleared after
-listening. For cloud replies, the GUI warms the local service on port 5051
-while the cloud backend composes the answer, retaining the CUDA model and its
-fixed clone prompt. Speech is then queued sentence-by-sentence with up to two
-WAV files prefetched; before local inference, the GUI asks Gwen to release
-CUDA so the
-two models never compete for VRAM. The short greeting passed manual listening,
-but Vietnamese pronunciation remains an experimental quality gate. The legacy
-voice runtime and all of its cache artifacts were removed on 2026-07-27.
+Ru exposes two persisted local voice choices: `Ru (OmniVoice)` and
+`Ái Vy (OmniVoice)`. Every retired Gwen or OmniVoice trial label migrates to
+the equivalent OmniVoice choice. Ái Vy uses the independently retained
+`data\voices\omnivoice\ai_vy.wav` reference. Both choices preserve the sentence
+queue and VTube `VoiceVolume` lip-sync lifecycle; private VTS metadata is
+removed before synthesis.
 
-Ru exposes four persisted local voice choices: `Ru (Gwen)`, `Yến Nhi (Gwen)`,
-`Ru (OmniVoice — test)`, and `Yến Nhi (OmniVoice — test)`. Legacy
-`Ru (Tsukuyomi)` settings migrate to `Ru (Gwen)`. Yến Nhi still needs the
-one-time `scripts\download_gwen_yen_nhi_voice.py` setup. All choices preserve
-the sentence queue and VTube `VoiceVolume` lip-sync lifecycle; private VTS
-metadata is removed before synthesis.
+The OmniVoice choices are the active GUI runtime. The Ru and Ái Vy profiles use
+only `tyc_talk.wav`/`reference_text.txt` or the independently retained Ái Vy
+reference pair. All use the separate
+`D:\LLM\omnivoice_env`, cache `models\omnivoice`, and loopback
+port 5052. OmniVoice is the GUI default. The lifecycle releases local Llama
+before warming the service and releases the service before local generation.
+Manual verification must cover both profiles, speed persistence, local Llama
+release, and no spoken VTS metadata.
 
-The OmniVoice choices are reversible GUI trials, not an adoption. They use only
-`tyc_talk.wav`/`reference_text.txt` or the existing Yến Nhi reference pair,
-the separate `D:\LLM\omnivoice_env`, cache `models\omnivoice`, and loopback
-port 5052. Gwen remains on 5051 and is still the GUI default. The lifecycle
-releases local Llama plus the non-selected voice engine before warming the
-selected engine, releases both voice services before local generation, and
-never falls back after a selected service error. Manual verification must cover
-both profiles on both engines, restart persistence, a switch back to Gwen,
-local Llama release, and no spoken VTS metadata.
+Voice pace is persisted as a 0.75x--1.20x manual baseline (default 0.90x).
+When automatic pacing is enabled, Ru's private slow/normal/quick marker adjusts
+only ±0.08x around that baseline; the marker is excluded from display, TTS,
+conversation history, and memory.
 
-The current pending listening trial sends both OmniVoice profiles with
+The active runtime sends both OmniVoice profiles with
 `vi-normalized-16`: explicit Vietnamese language, normalized text, and 16
-steps. It was selected for GUI listening only after the automated matrix passed;
-it is not a default change or a completed voice-quality approval.
+steps. Gwen's 2.52 GB local model was removed after Ái Vy's reference was moved
+to the independent OmniVoice voice-assets directory.
 
-On 2026-07-29, the isolated automated run completed 72/72 records for each
-engine with no benchmark errors. Gwen's median warm first-playable WAV was
-12.886 s (RTF 3.914); OmniVoice measured 1.218 s (RTF 0.465). OmniVoice met
-the automatic speed gate, but the report status remains `pending_manual_review`
-until Ru's clone identity plus Vietnamese, English, and code-switch output are
-listened to explicitly. Gwen therefore remains the GUI default.
+On 2026-07-29, the isolated OmniVoice matrix completed with no benchmark errors.
+Manual listening remains the quality gate for Ru and Ái Vy across Vietnamese,
+English, and code-switch output.

@@ -61,6 +61,13 @@ from .voice_runtime import (
     voice_selection_from_saved,
     voice_service_config,
 )
+from .voice_pacing import (
+    DEFAULT_VOICE_SPEED,
+    VOICE_PACE_INSTRUCTION,
+    effective_voice_speed,
+    parse_voice_pace,
+    voice_speed_from_saved,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODEL_NAME = "Ru"
@@ -85,6 +92,7 @@ def clean_tts_text(text: str) -> str:
     clean_text = re.sub(r"<thought>.*?</thought>", "", clean_text, flags=re.DOTALL)
     clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL)
     clean_text = re.sub(r"\s*\[\[VTS:[^\]]*\]\]", "", clean_text, flags=re.IGNORECASE)
+    clean_text = re.sub(r"\s*\[\[VOICE_PACE:[^\]]*\]\]", "", clean_text, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", clean_text.replace("*", "")).strip()
 
 
@@ -132,6 +140,7 @@ def request_tts_audio(
     text: str,
     selection: VoiceSelection,
     *,
+    speed: float = DEFAULT_VOICE_SPEED,
     post=None,
 ) -> str:
     config = voice_service_config(selection, PROJECT_ROOT)
@@ -142,11 +151,11 @@ def request_tts_audio(
     try:
         response = post(
             f"{config.base_url}/tts",
-            json={"text": text, "voice_profile": selection.profile_id},
+            json={"text": text, "voice_profile": selection.profile_id, "speed": speed},
             timeout=90,
         )
     except Exception as error:
-        raise RuntimeError("Voice server is offline. Start Gwen TTS and try again.") from error
+        raise RuntimeError("Voice server is offline. Start OmniVoice and try again.") from error
     if response.status_code != 200:
         try:
             detail = response.json().get("error")
@@ -174,7 +183,7 @@ def request_voice_control(
     try:
         response = post(f"{config.base_url}{path}", json=payload or {}, timeout=30)
     except Exception as error:
-        raise RuntimeError("Voice server is offline. Start Gwen TTS and try again.") from error
+        raise RuntimeError("Voice server is offline. Start OmniVoice and try again.") from error
     if response.status_code != 200:
         raise RuntimeError("Voice service rejected lifecycle request.")
     try:
@@ -321,7 +330,7 @@ class ModelRunner:
         return execute_reply(
             self._generate,
             prompt=prompt,
-            system_instruction=RU_SYSTEM_PROMPT + VTS_ACTION_INSTRUCTION + vts_instruction,
+            system_instruction=RU_SYSTEM_PROMPT + VTS_ACTION_INSTRUCTION + VOICE_PACE_INSTRUCTION + vts_instruction,
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             top_k=top_k,
@@ -345,14 +354,13 @@ class RuApp:
             self.gpu_transition_lock,
             release_local_runtime=self.runner.release_gpu,
             voice_services={
-                selection.engine_id: VoiceServiceController(
-                    available=lambda selection=selection: voice_service_available(selection),
-                    ensure=lambda selection=selection: ensure_voice_service(selection),
-                    request=lambda path, payload=None, selection=selection: request_voice_control(
-                        selection, path, payload
+                DEFAULT_VOICE_SELECTION.engine_id: VoiceServiceController(
+                    available=lambda: voice_service_available(DEFAULT_VOICE_SELECTION),
+                    ensure=lambda: ensure_voice_service(DEFAULT_VOICE_SELECTION),
+                    request=lambda path, payload=None: request_voice_control(
+                        DEFAULT_VOICE_SELECTION, path, payload
                     ),
                 )
-                for selection in (VOICE_SELECTIONS[0], VOICE_SELECTIONS[2])
             },
         )
         self._speech_generation = 0
@@ -392,6 +400,8 @@ class RuApp:
         self.backend_var = tk.StringVar(value=saved_backend)
         saved_selection = voice_selection_from_saved(saved_settings.get("voice_profile"))
         self.voice_selection_var = tk.StringVar(value=saved_selection.label)
+        self.voice_speed_var = tk.DoubleVar(value=voice_speed_from_saved(saved_settings.get("voice_speed")))
+        self.auto_voice_pace_var = tk.BooleanVar(value=bool(saved_settings.get("auto_voice_pace", True)))
         saved_speech_config = speech_settings_from_mapping(saved_settings)
         saved_speech_label = next(
             label
@@ -409,6 +419,8 @@ class RuApp:
                 "api_model": self.api_model_var.get(),
                 "backend": self.backend_var.get(),
                 "voice_profile": self._selected_voice_selection().label,
+                "voice_speed": round(self.voice_speed_var.get(), 2),
+                "auto_voice_pace": self.auto_voice_pace_var.get(),
             }
             settings.update(speech_settings_for_persistence(self._speech_config()))
             try:
@@ -423,6 +435,8 @@ class RuApp:
         self.api_model_var.trace_add("write", _save_settings)
         self.backend_var.trace_add("write", _save_settings)
         self.voice_selection_var.trace_add("write", _save_settings)
+        self.voice_speed_var.trace_add("write", _save_settings)
+        self.auto_voice_pace_var.trace_add("write", _save_settings)
         self.speech_engine_var.trace_add("write", self._on_speech_settings_changed)
         self.speech_model_dir_var.trace_add("write", self._on_speech_settings_changed)
         _save_settings()
@@ -642,6 +656,24 @@ class RuApp:
             state="readonly",
             width=24,
         ).grid(row=1, column=1)
+
+        voice_output = ttk.LabelFrame(content, text="Voice output")
+        voice_output.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        voice_output.columnconfigure(1, weight=1)
+        ttk.Label(voice_output, text="Base speed").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 4))
+        ttk.Scale(
+            voice_output,
+            from_=0.75,
+            to=1.20,
+            variable=self.voice_speed_var,
+            orient="horizontal",
+        ).grid(row=0, column=1, sticky="ew", padx=6, pady=(8, 4))
+        ttk.Label(voice_output, textvariable=self.voice_speed_var, width=5).grid(row=0, column=2, padx=(0, 8), pady=(8, 4))
+        ttk.Checkbutton(
+            voice_output,
+            text="Let Ru adjust pace around this speed",
+            variable=self.auto_voice_pace_var,
+        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=8, pady=(4, 8))
         
         ttk.Button(backend, text="Fetch", command=self._fetch_models, width=6).grid(row=1, column=4, padx=(4, 0))
 
@@ -652,7 +684,7 @@ class RuApp:
         self._labeled_entry(controls, 4, "Top-k", self.top_k_var, 8)
 
         speech = ttk.LabelFrame(content, text="Speech input")
-        speech.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        speech.grid(row=2, column=0, sticky="ew", pady=(12, 0))
         speech.columnconfigure(1, weight=1)
         ttk.Label(speech, text="Recognizer").grid(row=0, column=0, sticky="w", padx=6, pady=4)
         ttk.Combobox(
@@ -665,7 +697,7 @@ class RuApp:
         self._path_row(speech, 1, "Offline model folder", self.speech_model_dir_var, self._browse_speech_model)
 
         privacy = ttk.LabelFrame(content, text="Privacy and memory")
-        privacy.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        privacy.grid(row=3, column=0, sticky="ew", pady=(12, 0))
         ttk.Checkbutton(privacy, text="Remember conversations", variable=self.remember_conversations_var).grid(
             row=0, column=0, sticky="w", padx=8, pady=(8, 4)
         )
@@ -676,7 +708,7 @@ class RuApp:
             row=2, column=0, sticky="w", padx=8, pady=(4, 8)
         )
         ttk.Button(content, text="Close", command=dialog.destroy, style="Ru.Primary.TButton").grid(
-            row=3, column=0, sticky="e", pady=(14, 0)
+            row=4, column=0, sticky="e", pady=(14, 0)
         )
 
     def _fetch_models(self) -> None:
@@ -1094,7 +1126,8 @@ class RuApp:
         if not result.strip():
             self._generation_failed("model returned an empty response")
             return
-        clean_result, catalog_codes = parse_catalog_reply(result, vts_catalog)
+        pace_result, pace = parse_voice_pace(result)
+        clean_result, catalog_codes = parse_catalog_reply(pace_result, vts_catalog)
         vts_actions = requested_vts_actions(original_prompt)
         if not clean_result.strip():
             self._generation_failed("model returned no visible response")
@@ -1146,11 +1179,15 @@ class RuApp:
 
             threading.Thread(
                 target=self._play_tts,
-                args=(clean_result, update_first_voice),
+                args=(clean_result, update_first_voice, effective_voice_speed(
+                    self.voice_speed_var.get(),
+                    auto_pace_enabled=self.auto_voice_pace_var.get(),
+                    pace=pace,
+                )),
                 daemon=True,
             ).start()
 
-    def _play_tts(self, text: str, on_first_audio_timing=None) -> None:
+    def _play_tts(self, text: str, on_first_audio_timing=None, speed: float = DEFAULT_VOICE_SPEED) -> None:
         try:
             clean_text = clean_tts_text(text)
             if not clean_text:
@@ -1163,6 +1200,7 @@ class RuApp:
             self._play_voice_chunks(
                 split_tts_chunks(clean_text),
                 selection=selection,
+                speed=speed,
                 on_first_audio_timing=on_first_audio_timing,
             )
 
@@ -1176,6 +1214,7 @@ class RuApp:
         chunks: list[str],
         *,
         selection: VoiceSelection = DEFAULT_VOICE_SELECTION,
+        speed: float = DEFAULT_VOICE_SPEED,
         on_first_audio_timing=None,
     ) -> None:
         if not chunks:
@@ -1210,7 +1249,7 @@ class RuApp:
                     if stop_requested.is_set() or generation != self._speech_generation:
                         return
                     started = perf_counter()
-                    audio_file = request_tts_audio(chunk, selection)
+                    audio_file = request_tts_audio(chunk, selection, speed=speed)
                     if not first_audio_reported:
                         first_audio_reported = True
                         if on_first_audio_timing is not None:

@@ -10,10 +10,10 @@ from mini_gpt.voice_runtime import (
 )
 
 
-def test_omnivoice_yen_nhi_selection_and_service_config() -> None:
-    selection = voice_selection_by_label("Yến Nhi (OmniVoice — test)")
+def test_omnivoice_ai_vy_selection_and_service_config() -> None:
+    selection = voice_selection_by_label("Ái Vy (OmniVoice)")
 
-    assert (selection.engine_id, selection.profile_id) == ("omnivoice", "yen_nhi")
+    assert (selection.engine_id, selection.profile_id) == ("omnivoice", "ai_vy")
 
     config = voice_service_config(selection, Path("D:/LLM"))
 
@@ -23,7 +23,7 @@ def test_omnivoice_yen_nhi_selection_and_service_config() -> None:
 
 
 def test_saved_legacy_or_unknown_selection_migrates_to_gwen_ru() -> None:
-    legacy = voice_selection_from_saved("Ru (Tsukuyomi)")
+    legacy = voice_selection_from_saved("Ru (Gwen)")
     unknown = voice_selection_from_saved("something else")
     non_string = voice_selection_from_saved(None)
 

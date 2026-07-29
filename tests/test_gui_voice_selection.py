@@ -18,34 +18,33 @@ class FakeResponse:
 
 def test_gui_voice_labels_include_all_choices_and_migrate_legacy_label() -> None:
     assert [selection.label for selection in VOICE_SELECTIONS] == [
-        "Ru (Gwen)",
-        "Yến Nhi (Gwen)",
-        "Ru (OmniVoice — test)",
-        "Yến Nhi (OmniVoice — test)",
+        "Ru (OmniVoice)",
+        "Ái Vy (OmniVoice)",
     ]
-    assert voice_selection_from_saved("Ru (Tsukuyomi)").label == "Ru (Gwen)"
+    assert voice_selection_from_saved("Ru (Gwen)").label == "Ru (OmniVoice)"
 
 
-def test_omnivoice_request_uses_its_service_and_minimal_payload(tmp_path) -> None:
+def test_ai_vy_omnivoice_request_uses_its_service_and_minimal_payload(tmp_path) -> None:
     audio = tmp_path / "speech.wav"
     audio.write_bytes(b"RIFF")
     requests: list[tuple[str, dict[str, str]]] = []
-    selection = voice_selection_by_label("Ru (OmniVoice — test)")
+    selection = voice_selection_by_label("Ái Vy (OmniVoice)")
 
     result = gui.request_tts_audio(
         "xin chào",
         selection,
+        speed=0.82,
         post=lambda url, *, json, timeout: requests.append((url, json)) or FakeResponse(str(audio)),
     )
 
     assert result == str(audio)
     assert requests == [
-        ("http://127.0.0.1:5052/tts", {"text": "xin chào", "voice_profile": "ru"})
+        ("http://127.0.0.1:5052/tts", {"text": "xin chào", "voice_profile": "ai_vy", "speed": 0.82})
     ]
 
 
 def test_selected_omnivoice_failure_never_calls_gwen() -> None:
-    selection = voice_selection_by_label("Ru (OmniVoice — test)")
+    selection = voice_selection_by_label("Ru (OmniVoice)")
     requests: list[str] = []
 
     try:
@@ -63,7 +62,7 @@ def test_selected_omnivoice_failure_never_calls_gwen() -> None:
 
 
 def test_omnivoice_service_starts_with_d_runtime_and_root_script(monkeypatch) -> None:
-    selection = voice_selection_by_label("Yến Nhi (OmniVoice — test)")
+    selection = voice_selection_by_label("Ái Vy (OmniVoice)")
     commands: list[dict[str, object]] = []
     availability = iter((False, True))
     monkeypatch.setattr(gui, "voice_service_available", lambda value: next(availability))

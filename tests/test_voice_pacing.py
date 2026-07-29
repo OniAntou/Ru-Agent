@@ -1,0 +1,23 @@
+from __future__ import annotations
+
+from mini_gpt.voice_pacing import (
+    DEFAULT_VOICE_SPEED,
+    effective_voice_speed,
+    parse_voice_pace,
+    voice_speed_from_saved,
+)
+
+
+def test_voice_pace_marker_is_removed_before_visible_reply_or_tts() -> None:
+    reply, pace = parse_voice_pace("Em giải thích chậm hơn nhé. [[VOICE_PACE:slow]]")
+
+    assert reply == "Em giải thích chậm hơn nhé."
+    assert pace == "slow"
+
+
+def test_manual_speed_is_clamped_and_auto_pace_stays_near_manual_baseline() -> None:
+    assert voice_speed_from_saved("invalid") == DEFAULT_VOICE_SPEED
+    assert voice_speed_from_saved(9.0) == 1.2
+    assert effective_voice_speed(0.9, auto_pace_enabled=False, pace="quick") == 0.9
+    assert effective_voice_speed(0.9, auto_pace_enabled=True, pace="slow") == 0.82
+    assert effective_voice_speed(1.17, auto_pace_enabled=True, pace="quick") == 1.2

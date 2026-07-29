@@ -22,15 +22,19 @@ class VoiceServiceConfig:
 
 
 VOICE_SELECTIONS = (
-    VoiceSelection("Ru (Gwen)", "gwen", "ru"),
-    VoiceSelection("Yến Nhi (Gwen)", "gwen", "yen_nhi"),
-    VoiceSelection("Ru (OmniVoice — test)", "omnivoice", "ru"),
-    VoiceSelection("Yến Nhi (OmniVoice — test)", "omnivoice", "yen_nhi"),
+    VoiceSelection("Ru (OmniVoice)", "omnivoice", "ru"),
+    VoiceSelection("Ái Vy (OmniVoice)", "omnivoice", "ai_vy"),
 )
 DEFAULT_VOICE_SELECTION = VOICE_SELECTIONS[0]
 
 _SELECTIONS_BY_LABEL = {selection.label: selection for selection in VOICE_SELECTIONS}
-_LEGACY_LABELS = {"Ru (Tsukuyomi)": DEFAULT_VOICE_SELECTION.label}
+_LEGACY_LABELS = {
+    "Ru (Tsukuyomi)": DEFAULT_VOICE_SELECTION.label,
+    "Ru (Gwen)": DEFAULT_VOICE_SELECTION.label,
+    "Ái Vy (Gwen)": "Ái Vy (OmniVoice)",
+    "Ru (OmniVoice — test)": DEFAULT_VOICE_SELECTION.label,
+    "Ái Vy (OmniVoice — test)": "Ái Vy (OmniVoice)",
+}
 
 
 def voice_selection_by_label(label: str) -> VoiceSelection:
@@ -47,12 +51,9 @@ def voice_selection_from_saved(value: object) -> VoiceSelection:
 
 
 def voice_service_config(selection: VoiceSelection, project_root: Path) -> VoiceServiceConfig:
-    if selection.engine_id == "gwen":
-        host, port, environment, script = "127.0.0.1", 5051, "gwen_env", "gwen_tts_server.py"
-    elif selection.engine_id == "omnivoice":
-        host, port, environment, script = "127.0.0.1", 5052, "omnivoice_env", "omnivoice_tts_server.py"
-    else:
+    if selection.engine_id != "omnivoice":
         raise ValueError(f"Unsupported voice engine: {selection.engine_id!r}")
+    host, port, environment, script = "127.0.0.1", 5052, "omnivoice_env", "omnivoice_tts_server.py"
     return VoiceServiceConfig(
         engine_id=selection.engine_id,
         base_url=f"http://{host}:{port}",

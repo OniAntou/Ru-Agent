@@ -68,4 +68,4 @@ class GpuLifecycle:
 
     @staticmethod
     def _engine_name(engine_id: str) -> str:
-        return {"gwen": "Gwen", "omnivoice": "OmniVoice"}.get(engine_id, engine_id)
+        return {"omnivoice": "OmniVoice"}.get(engine_id, engine_id)

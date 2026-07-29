@@ -5,8 +5,8 @@ from urllib.request import urlretrieve
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TARGET = PROJECT_ROOT / "data" / "voices" / "gwen" / "yen_nhi.wav"
-SOURCE = "https://raw.githubusercontent.com/ggroup-ai-lab/gwen-tts/main/data/ref_audio/yen_nhi.wav"
+TARGET = PROJECT_ROOT / "data" / "voices" / "omnivoice" / "ai_vy.wav"
+SOURCE = "https://huggingface.co/g-group-ai-lab/gwen-tts-0.6B/resolve/main/data/ref_audio/ai_vy.wav"
 
 
 def main() -> None:
@@ -14,7 +14,7 @@ def main() -> None:
     if not TARGET.is_file() or TARGET.stat().st_size == 0:
         urlretrieve(SOURCE, TARGET)
     if TARGET.stat().st_size == 0:
-        raise RuntimeError("Downloaded Yến Nhi reference audio is empty.")
+        raise RuntimeError("Downloaded Ái Vy reference audio is empty.")
     print(TARGET)
 
 

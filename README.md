@@ -111,7 +111,7 @@ On 2026-07-27, this RTX 4050 Laptop GPU measured 3.36 s cold and 0.75 s warm
 for the two bounded 128-token dialogue probes. llama.cpp reported about 35
 generated tokens/s; a resident 2,048-context probe used 5,417 MiB of the
 6,141 MiB GPU. These are machine-specific measurements, not a quality
-approval. Gwen speech stops the owned GGUF server before synthesis so the two
+approval. OmniVoice speech stops the owned GGUF server before synthesis so the two
 models never compete for the 6 GiB GPU.
 
 The original v6 GGUF path was promoted to the default after manual testing of natural
@@ -213,128 +213,55 @@ best repair-stratum score and no explicit-content hard fail, but still failed
 several repair cases and needs manual review. Reports are under
 `checkpoints\\ru-hard-evaluation-v1`.
 
-## Experimental voice output
+## Local voice output
 
 The GUI automatically sends each completed reply to the selected local voice
-service. Its **Voice** selector persists one of four profiles: `Ru (Gwen)`,
-`Yến Nhi (Gwen)`, `Ru (OmniVoice — test)`, or `Yến Nhi (OmniVoice — test)`.
-Legacy `Ru (Tsukuyomi)` settings migrate to `Ru (Gwen)`; unknown settings do
-the same. Gwen remains the default. Both Ru choices use `tyc_talk.wav` with
-the matching `reference_text.txt`; both Yến Nhi choices use the existing Gwen
-reference audio and its exact transcript. Do not change a reference audio
-without its matching transcript.
+service. Its **Voice** selector persists either `Ru (OmniVoice)` or
+`Ái Vy (OmniVoice)`. Every historical Gwen or OmniVoice trial label migrates
+to the equivalent OmniVoice choice. OmniVoice is the default. Ru uses
+`tyc_talk.wav` and its matching transcript; Ái Vy uses the independently kept
+`data\voices\omnivoice\ai_vy.wav` and its matching transcript. Do not change a
+reference audio without its matching transcript.
 
-Set up Yến Nhi once before selecting it:
+If the Ái Vy asset is absent on a fresh checkout, fetch only that reference
+file (not the removed Gwen model):
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\download_gwen_yen_nhi_voice.py
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\download_omnivoice_ai_vy_voice.py
 ```
 
 All choices retain the same VTube Studio `VoiceVolume` lip-sync behavior and
 sentence queue. VTube metadata is removed before synthesis.
 
-### OmniVoice GUI trial
+### OmniVoice runtime
 
-The two **OmniVoice — test** labels require the already-installed
+Both OmniVoice labels require the already-installed
 `D:\LLM\omnivoice_env` runtime and `models\omnivoice` cache on `D:`. The GUI
 does not install packages or download a model. It starts
 `omnivoice_tts_server.py` only when that selected engine is needed, on loopback
-port 5052; Gwen remains on port 5051. The D-only setup script installs both
-OmniVoice and its Flask loopback-service dependency in `omnivoice_env`.
+port 5052. The D-only setup script installs OmniVoice and its Flask loopback
+service dependency in `omnivoice_env`.
 
 For the pending pronunciation listening trial, both OmniVoice labels use the
 measured `vi-normalized-16` settings (`language="Vietnamese"`, text
 normalization, 16 steps). This affects only explicitly selected OmniVoice test
-voices; **Ru (Gwen)** remains the GUI default until manual approval is recorded.
+voices; **Ru (OmniVoice)** remains the GUI default.
 
-Only the selected voice engine may remain on CUDA. Before warming OmniVoice,
-Ru releases Gwen and the local Llama runtime; before warming Gwen, it releases
-OmniVoice and local Llama. Before local generation, it asks both voice services
-to release. A failed selected engine is reported as unavailable and never
-falls back to the other engine or changes the saved selection.
+### Voice pace
 
-For manual verification, select Ru and Yến Nhi once with each engine, restart
-the GUI to confirm the choice persists, switch back to `Ru (Gwen)`, and verify
-that normal local Llama generation and VTube lip-sync still work. This is a
-reversible listening trial, not a default or quality promotion.
+Settings exposes a persisted **Base speed** control from 0.75x to 1.20x,
+defaulting to 0.90x. When **Let Ru adjust pace around this speed** is enabled,
+Ru can select only slow, normal, or quick pacing within ±0.08x of that manual
+baseline and still within the global safety bounds. Pacing metadata is private:
+it never appears in the chat, TTS text, conversation history, or memory.
 
-`g-group-ai-lab/gwen-tts-0.6B` runs in the separate `gwen_env` environment.
-For OpenCode cloud replies, Ru warms and retains its Gwen model plus the fixed
-voice-clone prompt on CUDA while the cloud model is composing the reply. The
-reply is then synthesized sentence-by-sentence through an up-to-two-WAV
-prefetch queue, so the first sentence can play before later sentences are ready
-without an avoidable gap. The
-first cloud reply after opening the GUI can still be slower because it performs
-that warmup.
+Before warming OmniVoice, Ru releases the local Llama runtime. Before local
+generation, it releases OmniVoice. A voice failure is reported as unavailable
+and never silently changes the saved selection.
 
-Before local GGUF or Transformers inference, Ru asks every available voice
-service to release its model and CUDA cache; this keeps voice and Llama models
-from competing for the 6 GB GPU. Gwen is experimental: its voice identity and
-short Vietnamese phrases passed manual listening, while pronunciation still
-needs user evaluation.
-
-The GUI starts and waits for the local service automatically the first time it
-needs to speak. The service continues in the background for later replies. Use
-the command below only to inspect the voice service manually:
-
-```powershell
-& D:\LLM\run_gwen_tts_server.bat
-```
-
-To measure a warm service directly, make a short request five times and inspect
-the returned `synthesis_ms` value. The relevant interactive target is the time
-from completed reply text to the first audible sentence, which also includes
-audio playback setup:
-
-```powershell
-$body = @{ text = 'Em chao anh, em da san sang roi.'; voice_profile = 'yen_nhi' } | ConvertTo-Json
-1..5 | ForEach-Object {
-    Invoke-RestMethod http://127.0.0.1:5051/tts -Method Post -ContentType 'application/json' -Body $body
-}
-```
-
-### OmniVoice isolated benchmark
-
-OmniVoice is an experiment only. It is available as two explicitly labelled
-GUI trials, while **Gwen remains the default** until a separate adoption review.
-The benchmark uses only `tyc_talk.wav` with its exact
-`reference_text.txt`, holds one engine on CUDA at a time, and writes generated
-WAVs plus live reports under ignored `eval_results\omnivoice`.
-
-Preflight first; it resolves inputs and prints commands without creating an
-environment, downloading a package/model, starting Gwen, loading CUDA, or
-creating output:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File D:\LLM\scripts\setup_omnivoice_env.ps1 -WhatIf
-powershell -ExecutionPolicy Bypass -File D:\LLM\scripts\run_omnivoice_benchmark.ps1 -WhatIf
-```
-
-After explicitly approving the first local download, create the separate
-environment and run the comparison:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File D:\LLM\scripts\setup_omnivoice_env.ps1 -ConfirmModelDownload
-powershell -ExecutionPolicy Bypass -File D:\LLM\scripts\run_omnivoice_benchmark.ps1 -ConfirmModelDownload
-```
-
-The model cache is confined to `models\omnivoice`; the installer cache and
-temporary extraction files are confined to `pip-cache\omnivoice` and
-`.tmp\omnivoice-install`, also on `D:`. One run measures a model/prompt load
-separately, then one cold and five warm passes over six Vietnamese, three
-English, and three Vietnamese-English prompts. `first_playable_wav_seconds`
-means the returned complete WAV (not streaming latency); real-time factor is
-synthesis seconds divided by generated-audio seconds. The report also records
-the selected process's peak GPU memory and private RAM when probes are
-available.
-
-Reject OmniVoice if it has any failed run, shares GPU compute with a local Ru
-LLM, fails to improve either median warm first-playable-WAV latency or median
-warm real-time factor by at least 25% against Gwen, or sounds worse in clone
-identity, Vietnamese, English, or natural Vietnamese-English switching. A
-numeric result alone is not adoption: listen to representative outputs from
-all three language groups before recording `accepted`, `rejected`, or
-`blocked`. The GUI trial does not change this adoption gate.
+For manual verification, select Ru and Ái Vy, test a manual speed plus each
+automatic pace, restart the GUI to confirm settings persist, and verify that
+normal local Llama generation and VTube lip-sync still work.
 
 ## Experimental voice input
 
@@ -367,7 +294,7 @@ WAV files.
 
 Keep Google as the default unless an explicit 20-sample manual gate covers
 Vietnamese, English, and Vietnamese-English turns; record recognition success,
-final-transcript latency, and whether local LLM replies plus Gwen playback
+final-transcript latency, and whether local LLM replies plus OmniVoice playback
 remain stable. A failed gate is a non-adoption result, not a reason to weaken
 the fallback or privacy behavior.
 

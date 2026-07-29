@@ -9,20 +9,21 @@ from typing import Callable
 
 from flask import Flask, jsonify, request
 from mini_gpt.omnivoice_tuning import GUI_TRIAL_SETTINGS
+from mini_gpt.voice_pacing import DEFAULT_VOICE_SPEED, clamp_voice_speed
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 MODEL_CACHE = PROJECT_ROOT / "models" / "omnivoice"
 REFERENCE_AUDIO = PROJECT_ROOT / "tyc_talk.wav"
 REFERENCE_TEXT = PROJECT_ROOT / "reference_text.txt"
-YEN_NHI_AUDIO = PROJECT_ROOT / "data" / "voices" / "gwen" / "yen_nhi.wav"
-YEN_NHI_TEXT = (
-    "sao láº¡i khÃ´ng liÃªn quan. cÃ¡c anh láº¥y vá»£ rá»“i cÃ¡c anh cá»© Ä‘á»™i chá»‹ lÃªn Ä‘áº§u "
-    "lÃ m nÃ³c nhÃ  áº¥y, suá»‘t ngÃ y há»i Ã½ kiáº¿n cÃ¡c chá»‹ thÃ¬ lÃ m sao mÃ  ra váº¥n Ä‘á» "
-    "Ä‘Æ°á»£c cho em Ä‘Ãºng khÃ´ng."
+AI_VY_AUDIO = PROJECT_ROOT / "data" / "voices" / "omnivoice" / "ai_vy.wav"
+AI_VY_TEXT = (
+    "việt nam đang kiêu hãnh bước vào kỷ nguyên vươn mình rực rỡ với khát vọng "
+    "mãnh liệt, trí tuệ đổi mới và tinh thần đoàn kết đất nước, tự tin bứt phá, "
+    "kiến tạo một tương lai thịnh vượng và vươn tầm quốc tế."
 )
 VOICE_PROFILES = {
     "ru": (REFERENCE_AUDIO, REFERENCE_TEXT.read_text(encoding="utf-8").strip()),
-    "yen_nhi": (YEN_NHI_AUDIO, YEN_NHI_TEXT),
+    "ai_vy": (AI_VY_AUDIO, AI_VY_TEXT),
 }
 
 _model = None
@@ -88,7 +89,18 @@ def release_model() -> None:
         pass
 
 
-def synthesize_fast(text: str, profile: str = "ru") -> str:
+def apply_voice_speed(audio, speed: float):
+    import librosa
+    import numpy as np
+
+    speed = clamp_voice_speed(speed)
+    waveform = np.asarray(audio, dtype=np.float32)
+    if speed == 1.0:
+        return waveform
+    return librosa.effects.time_stretch(waveform, rate=speed)
+
+
+def synthesize_fast(text: str, profile: str = "ru", speed: float = DEFAULT_VOICE_SPEED) -> str:
     warm_model(profile)
     import soundfile as sf
     import torch
@@ -101,9 +113,10 @@ def synthesize_fast(text: str, profile: str = "ru") -> str:
         )
     if not audio:
         raise RuntimeError("OmniVoice returned no audio.")
+    waveform = apply_voice_speed(audio[0], speed)
     output = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
     output.close()
-    sf.write(output.name, audio[0], 24_000)
+    sf.write(output.name, waveform, 24_000)
     return output.name
 
 
@@ -132,12 +145,13 @@ def create_app(synthesize: Callable[[str, str], str] | None = None) -> Flask:
         data = request.get_json(silent=True) or {}
         text = data.get("text", "").strip()
         profile = data.get("voice_profile", "ru")
+        speed = clamp_voice_speed(data.get("speed", DEFAULT_VOICE_SPEED))
         if not text:
             return jsonify({"error": "No text provided"}), 400
         try:
             started = perf_counter()
             audio_path = (
-                synthesize(text, profile) if synthesize is not None else synthesize_fast(text, profile)
+                synthesize(text, profile, speed) if synthesize is not None else synthesize_fast(text, profile, speed)
             )
             if not Path(audio_path).is_file():
                 raise RuntimeError("OmniVoice did not create a playable audio file.")

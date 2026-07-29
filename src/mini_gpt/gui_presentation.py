@@ -12,7 +12,7 @@ PALETTE = {
 }
 
 
-_PRIVATE_STREAM_MARKERS = ("[[VTS:", "[SEARCH:")
+_PRIVATE_STREAM_MARKERS = ("[[VTS:", "[[VOICE_PACE:", "[SEARCH:")
 
 
 def append_stream_text(existing: str, incoming: str) -> str:

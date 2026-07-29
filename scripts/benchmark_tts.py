@@ -398,7 +398,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model-cache", type=Path, default=project_root / "models" / "omnivoice")
     parser.add_argument("--warm-trials", type=int, default=5)
     parser.add_argument("--omnivoice-config", choices=tuple(SETTINGS_BY_ID), default=BASELINE_SETTINGS.config_id)
-    parser.add_argument("--voice-profile", choices=("ru", "yen_nhi"), default="ru")
+    parser.add_argument("--voice-profile", choices=("ru", "ai_vy"), default="ru")
     return parser.parse_args(argv)
 
 

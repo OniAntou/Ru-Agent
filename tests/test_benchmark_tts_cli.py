@@ -243,18 +243,18 @@ def test_run_benchmark_adds_profile_and_engine_metadata_to_every_record(tmp_path
         reference_audio=reference,
         reference_text="reference text",
         output_dir=tmp_path / "audio",
-        voice_profile="yen_nhi",
+        voice_profile="ai_vy",
         clock=lambda: 1.0,
     )
 
-    assert report["voice_profile"] == "yen_nhi"
+    assert report["voice_profile"] == "ai_vy"
     assert report["generation_config_id"] == "vi-normalized-20"
     assert report["generation_settings"] == {
         "language": "Vietnamese",
         "normalize_text": True,
         "num_step": 20,
     }
-    assert all(record["voice_profile"] == "yen_nhi" for record in report["records"])
+    assert all(record["voice_profile"] == "ai_vy" for record in report["records"])
     assert all(record["generation_config_id"] == "vi-normalized-20" for record in report["records"])
 
 
@@ -339,11 +339,11 @@ def test_cli_resolves_only_known_omnivoice_settings_and_voice_profiles() -> None
     args = parse_args([
         *common,
         "--omnivoice-config", "vi-normalized-24",
-        "--voice-profile", "yen_nhi",
+        "--voice-profile", "ai_vy",
     ])
 
     assert args.omnivoice_config == "vi-normalized-24"
-    assert args.voice_profile == "yen_nhi"
+    assert args.voice_profile == "ai_vy"
     assert parse_args(common).omnivoice_config == "baseline-16"
     assert parse_args(common).voice_profile == "ru"
     with pytest.raises(SystemExit):

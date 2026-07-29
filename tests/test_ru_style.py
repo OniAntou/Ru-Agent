@@ -31,6 +31,27 @@ def test_ru_prompts_route_emotion_to_vts_without_chat_symbols() -> None:
     assert all("private VTS markers" in prompt for prompt in prompts)
 
 
+def test_ru_prompts_explain_identity_mission_and_capabilities() -> None:
+    prompts = [RU_SYSTEM_PROMPT, *RU_PROMPTS.values(), RU_CLOUD_SYSTEM_PROMPT]
+    for prompt in prompts:
+        folded = prompt.casefold()
+        assert "trợ lý ai của anh" in folded
+        assert "avatar Live2D" in prompt
+        assert "nhiệm vụ" in folded
+        assert "VTube Studio" in prompt
+        assert "không tự nhận" in folded
+
+
+def test_ru_prompts_describe_connected_avatar_controls_without_mouth_override() -> None:
+    prompts = [RU_SYSTEM_PROMPT, *RU_PROMPTS.values(), RU_CLOUD_SYSTEM_PROMPT]
+    for prompt in prompts:
+        assert "hotkey" in prompt
+        assert "expression" in prompt
+        assert "VoiceVolume" in prompt
+        assert "LLM_MouthOpen" in prompt
+        assert "metadata VTS ẩn" in prompt
+
+
 def test_v6_3_authored_rows_have_no_chat_symbols() -> None:
     text = "\n".join(
         str(message["content"])

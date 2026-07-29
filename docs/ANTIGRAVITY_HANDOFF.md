@@ -143,6 +143,14 @@ the equivalent OmniVoice choice. Ái Vy uses the independently retained
 queue and VTube `VoiceVolume` lip-sync lifecycle; private VTS metadata is
 removed before synthesis.
 
+The active Ru identity contract describes Ru as the user's AI assistant embodied
+by the connected Live2D avatar. Ru's mission is natural conversation and
+in-session assistance; it can use only currently connected services and the
+current model catalog, and must not claim unavailable actions. The personality
+is friendly, witty, lightly grumpy, and affectionate while preserving the
+Vietnamese `anh`/`em` voice and direct handling of serious requests. VTS action
+metadata remains private and is removed from display, TTS, history, and memory.
+
 The active VTube motion policy keeps speaking sway layered and eased within an
 amplitude bound of `14.0` with base speed `1.35`; bounded direction drift and
 short holds break up repetition, while idle sway remains at amplitude `5.0`.

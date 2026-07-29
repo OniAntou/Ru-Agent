@@ -26,7 +26,7 @@
 - Create `data/evaluations/ru_tts_benchmark_v1.jsonl` for the fixed twelve prompts.
 - Create `scripts/benchmark_tts.py` for Gwen/OmniVoice adapters and report writing, with heavy imports lazy.
 - Create `tests/test_benchmark_tts_cli.py` for adapter and script contracts without real models, HTTP, GPU, or downloads.
-- Modify `gwen_tts_server.py` and `tests/test_gwen_tts_server.py` for a local service status endpoint.
+- Modify `gwen_tts_server.py` and create `tests/test_gwen_tts_server.py` for a local service status endpoint.
 - Create `scripts/setup_omnivoice_env.ps1` and `scripts/run_omnivoice_benchmark.ps1` for explicit isolated setup and safe sequential runs.
 - Modify `README.md` and `docs/ANTIGRAVITY_HANDOFF.md` for the reproducible gate and current candidate status.
 

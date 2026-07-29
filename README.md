@@ -319,6 +319,15 @@ codes from a previous model are discarded safely. An expression activated by
 Ru is deactivated after a short interval, while expressions that were already
 active from the user are never touched.
 
+While Ru is speaking, `LLM_Sway` keeps a small residual motion (amplitude `8.0`,
+speed `1.35`) instead of the former large sway. At most one ambient
+micro-action is considered every 12--25 seconds. The candidate pool is read
+from the current model catalog each time and is limited to reversible blink,
+eye, head, ear, or tail motions; pout, blush, clothing/body-reveal, and
+unknown entries are skipped. Ru's explicit catalog-selected actions remain
+independent, so a model can still expose additional hotkeys without changing
+this scheduler.
+
 Direct Vietnamese avatar requests such as `giơ tay`, `vẫy tay`, `vui lên`,
 `nhắm mắt`, and `dựng đuôi` remain a compatibility fallback even if the
 language model answers as a text-only assistant.

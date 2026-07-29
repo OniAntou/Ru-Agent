@@ -143,6 +143,14 @@ the equivalent OmniVoice choice. Ái Vy uses the independently retained
 queue and VTube `VoiceVolume` lip-sync lifecycle; private VTS metadata is
 removed before synthesis.
 
+The active VTube motion policy keeps speaking sway at amplitude `8.0` and
+speed `1.35` while leaving idle sway at amplitude `5.0`. During speech, the
+manager checks the current model catalog only every 12--25 seconds and may
+trigger one safe ambient blink, eye, head, ear, or tail action. Pout, blush,
+clothing/body-reveal, and unknown entries are excluded; Ru's explicit
+catalog-selected actions remain available and share a dispatch guard so they
+do not race an ambient action.
+
 The OmniVoice choices are the active GUI runtime. The Ru and Ái Vy profiles use
 only `tyc_talk.wav`/`reference_text.txt` or the independently retained Ái Vy
 reference pair. All use the separate

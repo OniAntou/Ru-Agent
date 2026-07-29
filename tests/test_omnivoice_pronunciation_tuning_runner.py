@@ -35,6 +35,9 @@ def test_runner_has_an_explicit_no_side_effect_preflight_and_safe_process_scope(
     assert "no directory, service, CUDA load, settings change, or WAV" in script
     assert "Get-RuComputeBlocker" in script
     assert "llama-server|llama-cli|mini_gpt\\.transformers|transformers.*mini_gpt" in script
+    assert "Test-OmniVoiceServiceLoaded" in script
+    assert "http://127.0.0.1:5052/status" in script
+    assert "OmniVoice service is loaded" in script
     assert "Stop-Process" not in script
     assert "pip install" not in script
     assert "setup_omnivoice_env.ps1" not in script

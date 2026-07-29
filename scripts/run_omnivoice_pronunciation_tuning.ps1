@@ -54,6 +54,15 @@ function Test-GwenService {
     }
 }
 
+function Test-OmniVoiceServiceLoaded {
+    try {
+        $status = Invoke-RestMethod "http://127.0.0.1:5052/status" -TimeoutSec 2
+        return $status.model_loaded -eq $true
+    } catch {
+        return $false
+    }
+}
+
 function Start-OwnedGwenService {
     if (Test-GwenService) {
         return
@@ -128,6 +137,9 @@ if ($WhatIf) {
 
 if (-not $ConfirmRun) {
     throw "Pass -ConfirmRun before generating pronunciation-tuning WAVs."
+}
+if (Test-OmniVoiceServiceLoaded) {
+    throw "OmniVoice service is loaded on port 5052; release it from the GUI before pronunciation tuning."
 }
 if (Test-Path -LiteralPath $OutputRoot) {
     if (-not $OverwriteOutput) {

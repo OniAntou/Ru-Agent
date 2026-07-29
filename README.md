@@ -277,10 +277,12 @@ Install the optional runtime only after supplying a compatible local model:
 & D:\LLM\.venv\Scripts\python.exe -m pip install -e '.[speech-offline]'
 ```
 
-Select a folder containing exactly the files required by the initial
-transducer proof of concept: `tokens.txt`, `encoder.onnx`, `decoder.onnx`, and
-`joiner.onnx`. The GUI stores only the selected recognizer and this model
-folder; it does not save microphone recordings or transcripts.
+Select a folder containing `tokens.txt` plus one matching
+`encoder*.onnx`, `decoder*.onnx`, and `joiner*.onnx`. The recommended initial
+model is the official `sherpa-onnx-zipformer-vi-30M-int8-2026-02-09` package,
+whose files are `encoder.int8.onnx`, `decoder.onnx`, and `joiner.int8.onnx`.
+The GUI stores only the selected recognizer and this model folder; it does not
+save microphone recordings or transcripts.
 
 Benchmark supplied samples before considering Sherpa-ONNX as a default. Each
 JSONL manifest row contains an `audio_path` and `expected_text`; paths may be
@@ -288,7 +290,7 @@ relative to the manifest. Samples must be uncompressed, mono, 16-bit, 16 kHz
 WAV files.
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\benchmark_stt.py --engine sherpa-onnx --model-dir D:\LLM\models\sherpa --manifest D:\LLM\data\stt_samples.jsonl --output D:\LLM\data\stt_benchmark.jsonl
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\benchmark_stt.py --engine sherpa-onnx --model-dir D:\LLM\models\sherpa-onnx-zipformer-vi-30M-int8-2026-02-09 --manifest D:\LLM\data\stt_samples.jsonl --output D:\LLM\data\stt_benchmark.jsonl
 ```
 
 Keep Google as the default unless an explicit 20-sample manual gate covers

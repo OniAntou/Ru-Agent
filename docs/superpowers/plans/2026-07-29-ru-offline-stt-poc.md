@@ -12,7 +12,7 @@
 
 - Preserve Google (vi-VN) as the default recognizer and do not silently fall back from Sherpa to Google.
 - The Sherpa proof of concept is CPU-first; do not alter LLM/Gwen GPU lifecycle or start any background audio process.
-- Do not download models automatically. A compatible user-supplied model directory must contain tokens.txt, encoder.onnx, decoder.onnx, and joiner.onnx.
+- Do not download models automatically. A compatible user-supplied model directory must contain tokens.txt plus matching encoder*.onnx, decoder*.onnx, and joiner*.onnx files.
 - Persist only speech_engine and speech_model_dir; never persist microphone audio, transcript text, or additional secrets.
 - Keep VTS metadata, memory extraction, and TTS out of the recognition path.
 - Add only new targeted tests; do not restore deleted legacy tests.

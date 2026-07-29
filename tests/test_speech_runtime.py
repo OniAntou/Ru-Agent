@@ -40,9 +40,18 @@ def test_sherpa_requires_the_complete_local_model_layout(tmp_path: Path) -> None
         )
 
 
-def test_sherpa_missing_optional_package_has_a_recovery_message(tmp_path: Path) -> None:
+def test_sherpa_missing_optional_package_has_a_recovery_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     for name in ("tokens.txt", "encoder.onnx", "decoder.onnx", "joiner.onnx"):
         (tmp_path / name).write_bytes(b"model")
+
+    def missing_package() -> object:
+        raise SpeechEngineUnavailable(
+            "Sherpa-ONNX is not installed. Install Ru with the speech-offline extra."
+        )
+
+    monkeypatch.setattr("mini_gpt.speech_runtime._import_sherpa_onnx", missing_package)
 
     with pytest.raises(SpeechEngineUnavailable, match="speech-offline"):
         build_speech_recognizer(
@@ -87,6 +96,8 @@ def test_sherpa_adapter_normalizes_a_successful_local_result(tmp_path: Path) -> 
         (tmp_path / name).write_bytes(b"model")
 
     class FakeStream:
+        result = SimpleNamespace(text="  xin   chao anh  ")
+
         def accept_waveform(self, sample_rate_hz: int, samples: object) -> None:
             assert sample_rate_hz == 16_000
             assert getattr(samples, "tolist")() == [0.0]
@@ -103,9 +114,6 @@ def test_sherpa_adapter_normalizes_a_successful_local_result(tmp_path: Path) -> 
         def decode_stream(self, _stream: object) -> None:
             pass
 
-        def get_result(self, _stream: object) -> SimpleNamespace:
-            return SimpleNamespace(text="  xin   chao anh  ")
-
     fake_module = SimpleNamespace(OfflineRecognizer=FakeOfflineRecognizer)
     recognizer = SherpaOnnxRecognizer(
         SpeechEngineConfig(engine_id="sherpa-onnx", model_dir=tmp_path),
@@ -113,3 +121,24 @@ def test_sherpa_adapter_normalizes_a_successful_local_result(tmp_path: Path) -> 
     )
 
     assert recognizer.recognize(CapturedAudio(b"\x00\x00")) == "xin chao anh"
+
+
+def test_sherpa_accepts_the_official_vietnamese_int8_model_layout(tmp_path: Path) -> None:
+    for name in ("tokens.txt", "encoder.int8.onnx", "decoder.onnx", "joiner.int8.onnx"):
+        (tmp_path / name).write_bytes(b"model")
+
+    class FakeOfflineRecognizer:
+        @classmethod
+        def from_transducer(cls, **kwargs: object) -> "FakeOfflineRecognizer":
+            assert str(kwargs["encoder"]).endswith("encoder.int8.onnx")
+            assert str(kwargs["decoder"]).endswith("decoder.onnx")
+            assert str(kwargs["joiner"]).endswith("joiner.int8.onnx")
+            return cls()
+
+    fake_module = SimpleNamespace(OfflineRecognizer=FakeOfflineRecognizer)
+    recognizer = SherpaOnnxRecognizer(
+        SpeechEngineConfig(engine_id="sherpa-onnx", model_dir=tmp_path),
+        sherpa_module=fake_module,
+    )
+
+    assert recognizer.engine_id == "sherpa-onnx"

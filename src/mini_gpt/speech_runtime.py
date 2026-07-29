@@ -15,7 +15,7 @@ SPEECH_ENGINE_LABELS = {
     "Google (online)": SPEECH_ENGINE_GOOGLE,
     "Sherpa-ONNX (offline)": SPEECH_ENGINE_SHERPA_ONNX,
 }
-_SHERPA_REQUIRED_FILES = ("tokens.txt", "encoder.onnx", "decoder.onnx", "joiner.onnx")
+_SHERPA_TOKENS_FILE = "tokens.txt"
 
 
 class SpeechRecognitionError(RuntimeError):
@@ -50,6 +50,14 @@ class SpeechEngineConfig:
     engine_id: str = SPEECH_ENGINE_GOOGLE
     model_dir: Path | None = None
     language: str = "vi-VN"
+
+
+@dataclass(frozen=True, slots=True)
+class SherpaTransducerFiles:
+    tokens: Path
+    encoder: Path
+    decoder: Path
+    joiner: Path
 
 
 class SpeechRecognizer(Protocol):
@@ -98,14 +106,14 @@ class SherpaOnnxRecognizer:
         *,
         sherpa_module: ModuleType | object | None = None,
     ) -> None:
-        self._model_dir = _validate_sherpa_model_dir(config.model_dir)
+        self._model_files = _resolve_sherpa_model_files(config.model_dir)
         self._sherpa_module = sherpa_module or _import_sherpa_onnx()
         try:
             self._recognizer = self._sherpa_module.OfflineRecognizer.from_transducer(
-                tokens=str(self._model_dir / "tokens.txt"),
-                encoder=str(self._model_dir / "encoder.onnx"),
-                decoder=str(self._model_dir / "decoder.onnx"),
-                joiner=str(self._model_dir / "joiner.onnx"),
+                tokens=str(self._model_files.tokens),
+                encoder=str(self._model_files.encoder),
+                decoder=str(self._model_files.decoder),
+                joiner=str(self._model_files.joiner),
                 num_threads=1,
                 sample_rate=16_000,
                 feature_dim=80,
@@ -123,7 +131,7 @@ class SherpaOnnxRecognizer:
         try:
             stream.accept_waveform(audio.sample_rate_hz, samples)
             self._recognizer.decode_stream(stream)
-            return normalize_transcript(self._recognizer.get_result(stream).text)
+            return normalize_transcript(stream.result.text)
         except SpeechRecognitionError:
             raise
         except Exception as error:
@@ -158,15 +166,30 @@ def speech_settings_for_persistence(config: SpeechEngineConfig) -> dict[str, str
     }
 
 
-def _validate_sherpa_model_dir(model_dir: Path | None) -> Path:
+def _resolve_sherpa_model_files(model_dir: Path | None) -> SherpaTransducerFiles:
     if model_dir is None or not model_dir.is_dir():
         raise SpeechConfigurationError("Select a Sherpa-ONNX model folder.")
-    missing = [name for name in _SHERPA_REQUIRED_FILES if not (model_dir / name).is_file()]
-    if missing:
-        raise SpeechConfigurationError(
-            "Sherpa-ONNX model folder must contain " + ", ".join(_SHERPA_REQUIRED_FILES) + "."
+    tokens = model_dir / _SHERPA_TOKENS_FILE
+    if not tokens.is_file():
+        raise SpeechConfigurationError("Sherpa-ONNX model folder must contain tokens.txt.")
+    try:
+        return SherpaTransducerFiles(
+            tokens=tokens,
+            encoder=_select_sherpa_component(model_dir, "encoder"),
+            decoder=_select_sherpa_component(model_dir, "decoder"),
+            joiner=_select_sherpa_component(model_dir, "joiner"),
         )
-    return model_dir
+    except LookupError as error:
+        raise SpeechConfigurationError(
+            "Sherpa-ONNX model folder must contain encoder*.onnx, decoder*.onnx, and joiner*.onnx."
+        ) from error
+
+
+def _select_sherpa_component(model_dir: Path, component: str) -> Path:
+    matches = sorted(model_dir.glob(f"{component}*.onnx"))
+    if not matches:
+        raise LookupError(component)
+    return min(matches, key=lambda path: (".int8." not in path.name, len(path.name), path.name))
 
 
 def _import_sherpa_onnx() -> ModuleType:

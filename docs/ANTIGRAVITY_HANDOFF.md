@@ -143,7 +143,7 @@ the equivalent OmniVoice choice. Ái Vy uses the independently retained
 queue and VTube `VoiceVolume` lip-sync lifecycle; private VTS metadata is
 removed before synthesis.
 
-The active VTube motion policy keeps speaking sway at amplitude `8.0` and
+The active VTube motion policy keeps speaking sway at amplitude `14.0` and
 speed `1.35` while leaving idle sway at amplitude `5.0`. During speech, the
 manager checks the current model catalog only every 12--25 seconds and may
 trigger one safe ambient blink, eye, head, ear, or tail action. Pout, blush,

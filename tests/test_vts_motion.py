@@ -17,9 +17,9 @@ class FakeRandom:
 
 
 def test_speaking_sway_is_smaller_than_idle_baseline_and_old_peak():
-    assert SPEAKING_SWAY_AMPLITUDE == 8.0
+    assert SPEAKING_SWAY_AMPLITUDE == 14.0
     assert IDLE_SWAY_AMPLITUDE == 5.0
-    assert abs(sway_value(1.0, speaking=True)) <= 8.0
+    assert abs(sway_value(1.0, speaking=True)) <= 14.0
     assert abs(sway_value(1.0, speaking=False)) <= 5.0
 
 

@@ -356,7 +356,7 @@ class RuApp:
             },
         )
         self._speech_generation = 0
-        self._stream_response_start: str | None = None
+        self._stream_response_anchor: str | None = None
         self._stream_raw_response = ""
         self.session_turns: list[ChatTurn] = []
         self.last_turn: ChatTurn | None = None
@@ -749,17 +749,21 @@ class RuApp:
         self.transcript_text.insert(tk.END, "You\n", "user_label")
         self.transcript_text.insert(tk.END, f"{prompt}\n\n", "user_bubble")
         self.transcript_text.insert(tk.END, "Ru\n", "ru_label")
-        self._stream_response_start = self.transcript_text.index(tk.END)
+        self.transcript_text.tag_configure("stream_anchor", elide=True)
+        self.transcript_text.insert(tk.END, " ", "stream_anchor")
+        self._stream_response_anchor = self.transcript_text.index("end-2c")
         self.transcript_text.insert(tk.END, "\n\n", "ru_bubble")
         self.transcript_text.see(tk.END)
         self.transcript_text.configure(state="disabled")
 
     def _replace_streaming_response(self, response: str) -> None:
-        if self._stream_response_start is None:
+        anchor = getattr(self, "_stream_response_anchor", None)
+        if anchor is None:
             return
+        response_start = f"{anchor} + 1c"
         self.transcript_text.configure(state="normal")
-        self.transcript_text.delete(self._stream_response_start, tk.END)
-        self.transcript_text.insert(tk.END, f"{response}\n\n", "ru_bubble")
+        self.transcript_text.delete(response_start, tk.END)
+        self.transcript_text.insert(response_start, f"{response}\n\n", "ru_bubble")
         self.transcript_text.see(tk.END)
         self.transcript_text.configure(state="disabled")
 
@@ -775,17 +779,26 @@ class RuApp:
 
     def _finish_streaming_turn(self, response: str) -> None:
         self._replace_streaming_response(response)
-        self._stream_response_start = None
+        self._clear_streaming_anchor()
         self._stream_raw_response = ""
 
     def _discard_streaming_turn(self) -> None:
-        if getattr(self, "_stream_response_start", None) is None:
+        anchor = getattr(self, "_stream_response_anchor", None)
+        if anchor is None:
             return
         self.transcript_text.configure(state="normal")
-        self.transcript_text.delete("%s - 1 lines" % self._stream_response_start, tk.END)
+        self.transcript_text.delete(f"{anchor} - 1 lines", tk.END)
         self.transcript_text.configure(state="disabled")
-        self._stream_response_start = None
+        self._stream_response_anchor = None
         self._stream_raw_response = ""
+
+    def _clear_streaming_anchor(self) -> None:
+        anchor = getattr(self, "_stream_response_anchor", None)
+        if anchor is not None:
+            self.transcript_text.configure(state="normal")
+            self.transcript_text.delete(anchor, f"{anchor} + 1c")
+            self.transcript_text.configure(state="disabled")
+        self._stream_response_anchor = None
 
     def _new_chat(self) -> None:
         if self.worker is not None and self.worker.is_alive():

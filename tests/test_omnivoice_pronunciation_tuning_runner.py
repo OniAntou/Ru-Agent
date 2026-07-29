@@ -23,7 +23,7 @@ def test_runner_defines_the_full_d_only_pronunciation_matrix() -> None:
     assert "[switch]$ConfirmRun" in script
     assert "[switch]$WhatIf" in script
     assert "[switch]$OverwriteOutput" in script
-    assert "[string]$GwenReport" in script
+    assert "[string]$GwenBaselineReport" in script
     assert "--voice-profile $profile" in script
     assert "--omnivoice-config $configId" in script
 
@@ -34,6 +34,8 @@ def test_runner_has_an_explicit_no_side_effect_preflight_and_safe_process_scope(
     assert "if ($WhatIf)" in script
     assert "if (-not $ConfirmRun)" in script
     assert "no directory, service, CUDA load, settings change, or WAV" in script
+    assert 'Write-Output "Runner parameters: ConfirmRun=$ConfirmRun WhatIf=$WhatIf"' in script
+    assert "Write-Output \"Preflight only: no directory, service, CUDA load, settings change, or WAV will be created\"\n    return" in script
     assert "Get-RuComputeBlocker" in script
     assert "llama-server|llama-cli|mini_gpt\\.transformers|transformers.*mini_gpt" in script
     assert "Test-OmniVoiceServiceLoaded" in script
@@ -63,7 +65,10 @@ def test_runner_records_the_manual_review_gate_without_adopting_runtime_settings
 def test_runner_can_use_a_verified_existing_gwen_report_without_starting_the_service() -> None:
     script = _script()
 
-    assert "if ($GwenReport)" in script
+    assert "if ($GwenBaselineReport)" in script
     assert "Could not read Gwen baseline report" in script
     assert "Gwen baseline report did not produce a finite" in script
-    assert "Gwen service start is skipped when -GwenReport is supplied" in script
+    assert "Gwen service start is skipped when -GwenBaselineReport is supplied" in script
+    assert '$gwenRunReport = Join-Path $OutputRoot "gwen-report.json"' in script
+    assert "function Test-FiniteNumber" in script
+    assert "[double]::IsFinite" not in script

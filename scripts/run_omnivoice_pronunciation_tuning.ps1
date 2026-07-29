@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$OutputRoot = (Join-Path "D:\LLM\eval_results\omnivoice-pronunciation" (Get-Date -Format "yyyyMMdd-HHmmss")),
-    [string]$GwenReport,
+    [string]$GwenBaselineReport,
     [switch]$ConfirmRun,
     [switch]$OverwriteOutput,
     [switch]$WhatIf
@@ -23,7 +23,7 @@ $profiles = "ru", "yen_nhi"
 
 function Assert-RunnerInputs {
     $requiredPaths = @($mainPython, $omniPython, $benchmarkScript, $manifest, $ruAudio, $ruText, $yenNhiAudio)
-    if (-not $GwenReport) {
+    if (-not $GwenBaselineReport) {
         $requiredPaths += $gwenPython
     }
     foreach ($path in $requiredPaths) {
@@ -99,13 +99,22 @@ function Write-YenNhiReferenceText([string]$destination) {
     [System.IO.File]::WriteAllBytes($destination, [Convert]::FromBase64String(($encoded | Select-Object -Last 1).Trim()))
 }
 
+function Test-FiniteNumber([object]$value) {
+    try {
+        $number = [double]$value
+    } catch {
+        return $false
+    }
+    return -not [double]::IsNaN($number) -and -not [double]::IsInfinity($number)
+}
+
 function Get-AutomaticVerdict([string]$reportPath, [string]$profile, [string]$configId, [double]$gwenMedian) {
     $report = Get-Content -Raw -LiteralPath $reportPath | ConvertFrom-Json
     $candidateMedian = $report.summary.median_warm_first_playable_wav_seconds
     $failedRecords = [int]$report.summary.failed_records
     if ($failedRecords -ne 0) {
         $verdict = "fail: benchmark records include failures"
-    } elseif ($null -eq $candidateMedian -or -not [double]::IsFinite([double]$candidateMedian)) {
+    } elseif (-not (Test-FiniteNumber $candidateMedian)) {
         $verdict = "fail: candidate median is missing or not finite"
     } elseif ([double]$candidateMedian -gt ($gwenMedian / 2)) {
         $verdict = "fail: candidate median is slower than the required 2x Gwen threshold"
@@ -128,10 +137,11 @@ if ($blocker) {
     throw "Ru local model is using the GPU (PID $($blocker.ProcessId)); release it before pronunciation tuning."
 }
 
+Write-Output "Runner parameters: ConfirmRun=$ConfirmRun WhatIf=$WhatIf"
 if ($WhatIf) {
     Write-Output "Preflight only: resolved inputs under $projectRoot"
-    if ($GwenReport) {
-        Write-Output "Preflight only: reuse Gwen baseline report $GwenReport"
+    if ($GwenBaselineReport) {
+        Write-Output "Preflight only: reuse Gwen baseline report $GwenBaselineReport"
     } else {
         Write-Output "Preflight only: Gwen baseline uses profile ru and $manifest"
     }
@@ -141,7 +151,7 @@ if ($WhatIf) {
         }
     }
     Write-Output "Preflight only: no directory, service, CUDA load, settings change, or WAV will be created"
-    exit 0
+    return
 }
 
 if (-not $ConfirmRun) {
@@ -159,20 +169,20 @@ if (Test-Path -LiteralPath $OutputRoot) {
 }
 
 $gwenOutput = Join-Path $OutputRoot "gwen"
-$gwenReport = Join-Path $OutputRoot "gwen-report.json"
+$gwenRunReport = Join-Path $OutputRoot "gwen-report.json"
 $yenNhiText = Join-Path $OutputRoot "yen_nhi_reference.txt"
 $entries = @()
 
-if ($GwenReport) {
-    if (-not (Test-Path -LiteralPath $GwenReport -PathType Leaf)) {
-        throw "Could not read Gwen baseline report: $GwenReport"
+if ($GwenBaselineReport) {
+    if (-not (Test-Path -LiteralPath $GwenBaselineReport -PathType Leaf)) {
+        throw "Could not read Gwen baseline report: $GwenBaselineReport"
     }
-    $gwenReport = (Resolve-Path -LiteralPath $GwenReport).Path
-    Write-Output "Gwen service start is skipped when -GwenReport is supplied"
+    $gwenRunReport = (Resolve-Path -LiteralPath $GwenBaselineReport).Path
+    Write-Output "Gwen service start is skipped when -GwenBaselineReport is supplied"
 } else {
     try {
         Start-OwnedGwenService
-        & $mainPython $benchmarkScript --engine gwen --manifest $manifest --output-dir $gwenOutput --report $gwenReport --reference-audio $ruAudio --reference-text $ruText --model-cache $modelCache --warm-trials 5 --voice-profile ru
+        & $mainPython $benchmarkScript --engine gwen --manifest $manifest --output-dir $gwenOutput --report $gwenRunReport --reference-audio $ruAudio --reference-text $ruText --model-cache $modelCache --warm-trials 5 --voice-profile ru
         if ($LASTEXITCODE -ne 0) {
             throw "Gwen baseline failed with exit code $LASTEXITCODE."
         }
@@ -183,12 +193,12 @@ if ($GwenReport) {
 
 Write-YenNhiReferenceText $yenNhiText
 try {
-    $gwen = Get-Content -Raw -LiteralPath $gwenReport | ConvertFrom-Json
+    $gwen = Get-Content -Raw -LiteralPath $gwenRunReport | ConvertFrom-Json
 } catch {
-    throw "Could not read Gwen baseline report: $gwenReport"
+    throw "Could not read Gwen baseline report: $gwenRunReport"
 }
 $gwenMedian = $gwen.summary.median_warm_first_playable_wav_seconds
-if ($null -eq $gwenMedian -or -not [double]::IsFinite([double]$gwenMedian)) {
+if (-not (Test-FiniteNumber $gwenMedian)) {
     throw "Gwen baseline report did not produce a finite median warm first-playable-WAV time."
 }
 
@@ -216,7 +226,7 @@ $summary = [ordered]@{
     schema_version = 1
     status = "pending_manual_review"
     gwen = [ordered]@{
-        report_path = $gwenReport
+        report_path = $gwenRunReport
         summary = $gwen.summary
     }
     omnivoice = $entries

@@ -1264,7 +1264,7 @@ class RuApp:
                 publish(end_of_queue)
 
         if hasattr(self, "vts_manager"):
-            self.vts_manager.is_speaking = True
+            self.vts_manager.set_speaking(True)
         producer = threading.Thread(target=synthesize_chunks, daemon=True)
         producer.start()
         try:
@@ -1292,7 +1292,7 @@ class RuApp:
                 except queue.Empty:
                     break
             if hasattr(self, "vts_manager"):
-                self.vts_manager.is_speaking = False
+                self.vts_manager.set_speaking(False)
             if generation == self._speech_generation and getattr(self, "voice_mode_active", False):
                 self.root.after(500, self._toggle_recording)
 

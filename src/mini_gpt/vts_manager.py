@@ -1,13 +1,13 @@
 import asyncio
 import logging
 import time
-import math
 import threading
 
 import pyvts
 
 from .vts_actions import VtsActions
 from .vts_catalog import VtsCatalog, build_catalog
+from .vts_motion import sway_value
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,7 @@ class VTSManager:
 
     def shutdown(self) -> None:
         self.is_connected = False
+        self.set_speaking(False)
         loop = self._loop
         if loop is None or not loop.is_running():
             return
@@ -127,16 +128,16 @@ class VTSManager:
             logger.error("Failed to create custom parameter: %s", e)
 
     async def sway_loop(self):
-        start_time = time.time()
+        start_time = time.monotonic()
         while self.is_connected:
             try:
-                elapsed = time.time() - start_time
+                elapsed = time.monotonic() - start_time
                 if self.is_speaking:
                     # Lắc mạnh và nhanh (biên độ 30, chu kỳ ngắn)
-                    val = math.sin(elapsed * 4.0) * 30.0
+                    val = sway_value(elapsed, speaking=True)
                 else:
                     # Đung đưa nhẹ nhàng (biên độ 5, chu kỳ dài)
-                    val = math.sin(elapsed * 1.5) * 5.0
+                    val = sway_value(elapsed, speaking=False)
                 req_inject = self.vts.vts_request.requestSetParameterValue(
                     parameter="LLM_Sway",
                     value=val
@@ -146,6 +147,11 @@ class VTSManager:
             except Exception as e:
                 logger.debug("Sway loop error: %s", e)
                 await asyncio.sleep(1)
+
+    def set_speaking(self, speaking: bool) -> None:
+        """Update the speech state consumed by the background sway loop."""
+
+        self.is_speaking = bool(speaking)
 
     async def trigger_hotkey(self, hotkey_name):
         if not self.is_connected:

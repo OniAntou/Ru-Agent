@@ -50,10 +50,12 @@ the default; Gwen remains the default until a separate voice-quality decision.
 
 ## Runtime integration
 
-After a passing gate, `omnivoice_tts_server.py` owns the selected immutable
-generation settings. GUI requests remain profile-only and do not expose model
-tuning controls. This prevents a user setting from silently bypassing the
-benchmark gate and keeps cached clone prompts reusable.
+For the manual listening trial, `omnivoice_tts_server.py` owns the selected
+immutable settings after the automated gate passes. GUI requests remain
+profile-only and do not expose model tuning controls. This prevents a user
+setting from silently bypassing the benchmark gate and keeps cached clone
+prompts reusable. This trial-only selection does not promote OmniVoice or
+change the Gwen default; recorded manual approval remains required.
 
 ## Verification
 

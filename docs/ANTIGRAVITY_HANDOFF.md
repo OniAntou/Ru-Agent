@@ -163,6 +163,11 @@ never falls back after a selected service error. Manual verification must cover
 both profiles on both engines, restart persistence, a switch back to Gwen,
 local Llama release, and no spoken VTS metadata.
 
+The current pending listening trial sends both OmniVoice profiles with
+`vi-normalized-24`: explicit Vietnamese language, normalized text, and 24
+steps. It was selected for GUI listening only after the automated matrix passed;
+it is not a default change or a completed voice-quality approval.
+
 On 2026-07-29, the isolated automated run completed 72/72 records for each
 engine with no benchmark errors. Gwen's median warm first-playable WAV was
 12.886 s (RTF 3.914); OmniVoice measured 1.218 s (RTF 0.465). OmniVoice met

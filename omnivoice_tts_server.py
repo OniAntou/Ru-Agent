@@ -8,6 +8,7 @@ from time import perf_counter
 from typing import Callable
 
 from flask import Flask, jsonify, request
+from mini_gpt.omnivoice_tuning import GUI_TRIAL_SETTINGS
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 MODEL_CACHE = PROJECT_ROOT / "models" / "omnivoice"
@@ -96,7 +97,7 @@ def synthesize_fast(text: str, profile: str = "ru") -> str:
         audio = get_model().generate(
             text=text,
             voice_clone_prompt=_voice_clone_prompts[profile],
-            num_step=16,
+            **GUI_TRIAL_SETTINGS.generate_kwargs(),
         )
     if not audio:
         raise RuntimeError("OmniVoice returned no audio.")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
 import omnivoice_tts_server as server
 
@@ -75,3 +76,63 @@ def test_http_reports_synthesis_error() -> None:
 
     assert response.status_code == 500
     assert response.get_json() == {"error": "broken"}
+
+
+def test_synthesis_uses_the_selected_24_step_vietnamese_trial_settings(tmp_path, monkeypatch) -> None:
+    class FakeInferenceMode:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback) -> None:
+            return None
+
+    class FakeTorch:
+        @staticmethod
+        def inference_mode() -> FakeInferenceMode:
+            return FakeInferenceMode()
+
+    class FakeSoundFile:
+        @staticmethod
+        def write(path: str, audio, sample_rate: int) -> None:
+            Path(path).write_bytes(b"RIFF")
+
+    class FakeModel:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def generate(self, **kwargs):
+            self.calls.append(kwargs)
+            return [[0.0, 0.0]]
+
+    model = FakeModel()
+    monkeypatch.setitem(sys.modules, "torch", FakeTorch())
+    monkeypatch.setitem(sys.modules, "soundfile", FakeSoundFile())
+    monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
+    monkeypatch.setattr(server, "get_model", lambda: model)
+    monkeypatch.setattr(server.tempfile, "NamedTemporaryFile", lambda **kwargs: type("Output", (), {
+        "name": str(tmp_path / "speech.wav"), "close": lambda self: None,
+    })())
+    server._voice_clone_prompts.clear()
+    server._voice_clone_prompts.update({"ru": "ru-prompt", "yen_nhi": "yen-prompt"})
+
+    ru_audio = server.synthesize_fast("Chào anh.", "ru")
+    yen_audio = server.synthesize_fast("Chào em.", "yen_nhi")
+
+    assert Path(ru_audio).is_file()
+    assert Path(yen_audio).is_file()
+    assert model.calls == [
+        {
+            "text": "Chào anh.",
+            "voice_clone_prompt": "ru-prompt",
+            "language": "Vietnamese",
+            "normalize_text": True,
+            "num_step": 24,
+        },
+        {
+            "text": "Chào em.",
+            "voice_clone_prompt": "yen-prompt",
+            "language": "Vietnamese",
+            "normalize_text": True,
+            "num_step": 24,
+        },
+    ]

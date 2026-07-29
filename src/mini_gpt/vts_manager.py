@@ -8,7 +8,7 @@ import pyvts
 
 from .vts_actions import VtsActions
 from .vts_catalog import VtsCatalog, build_catalog
-from .vts_motion import MicroActionScheduler, safe_micro_action_entries, sway_value
+from .vts_motion import MicroActionScheduler, OrganicSwayController, safe_micro_action_entries
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ class VTSManager:
         self._semantic_action_lock = threading.Lock()
         self._motion_random = random_source or random
         self._micro_action_scheduler = MicroActionScheduler(self._motion_random)
+        self._sway_controller = OrganicSwayController()
         self._last_micro_action_identifier: str | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._request_lock: asyncio.Lock | None = None
@@ -80,6 +81,7 @@ class VTSManager:
     def shutdown(self) -> None:
         self.is_connected = False
         self.set_speaking(False)
+        self._sway_controller.reset()
         loop = self._loop
         if loop is None or not loop.is_running():
             return
@@ -133,23 +135,25 @@ class VTSManager:
             logger.error("Failed to create custom parameter: %s", e)
 
     async def sway_loop(self):
+        self._sway_controller.reset()
         start_time = time.monotonic()
         while self.is_connected:
             try:
-                elapsed = time.monotonic() - start_time
+                now = time.monotonic()
+                elapsed = now - start_time
                 if self.is_speaking:
                     # Lắc mạnh và nhanh (biên độ 30, chu kỳ ngắn)
-                    val = sway_value(elapsed, speaking=True)
+                    val = self._sway_controller.update(now, elapsed, speaking=True)
                 else:
                     # Đung đưa nhẹ nhàng (biên độ 5, chu kỳ dài)
-                    val = sway_value(elapsed, speaking=False)
+                    val = self._sway_controller.update(now, elapsed, speaking=False)
                 req_inject = self.vts.vts_request.requestSetParameterValue(
                     parameter="LLM_Sway",
                     value=val
                 )
                 await self._request(req_inject)
                 if self._micro_action_scheduler.update(
-                    time.monotonic(), self.is_speaking
+                    now, self.is_speaking
                 ):
                     await self._trigger_micro_action()
                 await asyncio.sleep(0.05)

@@ -146,10 +146,10 @@ Ru now exposes two local Gwen profiles: `Ru (Tsukuyomi)` and `Yến Nhi (Gwen)`.
 The latter needs the one-time `scripts\download_gwen_yen_nhi_voice.py` setup.
 Both profiles preserve the same speech queue and VTube lip-sync lifecycle.
 
-The preferred next candidate is `LeNgocTu/Irodori-Sen-TTS`: a MIT-licensed
-500M Vietnamese-Japanese model whose card explicitly documents Japanese
-reference audio reading Vietnamese text. Its merged model is 1,953.4 MiB and
-the required `Aratako/Semantic-DACVAE-Japanese-32dim` codec is 409.7 MiB,
-making it viable to evaluate on the 6 GiB GPU. The model is gated: the user
-must log into Hugging Face and accept its terms before download, then test it
-with `tyc_talk.wav` before wiring it into the GUI.
+The current next candidate is an isolated OmniVoice benchmark, not a runtime
+change. It must use `tyc_talk.wav` with `reference_text.txt`, a separate
+`D:\LLM\omnivoice_env`, and a cache under `models\omnivoice`. Record the
+environment versions, cold/warm reports, hardware result, and manual
+Vietnamese/English/code-switch listening outcome before proposing any adoption.
+Gwen remains the default; a failed or inconclusive experiment changes neither
+the GUI nor its VTube Studio lifecycle.

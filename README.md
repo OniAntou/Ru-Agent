@@ -264,6 +264,47 @@ $body = @{ text = 'Em chao anh, em da san sang roi.'; fast_mode = $true; voice_p
 }
 ```
 
+### OmniVoice isolated benchmark
+
+OmniVoice is an experiment only. It has no GUI selector and **Gwen remains the
+default** until it passes the local benchmark and a manual listening review.
+The benchmark uses only `tyc_talk.wav` with its exact
+`reference_text.txt`, holds one engine on CUDA at a time, and writes generated
+WAVs plus live reports under ignored `eval_results\omnivoice`.
+
+Preflight first; it resolves inputs and prints commands without creating an
+environment, downloading a package/model, starting Gwen, loading CUDA, or
+creating output:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\LLM\scripts\setup_omnivoice_env.ps1 -WhatIf
+powershell -ExecutionPolicy Bypass -File D:\LLM\scripts\run_omnivoice_benchmark.ps1 -WhatIf
+```
+
+After explicitly approving the first local download, create the separate
+environment and run the comparison:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\LLM\scripts\setup_omnivoice_env.ps1 -ConfirmModelDownload
+powershell -ExecutionPolicy Bypass -File D:\LLM\scripts\run_omnivoice_benchmark.ps1 -ConfirmModelDownload
+```
+
+The cache is confined to `models\omnivoice`. One run measures a model/prompt
+load separately, then one cold and five warm passes over six Vietnamese, three
+English, and three Vietnamese-English prompts. `first_playable_wav_seconds`
+means the returned complete WAV (not streaming latency); real-time factor is
+synthesis seconds divided by generated-audio seconds. The report also records
+the selected process's peak GPU memory and private RAM when probes are
+available.
+
+Reject OmniVoice if it has any failed run, shares GPU compute with a local Ru
+LLM, fails to improve either median warm first-playable-WAV latency or median
+warm real-time factor by at least 25% against Gwen, or sounds worse in clone
+identity, Vietnamese, English, or natural Vietnamese-English switching. A
+numeric result alone is not adoption: listen to representative outputs from
+all three language groups before recording `accepted`, `rejected`, or
+`blocked`. Any future GUI integration needs a separate approved design.
+
 ## Experimental voice input
 
 Voice input defaults to the existing Google recognizer (`vi-VN`). The

@@ -25,7 +25,7 @@ def sway_value(elapsed: float, speaking: bool) -> float:
         + 0.24 * math.sin(time_value * 0.47 + 1.7)
         + 0.12 * math.sin(time_value * 2.2 + 0.4)
     )
-    envelope = 0.82 + 0.18 * (0.5 + 0.5 * math.sin(time_value * 0.17 + 0.8))
+    envelope = 0.62 + 0.38 * (0.5 + 0.5 * math.sin(time_value * 0.17 + 0.8))
     return amplitude * layered * envelope
 
 
@@ -35,18 +35,44 @@ class OrganicSwayController:
     def __init__(self) -> None:
         self._value = 0.0
         self._last_now: float | None = None
+        self._drift = 0.0
+        self._drift_target = 0.0
+        self._next_drift_at: float | None = None
 
     def reset(self) -> None:
         self._value = 0.0
         self._last_now = None
+        self._drift = 0.0
+        self._drift_target = 0.0
+        self._next_drift_at = None
 
     def update(self, now: float, elapsed: float, speaking: bool) -> float:
-        target = sway_value(elapsed, speaking)
         if self._last_now is None:
             self._last_now = now
             return self._value
 
         delta = max(0.0, float(now) - self._last_now)
+        amplitude = SPEAKING_SWAY_AMPLITUDE if speaking else IDLE_SWAY_AMPLITUDE
+        if speaking:
+            if self._next_drift_at is None:
+                self._next_drift_at = now + 0.8
+            elif now >= self._next_drift_at:
+                segment = math.floor(elapsed / 1.1)
+                drift_wave = (
+                    0.7 * math.sin(segment * 2.17 + 0.4)
+                    + 0.3 * math.cos(segment * 1.31 + 1.8)
+                )
+                self._drift_target = amplitude * 0.11 * drift_wave
+                hold = 0.55 + 0.75 * (0.5 + 0.5 * math.sin(segment * 1.71 + 0.2))
+                self._next_drift_at = now + hold
+        else:
+            self._drift_target = 0.0
+            self._next_drift_at = None
+
+        drift_alpha = 1.0 - math.exp(-delta / 0.45)
+        self._drift += (self._drift_target - self._drift) * drift_alpha
+        target = sway_value(elapsed, speaking) + self._drift
+        target = max(-amplitude, min(amplitude, target))
         alpha = 1.0 - math.exp(-delta / 0.22)
         self._value += (target - self._value) * alpha
         self._last_now = now

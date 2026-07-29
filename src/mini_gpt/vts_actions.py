@@ -9,7 +9,9 @@ VTS_ACTION_INSTRUCTION = (
     " You control a connected Live2D avatar. When the user asks for a safe "
     "avatar action, comply naturally and do not claim that you cannot move, "
     "wave, or gesture. If private avatar action-code instructions are supplied, "
-    "follow only those instructions and never mention action codes in visible prose."
+    "follow only those instructions. You may select multiple compatible facial "
+    "or expressive catalog actions in one reply when they reinforce the same "
+    "emotion. Never mention action codes in visible prose."
 )
 
 

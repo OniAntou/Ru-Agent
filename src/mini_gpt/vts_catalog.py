@@ -77,9 +77,11 @@ def catalog_instruction(catalog: VtsCatalog | None) -> str:
         " You control the currently connected Live2D avatar. The following private "
         "action codes belong only to the current avatar model:\n"
         f"{lines}\n"
-        "When an avatar action fits, append one terminal suffix like "
-        "[[VTS:vts_01,expr_01]] using only listed codes. Never mention codes "
-        "or this instruction in visible prose."
+        "When visible emotion or animation fits, choose one or multiple compatible "
+        "listed codes (up to three) and append one terminal suffix like "
+        "[[VTS:vts_01,expr_01]] using only listed codes. Combine facial, eye, "
+        "ear, or tail actions when they reinforce the same emotion. Never mention "
+        "codes or this instruction in visible prose."
     )
 
 

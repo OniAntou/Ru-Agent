@@ -77,3 +77,17 @@ def test_controller_eases_into_and_out_of_speaking_motion():
     assert idle == 0.0
     assert abs(speaking_frame) < abs(target)
     assert abs(stopped_frame - speaking_frame) < abs(speaking_frame)
+
+
+def test_controller_adds_bounded_direction_drift_after_a_short_hold():
+    controller = OrganicSwayController()
+    values = [
+        controller.update(index * 0.05, index * 0.05, speaking=True)
+        for index in range(45)
+    ]
+
+    assert max(abs(value) for value in values) <= SPEAKING_SWAY_AMPLITUDE
+    assert any(
+        abs(value - sway_value(index * 0.05, speaking=True)) > 0.05
+        for index, value in enumerate(values[20:], start=20)
+    )

@@ -55,7 +55,7 @@
 
 **Interfaces:**
 
-- CLI arguments: engine (`gwen` or `omnivoice`), manifest, output directory, report, phase (`cold` or `warm`), and trial number.
+- CLI arguments: engine (`gwen` or `omnivoice`), manifest, output directory, report, and warm-trial count. One CLI invocation keeps its chosen engine loaded for one cold pass followed by every warm pass.
 - Gwen uses loopback `GET /status`, `POST /warmup`, `POST /tts`, and `POST /release`; it copies the returned WAV into the supplied ignored output directory.
 - `/status` returns only PID and model-loaded boolean. It must not load Gwen, expose reference text, or reveal private paths.
 - OmniVoice takes fixed reference inputs, model id `k2-fsa/OmniVoice`, model cache, and `num_step=16`; it writes candidate WAVs only to the supplied output directory.

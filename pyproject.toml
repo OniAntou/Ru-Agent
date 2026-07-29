@@ -25,6 +25,7 @@ runtime = [
     "bitsandbytes>=0.48,<1",
     "ddgs>=9.0",
     "faiss-cpu>=1.7",
+    "keyring>=25",
     "peft>=0.14,<1",
     "sentence-transformers>=2.2",
     "transformers>=5,<6",

@@ -16,11 +16,41 @@ MICRO_ACTION_MAX_DELAY = 25.0
 
 
 def sway_value(elapsed: float, speaking: bool) -> float:
-    """Return the bounded sway value for the current speaking state."""
+    """Return a bounded, layered sway target for the current state."""
 
     amplitude = SPEAKING_SWAY_AMPLITUDE if speaking else IDLE_SWAY_AMPLITUDE
-    speed = SPEAKING_SWAY_SPEED if speaking else IDLE_SWAY_SPEED
-    return math.sin(elapsed * speed) * amplitude
+    time_value = float(elapsed)
+    layered = (
+        0.64 * math.sin(time_value * 1.05)
+        + 0.24 * math.sin(time_value * 0.47 + 1.7)
+        + 0.12 * math.sin(time_value * 2.2 + 0.4)
+    )
+    envelope = 0.82 + 0.18 * (0.5 + 0.5 * math.sin(time_value * 0.17 + 0.8))
+    return amplitude * layered * envelope
+
+
+class OrganicSwayController:
+    """Ease the live sway value toward each layered target."""
+
+    def __init__(self) -> None:
+        self._value = 0.0
+        self._last_now: float | None = None
+
+    def reset(self) -> None:
+        self._value = 0.0
+        self._last_now = None
+
+    def update(self, now: float, elapsed: float, speaking: bool) -> float:
+        target = sway_value(elapsed, speaking)
+        if self._last_now is None:
+            self._last_now = now
+            return self._value
+
+        delta = max(0.0, float(now) - self._last_now)
+        alpha = 1.0 - math.exp(-delta / 0.22)
+        self._value += (target - self._value) * alpha
+        self._last_now = now
+        return self._value
 
 
 def is_safe_micro_action(label: str, identifier: str) -> bool:

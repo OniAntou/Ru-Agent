@@ -1,6 +1,7 @@
 from mini_gpt.vts_motion import (
     IDLE_SWAY_AMPLITUDE,
     SPEAKING_SWAY_AMPLITUDE,
+    OrganicSwayController,
     MicroActionScheduler,
     is_safe_micro_action,
     safe_micro_action_entries,
@@ -56,3 +57,23 @@ def test_safe_micro_action_entries_keeps_only_reversible_motion_entries():
     ]
 
     assert safe_micro_action_entries(entries) == [entries[0]]
+
+
+def test_layered_sway_stays_bounded_and_is_not_a_single_repeating_wave():
+    values = [sway_value(index * 0.1, speaking=True) for index in range(240)]
+
+    assert max(abs(value) for value in values) <= SPEAKING_SWAY_AMPLITUDE
+    assert len({round(value, 4) for value in values[:80]}) > 60
+    assert values[:20] != values[120:140]
+
+
+def test_controller_eases_into_and_out_of_speaking_motion():
+    controller = OrganicSwayController()
+    idle = controller.update(now=0.0, elapsed=0.0, speaking=False)
+    target = sway_value(0.05, speaking=True)
+    speaking_frame = controller.update(now=0.05, elapsed=0.05, speaking=True)
+    stopped_frame = controller.update(now=0.10, elapsed=0.10, speaking=False)
+
+    assert idle == 0.0
+    assert abs(speaking_frame) < abs(target)
+    assert abs(stopped_frame - speaking_frame) < abs(speaking_frame)

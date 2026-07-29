@@ -55,7 +55,9 @@ field is removed from saved settings.
 OpenCode responses stream into the in-progress Ru bubble. Private VTube Studio
 metadata and model-directed `[SEARCH: ...]` commands stay hidden during the
 stream; a search command clears that provisional bubble before the grounded
-follow-up streams. For an OpenCode reply with voice enabled, the status line
+follow-up streams. The GUI receives only newly emitted text from the streaming
+runtime, so cumulative provider snapshots do not duplicate text in the bubble.
+For an OpenCode reply with voice enabled, the status line
 can show `API`, `Voice warm`, and `first voice` durations. `API` measures the
 existing request from send until its streamed completion is received, so it is
 not first-token latency. `Voice warm` measures the selected local warmup request, while `first voice`

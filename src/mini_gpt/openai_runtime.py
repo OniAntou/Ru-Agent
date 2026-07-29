@@ -113,7 +113,7 @@ class OpenAIRuntime:
                         new_content = content
                         parts.append(content)
                     if new_content and on_delta is not None:
-                        on_delta("".join(parts))
+                        on_delta(new_content)
         return "".join(parts)
 
     def generate(

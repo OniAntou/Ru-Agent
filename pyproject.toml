@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "flask>=3.1,<4"]
+speech-offline = ["sherpa-onnx>=1.12,<2"]
 runtime = [
     "accelerate>=1.0,<2",
     "bitsandbytes>=0.48,<1",

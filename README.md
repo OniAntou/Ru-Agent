@@ -237,7 +237,8 @@ The two **OmniVoice — test** labels require the already-installed
 `D:\LLM\omnivoice_env` runtime and `models\omnivoice` cache on `D:`. The GUI
 does not install packages or download a model. It starts
 `omnivoice_tts_server.py` only when that selected engine is needed, on loopback
-port 5052; Gwen remains on port 5051.
+port 5052; Gwen remains on port 5051. The D-only setup script installs both
+OmniVoice and its Flask loopback-service dependency in `omnivoice_env`.
 
 Only the selected voice engine may remain on CUDA. Before warming OmniVoice,
 Ru releases Gwen and the local Llama runtime; before warming Gwen, it releases

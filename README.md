@@ -132,7 +132,9 @@ It is new project-owned data targeted from the hard-suite failures; no v6.2
 rows were copied. It includes bounded contextual profanity metadata: 155
 `none`, 16 `mild`, and 9 `medium` rows. Training has not started. The bounded config is
 `configs\ru_llama3_1_v6_3.json` with 360 steps and a 9,600-second wall-clock
-cap.
+cap. Chat output must not contain Unicode emoji or ASCII emoticons; visible
+emotion is delegated to VTS metadata when available, with natural prose as the
+fallback.
 
 - Enable **Remember conversations** to let Ru automatically save safe, structured
   local preferences and project decisions in `data\conversations\memory.db`.

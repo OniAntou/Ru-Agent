@@ -24,6 +24,8 @@
   train/validation/held-out, 360-step and 9,600-second training cap.
 - [x] Refresh the active Ru contract and v6.3 rows: no forced `Nya~`, bounded
   contextual profanity metadata, and an authoritative OpenCode cloud prompt.
+- [x] Route Ru emotion through VTS: no Unicode emoji or ASCII emoticons in chat,
+  with natural prose fallback when VTS is unavailable.
 - [ ] Complete manual bilingual/held-out review and verified physical-VRAM
   gate for v6.2 before calling it quality-gate promoted.
 - [x] Finish the bounded v6.1 candidate and its comparison evaluation; its

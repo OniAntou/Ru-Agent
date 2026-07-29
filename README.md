@@ -243,8 +243,8 @@ port 5052; Gwen remains on port 5051. The D-only setup script installs both
 OmniVoice and its Flask loopback-service dependency in `omnivoice_env`.
 
 For the pending pronunciation listening trial, both OmniVoice labels use the
-measured `vi-normalized-24` settings (`language="Vietnamese"`, text
-normalization, 24 steps). This affects only explicitly selected OmniVoice test
+measured `vi-normalized-20` settings (`language="Vietnamese"`, text
+normalization, 20 steps). This affects only explicitly selected OmniVoice test
 voices; **Ru (Gwen)** remains the GUI default until manual approval is recorded.
 
 Only the selected voice engine may remain on CUDA. Before warming OmniVoice,

@@ -164,7 +164,7 @@ both profiles on both engines, restart persistence, a switch back to Gwen,
 local Llama release, and no spoken VTS metadata.
 
 The current pending listening trial sends both OmniVoice profiles with
-`vi-normalized-24`: explicit Vietnamese language, normalized text, and 24
+`vi-normalized-20`: explicit Vietnamese language, normalized text, and 20
 steps. It was selected for GUI listening only after the automated matrix passed;
 it is not a default change or a completed voice-quality approval.
 

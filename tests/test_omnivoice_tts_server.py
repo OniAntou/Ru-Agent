@@ -78,7 +78,7 @@ def test_http_reports_synthesis_error() -> None:
     assert response.get_json() == {"error": "broken"}
 
 
-def test_synthesis_uses_the_selected_24_step_vietnamese_trial_settings(tmp_path, monkeypatch) -> None:
+def test_synthesis_uses_the_selected_20_step_vietnamese_trial_settings(tmp_path, monkeypatch) -> None:
     class FakeInferenceMode:
         def __enter__(self):
             return self
@@ -126,13 +126,13 @@ def test_synthesis_uses_the_selected_24_step_vietnamese_trial_settings(tmp_path,
             "voice_clone_prompt": "ru-prompt",
             "language": "Vietnamese",
             "normalize_text": True,
-            "num_step": 24,
+            "num_step": 20,
         },
         {
             "text": "Chào em.",
             "voice_clone_prompt": "yen-prompt",
             "language": "Vietnamese",
             "normalize_text": True,
-            "num_step": 24,
+            "num_step": 20,
         },
     ]

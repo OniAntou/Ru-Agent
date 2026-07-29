@@ -74,4 +74,4 @@ def test_frozen_settings_define_the_entire_candidate_matrix_in_order() -> None:
         TEXT_AWARE_20_SETTINGS,
         TEXT_AWARE_24_SETTINGS,
     )
-    assert GUI_TRIAL_SETTINGS is TEXT_AWARE_20_SETTINGS
+    assert GUI_TRIAL_SETTINGS is TEXT_AWARE_16_SETTINGS

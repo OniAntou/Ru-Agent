@@ -62,4 +62,4 @@ CANDIDATE_SETTINGS = (
 )
 
 # This alters only the explicitly labelled OmniVoice GUI trial. Gwen remains the default.
-GUI_TRIAL_SETTINGS = TEXT_AWARE_20_SETTINGS
+GUI_TRIAL_SETTINGS = TEXT_AWARE_16_SETTINGS

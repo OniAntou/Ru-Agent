@@ -142,17 +142,22 @@ two models never compete for VRAM. The short greeting passed manual listening,
 but Vietnamese pronunciation remains an experimental quality gate. The legacy
 voice runtime and all of its cache artifacts were removed on 2026-07-27.
 
-Ru now exposes two local Gwen profiles: `Ru (Tsukuyomi)` and `Yến Nhi (Gwen)`.
-The latter needs the one-time `scripts\download_gwen_yen_nhi_voice.py` setup.
-Both profiles preserve the same speech queue and VTube lip-sync lifecycle.
+Ru exposes four persisted local voice choices: `Ru (Gwen)`, `Yến Nhi (Gwen)`,
+`Ru (OmniVoice — test)`, and `Yến Nhi (OmniVoice — test)`. Legacy
+`Ru (Tsukuyomi)` settings migrate to `Ru (Gwen)`. Yến Nhi still needs the
+one-time `scripts\download_gwen_yen_nhi_voice.py` setup. All choices preserve
+the sentence queue and VTube `VoiceVolume` lip-sync lifecycle; private VTS
+metadata is removed before synthesis.
 
-The current next candidate is an isolated OmniVoice benchmark, not a runtime
-change. It must use `tyc_talk.wav` with `reference_text.txt`, a separate
-`D:\LLM\omnivoice_env`, and a cache under `models\omnivoice`. Record the
-environment versions, cold/warm reports, hardware result, and manual
-Vietnamese/English/code-switch listening outcome before proposing any adoption.
-Gwen remains the default; a failed or inconclusive experiment changes neither
-the GUI nor its VTube Studio lifecycle.
+The OmniVoice choices are reversible GUI trials, not an adoption. They use only
+`tyc_talk.wav`/`reference_text.txt` or the existing Yến Nhi reference pair,
+the separate `D:\LLM\omnivoice_env`, cache `models\omnivoice`, and loopback
+port 5052. Gwen remains on 5051 and is still the GUI default. The lifecycle
+releases local Llama plus the non-selected voice engine before warming the
+selected engine, releases both voice services before local generation, and
+never falls back after a selected service error. Manual verification must cover
+both profiles on both engines, restart persistence, a switch back to Gwen,
+local Llama release, and no spoken VTS metadata.
 
 On 2026-07-29, the isolated automated run completed 72/72 records for each
 engine with no benchmark errors. Gwen's median warm first-playable WAV was

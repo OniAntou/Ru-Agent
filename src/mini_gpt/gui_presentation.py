@@ -64,15 +64,15 @@ def format_generation_status(
     cache_hit: bool,
     seconds: float,
     api_seconds: float | None = None,
-    gwen_warm_seconds: float | None = None,
+    voice_warm_seconds: float | None = None,
     first_voice_seconds: float | None = None,
 ) -> str:
     suffix = "" if cache_hit else " (model loaded)"
     phases = []
     if api_seconds is not None:
         phases.append(f"API {format_elapsed(api_seconds)}")
-    if gwen_warm_seconds is not None:
-        phases.append(f"Gwen warm {format_elapsed(gwen_warm_seconds)}")
+    if voice_warm_seconds is not None:
+        phases.append(f"Voice warm {format_elapsed(voice_warm_seconds)}")
     if first_voice_seconds is not None:
         phases.append(f"first voice {format_elapsed(first_voice_seconds)}")
     return " | ".join((f"Ru replied in {format_elapsed(seconds)}{suffix}", *phases))

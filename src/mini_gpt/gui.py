@@ -991,7 +991,7 @@ class RuApp:
             vts_catalog = self.vts_manager.current_catalog_sync() if hasattr(self, "vts_manager") else None
 
             api_seconds = 0.0
-            gwen_warm_seconds: float | None = None
+            voice_warm_seconds: float | None = None
 
             def record_api_timing(seconds: float) -> None:
                 nonlocal api_seconds
@@ -1008,7 +1008,7 @@ class RuApp:
             with self.gpu_transition_lock:
                 uses_voice = is_cloud and self.tts_enabled_var.get()
                 if uses_voice:
-                    gwen_warm_seconds = self.gpu_lifecycle.warm_voice_for_cloud(
+                    voice_warm_seconds = self.gpu_lifecycle.warm_voice_for_cloud(
                         self._selected_voice_selection(),
                         lambda status: self.root.after(
                             0, lambda status=status: self.status_var.set(status)
@@ -1046,7 +1046,7 @@ class RuApp:
                 elapsed = perf_counter() - started
             self.root.after(
                 0,
-                lambda result=result, cache_hit=cache_hit, elapsed=elapsed, prompt=prompt, remember_conversations=remember_conversations, vts_catalog=vts_catalog, api_seconds=api_seconds, gwen_warm_seconds=gwen_warm_seconds, is_cloud=is_cloud: self._generation_finished(
+                lambda result=result, cache_hit=cache_hit, elapsed=elapsed, prompt=prompt, remember_conversations=remember_conversations, vts_catalog=vts_catalog, api_seconds=api_seconds, voice_warm_seconds=voice_warm_seconds, is_cloud=is_cloud: self._generation_finished(
                     result,
                     cache_hit,
                     elapsed,
@@ -1054,7 +1054,7 @@ class RuApp:
                     remember_conversations,
                     vts_catalog,
                     api_seconds=api_seconds if is_cloud else None,
-                    gwen_warm_seconds=gwen_warm_seconds,
+                    voice_warm_seconds=voice_warm_seconds,
                     streamed=is_cloud,
                 ),
             )
@@ -1075,7 +1075,7 @@ class RuApp:
         vts_catalog: VtsCatalog | None = None,
         *,
         api_seconds: float | None = None,
-        gwen_warm_seconds: float | None = None,
+        voice_warm_seconds: float | None = None,
         streamed: bool = False,
     ) -> None:
         if not result.strip():
@@ -1106,7 +1106,7 @@ class RuApp:
             "cache_hit": cache_hit,
             "seconds": elapsed,
             "api_seconds": api_seconds,
-            "gwen_warm_seconds": gwen_warm_seconds,
+            "voice_warm_seconds": voice_warm_seconds,
         }
         self.status_var.set(format_generation_status(**status_kwargs))
         self._set_controls_enabled(True)

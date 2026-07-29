@@ -56,9 +56,9 @@ OpenCode responses stream into the in-progress Ru bubble. Private VTube Studio
 metadata and model-directed `[SEARCH: ...]` commands stay hidden during the
 stream; a search command clears that provisional bubble before the grounded
 follow-up streams. For an OpenCode reply with voice enabled, the status line
-can show `API`, `Gwen warm`, and `first voice` durations. `API` measures the
+can show `API`, `Voice warm`, and `first voice` durations. `API` measures the
 existing request from send until its streamed completion is received, so it is
-not first-token latency. `Gwen warm` measures the local warmup request, while `first voice`
+not first-token latency. `Voice warm` measures the selected local warmup request, while `first voice`
 measures the first synthesis request until its WAV is ready; playback itself
 is not included. These measurements create no extra API requests. If an
 opted-in web-search reply performs two OpenCode completions, the displayed API
@@ -213,12 +213,14 @@ several repair cases and needs manual review. Reports are under
 
 ## Experimental voice output
 
-The GUI automatically sends each completed reply to the local Gwen service on
-port 5051. Its **Voice** selector provides two local Gwen clone profiles:
-`Ru (Tsukuyomi)`, using `tyc_talk.wav` with the matching transcript in
-`reference_text.txt`, and `Yến Nhi (Gwen)`, using the upstream Gwen reference
-audio and its exact transcript. Do not change a reference audio without its
-matching transcript.
+The GUI automatically sends each completed reply to the selected local voice
+service. Its **Voice** selector persists one of four profiles: `Ru (Gwen)`,
+`Yến Nhi (Gwen)`, `Ru (OmniVoice — test)`, or `Yến Nhi (OmniVoice — test)`.
+Legacy `Ru (Tsukuyomi)` settings migrate to `Ru (Gwen)`; unknown settings do
+the same. Gwen remains the default. Both Ru choices use `tyc_talk.wav` with
+the matching `reference_text.txt`; both Yến Nhi choices use the existing Gwen
+reference audio and its exact transcript. Do not change a reference audio
+without its matching transcript.
 
 Set up Yến Nhi once before selecting it:
 
@@ -226,8 +228,27 @@ Set up Yến Nhi once before selecting it:
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\download_gwen_yen_nhi_voice.py
 ```
 
-Both choices use local Gwen, so they retain the same VTube Studio lip-sync
-behavior and GPU lifecycle.
+All choices retain the same VTube Studio `VoiceVolume` lip-sync behavior and
+sentence queue. VTube metadata is removed before synthesis.
+
+### OmniVoice GUI trial
+
+The two **OmniVoice — test** labels require the already-installed
+`D:\LLM\omnivoice_env` runtime and `models\omnivoice` cache on `D:`. The GUI
+does not install packages or download a model. It starts
+`omnivoice_tts_server.py` only when that selected engine is needed, on loopback
+port 5052; Gwen remains on port 5051.
+
+Only the selected voice engine may remain on CUDA. Before warming OmniVoice,
+Ru releases Gwen and the local Llama runtime; before warming Gwen, it releases
+OmniVoice and local Llama. Before local generation, it asks both voice services
+to release. A failed selected engine is reported as unavailable and never
+falls back to the other engine or changes the saved selection.
+
+For manual verification, select Ru and Yến Nhi once with each engine, restart
+the GUI to confirm the choice persists, switch back to `Ru (Gwen)`, and verify
+that normal local Llama generation and VTube lip-sync still work. This is a
+reversible listening trial, not a default or quality promotion.
 
 `g-group-ai-lab/gwen-tts-0.6B` runs in the separate `gwen_env` environment.
 For OpenCode cloud replies, Ru warms and retains its Gwen model plus the fixed
@@ -238,11 +259,11 @@ without an avoidable gap. The
 first cloud reply after opening the GUI can still be slower because it performs
 that warmup.
 
-Before local GGUF or Transformers inference, Ru asks Gwen to release its model
-and CUDA cache; this keeps the two models from competing for the 6 GB GPU.
-Local replies load Gwen only when speech begins. Gwen is experimental: its
-voice identity and short Vietnamese phrases passed manual listening, while
-pronunciation still needs user evaluation.
+Before local GGUF or Transformers inference, Ru asks every available voice
+service to release its model and CUDA cache; this keeps voice and Llama models
+from competing for the 6 GB GPU. Gwen is experimental: its voice identity and
+short Vietnamese phrases passed manual listening, while pronunciation still
+needs user evaluation.
 
 The GUI starts and waits for the local service automatically the first time it
 needs to speak. The service continues in the background for later replies. Use
@@ -258,7 +279,7 @@ from completed reply text to the first audible sentence, which also includes
 audio playback setup:
 
 ```powershell
-$body = @{ text = 'Em chao anh, em da san sang roi.'; fast_mode = $true; voice_profile = 'yen_nhi' } | ConvertTo-Json
+$body = @{ text = 'Em chao anh, em da san sang roi.'; voice_profile = 'yen_nhi' } | ConvertTo-Json
 1..5 | ForEach-Object {
     Invoke-RestMethod http://127.0.0.1:5051/tts -Method Post -ContentType 'application/json' -Body $body
 }
@@ -266,8 +287,8 @@ $body = @{ text = 'Em chao anh, em da san sang roi.'; fast_mode = $true; voice_p
 
 ### OmniVoice isolated benchmark
 
-OmniVoice is an experiment only. It has no GUI selector and **Gwen remains the
-default** until it passes the local benchmark and a manual listening review.
+OmniVoice is an experiment only. It is available as two explicitly labelled
+GUI trials, while **Gwen remains the default** until a separate adoption review.
 The benchmark uses only `tyc_talk.wav` with its exact
 `reference_text.txt`, holds one engine on CUDA at a time, and writes generated
 WAVs plus live reports under ignored `eval_results\omnivoice`.
@@ -305,7 +326,7 @@ warm real-time factor by at least 25% against Gwen, or sounds worse in clone
 identity, Vietnamese, English, or natural Vietnamese-English switching. A
 numeric result alone is not adoption: listen to representative outputs from
 all three language groups before recording `accepted`, `rejected`, or
-`blocked`. Any future GUI integration needs a separate approved design.
+`blocked`. The GUI trial does not change this adoption gate.
 
 ## Experimental voice input
 

@@ -15,7 +15,7 @@ every gate.
 - Store downloaded OmniVoice weights and Hugging Face cache under
   `D:\LLM\models\omnivoice`.
 - Use only Ru's existing authorized clone reference
-  `D:\LLM\data\voices\tyc_talk.wav` and its matching transcript.
+  `D:\LLM\tyc_talk.wav` and `D:\LLM\reference_text.txt`.
 - Add a deterministic benchmark manifest with 12 short utterances: six
   Vietnamese, three English, and three natural Vietnamese-English turns.
 - Add a benchmark runner that records model-load time, first-WAV latency,

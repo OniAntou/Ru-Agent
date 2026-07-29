@@ -41,7 +41,7 @@ from .ru_style import RU_SYSTEM_PROMPT
 from .memory import MemoryStore, StructuredMemoryStore
 from .search import perform_web_search
 from .reply_orchestration import execute_reply
-from .gpu_lifecycle import GpuLifecycle
+from .gpu_lifecycle import GpuLifecycle, VoiceServiceController
 from .speech_runtime import (
     SPEECH_ENGINE_GOOGLE,
     SPEECH_ENGINE_LABELS,
@@ -54,21 +54,17 @@ from .speech_runtime import (
     speech_settings_from_mapping,
 )
 from .tts_chunks import split_tts_chunks
+from .voice_runtime import (
+    DEFAULT_VOICE_SELECTION,
+    VOICE_SELECTIONS,
+    VoiceSelection,
+    voice_selection_from_saved,
+    voice_service_config,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODEL_NAME = "Ru"
 GUI_SETTINGS_PATH = PROJECT_ROOT / "data" / "gui_settings.json"
-GWEN_TTS_BASE_URL = "http://127.0.0.1:5051"
-GWEN_TTS_SERVER_URL = f"{GWEN_TTS_BASE_URL}/tts"
-GWEN_TTS_HOST = "127.0.0.1"
-GWEN_TTS_PORT = 5051
-GWEN_TTS_PYTHON = PROJECT_ROOT / "gwen_env" / "Scripts" / "python.exe"
-GWEN_TTS_SERVER_SCRIPT = PROJECT_ROOT / "gwen_tts_server.py"
-VOICE_PROFILE_OPTIONS = {
-    "Ru (Tsukuyomi)": "ru",
-    "Yến Nhi (Gwen)": "yen_nhi",
-}
-DEFAULT_VOICE_PROFILE = "ru"
 DEFAULT_MAX_NEW_TOKENS = "512"
 DEFAULT_ALLOW_WEB_SEARCH = True
 TTS_PREFETCH_WAVS = 2
@@ -92,24 +88,30 @@ def clean_tts_text(text: str) -> str:
     return re.sub(r"\s+", " ", clean_text.replace("*", "")).strip()
 
 
-def gwen_tts_server_available() -> bool:
+def voice_service_available(selection: VoiceSelection) -> bool:
+    config = voice_service_config(selection, PROJECT_ROOT)
     try:
-        with socket.create_connection((GWEN_TTS_HOST, GWEN_TTS_PORT), timeout=0.2):
+        with socket.create_connection((config.host, config.port), timeout=0.2):
             return True
     except OSError:
         return False
 
 
-def ensure_gwen_tts_server(*, process_factory=None, sleep=sleep, monotonic=monotonic) -> None:
-    if gwen_tts_server_available():
+def ensure_voice_service(
+    selection: VoiceSelection, *, process_factory=None, sleep=sleep, monotonic=monotonic
+) -> None:
+    config = voice_service_config(selection, PROJECT_ROOT)
+    if voice_service_available(selection):
         return
-    if not GWEN_TTS_PYTHON.is_file() or not GWEN_TTS_SERVER_SCRIPT.is_file():
-        raise RuntimeError("Gwen runtime is missing. Reinstall the local voice environment.")
+    if not config.python_path.is_file() or not config.server_script.is_file():
+        raise RuntimeError(
+            f"{selection.engine_id} runtime is missing. Reinstall the local voice environment."
+        )
 
     process_factory = process_factory or subprocess.Popen
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
     process_factory(
-        [str(GWEN_TTS_PYTHON), str(GWEN_TTS_SERVER_SCRIPT)],
+        [str(config.python_path), str(config.server_script)],
         cwd=str(PROJECT_ROOT),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -118,27 +120,29 @@ def ensure_gwen_tts_server(*, process_factory=None, sleep=sleep, monotonic=monot
 
     deadline = monotonic() + 12
     while monotonic() < deadline:
-        if gwen_tts_server_available():
+        if voice_service_available(selection):
             return
         sleep(0.2)
-    raise RuntimeError("Gwen voice service did not start. Check the local voice environment.")
+    raise RuntimeError(
+        f"{selection.engine_id} voice service did not start. Check the local voice environment."
+    )
 
 
 def request_tts_audio(
     text: str,
-    fast_mode: bool = False,
-    voice_profile: str = DEFAULT_VOICE_PROFILE,
+    selection: VoiceSelection,
     *,
     post=None,
 ) -> str:
+    config = voice_service_config(selection, PROJECT_ROOT)
     if post is None:
         import requests
 
         post = requests.post
     try:
         response = post(
-            GWEN_TTS_SERVER_URL,
-            json={"text": text, "fast_mode": fast_mode, "voice_profile": voice_profile},
+            f"{config.base_url}/tts",
+            json={"text": text, "voice_profile": selection.profile_id},
             timeout=90,
         )
     except Exception as error:
@@ -159,23 +163,26 @@ def request_tts_audio(
     return audio_file
 
 
-def request_gwen_control(path: str, payload: dict[str, str] | None = None, *, post=None) -> dict[str, bool]:
+def request_voice_control(
+    selection: VoiceSelection, path: str, payload: dict[str, str] | None = None, *, post=None
+) -> dict[str, bool]:
+    config = voice_service_config(selection, PROJECT_ROOT)
     if post is None:
         import requests
 
         post = requests.post
     try:
-        response = post(f"{GWEN_TTS_BASE_URL}{path}", json=payload or {}, timeout=30)
+        response = post(f"{config.base_url}{path}", json=payload or {}, timeout=30)
     except Exception as error:
         raise RuntimeError("Voice server is offline. Start Gwen TTS and try again.") from error
     if response.status_code != 200:
-        raise RuntimeError("Gwen voice service rejected lifecycle request.")
+        raise RuntimeError("Voice service rejected lifecycle request.")
     try:
         payload = response.json()
     except Exception as error:
-        raise RuntimeError("Gwen voice service returned an invalid lifecycle response.") from error
+        raise RuntimeError("Voice service returned an invalid lifecycle response.") from error
     if not isinstance(payload, dict):
-        raise RuntimeError("Gwen voice service returned an invalid lifecycle response.")
+        raise RuntimeError("Voice service returned an invalid lifecycle response.")
     return payload
 
 
@@ -337,9 +344,16 @@ class RuApp:
         self.gpu_lifecycle = GpuLifecycle(
             self.gpu_transition_lock,
             release_local_runtime=self.runner.release_gpu,
-            voice_server_available=gwen_tts_server_available,
-            ensure_voice_server=ensure_gwen_tts_server,
-            request_voice_control=request_gwen_control,
+            voice_services={
+                selection.engine_id: VoiceServiceController(
+                    available=lambda selection=selection: voice_service_available(selection),
+                    ensure=lambda selection=selection: ensure_voice_service(selection),
+                    request=lambda path, payload=None, selection=selection: request_voice_control(
+                        selection, path, payload
+                    ),
+                )
+                for selection in (VOICE_SELECTIONS[0], VOICE_SELECTIONS[2])
+            },
         )
         self._speech_generation = 0
         self._stream_response_start: str | None = None
@@ -376,13 +390,8 @@ class RuApp:
             value=saved_settings.get("api_model", "deepseek-v4-flash-free")
         )
         self.backend_var = tk.StringVar(value=saved_backend)
-        saved_profile = saved_settings.get("voice_profile", DEFAULT_VOICE_PROFILE)
-        if saved_profile not in VOICE_PROFILE_OPTIONS.values():
-            saved_profile = DEFAULT_VOICE_PROFILE
-        saved_profile_label = next(
-            label for label, profile in VOICE_PROFILE_OPTIONS.items() if profile == saved_profile
-        )
-        self.voice_profile_var = tk.StringVar(value=saved_profile_label)
+        saved_selection = voice_selection_from_saved(saved_settings.get("voice_profile"))
+        self.voice_selection_var = tk.StringVar(value=saved_selection.label)
         saved_speech_config = speech_settings_from_mapping(saved_settings)
         saved_speech_label = next(
             label
@@ -399,7 +408,7 @@ class RuApp:
                 "api_key": self.api_key_var.get(),
                 "api_model": self.api_model_var.get(),
                 "backend": self.backend_var.get(),
-                "voice_profile": self._selected_voice_profile(),
+                "voice_profile": self._selected_voice_selection().label,
             }
             settings.update(speech_settings_for_persistence(self._speech_config()))
             try:
@@ -413,7 +422,7 @@ class RuApp:
         self.api_key_var.trace_add("write", _save_settings)
         self.api_model_var.trace_add("write", _save_settings)
         self.backend_var.trace_add("write", _save_settings)
-        self.voice_profile_var.trace_add("write", _save_settings)
+        self.voice_selection_var.trace_add("write", _save_settings)
         self.speech_engine_var.trace_add("write", self._on_speech_settings_changed)
         self.speech_model_dir_var.trace_add("write", self._on_speech_settings_changed)
         _save_settings()
@@ -628,8 +637,8 @@ class RuApp:
         ttk.Label(backend, text="Voice").grid(row=1, column=0, padx=(0, 6))
         ttk.Combobox(
             backend,
-            textvariable=self.voice_profile_var,
-            values=tuple(VOICE_PROFILE_OPTIONS),
+            textvariable=self.voice_selection_var,
+            values=tuple(selection.label for selection in VOICE_SELECTIONS),
             state="readonly",
             width=24,
         ).grid(row=1, column=1)
@@ -917,8 +926,8 @@ class RuApp:
         return "break"
 
 
-    def _selected_voice_profile(self) -> str:
-        return VOICE_PROFILE_OPTIONS.get(self.voice_profile_var.get(), DEFAULT_VOICE_PROFILE)
+    def _selected_voice_selection(self) -> VoiceSelection:
+        return voice_selection_from_saved(self.voice_selection_var.get())
 
 
     def _start_generation(self) -> None:
@@ -997,10 +1006,10 @@ class RuApp:
                 self.root.after(0, self._reset_streaming_turn)
 
             with self.gpu_transition_lock:
-                uses_gwen = is_cloud and self.tts_enabled_var.get()
-                if uses_gwen:
+                uses_voice = is_cloud and self.tts_enabled_var.get()
+                if uses_voice:
                     gwen_warm_seconds = self.gpu_lifecycle.warm_voice_for_cloud(
-                        self._selected_voice_profile(),
+                        self._selected_voice_selection(),
                         lambda status: self.root.after(
                             0, lambda status=status: self.status_var.set(status)
                         ),
@@ -1136,12 +1145,11 @@ class RuApp:
 
             self.root.after(0, lambda: self.status_var.set("Preparing voice..."))
             
-            # Gwen replies are split so playback can begin before the full reply is synthesized.
-            self.gpu_lifecycle.prepare_speech()
-            self._play_gwen_chunks(
+            selection = self._selected_voice_selection()
+            self.gpu_lifecycle.prepare_speech(selection)
+            self._play_voice_chunks(
                 split_tts_chunks(clean_text),
-                fast_mode=True,
-                voice_profile=self._selected_voice_profile(),
+                selection=selection,
                 on_first_audio_timing=on_first_audio_timing,
             )
 
@@ -1150,12 +1158,11 @@ class RuApp:
             if getattr(self, "voice_mode_active", False):
                 self.root.after(1000, self._toggle_recording)
 
-    def _play_gwen_chunks(
+    def _play_voice_chunks(
         self,
         chunks: list[str],
         *,
-        fast_mode: bool,
-        voice_profile: str = DEFAULT_VOICE_PROFILE,
+        selection: VoiceSelection = DEFAULT_VOICE_SELECTION,
         on_first_audio_timing=None,
     ) -> None:
         if not chunks:
@@ -1190,9 +1197,7 @@ class RuApp:
                     if stop_requested.is_set() or generation != self._speech_generation:
                         return
                     started = perf_counter()
-                    audio_file = request_tts_audio(
-                        chunk, fast_mode=fast_mode, voice_profile=voice_profile
-                    )
+                    audio_file = request_tts_audio(chunk, selection)
                     if not first_audio_reported:
                         first_audio_reported = True
                         if on_first_audio_timing is not None:

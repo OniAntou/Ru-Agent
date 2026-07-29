@@ -62,6 +62,19 @@ class ReportEngine:
         return None
 
 
+class LoadFailureEngine:
+    engine_id = "load-failure"
+
+    def __init__(self) -> None:
+        self.released = False
+
+    def load(self, reference_audio: Path, reference_text: str) -> None:
+        raise RuntimeError("CUDA out of memory")
+
+    def release(self) -> None:
+        self.released = True
+
+
 def test_gwen_engine_copies_returned_audio_and_releases_the_owned_service(tmp_path: Path) -> None:
     source = tmp_path / "source.wav"
     source.write_bytes(b"wav")
@@ -155,6 +168,34 @@ def test_run_benchmark_writes_a_load_timed_json_report(tmp_path: Path) -> None:
     assert report["model_load_seconds"] == 2.5
     assert report["summary"]["successful_records"] == 6
     assert json.loads(report_path.read_text(encoding="utf-8"))["engine_id"] == "report"
+
+
+def test_run_benchmark_records_a_failed_model_load_without_fallback(tmp_path: Path) -> None:
+    reference = tmp_path / "reference.wav"
+    reference.write_bytes(b"reference")
+    engine = LoadFailureEngine()
+
+    report = run_benchmark(
+        engine,
+        [BenchmarkUtterance("vi-01", "vi", "Chào anh.")],
+        reference_audio=reference,
+        reference_text="reference text",
+        output_dir=tmp_path / "audio",
+        load_clock=iter((5.0, 6.0)).__next__,
+    )
+
+    assert engine.released is True
+    assert report["model_load_seconds"] == 1.0
+    assert report["records"] == [{
+        "schema_version": 1,
+        "engine_id": "load-failure",
+        "phase": "load",
+        "trial": None,
+        "utterance_id": None,
+        "status": "error",
+        "error_type": "RuntimeError",
+        "message": "CUDA out of memory",
+    }]
 
 
 def test_process_sampler_keeps_the_highest_value_for_only_the_selected_pid() -> None:

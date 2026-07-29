@@ -283,9 +283,29 @@ def run_benchmark(
     load_started = load_clock()
     try:
         engine.load(reference_audio, reference_text)
-    except Exception:
-        engine.release()
-        raise
+    except Exception as error:
+        model_load_seconds = max(0.0, load_clock() - load_started)
+        try:
+            engine.release()
+        except Exception:
+            pass
+        records = [{
+            "schema_version": 1,
+            "engine_id": engine.engine_id,
+            "phase": "load",
+            "trial": None,
+            "utterance_id": None,
+            "status": "error",
+            "error_type": type(error).__name__,
+            "message": str(error) or type(error).__name__,
+        }]
+        return {
+            "schema_version": 1,
+            "engine_id": engine.engine_id,
+            "model_load_seconds": model_load_seconds,
+            "records": records,
+            "summary": summarize(records),
+        }
     model_load_seconds = max(0.0, load_clock() - load_started)
     active_sampler = sampler
     if active_sampler is None:

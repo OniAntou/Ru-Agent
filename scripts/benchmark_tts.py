@@ -12,6 +12,11 @@ from pathlib import Path
 from time import perf_counter
 from typing import Callable
 
+from mini_gpt.omnivoice_tuning import (
+    BASELINE_SETTINGS,
+    CANDIDATE_SETTINGS,
+    OmniVoiceGenerationSettings,
+)
 from mini_gpt.tts_benchmark import (
     BenchmarkUtterance,
     ResourceSampler,
@@ -21,13 +26,22 @@ from mini_gpt.tts_benchmark import (
     summarize,
 )
 
+SETTINGS_BY_ID = {settings.config_id: settings for settings in CANDIDATE_SETTINGS}
+
 
 class GwenHttpBenchmarkEngine:
     engine_id = "gwen"
 
-    def __init__(self, *, http: object | None = None, base_url: str = "http://127.0.0.1:5051") -> None:
+    def __init__(
+        self,
+        *,
+        http: object | None = None,
+        base_url: str = "http://127.0.0.1:5051",
+        voice_profile: str = "ru",
+    ) -> None:
         self._http = http
         self._base_url = base_url.rstrip("/")
+        self._voice_profile = voice_profile
         self.process_id: int | None = None
 
     def _get(self, path: str):
@@ -66,11 +80,11 @@ class GwenHttpBenchmarkEngine:
         if not isinstance(pid, int) or pid <= 0:
             raise RuntimeError("Gwen status did not provide a valid service PID.")
         self.process_id = pid
-        self._json_response(self._post("/warmup", {"voice_profile": "ru"}), "warmup")
+        self._json_response(self._post("/warmup", {"voice_profile": self._voice_profile}), "warmup")
 
     def synthesize(self, text: str, output_path: Path) -> None:
         response = self._json_response(
-            self._post("/tts", {"text": text, "voice_profile": "ru"}), "synthesis"
+            self._post("/tts", {"text": text, "voice_profile": self._voice_profile}), "synthesis"
         )
         source_path = response.get("audio_path")
         if not isinstance(source_path, str) or not Path(source_path).is_file():
@@ -93,12 +107,12 @@ class OmniVoiceBenchmarkEngine:
         *,
         model_cache: Path,
         model_id: str = "k2-fsa/OmniVoice",
-        num_step: int = 16,
+        settings: OmniVoiceGenerationSettings = BASELINE_SETTINGS,
         importer: Callable[[str], object] = importlib.import_module,
     ) -> None:
         self._model_cache = model_cache
         self._model_id = model_id
-        self._num_step = num_step
+        self._settings = settings
         self._importer = importer
         self._model: object | None = None
         self._prompt: object | None = None
@@ -136,7 +150,11 @@ class OmniVoiceBenchmarkEngine:
         if self._model is None or self._prompt is None or self._soundfile is None:
             raise RuntimeError("OmniVoice is not loaded.")
         with self._torch.inference_mode():
-            audio = self._model.generate(text=text, voice_clone_prompt=self._prompt, num_step=self._num_step)
+            audio = self._model.generate(
+                text=text,
+                voice_clone_prompt=self._prompt,
+                **self._settings.generate_kwargs(),
+            )
         if not audio:
             raise RuntimeError("OmniVoice returned no audio.")
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,6 +168,12 @@ class OmniVoiceBenchmarkEngine:
         self._torch = None
         self._soundfile = None
         self.process_id = None
+
+    def benchmark_metadata(self) -> dict[str, object]:
+        return {
+            "generation_config_id": self._settings.config_id,
+            "generation_settings": self._settings.generate_kwargs(),
+        }
 
 
 def _windows_process_ram_mib(pid: int) -> float | None:
@@ -275,11 +299,21 @@ def run_benchmark(
     reference_audio: Path,
     reference_text: str,
     output_dir: Path,
+    voice_profile: str = "ru",
     sampler: ResourceSampler | None = None,
     load_clock: Callable[[], float] = perf_counter,
     clock: Callable[[], float] = perf_counter,
     warm_trials: int = 5,
 ) -> dict[str, object]:
+    metadata_provider = getattr(engine, "benchmark_metadata", None)
+    engine_metadata = metadata_provider() if callable(metadata_provider) else {}
+    if not isinstance(engine_metadata, dict):
+        raise TypeError("Benchmark engine metadata must be a dictionary.")
+    record_metadata = {**engine_metadata, "voice_profile": voice_profile}
+
+    def with_metadata(records: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [{**record, **record_metadata} for record in records]
+
     load_started = load_clock()
     try:
         engine.load(reference_audio, reference_text)
@@ -289,7 +323,7 @@ def run_benchmark(
             engine.release()
         except Exception:
             pass
-        records = [{
+        records = with_metadata([{
             "schema_version": 1,
             "engine_id": engine.engine_id,
             "phase": "load",
@@ -298,10 +332,11 @@ def run_benchmark(
             "status": "error",
             "error_type": type(error).__name__,
             "message": str(error) or type(error).__name__,
-        }]
+        }])
         return {
             "schema_version": 1,
             "engine_id": engine.engine_id,
+            **record_metadata,
             "model_load_seconds": model_load_seconds,
             "records": records,
             "summary": summarize(records),
@@ -312,7 +347,7 @@ def run_benchmark(
         process_id = getattr(engine, "process_id", None)
         if isinstance(process_id, int) and process_id > 0:
             active_sampler = ProcessResourceSampler(process_id)
-    records = run_engine_benchmark(
+    records = with_metadata(run_engine_benchmark(
         engine,
         utterances,
         reference_audio=reference_audio,
@@ -322,10 +357,11 @@ def run_benchmark(
         clock=clock,
         load_engine=False,
         warm_trials=warm_trials,
-    )
+    ))
     return {
         "schema_version": 1,
         "engine_id": engine.engine_id,
+        **record_metadata,
         "model_load_seconds": model_load_seconds,
         "records": records,
         "summary": summarize(records),
@@ -337,11 +373,16 @@ def write_report(path: Path, report: dict[str, object]) -> None:
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def build_engine(engine_id: str, model_cache: Path):
+def build_engine(
+    engine_id: str,
+    model_cache: Path,
+    omnivoice_settings: OmniVoiceGenerationSettings = BASELINE_SETTINGS,
+    voice_profile: str = "ru",
+):
     if engine_id == "gwen":
-        return GwenHttpBenchmarkEngine()
+        return GwenHttpBenchmarkEngine(voice_profile=voice_profile)
     if engine_id == "omnivoice":
-        return OmniVoiceBenchmarkEngine(model_cache=model_cache)
+        return OmniVoiceBenchmarkEngine(model_cache=model_cache, settings=omnivoice_settings)
     raise ValueError(f"Unsupported benchmark engine: {engine_id}")
 
 
@@ -356,13 +397,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--reference-text", type=Path, default=project_root / "reference_text.txt")
     parser.add_argument("--model-cache", type=Path, default=project_root / "models" / "omnivoice")
     parser.add_argument("--warm-trials", type=int, default=5)
+    parser.add_argument("--omnivoice-config", choices=tuple(SETTINGS_BY_ID), default=BASELINE_SETTINGS.config_id)
+    parser.add_argument("--voice-profile", choices=("ru", "yen_nhi"), default="ru")
     return parser.parse_args(argv)
 
 
 def main(
     argv: list[str] | None = None,
     *,
-    engine_factory: Callable[[str, Path], object] = build_engine,
+    engine_factory: Callable[[str, Path, OmniVoiceGenerationSettings, str], object] = build_engine,
 ) -> int:
     args = parse_args(argv)
     if args.warm_trials < 0:
@@ -374,11 +417,17 @@ def main(
     if not args.reference_audio.is_file() or not reference_text:
         raise SystemExit("Reference audio and matching non-empty reference text are required.")
     report = run_benchmark(
-        engine_factory(args.engine, args.model_cache),
+        engine_factory(
+            args.engine,
+            args.model_cache,
+            SETTINGS_BY_ID[args.omnivoice_config],
+            args.voice_profile,
+        ),
         load_manifest(args.manifest),
         reference_audio=args.reference_audio,
         reference_text=reference_text,
         output_dir=args.output_dir,
+        voice_profile=args.voice_profile,
         warm_trials=args.warm_trials,
     )
     write_report(args.report, report)

@@ -7,12 +7,14 @@ import wave
 
 import pytest
 
+from mini_gpt.omnivoice_tuning import TEXT_AWARE_20_SETTINGS
 from mini_gpt.tts_benchmark import BenchmarkUtterance
 from scripts.benchmark_tts import (
     GwenHttpBenchmarkEngine,
     OmniVoiceBenchmarkEngine,
     ProcessResourceSampler,
     main,
+    parse_args,
     run_benchmark,
     write_report,
 )
@@ -73,6 +75,18 @@ class LoadFailureEngine:
 
     def release(self) -> None:
         self.released = True
+
+
+class ConfiguredReportEngine(ReportEngine):
+    def benchmark_metadata(self) -> dict[str, object]:
+        return {
+            "generation_config_id": "vi-normalized-20",
+            "generation_settings": {
+                "language": "Vietnamese",
+                "normalize_text": True,
+                "num_step": 20,
+            },
+        }
 
 
 def test_gwen_engine_copies_returned_audio_and_releases_the_owned_service(tmp_path: Path) -> None:
@@ -149,6 +163,101 @@ def test_omnivoice_load_exposes_its_own_process_for_resource_sampling(tmp_path: 
     assert engine.process_id == os.getpid()
 
 
+def test_omnivoice_synthesis_passes_the_selected_text_handling_settings(tmp_path: Path) -> None:
+    reference = tmp_path / "reference.wav"
+    reference.write_bytes(b"reference")
+
+    class FakeCuda:
+        @staticmethod
+        def is_available() -> bool:
+            return True
+
+    class FakeInferenceMode:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback) -> None:
+            return None
+
+    class FakeTorch:
+        cuda = FakeCuda()
+        float16 = object()
+
+        @staticmethod
+        def inference_mode() -> FakeInferenceMode:
+            return FakeInferenceMode()
+
+    class FakeModel:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def create_voice_clone_prompt(self, **kwargs):
+            return {"prompt": kwargs}
+
+        def generate(self, **kwargs):
+            self.calls.append(kwargs)
+            return [[0.0, 0.0]]
+
+    model = FakeModel()
+
+    class FakeOmniVoice:
+        @staticmethod
+        def from_pretrained(*args, **kwargs):
+            return model
+
+    class FakeSoundFile:
+        @staticmethod
+        def write(path: str, audio, sample_rate: int) -> None:
+            Path(path).write_bytes(b"audio")
+
+    modules = {
+        "omnivoice": type("OmniModule", (), {"OmniVoice": FakeOmniVoice}),
+        "torch": FakeTorch(),
+        "soundfile": FakeSoundFile(),
+    }
+    engine = OmniVoiceBenchmarkEngine(
+        model_cache=tmp_path / "cache",
+        settings=TEXT_AWARE_20_SETTINGS,
+        importer=modules.__getitem__,
+    )
+
+    engine.load(reference, "reference text")
+    engine.synthesize("Xin chào anh.", tmp_path / "output.wav")
+
+    assert model.calls == [{
+        "text": "Xin chào anh.",
+        "voice_clone_prompt": {"prompt": {"ref_audio": str(reference), "ref_text": "reference text"}},
+        "language": "Vietnamese",
+        "normalize_text": True,
+        "num_step": 20,
+    }]
+
+
+def test_run_benchmark_adds_profile_and_engine_metadata_to_every_record(tmp_path: Path) -> None:
+    reference = tmp_path / "reference.wav"
+    reference.write_bytes(b"reference")
+
+    report = run_benchmark(
+        ConfiguredReportEngine(),
+        [BenchmarkUtterance("vi-01", "vi", "Chào anh.")],
+        reference_audio=reference,
+        reference_text="reference text",
+        output_dir=tmp_path / "audio",
+        voice_profile="yen_nhi",
+        clock=lambda: 1.0,
+    )
+
+    assert report["voice_profile"] == "yen_nhi"
+    assert report["generation_config_id"] == "vi-normalized-20"
+    assert report["generation_settings"] == {
+        "language": "Vietnamese",
+        "normalize_text": True,
+        "num_step": 20,
+    }
+    assert all(record["voice_profile"] == "yen_nhi" for record in report["records"])
+    assert all(record["generation_config_id"] == "vi-normalized-20" for record in report["records"])
+
+
 def test_run_benchmark_writes_a_load_timed_json_report(tmp_path: Path) -> None:
     reference = tmp_path / "reference.wav"
     reference.write_bytes(b"reference")
@@ -193,8 +302,9 @@ def test_run_benchmark_records_a_failed_model_load_without_fallback(tmp_path: Pa
         "trial": None,
         "utterance_id": None,
         "status": "error",
-        "error_type": "RuntimeError",
-        "message": "CUDA out of memory",
+            "error_type": "RuntimeError",
+            "message": "CUDA out of memory",
+            "voice_profile": "ru",
     }]
 
 
@@ -218,6 +328,28 @@ def test_process_sampler_keeps_the_highest_value_for_only_the_selected_pid() -> 
     assert requested_pids and set(requested_pids) == {4321}
     assert usage.process_ram_mib == 384.0
     assert usage.gpu_peak_mib == 1024.0
+
+
+def test_cli_resolves_only_known_omnivoice_settings_and_voice_profiles() -> None:
+    common = [
+        "--engine", "omnivoice", "--manifest", "manifest.jsonl", "--output-dir", "audio",
+        "--report", "report.json",
+    ]
+
+    args = parse_args([
+        *common,
+        "--omnivoice-config", "vi-normalized-24",
+        "--voice-profile", "yen_nhi",
+    ])
+
+    assert args.omnivoice_config == "vi-normalized-24"
+    assert args.voice_profile == "yen_nhi"
+    assert parse_args(common).omnivoice_config == "baseline-16"
+    assert parse_args(common).voice_profile == "ru"
+    with pytest.raises(SystemExit):
+        parse_args([*common, "--omnivoice-config", "not-a-config"])
+    with pytest.raises(SystemExit):
+        parse_args([*common, "--voice-profile", "not-a-profile"])
 
 
 def test_main_runs_a_selected_engine_and_writes_its_report(tmp_path: Path) -> None:
@@ -245,7 +377,7 @@ def test_main_runs_a_selected_engine_and_writes_its_report(tmp_path: Path) -> No
             "--report", str(report_path), "--reference-audio", str(reference),
             "--reference-text", str(reference_text),
         ],
-        engine_factory=lambda engine_id, model_cache: ReportEngine(),
+        engine_factory=lambda engine_id, model_cache, settings, voice_profile: ReportEngine(),
     )
 
     assert exit_code == 0

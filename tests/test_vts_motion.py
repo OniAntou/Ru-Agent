@@ -3,6 +3,7 @@ from mini_gpt.vts_motion import (
     SPEAKING_SWAY_AMPLITUDE,
     MicroActionScheduler,
     is_safe_micro_action,
+    safe_micro_action_entries,
     sway_value,
 )
 
@@ -40,3 +41,18 @@ def test_micro_action_filter_excludes_pout_blush_clothing_and_unknown_motion():
     assert is_safe_micro_action("\u8138\u7ea2\u542f\u7528", "blush.motion3.json") is False
     assert is_safe_micro_action("\u5916\u8863\u542f\u7528", "clothes.motion3.json") is False
     assert is_safe_micro_action("Mystery", "unknown.motion3.json") is False
+
+
+def test_safe_micro_action_entries_keeps_only_reversible_motion_entries():
+    class Entry:
+        def __init__(self, label, identifier):
+            self.label = label
+            self.identifier = identifier
+
+    entries = [
+        Entry("Blink", "blink.motion3.json"),
+        Entry("\u5916\u8863\u542f\u7528", "clothes.motion3.json"),
+        Entry("Mystery", "unknown.motion3.json"),
+    ]
+
+    assert safe_micro_action_entries(entries) == [entries[0]]

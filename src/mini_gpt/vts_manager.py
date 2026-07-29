@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 import time
 import threading
 
@@ -7,7 +8,7 @@ import pyvts
 
 from .vts_actions import VtsActions
 from .vts_catalog import VtsCatalog, build_catalog
-from .vts_motion import sway_value
+from .vts_motion import MicroActionScheduler, safe_micro_action_entries, sway_value
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ EXPRESSION_ACTIVE_SECONDS = 4.0
 
 
 class VTSManager:
-    def __init__(self):
+    def __init__(self, random_source=None):
         plugin_info = {
             "plugin_name": "Ru Local Llama",
             "developer": "Antigravity",
@@ -37,6 +38,10 @@ class VTSManager:
         self._last_action_at: dict[str, float] = {}
         self._expression_lock = threading.Lock()
         self._active_expressions: set[tuple[str, str]] = set()
+        self._semantic_action_lock = threading.Lock()
+        self._motion_random = random_source or random
+        self._micro_action_scheduler = MicroActionScheduler(self._motion_random)
+        self._last_micro_action_identifier: str | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._request_lock: asyncio.Lock | None = None
 
@@ -143,6 +148,10 @@ class VTSManager:
                     value=val
                 )
                 await self._request(req_inject)
+                if self._micro_action_scheduler.update(
+                    time.monotonic(), self.is_speaking
+                ):
+                    await self._trigger_micro_action()
                 await asyncio.sleep(0.05)
             except Exception as e:
                 logger.debug("Sway loop error: %s", e)
@@ -152,6 +161,42 @@ class VTSManager:
         """Update the speech state consumed by the background sway loop."""
 
         self.is_speaking = bool(speaking)
+        if not self.is_speaking:
+            self._micro_action_scheduler.reset()
+            self._last_micro_action_identifier = None
+
+    async def _trigger_micro_action(self) -> None:
+        """Trigger one safe catalog action without racing semantic actions."""
+
+        if not self.is_connected or not self.is_speaking:
+            return
+        if not self._semantic_action_lock.acquire(blocking=False):
+            return
+        try:
+            catalog = await self._fetch_catalog()
+            if catalog is None:
+                return
+            candidates = safe_micro_action_entries(catalog.entries)
+            if self._last_micro_action_identifier and len(candidates) > 1:
+                alternatives = [
+                    entry
+                    for entry in candidates
+                    if entry.identifier != self._last_micro_action_identifier
+                ]
+                if alternatives:
+                    candidates = alternatives
+            if not candidates:
+                return
+            entry = self._motion_random.choice(candidates)
+            if not entry.identifier:
+                return
+            if sum(item.identifier == entry.identifier for item in candidates) != 1:
+                logger.debug("Skipped ambiguous VTube micro-action: %s", entry.label)
+                return
+            await self._trigger_catalog_actions(catalog, (entry.code,))
+            self._last_micro_action_identifier = entry.identifier
+        finally:
+            self._semantic_action_lock.release()
 
     async def trigger_hotkey(self, hotkey_name):
         if not self.is_connected:
@@ -172,9 +217,10 @@ class VTSManager:
         self._run_on_vts_loop(self.trigger_hotkey(hotkey_name), wait=False)
 
     def trigger_actions_sync(self, actions: VtsActions) -> None:
-        for action in (actions.facial, actions.body):
-            if action is not None:
-                self._trigger_action(action)
+        with self._semantic_action_lock:
+            for action in (actions.facial, actions.body):
+                if action is not None:
+                    self._trigger_action(action)
 
     def _trigger_action(self, action: str) -> None:
         configuration = ACTION_HOTKEYS.get(action)
@@ -255,7 +301,8 @@ class VTSManager:
         if catalog is None or not codes:
             return
         try:
-            self._run_on_vts_loop(self._trigger_catalog_actions(catalog, codes), wait=True)
+            with self._semantic_action_lock:
+                self._run_on_vts_loop(self._trigger_catalog_actions(catalog, codes), wait=True)
         except Exception as error:
             logger.warning("Could not trigger VTube catalog actions: %s", error)
 

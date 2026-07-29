@@ -341,6 +341,10 @@ or recreate `LLM_MouthOpen`.
 existing `VTubeStudioSpout` output, so it does not change Ru, the active VTube
 Studio model, `VoiceVolume`, `LLM_Sway`, or any model hotkeys.
 
+The GUI's **Open overlay** / **Close overlay** button starts or stops only the
+`RuDesktopOverlay` receiver. It does not close Ru or VTube Studio, and it uses
+the current `VTubeStudioSpout` sender.
+
 1. In VTube Studio, enable its Windows **Spout2** sender. Use **Color Picker
    Background** and enable transparency in capture. Do not use the earlier
    green desktop-window workaround.

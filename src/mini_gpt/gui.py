@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+import csv
 from time import monotonic, perf_counter, sleep
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -75,6 +76,8 @@ GUI_SETTINGS_PATH = PROJECT_ROOT / "data" / "gui_settings.json"
 DEFAULT_MAX_NEW_TOKENS = "512"
 DEFAULT_ALLOW_WEB_SEARCH = True
 TTS_PREFETCH_WAVS = 2
+OVERLAY_EXE_PATH = PROJECT_ROOT / "tools" / "ru_desktop_overlay" / "out" / "build" / "Release" / "RuDesktopOverlay.exe"
+OVERLAY_SENDER = "VTubeStudioSpout"
 BACKEND_TRANSFORMERS = "transformers"
 BACKEND_GGUF = "gguf"
 BACKEND_OPENCODE = "opencode"
@@ -103,6 +106,31 @@ def voice_service_available(selection: VoiceSelection) -> bool:
             return True
     except OSError:
         return False
+
+
+def overlay_process_ids(*, run=subprocess.run) -> tuple[int, ...]:
+    """Return running RuDesktopOverlay process IDs on Windows."""
+
+    try:
+        result = run(
+            ["tasklist", "/FI", "IMAGENAME eq RuDesktopOverlay.exe", "/FO", "CSV", "/NH"],
+            capture_output=True,
+            text=True,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except OSError:
+        return ()
+
+    process_ids: list[int] = []
+    for row in csv.reader(result.stdout.splitlines()):
+        if len(row) < 2 or row[0].strip().casefold() != "rudesktopoverlay.exe":
+            continue
+        try:
+            process_ids.append(int(row[1].strip()))
+        except ValueError:
+            continue
+    return tuple(process_ids)
 
 
 def ensure_voice_service(
@@ -463,6 +491,7 @@ class RuApp:
         self.new_chat_button: ttk.Button
         self.mark_button: ttk.Button
         self.settings_button: ttk.Button
+        self.overlay_button: ttk.Button
         self.prompt_text: tk.Text
         self.transcript_text: tk.Text
         self._has_empty_state = True
@@ -592,8 +621,15 @@ class RuApp:
             actions, text="Save useful reply", command=self._mark_last_response, state="disabled", style="Ru.Quiet.TButton"
         )
         self.mark_button.grid(row=0, column=4, padx=(0, 6))
+        self.overlay_button = ttk.Button(
+            actions,
+            text="Close overlay" if overlay_process_ids() else "Open overlay",
+            command=self._toggle_overlay,
+            style="Ru.Quiet.TButton",
+        )
+        self.overlay_button.grid(row=0, column=5, padx=(0, 6))
         self.tts_checkbox = ttk.Checkbutton(actions, text="Ru voice", variable=self.tts_enabled_var)
-        self.tts_checkbox.grid(row=0, column=5, padx=(6, 0))
+        self.tts_checkbox.grid(row=0, column=6, padx=(6, 0))
         ttk.Label(composer, textvariable=self.status_var, style="Ru.Status.TLabel").grid(
             row=3, column=0, sticky="w", pady=(8, 0)
         )
@@ -617,6 +653,35 @@ class RuApp:
             "empty",
         )
         self.transcript_text.configure(state="disabled")
+
+    def _toggle_overlay(self) -> None:
+        process_ids = overlay_process_ids()
+        if process_ids:
+            for process_id in process_ids:
+                subprocess.run(
+                    ["taskkill", "/PID", str(process_id), "/T", "/F"],
+                    capture_output=True,
+                    check=False,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            self.overlay_button.configure(text="Open overlay")
+            self.status_var.set("Overlay closed")
+            return
+
+        if not OVERLAY_EXE_PATH.is_file():
+            self.status_var.set("Overlay unavailable: build RuDesktopOverlay first")
+            return
+        try:
+            subprocess.Popen(
+                [str(OVERLAY_EXE_PATH), "--sender", OVERLAY_SENDER],
+                cwd=str(PROJECT_ROOT),
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except OSError as error:
+            self.status_var.set(f"Overlay unavailable: {error}")
+            return
+        self.overlay_button.configure(text="Close overlay")
+        self.status_var.set("Overlay opening...")
 
     def _open_settings(self) -> None:
         dialog = tk.Toplevel(self.root)

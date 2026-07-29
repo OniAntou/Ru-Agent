@@ -151,6 +151,10 @@ clothing/body-reveal, and unknown entries are excluded; Ru's explicit
 catalog-selected actions remain available and share a dispatch guard so they
 do not race an ambient action.
 
+The GUI now exposes an **Open overlay** / **Close overlay** toggle for the
+`RuDesktopOverlay` receiver. Toggling it targets only that receiver process;
+VTube Studio and Ru remain running.
+
 The OmniVoice choices are the active GUI runtime. The Ru and Ái Vy profiles use
 only `tyc_talk.wav`/`reference_text.txt` or the independently retained Ái Vy
 reference pair. All use the separate

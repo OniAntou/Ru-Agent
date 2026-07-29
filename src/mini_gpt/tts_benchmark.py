@@ -167,11 +167,16 @@ def run_engine_benchmark(
     output_dir: Path,
     sampler: ResourceSampler | None = None,
     clock: Callable[[], float] = perf_counter,
+    load_engine: bool = True,
+    warm_trials: int = 5,
 ) -> list[dict[str, object]]:
+    if warm_trials < 0:
+        raise BenchmarkConfigurationError("Warm trial count must not be negative.")
     records: list[dict[str, object]] = []
     try:
-        engine.load(reference_audio, reference_text)
-        for phase, trial in [("cold", 0), *(("warm", number) for number in range(1, 6))]:
+        if load_engine:
+            engine.load(reference_audio, reference_text)
+        for phase, trial in [("cold", 0), *(("warm", number) for number in range(1, warm_trials + 1))]:
             for utterance in utterances:
                 records.append(
                     run_single_sample(

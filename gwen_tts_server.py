@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import gc
+import os
 from pathlib import Path
 from time import perf_counter
 from typing import Callable
@@ -104,6 +105,10 @@ def synthesize_fast(text: str, profile: str = "ru") -> str:
 
 def create_app(synthesize: Callable[[str], str] | None = None) -> Flask:
     app = Flask(__name__)
+
+    @app.get("/status")
+    def status():
+        return jsonify({"pid": os.getpid(), "model_loaded": _model is not None})
 
     @app.post("/warmup")
     def warmup():

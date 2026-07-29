@@ -180,6 +180,24 @@ def test_run_engine_benchmark_runs_one_cold_and_five_warm_trials(tmp_path: Path)
     assert engine.calls == ["load", *("synthesize" for _ in range(6)), "release"]
 
 
+def test_run_engine_benchmark_can_use_an_engine_loaded_by_the_report_runner(tmp_path: Path) -> None:
+    engine = WavEngine()
+
+    records = run_engine_benchmark(
+        engine,
+        [BenchmarkUtterance("vi-01", "vi", "Chào anh.")],
+        reference_audio=tmp_path / "reference.wav",
+        reference_text="reference text",
+        output_dir=tmp_path / "output",
+        sampler=StaticSampler(),
+        clock=lambda: 1.0,
+        load_engine=False,
+    )
+
+    assert len(records) == 6
+    assert engine.calls == [*("synthesize" for _ in range(6)), "release"]
+
+
 def test_summarize_uses_median_warm_metrics_and_ignores_errors() -> None:
     summary = summarize(
         [

@@ -21,8 +21,8 @@ def test_authored_rows_have_expected_quotas_and_context() -> None:
 def test_authored_rows_follow_current_personality_by_language() -> None:
     for row in FRESH_AUTHORED_ROWS:
         language = row["language"]
-        assert "Always append 'Nya~' at the very end of your final response." in row["messages"][0]["content"]
-        assert row["response"].endswith("Nya~")
+        assert "Always append 'Nya~'" not in row["messages"][0]["content"]
+        assert "Nya~" not in row["response"]
         if language == "en":
             assert "anh" not in row["response"].casefold()
         if language == "mixed":

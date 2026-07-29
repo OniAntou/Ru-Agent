@@ -37,7 +37,7 @@ from .gui_presentation import (
     format_generation_status,
     safe_streamed_response,
 )
-from .ru_style import RU_SYSTEM_PROMPT
+from .ru_style import RU_CLOUD_SYSTEM_PROMPT, RU_SYSTEM_PROMPT
 from .memory import MemoryStore, StructuredMemoryStore
 from .search import perform_web_search
 from .reply_orchestration import execute_reply
@@ -328,9 +328,10 @@ class ModelRunner:
         on_complete_timing=None,
     ) -> str:
         return execute_reply(
+        system_prompt = RU_CLOUD_SYSTEM_PROMPT if self.backend == BACKEND_OPENCODE else RU_SYSTEM_PROMPT
             self._generate,
             prompt=prompt,
-            system_instruction=RU_SYSTEM_PROMPT + VTS_ACTION_INSTRUCTION + VOICE_PACE_INSTRUCTION + vts_instruction,
+            system_instruction=system_prompt + VTS_ACTION_INSTRUCTION + VOICE_PACE_INSTRUCTION + vts_instruction,
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             top_k=top_k,

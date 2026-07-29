@@ -1,5 +1,8 @@
 # Ru Playful Teasing Persona Implementation Plan
 
+> **Historical plan:** its terminal `Nya~` convention is retained for audit
+> history only; the active v6.3 contract does not force that suffix.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Ru humorously and lightly teasing toward anh without weakening her helpful, safe, or VTube-aware behavior.

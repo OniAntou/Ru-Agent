@@ -187,7 +187,6 @@ def build_authored_rows() -> list[dict[str, object]]:
             response = _mixed_response(mode, obj, place, variant)
         else:
             response = _vi_response(mode, obj, place, variant)
-        response = response.removesuffix("Nya~").rstrip() + " Nya~"
         rows.append({
             "messages": messages,
             "response": response,

@@ -56,7 +56,7 @@ def _validate_authored(row: dict[str, object]) -> dict[str, object]:
     if not _conversation_roles(normalized_messages, str(row["language"])):
         raise ValueError("fresh authored row roles do not alternate")
     response = normalize_text(repair_mojibake(str(row["response"])))
-    if not response or not response.endswith("Nya~") or "[[VTS:" in response or _META_PATTERN.search(response) or _UNSAFE_PATTERN.search(response) or _URL_PATTERN.search(response):
+    if not response or "Nya~" in response or "[[VTS:" in response or _META_PATTERN.search(response) or _UNSAFE_PATTERN.search(response) or _URL_PATTERN.search(response):
         raise ValueError("fresh authored response failed safety gate")
     if row["language"] not in EXPECTED_LANGUAGE_COUNTS or row["mode"] not in EXPECTED_MODE_COUNTS or row["turn_band"] not in EXPECTED_TURN_BAND_COUNTS:
         raise ValueError("fresh authored metadata is invalid")
@@ -119,7 +119,7 @@ def build_ru_v6_2_fresh_corpus(
             "alternating_history": True,
             "duplicate_final_prompts": True,
             "language_specific_personality_prompts": True,
-            "requires_nya_suffix": True,
+            "requires_nya_suffix": False,
             "vts_markers_out_of_text": True,
             "style_reference_only": "roleplay_chat.md",
         },

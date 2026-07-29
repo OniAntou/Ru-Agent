@@ -10,6 +10,8 @@ EXPECTED_LANGUAGE_COUNTS = {"vi": 90, "mixed": 60, "en": 30}
 EXPECTED_MODE_COUNTS = {"repair": 60, "bilingual_bridge": 60, "context_recall": 60}
 EXPECTED_TURN_BAND_COUNTS = {"short": 60, "medium": 90, "long": 30}
 
+PROFANITY_LEVELS = {"none", "mild", "medium"}
+
 
 _VI_SCENES = (
     ("cuộc họp sáng nay", "góc ban công"),
@@ -159,6 +161,26 @@ def _history(language: str, index: int, mode: str) -> list[dict[str, str]]:
     ]
 
 
+def _profanity_for(index: int, language: str) -> str:
+    if language != "en" and index % 17 == 0:
+        return "medium"
+    if index % 11 == 0:
+        return "mild"
+    return "none"
+
+
+def _apply_profanity(response: str, level: str, language: str) -> str:
+    if level == "none":
+        return response
+    if level == "medium":
+        return response + " \u0110\u1ec7t, em v\u1eeba n\u00f3ng qu\u00e1; anh n\u00f3i ti\u1ebfp \u0111i."
+    if language == "en":
+        return response + " Damn, I overthought that; please continue."
+    if language == "mixed":
+        return response + " Damn, em v\u1eeba overthink r\u1ed3i; anh n\u00f3i ti\u1ebfp \u0111i."
+    return response + " V\u00e3i, em \u0111ang l\u00e0m c\u00e2u n\u00e0y r\u1ed1i h\u01a1n r\u1ed3i."
+
+
 def _row(index: int) -> dict[str, object]:
     mode = ("repair", "bilingual_bridge", "context_recall")[index % 3]
     language = "vi" if index % 6 in {0, 1, 2} else ("mixed" if index % 6 in {3, 4} else "en")
@@ -207,12 +229,14 @@ def _row(index: int) -> dict[str, object]:
             if language == "mixed":
                 prompt += " Keep the English part simple, nhé."
                 response += " Em giữ câu này simple để anh không phải dịch cảm xúc của mình."
+    profanity = _profanity_for(index, language)
+    response = _apply_profanity(response, profanity, language)
     messages = [{"role": "system", "content": ru_system_prompt_for(language)}]
     messages.extend(_history(language, index, mode))
     messages.append({"role": "user", "content": prompt})
     return {
         "messages": messages,
-        "response": response.removesuffix("Nya~").rstrip() + " Nya~",
+        "response": response.removesuffix("Nya~").rstrip(),
         "language": language,
         "mode": mode,
         "intensity": "medium" if mode == "repair" else "light",
@@ -220,6 +244,7 @@ def _row(index: int) -> dict[str, object]:
         "source": SOURCE,
         "license": LICENSE,
         "target": "hard-suite-repair" if mode == "repair" else mode,
+        "profanity": profanity,
     }
 
 

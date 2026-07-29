@@ -183,7 +183,7 @@ def _reject_reason(turn: SourceTurn) -> str | None:
 
 def _to_training_row(turn: SourceTurn) -> dict[str, object]:
     language = _language(turn.prompt, turn.response)
-    response = turn.response.removesuffix("Nya~").rstrip() + " Nya~"
+    response = turn.response.removesuffix("Nya~").rstrip()
     return {
         "messages": [
             {"role": "system", "content": ru_system_prompt_for(language)},

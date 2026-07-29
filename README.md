@@ -127,9 +127,10 @@ does not mean v6.2 has passed promotion review.
 The new dataset is `data\conversations\ru_v6_3`, with 180 authored rows split
 108/36/36 into train/validation/held-out. It contains repair, bilingual bridge,
 and context-recall strata, with 90 Vietnamese, 60 mixed, and 30 English rows.
-Manifest authored SHA-256: `4ced5766d226678c876fcf4c4b7311224869af0d5b00401a05b8c0c1b388d53b`.
+Manifest authored SHA-256: `d757882ea70ad5b1951a0e94a0012ecfae5c95b5fbbc677f20061bc40f9b7d8b`.
 It is new project-owned data targeted from the hard-suite failures; no v6.2
-rows were copied. Training has not started. The bounded config is
+rows were copied. It includes bounded contextual profanity metadata: 155
+`none`, 16 `mild`, and 9 `medium` rows. Training has not started. The bounded config is
 `configs\ru_llama3_1_v6_3.json` with 360 steps and a 9,600-second wall-clock
 cap.
 
@@ -172,8 +173,9 @@ audit rejected 44 rows for duplicates, malformed/noisy content, AI-meta text,
 control markers, links/lists, or unsafe explicit material. Rejected source text
 is not written to the candidate. Authored and imported rows now use the
 language-specific `ru_style.py` personality prompts, preserve the `anh`/`em`
-or English-only voice, add the natural `Nya~` personality suffix, and keep VTS
-control markers out of the training text.
+or English-only voice, and keep VTS control markers out of the training text.
+The active contract no longer forces a `Nya~` suffix; it allows only contextual
+mild/medium profanity under the documented safety boundary.
 
 Rebuild it deterministically with:
 
@@ -195,8 +197,9 @@ The same deterministic 12-case QLoRA evaluation was rerun for all three
 adapters (`comparison_v6.json`, `comparison_v6_1.json`, and
 `comparison_v6_2.json`). Automatic results were v6 `11/12`, v6.1 `12/12`, and
 v6.2 `12/12`; v6 alone failed the Vietnamese context-work case with an
-out-of-context refusal. v6.2 responses are shorter and consistently end with
-`Nya~`, but mixed-language grammar still needs manual review. The evaluation
+out-of-context refusal. v6.2 responses were shorter and consistently ended with
+`Nya~` under the historical v6.2 prompt contract; that suffix is no longer
+active, and mixed-language grammar still needs manual review. The evaluation
 allocator peak was 5,686.78 MiB for each run. This does not override v6.2's
 unverified physical-training VRAM gate or the required manual bilingual/held-out
 review.

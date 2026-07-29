@@ -20,6 +20,9 @@ def test_v6_3_authored_shape_and_quotas() -> None:
 
 def test_v6_3_rows_keep_history_and_personality_voice() -> None:
     assert all(any(message["role"] == "assistant" for message in row["messages"][1:-1]) for row in AUTHORED_ROWS)
-    assert all(row["response"].endswith("Nya~") for row in AUTHORED_ROWS)
+    assert all("Nya~" not in row["response"] for row in AUTHORED_ROWS)
+    assert {row["profanity"] for row in AUTHORED_ROWS} <= {"none", "mild", "medium"}
+    assert any(row["profanity"] == "mild" for row in AUTHORED_ROWS)
+    assert any(row["profanity"] == "medium" for row in AUTHORED_ROWS)
     assert all("anh" in row["response"].casefold() and "em" in row["response"].casefold() for row in AUTHORED_ROWS if row["language"] != "en")
     assert all("anh" not in row["response"].casefold() and "em" not in row["response"].casefold() for row in AUTHORED_ROWS if row["language"] == "en")

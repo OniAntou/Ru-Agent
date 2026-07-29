@@ -88,8 +88,8 @@ def test_selection_filters_unsafe_noise_and_deduplicates(tmp_path: Path) -> None
 
     assert len(selection.rows) == 2
     assert {row["source"] for row in selection.rows} == {"approved-import", "memory-import"}
-    assert all(row["response"].endswith("Nya~") for row in selection.rows)
-    assert all(row["messages"][0]["content"].endswith("Nya~' at the very end of your final response.") for row in selection.rows)
+    assert all("Nya~" not in row["response"] for row in selection.rows)
+    assert all("Always append 'Nya~'" not in row["messages"][0]["content"] for row in selection.rows)
     reasons = {item["reason"] for item in selection.rejected}
     assert {"duplicate_pair", "ai_meta", "unsafe_explicit", "links_or_list", "malformed"} <= reasons
 

@@ -1,5 +1,8 @@
 # v6.2 fresh corpus: memory and approved merge plan
 
+> **Historical v6.2 plan:** its `Nya~` target convention is superseded by the
+> active v6.3 personality contract and is retained only for audit history.
+
 > Execute inline in the current `D:\LLM` checkout. The user explicitly
 > authorized merging the current memory and approved sources into the new
 > candidate. Do not start training during this plan.

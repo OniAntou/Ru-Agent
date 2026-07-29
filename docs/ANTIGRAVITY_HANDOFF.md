@@ -59,18 +59,21 @@ operational GUI default by explicit user choice; v6 remains the HF fallback.
 The new project-owned dataset is at `data\conversations\ru_v6_3`. It contains
 180 authored rows split 108/36/36 into train/validation/held-out, with repair,
 bilingual-bridge, and context-recall strata. Its authored SHA-256 is
-`4ced5766d226678c876fcf4c4b7311224869af0d5b00401a05b8c0c1b388d53b`.
+`d757882ea70ad5b1951a0e94a0012ecfae5c95b5fbbc677f20061bc40f9b7d8b`.
 The corpus is new and does not copy v6.2 rows. Training has not started; use
 `configs\ru_llama3_1_v6_3.json`, which caps the run at 360 steps and 9,600
-seconds.
+seconds. The rows carry bounded profanity metadata (`none=155`, `mild=16`,
+`medium=9`) and the active Ru contract does not force a `Nya~` suffix.
 
 ## Current comparison
 
 The deterministic 12-case QLoRA suite was rerun with greedy decoding and 64
 new tokens per case. Results: v6 `11/12` (one Vietnamese context-work
-out-of-context refusal), v6.1 `12/12`, and v6.2 `12/12`. v6.2 is noticeably
-shorter and consistently ends with `Nya~`; its mixed-language turns still need
-manual naturalness review. The inference allocator peak was 5,686.78 MiB in
+out-of-context refusal), v6.1 `12/12`, and v6.2 `12/12`. v6.2 was noticeably
+shorter and consistently ended with `Nya~` under the historical v6.2 prompt
+contract; the active contract no longer forces that suffix. Its mixed-language
+turns still need manual naturalness review. The inference allocator peak was
+5,686.78 MiB in
 each run. These automatic results do not promote v6.2 because its training
 physical-VRAM measurement remains unverified.
 

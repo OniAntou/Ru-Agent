@@ -1,5 +1,8 @@
 # Ru v6.2 Fresh Roleplay Corpus Design
 
+> **Historical v6.2 design:** its `Nya~` target convention is retained for
+> audit history only and is superseded by the active v6.3 personality contract.
+
 **Date:** 2026-07-28
 
 **Status:** Design approved for implementation planning
@@ -71,11 +74,12 @@ moment calls for it, not because a Vietnamese and English sentence were joined
 mechanically. English-only rows remain natural English; Vietnamese rows preserve
 Ru's `em` voice and address the user as `anh`.
 
-The current `ru_style.py` personality is the source of truth for system
+The then-current `ru_style.py` personality was the source of truth for system
 messages. Each authored/imported row uses the language-specific prompt from
 `ru_system_prompt_for(language)`: Vietnamese keeps the `anh`/`em` voice,
 English stays English-only, and mixed rows contain a purposeful switch. Every
-assistant target ends in `Nya~` to match the current personality. VTS control
+the historical assistant target ended in `Nya~` to match the then-current
+personality. VTS control
 markers remain outside displayed training text; the runtime may add them later.
 
 ## Safety boundary

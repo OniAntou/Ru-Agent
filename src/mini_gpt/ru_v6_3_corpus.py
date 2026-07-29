@@ -27,14 +27,15 @@ _VTS_PATTERN = re.compile(r"\[\[\s*vts\s*:", re.IGNORECASE)
 _URL_PATTERN = re.compile(r"(?i)(?:https?://|www\.)")
 _VI_WRONG_VOICE = re.compile(r"(?i)\b(?:tôi|mình|bạn|cậu)\b")
 _EN_VI_MARKER = re.compile(r"(?i)\b(?:anh|em|nhé|ừ|không)\b")
+_PROFANITY_PATTERN = re.compile(r"(?i)(?:\b(?:damn|hell)\b|\u0111\u1ec7t|v\u00e3i|m\u1eb9 ki\u1ebfp)")
 
 
 def _validate_row(row: dict[str, object]) -> dict[str, object]:
-    expected = {"messages", "response", "language", "mode", "intensity", "turn_band", "source", "license", "target"}
+    expected = {"messages", "response", "language", "mode", "intensity", "turn_band", "source", "license", "target", "profanity"}
     if set(row) != expected:
         raise ValueError("v6.3 authored row has unexpected fields")
     language = row["language"]
-    if language not in EXPECTED_LANGUAGE_COUNTS or row["mode"] not in EXPECTED_MODE_COUNTS or row["turn_band"] not in EXPECTED_TURN_BAND_COUNTS:
+    if language not in EXPECTED_LANGUAGE_COUNTS or row["mode"] not in EXPECTED_MODE_COUNTS or row["turn_band"] not in EXPECTED_TURN_BAND_COUNTS or row["profanity"] not in {"none", "mild", "medium"}:
         raise ValueError("v6.3 authored metadata is invalid")
     messages = row["messages"]
     if not isinstance(messages, list) or len(messages) < 4 or not all(isinstance(message, dict) for message in messages):
@@ -47,8 +48,9 @@ def _validate_row(row: dict[str, object]) -> dict[str, object]:
     if any(not isinstance(message.get("content"), str) or not str(message["content"]).strip() for message in messages):
         raise ValueError("v6.3 message content cannot be empty")
     response = str(row["response"]).strip()
-    combined = "\n".join(str(message["content"]) for message in messages) + "\n" + response
-    if not response.endswith("Nya~") or _META_PATTERN.search(combined) or _UNSAFE_PATTERN.search(combined) or _VTS_PATTERN.search(combined) or _URL_PATTERN.search(combined):
+    combined = "\n".join(str(message["content"]) for message in messages[1:]) + "\n" + response
+    detected_profanity = bool(_PROFANITY_PATTERN.search(response))
+    if "Nya~" in response or (row["profanity"] == "none" and detected_profanity) or (row["profanity"] != "none" and not detected_profanity) or _META_PATTERN.search(combined) or _UNSAFE_PATTERN.search(combined) or _VTS_PATTERN.search(combined) or _URL_PATTERN.search(combined):
         raise ValueError("v6.3 row failed safety/metadata gate")
     if language == "vi" and ("anh" not in response.casefold() or "em" not in response.casefold() or _VI_WRONG_VOICE.search(response)):
         raise ValueError("v6.3 Vietnamese response failed anh/em voice gate")
@@ -103,6 +105,7 @@ def build_ru_v6_3_corpus(output_dir: str | Path, *, seed: int = 63, write: bool 
         "mode_counts": dict(Counter(str(row["mode"]) for row in rows)),
         "turn_band_counts": dict(Counter(str(row["turn_band"]) for row in rows)),
         "source_counts": dict(Counter(str(row["source"]) for row in rows)),
+        "profanity_counts": dict(Counter(str(row["profanity"]) for row in rows)),
         "authored_sha256": canonical_rows(rows),
         "seed": seed,
         "quality_gates": {
@@ -112,6 +115,7 @@ def build_ru_v6_3_corpus(output_dir: str | Path, *, seed: int = 63, write: bool 
             "repair_history": True,
             "unique_final_prompts": True,
             "vts_markers_out_of_text": True,
+            "bounded_contextual_profanity": True,
             "training_started": False,
         },
     }

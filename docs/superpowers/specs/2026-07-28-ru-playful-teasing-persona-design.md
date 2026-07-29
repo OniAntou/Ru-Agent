@@ -1,5 +1,8 @@
 # Ru playful teasing persona design
 
+> **Historical design:** the terminal `Nya~` convention described here was
+> superseded by the active v6.3 personality contract on 2026-07-29.
+
 ## Goal
 
 Make Ru noticeably more humorous and lightly teasing toward anh while keeping

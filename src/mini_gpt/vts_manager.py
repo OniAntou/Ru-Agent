@@ -160,10 +160,12 @@ class VTSManager:
     def set_speaking(self, speaking: bool) -> None:
         """Update the speech state consumed by the background sway loop."""
 
+        was_speaking = self.is_speaking
         self.is_speaking = bool(speaking)
-        if not self.is_speaking:
+        if not self.is_speaking or (self.is_speaking and not was_speaking):
             self._micro_action_scheduler.reset()
-            self._last_micro_action_identifier = None
+            if not self.is_speaking:
+                self._last_micro_action_identifier = None
 
     async def _trigger_micro_action(self) -> None:
         """Trigger one safe catalog action without racing semantic actions."""
@@ -176,7 +178,9 @@ class VTSManager:
             catalog = await self._fetch_catalog()
             if catalog is None:
                 return
-            candidates = safe_micro_action_entries(catalog.entries)
+            candidates = safe_micro_action_entries(
+                entry for entry in catalog.entries if entry.kind == "hotkey"
+            )
             if self._last_micro_action_identifier and len(candidates) > 1:
                 alternatives = [
                     entry

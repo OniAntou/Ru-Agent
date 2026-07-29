@@ -153,3 +153,10 @@ environment versions, cold/warm reports, hardware result, and manual
 Vietnamese/English/code-switch listening outcome before proposing any adoption.
 Gwen remains the default; a failed or inconclusive experiment changes neither
 the GUI nor its VTube Studio lifecycle.
+
+On 2026-07-29, the isolated automated run completed 72/72 records for each
+engine with no benchmark errors. Gwen's median warm first-playable WAV was
+12.886 s (RTF 3.914); OmniVoice measured 1.218 s (RTF 0.465). OmniVoice met
+the automatic speed gate, but the report status remains `pending_manual_review`
+until Ru's clone identity plus Vietnamese, English, and code-switch output are
+listened to explicitly. Gwen therefore remains the GUI default.

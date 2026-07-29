@@ -1,6 +1,7 @@
 .venv/
 .venv311/
 gwen_env/
+omnivoice_env/
 __pycache__/
 *.py[cod]
 .pytest_cache/

@@ -289,8 +289,10 @@ powershell -ExecutionPolicy Bypass -File D:\LLM\scripts\setup_omnivoice_env.ps1 
 powershell -ExecutionPolicy Bypass -File D:\LLM\scripts\run_omnivoice_benchmark.ps1 -ConfirmModelDownload
 ```
 
-The cache is confined to `models\omnivoice`. One run measures a model/prompt
-load separately, then one cold and five warm passes over six Vietnamese, three
+The model cache is confined to `models\omnivoice`; the installer cache and
+temporary extraction files are confined to `pip-cache\omnivoice` and
+`.tmp\omnivoice-install`, also on `D:`. One run measures a model/prompt load
+separately, then one cold and five warm passes over six Vietnamese, three
 English, and three Vietnamese-English prompts. `first_playable_wav_seconds`
 means the returned complete WAV (not streaming latency); real-time factor is
 synthesis seconds divided by generated-audio seconds. The report also records

@@ -328,7 +328,9 @@ from the current model catalog each time and is limited to reversible blink,
 eye, head, ear, or tail motions; pout, blush, clothing/body-reveal, and
 unknown entries are skipped. Ru's explicit catalog-selected actions remain
 independent, so a model can still expose additional hotkeys without changing
-this scheduler.
+this scheduler. Ru may combine up to three compatible facial, eye, ear, or
+tail catalog codes in one private suffix when they reinforce the same emotion;
+the codes are still removed before chat display, TTS, memory, and history.
 
 Direct Vietnamese avatar requests such as `giơ tay`, `vẫy tay`, `vui lên`,
 `nhắm mắt`, and `dựng đuôi` remain a compatibility fallback even if the

@@ -27,6 +27,9 @@ Verify the environment:
 & D:\LLM\.venv\Scripts\python.exe -m mini_gpt.gui
 ```
 
+The application now features a fully modernized, premium GUI built with `CustomTkinter`. It utilizes a split-pane layout with a dark theme sidebar for navigation and settings, providing a clean, ChatGPT-like aesthetic while maintaining a lightweight footprint to preserve VRAM for local LLM execution.
+
+
 The GUI defaults to the v6.2 LoRA GGUF at
 `models\gguf\ru-llama3.1-8b-instruct-v6.2-lora.gguf`, with v6.1 and v6 GGUF
 fallbacks if the preferred file is unavailable. The Transformers fallback

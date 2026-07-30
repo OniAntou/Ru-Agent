@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable
 from importlib.util import find_spec
 from pathlib import Path
@@ -8,6 +9,8 @@ from pathlib import Path
 from ._text_utils import normalize_text
 
 _GENERATION_CACHE: dict[tuple[str, str | None], tuple[object, object]] = {}
+_CACHE_LOCK = threading.Lock()
+_MAX_CACHE_SIZE = 2
 _RUNTIME_PACKAGES = ("accelerate", "bitsandbytes", "peft", "transformers")
 
 
@@ -55,7 +58,21 @@ def _load_llama_for_generation(base_path: str, adapter_dir: str | Path | None):
     return tokenizer, prepare_llama_for_generation(model)
 
 def clear_llama_generation_cache() -> None:
-    _GENERATION_CACHE.clear()
+    with _CACHE_LOCK:
+        _GENERATION_CACHE.clear()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+
+
+def _evict_cache_if_needed() -> None:
+    # Must be called while holding _CACHE_LOCK.
+    while len(_GENERATION_CACHE) >= _MAX_CACHE_SIZE:
+        oldest_key = next(iter(_GENERATION_CACHE))
+        del _GENERATION_CACHE[oldest_key]
     try:
         import torch
         if torch.cuda.is_available():
@@ -71,14 +88,15 @@ def _generation_cache_key(base_path: str | Path, adapter_dir: str | Path | None)
 
 def is_llama_generation_cached(base_path: str | Path, adapter_dir: str | Path | None) -> bool:
     """Return cache residency without importing model packages or allocating GPU memory."""
-    return _generation_cache_key(base_path, adapter_dir) in _GENERATION_CACHE
+    with _CACHE_LOCK:
+        return _generation_cache_key(base_path, adapter_dir) in _GENERATION_CACHE
 
 def generate_llama_response_hf(
     base_path: str,
     messages: tuple[tuple[str, str], ...],
     adapter_dir: str | Path | None = None,
     *,
-    max_new_tokens: int = 512,
+    max_new_tokens: int = 1024,
     temperature: float = 0.7,
     top_k: int = 20,
     do_sample: bool = False,
@@ -96,10 +114,12 @@ def generate_llama_response_hf(
     
     cache_key = _generation_cache_key(base_path, adapter_dir)
     
-    if cache_key not in _GENERATION_CACHE:
-        _GENERATION_CACHE[cache_key] = _load_llama_for_generation(base_path, adapter_dir)
+    with _CACHE_LOCK:
+        if cache_key not in _GENERATION_CACHE:
+            _evict_cache_if_needed()
+            _GENERATION_CACHE[cache_key] = _load_llama_for_generation(base_path, adapter_dir)
         
-    tokenizer, model = _GENERATION_CACHE[cache_key]
+        tokenizer, model = _GENERATION_CACHE[cache_key]
     
     inputs = tokenizer.apply_chat_template(
         serialized, 
@@ -124,6 +144,8 @@ def generate_llama_response_hf(
     if do_sample and top_k > 0:
         generation_kwargs["top_k"] = top_k
 
-    generated = model.generate(**generation_kwargs)
+    import torch
+    with torch.no_grad():
+        generated = model.generate(**generation_kwargs)
     
     return normalize_text(tokenizer.decode(generated[0][input_ids.shape[-1] :], skip_special_tokens=True))

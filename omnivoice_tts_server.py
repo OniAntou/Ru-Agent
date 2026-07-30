@@ -116,7 +116,14 @@ def synthesize_fast(text: str, profile: str = "ru", speed: float = DEFAULT_VOICE
     waveform = apply_voice_speed(audio[0], speed)
     output = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
     output.close()
-    sf.write(output.name, waveform, 24_000)
+    try:
+        sf.write(output.name, waveform, 24_000)
+    except Exception:
+        try:
+            Path(output.name).unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
     return output.name
 
 

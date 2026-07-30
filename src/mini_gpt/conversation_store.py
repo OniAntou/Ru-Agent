@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+
+from ._atomic_write import atomic_append_jsonl
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +25,7 @@ class ConversationExample:
 class ConversationStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
+        self._lock = threading.Lock()
 
     def save(self, prompt: str, response: str, checkpoint: str | Path) -> ConversationExample:
         clean_prompt = prompt.strip()
@@ -41,16 +45,21 @@ class ConversationStore:
             response=clean_response,
             checkpoint=clean_checkpoint,
         )
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8", newline="\n") as handle:
-            handle.write(json.dumps(record.to_dict(), ensure_ascii=False) + "\n")
+        line = json.dumps(record.to_dict(), ensure_ascii=False)
+        with self._lock:
+            atomic_append_jsonl(self.path, line)
         return record
 
     def read_all(self) -> list[dict[str, str]]:
         if not self.path.is_file():
             return []
-        return [
-            json.loads(line)
-            for line in self.path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        records: list[dict[str, str]] = []
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return records

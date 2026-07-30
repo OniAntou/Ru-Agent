@@ -34,7 +34,9 @@ def parse_voice_pace(reply: str) -> tuple[str, VoicePace]:
     matches = tuple(VOICE_PACE_MARKER.finditer(reply))
     pace: VoicePace = "normal"
     if matches:
-        pace = matches[-1].group(1).casefold()  # type: ignore[assignment]
+        raw = matches[-1].group(1).casefold()
+        if raw in ("slow", "normal", "quick"):
+            pace = raw  # type: ignore[assignment]
     return VOICE_PACE_MARKER.sub("", reply).strip(), pace
 
 

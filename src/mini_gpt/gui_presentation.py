@@ -1,17 +1,6 @@
 from __future__ import annotations
 
 
-PALETTE = {
-    "background": "#FAF8FC",
-    "surface": "#FFFFFF",
-    "ink": "#2E2933",
-    "muted": "#6E6575",
-    "accent": "#765E98",
-    "ru_bubble": "#F0E9F8",
-    "user_bubble": "#E9F1F0",
-}
-
-
 _PRIVATE_STREAM_MARKERS = ("[[VTS:", "[[VOICE_PACE:", "[SEARCH:")
 
 
@@ -26,6 +15,8 @@ def append_stream_text(existing: str, incoming: str) -> str:
 
 def safe_streamed_response(raw: str) -> str:
     """Hide private control markers, including a marker still being typed."""
+    if not _PRIVATE_STREAM_MARKERS or not raw:
+        return raw
     folded = raw.casefold()
     marker_positions = [folded.find(marker.casefold()) for marker in _PRIVATE_STREAM_MARKERS]
     completed_positions = [position for position in marker_positions if position >= 0]
@@ -45,7 +36,7 @@ def conversation_display_segments(prompt: str, response: str) -> tuple[tuple[str
         ("You\n", "user_label"),
         (f"{prompt}\n\n", "user_bubble"),
         ("Ru\n", "ru_label"),
-        (f"{response}\n\n", "ru_bubble"),
+        (f"{response}\n", "ru_bubble"),
     )
 
 

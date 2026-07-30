@@ -255,10 +255,10 @@ class StructuredMemoryStore:
         used_chars = 0
         for _, record in ranked:
             line = self._render_record(record)
-            if len(selected) >= limit or used_chars + len(line) + (1 if selected else 0) > max_chars:
+            if len(selected) >= limit or used_chars + len(line) + (1 if len(selected) > 0 else 0) > max_chars:
                 continue
             selected.append(record)
-            used_chars += len(line) + (1 if selected else 0)
+            used_chars += len(line) + (1 if len(selected) > 1 else 0)
         return tuple(selected)
 
     @staticmethod
@@ -270,10 +270,10 @@ class StructuredMemoryStore:
         used_chars = 0
         for record in records:
             line = self._render_record(record)
-            if used_chars + len(line) + (1 if lines else 0) > max_chars:
+            if used_chars + len(line) + (1 if len(lines) > 0 else 0) > max_chars:
                 break
             lines.append(line)
-            used_chars += len(line) + (1 if lines else 0)
+            used_chars += len(line) + (1 if len(lines) > 1 else 0)
         return "\n".join(lines)
 
     def remember_turn(self, prompt: str, response: str) -> tuple[MemoryRecord, ...]:
@@ -373,8 +373,17 @@ class MemoryStore:
         self.model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
         self.d = self.model.get_embedding_dimension()
         if self.texts_path.is_file():
-            with open(self.texts_path, "r", encoding="utf-8") as file:
-                self.texts = json.load(file)
+            try:
+                with open(self.texts_path, "r", encoding="utf-8") as file:
+                    loaded = json.load(file)
+                if isinstance(loaded, list):
+                    self.texts = [str(item) for item in loaded]
+                else:
+                    logger.warning("memory_texts.json is not a list, resetting index")
+                    self.texts = []
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning("Failed to load memory texts, resetting index: %s", exc)
+                self.texts = []
         if self.index_path.is_file():
             self.index = faiss.read_index(str(self.index_path))
             if self.index.ntotal != len(self.texts):

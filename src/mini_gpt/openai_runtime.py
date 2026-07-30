@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Sequence
 from time import perf_counter
-from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from ._text_utils import normalize_text
@@ -32,7 +31,7 @@ class OpenAIRuntime:
         url = f"{base_url}/models"
         headers = {
             "Authorization": f"Bearer {api_key}",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Ru-LocalLLM/0.1",
         }
         request = Request(url, headers=headers, method="GET")
         try:
@@ -49,7 +48,7 @@ class OpenAIRuntime:
             raise RuntimeError("API returned invalid JSON when fetching models") from error
 
     def is_cached(self) -> bool:
-        return True
+        return False
 
     def stop(self) -> None:
         pass
@@ -86,9 +85,9 @@ class OpenAIRuntime:
                 return message.strip()
         return None
 
-    def _read_stream(self, request: Request, on_delta: Callable[[str], None] | None) -> str:
-        parts: list[str] = []
-        with urlopen(request, timeout=120) as response:
+    def _read_stream(self, request_factory: Callable[[], Request], on_delta: Callable[[str], None] | None) -> str:
+        accumulated = ""
+        with urlopen(request_factory(), timeout=120) as response:
             for raw_line in response:
                 line = raw_line.decode("utf-8").strip()
                 if not line.startswith("data: "):
@@ -103,18 +102,27 @@ class OpenAIRuntime:
                 error_detail = self._stream_error(decoded)
                 if error_detail:
                     raise RuntimeError(f"OpenCode stream error: {error_detail}")
-                content = self._event_content(decoded, has_content=bool(parts))
-                if content:
-                    accumulated = "".join(parts)
-                    if content.startswith(accumulated):
-                        new_content = content[len(accumulated) :]
-                        parts = [content]
-                    else:
-                        new_content = content
-                        parts.append(content)
-                    if new_content and on_delta is not None:
-                        on_delta(new_content)
-        return "".join(parts)
+                raw_delta = self._event_content(decoded, has_content=bool(accumulated))
+                if raw_delta is None:
+                    continue
+
+                # Support both cumulative deltas (full text each chunk) and
+                # incremental deltas (the standard OpenAI streaming format).
+                if not accumulated:
+                    new_text = raw_delta
+                    accumulated = raw_delta
+                elif raw_delta.startswith(accumulated):
+                    # Cumulative / prefix delta — emit only the new suffix.
+                    new_text = raw_delta[len(accumulated):]
+                    accumulated = raw_delta
+                else:
+                    # Incremental delta (standard OpenAI format) — append directly.
+                    new_text = raw_delta
+                    accumulated += raw_delta
+
+                if new_text and on_delta is not None:
+                    on_delta(new_text)
+        return accumulated
 
     def generate(
         self,
@@ -144,23 +152,24 @@ class OpenAIRuntime:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Ru-LocalLLM/0.1",
         }
-        request = Request(url, data=data, headers=headers, method="POST")
+
+        def make_request() -> Request:
+            return Request(url, data=data, headers=headers, method="POST")
+
         started = perf_counter()
-        try:
-            content = self._read_stream(request, on_delta)
-            if not content.strip():
-                content = self._read_stream(request, on_delta)
-        except HTTPError as error:
-            detail = error.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"OpenCode HTTP {error.code}: {detail}") from error
-        except URLError as error:
-            raise RuntimeError(f"OpenCode is not reachable: {error.reason}") from error
+        content = ""
+        for attempt in range(2):
+            # Only deliver streaming deltas on the first attempt.
+            # On retry the same text arrives again, which would duplicate UI output.
+            content = self._read_stream(make_request, on_delta if attempt == 0 else None)
+            if content.strip():
+                break
 
         if on_complete_timing is not None:
             on_complete_timing(max(0.0, perf_counter() - started))
             
         if not content.strip():
-            raise RuntimeError("OpenCode returned two empty chat completions; please try again")
+            raise RuntimeError("OpenCode returned empty chat completions; please try again")
         return normalize_text(content)

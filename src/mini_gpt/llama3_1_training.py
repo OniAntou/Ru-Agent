@@ -82,11 +82,12 @@ class PhysicalVramMonitor:
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
-        if self._thread is not None and self._thread.is_alive():
-            return
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._poll, daemon=True, name="ru-vram-monitor")
-        self._thread.start()
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._poll, daemon=True, name="ru-vram-monitor")
+            self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
@@ -131,14 +132,14 @@ def validate_v6_1_adapter_dir(path: str | Path) -> Path:
             "ru-llama3.1-8b-instruct-v6.1-smoke"
         )
     if adapter_dir.resolve().parent != _CHECKPOINT_ROOT:
-        raise ValueError("v6.1 output must be directly inside the D:/LLM/checkpoints directory")
+        raise ValueError(f"v6.1 output must be directly inside the {_CHECKPOINT_ROOT} directory")
     return adapter_dir
 
 
 def validate_v6_1_source_adapter_dir(path: str | Path) -> Path:
     source_dir = Path(path)
     if source_dir.name != _V6_1_SOURCE_NAME or source_dir.resolve().parent != _CHECKPOINT_ROOT:
-        raise ValueError("v6.1 source adapter must be the v6 adapter inside D:/LLM/checkpoints")
+        raise ValueError(f"v6.1 source adapter must be the v6 adapter inside {_CHECKPOINT_ROOT}")
     return source_dir
 
 class LlamaResponseCollator:
@@ -191,7 +192,7 @@ def encode_llama_response(
     
     # Llama 3 specific: response ends with <|eot_id|>
     eot_token_id = tokenizer.convert_tokens_to_ids("<|eot_id|>")
-    if eot_token_id is None:
+    if eot_token_id is None or eot_token_id == tokenizer.unk_token_id:
         eot_token_id = tokenizer.eos_token_id
         
     response_ids = [*tokenizer(response, add_special_tokens=False)["input_ids"], eot_token_id]
@@ -341,7 +342,8 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
     
     tokenizer = AutoTokenizer.from_pretrained(base_path)
     if tokenizer.pad_token_id is None:
-        tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids("<|finetune_right_pad_id|>") or tokenizer.eos_token_id
+        pad_id = tokenizer.convert_tokens_to_ids("<|finetune_right_pad_id|>")
+        tokenizer.pad_token_id = pad_id if pad_id != tokenizer.unk_token_id else tokenizer.eos_token_id
         
     quantization = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.float16)
     # Transformers 5 warms CUDA's allocator with a multi-gigabyte temporary

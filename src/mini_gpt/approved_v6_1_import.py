@@ -78,13 +78,13 @@ def select_approved_rows(
     if len(prompts) != len(set(prompts)):
         raise ValueError("selected approved rows have a casefold prompt collision")
 
+    selected_prompt_set = set(prompts)
     rejected = [
         {
             "id": identifier,
             "reason": (
                 "casefold_prompt_duplicate"
-                if normalize_text(str(raw.get("prompt", ""))).casefold()
-                == normalized_final_prompt(selected[-1])
+                if normalize_text(str(raw.get("prompt", ""))).casefold() in selected_prompt_set
                 else "not_selected"
             ),
         }

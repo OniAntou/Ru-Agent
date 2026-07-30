@@ -50,15 +50,21 @@ def voice_selection_from_saved(value: object) -> VoiceSelection:
     return _SELECTIONS_BY_LABEL.get(_LEGACY_LABELS.get(value, value), DEFAULT_VOICE_SELECTION)
 
 
+# OmniVoice service defaults
+_OMNIVOICE_HOST = "127.0.0.1"
+_OMNIVOICE_PORT = 5052
+_OMNIVOICE_ENV_DIR = "omnivoice_env"
+_OMNIVOICE_SERVER_SCRIPT = "omnivoice_tts_server.py"
+
+
 def voice_service_config(selection: VoiceSelection, project_root: Path) -> VoiceServiceConfig:
     if selection.engine_id != "omnivoice":
         raise ValueError(f"Unsupported voice engine: {selection.engine_id!r}")
-    host, port, environment, script = "127.0.0.1", 5052, "omnivoice_env", "omnivoice_tts_server.py"
     return VoiceServiceConfig(
         engine_id=selection.engine_id,
-        base_url=f"http://{host}:{port}",
-        host=host,
-        port=port,
-        python_path=project_root / environment / "Scripts" / "python.exe",
-        server_script=project_root / script,
+        base_url=f"http://{_OMNIVOICE_HOST}:{_OMNIVOICE_PORT}",
+        host=_OMNIVOICE_HOST,
+        port=_OMNIVOICE_PORT,
+        python_path=project_root / _OMNIVOICE_ENV_DIR / "Scripts" / "python.exe",
+        server_script=project_root / _OMNIVOICE_SERVER_SCRIPT,
     )

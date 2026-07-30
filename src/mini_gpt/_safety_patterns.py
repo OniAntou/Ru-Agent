@@ -40,19 +40,20 @@ HARMFUL_INSTRUCTION = re.compile(
     r"|(?:chế tạo bom|chế tạo vũ khí|đầu độc|tự sát|tự hại)"
 )
 
-VI_WRONG_SELF = re.compile(r"(?i)\b(?:tôi|mình)\b")
+VI_WRONG_SELF = re.compile(r"(?i)\b(?:tôi|mình|tớ)\b")
 
 VI_WRONG_USER_ADDRESS = re.compile(
     r"(?<!làm\s)(?<!người\s)(?<!bầu\s)\bbạn\b", re.IGNORECASE
 )
 
-VI_DEFAULT_VOICE = re.compile(r"\b(?:tôi|mình|bạn)\b", re.IGNORECASE)
+# VI_DEFAULT_VOICE is a superset of VI_WRONG_SELF + "bạn"; kept for callers
+# that need a broader VI pronoun check. VI_WRONG_SELF is preferred for
+# self-reference detection.
+VI_DEFAULT_VOICE = re.compile(r"\b(?:tôi|mình|tớ|bạn)\b", re.IGNORECASE)
 
-EN_SELF = re.compile(r"(?i)\b(?:i|i'm|i've|i've|me|my)\b")
+EN_SELF = re.compile(r"(?i)\b(?:i|i'm|i've|me|my)\b")
 
 EN_USER = re.compile(r"(?i)\b(?:you|your)\b")
-
-SELF_REFERENCE_VOICE = re.compile(r"(?i)(?<!\w)(?:tôi|tớ|mình)(?!\w)")
 
 UNSAFE_CONTENT = re.compile(
     r"(?i)(?:\b(?:rape|kill you|giết anh|giết em|cưỡng ép|cưỡng hiếp)\b|"
@@ -103,9 +104,4 @@ VI_CONTENT_PATTERN = re.compile(
 
 EN_CONTENT_PATTERN = re.compile(
     r"(?i)\b(?:i|you|the|a|an|and|or|is|are|was|were|what|how|want|feel|sounds|made|today|with|for|to)\b"
-)
-
-_VI_WRONG_SELF_REFERENCE = re.compile(r"\btôi\b", re.IGNORECASE)
-_VI_WRONG_USER_ADDRESS_GATE = re.compile(
-    r"(?<!làm\s)(?<!người\s)(?<!bầu\s)\bbạn\b", re.IGNORECASE
 )

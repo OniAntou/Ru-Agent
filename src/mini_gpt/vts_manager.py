@@ -8,7 +8,19 @@ import pyvts
 
 from .vts_actions import VtsActions
 from .vts_catalog import VtsCatalog, build_catalog
-from .vts_motion import MicroActionScheduler, OrganicSwayController, safe_micro_action_entries
+from .vts_motion import (
+    body_pose_entries,
+    EyeMotionController,
+    head_nod_value,
+    head_tilt_value,
+    head_yaw_value,
+    is_idle_safe_micro_action,
+    MicroActionScheduler,
+    MouseEyeTracker,
+    OrganicSwayController,
+    PoseCycleScheduler,
+    safe_micro_action_entries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +54,10 @@ class VTSManager:
         self._motion_random = random_source or random
         self._micro_action_scheduler = MicroActionScheduler(self._motion_random)
         self._sway_controller = OrganicSwayController()
+        self._eye_controller = EyeMotionController(self._motion_random)
+        self._mouse_eye_tracker = MouseEyeTracker()
+        self._mouse_tracking_enabled = False
+        self._pose_cycle_scheduler = PoseCycleScheduler(self._motion_random)
         self._last_micro_action_identifier: str | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._request_lock: asyncio.Lock | None = None
@@ -75,7 +91,10 @@ class VTSManager:
             return None
         if wait:
             return asyncio.run(coroutine)
-        asyncio.run(coroutine)
+        try:
+            asyncio.run(coroutine)
+        except Exception as exc:
+            logger.debug("Background VTS coroutine failed: %s", exc)
         return None
 
     def shutdown(self) -> None:
@@ -115,7 +134,7 @@ class VTSManager:
             logger.info("VTS Connected. Found %d hotkeys.", len(self.hotkeys))
             # Khởi tạo thông số và chạy sway loop ngầm
             await self.setup_custom_parameters()
-            asyncio.create_task(self.sway_loop())
+            self._sway_task = asyncio.create_task(self.sway_loop())
         except Exception as e:
             logger.warning("Failed to connect to VTube Studio: %s", e)
             self.is_connected = False
@@ -132,7 +151,24 @@ class VTSManager:
             await self._request(req_create)
             logger.info("Created VTS custom parameter: LLM_Sway")
         except Exception as e:
-            logger.error("Failed to create custom parameter: %s", e)
+            logger.error("Failed to create custom parameter LLM_Sway: %s", e)
+
+        for name, min_val, max_val, info in (
+            ("LLM_HeadZ", -15.0, 15.0, "Head tilt (PARAM_ANGLE_Z)"),
+            ("LLM_HeadY", -15.0, 15.0, "Head nod (PARAM_ANGLE_Y)"),
+            ("LLM_HeadX", -10.0, 10.0, "Head yaw (PARAM_ANGLE_X)"),
+            ("LLM_EyeX",  -10.0, 10.0, "Eye look left/right"),
+            ("LLM_EyeY",   -6.0,  6.0, "Eye look up/down"),
+        ):
+            try:
+                req = self.vts.vts_request.requestCustomParameter(
+                    parameter=name, min=min_val, max=max_val,
+                    default_value=0.0, info=info,
+                )
+                await self._request(req)
+                logger.info("Created VTS custom parameter: %s", name)
+            except Exception as e:
+                logger.debug("Could not create %s: %s", name, e)
 
     async def sway_loop(self):
         self._sway_controller.reset()
@@ -141,21 +177,70 @@ class VTSManager:
             try:
                 now = time.monotonic()
                 elapsed = now - start_time
-                if self.is_speaking:
-                    # Lắc mạnh và nhanh (biên độ 30, chu kỳ ngắn)
-                    val = self._sway_controller.update(now, elapsed, speaking=True)
+
+                # ── Sway / Body ───────────────────────────────────────
+                if self._mouse_tracking_enabled:
+                    # Mouse tracking: body xoay theo hướng chuột
+                    val = self._mouse_eye_tracker.read_body()
                 else:
-                    # Đung đưa nhẹ nhàng (biên độ 5, chu kỳ dài)
-                    val = self._sway_controller.update(now, elapsed, speaking=False)
+                    # Idle: body lắc tự nhiên
+                    val = self._sway_controller.update(
+                        now, elapsed, speaking=self.is_speaking
+                    )
                 req_inject = self.vts.vts_request.requestSetParameterValue(
-                    parameter="LLM_Sway",
-                    value=val
+                    parameter="LLM_Sway", value=val
                 )
                 await self._request(req_inject)
-                if self._micro_action_scheduler.update(
-                    now, self.is_speaking
-                ):
+
+                # ── Eye + Head motion ──────────────────────────────────
+                if self._mouse_tracking_enabled:
+                    try:
+                        cx, cy = self._cursor_pos()
+                        self._mouse_eye_tracker.feed_position(cx, cy)
+                    except Exception:
+                        pass
+                    eye_x, eye_y = self._mouse_eye_tracker.read_eye()
+                    hz, hy, hx = self._mouse_eye_tracker.read_head()
+                else:
+                    eye_x, eye_y = self._eye_controller.update(now)
+                    hz = head_tilt_value(elapsed)
+                    hy = head_nod_value(elapsed)
+                    hx = head_yaw_value(elapsed)
+
+                await self._request(
+                    self.vts.vts_request.requestSetParameterValue(
+                        parameter="LLM_EyeX", value=eye_x
+                    )
+                )
+                await self._request(
+                    self.vts.vts_request.requestSetParameterValue(
+                        parameter="LLM_EyeY", value=eye_y
+                    )
+                )
+                await self._request(
+                    self.vts.vts_request.requestSetParameterValue(
+                        parameter="LLM_HeadZ", value=hz
+                    )
+                )
+                await self._request(
+                    self.vts.vts_request.requestSetParameterValue(
+                        parameter="LLM_HeadY", value=hy
+                    )
+                )
+                await self._request(
+                    self.vts.vts_request.requestSetParameterValue(
+                        parameter="LLM_HeadX", value=hx
+                    )
+                )
+
+                # ── Micro-actions ─────────────────────────────────────
+                if self._micro_action_scheduler.update(now, self.is_speaking):
                     await self._trigger_micro_action()
+
+                # ── Idle pose cycle ───────────────────────────────────
+                if self._pose_cycle_scheduler.update(now, self.is_speaking):
+                    await self._trigger_pose()
+
                 await asyncio.sleep(0.05)
             except Exception as e:
                 logger.debug("Sway loop error: %s", e)
@@ -168,13 +253,55 @@ class VTSManager:
         self.is_speaking = bool(speaking)
         if not self.is_speaking or (self.is_speaking and not was_speaking):
             self._micro_action_scheduler.reset()
+            self._pose_cycle_scheduler.reset()
             if not self.is_speaking:
                 self._last_micro_action_identifier = None
 
-    async def _trigger_micro_action(self) -> None:
-        """Trigger one safe catalog action without racing semantic actions."""
+    # ── Mouse eye tracking ──────────────────────────────────────────────
 
-        if not self.is_connected or not self.is_speaking:
+    def set_mouse_tracking(self, enabled: bool) -> None:
+        """Toggle cursor-follow gaze + head motion.
+
+        When *enabled* the ``sway_loop`` reads the cursor position directly
+        every tick (20 Hz) and feeds it to ``MouseEyeTracker`` so both eye
+        and head parameters move in sync — eyes quick, head slow.
+        When *disabled* the idle sine-wave head motion resumes.
+        """
+        self._mouse_tracking_enabled = bool(enabled)
+        if enabled:
+            # Reset eye + head, giữ body để tránh giật
+            self._mouse_eye_tracker.reset()
+            self._mouse_eye_tracker.start()
+        else:
+            self._mouse_eye_tracker.reset()
+
+    @staticmethod
+    def _cursor_pos() -> tuple[int, int]:
+        """Get global cursor coordinates via best available API."""
+        try:
+            import pyautogui  # type: ignore[import-untyped]
+            return pyautogui.position()  # type: ignore[no-any-return]
+        except Exception:
+            pass
+        try:
+            import ctypes
+            import ctypes.wintypes
+            pt = ctypes.wintypes.POINT()
+            ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+            return (pt.x, pt.y)
+        except Exception:
+            return (0, 0)
+
+    async def _trigger_micro_action(self) -> None:
+        """Trigger one safe catalog action without racing semantic actions.
+
+        Fires during both *speaking* and *idle* states:
+
+        *speaking* → any safe micro-action (blink, ear twitch, head nod …).
+        *idle*     → stricter subset (no tail, no body-level motions).
+        """
+
+        if not self.is_connected:
             return
         if not self._semantic_action_lock.acquire(blocking=False):
             return
@@ -185,6 +312,11 @@ class VTSManager:
             candidates = safe_micro_action_entries(
                 entry for entry in catalog.entries if entry.kind == "hotkey"
             )
+            if not self.is_speaking and candidates:
+                candidates = [
+                    e for e in candidates
+                    if is_idle_safe_micro_action(e.label, e.identifier)
+                ]
             if self._last_micro_action_identifier and len(candidates) > 1:
                 alternatives = [
                     entry
@@ -205,6 +337,21 @@ class VTSManager:
             self._last_micro_action_identifier = entry.identifier
         finally:
             self._semantic_action_lock.release()
+
+    async def _trigger_pose(self) -> None:
+        """Pick and fire one body-pose hotkey from the catalog."""
+        if not self.is_connected:
+            return
+        with self._semantic_action_lock:
+            catalog = await self._fetch_catalog()
+            if catalog is None:
+                return
+            candidates = body_pose_entries(catalog.entries)
+            entry = self._pose_cycle_scheduler.pick(candidates)
+            if entry is None or not entry.code:
+                return
+            await self._trigger_catalog_actions(catalog, (entry.code,))
+            logger.info("Idle pose: %s", entry.label)
 
     async def trigger_hotkey(self, hotkey_name):
         if not self.is_connected:
@@ -244,8 +391,11 @@ class VTSManager:
             self._last_action_at[action] = now
 
         self.trigger_hotkey_sync(primary_hotkey)
-        if reset_hotkey is not None:
-            reset_timer = threading.Timer(reset_delay, self.trigger_hotkey_sync, args=(reset_hotkey,))
+        if reset_hotkey is not None and self.is_connected:
+            def _reset_with_guard() -> None:
+                if self.is_connected:
+                    self.trigger_hotkey_sync(reset_hotkey)
+            reset_timer = threading.Timer(reset_delay, _reset_with_guard)
             reset_timer.daemon = True
             reset_timer.start()
 
@@ -283,7 +433,12 @@ class VTSManager:
 
     async def _trigger_catalog_actions(self, catalog: VtsCatalog, codes: tuple[str, ...]) -> None:
         current_catalog = await self._fetch_catalog()
-        if current_catalog is None or current_catalog.model_id != catalog.model_id:
+        if current_catalog is None:
+            return
+        if current_catalog.model_id != catalog.model_id:
+            # Model switched — old model's expressions are irrelevant on the new model.
+            with self._expression_lock:
+                self._active_expressions.clear()
             logger.warning("Discarded VTube actions because the active model changed")
             return
 
@@ -325,6 +480,9 @@ class VTSManager:
                 return
         current_catalog = await self._fetch_catalog()
         if current_catalog is None or current_catalog.model_id != expression_key[0]:
+            # Model changed or catalog unavailable — expression is orphaned, just clean up.
+            with self._expression_lock:
+                self._active_expressions.discard(expression_key)
             return
         await self._request(
             self.vts.vts_request.BaseRequest(

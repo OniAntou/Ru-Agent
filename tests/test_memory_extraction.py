@@ -1,5 +1,5 @@
 from mini_gpt.memory import MemoryKind
-from mini_gpt.memory_extraction import extract_candidates
+from mini_gpt.memory_extraction import extract_candidates, is_sensitive_or_unsafe, strip_internal_metadata
 
 
 def test_extracts_explicit_preference_and_scoped_project_decision():
@@ -19,3 +19,47 @@ def test_rejects_secret_and_vts_control_metadata():
         "API key của anh là sk-secret. [[VTS:vts_01]]",
         "Em đã nhận.",
     ) == ()
+
+
+def test_rejects_empty_input():
+    assert extract_candidates("", "") == ()
+
+
+def test_rejects_url_in_prompt():
+    assert extract_candidates("Anh thích https://example.com", "Ok") == ()
+
+
+def test_rejects_very_long_response():
+    assert extract_candidates("Anh thích pizza", "x" * 1500) == ()
+
+
+def test_strip_internal_metadata():
+    result = strip_internal_metadata("Hello [[VTS:vts_01]] world")
+    assert result == "Hello  world"
+
+
+def test_is_sensitive_rejects_password():
+    assert is_sensitive_or_unsafe("password là abc123") is True
+
+
+def test_is_sensitive_rejects_ghp_token():
+    assert is_sensitive_or_unsafe("ghp_abcdef123456") is True
+
+
+def test_is_sensitive_accepts_normal_text():
+    assert is_sensitive_or_unsafe("Anh thích Ru") is False
+
+
+def test_preference_only_no_decision():
+    candidates = extract_candidates("Anh thích pizza", "Em biết rồi.")
+    assert len(candidates) == 1
+    assert candidates[0].kind == MemoryKind.PREFERENCE
+    assert candidates[0].scope is None
+
+
+def test_decision_without_use_keyword_not_extracted():
+    """Scope path exists but no 'sẽ dùng/dùng' keyword → no DECISION."""
+    candidates = extract_candidates(
+        "D:\\LLM có nhiều file.", "Em thấy rồi."
+    )
+    assert candidates == ()

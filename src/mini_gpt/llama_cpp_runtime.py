@@ -51,7 +51,13 @@ class LlamaCppRuntime:
             self.project_root / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6.1-lora.gguf",
             self.project_root / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6-lora.gguf",
         )
-        return next((path for path in candidates if path.is_file() and path.stat().st_size), candidates[0])
+        for path in candidates:
+            try:
+                if path.is_file() and path.stat().st_size:
+                    return path
+            except OSError:
+                continue
+        return candidates[0]
 
     @property
     def log_path(self) -> Path:
@@ -86,7 +92,11 @@ class LlamaCppRuntime:
             (self.base_model, "base GGUF"),
             (self.lora_adapter, "Ru LoRA GGUF (v6.2, v6.1, or v6)"),
         ):
-            if not path.is_file() or path.stat().st_size == 0:
+            try:
+                st = path.stat()
+                if st.st_size == 0:
+                    raise FileNotFoundError(f"{label} is empty: {path}")
+            except OSError:
                 raise FileNotFoundError(f"{label} not found: {path}")
 
     def is_running(self) -> bool:
@@ -101,15 +111,20 @@ class LlamaCppRuntime:
         self.stop()
         self.validate_assets()
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._log_handle = self.log_path.open("a", encoding="utf-8")
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        self._process = self._popen(
-            self.server_command(),
-            cwd=self.project_root,
-            stdout=self._log_handle,
-            stderr=subprocess.STDOUT,
-            creationflags=creationflags,
-        )
+        log_handle = self.log_path.open("a", encoding="utf-8")
+        try:
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            self._process = self._popen(
+                self.server_command(),
+                cwd=self.project_root,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                creationflags=creationflags,
+            )
+            self._log_handle = log_handle
+        except Exception:
+            log_handle.close()
+            raise
         deadline = time.monotonic() + self.start_timeout_seconds
         last_error = "server did not become healthy"
         while time.monotonic() < deadline:
@@ -127,7 +142,6 @@ class LlamaCppRuntime:
 
     def stop(self) -> None:
         process = self._process
-        self._process = None
         if process is not None and process.poll() is None:
             process.terminate()
             try:
@@ -135,8 +149,12 @@ class LlamaCppRuntime:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=10)
+        self._process = None
         if self._log_handle is not None:
-            self._log_handle.close()
+            try:
+                self._log_handle.close()
+            except OSError:
+                pass
             self._log_handle = None
 
     def generate(

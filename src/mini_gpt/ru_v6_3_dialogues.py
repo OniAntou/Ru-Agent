@@ -189,11 +189,11 @@ def _row(index: int) -> dict[str, object]:
     if mode == "repair":
         if language == "vi":
             _, place = _VI_SCENES[scene_index % len(_VI_SCENES)]
-            prompt = _VI_REPAIR_PROMPTS[scene_index % len(_VI_REPAIR_PROMPTS)] + f" Anh đang ở {place} {_VI_MOMENTS[scene_index // len(_VI_SCENES)]}; em nghe đúng ý anh nhé."
+            prompt = _VI_REPAIR_PROMPTS[scene_index % len(_VI_REPAIR_PROMPTS)] + f" Anh đang ở {place} {_VI_MOMENTS[scene_index // len(_VI_SCENES) % len(_VI_MOMENTS)]}; em nghe đúng ý anh nhé."
             response = _VI_REPAIR_RESPONSES[scene_index % len(_VI_REPAIR_RESPONSES)]
         elif language == "mixed":
             _, place = _VI_SCENES[scene_index % len(_VI_SCENES)]
-            prompt = _VI_REPAIR_PROMPTS[scene_index % len(_VI_REPAIR_PROMPTS)] + f" Anh đang ở {place} {_VI_MOMENTS[scene_index // len(_VI_SCENES)]}; can we slow down?"
+            prompt = _VI_REPAIR_PROMPTS[scene_index % len(_VI_REPAIR_PROMPTS)] + f" Anh đang ở {place} {_VI_MOMENTS[scene_index // len(_VI_SCENES) % len(_VI_MOMENTS)]}; can we slow down?"
             response = _MIXED_REPAIR_RESPONSES[scene_index % len(_MIXED_REPAIR_RESPONSES)]
         else:
             _, place = _EN_SCENES[scene_index % len(_EN_SCENES)]
@@ -206,11 +206,11 @@ def _row(index: int) -> dict[str, object]:
     elif mode == "bilingual_bridge":
         if language == "vi":
             _, place = _VI_SCENES[scene_index % len(_VI_SCENES)]
-            prompt = _VI_BRIDGE_PROMPTS[scene_index % len(_VI_BRIDGE_PROMPTS)] + f" Anh đang ở {place} {_VI_MOMENTS[scene_index // len(_VI_SCENES)]}; em giữ nhịp tự nhiên nhé."
+            prompt = _VI_BRIDGE_PROMPTS[scene_index % len(_VI_BRIDGE_PROMPTS)] + f" Anh đang ở {place} {_VI_MOMENTS[scene_index // len(_VI_SCENES) % len(_VI_MOMENTS)]}; em giữ nhịp tự nhiên nhé."
             response = _VI_BRIDGE_RESPONSES[scene_index % len(_VI_BRIDGE_RESPONSES)]
         elif language == "mixed":
             _, place = _VI_SCENES[scene_index % len(_VI_SCENES)]
-            prompt = _VI_BRIDGE_PROMPTS[scene_index % len(_VI_BRIDGE_PROMPTS)] + f" Anh đang ở {place} {_VI_MOMENTS[scene_index // len(_VI_SCENES)]}; tell me plainly."
+            prompt = _VI_BRIDGE_PROMPTS[scene_index % len(_VI_BRIDGE_PROMPTS)] + f" Anh đang ở {place} {_VI_MOMENTS[scene_index // len(_VI_SCENES) % len(_VI_MOMENTS)]}; tell me plainly."
             response = _VI_BRIDGE_RESPONSES[scene_index % len(_VI_BRIDGE_RESPONSES)]
         else:
             place = _EN_SCENES[scene_index % len(_EN_SCENES)][1]
@@ -221,11 +221,11 @@ def _row(index: int) -> dict[str, object]:
         if language == "en":
             prompt = _EN_CONTEXT_PROMPTS[scene_index % len(_EN_CONTEXT_PROMPTS)].format(object=object_name, scene=place)
             response = _EN_CONTEXT_RESPONSES[scene_index % len(_EN_CONTEXT_RESPONSES)].format(object=object_name)
-            prompt += f" I want to stay with that thread {_EN_THREAD_MARKERS[scene_index // len(_EN_SCENES)]}."
+            prompt += f" I want to stay with that thread {_EN_THREAD_MARKERS[scene_index // len(_EN_SCENES) % len(_EN_THREAD_MARKERS)]}."
         else:
             prompt = _VI_CONTEXT_PROMPTS[scene_index % len(_VI_CONTEXT_PROMPTS)].format(object=object_name, scene=place)
             response = _VI_CONTEXT_RESPONSES[scene_index % len(_VI_CONTEXT_RESPONSES)].format(object=object_name)
-            prompt += f" Anh đang ở {_VI_MOMENTS[scene_index // len(_VI_SCENES)]}; em nhớ đúng mạch này nhé."
+            prompt += f" Anh đang ở {_VI_MOMENTS[scene_index // len(_VI_SCENES) % len(_VI_MOMENTS)]}; em nhớ đúng mạch này nhé."
             if language == "mixed":
                 prompt += " Keep the English part simple, nhé."
                 response += " Em giữ câu này simple để anh không phải dịch cảm xúc của mình."

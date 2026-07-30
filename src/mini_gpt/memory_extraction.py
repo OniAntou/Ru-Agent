@@ -33,7 +33,7 @@ def strip_internal_metadata(text: str) -> str:
 
 
 def is_sensitive_or_unsafe(text: str) -> bool:
-    return not text.strip() or len(text) > 500 or bool(_SENSITIVE_PATTERN.search(text))
+    return not text.strip() or len(text) > 1000 or bool(_SENSITIVE_PATTERN.search(text))
 
 
 def _scope_from(text: str) -> str | None:
@@ -66,6 +66,10 @@ def extract_candidates(prompt: str, response: str) -> tuple[MemoryCandidate, ...
             )
     scope = _scope_from(prompt)
     if scope is not None and re.search(r"\b(?:sẽ dùng|dùng|uses?|will use)\b", prompt, re.IGNORECASE):
-        decision = prompt[prompt.lower().find(scope.lower()) :].strip().rstrip(".")
-        candidates.append(MemoryCandidate(MemoryKind.DECISION, decision, scope, prompt, 1.0, 0.9))
+        scope_lower = scope.lower()
+        prompt_lower = prompt.lower()
+        idx = prompt_lower.find(scope_lower)
+        if idx >= 0:
+            decision = prompt[idx:].strip().rstrip(".")
+            candidates.append(MemoryCandidate(MemoryKind.DECISION, decision, scope, prompt, 1.0, 0.9))
     return tuple(candidates)

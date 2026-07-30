@@ -1,26 +1,30 @@
 from __future__ import annotations
 
+import logging
 import re
 import queue
 import socket
 import subprocess
 import sys
+
 import threading
+import traceback
 import tkinter as tk
+import customtkinter as ctk
 import csv
 from time import monotonic, perf_counter, sleep
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox
+from typing import Any
 
 import os
 import json
 import speech_recognition as sr
+from ._atomic_write import atomic_write_json
 from .vts_manager import VTSManager
 from .vts_actions import VTS_ACTION_INSTRUCTION, requested_vts_actions
 from .vts_catalog import VtsCatalog, catalog_instruction, parse_catalog_reply
 import pygame
-
-import torch
 
 from .chat import ChatTurn
 from .conversation_store import ConversationStore
@@ -32,7 +36,6 @@ from .llama3_1_runtime import (
 )
 from .llama_cpp_runtime import LlamaCppRuntime
 from .gui_presentation import (
-    PALETTE,
     append_stream_text,
     conversation_display_segments,
     format_generation_status,
@@ -70,10 +73,12 @@ from .voice_pacing import (
     voice_speed_from_saved,
 )
 
+logger = logging.getLogger(__name__)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODEL_NAME = "Ru"
 GUI_SETTINGS_PATH = PROJECT_ROOT / "data" / "gui_settings.json"
-DEFAULT_MAX_NEW_TOKENS = "512"
+DEFAULT_MAX_NEW_TOKENS = "1024"
 DEFAULT_ALLOW_WEB_SEARCH = True
 TTS_PREFETCH_WAVS = 2
 OVERLAY_EXE_PATH = PROJECT_ROOT / "tools" / "ru_desktop_overlay" / "out" / "build" / "Release" / "RuDesktopOverlay.exe"
@@ -88,6 +93,49 @@ BACKEND_LABELS = {
 }
 
 from .openai_runtime import OPENCODE_BASE_URL, OpenAIRuntime
+
+# ── Design System ──────────────────────────────────────────────────────────
+# Dark chat theme — deep, warm-neutral background, purple accents, green CTA.
+_DESIGN = {
+    "sidebar_bg": "#111118",
+    "sidebar_hover": "#1e1e2e",
+    "sidebar_text": "#a0a0b8",
+    "chat_bg": "#16161f",
+    "surface": "#1c1c2a",
+    "surface_hover": "#262640",
+    "bubble_user_bg": "#2d2b55",
+    "bubble_user_text": "#e8e8f0",
+    "bubble_ru_bg": "#1e1e30",
+    "bubble_ru_text": "#d8d8e8",
+    "composer_bg": "#24243a",
+    "composer_border": "#2e2e4a",
+    "header_bg": "#1a1a28",
+    "accent": "#7c3aed",
+    "accent_hover": "#6d28d9",
+    "accent_subtle": "#2d2b55",
+    "green": "#10b981",
+    "green_hover": "#059669",
+    "text_primary": "#e2e2f0",
+    "text_muted": "#6b6b80",
+    "text_label": "#8888a0",
+    "border": "#2e2e45",
+    "corner": 12,
+    "bubble_corner": 14,
+    "sidebar_corner": 10,
+    "composer_corner": 16,
+}
+
+# ── Shared resource: status indicator dot string ─────────────────────────
+_STATUS_DOT = "●"
+
+
+def _check_cuda() -> bool:
+    """Lazy CUDA availability check; avoids importing torch at module load."""
+    try:
+        import torch  # noqa: F811
+        return torch.cuda.is_available()
+    except ImportError:
+        return False
 
 
 def clean_tts_text(text: str) -> str:
@@ -186,13 +234,15 @@ def request_tts_audio(
         raise RuntimeError("Voice server is offline. Start OmniVoice and try again.") from error
     if response.status_code != 200:
         try:
-            detail = response.json().get("error")
+            body = response.json()
         except Exception:
-            detail = None
+            body = {}
+        detail = body.get("error")
         suffix = f": {detail}" if isinstance(detail, str) and detail else ""
         raise RuntimeError(f"Voice server failed (HTTP {response.status_code}){suffix}")
     try:
-        audio_file = response.json().get("audio_path")
+        body = response.json()
+        audio_file = body.get("audio_path")
     except Exception as error:
         raise RuntimeError("Voice server returned an invalid response.") from error
     if not isinstance(audio_file, str) or not Path(audio_file).is_file():
@@ -355,8 +405,8 @@ class ModelRunner:
         on_stream_reset=None,
         on_complete_timing=None,
     ) -> str:
-        return execute_reply(
         system_prompt = RU_CLOUD_SYSTEM_PROMPT if self.backend == BACKEND_OPENCODE else RU_SYSTEM_PROMPT
+        return execute_reply(
             self._generate,
             prompt=prompt,
             system_instruction=system_prompt + VTS_ACTION_INSTRUCTION + VOICE_PACE_INSTRUCTION + vts_instruction,
@@ -374,7 +424,7 @@ class ModelRunner:
 
 
 class RuApp:
-    def __init__(self, root: tk.Tk) -> None:
+    def __init__(self, root: ctk.CTk) -> None:
         self.root = root
         self.runner = ModelRunner()
         self.worker: threading.Thread | None = None
@@ -407,40 +457,40 @@ class RuApp:
         self.memory_db_path = PROJECT_ROOT / "data" / "conversations" / "memory.db"
         self.memory_store: StructuredMemoryStore | None = None
         checkpoint = default_paths()
-        self.checkpoint_var = tk.StringVar(value=str(checkpoint))
+        self.checkpoint_var = ctk.StringVar(value=str(checkpoint))
         
         saved_settings = {}
         if GUI_SETTINGS_PATH.is_file():
             try:
                 with open(GUI_SETTINGS_PATH, "r", encoding="utf-8") as f:
                     saved_settings = json.load(f)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to load GUI settings: %s", exc)
                 
         saved_backend = saved_settings.get("backend", "GGUF (default)")
         if saved_backend == "OpenAI API":
             saved_backend = "OpenCode Zen API"
         if saved_backend not in BACKEND_LABELS:
             saved_backend = "GGUF (default)"
-        self.api_key_var = tk.StringVar(value=saved_settings.get("api_key", ""))
-        self.api_model_var = tk.StringVar(
+        self.api_key_var = ctk.StringVar(value=saved_settings.get("api_key", ""))
+        self.api_model_var = ctk.StringVar(
             value=saved_settings.get("api_model", "deepseek-v4-flash-free")
         )
-        self.backend_var = tk.StringVar(value=saved_backend)
+        self.backend_var = ctk.StringVar(value=saved_backend)
         saved_selection = voice_selection_from_saved(saved_settings.get("voice_profile"))
-        self.voice_selection_var = tk.StringVar(value=saved_selection.label)
-        self.voice_speed_var = tk.DoubleVar(value=voice_speed_from_saved(saved_settings.get("voice_speed")))
-        self.auto_voice_pace_var = tk.BooleanVar(value=bool(saved_settings.get("auto_voice_pace", True)))
+        self.voice_selection_var = ctk.StringVar(value=saved_selection.label)
+        self.voice_speed_var = ctk.DoubleVar(value=voice_speed_from_saved(saved_settings.get("voice_speed")))
+        self.auto_voice_pace_var = ctk.BooleanVar(value=bool(saved_settings.get("auto_voice_pace", True)))
         saved_speech_config = speech_settings_from_mapping(saved_settings)
         saved_speech_label = next(
-            label
-            for label, engine_id in SPEECH_ENGINE_LABELS.items()
-            if engine_id == saved_speech_config.engine_id
+            (
+                label
+                for label, engine_id in SPEECH_ENGINE_LABELS.items()
+                if engine_id == saved_speech_config.engine_id
+            ),
+            next(iter(SPEECH_ENGINE_LABELS)),
         )
-        self.speech_engine_var = tk.StringVar(value=saved_speech_label)
-        self.speech_model_dir_var = tk.StringVar(
-            value=str(saved_speech_config.model_dir) if saved_speech_config.model_dir else ""
-        )
+        self.speech_engine_var = ctk.StringVar(value=saved_speech_label)
 
         def _save_settings(*args) -> None:
             settings = {
@@ -453,11 +503,9 @@ class RuApp:
             }
             settings.update(speech_settings_for_persistence(self._speech_config()))
             try:
-                GUI_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-                with open(GUI_SETTINGS_PATH, "w", encoding="utf-8") as f:
-                    json.dump(settings, f)
-            except Exception:
-                pass
+                atomic_write_json(GUI_SETTINGS_PATH, settings)
+            except Exception as exc:
+                logger.debug("Failed to save GUI settings: %s", exc)
 
         self._save_gui_settings = _save_settings
         self.api_key_var.trace_add("write", _save_settings)
@@ -467,19 +515,20 @@ class RuApp:
         self.voice_speed_var.trace_add("write", _save_settings)
         self.auto_voice_pace_var.trace_add("write", _save_settings)
         self.speech_engine_var.trace_add("write", self._on_speech_settings_changed)
-        self.speech_model_dir_var.trace_add("write", self._on_speech_settings_changed)
         _save_settings()
         
-        self.max_tokens_var = tk.StringVar(value=DEFAULT_MAX_NEW_TOKENS)
-        self.temperature_var = tk.StringVar(value="0.7")
-        self.top_k_var = tk.StringVar(value="20")
-        self.status_var = tk.StringVar(
-            value=f"CUDA available: {'yes' if torch.cuda.is_available() else 'no'} | Ready"
+        self.max_tokens_var = ctk.StringVar(value=DEFAULT_MAX_NEW_TOKENS)
+        self.temperature_var = ctk.StringVar(value="0.7")
+        self.top_k_var = ctk.StringVar(value="20")
+        _cuda_available = _check_cuda()
+        self.status_var = ctk.StringVar(
+            value=f"CUDA available: {'yes' if _cuda_available else 'no'} | Ready"
         )
         self.api_models_list: list[str] = [self.api_model_var.get()]
-        self.tts_enabled_var = tk.BooleanVar(value=True)
-        self.remember_conversations_var = tk.BooleanVar(value=True)
-        self.allow_web_search_var = tk.BooleanVar(value=DEFAULT_ALLOW_WEB_SEARCH)
+        self.tts_enabled_var = ctk.BooleanVar(value=True)
+        self._mouse_look_enabled = False
+        self.remember_conversations_var = ctk.BooleanVar(value=True)
+        self.allow_web_search_var = ctk.BooleanVar(value=DEFAULT_ALLOW_WEB_SEARCH)
         pygame.mixer.init()
         self.vts_manager = VTSManager()
         threading.Thread(target=self.vts_manager.run, daemon=True).start()
@@ -487,171 +536,225 @@ class RuApp:
         self.microphone_recognizer = sr.Recognizer()
         self._speech_runtime: SpeechRecognizer | None = None
         self._speech_runtime_config: SpeechEngineConfig | None = None
-        self.generate_button: ttk.Button
-        self.new_chat_button: ttk.Button
-        self.mark_button: ttk.Button
-        self.settings_button: ttk.Button
-        self.overlay_button: ttk.Button
-        self.prompt_text: tk.Text
-        self.transcript_text: tk.Text
+        self.generate_button: ctk.CTkButton
+        self.new_chat_button: ctk.CTkButton
+        self.mark_button: ctk.CTkButton
+        self.settings_button: ctk.CTkButton
+        self.overlay_button: ctk.CTkButton
+        self.prompt_text: ctk.CTkTextbox
+        self.transcript_text: ctk.CTkTextbox
         self._has_empty_state = True
         self._build()
 
     def _build(self) -> None:
+        D = _DESIGN
         self.root.title(MODEL_NAME)
-        self.root.geometry("900x720")
-        self.root.minsize(680, 540)
-        self.root.configure(background=PALETTE["background"])
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
-        self._configure_styles()
+        self.root.geometry("1100x750")
+        self.root.minsize(800, 600)
 
-        shell = tk.Frame(self.root, background=PALETTE["background"])
-        shell.grid(row=0, column=0, sticky="nsew", padx=20, pady=18)
-        shell.columnconfigure(0, weight=1)
-        shell.rowconfigure(1, weight=1)
+        # Grid layout: 2 columns (Sidebar, Main Chat)
+        self.root.grid_columnconfigure(1, weight=1)
+        self.root.grid_columnconfigure(0, weight=0)
+        self.root.grid_rowconfigure(0, weight=1)
 
-        header = tk.Frame(shell, background=PALETTE["background"])
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
-        header.columnconfigure(1, weight=1)
-        tk.Label(
-            header,
-            text=MODEL_NAME,
-            background=PALETTE["background"],
-            foreground=PALETTE["ink"],
-            font=("Segoe UI Semibold", 20),
-        ).grid(row=0, column=0, sticky="w")
-        tk.Label(
-            header,
-            text="Local Llama",
-            background=PALETTE["background"],
-            foreground=PALETTE["muted"],
-            font=("Segoe UI", 10),
-        ).grid(row=1, column=0, sticky="w")
-        self.settings_button = ttk.Button(
-            header,
-            text="Settings",
-            command=self._open_settings,
-            style="Ru.Quiet.TButton",
-        )
-        self.settings_button.grid(row=0, column=2, rowspan=2, sticky="e")
+        # ── SIDEBAR (Left) ─────────────────────────────────────────────
+        sidebar = ctk.CTkFrame(self.root, width=220, corner_radius=0, fg_color=D["sidebar_bg"])
+        sidebar.grid(row=0, column=0, sticky="nsew")
+        sidebar.grid_rowconfigure(6, weight=1)
 
-        content = tk.Frame(shell, background=PALETTE["background"])
-        content.grid(row=1, column=0, sticky="nsew")
-        content.columnconfigure(0, weight=1)
-        content.rowconfigure(0, weight=1)
+        # Logo header
+        logo_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+        logo_frame.grid(row=0, column=0, padx=18, pady=(24, 20), sticky="ew")
 
-        transcript_frame = tk.Frame(content, background=PALETTE["surface"], highlightthickness=0)
-        transcript_frame.grid(row=0, column=0, sticky="nsew")
-        transcript_frame.columnconfigure(0, weight=1)
-        transcript_frame.rowconfigure(0, weight=1)
-        self.transcript_text = tk.Text(
-            transcript_frame,
-            wrap="word",
-            state="disabled",
-            background=PALETTE["surface"],
-            foreground=PALETTE["ink"],
-            borderwidth=0,
-            highlightthickness=0,
-            font=("Segoe UI", 11),
-            padx=20,
-            pady=18,
-            spacing1=2,
-            spacing3=10,
+        ctk.CTkLabel(
+            logo_frame, text="Ru",
+            font=ctk.CTkFont(size=26, weight="bold"),
+            text_color=D["text_primary"],
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            logo_frame, text="Local Llama",
+            font=ctk.CTkFont(size=12),
+            text_color=D["text_muted"],
+        ).pack(side="left", padx=(10, 0), pady=(6, 0))
+
+        # — Nav buttons —
+        btn_kw = dict(anchor="w", height=38, corner_radius=D["sidebar_corner"])
+
+        self.new_chat_button = ctk.CTkButton(
+            sidebar, text="＋  New Chat",
+            fg_color=D["accent_subtle"], hover_color=D["surface_hover"],
+            command=self._new_chat, **btn_kw,
         )
-        self.transcript_text.grid(row=0, column=0, sticky="nsew")
-        self.transcript_text.tag_configure(
-            "ru_label", foreground=PALETTE["accent"], font=("Segoe UI Semibold", 10)
+        self.new_chat_button.grid(row=1, column=0, padx=14, pady=(0, 6), sticky="ew")
+
+        self.settings_button = ctk.CTkButton(
+            sidebar, text="⚙  Settings",
+            fg_color="transparent", hover_color=D["sidebar_hover"],
+            command=self._open_settings, **btn_kw,
         )
-        self.transcript_text.tag_configure(
-            "ru_bubble", background=PALETTE["ru_bubble"], lmargin1=12, lmargin2=12, rmargin=72
+        self.settings_button.grid(row=2, column=0, padx=14, pady=2, sticky="ew")
+
+        self.call_ru_button = ctk.CTkButton(
+            sidebar, text="🎙  Call Ru (Voice)",
+            fg_color="transparent", hover_color=D["sidebar_hover"],
+            command=self._toggle_voice_mode, **btn_kw,
         )
-        self.transcript_text.tag_configure(
-            "user_label", foreground=PALETTE["muted"], font=("Segoe UI Semibold", 10), justify="right"
+        self.call_ru_button.grid(row=3, column=0, padx=14, pady=2, sticky="ew")
+
+        self.overlay_button = ctk.CTkButton(
+            sidebar, text="🖥  Overlay",
+            fg_color="transparent", hover_color=D["sidebar_hover"],
+            command=self._toggle_overlay, **btn_kw,
         )
-        self.transcript_text.tag_configure(
-            "user_bubble", background=PALETTE["user_bubble"], lmargin1=72, lmargin2=72, rmargin=12, justify="right"
+        self.overlay_button.grid(row=4, column=0, padx=14, pady=2, sticky="ew")
+
+        self.mouse_look_button = ctk.CTkButton(
+            sidebar, text="🖱  Mouse Look",
+            fg_color="transparent", hover_color=D["sidebar_hover"],
+            command=self._toggle_mouse_look, **btn_kw,
         )
-        self.transcript_text.tag_configure(
-            "empty", foreground=PALETTE["muted"], justify="center", spacing1=36
+        self.mouse_look_button.grid(row=5, column=0, padx=14, pady=2, sticky="ew")
+
+        # — Bottom status area —
+        bottom_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+        bottom_frame.grid(row=7, column=0, padx=14, pady=(0, 18), sticky="ew")
+
+        self.tts_checkbox = ctk.CTkCheckBox(
+            bottom_frame, text="Voice output",
+            variable=self.tts_enabled_var,
+            fg_color=D["accent_subtle"], hover_color=D["surface_hover"],
+            text_color=D["text_label"],
+            font=ctk.CTkFont(size=12),
         )
-        transcript_scrollbar = ttk.Scrollbar(transcript_frame, orient="vertical", command=self.transcript_text.yview)
-        transcript_scrollbar.grid(row=0, column=1, sticky="ns")
-        self.transcript_text.configure(yscrollcommand=transcript_scrollbar.set)
+        self.tts_checkbox.pack(anchor="w", pady=(0, 12))
+
+        status_card = ctk.CTkFrame(bottom_frame, fg_color=D["surface"], corner_radius=8)
+        status_card.pack(fill="x")
+
+        dot = ctk.CTkLabel(
+            status_card, text=_STATUS_DOT,
+            text_color=D["green"], font=ctk.CTkFont(size=10),
+        )
+        dot.pack(side="left", padx=(10, 4), pady=10)
+
+        ctk.CTkLabel(
+            status_card, textvariable=self.status_var,
+            font=ctk.CTkFont(size=11), text_color=D["text_muted"],
+        ).pack(side="left", padx=(0, 10), pady=10)
+
+        # ── MAIN CHAT AREA (Right) ────────────────────────────────────
+        main_chat = ctk.CTkFrame(self.root, corner_radius=0, fg_color=D["chat_bg"])
+        main_chat.grid(row=0, column=1, sticky="nsew")
+        main_chat.grid_columnconfigure(0, weight=1)
+        main_chat.grid_rowconfigure(1, weight=1)
+
+        # — Chat Header —
+        header = ctk.CTkFrame(main_chat, fg_color=D["header_bg"], corner_radius=0, height=48)
+        header.grid(row=0, column=0, sticky="ew")
+        header.grid_propagate(False)
+
+        ctk.CTkLabel(
+            header, text="💬  Ru · " + self.backend_var.get().upper(),
+            font=ctk.CTkFont(size=13), text_color=D["text_label"],
+        ).pack(side="left", padx=(24, 0), pady=12)
+
+        # — Transcript —
+        self.transcript_text = ctk.CTkTextbox(
+            main_chat, wrap="word",
+            fg_color="transparent",
+            font=ctk.CTkFont(size=14, family="Segoe UI"),
+            border_spacing=0,
+        )
+        self.transcript_text.grid(row=1, column=0, padx=32, pady=(20, 12), sticky="nsew")
+
+        # Bubble tag styles
+        self.transcript_text.tag_config("ru_label",
+            foreground=D["text_muted"],
+            spacing1=16, spacing3=4,
+            lmargin1=4, lmargin2=4,
+        )
+        self.transcript_text.tag_config("ru_bubble",
+            foreground=D["bubble_ru_text"],
+            background=D["bubble_ru_bg"],
+            lmargin1=12, lmargin2=12, rmargin=96,
+            spacing1=6, spacing2=4, spacing3=8,
+        )
+        self.transcript_text.tag_config("user_label",
+            foreground=D["text_muted"],
+            spacing1=16, spacing3=4,
+            justify="right",
+            rmargin=4,
+        )
+        self.transcript_text.tag_config("user_bubble",
+            foreground=D["bubble_user_text"],
+            background=D["bubble_user_bg"],
+            lmargin1=96, lmargin2=96, rmargin=12,
+            spacing1=6, spacing2=4, spacing3=8,
+            justify="right",
+        )
+        self.transcript_text.tag_config("empty",
+            justify="center",
+            foreground=D["text_muted"],
+            spacing1=120, spacing2=8, spacing3=8,
+        )
+        self.transcript_text.configure(state="disabled")
         self._show_empty_state()
 
-        composer = tk.Frame(content, background=PALETTE["background"])
-        composer.grid(row=1, column=0, sticky="ew", pady=(12, 0))
-        composer.columnconfigure(0, weight=1)
-        tk.Label(
-            composer,
-            text="Write to Ru",
-            background=PALETTE["background"],
-            foreground=PALETTE["muted"],
-            font=("Segoe UI", 10),
-        ).grid(row=0, column=0, sticky="w", pady=(0, 5))
-        self.prompt_text = tk.Text(
-            composer,
-            height=4,
-            wrap="word",
-            background=PALETTE["surface"],
-            foreground=PALETTE["ink"],
-            borderwidth=0,
-            highlightthickness=1,
-            highlightbackground="#E6DFEA",
-            highlightcolor=PALETTE["accent"],
-            font=("Segoe UI", 11),
-            padx=12,
-            pady=10,
+        # — Composer —
+        composer_outer = ctk.CTkFrame(main_chat, fg_color="transparent")
+        composer_outer.grid(row=2, column=0, padx=32, pady=(0, 24), sticky="ew")
+        composer_outer.grid_columnconfigure(0, weight=1)
+
+        composer = ctk.CTkFrame(composer_outer, fg_color=D["composer_bg"], corner_radius=D["composer_corner"])
+        composer.grid(row=0, column=0, sticky="ew")
+        composer.grid_columnconfigure(0, weight=1)
+
+        self.prompt_text = ctk.CTkTextbox(
+            composer, height=52, wrap="word",
+            fg_color="transparent",
+            font=ctk.CTkFont(size=13),
+            border_spacing=0,
         )
-        self.prompt_text.grid(row=1, column=0, sticky="ew")
+        self.prompt_text.grid(row=0, column=0, padx=(16, 8), pady=(8, 8), sticky="ew")
         self.prompt_text.bind("<Control-Return>", self._submit_from_keyboard)
 
-        actions = tk.Frame(composer, background=PALETTE["background"])
-        actions.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        self.generate_button = ttk.Button(actions, text="Send", command=self._start_generation, style="Ru.Primary.TButton")
-        self.generate_button.grid(row=0, column=0, padx=(0, 6))
-        self.speak_button = ttk.Button(actions, text="Voice input", command=self._toggle_recording, style="Ru.Quiet.TButton")
-        self.speak_button.grid(row=0, column=1, padx=(0, 6))
-        self.call_ru_button = ttk.Button(actions, text="📞 Call Ru", command=self._toggle_voice_mode, style="Ru.Quiet.TButton")
-        self.call_ru_button.grid(row=0, column=2, padx=(0, 6))
-        self.new_chat_button = ttk.Button(actions, text="New chat", command=self._new_chat, style="Ru.Quiet.TButton")
-        self.new_chat_button.grid(row=0, column=3, padx=(0, 6))
-        self.mark_button = ttk.Button(
-            actions, text="Save useful reply", command=self._mark_last_response, state="disabled", style="Ru.Quiet.TButton"
+        actions = ctk.CTkFrame(composer, fg_color="transparent")
+        actions.grid(row=0, column=1, padx=(0, 8), pady=8, sticky="e")
+
+        self.speak_button = ctk.CTkButton(
+            actions, text="🎤", width=36, height=36,
+            corner_radius=18,
+            fg_color="transparent", hover_color=D["accent_subtle"],
+            command=self._toggle_recording,
         )
-        self.mark_button.grid(row=0, column=4, padx=(0, 6))
-        self.overlay_button = ttk.Button(
-            actions,
-            text="Close overlay" if overlay_process_ids() else "Open overlay",
-            command=self._toggle_overlay,
-            style="Ru.Quiet.TButton",
+        self.speak_button.pack(side="left", padx=(0, 6))
+
+        self.generate_button = ctk.CTkButton(
+            actions, text="➤", width=36, height=36,
+            corner_radius=18,
+            fg_color=D["green"], hover_color=D["green_hover"],
+            font=ctk.CTkFont(size=16, weight="bold"),
+            command=self._start_generation,
         )
-        self.overlay_button.grid(row=0, column=5, padx=(0, 6))
-        self.tts_checkbox = ttk.Checkbutton(actions, text="Ru voice", variable=self.tts_enabled_var)
-        self.tts_checkbox.grid(row=0, column=6, padx=(6, 0))
-        ttk.Label(composer, textvariable=self.status_var, style="Ru.Status.TLabel").grid(
-            row=3, column=0, sticky="w", pady=(8, 0)
+        self.generate_button.pack(side="left")
+
+        # Hidden — needed for the mark-last-response logic
+        self.mark_button = ctk.CTkButton(
+            self.root, text="Save useful reply",
+            command=self._mark_last_response, state="disabled",
         )
 
+        self._configure_styles()
+
     def _configure_styles(self) -> None:
-        style = ttk.Style(self.root)
-        style.configure("Ru.Primary.TButton", font=("Segoe UI Semibold", 10), padding=(14, 7))
-        style.configure("Ru.Quiet.TButton", font=("Segoe UI", 10), padding=(10, 7))
-        style.configure(
-            "Ru.Status.TLabel",
-            background=PALETTE["background"],
-            foreground=PALETTE["muted"],
-            font=("Segoe UI", 9),
-        )
+        self.root.configure(bg=_DESIGN["chat_bg"])
 
     def _show_empty_state(self) -> None:
         self.transcript_text.configure(state="normal")
-        self.transcript_text.insert(
-            tk.END,
-            "Chào anh, em ở đây. Hôm nay anh muốn kể em nghe chuyện gì?",
-            "empty",
-        )
+        self.transcript_text.insert(tk.END, "\n\n", "empty")
+        self.transcript_text.insert(tk.END, "✦  Chào anh, em ở đây  ✦\n", "empty")
+        self.transcript_text.insert(tk.END, "Hôm nay anh muốn kể em nghe chuyện gì?", "empty")
         self.transcript_text.configure(state="disabled")
 
     def _toggle_overlay(self) -> None:
@@ -683,99 +786,75 @@ class RuApp:
         self.overlay_button.configure(text="Close overlay")
         self.status_var.set("Overlay opening...")
 
+    def _toggle_mouse_look(self) -> None:
+        self._mouse_look_enabled = not self._mouse_look_enabled
+        self.vts_manager.set_mouse_tracking(self._mouse_look_enabled)
+        label = "🖱  Mouse Look · ON" if self._mouse_look_enabled else "🖱  Mouse Look"
+        fg = _DESIGN["accent_subtle"] if self._mouse_look_enabled else "transparent"
+        self.mouse_look_button.configure(text=label, fg_color=fg)
+        self.status_var.set(
+            "Mouse look enabled — model follows cursor"
+            if self._mouse_look_enabled
+            else "Mouse look disabled"
+        )
+
     def _open_settings(self) -> None:
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Ru settings")
-        dialog.configure(background=PALETTE["background"])
-        dialog.transient(self.root)
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Settings")
+        dialog.geometry("750x700")
         dialog.resizable(False, False)
         dialog.grab_set()
 
-        content = ttk.Frame(dialog, padding=16)
-        content.grid(row=0, column=0, sticky="nsew")
-        model = ttk.LabelFrame(content, text="Model")
-        model.grid(row=0, column=0, sticky="ew")
+        content = ctk.CTkScrollableFrame(dialog, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        def create_section(parent, title):
+            frame = ctk.CTkFrame(parent, fg_color=_DESIGN["surface"], corner_radius=10)
+            frame.pack(fill="x", pady=10)
+            ctk.CTkLabel(frame, text=title, font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", padx=15, pady=(10, 5))
+            inner = ctk.CTkFrame(frame, fg_color="transparent")
+            inner.pack(fill="x", padx=15, pady=(0, 10))
+            return inner
+
+        model = create_section(content, "Model & Backend")
         model.columnconfigure(1, weight=1)
         self._path_row(model, 0, "Checkpoint / adapter", self.checkpoint_var, self._browse_checkpoint)
-        backend = ttk.Frame(model)
-        backend.grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 4))
-        ttk.Label(backend, text="Backend").grid(row=0, column=0, padx=(0, 6))
-        ttk.Combobox(
-            backend,
-            textvariable=self.backend_var,
-            values=tuple(BACKEND_LABELS),
-            state="readonly",
-            width=24,
-        ).grid(row=0, column=1)
-        ttk.Label(backend, text="OpenCode API Key").grid(row=0, column=2, padx=(12, 6))
-        ttk.Entry(backend, textvariable=self.api_key_var, show="*", width=24).grid(row=0, column=3)
-
-        ttk.Label(backend, text="OpenCode model").grid(row=1, column=2, padx=(12, 6), pady=4)
-        self.model_combo = ttk.Combobox(backend, textvariable=self.api_model_var, values=self.api_models_list, width=22)
-        self.model_combo.grid(row=1, column=3, pady=4)
         
-        ttk.Label(backend, text="Voice").grid(row=1, column=0, padx=(0, 6))
-        ttk.Combobox(
-            backend,
-            textvariable=self.voice_selection_var,
-            values=tuple(selection.label for selection in VOICE_SELECTIONS),
-            state="readonly",
-            width=24,
-        ).grid(row=1, column=1)
-
-        voice_output = ttk.LabelFrame(content, text="Voice output")
-        voice_output.grid(row=1, column=0, sticky="ew", pady=(12, 0))
-        voice_output.columnconfigure(1, weight=1)
-        ttk.Label(voice_output, text="Base speed").grid(row=0, column=0, sticky="w", padx=8, pady=(8, 4))
-        ttk.Scale(
-            voice_output,
-            from_=0.75,
-            to=1.20,
-            variable=self.voice_speed_var,
-            orient="horizontal",
-        ).grid(row=0, column=1, sticky="ew", padx=6, pady=(8, 4))
-        ttk.Label(voice_output, textvariable=self.voice_speed_var, width=5).grid(row=0, column=2, padx=(0, 8), pady=(8, 4))
-        ttk.Checkbutton(
-            voice_output,
-            text="Let Ru adjust pace around this speed",
-            variable=self.auto_voice_pace_var,
-        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=8, pady=(4, 8))
+        ctk.CTkLabel(model, text="Backend").grid(row=1, column=0, sticky="w", pady=5)
+        ctk.CTkOptionMenu(model, variable=self.backend_var, values=tuple(BACKEND_LABELS)).grid(row=1, column=1, sticky="w", pady=5, padx=5)
         
-        ttk.Button(backend, text="Fetch", command=self._fetch_models, width=6).grid(row=1, column=4, padx=(4, 0))
+        ctk.CTkLabel(model, text="OpenCode API Key").grid(row=2, column=0, sticky="w", pady=5)
+        ctk.CTkEntry(model, textvariable=self.api_key_var, show="*", width=250).grid(row=2, column=1, sticky="w", pady=5, padx=5)
+        
+        ctk.CTkLabel(model, text="OpenCode model").grid(row=3, column=0, sticky="w", pady=5)
+        self.model_combo = ctk.CTkComboBox(model, variable=self.api_model_var, values=self.api_models_list, width=200, state="readonly")
+        self.model_combo.grid(row=3, column=1, sticky="w", pady=5, padx=5)
+        ctk.CTkButton(model, text="Fetch", command=self._fetch_models, width=60).grid(row=3, column=2, padx=5)
+        
+        ctk.CTkLabel(model, text="Voice").grid(row=4, column=0, sticky="w", pady=5)
+        ctk.CTkOptionMenu(model, variable=self.voice_selection_var, values=tuple(selection.label for selection in VOICE_SELECTIONS)).grid(row=4, column=1, sticky="w", pady=5, padx=5)
 
-        controls = ttk.Frame(model)
-        controls.grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
-        self._labeled_entry(controls, 0, "Max tokens", self.max_tokens_var, 8)
-        self._labeled_entry(controls, 2, "Temperature", self.temperature_var, 8)
-        self._labeled_entry(controls, 4, "Top-k", self.top_k_var, 8)
+        controls = create_section(content, "Generation Controls")
+        self._labeled_entry(controls, 0, "Max tokens", self.max_tokens_var, 100)
+        self._labeled_entry(controls, 2, "Temperature", self.temperature_var, 100)
+        self._labeled_entry(controls, 4, "Top-k", self.top_k_var, 100)
 
-        speech = ttk.LabelFrame(content, text="Speech input")
-        speech.grid(row=2, column=0, sticky="ew", pady=(12, 0))
-        speech.columnconfigure(1, weight=1)
-        ttk.Label(speech, text="Recognizer").grid(row=0, column=0, sticky="w", padx=6, pady=4)
-        ttk.Combobox(
-            speech,
-            textvariable=self.speech_engine_var,
-            values=tuple(SPEECH_ENGINE_LABELS),
-            state="readonly",
-            width=24,
-        ).grid(row=0, column=1, sticky="w", padx=4, pady=4)
-        self._path_row(speech, 1, "Offline model folder", self.speech_model_dir_var, self._browse_speech_model)
+        voice_output = create_section(content, "Voice Output")
+        ctk.CTkLabel(voice_output, text="Base speed").grid(row=0, column=0, sticky="w", pady=5)
+        ctk.CTkSlider(voice_output, from_=0.75, to=1.20, variable=self.voice_speed_var).grid(row=0, column=1, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(voice_output, textvariable=self.voice_speed_var).grid(row=0, column=2, pady=5)
+        ctk.CTkCheckBox(voice_output, text="Let Ru adjust pace around this speed", variable=self.auto_voice_pace_var).grid(row=1, column=0, columnspan=3, sticky="w", pady=5)
 
-        privacy = ttk.LabelFrame(content, text="Privacy and memory")
-        privacy.grid(row=3, column=0, sticky="ew", pady=(12, 0))
-        ttk.Checkbutton(privacy, text="Remember conversations", variable=self.remember_conversations_var).grid(
-            row=0, column=0, sticky="w", padx=8, pady=(8, 4)
-        )
-        ttk.Checkbutton(privacy, text="Allow online search", variable=self.allow_web_search_var).grid(
-            row=1, column=0, sticky="w", padx=8, pady=4
-        )
-        ttk.Button(privacy, text="Clear saved memory", command=self._clear_saved_memory).grid(
-            row=2, column=0, sticky="w", padx=8, pady=(4, 8)
-        )
-        ttk.Button(content, text="Close", command=dialog.destroy, style="Ru.Primary.TButton").grid(
-            row=4, column=0, sticky="e", pady=(14, 0)
-        )
+        speech = create_section(content, "Speech Input")
+        ctk.CTkLabel(speech, text="Recognizer").grid(row=0, column=0, sticky="w", pady=5)
+        ctk.CTkOptionMenu(speech, variable=self.speech_engine_var, values=tuple(SPEECH_ENGINE_LABELS)).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+
+        privacy = create_section(content, "Privacy and Memory")
+        ctk.CTkCheckBox(privacy, text="Remember conversations", variable=self.remember_conversations_var).grid(row=0, column=0, sticky="w", pady=5)
+        ctk.CTkCheckBox(privacy, text="Allow online search", variable=self.allow_web_search_var).grid(row=1, column=0, sticky="w", pady=5)
+        ctk.CTkButton(privacy, text="Clear saved memory", command=self._clear_saved_memory).grid(row=2, column=0, sticky="w", pady=(5,10))
+
+        ctk.CTkButton(dialog, text="Close", command=dialog.destroy).pack(pady=(0, 20))
 
     def _fetch_models(self) -> None:
         api_key = self.api_key_var.get().strip()
@@ -797,37 +876,36 @@ class RuApp:
         
     def _on_fetch_models_success(self, models: list[str]) -> None:
         self.api_models_list = models
-        if hasattr(self, "model_combo"):
-            self.model_combo['values'] = self.api_models_list
-            if models and self.api_model_var.get() not in models:
-                self.api_model_var.set(models[0])
+        try:
+            if self.model_combo.winfo_exists():
+                self.model_combo.configure(values=self.api_models_list)
+                if models and self.api_model_var.get() not in models:
+                    self.api_model_var.set(models[0])
+        except (AttributeError, tk.TclError):
+            pass  # model_combo chưa được tạo hoặc đã bị destroy
         self.status_var.set(f"Fetched {len(models)} models successfully")
     @staticmethod
-    def _labeled_entry(parent: ttk.Frame, column: int, label: str, variable: tk.StringVar, width: int) -> None:
-        ttk.Label(parent, text=label).grid(row=0, column=column, padx=(0 if column == 0 else 12, 4))
-        ttk.Entry(parent, textvariable=variable, width=width).grid(row=0, column=column + 1)
+    def _labeled_entry(parent: ctk.CTkFrame, column: int, label: str, variable: tk.StringVar, width: int) -> None:
+        ctk.CTkLabel(parent, text=label).grid(row=0, column=column, padx=(0 if column == 0 else 12, 4))
+        ctk.CTkEntry(parent, textvariable=variable, width=140).grid(row=0, column=column + 1)
 
     def _path_row(
         self,
-        parent: ttk.LabelFrame,
+        parent: ctk.CTkFrame,
         row: int,
         label: str,
         variable: tk.StringVar,
         browse_command: Any,
     ) -> None:
-        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=6, pady=4)
-        ttk.Entry(parent, textvariable=variable).grid(row=row, column=1, sticky="ew", padx=4, pady=4)
-        ttk.Button(parent, text="Browse", command=browse_command).grid(row=row, column=2, padx=6, pady=4)
+        ctk.CTkLabel(parent, text=label).grid(row=row, column=0, sticky="w", padx=6, pady=4)
+        ctk.CTkEntry(parent, textvariable=variable, width=250).grid(row=row, column=1, sticky="ew", padx=4, pady=4)
+        ctk.CTkButton(parent, text="Browse", command=browse_command).grid(row=row, column=2, padx=6, pady=4)
 
     def _browse_checkpoint(self) -> None:
         selected = filedialog.askdirectory(title="Select Llama Adapter Directory")
         if selected:
             self.checkpoint_var.set(selected)
 
-    def _browse_speech_model(self) -> None:
-        selected = filedialog.askdirectory(title="Select Sherpa-ONNX Model Directory")
-        if selected:
-            self.speech_model_dir_var.set(selected)
 
     def _append_turn(self, turn: ChatTurn) -> None:
         self.transcript_text.configure(state="normal")
@@ -845,12 +923,12 @@ class RuApp:
             self.transcript_text.delete("1.0", tk.END)
             self._has_empty_state = False
         self.transcript_text.insert(tk.END, "You\n", "user_label")
-        self.transcript_text.insert(tk.END, f"{prompt}\n\n", "user_bubble")
+        self.transcript_text.insert(tk.END, f"{prompt}\n", "user_bubble")
         self.transcript_text.insert(tk.END, "Ru\n", "ru_label")
-        self.transcript_text.tag_configure("stream_anchor", elide=True)
+        self.transcript_text.tag_config("stream_anchor", elide=True)
         self.transcript_text.insert(tk.END, " ", "stream_anchor")
         self._stream_response_anchor = self.transcript_text.index("end-2c")
-        self.transcript_text.insert(tk.END, "\n\n", "ru_bubble")
+        self.transcript_text.insert(tk.END, "\n", "ru_bubble")
         self.transcript_text.see(tk.END)
         self.transcript_text.configure(state="disabled")
 
@@ -996,8 +1074,7 @@ class RuApp:
 
     def _speech_config(self) -> SpeechEngineConfig:
         engine_id = SPEECH_ENGINE_LABELS.get(self.speech_engine_var.get(), SPEECH_ENGINE_GOOGLE)
-        model_dir = self.speech_model_dir_var.get().strip()
-        return SpeechEngineConfig(engine_id=engine_id, model_dir=Path(model_dir) if model_dir else None)
+        return SpeechEngineConfig(engine_id=engine_id, model_dir=None)
 
     def _on_speech_settings_changed(self, *_args: object) -> None:
         self._speech_runtime = None
@@ -1066,9 +1143,15 @@ class RuApp:
         checkpoint = self.checkpoint_var.get()
         remember_conversations = self.remember_conversations_var.get()
         allow_web_search = self.allow_web_search_var.get()
+        # Capture Tk variables on main thread — Tk vars are not thread-safe to read from worker threads.
+        tts_enabled = self.tts_enabled_var.get()
+        api_key = self.api_key_var.get()
+        api_model = self.api_model_var.get()
+        voice_selection = self._selected_voice_selection()
+        turns_snapshot = list(self.session_turns)
         self.worker = threading.Thread(
             target=self._generate_worker,
-            args=(prompt, settings, checkpoint, backend, remember_conversations, allow_web_search),
+            args=(prompt, settings, checkpoint, backend, remember_conversations, allow_web_search, tts_enabled, api_key, api_model, voice_selection, turns_snapshot),
             daemon=True,
         )
         self.worker.start()
@@ -1091,6 +1174,11 @@ class RuApp:
         backend: str,
         remember_conversations: bool,
         allow_web_search: bool,
+        tts_enabled: bool,
+        api_key: str,
+        api_model: str,
+        voice_selection: object,
+        turns_snapshot: list,
     ) -> None:
         try:
             memory_context = None
@@ -1117,10 +1205,10 @@ class RuApp:
                 self.root.after(0, self._reset_streaming_turn)
 
             with self.gpu_transition_lock:
-                uses_voice = is_cloud and self.tts_enabled_var.get()
+                uses_voice = is_cloud and tts_enabled
                 if uses_voice:
                     voice_warm_seconds = self.gpu_lifecycle.warm_voice_for_cloud(
-                        self._selected_voice_selection(),
+                        voice_selection,
                         lambda status: self.root.after(
                             0, lambda status=status: self.status_var.set(status)
                         ),
@@ -1138,15 +1226,15 @@ class RuApp:
                 started = perf_counter()
                 self.runner.load(
                     checkpoint,
-                    self.api_key_var.get(),
-                    model_name=self.api_model_var.get(),
+                    api_key,
+                    model_name=api_model,
                 )
                 if is_cloud:
                     self.root.after(0, lambda prompt=prompt: self._begin_streaming_turn(prompt))
                 result = self.runner.generate_reply(
                     prompt,
                     *settings,
-                    turns_history=list(self.session_turns),
+                    turns_history=turns_snapshot,
                     memory_context=memory_context,
                     allow_web_search=allow_web_search,
                     vts_instruction=catalog_instruction(vts_catalog),
@@ -1170,8 +1258,6 @@ class RuApp:
                 ),
             )
         except Exception as error:
-            import traceback
-
             traceback.print_exc()
             message = str(error) if str(error) else repr(error)
             self.root.after(0, lambda message=message: self._generation_failed(message))
@@ -1189,69 +1275,73 @@ class RuApp:
         voice_warm_seconds: float | None = None,
         streamed: bool = False,
     ) -> None:
-        if not result.strip():
-            self._generation_failed("model returned an empty response")
-            return
-        pace_result, pace = parse_voice_pace(result)
-        clean_result, catalog_codes = parse_catalog_reply(pace_result, vts_catalog)
-        vts_actions = requested_vts_actions(original_prompt)
-        if not clean_result.strip():
-            self._generation_failed("model returned no visible response")
-            return
-        turn = ChatTurn(original_prompt, clean_result)
-        self.session_turns.append(turn)
-        self.last_turn = turn
-        self.last_turn_saved = False
-        if streamed:
-            self._finish_streaming_turn(clean_result)
-        else:
-            self._append_turn(turn)
+        try:
+            if not result.strip():
+                self._generation_failed("model returned an empty response")
+                return
+            pace_result, pace = parse_voice_pace(result)
+            clean_result, catalog_codes = parse_catalog_reply(pace_result, vts_catalog)
+            vts_actions = requested_vts_actions(original_prompt)
+            if not clean_result.strip():
+                self._generation_failed("model returned no visible response")
+                return
+            turn = ChatTurn(original_prompt, clean_result)
+            self.session_turns.append(turn)
+            self.last_turn = turn
+            self.last_turn_saved = False
+            if streamed:
+                self._finish_streaming_turn(clean_result)
+            else:
+                self._append_turn(turn)
 
-        if (
-            remember_conversations
-            and self.remember_conversations_var.get()
-            and self.memory_store
-        ):
-            self.memory_store.remember_turn(original_prompt, clean_result)
+            if (
+                remember_conversations
+                and self.remember_conversations_var.get()
+                and self.memory_store
+            ):
+                self.memory_store.remember_turn(original_prompt, clean_result)
 
-        status_kwargs = {
-            "cache_hit": cache_hit,
-            "seconds": elapsed,
-            "api_seconds": api_seconds,
-            "voice_warm_seconds": voice_warm_seconds,
-        }
-        self.status_var.set(format_generation_status(**status_kwargs))
-        self._set_controls_enabled(True)
-        self._update_mark_button()
-        self.prompt_text.delete("1.0", tk.END)
-        self.prompt_text.focus_set()
+            status_kwargs = {
+                "cache_hit": cache_hit,
+                "seconds": elapsed,
+                "api_seconds": api_seconds,
+                "voice_warm_seconds": voice_warm_seconds,
+            }
+            self.status_var.set(format_generation_status(**status_kwargs))
+            self._set_controls_enabled(True)
+            self._update_mark_button()
+            self.prompt_text.delete("1.0", tk.END)
+            self.prompt_text.focus_set()
 
-        if hasattr(self, "vts_manager"):
-            if catalog_codes and hasattr(self.vts_manager, "trigger_catalog_actions_sync"):
-                self.vts_manager.trigger_catalog_actions_sync(vts_catalog, catalog_codes)
-            self.vts_manager.trigger_actions_sync(vts_actions)
+            if hasattr(self, "vts_manager"):
+                if catalog_codes and hasattr(self.vts_manager, "trigger_catalog_actions_sync"):
+                    self.vts_manager.trigger_catalog_actions_sync(vts_catalog, catalog_codes)
+                self.vts_manager.trigger_actions_sync(vts_actions)
 
-        if self.tts_enabled_var.get():
-            def update_first_voice(seconds: float) -> None:
-                self.root.after(
-                    0,
-                    lambda: self.status_var.set(
-                        format_generation_status(
-                            **status_kwargs,
-                            first_voice_seconds=seconds,
-                        )
-                    ),
-                )
+            if self.tts_enabled_var.get():
+                def update_first_voice(seconds: float) -> None:
+                    self.root.after(
+                        0,
+                        lambda: self.status_var.set(
+                            format_generation_status(
+                                **status_kwargs,
+                                first_voice_seconds=seconds,
+                            )
+                        ),
+                    )
 
-            threading.Thread(
-                target=self._play_tts,
-                args=(clean_result, update_first_voice, effective_voice_speed(
-                    self.voice_speed_var.get(),
-                    auto_pace_enabled=self.auto_voice_pace_var.get(),
-                    pace=pace,
-                )),
-                daemon=True,
-            ).start()
+                threading.Thread(
+                    target=self._play_tts,
+                    args=(clean_result, update_first_voice, effective_voice_speed(
+                        self.voice_speed_var.get(),
+                        auto_pace_enabled=self.auto_voice_pace_var.get(),
+                        pace=pace,
+                    )),
+                    daemon=True,
+                ).start()
+        except Exception as error:
+            logger.warning("Error in _generation_finished: %s", error, exc_info=True)
+            self._generation_failed(str(error) or repr(error))
 
     def _play_tts(self, text: str, on_first_audio_timing=None, speed: float = DEFAULT_VOICE_SPEED) -> None:
         try:
@@ -1373,7 +1463,7 @@ class RuApp:
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    root = tk.Tk()
+    root = ctk.CTk()
     app = RuApp(root)
     try:
         root.mainloop()

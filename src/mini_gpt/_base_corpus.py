@@ -73,13 +73,12 @@ def validate_messages(
     if not system_ok:
         raise ValueError(f"{version} record is missing the system prompt")
 
-    turn_roles = [msg["role"] for msg in messages if msg["role"] == "system" if allow_system]
     if allow_system:
         turn_roles = [m["role"] for m in messages[1:]]
     else:
         turn_roles = [m["role"] for m in messages]
 
-    if turn_roles[0] != "user" or turn_roles[-1] != "user":
+    if not turn_roles or turn_roles[0] != "user" or turn_roles[-1] != "user":
         raise ValueError(f"{version} conversation must start and end with user")
     if any(left == right for left, right in zip(turn_roles, turn_roles[1:])):
         raise ValueError(f"{version} conversation roles must alternate")
@@ -116,6 +115,8 @@ def write_splits_atomic(
 
 
 def validate_alternating_roles(messages: list[dict[str, str]], version: str) -> None:
+    if len(messages) < 2:
+        raise ValueError(f"{version} conversation must have at least 2 messages")
     turn_roles = [m["role"] for m in messages[1:]]
     if turn_roles[0] != "user" or turn_roles[-1] != "user":
         raise ValueError(f"{version} conversation must start and end with user")

@@ -59,7 +59,7 @@ def _mode_for(index: int) -> str:
         if index < count:
             return mode
         index -= count
-    raise AssertionError("mode index out of range")
+    raise ValueError("mode index out of range")
 
 
 def _language_for(index: int) -> str:
@@ -131,7 +131,7 @@ def _prompt(language: str, obj: str, place: str, variant: str, cycle: int) -> st
     if language == "en":
         return f"{en_time.capitalize()}, I keep thinking about the {obj} at {place}; {variant}."
     if language == "mixed":
-        return f"{vi_time.capitalize()}, anh cứ nghĩ về {obj} ở {place}; {variant} nhé."
+        return f"{vi_time.capitalize()}, anh cứ nghĩ về {obj} ở {place}; {variant} nhé. Let me know what you think."
     return f"{vi_time.capitalize()}, anh cứ nghĩ về {obj} ở {place}; {variant} nhé."
 
 

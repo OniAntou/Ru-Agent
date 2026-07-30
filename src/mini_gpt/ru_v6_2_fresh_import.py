@@ -12,7 +12,6 @@ from ._text_utils import normalize_text
 from .ru_style import ru_system_prompt_for
 
 
-_MOJIBAKE_MARKERS = ("Ã", "Â", "á»", "Ä", "Æ", "â")
 _URL_PATTERN = re.compile(r"(?i)(?:https?://|www\.)")
 _AI_META_SAFE_PATTERN = re.compile(
     r"(?i)(?:\bas an ai\b|\blanguage model\b|\bm\u00f4 h\u00ecnh ai\b|\bng\u00f4n ng\u1eef ai\b|"

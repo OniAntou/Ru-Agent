@@ -9,7 +9,7 @@ MAX_RESPONSE_CHARACTERS = 420
 LIST_PATTERN = re.compile(r"(?m)^\s*(?:\d+\.|[-*])\s+")
 AI_DISCLAIMER_PATTERN = re.compile(
     r"(?i)\b(as an ai language model|i cannot access|i do not have (?:the ability|a physical body)|i exist solely as)\b"
-    r"|(?:tÃ´i|mÃ¬nh) lÃ  má»™t (?:mÃ´ hÃ¬nh|ngÆ°á»i máº«u) ngÃ´n ngá»¯ ai|vá»›i tÆ° cÃ¡ch lÃ ",
+    r"|tôi là một (?:mô hình|người mẫu) ngôn ngữ ai|với tư cách là"
 )
 
 

@@ -48,3 +48,5 @@
   preserving playback order; evaluate VAD/barge-in only after that foundation
   passes its quality gate.
 - [ ] Avatar and vision work after the text and voice paths are stable.
+- [ ] Implement Discord Bot feature: Bring AI into Voice Channels. (STT: CTranslate2 Whisper. TTS: OmniVoice ONNX / Python backend).
+

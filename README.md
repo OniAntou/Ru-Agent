@@ -162,7 +162,7 @@ collisions, repeated full replies, and an overused response opening.
 Recreate the authored base and then explicitly reapply the reviewed rows:
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe scripts\build_ru_llama_v6_1_data.py --output-dir data\conversations\ru_v6_1 --seed 42
+& D:\LLM\.venv\Scripts\python.exe scripts\build_corpus.py --version v6_1 --output-dir data\conversations\ru_v6_1 --seed 42
 & D:\LLM\.venv\Scripts\python.exe scripts\merge_approved_into_ru_v6_1.py --dataset-dir data\conversations\ru_v6_1 --approved-file data\conversations\approved.jsonl
 ```
 
@@ -185,7 +185,7 @@ mild/medium profanity under the documented safety boundary.
 Rebuild it deterministically with:
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe scripts\build_ru_llama_v6_2_fresh_data.py
+& D:\LLM\.venv\Scripts\python.exe scripts\build_corpus.py --version v6_2_fresh
 ```
 
 The candidate was trained from the v6 adapter with the bounded config. It ran

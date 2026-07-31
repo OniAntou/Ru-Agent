@@ -236,3 +236,10 @@ cd D:\LLM
 .venv\Scripts\python.exe -m pytest tests/ -q --tb=short
 .venv\Scripts\python.exe -m py_compile src/mini_gpt/*.py scripts/*.py omnivoice_tts_server.py run_tests.py test_inject.py
 ```
+
+## Round 4 (2026-08-01): Corpus pipeline refactor
+
+- `scripts/build_corpus.py` — CLI hợp nhất build mọi version (`--version {v6,v6_1,v6_2,v6_2_fresh,v6_3}`), thay thế 5 script `build_ru_llama_v6*_data.py` (đã xóa).
+- `src/mini_gpt/corpus_common.py` — machinery dùng chung v6.1/v6.2 (Scene/SCENES, times, stances, acks/details/questions, slots, record, history, final_prompt).
+- `src/mini_gpt/corpus_validate.py` — validator tham số hóa thay `_normalize_row`/`build_*_corpus` trùng ~90% của v6.1/v6.2; hai file corpus thành thin wrappers.
+- `scripts/verify_corpus_byte_identical.py` — gate SHA256 toàn bộ version so data hiện có (byte-for-byte).

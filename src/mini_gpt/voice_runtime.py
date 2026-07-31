@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,9 +51,13 @@ def voice_selection_from_saved(value: object) -> VoiceSelection:
     return _SELECTIONS_BY_LABEL.get(_LEGACY_LABELS.get(value, value), DEFAULT_VOICE_SELECTION)
 
 
-# OmniVoice service defaults
-_OMNIVOICE_HOST = "127.0.0.1"
+# OmniVoice service defaults (overridable via environment)
+_OMNIVOICE_HOST = os.environ.get("RU_VOICE_HOST", "127.0.0.1")
 _OMNIVOICE_PORT = 5052
+try:
+    _OMNIVOICE_PORT = int(os.environ.get("RU_VOICE_PORT", _OMNIVOICE_PORT))
+except ValueError:
+    _OMNIVOICE_PORT = 5052
 _OMNIVOICE_ENV_DIR = "omnivoice_env"
 _OMNIVOICE_SERVER_SCRIPT = "omnivoice_tts_server.py"
 
@@ -68,3 +73,17 @@ def voice_service_config(selection: VoiceSelection, project_root: Path) -> Voice
         python_path=project_root / _OMNIVOICE_ENV_DIR / "Scripts" / "python.exe",
         server_script=project_root / _OMNIVOICE_SERVER_SCRIPT,
     )
+
+
+def validate_voice_environment(config: VoiceServiceConfig) -> None:
+    missing = [
+        path
+        for path in (config.python_path, config.server_script)
+        if not path.is_file()
+    ]
+    if missing:
+        raise RuntimeError(
+            "Môi trường OmniVoice chưa setup đúng cách, thiếu: "
+            + ", ".join(str(path) for path in missing)
+            + ". Hãy tạo omnivoice_env (Scripts/python.exe) và omnivoice_tts_server.py."
+        )

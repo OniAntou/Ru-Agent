@@ -31,7 +31,11 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     report = merge_approved_into_v6_1(args.dataset_dir, args.approved_file)
-    print(json.dumps(report["approved_import"], ensure_ascii=False, indent=2))
+    approved_import = report.get("approved_import")
+    if approved_import is None:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        raise SystemExit("Merge report did not include an approved_import section.")
+    print(json.dumps(approved_import, ensure_ascii=False, indent=2))
     return 0
 
 

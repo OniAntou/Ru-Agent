@@ -3,17 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 
 from mini_gpt import gui
-from mini_gpt.voice_runtime import VOICE_SELECTIONS, voice_selection_by_label, voice_selection_from_saved
+from mini_gpt.voice_runtime import VOICE_SELECTIONS, voice_selection_by_label, voice_selection_from_saved, voice_service_config
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class FakeResponse:
     status_code = 200
 
-    def __init__(self, audio_path: str) -> None:
-        self.audio_path = audio_path
+    def __init__(self, content: bytes) -> None:
+        self.content = content
 
     def json(self) -> dict[str, str]:
-        return {"audio_path": self.audio_path}
+        return {}
 
 
 def test_gui_voice_labels_include_all_choices_and_migrate_legacy_label() -> None:
@@ -29,22 +31,24 @@ def test_ai_vy_omnivoice_request_uses_its_service_and_minimal_payload(tmp_path) 
     audio.write_bytes(b"RIFF")
     requests: list[tuple[str, dict[str, str]]] = []
     selection = voice_selection_by_label("Ái Vy (OmniVoice)")
+    base_url = voice_service_config(selection, PROJECT_ROOT).base_url
 
     result = gui.request_tts_audio(
         "xin chào",
         selection,
         speed=0.82,
-        post=lambda url, *, json, timeout: requests.append((url, json)) or FakeResponse(str(audio)),
+        post=lambda url, *, json, timeout: requests.append((url, json)) or FakeResponse(audio.read_bytes()),
     )
 
-    assert result == str(audio)
+    assert result == b"RIFF"
     assert requests == [
-        ("http://127.0.0.1:5052/tts", {"text": "xin chào", "voice_profile": "ai_vy", "speed": 0.82})
+        (f"{base_url}/tts", {"text": "xin chào", "voice_profile": "ai_vy", "speed": 0.82})
     ]
 
 
 def test_selected_omnivoice_failure_never_calls_gwen() -> None:
     selection = voice_selection_by_label("Ru (OmniVoice)")
+    base_url = voice_service_config(selection, PROJECT_ROOT).base_url
     requests: list[str] = []
 
     try:
@@ -58,11 +62,12 @@ def test_selected_omnivoice_failure_never_calls_gwen() -> None:
     else:
         raise AssertionError("Selected OmniVoice error should be surfaced")
 
-    assert requests == ["http://127.0.0.1:5052/tts"]
+    assert requests == [f"{base_url}/tts"]
 
 
 def test_omnivoice_service_starts_with_d_runtime_and_root_script(monkeypatch) -> None:
     selection = voice_selection_by_label("Ái Vy (OmniVoice)")
+    config = voice_service_config(selection, PROJECT_ROOT)
     commands: list[dict[str, object]] = []
     availability = iter((False, True))
     monkeypatch.setattr(gui, "voice_service_available", lambda value: next(availability))
@@ -74,7 +79,4 @@ def test_omnivoice_service_starts_with_d_runtime_and_root_script(monkeypatch) ->
         monotonic=iter((0.0, 0.1)).__next__,
     )
 
-    assert commands[0]["command"] == [
-        str(Path("D:/LLM/omnivoice_env/Scripts/python.exe")),
-        str(Path("D:/LLM/omnivoice_tts_server.py")),
-    ]
+    assert commands[0]["command"] == [str(config.python_path), str(config.server_script)]

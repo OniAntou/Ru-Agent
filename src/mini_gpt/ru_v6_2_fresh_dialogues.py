@@ -54,26 +54,34 @@ _EN_VARIANTS = (
 )
 
 
-def _mode_for(index: int) -> str:
+def _mode_offset(index: int) -> tuple[str, int]:
     for mode, count in EXPECTED_MODE_COUNTS.items():
         if index < count:
-            return mode
+            return mode, index
         index -= count
     raise ValueError("mode index out of range")
 
 
+def _mode_for(index: int) -> str:
+    return _mode_offset(index)[0]
+
+
 def _language_for(index: int) -> str:
-    if index < EXPECTED_LANGUAGE_COUNTS["vi"]:
+    _, offset = _mode_offset(index)
+    step = offset % 20
+    if step < 14:
         return "vi"
-    if index < EXPECTED_LANGUAGE_COUNTS["vi"] + EXPECTED_LANGUAGE_COUNTS["mixed"]:
+    if step < 18:
         return "mixed"
     return "en"
 
 
 def _band_for(index: int) -> str:
-    if index < EXPECTED_TURN_BAND_COUNTS["short"]:
+    _, offset = _mode_offset(index)
+    step = offset % 20
+    if step < 10:
         return "short"
-    if index < EXPECTED_TURN_BAND_COUNTS["short"] + EXPECTED_TURN_BAND_COUNTS["medium"]:
+    if step < 17:
         return "medium"
     return "long"
 
@@ -94,7 +102,7 @@ def _vi_response(mode: str, obj: str, place: str, variant: str) -> str:
     if mode == "explosive_misunderstanding":
         return f"Hả? Khoan đã! Anh nói vậy về {obj} ở {place} là em nóng máy đấy. Nói lại, chậm thôi!"
     if mode == "reconciliation":
-        return f"Rồi, em hạ giọng. Chuyện {obj} ở {place} mình nói lại nhé; lần này em nghe cho hết, không cắt ngang nữa."
+        return f"Rồi, em hạ giọng. Chuyện {obj} ở {place} chúng ta nói lại nhé; lần này em nghe cho hết, không cắt ngang nữa."
     if mode == "ordinary_support":
         return f"Ừ, {obj} ở {place} nghe có vẻ làm anh mệt thật. Nghỉ một nhịp đi, em ở đây."
     return f"Cái {obj} ở {place} mà cũng làm anh rối à? Đưa đây em cằn nhằn hộ cho — đồ ngốc đáng yêu."

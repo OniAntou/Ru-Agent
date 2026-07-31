@@ -2,7 +2,17 @@ from datetime import UTC, datetime, timedelta
 import json
 import threading
 
+import pytest
+
 from mini_gpt.memory import MemoryKind, MemoryStore, StructuredMemoryStore
+
+
+@pytest.fixture(scope="session")
+def shared_store(tmp_path_factory):
+    base = tmp_path_factory.mktemp("shared_memory")
+    store = StructuredMemoryStore(base / "memory.db", index_path=base / "memory.faiss")
+    yield store
+    store.clear()
 
 
 def test_structured_store_can_be_created_in_worker_then_read_from_gui_thread(tmp_path):
@@ -43,10 +53,10 @@ def test_clear_removes_only_memory_artifacts(tmp_path):
     assert unrelated_path.read_text(encoding="utf-8") == "keep"
 
 
-def test_store_creates_and_reads_active_record(tmp_path):
-    store = StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "memory.faiss")
+def test_store_creates_and_reads_active_record(shared_store):
+    shared_store.clear()
 
-    record = store.upsert(
+    record = shared_store.upsert(
         kind=MemoryKind.PREFERENCE,
         content="Anh prefers Ru to address him as anh and itself as em.",
         scope=None,
@@ -56,13 +66,13 @@ def test_store_creates_and_reads_active_record(tmp_path):
     )
 
     assert record.status == "active"
-    assert store.get(record.id).content == record.content
-    assert store.count_active() == 1
+    assert shared_store.get(record.id).content == record.content
+    assert shared_store.count_active() == 1
 
 
-def test_correction_supersedes_previous_active_record(tmp_path):
-    store = StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "memory.faiss")
-    old = store.upsert(
+def test_correction_supersedes_previous_active_record(shared_store):
+    shared_store.clear()
+    old = shared_store.upsert(
         MemoryKind.PREFERENCE,
         "Anh prefers brief replies.",
         None,
@@ -70,7 +80,7 @@ def test_correction_supersedes_previous_active_record(tmp_path):
         1.0,
         0.7,
     )
-    new = store.upsert(
+    new = shared_store.upsert(
         MemoryKind.PREFERENCE,
         "Anh prefers detailed replies.",
         None,
@@ -80,13 +90,13 @@ def test_correction_supersedes_previous_active_record(tmp_path):
         supersedes_id=old.id,
     )
 
-    assert store.get(old.id).status == "superseded"
-    assert store.get(new.id).status == "active"
+    assert shared_store.get(old.id).status == "superseded"
+    assert shared_store.get(new.id).status == "active"
 
 
-def test_expired_unpinned_record_is_not_active(tmp_path):
-    store = StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "memory.faiss")
-    store.upsert(
+def test_expired_unpinned_record_is_not_active(shared_store):
+    shared_store.clear()
+    shared_store.upsert(
         MemoryKind.PROJECT,
         "D:\\OldProject uses legacy tooling.",
         "D:\\OldProject",
@@ -96,10 +106,11 @@ def test_expired_unpinned_record_is_not_active(tmp_path):
         expires_at=datetime.now(UTC) - timedelta(seconds=1),
     )
 
-    assert store.count_active() == 0
+    assert shared_store.count_active() == 0
 
 
-def test_migration_imports_only_safe_legacy_blocks(tmp_path):
+def test_migration_imports_only_safe_legacy_blocks(tmp_path, shared_store):
+    shared_store.clear()
     legacy_path = tmp_path / "memory_texts.json"
     legacy_path.write_text(
         json.dumps(
@@ -111,26 +122,25 @@ def test_migration_imports_only_safe_legacy_blocks(tmp_path):
         ),
         encoding="utf-8",
     )
-    store = StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "memory.faiss")
 
-    assert store.migrate_legacy_transcripts(legacy_path) == {"imported": 1, "rejected": 1}
-    assert store.count_active() == 1
+    assert shared_store.migrate_legacy_transcripts(legacy_path) == {"imported": 1, "rejected": 1}
+    assert shared_store.count_active() == 1
     assert legacy_path.exists()
 
 
-def test_retrieve_prefers_exact_project_scope_and_obeys_context_budget(tmp_path):
-    store = StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "memory.faiss")
-    store.upsert(MemoryKind.PROJECT, "D:\\LLM uses a local GGUF runtime.", "D:\\LLM", "project note", 1.0, 0.9)
-    store.upsert(MemoryKind.PROJECT, "D:\\Other uses a hosted runtime.", "D:\\Other", "other note", 1.0, 0.9)
+def test_retrieve_prefers_exact_project_scope_and_obeys_context_budget(shared_store):
+    shared_store.clear()
+    shared_store.upsert(MemoryKind.PROJECT, "D:\\LLM uses a local GGUF runtime.", "D:\\LLM", "project note", 1.0, 0.9)
+    shared_store.upsert(MemoryKind.PROJECT, "D:\\Other uses a hosted runtime.", "D:\\Other", "other note", 1.0, 0.9)
 
-    records = store.retrieve("Trong D:\\LLM runtime memory đang dùng gì?", limit=3, max_chars=140)
+    records = shared_store.retrieve("Trong D:\\LLM runtime memory đang dùng gì?", limit=3, max_chars=140)
 
     assert [record.scope for record in records] == ["D:\\LLM"]
-    assert len(store.render_context(records, max_chars=140)) <= 140
+    assert len(shared_store.render_context(records, max_chars=140)) <= 140
 
 
-def test_retrieve_returns_no_irrelevant_memory(tmp_path):
-    store = StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "memory.faiss")
-    store.upsert(MemoryKind.PREFERENCE, "Anh prefers brief replies.", None, "explicit", 1.0, 0.9)
+def test_retrieve_returns_no_irrelevant_memory(shared_store):
+    shared_store.clear()
+    shared_store.upsert(MemoryKind.PREFERENCE, "Anh prefers brief replies.", None, "explicit", 1.0, 0.9)
 
-    assert store.retrieve("Thời tiết trên Sao Hoả thế nào?", limit=3, max_chars=400) == ()
+    assert shared_store.retrieve("Thời tiết trên Sao Hoả thế nào?", limit=3, max_chars=400) == ()

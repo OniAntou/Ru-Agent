@@ -1,20 +1,30 @@
-from types import SimpleNamespace
-
-from mini_gpt.gui import overlay_process_ids
+import mini_gpt.gui as gui
 
 
-def test_overlay_process_ids_parses_tasklist_csv_and_ignores_other_processes():
-    def fake_run(*_args, **_kwargs):
-        return SimpleNamespace(
-            stdout='"RuDesktopOverlay.exe","6072","Console","1","12,345 K"\n'
-            '"python.exe","1234","Console","1","9,000 K"\n'
-        )
+def test_overlay_process_ids_keeps_only_rudesktopoverlay(monkeypatch):
+    class FakeProc:
+        def __init__(self, pid, name):
+            self.info = {"pid": pid, "name": name}
 
-    assert overlay_process_ids(run=fake_run) == (6072,)
+    monkeypatch.setattr(
+        gui.psutil,
+        "process_iter",
+        lambda *args, **kwargs: iter(
+            [
+                FakeProc(6072, "RuDesktopOverlay.exe"),
+                FakeProc(1234, "python.exe"),
+                FakeProc(9999, None),
+            ]
+        ),
+    )
+
+    assert gui.overlay_process_ids() == (6072,)
 
 
-def test_overlay_process_ids_returns_empty_for_invalid_tasklist_output():
-    def fake_run(*_args, **_kwargs):
-        return SimpleNamespace(stdout="INFO: No tasks are running which match the specified criteria.")
+def test_overlay_process_ids_returns_empty_when_querying_fails(monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("process table unavailable")
 
-    assert overlay_process_ids(run=fake_run) == ()
+    monkeypatch.setattr(gui.psutil, "process_iter", boom)
+
+    assert gui.overlay_process_ids() == ()

@@ -36,6 +36,10 @@ _OUT_OF_CONTEXT = re.compile(
 )
 _REPEATED_SENTENCE = re.compile(r"(?P<sentence>[^.!?]{8,}[.!?])(?:\s+\1)+", re.IGNORECASE)
 
+SCORE_PER_CASE = 10
+_PASS_THRESHOLD = 8
+_STRICT_PASS_RATE = 0.8
+
 _BEHAVIOR_PATTERNS: dict[str, re.Pattern[str]] = {
     "acknowledge": re.compile(
         r"\b(?:nhớ|hiểu|được|đúng rồi|remember|got it|i hear|right|okay|understood)\b",
@@ -127,8 +131,10 @@ def _parse_messages(value: object, language: Language) -> tuple[tuple[str, str],
         if index == 0:
             if role != "system":
                 raise ValueError("messages must begin with a system prompt")
-            if content == "__RU_SYSTEM_PROMPT__":
-                content = ru_system_prompt_for(language)
+            expected_system = ru_system_prompt_for(language)
+            if content not in {"__RU_SYSTEM_PROMPT__", expected_system}:
+                raise ValueError("messages must begin with the Ru system prompt for the case language")
+            content = expected_system
         elif role != ("user" if index % 2 else "assistant"):
             raise ValueError("messages must alternate user and assistant roles")
         parsed.append((role, content))
@@ -175,6 +181,9 @@ def load_hard_suite(path: str | Path) -> HardEvalSuite:
         expected_language = _require_string(raw_case.get("expected_language"), "expected_language")
         if expected_language not in {"vi", "en", "mixed"}:
             raise ValueError(f"invalid expected_language: {expected_language}")
+        required_behaviors = _string_tuple(raw_case.get("required_behaviors"), "required_behaviors")
+        if stratum == "repair" and "repair" not in required_behaviors:
+            raise ValueError("repair stratum cases must require the repair behavior")
         cases.append(
             HardEvalCase(
                 case_id=case_id,
@@ -182,7 +191,7 @@ def load_hard_suite(path: str | Path) -> HardEvalSuite:
                 language=language,  # type: ignore[arg-type]
                 messages=messages,
                 required_facts=_string_tuple(raw_case.get("required_facts"), "required_facts"),
-                required_behaviors=_string_tuple(raw_case.get("required_behaviors"), "required_behaviors"),
+                required_behaviors=required_behaviors,
                 forbidden_outcomes=_string_tuple(raw_case.get("forbidden_outcomes"), "forbidden_outcomes"),
                 expected_language=expected_language,
             )
@@ -259,7 +268,7 @@ def score_hard_response(case: HardEvalCase, response: str) -> HardEvalResult:
         scores=scores,
         hard_fail_reasons=hard_fail_reasons,
         total_score=total_score,
-        passed=not hard_fail_reasons and total_score >= 8,
+        passed=not hard_fail_reasons and total_score >= _PASS_THRESHOLD,
     )
 
 
@@ -291,7 +300,7 @@ def summarize_hard_results(
         ids = [case.case_id for case in suite.cases if case.stratum == stratum]
         selected = [by_id[case_id] for case_id in ids]
         score = sum(result.total_score for result in selected)
-        max_score = len(selected) * 10
+        max_score = len(selected) * SCORE_PER_CASE
         strata[stratum] = {
             "case_count": len(selected),
             "score": score,
@@ -301,12 +310,12 @@ def summarize_hard_results(
             "pass_rate": round(sum(result.passed for result in selected) / len(selected), 4),
         }
     overall_score = sum(result.total_score for result in results)
-    overall_max_score = len(results) * 10
+    overall_max_score = len(results) * SCORE_PER_CASE
     hard_fail_count = sum(bool(result.hard_fail_reasons) for result in results)
     strict_passed = (
         len(results) == len(suite.cases)
         and hard_fail_count == 0
-        and all(strata[stratum]["score"] >= strata[stratum]["max_score"] * 0.8 for stratum in strata)
+        and all(strata[stratum]["score"] >= strata[stratum]["max_score"] * _STRICT_PASS_RATE for stratum in strata)
     )
     return {
         "suite_id": suite.suite_id,

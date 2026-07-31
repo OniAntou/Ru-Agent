@@ -111,6 +111,31 @@ def test_gwen_engine_copies_returned_audio_and_releases_the_owned_service(tmp_pa
     ]
 
 
+class InvalidPidHttp:
+    def get(self, path: str) -> FakeResponse:
+        return FakeResponse({"pid": 0, "model_loaded": False})
+
+    def post(self, path: str, payload: dict[str, str] | None = None) -> FakeResponse:
+        return FakeResponse({"ready": True})
+
+
+def test_gwen_engine_rejects_a_status_without_a_valid_pid(tmp_path: Path) -> None:
+    engine = GwenHttpBenchmarkEngine(http=InvalidPidHttp())
+
+    with pytest.raises(RuntimeError, match="valid service PID"):
+        engine.load(tmp_path / "reference.wav", "reference text")
+
+
+def test_gwen_engine_rejects_a_missing_returned_audio_path(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.wav"
+    http = FakeGwenHttp(missing)
+    engine = GwenHttpBenchmarkEngine(http=http)
+
+    engine.load(tmp_path / "reference.wav", "reference text")
+    with pytest.raises(RuntimeError, match="playable WAV path"):
+        engine.synthesize("Chào anh.", tmp_path / "output.wav")
+
+
 def test_omnivoice_import_is_deferred_until_load(tmp_path: Path) -> None:
     import_calls: list[str] = []
 
@@ -302,9 +327,9 @@ def test_run_benchmark_records_a_failed_model_load_without_fallback(tmp_path: Pa
         "trial": None,
         "utterance_id": None,
         "status": "error",
-            "error_type": "RuntimeError",
-            "message": "CUDA out of memory",
-            "voice_profile": "ru",
+        "error_type": "RuntimeError",
+        "message": "CUDA out of memory",
+        "voice_profile": "ru",
     }]
 
 

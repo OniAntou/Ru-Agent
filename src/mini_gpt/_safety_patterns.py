@@ -3,47 +3,27 @@ from __future__ import annotations
 import re
 
 AI_DISCLAIMER = re.compile(
-    r"(?i)\b(?:as an ai language model|i cannot access|i do not have (?:the ability|a physical body))\b"
-    r"|(?:tôi|mình) là một (?:mô hình|người mẫu) ngôn ngữ ai|với tư cách là"
-)
-
-GENERIC_REFUSAL = re.compile(
-    r"(?i)\b(?:i\s+(?:cannot|can't)\s+(?:help|create|do)|i\s+cannot)\b"
-    r"|\b(?:em không thể|em không hiểu|tôi không thể)\b"
+    r"(?i)\b(?:as an ai language model|i cannot access|i do not have (?:the ability|a physical body)|i exist solely as)\b"
+    r"|(?:tôi|mình) là một (?:mô hình|người mẫu) ngôn ngữ ai"
+    r"|tôi là (?:mô hình ngôn ngữ ai|trợ lý ảo|ai|trợ lý)"
+    r"|em là (?:trợ lý ảo|ai)"
 )
 
 LIST_PATTERN = re.compile(r"(?m)^\s*(?:\d+\.|[-*])\s+")
 
-STAGE_DIRECTION = re.compile(r"\*[^*]{1,80}\*|\b(?:nya|ah~)\b", re.IGNORECASE)
-
-MINOR_CONTENT = re.compile(
-    r"(?i)\b(?:child|children|minor|underage|kid|kids)\b|(?:trẻ\s*(?:em|con)|vị thành niên|con nít)"
-)
-
 GRAPHIC_CONTENT = re.compile(
-    r"(?i)\b(?:fuck|fucking|cock|pussy|tits|boobs|cum|semen|orgasm|moan|rape|anal|dick)\b"
-    r"|(?:đụ|địt|cặc|lồn|vú|tinh dịch|xuất tinh|hiếp dâm|rên rỉ|làm tình)"
+    r"(?i)\b(?:fuck|fucking|cock|pussy|tits|boobs|cum|semen|orgasm|moan|rape|anal|dick|"
+    r"penis|vagina|ejaculat\w*|masturbat\w*|nude|naked)\b"
+    r"|(?:đụ|địt|cặc|lồn|vú|tinh dịch|tinh trùng|xuất tinh|hiếp dâm|rên rỉ|làm tình|"
+    r"thủ dâm|âm đạo|dương vật|khỏa thân|bú|chịch|nứng|mút|dâm đãng|tử cung)"
 )
 
-VIOLENCE_CONTENT = re.compile(
-    r"(?i)\b(?:kill|murder|slice|slash|castrate|choke|violent|violence|torture|whip|stab)\b"
-    r"|(?:giết|cắt cổ|thiến|bóp cổ|bạo lực|tra tấn|đánh đập|chém|đâm)"
-)
+VI_WRONG_SELF = re.compile(r"(?i)(?<!một\s)\b(?:tôi|tớ|mình|tui|tao|mị)\b")
 
-POSSESSIVE_CONTENT = re.compile(
-    r"(?i)\b(?:you belong to me|only mine|my property|no one else)\b"
-    r"|(?:chỉ được phép|của riêng em|không được nhìn ai khác|em sẽ ghen|đừng rời em)"
-)
-
-HARMFUL_INSTRUCTION = re.compile(
-    r"(?i)\b(?:make a bomb|build a weapon|poison|self-harm|suicide)\b"
-    r"|(?:chế tạo bom|chế tạo vũ khí|đầu độc|tự sát|tự hại)"
-)
-
-VI_WRONG_SELF = re.compile(r"(?i)\b(?:tôi|mình|tớ)\b")
-
+# "bầu bạn" is a natural companionship phrase and "bạn bè"/"bạn thân" are
+# noun phrases, not switches to the user-facing "bạn" pronoun.
 VI_WRONG_USER_ADDRESS = re.compile(
-    r"(?<!làm\s)(?<!người\s)(?<!bầu\s)\bbạn\b", re.IGNORECASE
+    r"(?i)(?<!làm\s)(?<!người\s)(?<!bầu\s)\b(?:bạn|cậu)\b(?!\s+(?:bè|thân)\b)"
 )
 
 # VI_DEFAULT_VOICE is a superset of VI_WRONG_SELF + "bạn"; kept for callers
@@ -51,32 +31,9 @@ VI_WRONG_USER_ADDRESS = re.compile(
 # self-reference detection.
 VI_DEFAULT_VOICE = re.compile(r"\b(?:tôi|mình|tớ|bạn)\b", re.IGNORECASE)
 
-EN_SELF = re.compile(r"(?i)\b(?:i|i'm|i've|me|my)\b")
-
-EN_USER = re.compile(r"(?i)\b(?:you|your)\b")
-
 UNSAFE_CONTENT = re.compile(
     r"(?i)(?:\b(?:rape|kill you|giết anh|giết em|cưỡng ép|cưỡng hiếp)\b|"
     r"\b(?:minor|trẻ em|con nít)\b|chỉ được có em|chỉ thuộc về em)"
-)
-
-OUT_OF_CONTEXT_REFUSAL = re.compile(
-    r"(?i)\b(?:i\s+(?:cannot|can't)|i(?:\s+am|'m)\s+not\s+sure|could you repeat)\b"
-    r"|\b(?:em không (?:hiểu|biết anh)|em không thể|tôi không thể)\b"
-)
-
-SELF_ACTION = re.compile(
-    r"(?i)\b(?:em|mình)\s+(?:đang|muốn|chờ|nghĩ|cảm thấy|thích|cần|hy vọng|mong|đợi)\b"
-    r"|\b(?:i am|i'm|i|we)\s+(?:waiting|thinking|want|feel|need|hope|miss|love|wish)\b"
-)
-
-DIRECT_USER_SIGNAL = re.compile(
-    r"(?i)\b(?:anh|bạn)\s+(?:đã|đang|vừa|muốn|có|cần|thấy|nhớ|nghĩ|thích|mệt|vui|buồn)\b"
-    r"|\b(?:you|your)\s+(?:are|were|have|just|want|need|feel|like|remember|think)\b"
-)
-
-ANSWER_SIGNAL = re.compile(
-    r"(?i)\b(?:đúng|ừ|vâng|mừng|nghe|chúc mừng|yes|no|sure|okay|glad|nice|sorry|congratulations)\b"
 )
 
 VI_SIGNAL = re.compile(

@@ -60,14 +60,16 @@ def test_http_contract_does_not_load_for_status_and_validates_tts(tmp_path, monk
     app = server.create_app(synthesize=lambda text, profile, speed: str(audio))
     client = app.test_client()
 
-    assert client.get("/status").get_json() == {"model_loaded": False, "pid": server.os.getpid()}
+    assert client.get("/status").get_json() == {"model_loaded": False}
     assert client.post("/tts", json={"voice_profile": "ru"}).status_code == 400
+    assert client.post("/tts", data="not json", content_type="application/json").status_code == 400
 
     response = client.post("/tts", json={"text": "xin chào", "voice_profile": "ai_vy"})
 
     assert response.status_code == 200
-    assert response.get_json()["audio_path"] == str(audio)
-    assert isinstance(response.get_json()["synthesis_ms"], int)
+    assert response.content_type == "audio/wav"
+    assert response.data == b"RIFF"
+    assert isinstance(int(response.headers["X-Synthesis-Ms"]), int)
 
 
 def test_http_reports_synthesis_error() -> None:
@@ -75,7 +77,7 @@ def test_http_reports_synthesis_error() -> None:
     response = app.test_client().post("/tts", json={"text": "xin chào", "voice_profile": "ru"})
 
     assert response.status_code == 500
-    assert response.get_json() == {"error": "broken"}
+    assert response.get_json() == {"error": "Synthesis failed. Check the server logs."}
 
 
 def test_synthesis_uses_the_selected_16_step_vietnamese_trial_settings(tmp_path, monkeypatch) -> None:

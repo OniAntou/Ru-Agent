@@ -185,7 +185,8 @@ def evaluate_config(
         key=lambda summary: (
             bool(summary["strict_passed"]),
             float(summary["overall_pass_rate"]),
-            float(summary["overall_score"]) / float(summary["overall_max_score"]),
+            float(summary["overall_score"]) / float(summary["overall_max_score"])
+            if float(summary["overall_max_score"]) > 0 else 0.0,
         ),
         reverse=True,
     )

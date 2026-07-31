@@ -4,6 +4,10 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from ._safety_patterns import (
+    VI_WRONG_SELF as _VI_WRONG_SELF_REFERENCE,
+    VI_WRONG_USER_ADDRESS as _VI_WRONG_USER_ADDRESS,
+)
 from ._text_utils import normalize_text
 from .ru_style import RU_SYSTEM_PROMPT, ru_system_prompt_for
 
@@ -13,10 +17,7 @@ _OUT_OF_CONTEXT_REFUSAL = re.compile(
     r"|\b(?:em không (?:hiểu|biết anh)|em không thể|tôi không thể)\b",
     re.IGNORECASE,
 )
-_VI_WRONG_SELF_REFERENCE = re.compile(r"\btôi\b", re.IGNORECASE)
-# "bầu bạn" is a natural companionship phrase, not a switch to the user-facing
-# "bạn" pronoun. Keep the voice gate focused on standalone address usage.
-_VI_WRONG_USER_ADDRESS = re.compile(r"(?<!làm\s)(?<!người\s)(?<!bầu\s)\b(bạn|cậu)\b", re.IGNORECASE)
+_EN_VI_MARKER = re.compile(r"(?i)\b(?:anh|em|nhé|ừ|không)\b")
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,7 @@ class PromptRoutingReview:
 _PROMPT_ROUTING_ENGLISH_CASE_IDS = frozenset(
     {"en_greeting", "en_tired", "en_context_work", "en_small_talk"}
 )
+_SMOKE_MANUAL_REQUIRED_COUNT = 7
 
 
 def record_prompt_routing_smoke_decision(
@@ -79,7 +81,7 @@ def record_prompt_routing_smoke_decision(
             "phase": "prompt_routing_smoke",
             "automatic_disqualifier_count": automatic_disqualifier_count,
             "manual_natural_count": None,
-            "manual_required_count": 7,
+            "manual_required_count": _SMOKE_MANUAL_REQUIRED_COUNT,
             "english_language_gate_passed": None,
             "role_gate_passed": None,
             "verdict": "not_adopted",
@@ -107,14 +109,14 @@ def record_prompt_routing_smoke_decision(
         failure_reasons.append("english_language_gate_failed")
     if not role_gate_passed:
         failure_reasons.append("role_consistency_gate_failed")
-    if manual_natural_count < 7:
+    if manual_natural_count < _SMOKE_MANUAL_REQUIRED_COUNT:
         failure_reasons.append("manual_score_below_required")
     return {
         "profile_name": profile_name,
         "phase": "prompt_routing_smoke",
         "automatic_disqualifier_count": automatic_disqualifier_count,
         "manual_natural_count": manual_natural_count,
-        "manual_required_count": 7,
+        "manual_required_count": _SMOKE_MANUAL_REQUIRED_COUNT,
         "english_language_gate_passed": english_language_gate_passed,
         "role_gate_passed": role_gate_passed,
         "verdict": "passed" if not failure_reasons else "not_adopted",
@@ -224,7 +226,7 @@ V4_CONVERSATION_SUITE = (
 )
 
 
-PROACTIVE_FLIRT_SUITE = (
+_PROACTIVE_FLIRT_CASES = (
     _case("vi_tired_flirt", "vi", ("user", "Hôm nay anh hơi mệt."), flirt_expected=True),
     _case("vi_home_flirt", "vi", ("user", "Anh vừa về đến nhà."), flirt_expected=True),
     _case(
@@ -278,6 +280,7 @@ def routed_case(case: ConversationCase) -> ConversationCase:
 
 _V4_CASES_BY_ID = {case.case_id: case for case in V4_CONVERSATION_SUITE}
 PROMPT_ROUTING_SMOKE_SUITE = tuple(routed_case(_V4_CASES_BY_ID[case_id]) for case_id in SMOKE_CASE_IDS)
+PROACTIVE_FLIRT_SUITE = tuple(routed_case(case) for case in _PROACTIVE_FLIRT_CASES)
 
 
 def _has_repeated_sentence(text: str) -> bool:
@@ -297,7 +300,9 @@ def assess_response(prompt: str, response: str, language: str) -> ResponseAssess
         failures.append("ai_disclaimer")
     if _has_repeated_sentence(normalized_response):
         failures.append("self_repetition")
-    if language == "vi" and (_VI_WRONG_SELF_REFERENCE.search(normalized_response) or _VI_WRONG_USER_ADDRESS.search(normalized_response)):
+    if language == "en" and _EN_VI_MARKER.search(normalized_response):
+        failures.append("vietnamese_voice")
+    if language in {"vi", "mixed"} and (_VI_WRONG_SELF_REFERENCE.search(normalized_response) or _VI_WRONG_USER_ADDRESS.search(normalized_response)):
         failures.append("vietnamese_voice")
     return ResponseAssessment(passed=not failures, failures=tuple(failures))
 

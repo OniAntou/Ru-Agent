@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import logging
 from collections import Counter
 from pathlib import Path
 from random import Random
@@ -79,6 +80,7 @@ def _normalize_row(raw_row: dict[str, object]) -> dict[str, object]:
 
 
 def build_ru_v6_corpus(rows: list[dict[str, object]], output_dir: str | Path, seed: int = 42) -> dict[str, object]:
+    logging.getLogger(__name__).warning("V6 corpus is deprecated; use v6.1+ corpora instead")
     normalized = [_normalize_row(row) for row in rows]
     if len(normalized) != EXPECTED_EXAMPLES:
         raise ValueError(f"{VERSION} corpus must contain exactly {EXPECTED_EXAMPLES} rows")

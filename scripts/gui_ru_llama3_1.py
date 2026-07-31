@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 import sys
 from pathlib import Path
 from flask import Flask, jsonify, render_template_string, request
@@ -12,8 +14,22 @@ from mini_gpt.ru_style import RU_SYSTEM_PROMPT
 
 app = Flask(__name__)
 
-BASE_MODEL = str(PROJECT_ROOT / "models" / "llama3.1-8b-instruct-hf")
-ADAPTER_DIR = str(PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6_3")
+BASE_MODEL = os.environ.get(
+    "RU_BASE_MODEL", str(PROJECT_ROOT / "models" / "llama3.1-8b-instruct-hf")
+)
+ADAPTER_DIR = os.environ.get(
+    "RU_ADAPTER_DIR", str(PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6_3")
+)
+
+MAX_HISTORY_TURNS = 20
+MAX_MESSAGE_CHARS = 4000
+
+_adapter_path = Path(ADAPTER_DIR)
+if not _adapter_path.is_dir():
+    raise SystemExit(
+        f"Adapter checkpoint not found: {ADAPTER_DIR}. "
+        "Set the RU_ADAPTER_DIR environment variable to the adapter directory."
+    )
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -265,7 +281,7 @@ HTML_TEMPLATE = """
 
     <script>
         const history = [
-            ["system", `{{ system_prompt }}`]
+            ["system", {{ system_prompt_json | safe }}]
         ];
 
         const messagesContainer = document.getElementById('messages');
@@ -337,18 +353,33 @@ HTML_TEMPLATE = """
 
 @app.route("/")
 def index():
-    return render_template_string(HTML_TEMPLATE, system_prompt=RU_SYSTEM_PROMPT.replace("\n", " "))
+    system_prompt_json = json.dumps(RU_SYSTEM_PROMPT.replace("\n", " "))
+    return render_template_string(HTML_TEMPLATE, system_prompt_json=system_prompt_json)
 
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
-    data = request.get_json() or {}
-    raw_history = data.get("history", [])
-    history = [tuple(item) for item in raw_history]
+    data = request.get_json(silent=True) or {}
+    raw_history = data.get("history")
+    if not isinstance(raw_history, list) or not raw_history:
+        return jsonify({"error": "Invalid history: expected a non-empty list"}), 400
+
+    history = []
+    for item in raw_history[-MAX_HISTORY_TURNS:]:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            return jsonify({"error": "Invalid history item: expected [role, content]"}), 400
+        role, content = item
+        if not isinstance(role, str) or not isinstance(content, str):
+            return jsonify({"error": "Invalid history item: role and content must be strings"}), 400
+        content = content[:MAX_MESSAGE_CHARS]
+        history.append((role, content))
 
     if not history or history[-1][0] != "user":
-        return jsonify({"error": "Invalid history"}), 400
+        return jsonify({"error": "Invalid history: last message must be from the user"}), 400
 
-    response = generate_llama_response_hf(BASE_MODEL, tuple(history), ADAPTER_DIR)
+    try:
+        response = generate_llama_response_hf(BASE_MODEL, tuple(history), ADAPTER_DIR)
+    except Exception as error:
+        return jsonify({"error": f"Generation failed: {error}"}), 500
     return jsonify({"reply": response})
 
 if __name__ == "__main__":

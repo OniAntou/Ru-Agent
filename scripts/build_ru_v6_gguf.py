@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import psutil
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,16 +27,22 @@ class ConversionPaths:
     adapter_output: Path
 
 
-def conversion_paths(root: Path) -> ConversionPaths:
+def conversion_paths(
+    root: Path,
+    base_model: str = "models/llama3.1-8b-instruct-hf",
+    adapter_dir: str = "checkpoints/ru-llama3.1-8b-instruct-v6",
+    base_output: str = "models/gguf/llama3.1-8b-instruct-q4_k_m.gguf",
+    adapter_output: str = "models/gguf/ru-llama3.1-8b-instruct-v6-lora.gguf",
+) -> ConversionPaths:
     return ConversionPaths(
         root=root,
         source_dir=root / "tools" / "llama.cpp",
         binaries_dir=root / "tools" / "llama.cpp-bin",
-        base_model=root / "models" / "llama3.1-8b-instruct-hf",
-        adapter_dir=root / "checkpoints" / "ru-llama3.1-8b-instruct-v6",
+        base_model=root / base_model,
+        adapter_dir=root / adapter_dir,
         temporary_base=root / ".tmp" / "ru-v6-gguf-base-f16.gguf",
-        base_output=root / "models" / "gguf" / "llama3.1-8b-instruct-q4_k_m.gguf",
-        adapter_output=root / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6-lora.gguf",
+        base_output=root / base_output,
+        adapter_output=root / adapter_output,
     )
 
 
@@ -48,8 +55,7 @@ def ensure_free_space(root: Path, *, free_bytes: int | None = None) -> None:
         )
 
 
-def build_commands(root: Path, python_executable: str) -> tuple[tuple[str, ...], ...]:
-    paths = conversion_paths(root)
+def build_commands(paths: ConversionPaths, python_executable: str) -> tuple[tuple[str, ...], ...]:
     return (
         (
             python_executable,
@@ -108,6 +114,16 @@ def conversion_lock(root: Path):
     lock_path = root / ".tmp" / "ru-v6-gguf-conversion.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     acquired = False
+    
+    if lock_path.exists():
+        try:
+            with open(lock_path, "r", encoding="utf-8") as f:
+                pid = int(f.read().strip())
+            if not psutil.pid_exists(pid):
+                lock_path.unlink()
+        except Exception:
+            lock_path.unlink(missing_ok=True)
+
     try:
         with lock_path.open("x", encoding="utf-8") as lock_file:
             acquired = True
@@ -122,8 +138,8 @@ def conversion_lock(root: Path):
             lock_path.unlink(missing_ok=True)
 
 
-def convert(root: Path, *, python_executable: str = sys.executable) -> ConversionPaths:
-    paths = conversion_paths(root)
+def convert(paths: ConversionPaths, *, python_executable: str = sys.executable) -> ConversionPaths:
+    root = paths.root
     with conversion_lock(root):
         ensure_free_space(root)
         validate_paths(paths)
@@ -136,14 +152,12 @@ def convert(root: Path, *, python_executable: str = sys.executable) -> Conversio
         paths.temporary_base.parent.mkdir(parents=True, exist_ok=True)
         paths.base_output.parent.mkdir(parents=True, exist_ok=True)
         try:
-            for command in build_commands(root, python_executable):
+            for command in build_commands(paths, python_executable):
                 print("Running:", subprocess.list2cmdline(command), flush=True)
                 subprocess.run(command, cwd=root, check=True)
             _verify_output(paths.base_output, "base")
             _verify_output(paths.adapter_output, "adapter")
-        except BaseException:
-            raise
-        else:
+        finally:
             paths.temporary_base.unlink(missing_ok=True)
     return paths
 
@@ -151,17 +165,21 @@ def convert(root: Path, *, python_executable: str = sys.executable) -> Conversio
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build Ru v6 base and LoRA GGUF files with llama.cpp")
     parser.add_argument("--dry-run", action="store_true", help="validate setup and print conversion commands")
+    parser.add_argument("--base-model", type=str, default="models/llama3.1-8b-instruct-hf", help="Base model directory")
+    parser.add_argument("--adapter-dir", type=str, default="checkpoints/ru-llama3.1-8b-instruct-v6", help="LoRA adapter directory")
+    parser.add_argument("--base-output", type=str, default="models/gguf/llama3.1-8b-instruct-q4_k_m.gguf", help="Output base GGUF")
+    parser.add_argument("--adapter-output", type=str, default="models/gguf/ru-llama3.1-8b-instruct-v6-lora.gguf", help="Output adapter GGUF")
     args = parser.parse_args()
 
-    paths = conversion_paths(PROJECT_ROOT)
+    paths = conversion_paths(PROJECT_ROOT, args.base_model, args.adapter_dir, args.base_output, args.adapter_output)
     ensure_free_space(PROJECT_ROOT)
     validate_paths(paths)
     if args.dry_run:
-        for command in build_commands(PROJECT_ROOT, sys.executable):
+        for command in build_commands(paths, sys.executable):
             print(subprocess.list2cmdline(command))
         return 0
 
-    result = convert(PROJECT_ROOT)
+    result = convert(paths)
     print(f"Created base GGUF: {result.base_output}")
     print(f"Created LoRA GGUF: {result.adapter_output}")
     return 0

@@ -14,6 +14,7 @@ from mini_gpt.ru_hard_evaluation import (
     score_hard_response,
     summarize_hard_results,
 )
+from mini_gpt.ru_style import RU_SYSTEM_PROMPT
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from evaluate_ru_llama3_1_hard import (  # noqa: E402
@@ -79,9 +80,8 @@ def test_hard_suite_loader_rejects_invalid_roles(tmp_path):
                         "stratum": "context",
                         "language": "vi",
                         "messages": [
-                            ["system", "Ru"],
+                            ["system", RU_SYSTEM_PROMPT],
                             ["assistant", "wrong"],
-                            ["user", "middle"],
                             ["assistant", "okay"],
                             ["user", "end"],
                         ],

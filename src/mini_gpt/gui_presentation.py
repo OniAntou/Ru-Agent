@@ -10,6 +10,13 @@ def append_stream_text(existing: str, incoming: str) -> str:
         return incoming
     if existing.startswith(incoming):
         return existing
+    overlap = 0
+    for length in range(min(len(existing), len(incoming)), 0, -1):
+        if existing[-length:] == incoming[:length]:
+            overlap = length
+            break
+    if overlap:
+        return existing + incoming[overlap:]
     return existing + incoming
 
 
@@ -17,15 +24,15 @@ def safe_streamed_response(raw: str) -> str:
     """Hide private control markers, including a marker still being typed."""
     if not _PRIVATE_STREAM_MARKERS or not raw:
         return raw
-    folded = raw.casefold()
-    marker_positions = [folded.find(marker.casefold()) for marker in _PRIVATE_STREAM_MARKERS]
+    folded = raw.lower()
+    marker_positions = [folded.find(marker.lower()) for marker in _PRIVATE_STREAM_MARKERS]
     completed_positions = [position for position in marker_positions if position >= 0]
     if completed_positions:
         return raw[: min(completed_positions)]
 
     for length in range(max(map(len, _PRIVATE_STREAM_MARKERS)) - 1, 0, -1):
-        tail = raw[-length:].casefold()
-        if any(marker.casefold().startswith(tail) for marker in _PRIVATE_STREAM_MARKERS):
+        tail = raw[-length:].lower()
+        if any(marker.lower().startswith(tail) for marker in _PRIVATE_STREAM_MARKERS):
             return raw[:-length]
     return raw
 

@@ -43,6 +43,11 @@ async def test_inject():
     # Reset to 0
     req_inject = mgr.vts.vts_request.requestSetParameterValue(parameter="LLM_Sway", value=0.0)
     await mgr.vts.request(req_inject)
+
+    # Cleanup: xóa custom parameter đã tạo (pyvts hỗ trợ requestDeleteCustomParameter)
+    req_delete = mgr.vts.vts_request.requestDeleteCustomParameter(parameter="LLM_Sway")
+    await mgr.vts.request(req_delete)
+    print("Deleted parameter LLM_Sway")
     print("Done")
 
 if __name__ == '__main__':

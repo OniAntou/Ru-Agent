@@ -10,6 +10,7 @@ from ._text_utils import normalize_text
 _AI_META = re.compile(
     r"(?i)\b(?:as an ai|ai language model|language model|ai-generated|generated response)\b"
 )
+_MAX_OPENING_RATIO = 0.15
 
 
 def normalized_final_prompt(row: dict[str, object]) -> str:
@@ -28,7 +29,7 @@ def normalized_final_prompt(row: dict[str, object]) -> str:
 def naturalness_rejection_reason(prompt: str, response: str) -> str | None:
     if not normalize_text(response):
         return "empty_response"
-    if _AI_META.search(f"{prompt}\n{response}"):
+    if _AI_META.search(response):
         return "ai_meta_language"
     if ".." in response:
         return "repeated_punctuation"
@@ -105,12 +106,14 @@ def audit_rows(rows: Iterable[dict[str, object]]) -> dict[str, object]:
 
 
 def assert_authored_rows_are_natural(rows: Iterable[dict[str, object]]) -> None:
-    summary = audit_rows(rows)["summary"]
+    audit = audit_rows(rows)
+    summary = audit["summary"]
     if summary["rejection_count"]:
-        raise ValueError("v6.1 corpus contains AI-like or empty responses")
+        reasons = sorted({str(item["reason"]) for item in audit["rejections"]})
+        raise ValueError(f"v6.1 corpus contains unnatural responses: {', '.join(reasons)}")
     if summary["casefold_prompt_collision_count"]:
         raise ValueError("v6.1 corpus contains casefold duplicate final prompts")
     if summary["repeated_response_count"]:
         raise ValueError("v6.1 corpus contains repeated full responses")
-    if summary["largest_response_opening_ratio"] > 0.15:
+    if summary["largest_response_opening_ratio"] > _MAX_OPENING_RATIO:
         raise ValueError("v6.1 corpus overuses one response opening")

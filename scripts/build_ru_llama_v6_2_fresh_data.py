@@ -23,6 +23,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if not args.audit_only:
+        for path, label in ((args.approved_file, "approved-file"), (args.memory_file, "memory-file")):
+            if not path.is_file():
+                raise SystemExit(f"{label} not found: {path}")
     report = build_ru_v6_2_fresh_corpus(
         args.output_dir,
         approved_file=args.approved_file,

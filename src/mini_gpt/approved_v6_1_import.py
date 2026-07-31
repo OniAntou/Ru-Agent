@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from ._base_corpus import canonical_rows, write_jsonl
+from ._corpus_quality import casual_rejection_reason
+from ._safety_patterns import AI_DISCLAIMER, GRAPHIC_CONTENT, UNSAFE_CONTENT
 from ._text_utils import normalize_text
 from .ru_style import RU_SYSTEM_PROMPT
 from .ru_v6_1_naturalness import normalized_final_prompt
@@ -18,6 +20,15 @@ SELECTED_IDS = (
     "6e7f8d38-3b8d-41e1-b77e-7410c8ab44c4",
 )
 IMPORTED_SOURCE = "user-approved-local"
+
+
+def _quality_gate_reason(prompt: str, response: str) -> str | None:
+    combined = f"{prompt}\n{response}"
+    if AI_DISCLAIMER.search(combined):
+        return "ai_disclaimer"
+    if GRAPHIC_CONTENT.search(combined) or UNSAFE_CONTENT.search(combined):
+        return "explicit_or_unsafe_content"
+    return casual_rejection_reason(prompt, response)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -147,6 +158,16 @@ def merge_approved_into_v6_1(
         raise ValueError(f"approved prompt collision: {', '.join(collisions)}")
 
     merged_train = [*base_train, *selected]
+    overrides = [
+        {
+            "id": str(row["approval_id"]),
+            "reason": reason,
+            "note": "approved",
+        }
+        for row in selected
+        for reason in [_quality_gate_reason(str(row["messages"][-1]["content"]), str(row["response"]))]
+        if reason is not None
+    ]
     base_total = int(manifest.get("authored_total_examples", manifest["total_examples"]))
     split_counts = {
         "train": len(merged_train),
@@ -162,6 +183,7 @@ def merge_approved_into_v6_1(
         "selected_ids": list(SELECTED_IDS),
         "rejected": rejected,
         "accepted_count": len(selected),
+        "quality_overrides": overrides,
         "final_train_count": len(merged_train),
         "final_train_sha256": canonical_rows(merged_train),
     }

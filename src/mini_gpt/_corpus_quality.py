@@ -2,15 +2,11 @@ from __future__ import annotations
 
 import re
 
+from ._safety_patterns import AI_DISCLAIMER, LIST_PATTERN
 from ._text_utils import normalize_text
 
 MAX_PROMPT_CHARACTERS = 420
 MAX_RESPONSE_CHARACTERS = 420
-LIST_PATTERN = re.compile(r"(?m)^\s*(?:\d+\.|[-*])\s+")
-AI_DISCLAIMER_PATTERN = re.compile(
-    r"(?i)\b(as an ai language model|i cannot access|i do not have (?:the ability|a physical body)|i exist solely as)\b"
-    r"|tôi là một (?:mô hình|người mẫu) ngôn ngữ ai|với tư cách là"
-)
 
 
 def casual_rejection_reason(prompt: str, response: str) -> str | None:
@@ -27,6 +23,6 @@ def casual_rejection_reason(prompt: str, response: str) -> str | None:
         return "link"
     if LIST_PATTERN.search(response):
         return "list_heavy"
-    if AI_DISCLAIMER_PATTERN.search(response):
+    if AI_DISCLAIMER.search(response):
         return "ai_disclaimer"
     return None

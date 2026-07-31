@@ -8,10 +8,10 @@ import subprocess
 import sys
 
 import threading
-import traceback
 import tkinter as tk
 import customtkinter as ctk
 import csv
+import psutil
 from time import monotonic, perf_counter, sleep
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -50,6 +50,7 @@ from .speech_runtime import (
     SPEECH_ENGINE_GOOGLE,
     SPEECH_ENGINE_LABELS,
     CapturedAudio,
+    SpeechConfigurationError,
     SpeechEngineConfig,
     SpeechRecognitionError,
     SpeechRecognizer,
@@ -62,6 +63,7 @@ from .voice_runtime import (
     DEFAULT_VOICE_SELECTION,
     VOICE_SELECTIONS,
     VoiceSelection,
+    validate_voice_environment,
     voice_selection_from_saved,
     voice_service_config,
 )
@@ -91,6 +93,14 @@ BACKEND_LABELS = {
     "Transformers (fallback)": BACKEND_TRANSFORMERS,
     "OpenCode Zen API": BACKEND_OPENCODE,
 }
+VOICE_SERVICE_START_TIMEOUT = 12
+TTS_REQUEST_TIMEOUT = 90
+MEMORY_RETRIEVE_LIMIT = 5
+MEMORY_CONTEXT_MAX_CHARS = 1200
+SETTINGS_SAVE_DEBOUNCE_MS = 400
+SHUTDOWN_WORKER_JOIN_TIMEOUT = 5.0
+RECORD_RETRY_DELAY_MS = 1000
+TTS_PLAYBACK_POLL_SECONDS = 0.2
 
 from .openai_runtime import OPENCODE_BASE_URL, OpenAIRuntime
 
@@ -140,8 +150,20 @@ def _check_cuda() -> bool:
 
 def clean_tts_text(text: str) -> str:
     clean_text = re.sub(r"\[SEARCH:.*?\]", "", text).strip()
-    clean_text = re.sub(r"<thought>.*?</thought>", "", clean_text, flags=re.DOTALL)
-    clean_text = re.sub(r"<think>.*?</think>", "", clean_text, flags=re.DOTALL)
+    
+    # Safely remove <thought> and <think> blocks without dangerous regex DOTALL
+    for tag in ("thought", "think"):
+        while True:
+            start_idx = clean_text.find(f"<{tag}>")
+            if start_idx == -1:
+                break
+            end_idx = clean_text.find(f"</{tag}>", start_idx)
+            if end_idx == -1:
+                # Malformed unclosed tag, strip the tag itself and everything after it
+                clean_text = clean_text[:start_idx]
+                break
+            clean_text = clean_text[:start_idx] + clean_text[end_idx + len(f"</{tag}>"):]
+
     clean_text = re.sub(r"\s*\[\[VTS:[^\]]*\]\]", "", clean_text, flags=re.IGNORECASE)
     clean_text = re.sub(r"\s*\[\[VOICE_PACE:[^\]]*\]\]", "", clean_text, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", clean_text.replace("*", "")).strip()
@@ -156,28 +178,19 @@ def voice_service_available(selection: VoiceSelection) -> bool:
         return False
 
 
-def overlay_process_ids(*, run=subprocess.run) -> tuple[int, ...]:
-    """Return running RuDesktopOverlay process IDs on Windows."""
-
+def overlay_process_ids(*, run=None) -> tuple[int, ...]:
+    """Return running RuDesktopOverlay process IDs on Windows using psutil."""
+    process_ids = []
     try:
-        result = run(
-            ["tasklist", "/FI", "IMAGENAME eq RuDesktopOverlay.exe", "/FO", "CSV", "/NH"],
-            capture_output=True,
-            text=True,
-            check=False,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except OSError:
-        return ()
-
-    process_ids: list[int] = []
-    for row in csv.reader(result.stdout.splitlines()):
-        if len(row) < 2 or row[0].strip().casefold() != "rudesktopoverlay.exe":
-            continue
-        try:
-            process_ids.append(int(row[1].strip()))
-        except ValueError:
-            continue
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                name = proc.info['name']
+                if name and name.casefold() == "rudesktopoverlay.exe":
+                    process_ids.append(proc.info['pid'])
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    except Exception as e:
+        logger.debug("Failed to query overlay process IDs: %s", e)
     return tuple(process_ids)
 
 
@@ -187,10 +200,7 @@ def ensure_voice_service(
     config = voice_service_config(selection, PROJECT_ROOT)
     if voice_service_available(selection):
         return
-    if not config.python_path.is_file() or not config.server_script.is_file():
-        raise RuntimeError(
-            f"{selection.engine_id} runtime is missing. Reinstall the local voice environment."
-        )
+    validate_voice_environment(config)
 
     process_factory = process_factory or subprocess.Popen
     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
@@ -202,7 +212,7 @@ def ensure_voice_service(
         creationflags=creation_flags,
     )
 
-    deadline = monotonic() + 12
+    deadline = monotonic() + VOICE_SERVICE_START_TIMEOUT
     while monotonic() < deadline:
         if voice_service_available(selection):
             return
@@ -218,7 +228,7 @@ def request_tts_audio(
     *,
     speed: float = DEFAULT_VOICE_SPEED,
     post=None,
-) -> str:
+) -> bytes:
     config = voice_service_config(selection, PROJECT_ROOT)
     if post is None:
         import requests
@@ -240,14 +250,9 @@ def request_tts_audio(
         detail = body.get("error")
         suffix = f": {detail}" if isinstance(detail, str) and detail else ""
         raise RuntimeError(f"Voice server failed (HTTP {response.status_code}){suffix}")
-    try:
-        body = response.json()
-        audio_file = body.get("audio_path")
-    except Exception as error:
-        raise RuntimeError("Voice server returned an invalid response.") from error
-    if not isinstance(audio_file, str) or not Path(audio_file).is_file():
-        raise RuntimeError("Voice server did not return a playable audio file.")
-    return audio_file
+    if not response.content:
+        raise RuntimeError("Voice server returned empty audio.")
+    return response.content
 
 
 def request_voice_control(
@@ -273,8 +278,8 @@ def request_voice_control(
     return payload
 
 
-def play_wav_blocking(audio_file: str) -> None:
-    sound = pygame.mixer.Sound(audio_file)
+def play_wav_blocking(audio_bytes: bytes) -> None:
+    sound = pygame.mixer.Sound(buffer=audio_bytes)
     sound.play()
     pygame.time.wait(int(sound.get_length() * 1000))
 
@@ -319,12 +324,14 @@ class ModelRunner:
         checkpoint_path: str | Path,
         api_key: str = "",
         model_name: str = "deepseek-v4-flash-free",
+        api_variant: str = "Default",
     ) -> str:
         if self.backend == BACKEND_OPENCODE:
             self.openai_runtime = OpenAIRuntime(
                 api_key,
                 base_url=OPENCODE_BASE_URL,
                 model_name=model_name,
+                api_variant=api_variant,
             )
             return "Ready (OpenCode Zen API)"
         if self.backend == BACKEND_GGUF:
@@ -429,6 +436,14 @@ class RuApp:
         self.runner = ModelRunner()
         self.worker: threading.Thread | None = None
         self.gpu_transition_lock = threading.RLock()
+        self._memory_lock = threading.RLock()
+        self._speech_runtime_lock = threading.Lock()
+        self._shutting_down = False
+        self._last_turn_saving = False
+        self._mic_after_id: int | None = None
+        self._settings_save_after_id: int | None = None
+        self._overlay_process: subprocess.Popen | None = None
+        self._pygame_initialized = False
         self.gpu_lifecycle = GpuLifecycle(
             self.gpu_transition_lock,
             release_local_runtime=self.runner.release_gpu,
@@ -467,21 +482,38 @@ class RuApp:
             except Exception as exc:
                 logger.debug("Failed to load GUI settings: %s", exc)
                 
+        try:
+            from .credential_store import CredentialStore
+            self.credential_store = CredentialStore("mini_gpt", "api_key")
+            saved_settings, migrated = self.credential_store.migrate_legacy(saved_settings)
+            if migrated:
+                atomic_write_json(GUI_SETTINGS_PATH, saved_settings)
+            initial_api_key = self.credential_store.get_key() or ""
+        except Exception as exc:
+            logger.debug("CredentialStore init failed: %s", exc)
+            self.credential_store = None
+            initial_api_key = saved_settings.get("api_key", "")
+
         saved_backend = saved_settings.get("backend", "GGUF (default)")
         if saved_backend == "OpenAI API":
             saved_backend = "OpenCode Zen API"
         if saved_backend not in BACKEND_LABELS:
             saved_backend = "GGUF (default)"
-        self.api_key_var = ctk.StringVar(value=saved_settings.get("api_key", ""))
+            
+        self.api_key_var = ctk.StringVar(value=initial_api_key)
         self.api_model_var = ctk.StringVar(
             value=saved_settings.get("api_model", "deepseek-v4-flash-free")
         )
+        self.api_variant_var = ctk.StringVar(value=saved_settings.get("api_variant", "Default"))
         self.backend_var = ctk.StringVar(value=saved_backend)
         saved_selection = voice_selection_from_saved(saved_settings.get("voice_profile"))
         self.voice_selection_var = ctk.StringVar(value=saved_selection.label)
         self.voice_speed_var = ctk.DoubleVar(value=voice_speed_from_saved(saved_settings.get("voice_speed")))
         self.auto_voice_pace_var = ctk.BooleanVar(value=bool(saved_settings.get("auto_voice_pace", True)))
-        saved_speech_config = speech_settings_from_mapping(saved_settings)
+        try:
+            saved_speech_config = speech_settings_from_mapping(saved_settings)
+        except SpeechConfigurationError:
+            saved_speech_config = SpeechEngineConfig()
         saved_speech_label = next(
             (
                 label
@@ -494,8 +526,8 @@ class RuApp:
 
         def _save_settings(*args) -> None:
             settings = {
-                "api_key": self.api_key_var.get(),
                 "api_model": self.api_model_var.get(),
+                "api_variant": self.api_variant_var.get(),
                 "backend": self.backend_var.get(),
                 "voice_profile": self._selected_voice_selection().label,
                 "voice_speed": round(self.voice_speed_var.get(), 2),
@@ -508,12 +540,53 @@ class RuApp:
                 logger.debug("Failed to save GUI settings: %s", exc)
 
         self._save_gui_settings = _save_settings
-        self.api_key_var.trace_add("write", _save_settings)
-        self.api_model_var.trace_add("write", _save_settings)
-        self.backend_var.trace_add("write", _save_settings)
-        self.voice_selection_var.trace_add("write", _save_settings)
-        self.voice_speed_var.trace_add("write", _save_settings)
-        self.auto_voice_pace_var.trace_add("write", _save_settings)
+
+        def _schedule_settings_save(*args) -> None:
+            if self._settings_save_after_id is not None:
+                try:
+                    self.root.after_cancel(self._settings_save_after_id)
+                except (RuntimeError, tk.TclError):
+                    pass
+            self._settings_save_after_id = self.root.after(
+                SETTINGS_SAVE_DEBOUNCE_MS, self._flush_settings_save
+            )
+
+        def _flush_settings_save() -> None:
+            self._settings_save_after_id = None
+            self._save_gui_settings()
+
+        self._schedule_settings_save = _schedule_settings_save
+        self._flush_settings_save = _flush_settings_save
+
+        def _save_api_key(*args) -> None:
+            if self.credential_store is None:
+                return
+            key = self.api_key_var.get().strip()
+            try:
+                if key:
+                    self.credential_store.set_key(key)
+                else:
+                    self.credential_store.delete_key()
+            except Exception as exc:
+                logger.exception("Failed to save API key: %s", exc)
+                self.status_var.set("Failed to save API key")
+
+        self.api_key_var.trace_add("write", _save_api_key)
+
+        def _on_model_changed(*args) -> None:
+            _schedule_settings_save()
+            options = ["Default", "low", "medium", "high", "max"]
+            if hasattr(self, "variant_combo") and self.variant_combo.winfo_exists():
+                self.variant_combo.configure(state="readonly", values=options)
+                if self.api_variant_var.get() not in options:
+                    self.api_variant_var.set("Default")
+
+        self.api_model_var.trace_add("write", _on_model_changed)
+        self.api_variant_var.trace_add("write", _schedule_settings_save)
+        self.backend_var.trace_add("write", _schedule_settings_save)
+        self.voice_selection_var.trace_add("write", _schedule_settings_save)
+        self.voice_speed_var.trace_add("write", _schedule_settings_save)
+        self.auto_voice_pace_var.trace_add("write", _schedule_settings_save)
         self.speech_engine_var.trace_add("write", self._on_speech_settings_changed)
         _save_settings()
         
@@ -524,12 +597,17 @@ class RuApp:
         self.status_var = ctk.StringVar(
             value=f"CUDA available: {'yes' if _cuda_available else 'no'} | Ready"
         )
+        self.api_models_data: list[dict] = [{"id": self.api_model_var.get()}]
         self.api_models_list: list[str] = [self.api_model_var.get()]
         self.tts_enabled_var = ctk.BooleanVar(value=True)
         self._mouse_look_enabled = False
         self.remember_conversations_var = ctk.BooleanVar(value=True)
         self.allow_web_search_var = ctk.BooleanVar(value=DEFAULT_ALLOW_WEB_SEARCH)
-        pygame.mixer.init()
+        try:
+            pygame.mixer.init()
+            self._pygame_initialized = True
+        except Exception as exc:
+            logger.warning("pygame.mixer init failed; audio playback disabled: %s", exc)
         self.vts_manager = VTSManager()
         threading.Thread(target=self.vts_manager.run, daemon=True).start()
         self.is_recording = False
@@ -560,7 +638,7 @@ class RuApp:
         # ── SIDEBAR (Left) ─────────────────────────────────────────────
         sidebar = ctk.CTkFrame(self.root, width=220, corner_radius=0, fg_color=D["sidebar_bg"])
         sidebar.grid(row=0, column=0, sticky="nsew")
-        sidebar.grid_rowconfigure(6, weight=1)
+        sidebar.grid_rowconfigure(7, weight=1)
 
         # Logo header
         logo_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
@@ -616,9 +694,18 @@ class RuApp:
         )
         self.mouse_look_button.grid(row=5, column=0, padx=14, pady=2, sticky="ew")
 
+        # — Debug: VTS Inject Toggle —
+        self._injection_paused = False
+        self.inject_button = ctk.CTkButton(
+            sidebar, text="📡 VTS Inject · ON",
+            fg_color="transparent", hover_color=D["sidebar_hover"],
+            command=self._toggle_injection, **btn_kw,
+        )
+        self.inject_button.grid(row=6, column=0, padx=14, pady=2, sticky="ew")
+
         # — Bottom status area —
         bottom_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
-        bottom_frame.grid(row=7, column=0, padx=14, pady=(0, 18), sticky="ew")
+        bottom_frame.grid(row=8, column=0, padx=14, pady=(0, 18), sticky="ew")
 
         self.tts_checkbox = ctk.CTkCheckBox(
             bottom_frame, text="Voice output",
@@ -760,13 +847,18 @@ class RuApp:
     def _toggle_overlay(self) -> None:
         process_ids = overlay_process_ids()
         if process_ids:
-            for process_id in process_ids:
-                subprocess.run(
-                    ["taskkill", "/PID", str(process_id), "/T", "/F"],
-                    capture_output=True,
-                    check=False,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                )
+            def kill_task() -> None:
+                for process_id in process_ids:
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/PID", str(process_id), "/T", "/F"],
+                            capture_output=True,
+                            check=False,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                        )
+                    except OSError:
+                        pass
+            threading.Thread(target=kill_task, daemon=True).start()
             self.overlay_button.configure(text="Open overlay")
             self.status_var.set("Overlay closed")
             return
@@ -775,7 +867,7 @@ class RuApp:
             self.status_var.set("Overlay unavailable: build RuDesktopOverlay first")
             return
         try:
-            subprocess.Popen(
+            self._overlay_process = subprocess.Popen(
                 [str(OVERLAY_EXE_PATH), "--sender", OVERLAY_SENDER],
                 cwd=str(PROJECT_ROOT),
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -796,6 +888,18 @@ class RuApp:
             "Mouse look enabled — model follows cursor"
             if self._mouse_look_enabled
             else "Mouse look disabled"
+        )
+
+    def _toggle_injection(self) -> None:
+        self._injection_paused = not self._injection_paused
+        self.vts_manager.set_injection_paused(self._injection_paused)
+        label = "📡 VTS Inject · OFF" if self._injection_paused else "📡 VTS Inject · ON"
+        fg = _DESIGN["accent_subtle"] if not self._injection_paused else "transparent"
+        self.inject_button.configure(text=label, fg_color=fg)
+        self.status_var.set(
+            "VTS injection paused — test FPS"
+            if self._injection_paused
+            else "VTS injection resumed"
         )
 
     def _open_settings(self) -> None:
@@ -827,12 +931,16 @@ class RuApp:
         ctk.CTkEntry(model, textvariable=self.api_key_var, show="*", width=250).grid(row=2, column=1, sticky="w", pady=5, padx=5)
         
         ctk.CTkLabel(model, text="OpenCode model").grid(row=3, column=0, sticky="w", pady=5)
-        self.model_combo = ctk.CTkComboBox(model, variable=self.api_model_var, values=self.api_models_list, width=200, state="readonly")
+        self.model_combo = ctk.CTkComboBox(model, variable=self.api_model_var, values=self.api_models_list, width=200, state="normal")
         self.model_combo.grid(row=3, column=1, sticky="w", pady=5, padx=5)
         ctk.CTkButton(model, text="Fetch", command=self._fetch_models, width=60).grid(row=3, column=2, padx=5)
         
-        ctk.CTkLabel(model, text="Voice").grid(row=4, column=0, sticky="w", pady=5)
-        ctk.CTkOptionMenu(model, variable=self.voice_selection_var, values=tuple(selection.label for selection in VOICE_SELECTIONS)).grid(row=4, column=1, sticky="w", pady=5, padx=5)
+        ctk.CTkLabel(model, text="Model Mode/Variant").grid(row=4, column=0, sticky="w", pady=5)
+        self.variant_combo = ctk.CTkComboBox(model, variable=self.api_variant_var, values=["Default", "low", "medium", "high", "max"], width=200, state="readonly")
+        self.variant_combo.grid(row=4, column=1, sticky="w", pady=5, padx=5)
+        
+        ctk.CTkLabel(model, text="Voice").grid(row=5, column=0, sticky="w", pady=5)
+        ctk.CTkOptionMenu(model, variable=self.voice_selection_var, values=tuple(selection.label for selection in VOICE_SELECTIONS)).grid(row=5, column=1, sticky="w", pady=5, padx=5)
 
         controls = create_section(content, "Generation Controls")
         self._labeled_entry(controls, 0, "Max tokens", self.max_tokens_var, 100)
@@ -861,28 +969,31 @@ class RuApp:
         if not api_key:
             self.status_var.set("Please enter OpenCode API Key first")
             return
-            
+
         self.status_var.set("Fetching models...")
-        self.root.update()
-        
+
         def fetch_task():
             try:
                 models = OpenAIRuntime.fetch_models(api_key, OPENCODE_BASE_URL)
-                self.root.after(0, lambda: self._on_fetch_models_success(models))
+                self._schedule_ui(self._on_fetch_models_success, models)
             except Exception as e:
-                self.root.after(0, lambda e=e: self.status_var.set(f"Fetch models error: {e}"))
-                
+                logger.exception("Fetch models failed: %s", e)
+                self._schedule_ui(lambda e=e: self.status_var.set(f"Fetch models error: {e}"))
+
         threading.Thread(target=fetch_task, daemon=True).start()
-        
-    def _on_fetch_models_success(self, models: list[str]) -> None:
-        self.api_models_list = models
+
+    def _on_fetch_models_success(self, models: list[dict]) -> None:
         try:
-            if self.model_combo.winfo_exists():
+            self.api_models_data = models
+            self.api_models_list = [m.get("id") for m in models if "id" in m]
+            if hasattr(self, "model_combo") and self.model_combo.winfo_exists():
                 self.model_combo.configure(values=self.api_models_list)
-                if models and self.api_model_var.get() not in models:
-                    self.api_model_var.set(models[0])
-        except (AttributeError, tk.TclError):
-            pass  # model_combo chưa được tạo hoặc đã bị destroy
+                if self.api_models_list and self.api_model_var.get() not in self.api_models_list:
+                    self.api_model_var.set(self.api_models_list[0])
+                else:
+                    self.api_model_var.set(self.api_model_var.get())
+        except (AttributeError, tk.TclError) as error:
+            logger.debug("Model combo unavailable while updating: %s", error)
         self.status_var.set(f"Fetched {len(models)} models successfully")
     @staticmethod
     def _labeled_entry(parent: ctk.CTkFrame, column: int, label: str, variable: tk.StringVar, width: int) -> None:
@@ -928,6 +1039,7 @@ class RuApp:
         self.transcript_text.tag_config("stream_anchor", elide=True)
         self.transcript_text.insert(tk.END, " ", "stream_anchor")
         self._stream_response_anchor = self.transcript_text.index("end-2c")
+        self._stream_displayed_text = ""
         self.transcript_text.insert(tk.END, "\n", "ru_bubble")
         self.transcript_text.see(tk.END)
         self.transcript_text.configure(state="disabled")
@@ -942,12 +1054,36 @@ class RuApp:
         self.transcript_text.insert(response_start, f"{response}\n\n", "ru_bubble")
         self.transcript_text.see(tk.END)
         self.transcript_text.configure(state="disabled")
+        self._stream_displayed_text = response
 
     def _append_stream_delta(self, delta: str) -> None:
-        self._stream_raw_response = append_stream_text(
-            getattr(self, "_stream_raw_response", ""), delta
-        )
-        self._replace_streaming_response(safe_streamed_response(self._stream_raw_response))
+        raw = append_stream_text(getattr(self, "_stream_raw_response", ""), delta)
+        self._stream_raw_response = raw
+        anchor = getattr(self, "_stream_response_anchor", None)
+        if anchor is None:
+            return
+        safe = safe_streamed_response(raw)
+        displayed = getattr(self, "_stream_displayed_text", "")
+        if safe == displayed:
+            return
+        self.transcript_text.configure(state="normal")
+        try:
+            if safe.startswith(displayed):
+                new_part = safe[len(displayed):]
+                if new_part:
+                    self.transcript_text.insert(
+                        f"{anchor} + 1c + {len(displayed)}c", new_part, "ru_bubble"
+                    )
+                    self.transcript_text.see(tk.END)
+            elif displayed.startswith(safe):
+                self.transcript_text.delete(f"{anchor} + 1c + {len(safe)}c", "end-1c")
+            else:
+                self.transcript_text.delete(f"{anchor} + 1c", "end-1c")
+                self.transcript_text.insert(f"{anchor} + 1c", safe, "ru_bubble")
+                self.transcript_text.see(tk.END)
+        finally:
+            self.transcript_text.configure(state="disabled")
+        self._stream_displayed_text = safe
 
     def _reset_streaming_turn(self) -> None:
         self._stream_raw_response = ""
@@ -967,6 +1103,7 @@ class RuApp:
         self.transcript_text.configure(state="disabled")
         self._stream_response_anchor = None
         self._stream_raw_response = ""
+        self._stream_displayed_text = ""
 
     def _clear_streaming_anchor(self) -> None:
         anchor = getattr(self, "_stream_response_anchor", None)
@@ -978,7 +1115,9 @@ class RuApp:
 
     def _new_chat(self) -> None:
         if self.worker is not None and self.worker.is_alive():
+            self.status_var.set("Ru is still working — wait for the reply to finish")
             return
+        self._speech_generation += 1
         self.session_turns.clear()
         self.last_turn = None
         self.last_turn_saved = False
@@ -995,10 +1134,11 @@ class RuApp:
         self.mark_button.configure(state=state)
 
     def _memory_store_for_session(self) -> StructuredMemoryStore:
-        if self.memory_store is None:
-            self.memory_store = StructuredMemoryStore(self.memory_db_path, index_path=self.memory_index_path)
-            self.memory_store.migrate_legacy_transcripts(self.memory_texts_path)
-        return self.memory_store
+        with self._memory_lock:
+            if self.memory_store is None:
+                self.memory_store = StructuredMemoryStore(self.memory_db_path, index_path=self.memory_index_path)
+                self.memory_store.migrate_legacy_transcripts(self.memory_texts_path)
+            return self.memory_store
 
     def _clear_saved_memory(self) -> None:
         if not messagebox.askyesno(
@@ -1008,34 +1148,52 @@ class RuApp:
         ):
             return
         try:
-            if self.memory_store is not None:
-                self.memory_store.clear()
-            MemoryStore.clear_artifacts(self.memory_index_path, self.memory_texts_path)
-            if self.memory_db_path.is_file():
-                self.memory_db_path.unlink()
+            with self._memory_lock:
+                if self.memory_store is not None:
+                    self.memory_store.clear()
+                MemoryStore.clear_artifacts(self.memory_index_path, self.memory_texts_path)
+                if self.memory_db_path.is_file():
+                    self.memory_db_path.unlink()
+                self.memory_store = None
         except OSError as error:
             self.status_var.set(f"Could not clear saved memory: {error}")
             return
-        self.memory_store = None
         self.status_var.set("Saved conversation memory cleared")
 
     def _mark_last_response(self) -> None:
+        if self._last_turn_saving:
+            self.status_var.set("Saving in progress...")
+            return
         if self.last_turn is None or self.last_turn_saved:
             self.status_var.set("There is no new response to save")
             return
         checkpoint = self.runner.checkpoint_path or Path(self.checkpoint_var.get())
-        try:
-            self.conversation_store.save(
-                self.last_turn.prompt,
-                self.last_turn.response,
-                checkpoint,
-            )
-        except (OSError, ValueError) as error:
-            self.status_var.set(f"Error saving example: {error}")
-            return
+        self._last_turn_saving = True
+
+        def save_task():
+            try:
+                self.conversation_store.save(
+                    self.last_turn.prompt,
+                    self.last_turn.response,
+                    checkpoint,
+                )
+                self._schedule_ui(self._on_save_success)
+            except (OSError, ValueError) as error:
+                self._schedule_ui(
+                    lambda e=str(error): self._on_save_error(e)
+                )
+
+        threading.Thread(target=save_task, daemon=True).start()
+
+    def _on_save_success(self) -> None:
+        self._last_turn_saving = False
         self.last_turn_saved = True
         self._update_mark_button()
         self.status_var.set(f"Saved useful response to {self.conversation_store.path}")
+
+    def _on_save_error(self, message: str) -> None:
+        self._last_turn_saving = False
+        self.status_var.set(f"Error saving example: {message}")
 
     def _toggle_voice_mode(self) -> None:
         self.voice_mode_active = not getattr(self, "voice_mode_active", False)
@@ -1044,10 +1202,45 @@ class RuApp:
             self.tts_enabled_var.set(True)
             self._toggle_recording()
         else:
+            self._cancel_scheduled_recording()
             self.call_ru_button.configure(text="📞 Call Ru")
             self.status_var.set("Voice mode ended.")
 
+    def _schedule_ui(self, callback: Any, *args: Any) -> None:
+        if self._shutting_down:
+            return
+
+        def _run() -> None:
+            if self._shutting_down:
+                return
+            callback(*args)
+
+        try:
+            self.root.after(0, _run)
+        except (RuntimeError, tk.TclError):
+            logger.debug("Skipped UI callback during shutdown")
+
+    def _cancel_scheduled_recording(self) -> None:
+        if self._mic_after_id is not None:
+            try:
+                self.root.after_cancel(self._mic_after_id)
+            except (RuntimeError, tk.TclError):
+                pass
+            self._mic_after_id = None
+
+    def _schedule_recording(self, delay_ms: int = RECORD_RETRY_DELAY_MS) -> None:
+        if self._shutting_down or not getattr(self, "voice_mode_active", False):
+            return
+        self._cancel_scheduled_recording()
+        try:
+            self._mic_after_id = self.root.after(delay_ms, self._toggle_recording)
+        except (RuntimeError, tk.TclError):
+            self._mic_after_id = None
+
     def _toggle_recording(self) -> None:
+        self._mic_after_id = None
+        if not getattr(self, "voice_mode_active", False) or self._shutting_down:
+            return
         if self.is_recording:
             return
         self.is_recording = True
@@ -1061,35 +1254,38 @@ class RuApp:
             with sr.Microphone() as source:
                 self.microphone_recognizer.adjust_for_ambient_noise(source, duration=0.5)
                 audio = self.microphone_recognizer.listen(source, timeout=5, phrase_time_limit=15)
-            self.root.after(0, lambda: self.status_var.set("Recognizing..."))
+            self._schedule_ui(lambda: self.status_var.set("Recognizing..."))
             raw_audio = audio.get_raw_data(convert_rate=16_000, convert_width=2)
             text = self._selected_speech_recognizer().recognize(CapturedAudio(raw_audio))
-            self.root.after(0, lambda t=text: self._on_record_success(t))
+            self._schedule_ui(lambda t=text: self._on_record_success(t))
         except sr.WaitTimeoutError:
-            self.root.after(0, lambda: self._on_record_error("Listening timed out."))
+            self._schedule_ui(lambda: self._on_record_error("Listening timed out."))
         except SpeechRecognitionError as error:
-            self.root.after(0, lambda: self._on_record_error(str(error)))
+            self._schedule_ui(lambda e=str(error): self._on_record_error(e))
         except Exception:
-            self.root.after(0, lambda: self._on_record_error("Voice input failed."))
+            logger.exception("Voice recording failed")
+            self._schedule_ui(lambda: self._on_record_error("Voice input failed."))
 
     def _speech_config(self) -> SpeechEngineConfig:
         engine_id = SPEECH_ENGINE_LABELS.get(self.speech_engine_var.get(), SPEECH_ENGINE_GOOGLE)
         return SpeechEngineConfig(engine_id=engine_id, model_dir=None)
 
     def _on_speech_settings_changed(self, *_args: object) -> None:
-        self._speech_runtime = None
-        self._speech_runtime_config = None
+        with self._speech_runtime_lock:
+            self._speech_runtime = None
+            self._speech_runtime_config = None
         self._save_gui_settings()
 
     def _selected_speech_recognizer(self) -> SpeechRecognizer:
         config = self._speech_config()
-        if self._speech_runtime is None or self._speech_runtime_config != config:
-            self._speech_runtime = build_speech_recognizer(
-                config,
-                google_recognizer=self.microphone_recognizer,
-            )
-            self._speech_runtime_config = config
-        return self._speech_runtime
+        with self._speech_runtime_lock:
+            if self._speech_runtime is None or self._speech_runtime_config != config:
+                self._speech_runtime = build_speech_recognizer(
+                    config,
+                    google_recognizer=self.microphone_recognizer,
+                )
+                self._speech_runtime_config = config
+            return self._speech_runtime
             
     def _on_record_success(self, text: str) -> None:
         self.is_recording = False
@@ -1100,14 +1296,16 @@ class RuApp:
         self.prompt_text.delete("1.0", tk.END)
         self.prompt_text.insert(tk.END, new_text)
         if getattr(self, "voice_mode_active", False):
-            self._start_generation()
+            if self.worker is None or not self.worker.is_alive():
+                self._start_generation()
+            else:
+                self._schedule_recording()
 
     def _on_record_error(self, msg: str) -> None:
         self.is_recording = False
         self.speak_button.configure(state="normal", text="Voice input")
         self.status_var.set(msg)
-        if getattr(self, "voice_mode_active", False):
-            self.root.after(1000, self._toggle_recording)
+        self._schedule_recording()
 
     def _submit_from_keyboard(self, _event: object) -> str:
         self._start_generation()
@@ -1120,6 +1318,7 @@ class RuApp:
 
     def _start_generation(self) -> None:
         if self.worker is not None and self.worker.is_alive():
+            self.status_var.set("Ru is still working — wait for the reply to finish")
             return
         prompt = self.prompt_text.get("1.0", tk.END).strip()
         if not prompt:
@@ -1147,11 +1346,12 @@ class RuApp:
         tts_enabled = self.tts_enabled_var.get()
         api_key = self.api_key_var.get()
         api_model = self.api_model_var.get()
+        api_variant = self.api_variant_var.get()
         voice_selection = self._selected_voice_selection()
         turns_snapshot = list(self.session_turns)
         self.worker = threading.Thread(
             target=self._generate_worker,
-            args=(prompt, settings, checkpoint, backend, remember_conversations, allow_web_search, tts_enabled, api_key, api_model, voice_selection, turns_snapshot),
+            args=(prompt, settings, checkpoint, backend, remember_conversations, allow_web_search, tts_enabled, api_key, api_model, api_variant, voice_selection, turns_snapshot),
             daemon=True,
         )
         self.worker.start()
@@ -1177,6 +1377,7 @@ class RuApp:
         tts_enabled: bool,
         api_key: str,
         api_model: str,
+        api_variant: str,
         voice_selection: object,
         turns_snapshot: list,
     ) -> None:
@@ -1184,9 +1385,18 @@ class RuApp:
             memory_context = None
             memory_store = self._memory_store_for_session() if remember_conversations else None
             if memory_store:
-                memory_context = memory_store.render_context(
-                    memory_store.retrieve(prompt, limit=5, max_chars=1200), max_chars=1200
-                ) or None
+                try:
+                    with self._memory_lock:
+                        memory_context = memory_store.render_context(
+                            memory_store.retrieve(
+                                prompt,
+                                limit=MEMORY_RETRIEVE_LIMIT,
+                                max_chars=MEMORY_CONTEXT_MAX_CHARS,
+                            ),
+                            max_chars=MEMORY_CONTEXT_MAX_CHARS,
+                        ) or None
+                except OSError as error:
+                    logger.warning("Memory retrieval failed: %s", error)
             vts_catalog = self.vts_manager.current_catalog_sync() if hasattr(self, "vts_manager") else None
 
             api_seconds = 0.0
@@ -1199,26 +1409,25 @@ class RuApp:
             is_cloud = backend == BACKEND_OPENCODE
 
             def stream_delta(delta: str) -> None:
-                self.root.after(0, lambda delta=delta: self._append_stream_delta(delta))
+                self._schedule_ui(lambda delta=delta: self._append_stream_delta(delta))
 
             def reset_stream() -> None:
-                self.root.after(0, self._reset_streaming_turn)
+                self._schedule_ui(self._reset_streaming_turn)
 
             with self.gpu_transition_lock:
                 uses_voice = is_cloud and tts_enabled
                 if uses_voice:
                     voice_warm_seconds = self.gpu_lifecycle.warm_voice_for_cloud(
                         voice_selection,
-                        lambda status: self.root.after(
-                            0, lambda status=status: self.status_var.set(status)
+                        lambda status: self._schedule_ui(
+                            lambda status=status: self.status_var.set(status)
                         ),
                     )
                 elif not is_cloud:
                     self.gpu_lifecycle.prepare_local_generation()
                 self.runner.select_backend(backend)
                 cache_hit = self.runner.is_cached(checkpoint)
-                self.root.after(
-                    0,
+                self._schedule_ui(
                     lambda cache_hit=cache_hit: self.status_var.set(
                         "Ru is replying..." if cache_hit else "Loading Ru..."
                     ),
@@ -1228,23 +1437,23 @@ class RuApp:
                     checkpoint,
                     api_key,
                     model_name=api_model,
+                    api_variant=api_variant,
                 )
-                if is_cloud:
-                    self.root.after(0, lambda prompt=prompt: self._begin_streaming_turn(prompt))
-                result = self.runner.generate_reply(
-                    prompt,
-                    *settings,
-                    turns_history=turns_snapshot,
-                    memory_context=memory_context,
-                    allow_web_search=allow_web_search,
-                    vts_instruction=catalog_instruction(vts_catalog),
-                    on_stream_delta=stream_delta if is_cloud else None,
-                    on_stream_reset=reset_stream if is_cloud else None,
-                    on_complete_timing=record_api_timing if is_cloud else None,
-                )
-                elapsed = perf_counter() - started
-            self.root.after(
-                0,
+            if is_cloud:
+                self._schedule_ui(lambda prompt=prompt: self._begin_streaming_turn(prompt))
+            result = self.runner.generate_reply(
+                prompt,
+                *settings,
+                turns_history=turns_snapshot,
+                memory_context=memory_context,
+                allow_web_search=allow_web_search,
+                vts_instruction=catalog_instruction(vts_catalog),
+                on_stream_delta=stream_delta if is_cloud else None,
+                on_stream_reset=reset_stream if is_cloud else None,
+                on_complete_timing=record_api_timing if is_cloud else None,
+            )
+            elapsed = perf_counter() - started
+            self._schedule_ui(
                 lambda result=result, cache_hit=cache_hit, elapsed=elapsed, prompt=prompt, remember_conversations=remember_conversations, vts_catalog=vts_catalog, api_seconds=api_seconds, voice_warm_seconds=voice_warm_seconds, is_cloud=is_cloud: self._generation_finished(
                     result,
                     cache_hit,
@@ -1255,12 +1464,13 @@ class RuApp:
                     api_seconds=api_seconds if is_cloud else None,
                     voice_warm_seconds=voice_warm_seconds,
                     streamed=is_cloud,
+                    voice_selection=voice_selection,
                 ),
             )
         except Exception as error:
-            traceback.print_exc()
+            logger.exception("Generation worker failed: %s", error)
             message = str(error) if str(error) else repr(error)
-            self.root.after(0, lambda message=message: self._generation_failed(message))
+            self._schedule_ui(lambda message=message: self._generation_failed(message))
 
     def _generation_finished(
         self,
@@ -1274,6 +1484,7 @@ class RuApp:
         api_seconds: float | None = None,
         voice_warm_seconds: float | None = None,
         streamed: bool = False,
+        voice_selection: object = DEFAULT_VOICE_SELECTION,
     ) -> None:
         try:
             if not result.strip():
@@ -1299,7 +1510,11 @@ class RuApp:
                 and self.remember_conversations_var.get()
                 and self.memory_store
             ):
-                self.memory_store.remember_turn(original_prompt, clean_result)
+                try:
+                    with self._memory_lock:
+                        self.memory_store.remember_turn(original_prompt, clean_result)
+                except OSError as error:
+                    logger.warning("Failed to remember turn: %s", error)
 
             status_kwargs = {
                 "cache_hit": cache_hit,
@@ -1310,48 +1525,67 @@ class RuApp:
             self.status_var.set(format_generation_status(**status_kwargs))
             self._set_controls_enabled(True)
             self._update_mark_button()
-            self.prompt_text.delete("1.0", tk.END)
+            current_text = self.prompt_text.get("1.0", tk.END)
+            stripped = current_text.strip()
+            if stripped == original_prompt:
+                self.prompt_text.delete("1.0", tk.END)
+            elif stripped.startswith(original_prompt):
+                remainder = stripped[len(original_prompt):].strip()
+                self.prompt_text.delete("1.0", tk.END)
+                if remainder:
+                    self.prompt_text.insert(tk.END, remainder)
             self.prompt_text.focus_set()
-
-            if hasattr(self, "vts_manager"):
-                if catalog_codes and hasattr(self.vts_manager, "trigger_catalog_actions_sync"):
-                    self.vts_manager.trigger_catalog_actions_sync(vts_catalog, catalog_codes)
-                self.vts_manager.trigger_actions_sync(vts_actions)
-
-            if self.tts_enabled_var.get():
-                def update_first_voice(seconds: float) -> None:
-                    self.root.after(
-                        0,
-                        lambda: self.status_var.set(
-                            format_generation_status(
-                                **status_kwargs,
-                                first_voice_seconds=seconds,
-                            )
-                        ),
-                    )
-
-                threading.Thread(
-                    target=self._play_tts,
-                    args=(clean_result, update_first_voice, effective_voice_speed(
-                        self.voice_speed_var.get(),
-                        auto_pace_enabled=self.auto_voice_pace_var.get(),
-                        pace=pace,
-                    )),
-                    daemon=True,
-                ).start()
         except Exception as error:
             logger.warning("Error in _generation_finished: %s", error, exc_info=True)
             self._generation_failed(str(error) or repr(error))
+            return
 
-    def _play_tts(self, text: str, on_first_audio_timing=None, speed: float = DEFAULT_VOICE_SPEED) -> None:
+        if hasattr(self, "vts_manager") and (catalog_codes or vts_actions):
+            def vts_task() -> None:
+                try:
+                    if catalog_codes and hasattr(self.vts_manager, "trigger_catalog_actions_sync"):
+                        self.vts_manager.trigger_catalog_actions_sync(vts_catalog, catalog_codes)
+                    self.vts_manager.trigger_actions_sync(vts_actions)
+                except Exception as error:
+                    logger.warning("VTS trigger failed: %s", error)
+
+            threading.Thread(target=vts_task, daemon=True).start()
+
+        if self.tts_enabled_var.get():
+            def update_first_voice(seconds: float) -> None:
+                self._schedule_ui(
+                    lambda: self.status_var.set(
+                        format_generation_status(
+                            **status_kwargs,
+                            first_voice_seconds=seconds,
+                        )
+                    ),
+                )
+
+            threading.Thread(
+                target=self._play_tts,
+                args=(clean_result, update_first_voice, effective_voice_speed(
+                    self.voice_speed_var.get(),
+                    auto_pace_enabled=self.auto_voice_pace_var.get(),
+                    pace=pace,
+                ), voice_selection),
+                daemon=True,
+            ).start()
+
+    def _play_tts(
+        self,
+        text: str,
+        on_first_audio_timing=None,
+        speed: float = DEFAULT_VOICE_SPEED,
+        selection: object = DEFAULT_VOICE_SELECTION,
+    ) -> None:
         try:
             clean_text = clean_tts_text(text)
             if not clean_text:
                 return
 
-            self.root.after(0, lambda: self.status_var.set("Preparing voice..."))
-            
-            selection = self._selected_voice_selection()
+            self._schedule_ui(lambda: self.status_var.set("Preparing voice..."))
+
             self.gpu_lifecycle.prepare_speech(selection)
             self._play_voice_chunks(
                 split_tts_chunks(clean_text),
@@ -1361,9 +1595,8 @@ class RuApp:
             )
 
         except Exception as error:
-            self.root.after(0, lambda e=str(error): self.status_var.set(f"Voice unavailable: {e}"))
-            if getattr(self, "voice_mode_active", False):
-                self.root.after(1000, self._toggle_recording)
+            self._schedule_ui(lambda e=str(error): self.status_var.set(f"Voice unavailable: {e}"))
+            self._schedule_recording()
 
     def _play_voice_chunks(
         self,
@@ -1424,17 +1657,22 @@ class RuApp:
         producer.start()
         try:
             while generation == self._speech_generation:
-                item = files.get()
+                try:
+                    item = files.get(timeout=TTS_PLAYBACK_POLL_SECONDS)
+                except queue.Empty:
+                    continue
                 if item is end_of_queue:
                     break
                 if isinstance(item, tuple) and item[:1] == ("error",):
-                    self.root.after(
-                        0,
+                    self._schedule_ui(
                         lambda detail=str(item[1]): self.status_var.set(f"Voice unavailable: {detail}"),
                     )
                     break
-                if not isinstance(item, str):
+                if not isinstance(item, (str, bytes)):
                     continue
+                if generation != self._speech_generation:
+                    remove_audio_file(item)
+                    break
                 try:
                     play_wav_blocking(item)
                 finally:
@@ -1446,18 +1684,42 @@ class RuApp:
                     remove_audio_file(files.get_nowait())
                 except queue.Empty:
                     break
-            if hasattr(self, "vts_manager"):
+            if hasattr(self, "vts_manager") and generation == self._speech_generation:
                 self.vts_manager.set_speaking(False)
-            if generation == self._speech_generation and getattr(self, "voice_mode_active", False):
-                self.root.after(500, self._toggle_recording)
+            self._schedule_recording(RECORD_RETRY_DELAY_MS // 2)
 
     def _generation_failed(self, message: str) -> None:
         self._discard_streaming_turn()
         self.status_var.set(f"Error: {message}")
         self._set_controls_enabled(True)
         self._update_mark_button()
-        if getattr(self, "voice_mode_active", False):
-            self.root.after(1000, self._toggle_recording)
+        self._schedule_recording()
+
+
+    def shutdown(self) -> None:
+        self._shutting_down = True
+        self._cancel_scheduled_recording()
+        if self._settings_save_after_id is not None:
+            try:
+                self.root.after_cancel(self._settings_save_after_id)
+            except (RuntimeError, tk.TclError):
+                pass
+            self._settings_save_after_id = None
+        if self.worker is not None and self.worker.is_alive():
+            self.worker.join(timeout=SHUTDOWN_WORKER_JOIN_TIMEOUT)
+        if self._overlay_process is not None and self._overlay_process.poll() is None:
+            try:
+                self._overlay_process.terminate()
+            except OSError:
+                pass
+        with self.gpu_transition_lock:
+            self.runner.release_gpu()
+        if self._pygame_initialized:
+            try:
+                pygame.mixer.quit()
+            except Exception as exc:
+                logger.debug("pygame.mixer.quit failed: %s", exc)
+        self.vts_manager.shutdown()
 
 
 def main() -> int:
@@ -1468,8 +1730,7 @@ def main() -> int:
     try:
         root.mainloop()
     finally:
-        app.vts_manager.shutdown()
-        app.runner.release_gpu()
+        app.shutdown()
     return 0
 
 

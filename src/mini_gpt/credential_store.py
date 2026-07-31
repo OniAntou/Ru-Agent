@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class KeyringBackend(Protocol):
@@ -31,6 +34,7 @@ class CredentialStore:
         try:
             return self._backend.get_password(self.service_name, self.account_name)
         except Exception as error:
+            logger.exception("Credential backend failed while reading the API key")
             raise CredentialStoreError("Could not read the saved API key") from error
 
     def set_key(self, key: str) -> None:
@@ -40,17 +44,21 @@ class CredentialStore:
         try:
             self._backend.set_password(self.service_name, self.account_name, key)
         except Exception as error:
+            logger.exception("Credential backend failed while saving the API key")
             raise CredentialStoreError("Could not save the API key") from error
 
     def delete_key(self) -> None:
         try:
             self._backend.delete_password(self.service_name, self.account_name)
         except Exception as error:
+            logger.exception("Credential backend failed while removing the API key")
             raise CredentialStoreError("Could not remove the saved API key") from error
 
     def migrate_legacy(self, settings: dict[str, object]) -> tuple[dict[str, object], bool]:
         cleaned = dict(settings)
         legacy_key = cleaned.pop("api_key", None)
+        migrated = False
         if isinstance(legacy_key, str) and legacy_key.strip() and self.get_key() is None:
             self.set_key(legacy_key)
-        return cleaned, isinstance(legacy_key, str)
+            migrated = True
+        return cleaned, migrated

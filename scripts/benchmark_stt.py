@@ -10,7 +10,6 @@ from typing import Callable, Iterable
 
 from mini_gpt.speech_runtime import (
     SPEECH_ENGINE_GOOGLE,
-    SPEECH_ENGINE_SHERPA_ONNX,
     CapturedAudio,
     SpeechConfigurationError,
     SpeechEngineConfig,
@@ -68,6 +67,18 @@ def run_benchmark(
                 }
             )
             continue
+        except Exception as error:
+            records.append(
+                {
+                    "engine_id": recognizer.engine_id,
+                    "audio_path": str(item.audio_path),
+                    "expected_text": item.expected_text,
+                    "latency_ms": round((clock() - started) * 1000, 3),
+                    "status": "error",
+                    "error": f"{type(error).__name__}: {error}",
+                }
+            )
+            continue
         records.append(
             {
                 "engine_id": recognizer.engine_id,
@@ -110,7 +121,7 @@ def load_manifest(path: Path) -> list[BenchmarkItem]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Benchmark Ru speech recognition using supplied WAV files.")
-    parser.add_argument("--engine", choices=(SPEECH_ENGINE_GOOGLE, SPEECH_ENGINE_SHERPA_ONNX), required=True)
+    parser.add_argument("--engine", choices=(SPEECH_ENGINE_GOOGLE,), required=True)
     parser.add_argument("--model-dir", type=Path)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)

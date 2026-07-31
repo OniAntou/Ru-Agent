@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import random
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, asdict
@@ -85,7 +88,10 @@ class PhysicalVramMonitor:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return
+            # A previous aborted run must not poison the next one.
             self._stop.clear()
+            self._exceeded.clear()
+            self._peak_mib = None
             self._thread = threading.Thread(target=self._poll, daemon=True, name="ru-vram-monitor")
             self._thread.start()
 
@@ -293,6 +299,7 @@ def write_adapter_manifest(
     elapsed_seconds: float | None = None,
     training_status: str = "completed",
     wall_clock_seconds: float | None = None,
+    aborted_reason: str | None = None,
 ) -> dict[str, object]:
     destination = Path(adapter_dir)
     manifest = {
@@ -316,11 +323,44 @@ def write_adapter_manifest(
         "elapsed_seconds": elapsed_seconds,
         "training_status": training_status,
         "wall_clock_seconds": wall_clock_seconds,
+        "aborted_reason": aborted_reason,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
     destination.mkdir(parents=True, exist_ok=True)
-    (destination / "ru_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    manifest_path = destination / "ru_manifest.json"
+    temp_path = manifest_path.with_suffix(".json.tmp")
+    temp_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    os.replace(temp_path, manifest_path)
     return manifest
+
+
+def _is_cuda_oom(error: Exception) -> bool:
+    try:
+        torch_oom = torch.OutOfMemoryError
+    except AttributeError:
+        torch_oom = torch.cuda.OutOfMemoryError
+    return isinstance(error, (torch.cuda.OutOfMemoryError, torch_oom))
+
+
+def _save_adapter_atomically(model: object, destination: Path) -> None:
+    # save_pretrained() writes in place; a crash mid-write leaves a corrupt
+    # adapter that later fails to load. Save into a staging directory and
+    # swap it in with a rename so the destination is always complete.
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".adapter-staging-", dir=destination.parent))
+    try:
+        model.save_pretrained(staging)
+        backup = destination.with_name(destination.name + ".prev")
+        if destination.exists():
+            if backup.exists():
+                shutil.rmtree(backup, ignore_errors=True)
+            destination.rename(backup)
+        staging.rename(destination)
+        if backup.exists():
+            shutil.rmtree(backup, ignore_errors=True)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
 
 def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = None) -> dict[str, object]:
     from hashlib import sha256
@@ -386,8 +426,28 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
         )
 
     def encode(path: Path):
-        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-        return [encode_llama_response(tokenizer, tuple(LlamaMessage(message["role"], message["content"]) for message in row["messages"]), row["response"], config.max_length) for row in rows]
+        rows: list[EncodedLlamaResponse] = []
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"Invalid JSON in {path} at line {line_number}: {error}") from error
+            rows.append(
+                encode_llama_response(
+                    tokenizer,
+                    tuple(
+                        LlamaMessage(message["role"], message["content"])
+                        for message in row["messages"]
+                    ),
+                    row["response"],
+                    config.max_length,
+                )
+            )
+        return rows
 
     train_rows, validation_rows = encode(train_path), encode(validation_path)
     collator = LlamaResponseCollator(tokenizer.pad_token_id)
@@ -436,6 +496,7 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
     training_started = time.monotonic()
     timed_out = False
     executed_steps = 0
+    aborted_reason: str | None = None
     monitor = (
         PhysicalVramMonitor(config.physical_vram_cap_mib, config.physical_vram_poll_seconds)
         if config.physical_vram_cap_mib is not None
@@ -446,16 +507,28 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
 
     try:
         for step in range(limit):
-            if monitor is not None and monitor.exceeded:
-                raise RuntimeError(f"physical VRAM cap exceeded (peak_mib={monitor.peak_mib})")
+            # Poll the VRAM monitor periodically instead of only before the
+            # first step so an overshoot aborts mid-run.
+            if step % 5 == 0 and monitor is not None and monitor.exceeded:
+                aborted_reason = f"physical VRAM cap exceeded (peak_mib={monitor.peak_mib})"
+                break
             if config.wall_clock_seconds is not None and time.monotonic() - training_started >= config.wall_clock_seconds:
                 timed_out = True
                 break
-            batch = collator([train_rows[step % len(train_rows)]])
-            executed_steps += 1
-            batch = {key: value.to("cuda") for key, value in batch.items()}
-            loss = model(**batch).loss / config.gradient_accumulation_steps
-            loss.backward()
+            try:
+                batch = collator([train_rows[step % len(train_rows)]])
+                executed_steps += 1
+                batch = {key: value.to("cuda") for key, value in batch.items()}
+                loss = model(**batch).loss / config.gradient_accumulation_steps
+                loss.backward()
+            except Exception as error:
+                if not _is_cuda_oom(error):
+                    raise
+                aborted_reason = f"CUDA out of memory during step {step + 1}: {error}"
+                optimizer.zero_grad(set_to_none=True)
+                del model
+                torch.cuda.empty_cache()
+                break
             if (step + 1) % config.gradient_accumulation_steps == 0 or step + 1 == limit:
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -469,17 +542,27 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
                         f"elapsed_s={elapsed:.1f}"
                     )
                 if optimizer_updates % config.evaluation_steps == 0 or step + 1 == limit:
-                    candidate_loss = validation_loss()
+                    try:
+                        candidate_loss = validation_loss()
+                    except Exception as error:
+                        if not _is_cuda_oom(error):
+                            raise
+                        aborted_reason = f"CUDA out of memory during validation: {error}"
+                        optimizer.zero_grad(set_to_none=True)
+                        del model
+                        torch.cuda.empty_cache()
+                        break
                     print(
                         "[validation] "
                         f"update={optimizer_updates} rows={len(validation_rows)} "
                         f"loss={candidate_loss:.4f}"
                     )
                     if monitor is not None and monitor.exceeded:
-                        raise RuntimeError(f"physical VRAM cap exceeded (peak_mib={monitor.peak_mib})")
+                        aborted_reason = f"physical VRAM cap exceeded (peak_mib={monitor.peak_mib})"
+                        break
                     if candidate_loss < best_loss:
                         best_loss = candidate_loss
-                        model.save_pretrained(adapter_dir)
+                        _save_adapter_atomically(model, adapter_dir)
     finally:
         if monitor is not None:
             monitor.stop()
@@ -493,13 +576,18 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
             # produced no trustworthy sample, use actual tensor allocation as
             # the conservative fallback instead of the virtual reserved pool.
             physical_peak_mib = torch.cuda.max_memory_allocated() / (1024 * 1024)
-        if monitor.exceeded or physical_peak_mib > config.physical_vram_cap_mib:
-            raise RuntimeError(f"physical VRAM cap exceeded (peak_mib={physical_peak_mib})")
-        physical_cap_passed = True
+        if aborted_reason is None and monitor.exceeded:
+            aborted_reason = f"physical VRAM cap exceeded (peak_mib={physical_peak_mib})"
+        if aborted_reason is None and physical_peak_mib > config.physical_vram_cap_mib:
+            aborted_reason = f"physical VRAM cap exceeded (peak_mib={physical_peak_mib})"
+        if aborted_reason is None:
+            physical_cap_passed = True
 
     peak_vram_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
     elapsed_seconds = time.monotonic() - training_started
-    return write_adapter_manifest(
+    # Write the manifest even for aborted runs so the checkpoint directory is
+    # loadable and the failure reason is recorded for the next run.
+    manifest = write_adapter_manifest(
         adapter_dir,
         backend=config.backend,
         profile_name=config.profile_name,
@@ -515,9 +603,13 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
         seed=config.seed,
         max_length=config.max_length,
         optimizer_updates=optimizer_updates,
-        training_steps=executed_steps,
+        training_steps=optimizer_updates,
         validation_examples=len(validation_rows),
         elapsed_seconds=elapsed_seconds,
-        training_status="timed_out" if timed_out else "completed",
+        training_status="incomplete" if aborted_reason else ("timed_out" if timed_out else "completed"),
         wall_clock_seconds=config.wall_clock_seconds,
+        aborted_reason=aborted_reason,
     )
+    if aborted_reason is not None:
+        raise RuntimeError(aborted_reason)
+    return manifest

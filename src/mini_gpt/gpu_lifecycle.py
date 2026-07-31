@@ -1,10 +1,20 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from time import perf_counter
 
 from .voice_runtime import VoiceSelection
+
+logger = logging.getLogger(__name__)
+
+_ENGINE_DISPLAY_NAMES = {
+    "omnivoice": "OmniVoice",
+    "edge": "Edge",
+    "system": "System",
+    "piper": "Piper",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,27 +43,29 @@ class GpuLifecycle:
     ) -> float:
         with self._lock:
             controller = self._selected_controller(selection)
-            self._release_local_runtime()
-            self._release_other_voice_services(selection.engine_id)
             set_status(f"Warming {self._engine_name(selection.engine_id)} voice...")
             controller.ensure()
             started = self._clock()
-            controller.request("/warmup", {"voice_profile": selection.profile_id})
+            self._request_warmup(controller, selection)
+            # Release the local model only after the voice service is warm:
+            # a failed warmup must not leave the GPU model unloaded (rollback).
+            self._release_local_runtime()
+            self._release_other_voice_services(selection.engine_id)
             return max(0.0, self._clock() - started)
 
     def prepare_local_generation(self) -> None:
         with self._lock:
             for controller in self._voice_services.values():
                 if controller.available():
-                    controller.request("/release", None)
+                    self._release_voice_service(controller)
 
     def prepare_speech(self, selection: VoiceSelection) -> None:
         with self._lock:
             controller = self._selected_controller(selection)
+            controller.ensure()
+            self._request_warmup(controller, selection)
             self._release_local_runtime()
             self._release_other_voice_services(selection.engine_id)
-            controller.ensure()
-            controller.request("/warmup", {"voice_profile": selection.profile_id})
 
     def _selected_controller(self, selection: VoiceSelection) -> VoiceServiceController:
         try:
@@ -64,8 +76,22 @@ class GpuLifecycle:
     def _release_other_voice_services(self, selected_engine_id: str) -> None:
         for engine_id, controller in self._voice_services.items():
             if engine_id != selected_engine_id and controller.available():
-                controller.request("/release", None)
+                self._release_voice_service(controller)
+
+    def _release_voice_service(self, controller: VoiceServiceController) -> None:
+        result = controller.request("/release", None)
+        if isinstance(result, dict) and result.get("released") is False:
+            # Proceed but warn: loading the local model now may fail or run
+            # out of memory because the voice service still holds the GPU.
+            logger.warning(
+                "Voice service did not confirm /release; GPU memory may be insufficient for local generation"
+            )
+
+    def _request_warmup(self, controller: VoiceServiceController, selection: VoiceSelection) -> None:
+        result = controller.request("/warmup", {"voice_profile": selection.profile_id})
+        if isinstance(result, dict) and result.get("ready") is False:
+            raise RuntimeError(f"Voice warmup failed for engine {selection.engine_id!r}")
 
     @staticmethod
     def _engine_name(engine_id: str) -> str:
-        return {"omnivoice": "OmniVoice"}.get(engine_id, engine_id)
+        return _ENGINE_DISPLAY_NAMES.get(engine_id, engine_id)

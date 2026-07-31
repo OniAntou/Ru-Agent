@@ -1,8 +1,10 @@
 import asyncio
+import concurrent.futures
 import logging
+import os
 import random
-import time
 import threading
+import time
 
 import pyvts
 
@@ -24,6 +26,20 @@ from .vts_motion import (
 
 logger = logging.getLogger(__name__)
 
+REQUEST_TIMEOUT_SECONDS = 2.0
+VTS_LOOP_WAIT_TIMEOUT_SECONDS = 10.0
+SWAY_LOOP_SLEEP_SECONDS = 0.1
+DISCONNECTED_POLL_SECONDS = 0.5
+ERROR_BACKOFF_SECONDS = 1.0
+RECONNECT_MIN_INTERVAL_SECONDS = 5.0
+RECONNECT_MAX_ATTEMPTS = 5
+MAX_CONCURRENT_REQUESTS = 4
+CATALOG_CACHE_TTL_SECONDS = 10.0
+VTS_TOKEN_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "vts_token.txt",
+)
+
 ACTION_HOTKEYS = {
     "joy": ("星星眼", "眼睛恢复", 2.0),
     "surprised": ("惊讶", None, 2.0),
@@ -40,7 +56,7 @@ class VTSManager:
         plugin_info = {
             "plugin_name": "Ru Local Llama",
             "developer": "Antigravity",
-            "authentication_token_path": "./vts_token.txt",
+            "authentication_token_path": VTS_TOKEN_PATH,
         }
         self.vts = pyvts.vts(plugin_info=plugin_info)
         self.is_connected = False
@@ -59,15 +75,27 @@ class VTSManager:
         self._mouse_tracking_enabled = False
         self._pose_cycle_scheduler = PoseCycleScheduler(self._motion_random)
         self._last_micro_action_identifier: str | None = None
+        self._injection_paused = False
+        self._sway_running = False
+        self._sway_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._request_lock: asyncio.Lock | None = None
+        self._request_semaphore: asyncio.Semaphore | None = None
+        self._reconnect_lock: asyncio.Lock | None = None
+        self._background_tasks: set[asyncio.Task] = set()
+        self._timers: list[threading.Timer] = []
+        self._injection_chain: asyncio.Task | None = None
+        self._catalog_cache: VtsCatalog | None = None
+        self._catalog_cache_at = 0.0
+        self._last_reconnect_attempt_at = 0.0
+        self._reconnect_attempts = 0
+        self._reconnect_exhausted_logged = False
 
     def run(self) -> None:
         """Own the VTube Studio websocket on one persistent background loop."""
         loop = asyncio.new_event_loop()
         self._loop = loop
         asyncio.set_event_loop(loop)
-        self._request_lock = asyncio.Lock()
         try:
             loop.run_until_complete(self.connect())
             loop.run_forever()
@@ -75,19 +103,87 @@ class VTSManager:
             self.is_connected = False
             loop.close()
 
+    def _ensure_async_primitives(self) -> None:
+        if self._request_lock is None:
+            self._request_lock = asyncio.Lock()
+        if self._request_semaphore is None:
+            self._request_semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+
     async def _request(self, request: dict) -> dict:
-        request_lock = getattr(self, "_request_lock", None)
-        if request_lock is None:
-            return await self.vts.request(request)
-        async with request_lock:
-            return await self.vts.request(request)
+        if not self.is_connected:
+            return {}
+        self._ensure_async_primitives()
+        async with self._request_lock:
+            try:
+                return await asyncio.wait_for(
+                    self.vts.request(request), timeout=REQUEST_TIMEOUT_SECONDS
+                )
+            except Exception as exc:
+                logger.warning("VTS request failed: %s", exc)
+                self.is_connected = False
+                self._schedule_reconnect()
+                return {}
+
+    def _schedule_reconnect(self) -> None:
+        if not self._sway_running:
+            return
+        now = time.monotonic()
+        if self._reconnect_attempts >= RECONNECT_MAX_ATTEMPTS:
+            if not self._reconnect_exhausted_logged:
+                self._reconnect_exhausted_logged = True
+                logger.error(
+                    "VTS auto-reconnect exhausted after %d attempts",
+                    self._reconnect_attempts,
+                )
+            return
+        self._reconnect_exhausted_logged = False
+        if now - self._last_reconnect_attempt_at < RECONNECT_MIN_INTERVAL_SECONDS:
+            return
+        self._last_reconnect_attempt_at = now
+        logger.info("VTS connection lost, scheduling reconnect")
+        self._spawn_background_task(self._auto_reconnect())
+
+    async def _auto_reconnect(self) -> None:
+        if self._reconnect_lock is None:
+            self._reconnect_lock = asyncio.Lock()
+        async with self._reconnect_lock:
+            while self._reconnect_attempts < RECONNECT_MAX_ATTEMPTS:
+                await asyncio.sleep(RECONNECT_MIN_INTERVAL_SECONDS)
+                if self.is_connected or not self._sway_running:
+                    return
+                self._reconnect_attempts += 1
+                self._last_reconnect_attempt_at = time.monotonic()
+                logger.info(
+                    "VTS reconnect attempt %d/%d",
+                    self._reconnect_attempts,
+                    RECONNECT_MAX_ATTEMPTS,
+                )
+                await self._reconnect()
+                if self.is_connected:
+                    self._reconnect_attempts = 0
+                    self._reconnect_exhausted_logged = False
+                    return
+            if not self._reconnect_exhausted_logged:
+                self._reconnect_exhausted_logged = True
+                logger.error(
+                    "VTS auto-reconnect exhausted after %d attempts",
+                    self._reconnect_attempts,
+                )
 
     def _run_on_vts_loop(self, coroutine, *, wait: bool):
         loop = getattr(self, "_loop", None)
         if loop is not None and loop.is_running():
             future = asyncio.run_coroutine_threadsafe(coroutine, loop)
             if wait:
-                return future.result(timeout=5)
+                try:
+                    return future.result(timeout=VTS_LOOP_WAIT_TIMEOUT_SECONDS)
+                except concurrent.futures.TimeoutError:
+                    logger.debug("VTS loop wait timed out")
+                    future.cancel()
+                    return None
+                except Exception:
+                    future.cancel()
+                    raise
             return None
         if wait:
             return asyncio.run(coroutine)
@@ -99,13 +195,27 @@ class VTSManager:
 
     def shutdown(self) -> None:
         self.is_connected = False
+        self._sway_running = False
         self.set_speaking(False)
         self._sway_controller.reset()
+        for timer in self._timers:
+            timer.cancel()
+        self._timers.clear()
         loop = self._loop
         if loop is None or not loop.is_running():
             return
 
         async def close_connection() -> None:
+            sway_task = getattr(self, "_sway_task", None)
+            if sway_task is not None and not sway_task.done():
+                sway_task.cancel()
+                try:
+                    await sway_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+            for task in list(self._background_tasks):
+                task.cancel()
+            self._background_tasks.clear()
             if self.vts.websocket is not None:
                 await self.vts.close()
 
@@ -129,15 +239,31 @@ class VTSManager:
             if not authenticated:
                 raise RuntimeError("VTube Studio did not authenticate Ru")
             self.is_connected = True
-            response = await self._request(self.vts.vts_request.requestHotKeyList())
-            self.hotkeys = response["data"]["availableHotkeys"]
+            try:
+                response = await asyncio.wait_for(
+                    self.vts.request(self.vts.vts_request.requestHotKeyList()),
+                    timeout=REQUEST_TIMEOUT_SECONDS,
+                )
+                self.hotkeys = response.get("data", {}).get("availableHotkeys", [])
+            except Exception as e:
+                logger.warning("Could not load hotkeys during connect: %s", e)
             logger.info("VTS Connected. Found %d hotkeys.", len(self.hotkeys))
-            # Khởi tạo thông số và chạy sway loop ngầm
             await self.setup_custom_parameters()
-            self._sway_task = asyncio.create_task(self.sway_loop())
+            self._catalog_cache = None
+            self._reconnect_attempts = 0
+            self._reconnect_exhausted_logged = False
+            self._ensure_sway_task()
         except Exception as e:
             logger.warning("Failed to connect to VTube Studio: %s", e)
             self.is_connected = False
+
+    def _ensure_sway_task(self) -> None:
+        if self._loop is None or not self._loop.is_running():
+            return
+        task = getattr(self, "_sway_task", None)
+        if task is not None and not task.done():
+            return
+        self._sway_task = asyncio.create_task(self.sway_loop())
 
     async def setup_custom_parameters(self):
         try:
@@ -171,91 +297,143 @@ class VTSManager:
                 logger.debug("Could not create %s: %s", name, e)
 
     async def sway_loop(self):
+        self._sway_running = True
         self._sway_controller.reset()
         start_time = time.monotonic()
-        while self.is_connected:
-            try:
-                now = time.monotonic()
-                elapsed = now - start_time
+        try:
+            while self._sway_running:
+                if not self.is_connected:
+                    self._schedule_reconnect()
+                    await asyncio.sleep(DISCONNECTED_POLL_SECONDS)
+                    continue
+                try:
+                    now = time.monotonic()
+                    elapsed = now - start_time
 
-                # ── Sway / Body ───────────────────────────────────────
-                if self._mouse_tracking_enabled:
-                    # Mouse tracking: body xoay theo hướng chuột
-                    val = self._mouse_eye_tracker.read_body()
-                else:
-                    # Idle: body lắc tự nhiên
-                    val = self._sway_controller.update(
-                        now, elapsed, speaking=self.is_speaking
-                    )
-                req_inject = self.vts.vts_request.requestSetParameterValue(
-                    parameter="LLM_Sway", value=val
-                )
-                await self._request(req_inject)
+                    # ── Sway / Body ───────────────────────────────────────
+                    if self._mouse_tracking_enabled:
+                        val = self._mouse_eye_tracker.read_body()
+                    else:
+                        val = self._sway_controller.update(
+                            now, elapsed, speaking=self.is_speaking
+                        )
 
-                # ── Eye + Head motion ──────────────────────────────────
-                if self._mouse_tracking_enabled:
-                    try:
-                        cx, cy = self._cursor_pos()
-                        self._mouse_eye_tracker.feed_position(cx, cy)
-                    except Exception:
-                        pass
-                    eye_x, eye_y = self._mouse_eye_tracker.read_eye()
-                    hz, hy, hx = self._mouse_eye_tracker.read_head()
-                else:
-                    eye_x, eye_y = self._eye_controller.update(now)
-                    hz = head_tilt_value(elapsed)
-                    hy = head_nod_value(elapsed)
-                    hx = head_yaw_value(elapsed)
+                    # ── Eye + Head motion ──────────────────────────────────
+                    if self._mouse_tracking_enabled:
+                        try:
+                            cx, cy = self._cursor_pos()
+                            self._mouse_eye_tracker.feed_position(cx, cy)
+                        except Exception:
+                            pass
+                        eye_x, eye_y = self._mouse_eye_tracker.read_eye()
+                        hz, hy, hx = self._mouse_eye_tracker.read_head()
+                    else:
+                        eye_x, eye_y = self._eye_controller.update(now)
+                        hz = head_tilt_value(elapsed)
+                        hy = head_nod_value(elapsed)
+                        hx = head_yaw_value(elapsed)
 
-                await self._request(
-                    self.vts.vts_request.requestSetParameterValue(
-                        parameter="LLM_EyeX", value=eye_x
-                    )
-                )
-                await self._request(
-                    self.vts.vts_request.requestSetParameterValue(
-                        parameter="LLM_EyeY", value=eye_y
-                    )
-                )
-                await self._request(
-                    self.vts.vts_request.requestSetParameterValue(
-                        parameter="LLM_HeadZ", value=hz
-                    )
-                )
-                await self._request(
-                    self.vts.vts_request.requestSetParameterValue(
-                        parameter="LLM_HeadY", value=hy
-                    )
-                )
-                await self._request(
-                    self.vts.vts_request.requestSetParameterValue(
-                        parameter="LLM_HeadX", value=hx
-                    )
-                )
+                    # ── Batch gửi tất cả parameter mỗi tick ──────────────
+                    if not self._injection_paused:
+                        req = self.vts.vts_request.requestSetMultiParameterValue(
+                            parameters=["LLM_Sway", "LLM_EyeX", "LLM_EyeY",
+                                        "LLM_HeadZ", "LLM_HeadY", "LLM_HeadX"],
+                            values=[val, eye_x, eye_y, hz, hy, hx],
+                        )
+                        self._spawn_background_task(self._send_request(req))
 
-                # ── Micro-actions ─────────────────────────────────────
-                if self._micro_action_scheduler.update(now, self.is_speaking):
-                    await self._trigger_micro_action()
+                    # ── Micro-actions ─────────────────────────────────────
+                    if self._micro_action_scheduler.update(now, self.is_speaking):
+                        self._spawn_background_task(self._trigger_micro_action())
 
-                # ── Idle pose cycle ───────────────────────────────────
-                if self._pose_cycle_scheduler.update(now, self.is_speaking):
-                    await self._trigger_pose()
+                    # ── Idle pose cycle ───────────────────────────────────
+                    if self._pose_cycle_scheduler.update(now, self.is_speaking):
+                        self._spawn_background_task(self._trigger_pose())
 
-                await asyncio.sleep(0.05)
-            except Exception as e:
-                logger.debug("Sway loop error: %s", e)
-                await asyncio.sleep(1)
+                    await asyncio.sleep(SWAY_LOOP_SLEEP_SECONDS)  # 10 Hz
+                except Exception as e:
+                    logger.debug("Sway loop error: %s", e)
+                    await asyncio.sleep(ERROR_BACKOFF_SECONDS)
+        finally:
+            self._sway_running = False
+
+    def _spawn_background_task(self, coroutine) -> None:
+        task = asyncio.create_task(coroutine)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _send_request(self, request: dict) -> None:
+        self._ensure_async_primitives()
+        if not self.is_connected:
+            return
+        async with self._request_semaphore:
+            await self._request(request)
 
     def set_speaking(self, speaking: bool) -> None:
         """Update the speech state consumed by the background sway loop."""
+        speaking = bool(speaking)
+        if speaking == self.is_speaking:
+            return
+        self.is_speaking = speaking
+        self._micro_action_scheduler.reset()
+        self._pose_cycle_scheduler.reset()
+        if not speaking:
+            self._last_micro_action_identifier = None
 
-        was_speaking = self.is_speaking
-        self.is_speaking = bool(speaking)
-        if not self.is_speaking or (self.is_speaking and not was_speaking):
-            self._micro_action_scheduler.reset()
-            self._pose_cycle_scheduler.reset()
-            if not self.is_speaking:
-                self._last_micro_action_identifier = None
+    def set_injection_paused(self, paused: bool) -> None:
+        """Toggle VTS WebSocket connection entirely for FPS test."""
+        self._injection_paused = bool(paused)
+        self._run_on_vts_loop(self._run_injection_toggle(), wait=False)
+        logger.info("VTS injection paused=%s", paused)
+
+    async def _run_injection_toggle(self) -> None:
+        chain = self._injection_chain
+        if chain is not None and chain is not asyncio.current_task():
+            try:
+                await chain
+            except (asyncio.CancelledError, Exception):
+                pass
+        self._injection_chain = asyncio.current_task()
+        try:
+            if self._injection_paused:
+                await self._disconnect()
+            else:
+                await self._reconnect()
+                self._ensure_sway_task()
+        finally:
+            self._injection_chain = None
+
+    async def _disconnect(self) -> None:
+        try:
+            await self.vts.close()
+        except Exception:
+            pass
+        self.is_connected = False
+
+    async def _reconnect(self) -> None:
+        try:
+            await self.vts.connect()
+            try:
+                await self.vts.read_token()
+                authenticated = await self.vts.request_authenticate()
+            except Exception:
+                authenticated = False
+            if not authenticated:
+                await self.vts.request_authenticate_token(force=True)
+                authenticated = await self.vts.request_authenticate()
+            if not authenticated:
+                logger.error("VTS reconnect auth failed")
+                return
+            self.is_connected = True
+            await self.setup_custom_parameters()
+            self._catalog_cache = None
+            self._reconnect_attempts = 0
+            self._reconnect_exhausted_logged = False
+            self._ensure_sway_task()
+            logger.info("VTS reconnected")
+        except Exception as e:
+            self.is_connected = False
+            logger.error("VTS reconnect failed: %s", e)
 
     # ── Mouse eye tracking ──────────────────────────────────────────────
 
@@ -263,7 +441,7 @@ class VTSManager:
         """Toggle cursor-follow gaze + head motion.
 
         When *enabled* the ``sway_loop`` reads the cursor position directly
-        every tick (20 Hz) and feeds it to ``MouseEyeTracker`` so both eye
+        every tick (10 Hz) and feeds it to ``MouseEyeTracker`` so both eye
         and head parameters move in sync — eyes quick, head slow.
         When *disabled* the idle sine-wave head motion resumes.
         """
@@ -279,16 +457,16 @@ class VTSManager:
     def _cursor_pos() -> tuple[int, int]:
         """Get global cursor coordinates via best available API."""
         try:
-            import pyautogui  # type: ignore[import-untyped]
-            return pyautogui.position()  # type: ignore[no-any-return]
-        except Exception:
-            pass
-        try:
             import ctypes
             import ctypes.wintypes
             pt = ctypes.wintypes.POINT()
-            ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
-            return (pt.x, pt.y)
+            if ctypes.windll.user32.GetCursorPos(ctypes.byref(pt)):
+                return (pt.x, pt.y)
+        except Exception:
+            pass
+        try:
+            import pyautogui  # type: ignore[import-untyped]
+            return pyautogui.position()  # type: ignore[no-any-return]
         except Exception:
             return (0, 0)
 
@@ -342,7 +520,9 @@ class VTSManager:
         """Pick and fire one body-pose hotkey from the catalog."""
         if not self.is_connected:
             return
-        with self._semantic_action_lock:
+        if not self._semantic_action_lock.acquire(blocking=False):
+            return
+        try:
             catalog = await self._fetch_catalog()
             if catalog is None:
                 return
@@ -352,19 +532,36 @@ class VTSManager:
                 return
             await self._trigger_catalog_actions(catalog, (entry.code,))
             logger.info("Idle pose: %s", entry.label)
+        finally:
+            self._semantic_action_lock.release()
 
     async def trigger_hotkey(self, hotkey_name):
         if not self.is_connected:
             return
 
-        for hk in self.hotkeys:
-            if hk["name"].lower() == hotkey_name.lower():
-                request_msg = self.vts.vts_request.requestTriggerHotKey(hk["hotkeyID"])
-                await self._request(request_msg)
-                logger.info("Triggered hotkey: %s", hk["name"])
-                return
+        for attempt in range(2):
+            if not self.hotkeys:
+                await self._reload_hotkeys()
+            for hk in self.hotkeys:
+                if hk["name"].lower() == hotkey_name.lower():
+                    request_msg = self.vts.vts_request.requestTriggerHotKey(hk["hotkeyID"])
+                    await self._request(request_msg)
+                    logger.info("Triggered hotkey: %s", hk["name"])
+                    return
+            if attempt == 0:
+                await self._reload_hotkeys()
 
         logger.warning("Hotkey '%s' not found.", hotkey_name)
+
+    async def _reload_hotkeys(self) -> None:
+        try:
+            response = await self._request(self.vts.vts_request.requestHotKeyList())
+            hotkeys = response.get("data", {}).get("availableHotkeys", [])
+            if hotkeys:
+                self.hotkeys = hotkeys
+                logger.info("Reloaded %d hotkeys", len(hotkeys))
+        except Exception as error:
+            logger.warning("Could not reload hotkeys: %s", error)
 
     def trigger_hotkey_sync(self, hotkey_name):
         if not self.is_connected:
@@ -397,11 +594,15 @@ class VTSManager:
                     self.trigger_hotkey_sync(reset_hotkey)
             reset_timer = threading.Timer(reset_delay, _reset_with_guard)
             reset_timer.daemon = True
+            self._timers.append(reset_timer)
             reset_timer.start()
 
     async def _fetch_catalog(self) -> VtsCatalog | None:
         if not self.is_connected:
             return None
+        now = time.monotonic()
+        if self._catalog_cache is not None and now - self._catalog_cache_at < CATALOG_CACHE_TTL_SECONDS:
+            return self._catalog_cache
         current = await self._request(self.vts.vts_request.BaseRequest("CurrentModelRequest"))
         current_data = current.get("data", {})
         if not current_data.get("modelLoaded"):
@@ -417,12 +618,15 @@ class VTSManager:
                 {"details": False, "expressionFile": ""},
             )
         )
-        return build_catalog(
+        catalog = build_catalog(
             model_id=model_id,
             model_name=model_name,
             hotkeys=hotkeys.get("data", {}).get("availableHotkeys", []),
             expressions=expressions.get("data", {}).get("expressions", []),
         )
+        self._catalog_cache = catalog
+        self._catalog_cache_at = now
+        return catalog
 
     def current_catalog_sync(self) -> VtsCatalog | None:
         try:
@@ -472,6 +676,7 @@ class VTSManager:
     def _schedule_expression_deactivation(self, expression_key: tuple[str, str]) -> None:
         timer = threading.Timer(EXPRESSION_ACTIVE_SECONDS, self._deactivate_expression_sync, args=(expression_key,))
         timer.daemon = True
+        self._timers.append(timer)
         timer.start()
 
     async def _deactivate_expression(self, expression_key: tuple[str, str]) -> None:
@@ -498,3 +703,6 @@ class VTSManager:
             self._run_on_vts_loop(self._deactivate_expression(expression_key), wait=True)
         except Exception as error:
             logger.warning("Could not deactivate VTube expression: %s", error)
+        finally:
+            with self._expression_lock:
+                self._active_expressions.discard(expression_key)

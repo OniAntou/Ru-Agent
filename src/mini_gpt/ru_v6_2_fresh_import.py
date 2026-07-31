@@ -13,22 +13,6 @@ from .ru_style import ru_system_prompt_for
 
 
 _URL_PATTERN = re.compile(r"(?i)(?:https?://|www\.)")
-_AI_META_SAFE_PATTERN = re.compile(
-    r"(?i)(?:\bas an ai\b|\blanguage model\b|\bm\u00f4 h\u00ecnh ai\b|\bng\u00f4n ng\u1eef ai\b|"
-    r"\bm\u1ed9t ng\u01b0\u1eddi robot\b|\bt\u00f4i l\u00e0 robot\b|\bem l\u00e0 robot\b|\bkh\u00f4ng th\u1ec3 truy c\u1eadp\b|\bi cannot\b)"
-)
-_EXPLICIT_SAFE_PATTERN = re.compile(
-    r"(?i)(?:\bquan h\u1ec7 t\u00ecnh d\u1ee5c\b|\bsex\b|\bsexting\b|\bc\u1ef1c kho\u00e1i\b|"
-    r"\bmasturbat\w*\b|\bth\u1ee7 d\u00e2m\b|\b\u00e2m \u0111\u1ea1o\b|\bd\u01b0\u01a1ng v\u1eadt\b|\b\u0111\u1ee5\b|"
-    r"\b(orgasm|sexual intercourse|genitals|penis|vagina|rape|cum|fuck)\b|"
-    r"\bc\u01b0\u1ee1ng hi\u1ebfp\b|\bhi\u1ebfp d\u00e2m\b|\bc\u01b0\u1ee1ng \u00e9p t\u00ecnh d\u1ee5c\b)"
-)
-_MINOR_SAFE_PATTERN = re.compile(r"(?i)(?:\btr\u1ebb em\b|\bcon n\u00edt\b|\bv\u1ecb th\u00e0nh ni\u00ean\b|\bminor\b)")
-_HARM_SAFE_PATTERN = re.compile(
-    r"(?i)(?:\bgi\u1ebft anh\b|\bgi\u1ebft em\b|\bkill you\b|\bshoot you\b|\bch\u1eb7t \u0111\u1ea7u\b|\bm\u00e1u me\b|"
-    r"\bb\u1eafn anh\b|\bb\u1eafn em\b|\bblood everywhere\b|\bgraphic violence\b|\b\u0111\u00e1nh ch\u1ebft\b)"
-)
-_VTS_PATTERN = re.compile(r"\[\[\s*vts\s*:", re.IGNORECASE)
 _AI_META_PATTERN = re.compile(
     r"(?i)(?:\bas an ai\b|\blanguage model\b|\bmô hình ai\b|\bngôn ngữ ai\b|"
     r"\bmột người robot\b|\btôi là robot\b|\bem là robot\b|\bkhông thể truy cập\b|"
@@ -37,14 +21,16 @@ _AI_META_PATTERN = re.compile(
 _EXPLICIT_PATTERN = re.compile(
     r"(?i)(?:\bquan hệ tình dục\b|\bsex\b|\bsexting\b|\bcực khoái\b|"
     r"\bmasturbat\w*\b|\bthủ dâm\b|\bâm đạo\b|\bdương vật\b|\bđụ\b|"
-    r"\bfuck\b|\bcưỡng hiếp\b|\bhiếp dâm\b|\bcưỡng ép tình dục\b|"
+    r"\b(orgasm|sexual intercourse|genitals|penis|vagina|rape|cum|fuck)\b|"
+    r"\bcưỡng hiếp\b|\bhiếp dâm\b|\bcưỡng ép tình dục\b|"
     r"\bcoercive sex\b|\bexplicit sexual\b|\btinh túy\b)"
 )
 _MINOR_PATTERN = re.compile(r"(?i)(?:\btrẻ em\b|\bcon nít\b|\bvị thành niên\b|\bminor\b)")
 _HARM_PATTERN = re.compile(
-    r"(?i)(?:\bgiết anh\b|\bgiết em\b|\bkill you\b|\bchặt đầu\b|\bmáu me\b|"
-    r"\bbắn anh\b|\bbắn em\b|\bgraphic violence\b|\bđánh chết\b)"
+    r"(?i)(?:\bgiết anh\b|\bgiết em\b|\bkill you\b|\bshoot you\b|\bchặt đầu\b|\bmáu me\b|"
+    r"\bbắn anh\b|\bbắn em\b|\bblood everywhere\b|\bgraphic violence\b|\bđánh chết\b)"
 )
+_VTS_PATTERN = re.compile(r"\[\[\s*vts\s*:", re.IGNORECASE)
 _LIST_LINE_PATTERN = re.compile(r"(?m)^\s*(?:[-*•]|\d+[.)])\s+")
 _PAIR_PATTERN = re.compile(r"(?ms)User\s*:\s*(.*?)\s*Assistant\s*:\s*(.*?)(?=\n\s*User\s*:|\Z)")
 _VI_PATTERN = re.compile(r"(?i)(?:\b(?:anh|em|mình|tôi|không|đang|vừa|hỏi|thăm|chào|nói|về|đây|nhé|rồi|muốn)\b|[à-ỹ])")
@@ -157,6 +143,11 @@ def _language(prompt: str, response: str) -> str:
     return "vi"
 
 
+_MAX_PROMPT_CHARS = 800
+_MAX_RESPONSE_CHARS = 1600
+CALIBRATION_MODES = frozenset({"approved_calibration", "memory_calibration"})
+
+
 def _reject_reason(turn: SourceTurn) -> str | None:
     prompt = normalize_text(turn.prompt)
     response = normalize_text(turn.response)
@@ -165,17 +156,17 @@ def _reject_reason(turn: SourceTurn) -> str | None:
     combined = f"{prompt}\n{response}"
     if _VTS_PATTERN.search(combined):
         return "vts_control_marker"
-    if _AI_META_PATTERN.search(combined) or _AI_META_SAFE_PATTERN.search(combined):
+    if _AI_META_PATTERN.search(combined):
         return "ai_meta"
     if _URL_PATTERN.search(combined) or len(_LIST_LINE_PATTERN.findall(response)) >= 2:
         return "links_or_list"
-    if _EXPLICIT_PATTERN.search(combined) or _EXPLICIT_SAFE_PATTERN.search(combined):
+    if _EXPLICIT_PATTERN.search(combined):
         return "unsafe_explicit"
-    if _MINOR_PATTERN.search(combined) or _MINOR_SAFE_PATTERN.search(combined):
+    if _MINOR_PATTERN.search(combined):
         return "unsafe_minor"
-    if _HARM_PATTERN.search(combined) or _HARM_SAFE_PATTERN.search(combined):
+    if _HARM_PATTERN.search(combined):
         return "unsafe_harm"
-    if len(prompt) > 800 or len(response) > 1600:
+    if len(prompt) > _MAX_PROMPT_CHARS or len(response) > _MAX_RESPONSE_CHARS:
         return "too_long"
     return None
 
@@ -183,6 +174,9 @@ def _reject_reason(turn: SourceTurn) -> str | None:
 def _to_training_row(turn: SourceTurn) -> dict[str, object]:
     language = _language(turn.prompt, turn.response)
     response = turn.response.removesuffix("Nya~").rstrip()
+    mode = "memory_calibration" if turn.source == "memory-import" else "approved_calibration"
+    if mode not in CALIBRATION_MODES:
+        raise ValueError(f"unexpected calibration mode: {mode}")
     return {
         "messages": [
             {"role": "system", "content": ru_system_prompt_for(language)},
@@ -190,7 +184,7 @@ def _to_training_row(turn: SourceTurn) -> dict[str, object]:
         ],
         "response": response,
         "language": language,
-        "mode": "memory_calibration" if turn.source == "memory-import" else "approved_calibration",
+        "mode": mode,
         "intensity": "light",
         "turn_band": "short",
         "source": turn.source,
@@ -251,7 +245,18 @@ def select_import_rows(approved_path: str | Path, memory_path: str | Path) -> Im
 def _read_rows(path: Path) -> list[dict[str, object]]:
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    records: list[dict[str, object]] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"malformed jsonl row in {path} at line {line_number}") from error
+        if not isinstance(value, dict):
+            raise ValueError(f"malformed jsonl row in {path} at line {line_number}")
+        records.append(value)
+    return records
 
 
 def append_imports_to_train(dataset_dir: str | Path, selection: ImportSelection) -> dict[str, object]:
@@ -278,6 +283,16 @@ def append_imports_to_train(dataset_dir: str | Path, selection: ImportSelection)
         raise RuntimeError("import merge modified validation or held-out data")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     split_counts = {"train": len(merged), "validation": len(_read_rows(destination / "val.jsonl")), "held_out": len(_read_rows(destination / "held_out.jsonl"))}
+    imported = merged[len(base_train):]
+    for field in ("language", "mode", "intensity", "turn_band", "source"):
+        key = f"{field}_counts"
+        if key not in manifest:
+            continue
+        counts = dict(manifest[key])
+        for row in imported:
+            value = str(row[field])
+            counts[value] = counts.get(value, 0) + 1
+        manifest[key] = counts
     report: dict[str, object] = {
         "source_hashes": selection.source_hashes,
         "accepted_count": len(selection.rows) - skipped_existing,
@@ -290,5 +305,7 @@ def append_imports_to_train(dataset_dir: str | Path, selection: ImportSelection)
     manifest["split_counts"] = split_counts
     manifest["total_examples"] = sum(split_counts.values())
     manifest["imported_calibration"] = report
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    manifest_partial = manifest_path.with_suffix(manifest_path.suffix + ".partial")
+    manifest_partial.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    manifest_partial.replace(manifest_path)
     return report

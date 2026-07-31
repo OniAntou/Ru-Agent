@@ -63,3 +63,8 @@ CANDIDATE_SETTINGS = (
 
 # This alters the active OmniVoice GUI runtime; its selection remains reversible.
 GUI_TRIAL_SETTINGS = TEXT_AWARE_16_SETTINGS
+
+
+def get_gui_trial_settings() -> OmniVoiceGenerationSettings:
+    """Return the current GUI trial settings, read at call time."""
+    return GUI_TRIAL_SETTINGS

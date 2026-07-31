@@ -7,7 +7,7 @@ from typing import Literal
 MIN_VOICE_SPEED = 0.75
 MAX_VOICE_SPEED = 1.20
 DEFAULT_VOICE_SPEED = 0.90
-VOICE_PACE_MARKER = re.compile(r"\s*\[\[VOICE_PACE:(slow|normal|quick)\]\]", re.IGNORECASE)
+VOICE_PACE_MARKER = re.compile(r"\s*\[\[VOICE_PACE:(slow|normal|quick)\]\]\s*", re.IGNORECASE)
 VoicePace = Literal["slow", "normal", "quick"]
 
 VOICE_PACE_INSTRUCTION = (
@@ -34,10 +34,8 @@ def parse_voice_pace(reply: str) -> tuple[str, VoicePace]:
     matches = tuple(VOICE_PACE_MARKER.finditer(reply))
     pace: VoicePace = "normal"
     if matches:
-        raw = matches[-1].group(1).casefold()
-        if raw in ("slow", "normal", "quick"):
-            pace = raw  # type: ignore[assignment]
-    return VOICE_PACE_MARKER.sub("", reply).strip(), pace
+        pace = matches[-1].group(1).casefold()  # type: ignore[assignment]
+    return VOICE_PACE_MARKER.sub(" ", reply).strip(), pace
 
 
 def effective_voice_speed(base_speed: object, *, auto_pace_enabled: bool, pace: VoicePace) -> float:

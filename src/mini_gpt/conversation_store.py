@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -8,6 +9,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from ._atomic_write import atomic_append_jsonl
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,15 +54,22 @@ class ConversationStore:
         return record
 
     def read_all(self) -> list[dict[str, str]]:
-        if not self.path.is_file():
-            return []
-        records: list[dict[str, str]] = []
-        for line in self.path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
+        with self._lock:
+            if not self.path.is_file():
+                return []
+            records: list[dict[str, str]] = []
             try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-        return records
+                lines = self.path.read_text(encoding="utf-8").splitlines()
+            except FileNotFoundError:
+                return []
+            for line_number, line in enumerate(lines, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except json.JSONDecodeError as exc:
+                    logger.warning(
+                        "Skipping malformed JSONL line %d in %s: %s", line_number, self.path, exc
+                    )
+            return records

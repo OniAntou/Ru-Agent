@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from typing import Literal
 
 
-VTS_CATALOG_SUFFIX = re.compile(
-    r"\s*\[\[VTS:(?P<codes>[^\]]*)\]\](?P<postfix>\s*Nya~)?\s*$",
-    re.IGNORECASE,
-)
+VTS_CATALOG_MARKER = re.compile(r"\[\[VTS:([^\]]*)\]\]", re.IGNORECASE)
+CATALOG_INSTRUCTION_MAX_ENTRIES = 20
+CODE_DELIMITERS = re.compile(r"[\s,]+")
 
 
 @dataclass(frozen=True)
@@ -72,7 +71,10 @@ def build_catalog(
 def catalog_instruction(catalog: VtsCatalog | None) -> str:
     if catalog is None or not catalog.entries:
         return ""
-    lines = "\n".join(f"{entry.code} = {entry.label}" for entry in catalog.entries)
+    lines = "\n".join(
+        f"{entry.code} = {entry.label}"
+        for entry in catalog.entries[:CATALOG_INSTRUCTION_MAX_ENTRIES]
+    )
     return (
         " You control the currently connected Live2D avatar. The following private "
         "action codes belong only to the current avatar model:\n"
@@ -85,20 +87,25 @@ def catalog_instruction(catalog: VtsCatalog | None) -> str:
     )
 
 
+def _strip_markers(reply: str) -> str:
+    return re.sub(r"\s+", " ", VTS_CATALOG_MARKER.sub("", reply)).strip()
+
+
 def parse_catalog_reply(reply: str, catalog: VtsCatalog | None) -> tuple[str, tuple[str, ...]]:
-    """Strip terminal VTS metadata and resolve only this catalog's unique codes."""
-    match = VTS_CATALOG_SUFFIX.search(reply)
-    if match is None:
+    """Strip VTS metadata markers anywhere in the reply and resolve this
+    catalog's unique codes."""
+    matches = list(VTS_CATALOG_MARKER.finditer(reply))
+    if not matches:
         return reply, ()
 
-    clean_reply = reply[: match.start()].rstrip()
-    postfix = (match.group("postfix") or "").strip()
-    if postfix:
-        clean_reply = f"{clean_reply} {postfix}".strip()
-    codes = tuple(code.strip().lower() for code in match.group("codes").split(","))
+    codes = tuple(
+        code.strip().lower()
+        for match in matches
+        for code in CODE_DELIMITERS.split(match.group(1))
+    )
     valid_codes = {entry.code for entry in catalog.entries} if catalog else set()
     if not codes or any(not code for code in codes) or len(codes) != len(set(codes)):
-        return clean_reply, ()
+        return _strip_markers(reply), ()
     if any(code not in valid_codes for code in codes):
-        return clean_reply, ()
-    return clean_reply, codes
+        return _strip_markers(reply), ()
+    return _strip_markers(reply), codes

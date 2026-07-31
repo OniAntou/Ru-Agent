@@ -16,7 +16,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-model", default=str(PROJECT_ROOT / "models" / "llama3.1-8b-instruct-hf"))
     parser.add_argument("--adapter-dir", default=str(PROJECT_ROOT / "checkpoints" / "ru-llama3.1-8b-instruct-v6"))
     parser.add_argument("--prompt", type=str, help="Single prompt mode")
+    parser.add_argument("--max-history-turns", type=int, default=20, help="Keep at most this many user/assistant turns")
     return parser
+
+
+def trim_history(messages: list[tuple[str, str]], max_turns: int) -> list[tuple[str, str]]:
+    if max_turns <= 0:
+        return messages[:1]
+    turns = messages[1:]
+    if len(turns) > max_turns * 2:
+        turns = turns[-(max_turns * 2):]
+    return [messages[0], *turns]
 
 
 def main() -> int:
@@ -26,7 +36,11 @@ def main() -> int:
 
     if args.prompt:
         messages = (("system", RU_SYSTEM_PROMPT), ("user", args.prompt))
-        response = generate_llama_response_hf(args.base_model, messages, args.adapter_dir)
+        try:
+            response = generate_llama_response_hf(args.base_model, messages, args.adapter_dir)
+        except Exception as error:
+            print(f"Generation failed: {type(error).__name__}: {error}", file=sys.stderr)
+            return 1
         print(f"\n--- User ---\n{args.prompt}\n\n--- Ru (Llama 3.1 8B v6) ---\n{response}\n")
         return 0
 
@@ -49,8 +63,15 @@ def main() -> int:
             break
 
         history.append(("user", user_input))
-        response = generate_llama_response_hf(args.base_model, tuple(history), args.adapter_dir)
-        history.append(("assistant", response))
+        messages = trim_history(history, args.max_history_turns)
+        try:
+            response = generate_llama_response_hf(args.base_model, tuple(messages), args.adapter_dir)
+        except Exception as error:
+            print(f"Generation failed: {type(error).__name__}: {error}", file=sys.stderr)
+            print("Continuing chat without this reply...\n")
+            history.pop()
+            continue
+        history = [*messages, ("assistant", response)]
         print(f"Ru: {response}\n")
 
     return 0

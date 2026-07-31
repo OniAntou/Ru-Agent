@@ -95,6 +95,19 @@ def test_load_manifest_rejects_a_wrong_language_mix(tmp_path: Path) -> None:
         load_manifest(manifest)
 
 
+def test_load_manifest_rejects_malformed_json(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text("{\"id\": \"vi-01\", \"language\": \"vi\"", encoding="utf-8")
+
+    with pytest.raises(BenchmarkConfigurationError, match="Invalid benchmark manifest line: 1"):
+        load_manifest(manifest)
+
+
+def test_load_manifest_reports_a_missing_file(tmp_path: Path) -> None:
+    with pytest.raises(BenchmarkConfigurationError, match="Could not read benchmark manifest"):
+        load_manifest(tmp_path / "missing.jsonl")
+
+
 def test_committed_manifest_has_the_required_bilingual_mix() -> None:
     manifest = Path(__file__).parents[1] / "data" / "evaluations" / "ru_tts_benchmark_v1.jsonl"
 
@@ -214,4 +227,16 @@ def test_summarize_uses_median_warm_metrics_and_ignores_errors() -> None:
         "failed_records": 1,
         "median_warm_first_playable_wav_seconds": 0.4,
         "median_warm_real_time_factor": 0.3,
+    }
+
+
+def test_summarize_an_empty_record_list() -> None:
+    summary = summarize([])
+
+    assert summary == {
+        "records": 0,
+        "successful_records": 0,
+        "failed_records": 0,
+        "median_warm_first_playable_wav_seconds": None,
+        "median_warm_real_time_factor": None,
     }

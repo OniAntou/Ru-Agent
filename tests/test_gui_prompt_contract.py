@@ -1,5 +1,7 @@
 from mini_gpt import gui
 
+import pytest
+
 
 def test_model_runner_uses_cloud_personality_for_opencode(monkeypatch) -> None:
     captured: dict[str, object] = {}
@@ -33,3 +35,11 @@ def test_model_runner_keeps_shared_personality_for_local_backends(monkeypatch) -
     instruction = str(captured["system_instruction"])
     assert instruction.startswith(gui.RU_SYSTEM_PROMPT)
     assert "authoritative Ru personality contract" not in instruction
+
+
+def test_model_runner_rejects_an_unsupported_backend() -> None:
+    runner = object.__new__(gui.ModelRunner)
+    runner.backend = gui.BACKEND_GGUF
+
+    with pytest.raises(ValueError, match="unsupported backend"):
+        runner.select_backend("not-a-backend")

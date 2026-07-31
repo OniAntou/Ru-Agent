@@ -93,8 +93,8 @@ release. Install the converter extra, then validate before starting:
 
 The guarded script refuses to run below 24 GiB free, never overwrites an
 existing candidate, prevents concurrent conversion, preserves the HF base and
-adapter, and removes only its verified temporary F16 GGUF after success. It
-creates:
+adapter, and always removes its temporary F16 GGUF (also on failure or
+Ctrl+C). It creates:
 
 - `models\gguf\llama3.1-8b-instruct-q4_k_m.gguf`
 - `models\gguf\ru-llama3.1-8b-instruct-v6-lora.gguf`
@@ -273,38 +273,11 @@ normal local Llama generation and VTube lip-sync still work.
 
 ## Experimental voice input
 
-Voice input defaults to the existing Google recognizer (`vi-VN`). The
-**Speech input** settings section can instead select **Sherpa-ONNX (offline)**.
-That choice never falls back to Google: microphone audio stays local for the
-recognition request, and no model is downloaded automatically.
-
-Install the optional runtime only after supplying a compatible local model:
-
-```powershell
-& D:\LLM\.venv\Scripts\python.exe -m pip install -e '.[speech-offline]'
-```
-
-Select a folder containing `tokens.txt` plus one matching
-`encoder*.onnx`, `decoder*.onnx`, and `joiner*.onnx`. The recommended initial
-model is the official `sherpa-onnx-zipformer-vi-30M-int8-2026-02-09` package,
-whose files are `encoder.int8.onnx`, `decoder.onnx`, and `joiner.int8.onnx`.
-The GUI stores only the selected recognizer and this model folder; it does not
-save microphone recordings or transcripts.
-
-Benchmark supplied samples before considering Sherpa-ONNX as a default. Each
-JSONL manifest row contains an `audio_path` and `expected_text`; paths may be
-relative to the manifest. Samples must be uncompressed, mono, 16-bit, 16 kHz
-WAV files.
-
-```powershell
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\benchmark_stt.py --engine sherpa-onnx --model-dir D:\LLM\models\sherpa-onnx-zipformer-vi-30M-int8-2026-02-09 --manifest D:\LLM\data\stt_samples.jsonl --output D:\LLM\data\stt_benchmark.jsonl
-```
-
-Keep Google as the default unless an explicit 20-sample manual gate covers
-Vietnamese, English, and Vietnamese-English turns; record recognition success,
-final-transcript latency, and whether local LLM replies plus OmniVoice playback
-remain stable. A failed gate is a non-adoption result, not a reason to weaken
-the fallback or privacy behavior.
+Voice input uses the Google recognizer (`vi-VN`) and is an experimental
+feature. Microphone audio is sent to Google's recognition endpoint; nothing is
+stored locally beyond the resulting transcript. The former Sherpa-ONNX offline
+engine was removed from the runtime; saved settings that still reference it
+fall back to Google with a clear error.
 
 ## Ru identity and capabilities
 

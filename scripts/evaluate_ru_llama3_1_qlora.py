@@ -12,6 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from mini_gpt.llama3_1_runtime import clear_llama_generation_cache, generate_llama_response_hf  # noqa: E402
 from mini_gpt.ru_llama_evaluation import (  # noqa: E402
     PROACTIVE_FLIRT_SUITE,
+    ResponseAssessment,
     assess_proactive_flirt_response,
 )
 
@@ -40,18 +41,28 @@ def main(argv: list[str] | None = None) -> int:
     adapter_failed = False
 
     if args.adapter_dir:
-        for case in PROACTIVE_FLIRT_SUITE:
-            adapter_response = generate_llama_response_hf(
-                args.base_model,
-                case.messages,
-                args.adapter_dir,
-                max_new_tokens=args.max_new_tokens,
-                do_sample=False,
-            )
-            adapter_assessment = assess_proactive_flirt_response(case.prompt, adapter_response, case.language)
-            adapter_results[case.case_id] = (adapter_response, adapter_assessment)
-            adapter_failed = adapter_failed or not adapter_assessment.passed
-        clear_llama_generation_cache()
+        try:
+            for case in PROACTIVE_FLIRT_SUITE:
+                try:
+                    adapter_response = generate_llama_response_hf(
+                        args.base_model,
+                        case.messages,
+                        args.adapter_dir,
+                        max_new_tokens=args.max_new_tokens,
+                        do_sample=False,
+                    )
+                    adapter_assessment = assess_proactive_flirt_response(case.prompt, adapter_response, case.language)
+                except Exception as error:
+                    print(f"[evaluate] case {case.case_id} failed: {type(error).__name__}: {error}", file=sys.stderr)
+                    adapter_response = f"<generation error: {type(error).__name__}: {error}>"
+                    adapter_assessment = ResponseAssessment(passed=False, failures=("generation_error",))
+                    adapter_failed = True
+                adapter_results[case.case_id] = (adapter_response, adapter_assessment)
+                adapter_failed = adapter_failed or not adapter_assessment.passed
+        finally:
+            clear_llama_generation_cache()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     cases: list[dict[str, object]] = []
     for case in PROACTIVE_FLIRT_SUITE:

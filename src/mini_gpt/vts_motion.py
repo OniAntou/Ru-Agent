@@ -43,9 +43,9 @@ def sway_value(elapsed: float, speaking: bool) -> float:
 # Slow head-movement waves injected into VRChat-style tracking parameters.
 # VRM models map these to head-bone rotation; amplitude ±8 is clearly
 # visible without being distracting.
-_HEAD_TILT_RATE = 0.15      # ~1 chu kỳ mỗi 42s
-_HEAD_NOD_RATE  = 0.10      # ~1 chu kỳ mỗi 63s
-_HEAD_YAW_RATE  = 0.06      # ~1 chu kỳ mỗi 105s
+_HEAD_TILT_RATE = 0.15      # ~1 chu kỳ mỗi 6.7s
+_HEAD_NOD_RATE  = 0.10      # ~1 chu kỳ mỗi 10s
+_HEAD_YAW_RATE  = 0.06      # ~1 chu kỳ mỗi 16.7s
 _HEAD_TILT_AMPLITUDE = 8.0
 _HEAD_NOD_AMPLITUDE  = 6.0
 _HEAD_YAW_AMPLITUDE  = 4.0
@@ -236,7 +236,6 @@ _EYE_RANGE_Y = 5.0        # ±5 lên/xuống
 _EYE_HOLD_MIN = 2.0       # giữ tối thiểu 2s
 _EYE_HOLD_MAX = 6.0       # giữ tối đa 6s
 _EYE_EASE_IN = 0.35       # thời gian ease đến target (sec)
-_EYE_BLINK_COOLDOWN = 4.0 # không chọn target mới quá nhanh sau blink
 
 
 class EyeMotionController:
@@ -267,7 +266,7 @@ class EyeMotionController:
         self._ease_start = None
 
     def update(self, now: float) -> tuple[float, float]:
-        """Return (eye_x, eye_y) — call every sway_loop tick (50 ms)."""
+        """Return (eye_x, eye_y) — call every sway_loop tick (100 ms)."""
 
         if self._last_switch is None:
             self._last_switch = now
@@ -293,10 +292,10 @@ class EyeMotionController:
                 self._y = self._target_y
                 self._ease_start = None
             else:
-                # Smoothstep ease
+                # Smoothstep lerp đầy đủ: t=1 đạt target chính xác, không nhảy
                 s = t * t * (3 - 2 * t)
-                self._x += (self._target_x - self._x) * s * 0.15
-                self._y += (self._target_y - self._y) * s * 0.15
+                self._x += (self._target_x - self._x) * s
+                self._y += (self._target_y - self._y) * s
 
         return (self._x, self._y)
 
@@ -311,18 +310,18 @@ class MouseEyeTracker:
 
     # ── Eye ─────────────────────────────────────────────────────────────
     _EYE_SMOOTH = 0.98         # gần realtime
-    _EYE_SCALE_X = 12.0        # range ±12
-    _EYE_SCALE_Y = 12.0
+    _EYE_SCALE_X = 9.5         # khớp LLM_EyeX max ±10
+    _EYE_SCALE_Y = 5.5         # khớp LLM_EyeY max ±6
 
     # ── Head ────────────────────────────────────────────────────────────
     _HEAD_SMOOTH = 0.92        # realtime
-    _HEAD_SCALE_Z = 12.0       # nghiêng ±12
-    _HEAD_SCALE_Y = 12.0       # gật ±12
-    _HEAD_SCALE_X = 14.0       # quay ±14
+    _HEAD_SCALE_Z = 12.0       # nghiêng ±12 (LLM_HeadZ max ±15)
+    _HEAD_SCALE_Y = 12.0       # gật ±12 (LLM_HeadY max ±15)
+    _HEAD_SCALE_X = 9.5        # quay ±9.5 (LLM_HeadX max ±10)
 
     # ── Body (LLM_Sway) ─────────────────────────────────────────────────
     _BODY_SMOOTH = 0.92        # realtime
-    _BODY_SCALE = 14.0         # range ±14
+    _BODY_SCALE = 14.0         # range ±14 (LLM_Sway max ±30)
 
     def __init__(self) -> None:
         # eye state
@@ -354,8 +353,8 @@ class MouseEyeTracker:
     def feed_position(self, cursor_x: int, cursor_y: int) -> None:
         """Ingest a cursor position and update eased eye + head values."""
 
-        nx = (cursor_x / self._screen_w) * 2 - 1          # -1 .. 1
-        ny = (cursor_y / self._screen_h) * 2 - 1          # -1 .. 1 (top = -1)
+        nx = max(-1.0, min(1.0, (cursor_x / self._screen_w) * 2 - 1))   # -1 .. 1
+        ny = max(-1.0, min(1.0, (cursor_y / self._screen_h) * 2 - 1))   # -1 .. 1 (top = -1)
 
         # ── Eye — quick, full range ──────────────────────────────────────
         tx = -nx * self._EYE_SCALE_X                      # đảo X: chuột trái → mắt nhìn trái
@@ -419,7 +418,6 @@ def is_body_pose_action(label: str, identifier: str) -> bool:
 
 _POSE_CYCLE_MIN = 70
 _POSE_CYCLE_MAX = 130
-_POSE_JITTER = (-20, 40)
 
 
 def body_pose_entries(entries: Iterable[object]) -> list[object]:
@@ -442,13 +440,21 @@ class PoseCycleScheduler:
         self.random_source = random_source or random
         self._next_at: float | None = None
         self._last_pose_code: str | None = None
+        self._was_speaking = False
 
     def reset(self) -> None:
         self._next_at = None
         self._last_pose_code = None
+        self._was_speaking = False
 
     def update(self, now: float, speaking: bool) -> bool:
         if speaking:
+            self._was_speaking = True
+            return False
+        if self._was_speaking:
+            # Vừa nói xong: re-roll thời gian pose kế tiếp, không trigger ngay
+            self._was_speaking = False
+            self._next_at = now + self._roll_interval()
             return False
         if self._next_at is None:
             self._next_at = now + self._roll_interval()

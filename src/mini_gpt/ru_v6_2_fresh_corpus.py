@@ -60,6 +60,8 @@ def _validate_authored(row: dict[str, object]) -> dict[str, object]:
         raise ValueError("fresh authored response failed safety gate")
     if row["language"] not in EXPECTED_LANGUAGE_COUNTS or row["mode"] not in EXPECTED_MODE_COUNTS or row["turn_band"] not in EXPECTED_TURN_BAND_COUNTS:
         raise ValueError("fresh authored metadata is invalid")
+    if row["intensity"] not in {"light", "neutral"}:
+        raise ValueError("fresh authored intensity is invalid")
     if row["source"] != SOURCE or row["license"] != LICENSE:
         raise ValueError("fresh authored provenance is invalid")
     user_turns = sum(message["role"] == "user" for message in normalized_messages)
@@ -127,12 +129,27 @@ def build_ru_v6_2_fresh_corpus(
     if not write:
         return report
     destination = Path(output_dir)
+    split_paths = (
+        destination / "train.jsonl",
+        destination / "val.jsonl",
+        destination / "held_out.jsonl",
+        destination / "manifest.json",
+    )
+    snapshots = [(path, path.read_bytes() if path.exists() else None) for path in split_paths]
     write_splits_atomic(destination, train, validation, held_out, report)
-    if approved_file is not None or memory_file is not None:
-        selection = select_import_rows(
-            approved_file or destination / "missing-approved.jsonl",
-            memory_file or destination / "missing-memory.json",
-        )
-        append_imports_to_train(destination, selection)
-        report = json.loads((destination / "manifest.json").read_text(encoding="utf-8"))
+    try:
+        if approved_file is not None or memory_file is not None:
+            selection = select_import_rows(
+                approved_file or destination / "missing-approved.jsonl",
+                memory_file or destination / "missing-memory.json",
+            )
+            append_imports_to_train(destination, selection)
+    except Exception:
+        for path, content in snapshots:
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(content)
+        raise
+    report = json.loads((destination / "manifest.json").read_text(encoding="utf-8"))
     return report

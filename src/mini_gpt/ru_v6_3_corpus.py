@@ -35,8 +35,12 @@ def _validate_row(row: dict[str, object]) -> dict[str, object]:
     if set(row) != expected:
         raise ValueError("v6.3 authored row has unexpected fields")
     language = row["language"]
-    if language not in EXPECTED_LANGUAGE_COUNTS or row["mode"] not in EXPECTED_MODE_COUNTS or row["turn_band"] not in EXPECTED_TURN_BAND_COUNTS or row["profanity"] not in {"none", "mild", "medium"}:
+    mode = row["mode"]
+    if language not in EXPECTED_LANGUAGE_COUNTS or mode not in EXPECTED_MODE_COUNTS or row["turn_band"] not in EXPECTED_TURN_BAND_COUNTS or row["profanity"] not in {"none", "mild", "medium"}:
         raise ValueError("v6.3 authored metadata is invalid")
+    expected_target = "hard-suite-repair" if mode == "repair" else mode
+    if row["target"] != expected_target:
+        raise ValueError("v6.3 authored target does not match its mode")
     messages = row["messages"]
     if not isinstance(messages, list) or len(messages) < 4 or not all(isinstance(message, dict) for message in messages):
         raise ValueError("v6.3 messages are malformed")
@@ -45,6 +49,10 @@ def _validate_row(row: dict[str, object]) -> dict[str, object]:
     roles = [str(message.get("role")) for message in messages[1:]]
     if roles[0] != "user" or roles[-1] != "user" or any(left == right for left, right in zip(roles, roles[1:])):
         raise ValueError("v6.3 conversation roles do not alternate")
+    expected_user_turns = {"short": 2, "medium": 3, "long": 4}
+    user_turns = sum(role == "user" for role in roles)
+    if user_turns != expected_user_turns[str(row["turn_band"])]:
+        raise ValueError("v6.3 user turn count does not match its turn band")
     if any(not isinstance(message.get("content"), str) or not str(message["content"]).strip() for message in messages):
         raise ValueError("v6.3 message content cannot be empty")
     response = str(row["response"]).strip()
@@ -97,7 +105,7 @@ def build_ru_v6_3_corpus(output_dir: str | Path, *, seed: int = 63, write: bool 
         "dataset_id": "ru_v6_3_targeted",
         "dataset_version": "v6.3",
         "lineage": "new authored rows targeted from ru_hard_v1 findings; no v6.2 rows copied",
-        "base_adapter": "D:/LLM/checkpoints/ru-llama3.1-8b-instruct-v6.2-fresh",
+        "base_adapter": str(Path(__file__).resolve().parents[2] / "checkpoints" / "ru-llama3.1-8b-instruct-v6.2-fresh"),
         "authored_total_examples": len(rows),
         "total_examples": len(rows),
         "split_counts": {"train": len(train), "validation": len(validation), "held_out": len(held_out)},

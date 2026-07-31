@@ -25,8 +25,8 @@ def test_cloud_prompt_is_explicit_authoritative_contract() -> None:
 
 def test_ru_prompts_route_emotion_to_vts_without_chat_symbols() -> None:
     prompts = [RU_SYSTEM_PROMPT, *RU_PROMPTS.values(), RU_CLOUD_SYSTEM_PROMPT]
-    assert all("Do not use emoji" in prompt for prompt in prompts)
-    assert all("ASCII emoticons" in prompt for prompt in prompts)
+    assert all("never use emojis" in prompt.casefold() for prompt in prompts)
+    assert all("ascii emoticons" in prompt.casefold() for prompt in prompts)
     assert all("VTS action" in prompt for prompt in prompts)
     assert all("private VTS markers" in prompt for prompt in prompts)
 

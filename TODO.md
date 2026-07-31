@@ -30,8 +30,14 @@
   gate for v6.2 before calling it quality-gate promoted.
 - [x] Finish the bounded v6.1 candidate and its comparison evaluation; its
   training manifest reports a 5,900 MiB physical peak under the 6,144 MiB cap.
-- [ ] Make short Vietnamese-English conversations consistently natural before
+- [x] Make short Vietnamese-English conversations consistently natural before
   calling any adapter quality-gate promoted.
+- [x] Full codebase review round 3 (11 CRITICAL / 46 HIGH / 129 MEDIUM / 121 LOW
+  found): all critical and high issues fixed across runtime, GUI, voice/TTS,
+  VTS, memory, corpus, tests, and scripts; dead Sherpa-ONNX speech path removed.
+  See `docs/codebase-review-fixes.md` → Round 3.
+- [ ] Re-run the full test suite and manual GUI/voice/VTS smoke test after the
+  round-3 refactors before the next adapter evaluation.
 
 ## Deferred capabilities
 

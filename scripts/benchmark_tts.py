@@ -91,6 +91,9 @@ class GwenHttpBenchmarkEngine:
             raise RuntimeError("Gwen did not return a playable WAV path.")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source_path, output_path)
+        if not output_path.is_file() or output_path.stat().st_size == 0:
+            output_path.unlink(missing_ok=True)
+            raise RuntimeError("Gwen returned an empty WAV file.")
 
     def release(self) -> None:
         try:
@@ -407,9 +410,21 @@ def main(
     *,
     engine_factory: Callable[[str, Path, OmniVoiceGenerationSettings, str], object] = build_engine,
 ) -> int:
+    try:
+        return _run(argv, engine_factory=engine_factory)
+    except Exception as error:
+        print(f"Benchmark failed: {type(error).__name__}: {error}", file=sys.stderr)
+        return 1
+
+
+def _run(
+    argv: list[str] | None,
+    *,
+    engine_factory: Callable[[str, Path, OmniVoiceGenerationSettings, str], object],
+) -> int:
     args = parse_args(argv)
-    if args.warm_trials < 0:
-        raise SystemExit("--warm-trials must not be negative.")
+    if args.warm_trials < 0 or args.warm_trials > 20:
+        raise SystemExit("--warm-trials must be between 0 and 20.")
     try:
         reference_text = args.reference_text.read_text(encoding="utf-8").strip()
     except OSError as error:

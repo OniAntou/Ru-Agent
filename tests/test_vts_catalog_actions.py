@@ -37,3 +37,59 @@ def test_catalog_reply_keeps_multiple_distinct_valid_codes():
 
     assert clean == "Hay quá!"
     assert codes == ("vts_01", "expr_01", "vts_02")
+
+
+def test_catalog_reply_drops_codes_not_in_this_catalog():
+    catalog = build_catalog(
+        model_id="model-1",
+        model_name="Ru",
+        hotkeys=[{"name": "Happy", "hotkeyID": "happy-id"}],
+        expressions=[{"name": "Smile", "expressionFile": "smile.exp3.json"}],
+    )
+
+    clean, codes = parse_catalog_reply("Hay quá! [[VTS:vts_99,expr_01]]", catalog)
+
+    assert clean == "Hay quá!"
+    assert codes == ()
+
+
+def test_catalog_reply_rejects_duplicate_or_empty_codes():
+    catalog = build_catalog(
+        model_id="model-1",
+        model_name="Ru",
+        hotkeys=[{"name": "Happy", "hotkeyID": "happy-id"}],
+        expressions=[{"name": "Smile", "expressionFile": "smile.exp3.json"}],
+    )
+
+    duplicate, duplicate_codes = parse_catalog_reply("Hay quá! [[VTS:vts_01,vts_01]]", catalog)
+    assert duplicate == "Hay quá!"
+    assert duplicate_codes == ()
+
+    empty, empty_codes = parse_catalog_reply("Hay quá! [[VTS:]]", catalog)
+    assert empty == "Hay quá!"
+    assert empty_codes == ()
+
+
+def test_catalog_reply_strips_all_markers_and_keeps_all_valid_codes():
+    catalog = build_catalog(
+        model_id="model-1",
+        model_name="Ru",
+        hotkeys=[{"name": "Happy", "hotkeyID": "happy-id"}],
+        expressions=[{"name": "Smile", "expressionFile": "smile.exp3.json"}],
+    )
+
+    clean, codes = parse_catalog_reply("[[VTS:vts_01]] và [[VTS:expr_01]] Nya~", catalog)
+
+    assert clean == "và Nya~"
+    assert codes == ("vts_01", "expr_01")
+
+
+def test_catalog_reply_without_a_marker_is_passed_through():
+    catalog = build_catalog(
+        model_id="model-1",
+        model_name="Ru",
+        hotkeys=[{"name": "Happy", "hotkeyID": "happy-id"}],
+        expressions=[],
+    )
+
+    assert parse_catalog_reply("Chào anh hôm nay thế nào?", catalog) == ("Chào anh hôm nay thế nào?", ())

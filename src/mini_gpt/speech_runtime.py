@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
 from typing import Mapping, Protocol
 
 import numpy as np
@@ -67,7 +66,7 @@ def normalize_transcript(text: str) -> str:
 class GoogleSpeechRecognizer:
     engine_id = SPEECH_ENGINE_GOOGLE
 
-    def __init__(self, recognizer: object, language: str) -> None:
+    def __init__(self, recognizer: sr.Recognizer, language: str) -> None:
         self._recognizer = recognizer
         self._language = language
 
@@ -78,13 +77,14 @@ class GoogleSpeechRecognizer:
             audio.sample_width_bytes,
         )
         try:
-            text = self._recognizer.recognize_google(source_audio, language=self._language)
+            text = self._recognizer.recognize_google(
+                source_audio,
+                language=self._language,
+            )
         except sr.UnknownValueError as error:
             raise SpeechNoMatchError("Could not understand audio.") from error
-        except sr.RequestError as error:
+        except (sr.RequestError, TimeoutError) as error:
             raise SpeechServiceError("Google Speech request failed.") from error
-        except Exception as error:
-            raise SpeechServiceError("Google Speech recognition failed.") from error
         return normalize_transcript(text)
 
 
@@ -93,17 +93,23 @@ class GoogleSpeechRecognizer:
 def build_speech_recognizer(
     config: SpeechEngineConfig,
     *,
-    google_recognizer: object | None = None,
+    google_recognizer: sr.Recognizer | None = None,
 ) -> SpeechRecognizer:
     if config.engine_id == SPEECH_ENGINE_GOOGLE:
-        return GoogleSpeechRecognizer(google_recognizer or sr.Recognizer(), config.language)
+        if google_recognizer is None:
+            google_recognizer = sr.Recognizer()
+        elif not callable(getattr(google_recognizer, "recognize_google", None)):
+            raise TypeError("google_recognizer must expose a callable recognize_google method.")
+        return GoogleSpeechRecognizer(google_recognizer, config.language)
     raise SpeechConfigurationError("Select a valid speech input engine.")
 
 
 def speech_settings_from_mapping(settings: Mapping[str, object]) -> SpeechEngineConfig:
     engine_id = settings.get("speech_engine")
-    if engine_id != SPEECH_ENGINE_GOOGLE:
+    if not isinstance(engine_id, str) or not engine_id.strip():
         engine_id = SPEECH_ENGINE_GOOGLE
+    elif engine_id != SPEECH_ENGINE_GOOGLE:
+        raise SpeechConfigurationError(f"Unsupported speech engine: {engine_id!r}.")
     model_dir_value = settings.get("speech_model_dir")
     model_dir = Path(model_dir_value) if isinstance(model_dir_value, str) and model_dir_value.strip() else None
     return SpeechEngineConfig(engine_id=engine_id, model_dir=model_dir)

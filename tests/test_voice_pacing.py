@@ -21,3 +21,24 @@ def test_manual_speed_is_clamped_and_auto_pace_stays_near_manual_baseline() -> N
     assert effective_voice_speed(0.9, auto_pace_enabled=False, pace="quick") == 0.9
     assert effective_voice_speed(0.9, auto_pace_enabled=True, pace="slow") == 0.82
     assert effective_voice_speed(1.17, auto_pace_enabled=True, pace="quick") == 1.2
+
+
+def test_voice_pace_marker_in_the_middle_is_stripped() -> None:
+    reply, pace = parse_voice_pace("Em [[VOICE_PACE:slow]] giải thích chậm nhé.")
+
+    assert reply == "Em giải thích chậm nhé."
+    assert pace == "slow"
+
+
+def test_voice_pace_uses_the_last_of_several_markers() -> None:
+    reply, pace = parse_voice_pace("[[VOICE_PACE:quick]] Chào anh. [[VOICE_PACE:slow]]")
+
+    assert reply == "Chào anh."
+    assert pace == "slow"
+
+
+def test_voice_pace_without_a_marker_defaults_to_normal() -> None:
+    reply, pace = parse_voice_pace("Chào anh hôm nay thế nào?")
+
+    assert reply == "Chào anh hôm nay thế nào?"
+    assert pace == "normal"

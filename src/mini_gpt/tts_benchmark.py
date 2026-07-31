@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 import statistics
 import wave
 from collections.abc import Callable, Iterable, Sequence
@@ -8,6 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Protocol, TypeVar
+
+
+logger = logging.getLogger(__name__)
+
+_SAFE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
+_ID_SANITIZE_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
 class BenchmarkConfigurationError(ValueError):
@@ -72,6 +80,10 @@ def load_manifest(path: Path) -> list[BenchmarkUtterance]:
             raise BenchmarkConfigurationError(f"Invalid benchmark manifest line: {line_number}.") from error
         if not all(isinstance(item, str) for item in (utterance_id, language, text)):
             raise BenchmarkConfigurationError(f"Invalid benchmark manifest line: {line_number}.")
+        if not _SAFE_ID_PATTERN.fullmatch(utterance_id):
+            raise BenchmarkConfigurationError(
+                f"Benchmark utterance IDs must match {_SAFE_ID_PATTERN.pattern!r}: {utterance_id!r}."
+            )
         if not utterance_id.strip() or utterance_id in seen_ids:
             raise BenchmarkConfigurationError(f"Benchmark utterance IDs must be unique: {utterance_id!r}.")
         if language not in _EXPECTED_LANGUAGE_COUNTS:
@@ -81,10 +93,12 @@ def load_manifest(path: Path) -> list[BenchmarkUtterance]:
         seen_ids.add(utterance_id)
         utterances.append(BenchmarkUtterance(utterance_id, language, text))
 
+    expected_total = sum(_EXPECTED_LANGUAGE_COUNTS.values())
     language_counts = {language: sum(item.language == language for item in utterances) for language in _EXPECTED_LANGUAGE_COUNTS}
-    if len(utterances) != 12 or language_counts != _EXPECTED_LANGUAGE_COUNTS:
+    if len(utterances) != expected_total or language_counts != _EXPECTED_LANGUAGE_COUNTS:
         raise BenchmarkConfigurationError(
-            "Benchmark manifest must contain exactly 12 items: six vi, three en, and three vi-en."
+            "Benchmark manifest must contain exactly "
+            f"{expected_total} items: six vi, three en, and three vi-en."
         )
     return utterances
 
@@ -117,7 +131,7 @@ def run_single_sample(
     sampler: ResourceSampler | None = None,
     clock: Callable[[], float] = perf_counter,
 ) -> dict[str, object]:
-    output_path = output_dir / f"{phase}-{trial:02d}-{utterance.id}.wav"
+    output_path = output_dir / f"{phase}-{trial:02d}-{_ID_SANITIZE_PATTERN.sub('_', utterance.id)}.wav"
     output_dir.mkdir(parents=True, exist_ok=True)
     active_sampler = sampler or NullResourceSampler()
     started = clock()
@@ -126,6 +140,16 @@ def run_single_sample(
         elapsed = max(0.0, clock() - started)
         audio_seconds = inspect_wav(output_path)
     except Exception as error:
+        logger.exception(
+            "TTS benchmark synthesis failed: phase=%s trial=%s utterance=%s",
+            phase,
+            trial,
+            utterance.id,
+        )
+        try:
+            Path(output_path).unlink(missing_ok=True)
+        except OSError:
+            pass
         return {
             "schema_version": 1,
             "engine_id": engine.engine_id,
@@ -169,7 +193,13 @@ def run_engine_benchmark(
     clock: Callable[[], float] = perf_counter,
     load_engine: bool = True,
     warm_trials: int = 5,
+    release_engine: bool = True,
 ) -> list[dict[str, object]]:
+    """Run a benchmark, loading the engine first when requested.
+
+    release_engine=False keeps the engine loaded for callers that manage
+    the engine lifecycle themselves (e.g. report runners).
+    """
     if warm_trials < 0:
         raise BenchmarkConfigurationError("Warm trial count must not be negative.")
     records: list[dict[str, object]] = []
@@ -190,7 +220,8 @@ def run_engine_benchmark(
                     )
                 )
     finally:
-        engine.release()
+        if release_engine:
+            engine.release()
     return records
 
 
@@ -199,7 +230,11 @@ def summarize(records: Sequence[dict[str, object]]) -> dict[str, object]:
     warm_records = [record for record in successful_records if record.get("phase") == "warm"]
 
     def median(field: str) -> float | None:
-        values = [float(record[field]) for record in warm_records if isinstance(record.get(field), (int, float))]
+        values = [
+            float(record[field])
+            for record in warm_records
+            if isinstance(record.get(field), (int, float)) and not isinstance(record.get(field), bool)
+        ]
         return statistics.median(values) if values else None
 
     return {

@@ -17,11 +17,11 @@ class FakeRandom:
         return next(self.values)
 
 
-def test_speaking_sway_is_smaller_than_idle_baseline_and_old_peak():
-    assert SPEAKING_SWAY_AMPLITUDE == 14.0
-    assert IDLE_SWAY_AMPLITUDE == 5.0
-    assert abs(sway_value(1.0, speaking=True)) <= 14.0
-    assert abs(sway_value(1.0, speaking=False)) <= 5.0
+def test_sway_amplitudes_match_the_active_policy():
+    assert SPEAKING_SWAY_AMPLITUDE == 16.0
+    assert IDLE_SWAY_AMPLITUDE == 10.0
+    assert abs(sway_value(1.0, speaking=True)) <= 16.0
+    assert abs(sway_value(1.0, speaking=False)) <= 10.0
 
 
 def test_scheduler_waits_for_a_randomized_interval_and_resets_on_new_session():
@@ -32,7 +32,9 @@ def test_scheduler_waits_for_a_randomized_interval_and_resets_on_new_session():
     assert scheduler.update(120.0, speaking=True) is True
     scheduler.update(121.0, speaking=False)
     assert scheduler.update(122.0, speaking=True) is False
-    assert scheduler.next_due_at == 142.0
+    assert scheduler.next_due_at == 134.0
+    scheduler.reset()
+    assert scheduler.next_due_at is None
 
 
 def test_micro_action_filter_excludes_pout_blush_clothing_and_unknown_motion():

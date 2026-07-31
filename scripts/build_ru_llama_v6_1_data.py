@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     if args.audit:
-        with TemporaryDirectory(prefix="ru-v6-2-audit-") as temporary_dir:
+        with TemporaryDirectory(prefix="ru-v6-1-audit-") as temporary_dir:
             report = build_ru_v6_1_corpus(temporary_dir, seed=args.seed)
             held_out = _rows(Path(temporary_dir) / "held_out.jsonl")
         print(json.dumps({"report": report, "held_out": held_out}, ensure_ascii=False, indent=2))

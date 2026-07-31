@@ -1660,9 +1660,9 @@ git commit -m "refactor(corpus): replace five per-version build scripts with sin
 - [ ] **Step 1: Gate toàn bộ + suite đầy đủ**
 
 Run: `.venv\Scripts\python.exe scripts\verify_corpus_byte_identical.py`
-Expected: 5× `[PASS]`, `BYTE-IDENTICAL-OK`, exit 0.
+Expected: 4× `[PASS]` (v6_1, v6_2, v6_2_fresh, v6_3 — v6 không nằm trong gate), `REFACTOR-NEUTRAL-OK`, exit 0.
 Run: `.venv\Scripts\python.exe -m pytest tests\ -q --tb=short`
-Expected: 162 passed, 0 failed, 2 deprecation warnings (aifc, pkg_resources — từ thư viện, không phải lỗi).
+Expected: 161 passed, 0 failed, 2 deprecation warnings (aifc, pkg_resources — từ thư viện, không phải lỗi).
 Run: `.venv\Scripts\python.exe -m compileall -q src\mini_gpt scripts`
 Expected: không output, exit 0.
 

@@ -121,3 +121,12 @@ Mỗi bước commit riêng (conventional: `refactor(corpus):`); gate phải PAS
 | Python version/rounding thay đổi output | Gate so với data hiện có ngay trên máy dev — bắt lệch tức thì |
 | Gộp validator làm mất hành vi riêng v6.1 (approved/naturalness) | Flags tường minh + giữ test v6.1 hiện có (không có test riêng cho v6.1/v6.2 — bổ sung test snapshot qua gate) |
 | Điều khoản dự phòng bị lạm dụng | Áp dụng đúng tiêu chí §4.3, ghi rõ lý do trong commit |
+
+## 10. Verification results (2026-08-01)
+
+- **Gate byte-identical:** 4× `[PASS]` (v6_1, v6_2, v6_2_fresh, v6_3) + `REFACTOR-NEUTRAL-OK`, exit 0. v6 KHÔNG nằm trong gate: data v6 được build trước khi thêm check "default em/anh voice" (có sẵn tại 43b023f, `ru_v6_corpus.py:67`), rebuild fail pre-existing — không phải lỗi refactor, giữ nguyên deprecated.
+- **Test suite:** 161 passed (152 gốc + 4 gate + 5 CLI), 2 deprecation warnings từ thư viện (aifc, pkg_resources).
+- **compileall:** `src/mini_gpt` + `scripts` — exit 0.
+- **Smoke CLI mới:** v6_1/v6_2 (`--audit`), v6_2_fresh/v6_3 (`--audit-only`) — exit 0. v6 `--audit` fail vì lý do trên.
+- **Giảm dòng (43b023f..HEAD, 14 file pipeline):** +1052/−1629 → net **−577 dòng** (khớp ước tính ~600 trong plan Task 7 Step 3; ước 1.500-1.800 trong §2 không đạt vì fresh/v6.3 giữ nguyên theo §4.3 — đúng quy trình, ưu tiên byte-for-byte).
+- **Commits:** a4657fb (gate), b00e7c8 (corpus_common), 4863c57 (v6.2 dialogues), f46c263 (corpus_validate), 5fb99de (v6.2 wrapper), 582ed8c (CLI + xóa 5 script), 00eaadf (Round 3 fixes đang chờ — commit riêng theo yêu cầu chủ nhân).

@@ -193,6 +193,10 @@ English, and code-switch output.
 
 ## Implemented feature awaiting live acceptance: local screen awareness
 
+DeepSeek continuation instructions, exact runtime values, failed-path evidence,
+and next commands are maintained in
+`docs/DEEPSEEK_SCREEN_AWARENESS_HANDOFF.md`.
+
 The approved design is implemented on `main`. The manual, off-by-default
 sidebar control observes only the Windows primary monitor. Rust owns DXGI
 capture, a bounded RAM-only frame ring, adaptive event gating, the pinned local

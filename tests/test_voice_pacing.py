@@ -4,6 +4,7 @@ from mini_gpt.voice_pacing import (
     DEFAULT_VOICE_SPEED,
     effective_voice_speed,
     parse_voice_pace,
+    voice_pace_for,
     voice_speed_from_saved,
 )
 
@@ -42,3 +43,8 @@ def test_voice_pace_without_a_marker_defaults_to_normal() -> None:
 
     assert reply == "Chào anh hôm nay thế nào?"
     assert pace == "normal"
+
+    # Heuristic inference from punctuation
+    assert voice_pace_for("Anh vừa nói gì đó ã? Em hiểu rồi...") == "normal"
+    assert voice_pace_for("Trời ơi! Mừng quá đi mất! Em vui lắm!") == "quick"
+    assert voice_pace_for("Em hơi buồn... Anh nói thật lòng đi...") == "slow"

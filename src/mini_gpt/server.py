@@ -43,6 +43,7 @@ from mini_gpt.speech_runtime import (
 from mini_gpt.vts_actions import VtsActions
 from mini_gpt.vts_catalog import parse_catalog_reply
 from mini_gpt.vts_manager import VTSManager
+from mini_gpt.voice_pacing import effective_voice_speed, voice_pace_for
 from mini_gpt.voice_runtime import (
     VOICE_SELECTIONS,
     voice_selection_by_label,
@@ -679,6 +680,8 @@ def voice_tts(payload: VoiceTtsPayload):
     settings = load_settings()
     voice_label = payload.voice_label or settings.get("voice_label", _DEFAULT_SETTINGS["voice_label"])
     speed = payload.speed if payload.speed is not None else settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"])
+    pace = voice_pace_for(text)
+    speed = effective_voice_speed(speed, auto_pace_enabled=True, pace=pace)
     text = _strip_voice_markers(text)
     try:
         ensure_voice_service()

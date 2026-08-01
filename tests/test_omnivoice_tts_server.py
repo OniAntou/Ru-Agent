@@ -139,3 +139,46 @@ def test_synthesis_uses_the_selected_16_step_vietnamese_trial_settings(tmp_path,
             "num_step": 16,
         },
     ]
+
+
+def test_apply_voice_speed_mono_shape_is_1d() -> None:
+    import numpy as np
+
+    waveform = server.apply_voice_speed(np.zeros((1, 2400), dtype=np.float32), 1.0)
+    assert waveform.ndim == 1
+    assert waveform.shape[0] == 2400
+
+
+def test_synthesize_fast_writes_1d_waveform(tmp_path, monkeypatch) -> None:
+    import numpy as np
+
+    class FakeModel:
+        def create_voice_clone_prompt(self, **kwargs: str) -> str:
+            return "prompt"
+
+        def generate(self, **kwargs: object) -> list[object]:
+            return [np.zeros((1, 2400), dtype=np.float32)]
+
+    server.release_model()
+    monkeypatch.setattr(server, "get_model", lambda: FakeModel())
+    server._voice_clone_prompts.clear()
+    server._voice_clone_prompts.update({"ru": "ru-prompt"})
+    writes: list[np.ndarray] = []
+
+    def fake_write(name: str, data: object, samplerate: int) -> None:
+        writes.append(np.asarray(data))
+        Path(name).write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+
+    monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
+    monkeypatch.setattr("soundfile.write", fake_write)
+    monkeypatch.setattr(
+        server.tempfile, "NamedTemporaryFile", lambda **kwargs: type(
+            "Output", (), {"name": str(tmp_path / "speech.wav"), "close": lambda self: None}
+        )()
+    )
+
+    path = server.synthesize_fast("Chào anh.", "ru", speed=1.0)
+
+    assert Path(path).is_file()
+    assert writes, "soundfile.write must be called"
+    assert writes[0].ndim == 1, "waveform must be 1D for libsndfile"

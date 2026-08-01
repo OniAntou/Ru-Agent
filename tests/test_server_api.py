@@ -483,6 +483,24 @@ def test_session_activate_rebuilds_turn_context(monkeypatch, isolated_state) -> 
     assert [turn.prompt for turn in server._SESSION_TURNS] == ["Chào   anh hôm nay"]
 
 
+def test_session_activate_ignores_orphan_user_turn(monkeypatch, isolated_state) -> None:
+    session_id = server._create_session_file()
+    assert session_id is not None
+    assert server._session_append_messages(
+        session_id,
+        [
+            {"role": "user", "content": "Câu hỏi đầu"},
+            {"role": "ai", "content": "Trả lời đầu"},
+            {"role": "user", "content": "Câu hỏi chưa có trả lời"},
+        ],
+    )
+    with TestClient(server.app) as client:
+        loaded = client.post(f"/sessions/{session_id}/activate")
+    body = loaded.json()
+    assert body["status"] == "ok"
+    assert [turn.prompt for turn in server._SESSION_TURNS] == ["Câu hỏi đầu"]
+
+
 def test_ws_creates_session_when_id_missing(monkeypatch, isolated_state) -> None:
     def fake_generate(prompt, max_new_tokens, temperature, top_k, allow_web_search, turns_history, on_stream_delta, **kwargs):
         on_stream_delta("hi")

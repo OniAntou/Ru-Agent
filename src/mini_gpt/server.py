@@ -275,7 +275,10 @@ def _rebuild_session_turns(session_id: str) -> dict | None:
             turns.append([content])
         elif turns:
             turns[-1].append(content)
-    chat_turns = [ChatTurn(user_text, ai_text) for user_text, ai_text in turns]
+    chat_turns: list[ChatTurn] = []
+    for turn in turns:
+        if len(turn) >= 2:
+            chat_turns.append(ChatTurn(turn[0], turn[1]))
     with _HISTORY_LOCK:
         _SESSION_TURNS.clear()
         _SESSION_TURNS.extend(chat_turns[-_MAX_CONTEXT_TURNS:])

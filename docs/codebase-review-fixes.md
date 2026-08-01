@@ -243,3 +243,126 @@ cd D:\LLM
 - `src/mini_gpt/corpus_common.py` — machinery dùng chung v6.1/v6.2 (Scene/SCENES, times, stances, acks/details/questions, slots, record, history, final_prompt).
 - `src/mini_gpt/corpus_validate.py` — validator tham số hóa thay `_normalize_row`/`build_*_corpus` trùng ~90% của v6.1/v6.2; hai file corpus thành thin wrappers.
 - `scripts/verify_corpus_byte_identical.py` — gate SHA256 toàn bộ version so data hiện có (byte-for-byte).
+
+## Round 5 (2026-08-01): Remove legacy CustomTkinter GUI
+
+Chuyển hoàn toàn sang GUI Tauri (`gui-tauri/` + FastAPI backend `mini_gpt.server` tren 127.0.0.1:8000), xóa GUI cũ:
+
+- Xóa `src/mini_gpt/gui.py` (GUI CustomTkinter, 1852 dong) va `src/mini_gpt/gui_presentation.py`; `append_stream_text` duoc chuyen sang `src/mini_gpt/_text_utils.py` (dung chung, test openai_runtime giu nguyen).
+- Xóa script patch GUI cu: `edit_gui.py`, `rewrite_ui.py`, `rewrite_kilo.py`, `fix.py` va `Start_Ru.bat`.
+- Xóa web GUI cu `scripts/gui_ru_llama3_1.py` (Flask).
+- Xóa 5 test chi GUI cu: `test_gui_prompt_contract.py`, `test_gui_streaming.py`, `test_gui_speech_settings.py`, `test_gui_voice_selection.py`, `test_overlay_control.py`.
+- README.md cap nhat: Active GUI = Tauri, bo phan mo ta CustomTkinter va eager-inference note; cac phan voice/VTS/overlay doi sang mo ta runtime (chua noi vao Tauri).
+- Kiem tra: `pytest -q` = 149 passed.
+
+## Round 6 (2026-08-01): Sửa GUI Tauri — lõi chat hoạt động end-to-end
+
+Lõi chat của GUI Tauri chạy được hết: backend FastAPI + WebSocket stream, llama.cpp GGUF + LoRA, frontend chat/settings. Chi tiết:
+
+### Backend (`mini_gpt/server.py` — viết lại phần lớn)
+- `apply_saved_settings()` khi startup: đọc settings file, chọn backend, load model.
+- `GET /settings` — trả settings (không bao giờ lộ `api_key`); `POST /settings` — lưu + apply, `load()` fail thì trả `{"status":"error","message":...}` thay vì 500.
+- `_TURN_LOCK` tuần tự hóa lượt chat; thread tự `release()` trong `finally`; prompt khi busy nhận error message rõ ràng.
+- `_HISTORY_LOCK` + `_atomic_write` cho history (giới hạn `_MAX_HISTORY_MESSAGES=200`); `_SESSION_TURNS` giữ context giữa các lượt (giới hạn 8, dùng `ChatTurn`).
+- `top_k`, `allow_web_search`, `checkpoint_path` (Transformers) được đẩy xuyên suốt đến core.
+- `_safe_put()` tránh crash khi event loop đóng khi WS ngắt.
+
+### Fix bug thật (probe server phát hiện — test không bắt được)
+- `headless_runner.py` thiếu `from mini_gpt.search import perform_web_search` → chat error ngay khi bật web search (giờ default `allow_web_search=True` nên chết lúc nào cũng gặp). Đã thêm import.
+- `llama_cpp_runtime.py` `server_command()` chèn `--lora` sai vị trí (`command[2:2]`) khiến `--model` ăn nhầm giá trị, llama-server chết `invalid argument` ngay lập tức; sửa thành `command[1:1]` — model với LoRA chạy thật (31 tok/s, GPU).
+- `llama_cpp_runtime.generate()` sinh repetition loop không stop token → llama-server cancel với lỗi `peg-native output`; thêm `repeat_penalty=1.15`, `repeat_last_n=256` vào body request — fix.
+
+### Streaming
+- `llama_cpp_runtime` có `_request_stream()` (SSE) + `on_delta`; `headless_runner` truyền `on_stream_delta` cho GGUF; `backend_core.generate_reply_with_memory` thêm `top_k`, `allow_web_search`, `turns_history`.
+- Frontend nhận `chunk` → `done`/`error` qua WS; `done` đóng lượt.
+
+### Frontend Tauri (`gui-tauri/src/components/`)
+- `ChatTab.tsx`: try/catch `JSON.parse`, xử lý `done`/`error`, tự reconnect WS sau 2s, typing indicator, disable send khi busy/ngắt kết nối, scroll tự động; load history khi mount; auto-read reply khi bật TTS.
+- `SettingsTab.tsx`: load `GET /settings` khi mount, toggle "Allow online search", checkpoint path cho Transformers, model list theo backend, disable save khi lưu.
+- `VoiceTab.tsx`: toggle TTS (lưu localStorage `ru_tts_enabled`), chọn giọng (Ru/Ái Vy) + tốc độ, text thử giọng, nút Test Voice / Warm Up / Release GPU / Save; hiển thị trạng thái voice service. Playback qua `<audio>` blob (không cần plugin Tauri).
+- `lib/playVoice.ts`: `speakText` (POST `/voice/tts` → play WAV blob), `stopVoice`, `ttsEnabled`.
+
+### Voice pipeline qua GUI Tauri
+- `server.py` thêm proxy voice: `GET /voice/status`, `POST /voice/tts` (→ WAV bytes), `POST /voice/warmup`, `POST /voice/release`; `ensure_voice_service()` tự spawn OmniVoice Flask server (omnivoice_env) nếu chưa chạy, log lỗi rõ ràng.
+- `POST /settings` đổi thành **partial update**: chỉ field được gửi mới áp dụng; lưu voice settings không reset/load lại backend (`backend=None` → không `select_backend`/`load`).
+- Settings thêm `voice_label` ("Ru (OmniVoice)") + `voice_speed` (0.9) — lưu/load qua GET/POST /settings.
+- Fix bug thật (probe phát hiện): `omnivoice_tts_server.py` `apply_voice_speed` trả waveform 2D (1, N) → `soundfile.write` (libsndfile 1.2.2 + numpy mới) fail "Format not recognised" → giờ trả mono 1D khi 1 channel; regression test bắt 2D.
+- Probe thật: warmup OK, `/voice/tts` trả WAV hợp lệ 24 kHz mono 2.09s.
+
+### Dev workflow
+- `start_dev.bat`: backend chạy nền ẩn (không chiếm terminal), log vào `logs/server.log` + `logs/server_err.log`; frontend `npm run tauri dev` mở cửa sổ riêng.
+- Dừng server: `taskkill /F /IM python.exe` hoặc theo PID trên port 8000.
+
+### Dependencies
+- `pyproject.toml` thêm extra `server = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.30,<1", "pydantic>=2,<3"]`; cài fastapi 0.141.1, uvicorn 0.52.0, pydantic 2.13.4, keyring.
+
+### Tests
+- `tests/test_server_api.py` — 19 test (status, settings round-trip + không lộ api_key, partial update không reset backend, WS stream chunk/done, error path, serialization, history, search flag, context giữa lượt, startup settings, load-fail không crash, checkpoint round-trip, voice status/tts/warmup/release + error path).
+- `tests/test_llama_cpp_runtime.py` — 3 test mới cho `server_command` (thứ tự arg `--lora`, không lora, validate assets).
+- `tests/test_omnivoice_tts_server.py` — thêm regression cho mono 1D waveform (`apply_voice_speed`, `synthesize_fast`).
+- Toàn bộ: **173 passed** (pytest -q, 22s). Lưu ý: không chạy full suite song song với server thật (llama-server chiếm GPU làm test transformers chậm).
+- Frontend: `npm run build` (tsc + vite) pass.
+- Probe thật: `GET /status`, `GET /settings`, WS `/chat` stream 512 chunks + `done` với reply tiếng Việt, voice warmup + `/voice/tts` trả WAV 24 kHz — OK.
+
+## Round 7 (2026-08-01): Voice input (mic → STT) + VTS/avatar trong GUI Tauri
+
+### Backend (`mini_gpt/server.py`)
+- `POST /voice/transcribe`: nhận `{audio_b64, sample_rate}` (WAV PCM16 base64) → `CapturedAudio` → `GoogleSpeechRecognizer` (`vi-VN`); validate base64/empty/sample rate; bọc `SpeechRecognitionError` → message thân thiện.
+- `GET /vts/status` — trả `connected` (không cần khởi động manager); `POST /vts/connect` — lazy khởi tạo `VTSManager` trên thread riêng (`vts-loop`, daemon) + chờ auth tối đa `VTS_CONNECT_TIMEOUT_SECONDS=20s` với message hướng dẫn mở VTube Studio.
+- `POST /vts/action`: payload `{facial, body, codes}` — `codes` → validate với catalog (entry codes) rồi `trigger_catalog_actions_sync`; còn lại → `VtsActions(facial, body)` → `trigger_actions_sync`.
+- WS `/chat`: khi có reply xong và VTS đang kết nối, parse marker `[[VTS:...]]` qua `parse_catalog_reply` và trigger background thread (không block turn; không kẹt khi model đổi).
+
+### Frontend Tauri
+- `lib/voiceInput.ts` (mới): `MediaRecorder`-free path — `getUserMedia` + `ScriptProcessorNode`, gộp Float32 → downsample 16 kHz → encode WAV PCM16 → base64 → `POST /voice/transcribe`; `startRecording`/`stopRecording`/`isRecording`.
+- `ChatTab.tsx`: nút mic trong input box (đỏ khi đang ghi) — record → transcribe → điền text vào input; note lỗi (quyền mic, không nghe rõ, backend mất kết nối). Strip `[[VTS:...]]` marker trước khi auto-TTS.
+- `VoiceTab.tsx`: section VTube Studio — trạng thái kết nối, nút Connect, nút facial (joy/surprised/gentle) + body (raise_hand/tail_up), note reset tự động ~2s.
+
+### Tests
+- `tests/test_server_api.py` +5: transcribe happy path (fake recognizer), reject bad audio (empty/invalid b64/rate 0), surface `SpeechRecognitionError`, VTS status/connect khi chưa kết nối, VTS action semantic + error khi payload rỗng.
+- Toàn bộ: **178 passed** (pytest -q, ~42s).
+- Frontend: `npm run build` pass.
+
+### Còn lại (manual)
+- Smoke test mic → STT với micro thật, kết nối VTube Studio với plugin Ru, xem avatar phản ứng với marker `[[VTS:...]]`.
+
+## Round 8 (2026-08-01): Session history + New Session
+
+### Backend (`mini_gpt/server.py`)
+- Lưu mỗi session thành file JSON riêng: `~/.minigpt/sessions/<id>.json` (`{id, title, created_at, updated_at, messages}`); `id` = `uuid4().hex` validate regex `^[a-zA-Z0-9_-]{1,64}$` (chống path traversal — router cũng trả 404 với `..%2F`).
+- Title tự động từ message user đầu (collapse whitespace, cắt 50 ký tự); fallback `"Cuộc trò chuyện mới"`.
+- `GET /sessions` → danh sách tóm tắt (không kèm messages) sắp theo `updated_at` giảm dần; `POST /sessions/new` → tạo trống + reset `_SESSION_TURNS`; `POST /sessions/{id}/activate` → load + rebuild `_SESSION_TURNS` (tối đa 8 turns cuối); `DELETE /sessions/{id}`.
+- WS `/chat`: request `{prompt, session_id}`; id thiếu/không tồn tại → tự tạo session mới + gửi `{"type":"session", "session_id"}`; append user+ai vào session (cập nhật title + giới hạn 200 messages); `done`/`error` kèm `session_id`.
+- Migration: startup gọi `migrate_legacy_history()` — nếu `history.json` tồn tại và chưa có session nào → import thành session đầu tiên rồi xóa file.
+
+### Frontend (`gui-tauri/src/components/ChatTab.tsx`)
+- Session bar: title session hiện tại + nút **New Session** (+), nút **Lịch sử** (toggle panel liệt kê sessions: title, thời gian, số tin nhắn; click → activate; nút xóa có confirm).
+- On mount: list rỗng → tạo session mới; có session → activate session mới nhất. Mỗi message WS gửi kèm `session_id`; sync lại từ `session`/`done`/`error`. Xóa session đang xem → chuyển sang session mới nhất hoặc tạo mới.
+- `App.css`: style cho session-bar/list/item.
+
+### Tests
+- `tests/test_server_api.py`: fixture cô lập `SESSION_DIR`; test `history_persists` cũ chuyển sang session (`test_chat_persists_turns_into_session`); thêm 7 test: list/new/delete, activate rebuild context, WS tự tạo session khi thiếu id, WS tạo session mới khi id không tồn tại, path traversal → 404, migration import + xóa file, migration skip khi đã có session.
+- Toàn bộ: **185 passed** (pytest -q, ~52s). `npm run build` pass.
+- Migration chạy thật: xóa 3 session rác (probe "xin chào"/"boom") rồi import `history.json` cũ (11 tin nhắn) → session "first".
+
+### Ghi chú
+- `history.json` không còn được chat ghi nữa; `/history` giữ nguyên để tương thích (Memory tab / clear memory vẫn dùng).
+
+## Round 9 (2026-08-01): Self-learning
+
+Ru tự rút tri thức từ hội thoại: sau mỗi lượt chat, khi model rảnh, dùng chính LLM để trích fact lâu dài, dedup rồi lưu vào memory hiện có.
+
+### Backend — module mới `src/mini_gpt/memory_learning.py`
+- `extract_facts_with_llm(prompt, reply, generate_fn)` — prompt hệ thống yêu cầu LLM trả JSON thuần gồm fact (kind: `profile`/`preference`/`project`/`decision`, tối đa 5 fact, content ≤ 300 ký tự, `confidence`/`importance` trong [0, 1]).
+- Bỏ qua: content nhạy cảm (API key, password, token, số tài khoản, URL) qua `is_sensitive_or_unsafe`, nội dung nhất thời, marker nội bộ `[[VTS:...]]`, kind không hợp lệ, JSON không parse được; generation fail → trả `[]` (không crash).
+- Tham số trích xuất: 150 max tokens, temperature 0.2, top-k 50.
+
+### Backend (`mini_gpt/server.py`)
+- `_MEMORY_QUEUE` (maxsize 50) + `_MEMORY_TURN_LOCK` (threading.Lock): sau mỗi reply, `_learn_from_turn(prompt, reply)` đẩy turn vào queue (queue full → drop turn cũ nhất); worker `_memory_learner_loop` (thread daemon `memory-learner`) đọc queue và xử lý từng turn.
+- `_process_memory_turn` — `acquire(blocking=False)` `_MEMORY_TURN_LOCK`: nếu model đang bận (lượt chat giữ lock suốt `run_generation`) thì skip turn học, không cạnh tranh GPU với chat. Trích fact bằng LLM qua `core.runner.generate_reply`, dedup casefold với `store.list_active()` (không upsert fact trùng), upsert vào `StructuredMemoryStore` (`data/conversations/memory.db`) với `evidence = prompt` gốc (≤ 2000 ký tự).
+- Fact được chèn vào context các lượt sau qua pipeline retrieve → `memory_context` có sẵn.
+- Setting mới `enable_self_learning` (default `true`), toggle qua checkbox "Self-learning (Ru tự ghi nhớ điều học được từ hội thoại)" trong Model Settings (`gui-tauri/src/components/SettingsTab.tsx`); lưu/load qua `GET/POST /settings` (partial update, không lộ `api_key`).
+
+### Tests
+- `tests/test_memory_learning.py` (mới) — **9 test**: extraction happy path, non-JSON/JSON trong code fence, kind không hợp lệ bị skip, sensitive/unsafe bị skip, clip `confidence`/`importance`, giới hạn 5 fact / 300 ký tự, strip `[[VTS:...]]`, generation fail → `[]`.
+- `tests/test_server_api.py` +7 → **39 test**: `enable_self_learning` round-trip + default `true`, queue turn khi bật / không queue khi tắt, queue full drop cũ nhất, dedup không upsert trùng, lock skip khi model bận, upsert thật vào store cô lập.
+- Xác nhận: chạy riêng 2 file với server thật đang chiếm GPU — **48 passed** (`test_memory_learning` 9 + `test_server_api` 39, 28.6s).

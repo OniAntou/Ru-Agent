@@ -23,52 +23,68 @@ Verify the environment:
 
 ## Active GUI
 
+The active desktop GUI is the **Tauri** app in `gui-tauri/` (React 19 +
+Tauri 2, Vite), backed by the local FastAPI server
+`mini_gpt.server` on `127.0.0.1:8000`. The legacy CustomTkinter GUI
+(`mini_gpt.gui`), its patch scripts (`edit_gui.py`, `rewrite_ui.py`,
+`rewrite_kilo.py`, `fix.py`), the old Flask web GUI
+(`scripts/gui_ru_llama3_1.py`), and the `Start_Ru.bat` launcher were
+removed.
+
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe -m mini_gpt.gui
+& D:\LLM\start_dev.bat
 ```
 
-The application now features a fully modernized, premium GUI built with `CustomTkinter`. It utilizes a split-pane layout with a dark theme sidebar for navigation and settings, providing a clean, ChatGPT-like aesthetic while maintaining a lightweight footprint to preserve VRAM for local LLM execution.
+`start_dev.bat` starts the backend **in the background** (no terminal is
+blocked) with logs at `logs\server.log` / `logs\server_err.log`, then opens
+the Tauri dev window. Stop the server with
+`taskkill /F /PID <pid>` (find it via `netstat -ano | findstr :8000`).
 
+or manually:
 
-The GUI defaults to the v6.2 LoRA GGUF at
+```powershell
+& D:\LLM\.venv\Scripts\python.exe -m mini_gpt.server   # runs in foreground; use a dedicated terminal
+npm run tauri dev   # in gui-tauri/
+```
+
+The app has four tabs: **Chat** (WebSocket streaming to `/chat` with
+auto-reconnect and typing indicator; persistent session history — each chat
+session is stored under `~/.minigpt/sessions/` with an auto title from the
+first message, a "New Session" button, and a history panel to reopen/delete
+old sessions; legacy `history.json` is auto-migrated once), **Memory** (clear
+saved memory via `DELETE /memory`), **Settings** (backend, model, API key, max
+tokens, temperature, top-k, web search toggle, checkpoint path — loads the
+current state from `GET /settings`), and **Voice** (TTS via the OmniVoice
+service: voice pick, speed, test, warm up, release GPU; toggle "read replies
+aloud" persists in the browser and auto-plays each chat reply; microphone
+input → speech recognition fills the chat box; VTube Studio avatar connection
+and expression controls).
+
+The backend defaults to the v6.2 LoRA GGUF at
 `models\gguf\ru-llama3.1-8b-instruct-v6.2-lora.gguf`, with v6.1 and v6 GGUF
 fallbacks if the preferred file is unavailable. The Transformers fallback
 selector prefers `checkpoints\ru-llama3.1-8b-instruct-v6.2-fresh`, then v6.1
-and v6. The app keeps a bounded recent conversation context and validates
-runtime dependencies before loading the model. Its default screen is
-conversation-first; open **Settings** to change the adapter, sampler,
-saved-memory option, or online-search permission.
-Send with the button or `Ctrl+Enter`; plain Enter adds a line. The status line
-shows whether the Llama model was already resident and how long the completed
-local reply took. Persistent memory is enabled by default and can be turned off
-in **Settings**; online search is enabled by default and can also be turned off.
-The default reply
-limit is 512 tokens.
-The local GUI deliberately uses eager Llama inference: do not re-enable
-`torch.compile` on this Python 3.13/CUDA setup, because it caused native
-`torch_cpu.dll` process crashes during chat generation.
+and v6. The backend keeps a bounded recent conversation context and validates
+runtime dependencies before loading the model.
+
+Persistent memory and online search remain runtime capabilities (see
+below); the Tauri GUI exposes the memory controls and an "Allow online
+search" toggle in Settings.
 
 ## OpenCode cloud replies
 
-**OpenCode Zen API** is Ru's only cloud backend. In **Settings**, provide an
-OpenCode API key and choose a model; the service URL is fixed by the app. A
-previously saved `OpenAI API` selection migrates to OpenCode once and its URL
-field is removed from saved settings.
+**OpenCode Zen API** is Ru's only cloud backend. In the **Settings** tab,
+provide an OpenCode API key and choose a model; the service URL is fixed by
+the backend.
 
-OpenCode responses stream into the in-progress Ru bubble. Private VTube Studio
-metadata and model-directed `[SEARCH: ...]` commands stay hidden during the
-stream; a search command clears that provisional bubble before the grounded
-follow-up streams. The GUI receives only newly emitted text from the streaming
-runtime, so cumulative provider snapshots do not duplicate text in the bubble.
-For an OpenCode reply with voice enabled, the status line
-can show `API`, `Voice warm`, and `first voice` durations. `API` measures the
-existing request from send until its streamed completion is received, so it is
-not first-token latency. `Voice warm` measures the selected local warmup request, while `first voice`
-measures the first synthesis request until its WAV is ready; playback itself
-is not included. These measurements create no extra API requests. If an
-opted-in web-search reply performs two OpenCode completions, the displayed API
-duration is their total. A protocol-valid but empty stream is retried once
-before the GUI reports a failure.
+OpenCode responses stream into the in-progress Ru message. Model-directed
+`[SEARCH: ...]` commands stay hidden during the stream; a search command
+clears that provisional message before the grounded follow-up streams. The
+frontend receives only newly emitted text from the streaming runtime, so
+cumulative provider snapshots do not duplicate text. If an
+opted-in web-search reply performs two OpenCode completions, the recorded
+API duration is their total. A protocol-valid but empty stream is retried
+once before the backend reports a failure.
 
 ## GGUF runtime
 
@@ -142,6 +158,12 @@ fallback.
 - Enable **Remember conversations** to let Ru automatically save safe, structured
   local preferences and project decisions in `data\conversations\memory.db`.
   Credentials, URLs, sensitive data, and VTube Studio metadata are rejected.
+- **Self-learning** (bật mặc định trong Model Settings): sau mỗi lượt chat, khi
+  model rảnh, Ru dùng chính LLM để trích các fact lâu dài
+  (profile/preference/project/decision) từ lượt vừa rồi, dedup với memory hiện
+  có rồi upsert vào `data\conversations\memory.db`; các fact này được tự chèn
+  vào context ở các lượt sau. Thông tin nhạy cảm (API key, password, token,
+  URL) và VTS metadata bị bỏ qua.
 - **Allow online search** is enabled by default to permit a model-directed
   DDGS lookup; disable it to keep replies fully offline.
 - **Clear saved memory** removes only the local SQLite/vector memory artifacts
@@ -223,13 +245,17 @@ several repair cases and needs manual review. Reports are under
 
 ## Local voice output
 
-The GUI automatically sends each completed reply to the selected local voice
-service. Its **Voice** selector persists either `Ru (OmniVoice)` or
+The runtime can automatically send each completed reply to the selected local
+voice service. Its **Voice** selection persists either `Ru (OmniVoice)` or
 `Ái Vy (OmniVoice)`. Every historical Gwen or OmniVoice trial label migrates
 to the equivalent OmniVoice choice. OmniVoice is the default. Ru uses
 `tyc_talk.wav` and its matching transcript; Ái Vy uses the independently kept
 `data\voices\omnivoice\ai_vy.wav` and its matching transcript. Do not change a
 reference audio without its matching transcript.
+
+Note: the Tauri GUI does not expose this voice selection yet; the runtime
+helpers (`voice_runtime`, `speech_runtime`, `tts_chunks`, `voice_pacing`)
+remain for the backend integration.
 
 If the Ái Vy asset is absent on a fresh checkout, fetch only that reference
 file (not the removed Gwen model):
@@ -244,7 +270,7 @@ sentence queue. VTube metadata is removed before synthesis.
 ### OmniVoice runtime
 
 Both OmniVoice labels require the already-installed
-`D:\LLM\omnivoice_env` runtime and `models\omnivoice` cache on `D:`. The GUI
+`D:\LLM\omnivoice_env` runtime and `models\omnivoice` cache on `D:`. The runtime
 does not install packages or download a model. It starts
 `omnivoice_tts_server.py` only when that selected engine is needed, on loopback
 port 5052. The D-only setup script installs OmniVoice and its Flask loopback
@@ -253,7 +279,7 @@ service dependency in `omnivoice_env`.
 For the pending pronunciation listening trial, both OmniVoice labels use the
 measured `vi-normalized-16` settings (`language="Vietnamese"`, text
 normalization, 16 steps). This affects only explicitly selected OmniVoice test
-voices; **Ru (OmniVoice)** remains the GUI default.
+voices; **Ru (OmniVoice)** remains the runtime default.
 
 ### Voice pace
 
@@ -268,7 +294,7 @@ generation, it releases OmniVoice. A voice failure is reported as unavailable
 and never silently changes the saved selection.
 
 For manual verification, select Ru and Ái Vy, test a manual speed plus each
-automatic pace, restart the GUI to confirm settings persist, and verify that
+automatic pace, restart the app to confirm settings persist, and verify that
 normal local Llama generation and VTube lip-sync still work.
 
 ## Experimental voice input
@@ -278,6 +304,11 @@ feature. Microphone audio is sent to Google's recognition endpoint; nothing is
 stored locally beyond the resulting transcript. The former Sherpa-ONNX offline
 engine was removed from the runtime; saved settings that still reference it
 fall back to Google with a clear error.
+
+The Tauri GUI wires it through the backend `POST /voice/transcribe` endpoint:
+the mic button in the chat input records via the browser APIs
+(`getUserMedia` + `ScriptProcessorNode`), down-samples to 16 kHz PCM WAV, and
+fills the chat input with the recognized Vietnamese text.
 
 ## Ru identity and capabilities
 
@@ -298,14 +329,18 @@ that an action happened.
 
 ## VTube Studio actions
 
-For every reply, the GUI reads the current VTube Studio model, its hotkeys,
+The VTS runtime modules (`vts_manager`, `vts_catalog`, `vts_actions`,
+`vts_motion`) are wired through the backend (`/vts/status|connect|action`) and
+the Tauri Voice tab (connect, facial joy/surprised/gentle, body
+raise_hand/tail_up). For every reply, the runtime reads the current VTube Studio
+model, its hotkeys,
 and its `.exp3.json` expressions. It supplies that model-scoped catalog to Ru
 as private `vts_XX` and `expr_XX` codes, so switching models changes the
 available actions without editing source code. Ru may use any listed hotkey,
 including appearance, hair, and clothing changes that belong to the current
 model.
 
-Ru emits chosen actions only as a terminal `[[VTS:...]]` suffix. The GUI
+Ru emits chosen actions only as a terminal `[[VTS:...]]` suffix. The runtime
 removes that metadata before showing chat text, generating TTS, saving memory,
 or saving a reviewed example. It rechecks the current model before dispatch;
 codes from a previous model are discarded safely. An expression activated by
@@ -338,7 +373,9 @@ or recreate `LLM_MouthOpen`.
 existing `VTubeStudioSpout` output, so it does not change Ru, the active VTube
 Studio model, `VoiceVolume`, `LLM_Sway`, or any model hotkeys.
 
-The GUI's **Open overlay** / **Close overlay** button starts or stops only the
+The overlay can be started or stopped through the `scripts`
+(`build_ru_desktop_overlay.ps1` / `start_ru_desktop_overlay.ps1`); the legacy
+GUI button was removed with the CustomTkinter GUI. It starts or stops only the
 `RuDesktopOverlay` receiver. It does not close Ru or VTube Studio, and it uses
 the current `VTubeStudioSpout` sender.
 

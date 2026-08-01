@@ -64,6 +64,17 @@ h1, h2, h3, h4, h5, h6 {
   .sidebar-header h2 {
     display: none;
   }
+  .sidebar-header {
+    padding: 12px 8px;
+  }
+  .observation-toggle {
+    justify-content: center;
+    padding: 8px;
+  }
+  .observation-toggle span,
+  .observation-detail {
+    display: none;
+  }
   .nav-text {
     display: none;
   }
@@ -89,6 +100,67 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--text-primary);
   text-transform: uppercase;
   letter-spacing: 0.1em;
+}
+
+.observation-control {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 14px;
+}
+
+.observation-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 7px;
+  background: #1d1d21;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+}
+
+.observation-toggle:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.observation-toggle:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.observation-toggle:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.observation-observing .observation-toggle {
+  border-color: #4f7f67;
+  color: #bde7ce;
+}
+
+.observation-starting .observation-toggle,
+.observation-paused .observation-toggle {
+  border-color: #8a7442;
+  color: #ead49d;
+}
+
+.observation-error .observation-toggle {
+  border-color: #8c4f56;
+  color: #efb5bb;
+}
+
+.observation-detail {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1.3;
 }
 
 .nav-menu {

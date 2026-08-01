@@ -4,6 +4,7 @@ import ChatTab from "./components/ChatTab";
 import SettingsTab from "./components/SettingsTab";
 import VoiceTab from "./components/VoiceTab";
 import MemoryTab from "./components/MemoryTab";
+import ObservationControl from "./components/ObservationControl";
 import { apiFetch } from "./lib/backendClient";
 import "./App.css";
 
@@ -118,6 +119,7 @@ function App() {
       <div className="sidebar">
         <div className="sidebar-header">
           <h2>✦ Ru Dashboard</h2>
+          <ObservationControl />
         </div>
 
         <nav className="nav-menu">

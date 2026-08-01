@@ -16,34 +16,51 @@ export function ttsEnabled(): boolean {
   return localStorage.getItem("ru_tts_enabled") === "1";
 }
 
+export type SpeakOptions = {
+  voiceLabel?: string;
+  speed?: number;
+  interrupt?: boolean;
+  onPlaying?: () => void;
+};
+
 export async function speakText(
   text: string,
-  options?: { voiceLabel?: string; speed?: number }
+  options: SpeakOptions = {}
 ): Promise<boolean> {
-  stopVoice();
+  const busy = currentAbort !== null || currentAudio !== null;
+  if (busy && options.interrupt === false) return false;
+  if (options.interrupt !== false) stopVoice();
   const abort = new AbortController();
   currentAbort = abort;
   try {
-    const voiceLabel = options?.voiceLabel ?? (localStorage.getItem("ru_voice_label") || undefined);
-    const speed = options?.speed ?? (Number(localStorage.getItem("ru_voice_speed") ?? "1") || 1.0);
+    const voiceLabel = options.voiceLabel ?? (localStorage.getItem("ru_voice_label") || undefined);
+    const speed = options.speed ?? (Number(localStorage.getItem("ru_voice_speed") ?? "1") || 1.0);
     const response = await apiFetch("/voice/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, voice_label: voiceLabel, speed }),
       signal: abort.signal,
     });
-    if (!response.ok) return false;
+    if (!response.ok) {
+      if (currentAbort === abort) currentAbort = null;
+      return false;
+    }
     const contentType = response.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const data = await response.json();
       if (data?.status === "error") {
         console.error("TTS error:", data.message);
+        if (currentAbort === abort) currentAbort = null;
         return false;
       }
+      if (currentAbort === abort) currentAbort = null;
       return false;
     }
     const blob = await response.blob();
-    if (blob.size === 0) return false;
+    if (blob.size === 0) {
+      if (currentAbort === abort) currentAbort = null;
+      return false;
+    }
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     currentAudio = audio;
@@ -71,6 +88,12 @@ export async function speakText(
         resolve(played);
       };
       currentFinish = finish;
+      let playingReported = false;
+      audio.onplaying = () => {
+        if (playingReported) return;
+        playingReported = true;
+        options.onPlaying?.();
+      };
       audio.onended = () => finish(true);
       audio.onerror = () => finish(false);
       audio.play().catch(() => finish(false));

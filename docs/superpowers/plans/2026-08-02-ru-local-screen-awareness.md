@@ -8,7 +8,7 @@
 
 **Tech Stack:** Windows DXGI Desktop Duplication, Rust 1.97, Tauri 2, `dxgi-capture-rs` 1.2.2, `image` 0.25.10, `reqwest` 0.13.4, React 19, TypeScript 5.8, Python 3.11+, FastAPI/Pydantic, llama.cpp b10142+, Qwen3-VL-2B-Instruct GGUF, OpenCode Zen/Kilo Gateway, OmniVoice.
 
-> **Execution status (2026-08-02): Tasks 1–6 passed; Tasks 7–9 pending.** Both
+> **Execution status (2026-08-02): Tasks 1–7 passed; Tasks 8–9 pending.** Both
 > pinned artifacts pass size/SHA-256 validation. Five consecutive synthetic
 > observations passed the strict parser at load 1,827 ms, inference p50 1,680
 > ms, and p95/worst 1,921 ms. llama.cpp b10142's compatible wire schema omits
@@ -32,6 +32,11 @@
 > shuts observation/vision down before the backend and shared Job Object. A
 > 20-cycle worker/ring leak gate, 87 focused Python tests, and 27 Rust tests pass
 > together with format, check, and Clippy; observation bodies contain text only.
+> The always-mounted sidebar control is off by default, exposes in-memory
+> latency metrics, ignores the normal chat-TTS preference, and forces every
+> accepted proactive line through Ru (OmniVoice). Proactive playback never
+> interrupts existing audio and reports first-playing/finish callbacks; all ten
+> frontend tests and the TypeScript/Vite production build pass.
 
 ## Global Constraints
 

@@ -8,6 +8,14 @@
 
 **Tech Stack:** Windows DXGI Desktop Duplication, Rust 1.97, Tauri 2, `dxgi-capture-rs` 1.2.2, `image` 0.25.10, `reqwest` 0.13.4, React 19, TypeScript 5.8, Python 3.11+, FastAPI/Pydantic, llama.cpp b10142+, Qwen3-VL-2B-Instruct GGUF, OpenCode Zen/Kilo Gateway, OmniVoice.
 
+> **Execution status (2026-08-02): blocked at Task 1, Step 6.** Both pinned
+> artifacts pass size/SHA-256 validation and llama-server b10142 loads them,
+> reaches `/health`, and accepts the in-memory synthetic JPEG. The bounded
+> observation schema fails sampler initialization with HTTP 400 `Failed to
+> initialize samplers: failed to parse grammar`; unconstrained output does not
+> match the required names/types. Tasks 2–9 have not started. Revise and review
+> the structured-output contract before resuming this plan.
+
 ## Global Constraints
 
 - The approved design is `docs/superpowers/specs/2026-08-01-ru-local-screen-awareness-design.md`; if this plan conflicts with it, the design wins.

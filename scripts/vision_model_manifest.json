@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "repository": "Qwen/Qwen3-VL-2B-Instruct-GGUF",
+  "revision": "52d6c8ffea26cc873ac5ad116f8631268d7eb503",
+  "license": "apache-2.0",
+  "files": [
+    {
+      "name": "Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+      "size": 1107409952,
+      "sha256": "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae"
+    },
+    {
+      "name": "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",
+      "size": 445053216,
+      "sha256": "f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82"
+    }
+  ]
+}

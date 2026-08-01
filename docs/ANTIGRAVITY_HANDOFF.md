@@ -193,7 +193,7 @@ English, and code-switch output.
 
 ## Approved next design: local screen awareness
 
-The user approved the design in
+The user approved the design and implementation plan in
 `docs/superpowers/specs/2026-08-01-ru-local-screen-awareness-design.md`; it is
 not implemented yet. The first milestone continuously observes only the
 Windows primary monitor, keeps sampled frames in a bounded RAM buffer, and
@@ -206,5 +206,30 @@ seconds and an active cadence of roughly three to six distinct comments per
 minute. Observation is manual and visibly indicated. It adds no sensitive-data
 filter and no system-audio capture. System audio remains a separately designed
 milestone after vision passes quality, latency, GPU, and process-lifecycle
-gates. Do not download a VLM or implement this design until its implementation
-plan has been reviewed and approved.
+gates.
+
+Implementation started on 2026-08-02 in
+`codex/ru-local-screen-awareness` and stopped at Task 1's required local-model
+hard gate. The two pinned Qwen3-VL artifacts were downloaded to ignored local
+storage and passed exact size/SHA-256 validation. llama-server b10142 loads the
+model and mmproj, becomes healthy, accepts the in-memory synthetic JPEG, and
+can return unconstrained JSON. It cannot initialize the sampler for the full
+bounded observation schema and returns HTTP 400 with `Failed to initialize
+samplers: failed to parse grammar`. The attempted OpenAI-style nested schema
+and the b10142 `json_object` direct-schema path both fail this gate; a direct
+schema paired with the wrong `json_schema` type only produced unconstrained,
+wrongly named string fields and is not acceptable. Every diagnostic child was
+terminated and waited; no `llama-server.exe` remained afterward.
+
+No DXGI capture, frame ring, backend reaction endpoint, UI toggle, screen
+content persistence, or live screen trial was implemented. Before resuming,
+amend the structured-output contract deliberately (for example a tested
+b10142-compatible grammar or a reviewed llama.cpp upgrade), then require five
+consecutive parsed responses from:
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe scripts\benchmark_local_vision.py --runs 5
+```
+
+Keep `TODO.md` open and do not proceed to capture/UI merely because model load
+succeeds.

@@ -33,6 +33,19 @@ const metrics = {
   worstMs: 2100,
   droppedStale: 1,
   commentsLastMinute: 3,
+  framesCaptured: 40,
+  visionAnalyses: 12,
+  visionCandidates: 4,
+  cloudAttempts: 2,
+  cloudSkips: 1,
+  cloudFailures: 0,
+  reactionsEmitted: 1,
+  rejectedConfidence: 0,
+  rejectedNovelty: 8,
+  rejectedWorthiness: 10,
+  lastConfidence: 0.91,
+  lastNovelty: 0.42,
+  lastWorthiness: 0.38,
 };
 
 describe("ObservationControl", () => {
@@ -94,6 +107,13 @@ describe("ObservationControl", () => {
       act(() => stateHandler({ ...off, phase, message: phase }));
       expect(screen.getByText(label)).toBeInTheDocument();
     }
+
+    act(() => stateHandler({ ...off, phase: "observing", message: "watching" }));
+    expect(
+      screen.getByText(
+        "Đang nhìn · frame 40 · vision 12 · ứng viên 4 · thấp c/n/w 0/8/10 · điểm cuối 0.91/0.42/0.38 · cloud 2 · đã phát 1",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("always uses Ru OmniVoice and reports first-playing latency even when chat TTS is off", async () => {
@@ -126,6 +146,7 @@ describe("ObservationControl", () => {
     );
     expect(client.reportVoiceStarted).toHaveBeenCalledWith("obs-1", 500);
     expect(client.reportVoiceFinished).toHaveBeenCalledWith("obs-1", true);
+    expect(screen.getByText("Ru đã nói xong 6 từ.")).toBeInTheDocument();
   });
 
   it("reports failed playback, refreshes metrics, and unregisters both listeners", async () => {
@@ -143,11 +164,33 @@ describe("ObservationControl", () => {
     await waitFor(() =>
       expect(client.reportVoiceFinished).toHaveBeenCalledWith("obs-2", false),
     );
+    expect(screen.getByText("Phản ứng 2 từ không phát được hoặc bị gián đoạn.")).toBeInTheDocument();
     expect(client.getObservationMetrics).toHaveBeenCalledTimes(2);
     expect(screen.getByTitle(/p50 1200 ms/)).toHaveAttribute("data-latency-p95", "1800");
 
     view.unmount();
     expect(unlistenState).toHaveBeenCalledOnce();
     expect(unlistenReaction).toHaveBeenCalledOnce();
+  });
+
+  it("shows the actionable Tauri command error instead of a generic failure", async () => {
+    client.startObservation
+      .mockRejectedValueOnce(
+        "Môi trường OmniVoice chưa setup đúng cách, thiếu: omnivoice_env/Scripts/python.exe.",
+      )
+      .mockResolvedValueOnce({ ...off, phase: "starting", message: "retrying" });
+    render(<ObservationControl />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Bật quan sát màn hình chính" }));
+
+    expect(
+      await screen.findByText(
+        "Môi trường OmniVoice chưa setup đúng cách, thiếu: omnivoice_env/Scripts/python.exe.",
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Bật quan sát màn hình chính" }));
+    await waitFor(() => expect(client.startObservation).toHaveBeenCalledTimes(2));
+    expect(client.stopObservation).not.toHaveBeenCalled();
   });
 });

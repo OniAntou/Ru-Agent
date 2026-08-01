@@ -27,6 +27,19 @@ export type ObservationMetricsSnapshot = {
   worstMs: number | null;
   droppedStale: number;
   commentsLastMinute: number;
+  framesCaptured: number;
+  visionAnalyses: number;
+  visionCandidates: number;
+  cloudAttempts: number;
+  cloudSkips: number;
+  cloudFailures: number;
+  reactionsEmitted: number;
+  rejectedConfidence: number;
+  rejectedNovelty: number;
+  rejectedWorthiness: number;
+  lastConfidence: number | null;
+  lastNovelty: number | null;
+  lastWorthiness: number | null;
 };
 
 export const startObservation = () => invoke<ObservationSnapshot>("observation_start");

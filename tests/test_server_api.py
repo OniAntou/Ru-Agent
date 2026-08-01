@@ -356,6 +356,40 @@ def test_voice_status_reports_availability(monkeypatch, isolated_state) -> None:
     assert response.json() == {"status": "ok", "available": False}
 
 
+def test_post_voice_uses_urllib_request_instead_of_fastapi_request(monkeypatch) -> None:
+    captured = {}
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return b'{"ready":true}'
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(server, "urlopen", fake_urlopen)
+
+    status, body = server._post_voice(
+        "/warmup", {"voice_profile": "ru"}, timeout=30.0
+    )
+
+    request = captured["request"]
+    assert request.full_url == "http://127.0.0.1:5052/warmup"
+    assert request.get_method() == "POST"
+    assert json.loads(request.data) == {"voice_profile": "ru"}
+    assert captured["timeout"] == 30.0
+    assert (status, body) == (200, b'{"ready":true}')
+
+
 def test_voice_tts_returns_wav_bytes(monkeypatch, isolated_state) -> None:
     monkeypatch.setattr(server, "ensure_voice_service", lambda: None)
     monkeypatch.setattr(server, "request_voice_audio", lambda text, label, speed: b"RIFFWAVE-data")

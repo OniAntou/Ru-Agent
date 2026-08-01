@@ -73,7 +73,7 @@ def test_routine_event_waits_twenty_seconds_after_completed_reaction() -> None:
     ).allowed
 
 
-def test_policy_rejects_low_confidence_or_low_value_observations() -> None:
+def test_policy_rejects_low_confidence_but_accepts_low_subjective_scores() -> None:
     coordinator = ReactionCoordinator(clock=lambda: 100.0)
     low_confidence = observation().observation
     request = ReactionRequest(
@@ -88,7 +88,16 @@ def test_policy_rejects_low_confidence_or_low_value_observations() -> None:
         ),
     )
     assert coordinator.begin(request).reason == "low_confidence"
-    assert coordinator.begin(observation("low-value", novelty=0.5, worthiness=0.59)).reason == "low_value"
+    assert coordinator.begin(observation("low-value", novelty=0.5, worthiness=0.59)).allowed
+
+
+def test_policy_allows_confident_event_when_subjective_local_scores_are_zero() -> None:
+    coordinator = ReactionCoordinator(clock=lambda: 100.0)
+
+    decision = coordinator.begin(observation("zero-opinion", novelty=0.0, worthiness=0.0))
+
+    assert decision.allowed is True
+    assert decision.reason == "allowed"
 
 
 def test_cancel_marks_only_current_pending_generation() -> None:

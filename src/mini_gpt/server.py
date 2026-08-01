@@ -16,11 +16,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import Request as UrlRequest, urlopen
 from uuid import uuid4
 
 import uvicorn
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request as FastApiRequest, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
@@ -102,7 +102,7 @@ def _valid_desktop_token(candidate: str) -> bool:
 
 
 @app.middleware("http")
-async def desktop_boundary(request: Request, call_next):
+async def desktop_boundary(request: FastApiRequest, call_next):
     if request.method != "OPTIONS":
         authorization = request.headers.get("authorization", "")
         candidate = authorization.removeprefix("Bearer ").strip()
@@ -470,7 +470,7 @@ def ensure_voice_service() -> None:
 def _post_voice(path: str, payload: dict, *, timeout: float) -> tuple[int, bytes]:
     config = _voice_config()
     data = json.dumps(payload).encode("utf-8")
-    request = Request(
+    request = UrlRequest(
         f"{config.base_url}{path}",
         data=data,
         headers={"Content-Type": "application/json"},

@@ -103,7 +103,7 @@ pub fn build_multimodal_request(frames: &[PreparedFrame]) -> Result<Value, Visio
         "model": "qwen3-vl-2b-instruct",
         "messages": [{"role": "user", "content": content}],
         "temperature": 0.1,
-        "max_tokens": 192,
+        "max_tokens": 512,
         "stream": false,
         "response_format": {
             "type": "json_object",
@@ -434,6 +434,7 @@ mod tests {
         let encoded = serde_json::to_string(&body).unwrap();
         assert!(encoded.contains("data:image/jpeg;base64,"));
         assert!(encoded.contains("comment_worthiness"));
+        assert_eq!(body["max_tokens"], 512);
         assert!(!encoded.contains("http://") && !encoded.contains("https://"));
     }
 

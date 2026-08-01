@@ -12,8 +12,6 @@ MIN_REACTION_INTERVAL_SECONDS = 10.0
 ROUTINE_REACTION_INTERVAL_SECONDS = 20.0
 REPEAT_WINDOW_SECONDS = 30.0
 MIN_CONFIDENCE = 0.55
-MIN_NOVELTY = 0.55
-MIN_COMMENT_WORTHINESS = 0.60
 MAX_PROMPT_CHARACTERS = 6_000
 
 
@@ -56,11 +54,6 @@ class ReactionCoordinator:
         observation = request.observation
         if observation.confidence < MIN_CONFIDENCE:
             return ReactionDecision(False, "low_confidence")
-        if (
-            observation.novelty < MIN_NOVELTY
-            or observation.comment_worthiness < MIN_COMMENT_WORTHINESS
-        ):
-            return ReactionDecision(False, "low_value")
         now = self._clock()
         key = " ".join(observation.event.casefold().split())
         with self._lock:

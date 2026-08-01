@@ -40,13 +40,35 @@ const EMPTY_METRICS: ObservationMetricsSnapshot = {
   worstMs: null,
   droppedStale: 0,
   commentsLastMinute: 0,
+  framesCaptured: 0,
+  visionAnalyses: 0,
+  visionCandidates: 0,
+  cloudAttempts: 0,
+  cloudSkips: 0,
+  cloudFailures: 0,
+  reactionsEmitted: 0,
+  rejectedConfidence: 0,
+  rejectedNovelty: 0,
+  rejectedWorthiness: 0,
+  lastConfidence: null,
+  lastNovelty: null,
+  lastWorthiness: null,
 };
 
 const eventAge = (eventUnixMs: number) => Math.max(0, Date.now() - eventUnixMs);
+const wordCount = (text: string) => text.trim().split(/\s+/u).filter(Boolean).length;
+const score = (value: number | null) => (value === null ? "-" : value.toFixed(2));
+
+const commandErrorMessage = (error: unknown) => {
+  if (typeof error === "string" && error.trim()) return error;
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "Observation command failed.";
+};
 
 export default function ObservationControl() {
   const [snapshot, setSnapshot] = useState<ObservationSnapshot>(OFF);
   const [metrics, setMetrics] = useState<ObservationMetricsSnapshot>(EMPTY_METRICS);
+  const [playbackStatus, setPlaybackStatus] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -63,7 +85,9 @@ export default function ObservationControl() {
     };
 
     const playReaction = async (reaction: ScreenReactionEvent) => {
+      const words = wordCount(reaction.text);
       let playingReported = false;
+      if (!disposed) setPlaybackStatus(`Đang chuẩn bị phản ứng ${words} từ bằng Ru (OmniVoice).`);
       const played = await speakText(reaction.text, {
         voiceLabel: "Ru (OmniVoice)",
         speed: reaction.voiceSpeed,
@@ -71,12 +95,20 @@ export default function ObservationControl() {
         onPlaying: () => {
           if (playingReported) return;
           playingReported = true;
+          if (!disposed) setPlaybackStatus(`Ru đang nói phản ứng ${words} từ.`);
           void reportVoiceStarted(reaction.observationId, eventAge(reaction.eventUnixMs)).catch(
             () => undefined,
           );
         },
       });
       await reportVoiceFinished(reaction.observationId, played).catch(() => undefined);
+      if (!disposed) {
+        setPlaybackStatus(
+          played
+            ? `Ru đã nói xong ${words} từ.`
+            : `Phản ứng ${words} từ không phát được hoặc bị gián đoạn.`,
+        );
+      }
       await refreshMetrics();
     };
 
@@ -86,6 +118,7 @@ export default function ObservationControl() {
       })
       .catch(() => undefined);
     void refreshMetrics();
+    const metricsTimer = window.setInterval(() => void refreshMetrics(), 2_000);
     void onObservationState((next) => {
       if (!disposed) setSnapshot(next);
     }).then((unlisten) => {
@@ -101,28 +134,35 @@ export default function ObservationControl() {
 
     return () => {
       disposed = true;
+      window.clearInterval(metricsTimer);
       unlisteners.forEach((unlisten) => unlisten());
     };
   }, []);
 
-  const observing = snapshot.phase !== "off";
+  const observing = ["starting", "observing", "paused"].includes(snapshot.phase);
   const title = useMemo(
     () =>
       `p50 ${metrics.p50Ms ?? "-"} ms · p95 ${metrics.p95Ms ?? "-"} ms · worst ${metrics.worstMs ?? "-"} ms`,
     [metrics],
   );
+  const observationDetail =
+    playbackStatus ??
+    (snapshot.phase === "observing"
+      ? `Đang nhìn · frame ${metrics.framesCaptured} · vision ${metrics.visionAnalyses} · ứng viên ${metrics.visionCandidates} · thấp c/n/w ${metrics.rejectedConfidence}/${metrics.rejectedNovelty}/${metrics.rejectedWorthiness} · điểm cuối ${score(metrics.lastConfidence)}/${score(metrics.lastNovelty)}/${score(metrics.lastWorthiness)} · cloud ${metrics.cloudAttempts} · đã phát ${metrics.reactionsEmitted}`
+      : snapshot.message);
 
   const toggle = async () => {
     if (pending) return;
+    setPlaybackStatus(null);
     setPending(true);
     try {
       const next = observing ? await stopObservation() : await startObservation();
       setSnapshot(next);
-    } catch {
+    } catch (error) {
       setSnapshot((current) => ({
         ...current,
         phase: "error",
-        message: "Observation command failed.",
+        message: commandErrorMessage(error),
       }));
     } finally {
       setPending(false);
@@ -139,6 +179,19 @@ export default function ObservationControl() {
       data-latency-worst={metrics.worstMs ?? ""}
       data-dropped-stale={metrics.droppedStale}
       data-comments-last-minute={metrics.commentsLastMinute}
+      data-frames-captured={metrics.framesCaptured}
+      data-vision-analyses={metrics.visionAnalyses}
+      data-vision-candidates={metrics.visionCandidates}
+      data-cloud-attempts={metrics.cloudAttempts}
+      data-cloud-skips={metrics.cloudSkips}
+      data-cloud-failures={metrics.cloudFailures}
+      data-reactions-emitted={metrics.reactionsEmitted}
+      data-rejected-confidence={metrics.rejectedConfidence}
+      data-rejected-novelty={metrics.rejectedNovelty}
+      data-rejected-worthiness={metrics.rejectedWorthiness}
+      data-last-confidence={metrics.lastConfidence ?? ""}
+      data-last-novelty={metrics.lastNovelty ?? ""}
+      data-last-worthiness={metrics.lastWorthiness ?? ""}
     >
       <button
         type="button"
@@ -152,7 +205,7 @@ export default function ObservationControl() {
         <span>{LABELS[snapshot.phase]}</span>
       </button>
       <span className="observation-detail" aria-live="polite">
-        {snapshot.message}
+        {observationDetail}
       </span>
     </div>
   );

@@ -64,6 +64,19 @@ pub struct ObservationMetricsSnapshot {
     pub worst_ms: Option<u64>,
     pub dropped_stale: u64,
     pub comments_last_minute: usize,
+    pub frames_captured: u64,
+    pub vision_analyses: u64,
+    pub vision_candidates: u64,
+    pub cloud_attempts: u64,
+    pub cloud_skips: u64,
+    pub cloud_failures: u64,
+    pub reactions_emitted: u64,
+    pub rejected_confidence: u64,
+    pub rejected_novelty: u64,
+    pub rejected_worthiness: u64,
+    pub last_confidence: Option<f32>,
+    pub last_novelty: Option<f32>,
+    pub last_worthiness: Option<f32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -81,6 +94,19 @@ struct ObservationMetrics {
     latencies_ms: VecDeque<u64>,
     comment_times_ms: VecDeque<u64>,
     dropped_stale: u64,
+    frames_captured: u64,
+    vision_analyses: u64,
+    vision_candidates: u64,
+    cloud_attempts: u64,
+    cloud_skips: u64,
+    cloud_failures: u64,
+    reactions_emitted: u64,
+    rejected_confidence: u64,
+    rejected_novelty: u64,
+    rejected_worthiness: u64,
+    last_confidence: Option<f32>,
+    last_novelty: Option<f32>,
+    last_worthiness: Option<f32>,
 }
 
 impl ObservationMetrics {
@@ -117,6 +143,19 @@ impl ObservationMetrics {
             worst_ms: sorted.last().copied(),
             dropped_stale: self.dropped_stale,
             comments_last_minute: self.comment_times_ms.len(),
+            frames_captured: self.frames_captured,
+            vision_analyses: self.vision_analyses,
+            vision_candidates: self.vision_candidates,
+            cloud_attempts: self.cloud_attempts,
+            cloud_skips: self.cloud_skips,
+            cloud_failures: self.cloud_failures,
+            reactions_emitted: self.reactions_emitted,
+            rejected_confidence: self.rejected_confidence,
+            rejected_novelty: self.rejected_novelty,
+            rejected_worthiness: self.rejected_worthiness,
+            last_confidence: self.last_confidence,
+            last_novelty: self.last_novelty,
+            last_worthiness: self.last_worthiness,
         }
     }
 }
@@ -162,6 +201,19 @@ impl ObservationState {
                 worst_ms: None,
                 dropped_stale: 0,
                 comments_last_minute: 0,
+                frames_captured: 0,
+                vision_analyses: 0,
+                vision_candidates: 0,
+                cloud_attempts: 0,
+                cloud_skips: 0,
+                cloud_failures: 0,
+                reactions_emitted: 0,
+                rejected_confidence: 0,
+                rejected_novelty: 0,
+                rejected_worthiness: 0,
+                last_confidence: None,
+                last_novelty: None,
+                last_worthiness: None,
             })
     }
 }
@@ -181,6 +233,10 @@ struct ReactionCandidate {
     observation_id: String,
     event_unix_ms: u64,
     observation: VisionObservation,
+}
+
+fn observation_is_candidate(observation: &VisionObservation) -> bool {
+    observation.confidence >= 0.55
 }
 
 pub struct ObservationRuntime {
@@ -222,6 +278,7 @@ impl ObservationRuntime {
             sequence.clone(),
             batch_tx,
             batch_drain,
+            metrics.clone(),
             snapshot.clone(),
             app.clone(),
             capture_ready_tx,
@@ -236,6 +293,7 @@ impl ObservationRuntime {
             reaction_drain,
             pending_id.clone(),
             bridge.clone(),
+            metrics.clone(),
             snapshot.clone(),
             project_root,
             app.clone(),
@@ -304,6 +362,7 @@ fn spawn_capture_worker(
     sequence: Arc<AtomicU64>,
     batch_tx: Sender<VisionBatch>,
     batch_drain: Receiver<VisionBatch>,
+    metrics: Arc<Mutex<ObservationMetrics>>,
     snapshot: Arc<Mutex<ObservationSnapshot>>,
     app: AppHandle,
     capture_ready: Sender<()>,
@@ -343,6 +402,9 @@ fn spawn_capture_worker(
             let Ok(prepared) = prepare_frame_with_sequence(&captured, sequence) else {
                 continue;
             };
+            if let Ok(mut value) = metrics.lock() {
+                value.frames_captured += 1;
+            }
             let change = previous_fingerprint
                 .as_deref()
                 .map(|previous| mean_absolute_difference(previous, &prepared.fingerprint))
@@ -398,6 +460,7 @@ fn spawn_vision_worker(
     reaction_drain: Receiver<ReactionCandidate>,
     pending_id: Arc<Mutex<Option<String>>>,
     bridge: Arc<BackendBridge>,
+    metrics: Arc<Mutex<ObservationMetrics>>,
     snapshot: Arc<Mutex<ObservationSnapshot>>,
     project_root: PathBuf,
     app: AppHandle,
@@ -470,13 +533,27 @@ fn spawn_vision_worker(
                         return;
                     }
                 };
+                if let Ok(mut value) = metrics.lock() {
+                    value.vision_analyses += 1;
+                }
                 match vision.analyze(&batch.frames) {
                     Ok(observation) => {
-                        if observation.confidence < 0.55
-                            || observation.novelty < 0.55
-                            || observation.comment_worthiness < 0.60
-                        {
+                        let rejected_confidence = observation.confidence < 0.55;
+                        let rejected_novelty = observation.novelty < 0.55;
+                        let rejected_worthiness = observation.comment_worthiness < 0.60;
+                        if let Ok(mut value) = metrics.lock() {
+                            value.last_confidence = Some(observation.confidence);
+                            value.last_novelty = Some(observation.novelty);
+                            value.last_worthiness = Some(observation.comment_worthiness);
+                            value.rejected_confidence += u64::from(rejected_confidence);
+                            value.rejected_novelty += u64::from(rejected_novelty);
+                            value.rejected_worthiness += u64::from(rejected_worthiness);
+                        }
+                        if !observation_is_candidate(&observation) {
                             continue;
+                        }
+                        if let Ok(mut value) = metrics.lock() {
+                            value.vision_candidates += 1;
                         }
                         let observation_id = format!(
                             "screen-{}",
@@ -566,11 +643,17 @@ fn spawn_reaction_worker(
                 event_age_ms: age_ms,
                 observation: candidate.observation,
             };
+            if let Ok(mut value) = metrics.lock() {
+                value.cloud_attempts += 1;
+            }
             match bridge.react(&request) {
                 Ok(reply) => {
                     cloud_failures = 0;
                     clear_pending(&pending_id, &candidate.observation_id);
                     let Some(reaction) = reply.reaction else {
+                        if let Ok(mut value) = metrics.lock() {
+                            value.cloud_skips += 1;
+                        }
                         continue;
                     };
                     if now_unix_ms().saturating_sub(candidate.event_unix_ms) > MAX_EVENT_AGE_MS {
@@ -599,11 +682,16 @@ fn spawn_reaction_worker(
                         if let Ok(mut awaiting) = awaiting_voice.lock() {
                             awaiting.take();
                         }
+                    } else if let Ok(mut value) = metrics.lock() {
+                        value.reactions_emitted += 1;
                     }
                 }
                 Err(BridgeError::Transport | BridgeError::Provider | BridgeError::Unauthorized) => {
                     clear_pending(&pending_id, &candidate.observation_id);
                     cloud_failures += 1;
+                    if let Ok(mut value) = metrics.lock() {
+                        value.cloud_failures += 1;
+                    }
                     if cloud_failures >= MAX_CLOUD_FAILURES {
                         set_phase(
                             &snapshot,
@@ -618,6 +706,9 @@ fn spawn_reaction_worker(
                 }
                 Err(BridgeError::InvalidResponse) => {
                     clear_pending(&pending_id, &candidate.observation_id);
+                    if let Ok(mut value) = metrics.lock() {
+                        value.cloud_failures += 1;
+                    }
                 }
             }
         }
@@ -926,6 +1017,56 @@ mod tests {
         assert_eq!(snapshot.p50_ms, Some(70));
         assert_eq!(snapshot.p95_ms, Some(115));
         assert_eq!(snapshot.worst_ms, Some(120));
+    }
+
+    #[test]
+    fn metrics_expose_each_ephemeral_pipeline_stage_without_content() {
+        let mut metrics = ObservationMetrics {
+            frames_captured: 40,
+            vision_analyses: 12,
+            vision_candidates: 4,
+            cloud_attempts: 2,
+            cloud_skips: 1,
+            cloud_failures: 0,
+            reactions_emitted: 1,
+            rejected_confidence: 0,
+            rejected_novelty: 8,
+            rejected_worthiness: 10,
+            last_confidence: Some(0.91),
+            last_novelty: Some(0.42),
+            last_worthiness: Some(0.38),
+            ..ObservationMetrics::default()
+        };
+
+        let snapshot = metrics.snapshot(1_000);
+
+        assert_eq!(snapshot.frames_captured, 40);
+        assert_eq!(snapshot.vision_analyses, 12);
+        assert_eq!(snapshot.vision_candidates, 4);
+        assert_eq!(snapshot.cloud_attempts, 2);
+        assert_eq!(snapshot.cloud_skips, 1);
+        assert_eq!(snapshot.cloud_failures, 0);
+        assert_eq!(snapshot.reactions_emitted, 1);
+        assert_eq!(snapshot.rejected_confidence, 0);
+        assert_eq!(snapshot.rejected_novelty, 8);
+        assert_eq!(snapshot.rejected_worthiness, 10);
+        assert_eq!(snapshot.last_confidence, Some(0.91));
+        assert_eq!(snapshot.last_novelty, Some(0.42));
+        assert_eq!(snapshot.last_worthiness, Some(0.38));
+    }
+
+    #[test]
+    fn confident_observation_is_candidate_even_when_subjective_scores_are_zero() {
+        let observation = VisionObservation {
+            scene: "video".to_owned(),
+            event: "scene changed".to_owned(),
+            confidence: 0.9,
+            novelty: 0.0,
+            comment_worthiness: 0.0,
+            visible_text: vec![],
+        };
+
+        assert!(observation_is_candidate(&observation));
     }
 
     #[test]

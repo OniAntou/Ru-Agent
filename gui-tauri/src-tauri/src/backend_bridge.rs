@@ -3,6 +3,10 @@ use crate::BackendRuntimeConfig;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+// First use may spend up to 45 s starting OmniVoice and another 30 s warming it.
+const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(90);
+
 #[derive(Clone, Debug, Serialize)]
 pub struct ReactionRequestBody {
     pub observation_id: String,
@@ -53,10 +57,19 @@ pub struct BackendBridge {
     base_url: String,
     token: String,
     client: reqwest::blocking::Client,
+    preflight_timeout: Duration,
 }
 
 impl BackendBridge {
     pub(crate) fn new(runtime: BackendRuntimeConfig) -> Result<Self, BridgeError> {
+        Self::new_with_timeouts(runtime, REQUEST_TIMEOUT, PREFLIGHT_TIMEOUT)
+    }
+
+    fn new_with_timeouts(
+        runtime: BackendRuntimeConfig,
+        request_timeout: Duration,
+        preflight_timeout: Duration,
+    ) -> Result<Self, BridgeError> {
         let parsed =
             reqwest::Url::parse(&runtime.base_url).map_err(|_| BridgeError::InvalidResponse)?;
         if parsed.scheme() != "http"
@@ -71,13 +84,14 @@ impl BackendBridge {
             return Err(BridgeError::InvalidResponse);
         }
         let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(10))
+            .timeout(request_timeout)
             .build()
             .map_err(|_| BridgeError::Transport)?;
         Ok(Self {
             base_url: runtime.base_url.trim_end_matches('/').to_owned(),
             token: runtime.token,
             client,
+            preflight_timeout,
         })
     }
 
@@ -116,6 +130,7 @@ impl ReactionClient for BackendBridge {
     fn preflight(&self) -> Result<Preflight, BridgeError> {
         let response = self
             .post("/observation/preflight")
+            .timeout(self.preflight_timeout)
             .send()
             .map_err(|_| BridgeError::Transport)?;
         Self::map_status(response.status())?;
@@ -178,6 +193,10 @@ mod tests {
     use std::thread;
 
     fn serve_once(response: &str) -> (String, thread::JoinHandle<Vec<u8>>) {
+        serve_once_after(Duration::ZERO, response)
+    }
+
+    fn serve_once_after(delay: Duration, response: &str) -> (String, thread::JoinHandle<Vec<u8>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let base_url = format!("http://{}", listener.local_addr().unwrap());
         let response = response.as_bytes().to_vec();
@@ -186,6 +205,7 @@ mod tests {
             let mut request = vec![0_u8; 16_384];
             let read = stream.read(&mut request).unwrap();
             request.truncate(read);
+            thread::sleep(delay);
             write!(
                 stream,
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -254,5 +274,25 @@ mod tests {
             BackendBridge::new(runtime).unwrap_err(),
             BridgeError::InvalidResponse
         );
+    }
+
+    #[test]
+    fn preflight_can_outlive_the_normal_request_timeout_while_omnivoice_warms() {
+        let (base_url, server) = serve_once_after(
+            Duration::from_millis(75),
+            r#"{"status":"ok","voice_label":"Ru (OmniVoice)","voice_speed":1.0}"#,
+        );
+        let bridge = BackendBridge::new_with_timeouts(
+            BackendRuntimeConfig {
+                base_url,
+                token: "secret-token".to_owned(),
+            },
+            Duration::from_millis(25),
+            Duration::from_millis(200),
+        )
+        .unwrap();
+
+        assert!(bridge.preflight().is_ok());
+        server.join().unwrap();
     }
 }

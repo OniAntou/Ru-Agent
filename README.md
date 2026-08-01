@@ -158,7 +158,7 @@ fallback.
 - Enable **Remember conversations** to let Ru automatically save safe, structured
   local preferences and project decisions in `data\conversations\memory.db`.
   Credentials, URLs, sensitive data, and VTube Studio metadata are rejected.
-- **Self-learning** (bật mặc định trong Model Settings): sau mỗi lượt chat, khi
+- **Self-learning (Ru tự ghi nhớ điều học được từ hội thoại)** (bật mặc định trong Model Settings): sau mỗi lượt chat, khi
   model rảnh, Ru dùng chính LLM để trích các fact lâu dài
   (profile/preference/project/decision) từ lượt vừa rồi, dedup với memory hiện
   có rồi upsert vào `data\conversations\memory.db`; các fact này được tự chèn

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass
 
@@ -15,7 +16,9 @@ _MAX_FACT_CHARS = 300
 _EXTRACTION_MAX_TOKENS = 150
 _EXTRACTION_TEMPERATURE = 0.2
 _EXTRACTION_TOP_K = 50
-_VALID_KINDS = frozenset(MemoryKind.__members__.values())
+_VALID_KINDS = frozenset(
+    (MemoryKind.PROFILE, MemoryKind.PREFERENCE, MemoryKind.PROJECT, MemoryKind.DECISION)
+)
 _CODE_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
 
 _EXTRACTION_SYSTEM_PROMPT = """Bạn là hệ thống trích xuất tri thức. Cho lượt trò chuyện sau, trích các fact rõ ràng, có giá trị lâu dài: sở thích, thông tin cá nhân, quyết định, thông tin dự án/đường dẫn.
@@ -68,18 +71,20 @@ def extract_facts_with_llm(prompt: str, reply: str, generate_fn) -> tuple[Extrac
         if not isinstance(item, dict):
             continue
         kind = item.get("kind")
-        if kind not in _VALID_KINDS:
+        if not isinstance(kind, str) or kind not in _VALID_KINDS:
             continue
         content = _clean_content(str(item.get("content", "")))
         if is_sensitive_or_unsafe(content):
             continue
         try:
-            confidence = max(0.0, min(1.0, float(item.get("confidence", 0.5))))
-            importance = max(0.0, min(1.0, float(item.get("importance", 0.5))))
+            confidence = float(item.get("confidence", 0.5))
+            importance = float(item.get("importance", 0.5))
         except (TypeError, ValueError):
             continue
-        if not content:
+        if not (math.isfinite(confidence) and math.isfinite(importance)):
             continue
+        confidence = max(0.0, min(1.0, confidence))
+        importance = max(0.0, min(1.0, importance))
         facts.append(ExtractFact(MemoryKind(kind), content, confidence, importance))
         if len(facts) >= _MAX_FACTS:
             break

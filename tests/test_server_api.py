@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import queue
 import threading
 import time
 
@@ -19,10 +20,13 @@ def isolated_state(monkeypatch, tmp_path):
     server._SESSION_TURNS.clear()
     server.core.runner.backend = headless_runner.BACKEND_GGUF
     monkeypatch.setattr(server.core, "remember", lambda prompt, reply: None)
+    monkeypatch.setattr(server._MEMORY_QUEUE, "put_nowait", lambda item: None)
     yield
     server._SESSION_TURNS.clear()
     if server._TURN_LOCK.locked():
         server._TURN_LOCK.release()
+    if server._MEMORY_TURN_LOCK.locked():
+        server._MEMORY_TURN_LOCK.release()
 
 
 def test_status_endpoint() -> None:
@@ -626,4 +630,30 @@ def test_chat_enqueues_learning_turn(monkeypatch, isolated_state) -> None:
             ws.send_text(json.dumps({"prompt": "hello"}))
             while ws.receive_json()["type"] != "done":
                 pass
+    deadline = time.monotonic() + 5
+    while not enqueued and time.monotonic() < deadline:
+        time.sleep(0.01)
     assert enqueued == [("hello", "reply")]
+
+
+def test_learn_from_turn_queue_full_drops_oldest(monkeypatch, isolated_state) -> None:
+    fresh = queue.Queue(maxsize=2)
+    monkeypatch.setattr(server, "_MEMORY_QUEUE", fresh)
+    server.save_settings_to_file({"enable_self_learning": True})
+    server._learn_from_turn("prompt 1", "reply 1")
+    server._learn_from_turn("prompt 2", "reply 2")
+    server._learn_from_turn("prompt 3", "reply 3")
+    assert list(fresh.queue) == [("prompt 2", "reply 2"), ("prompt 3", "reply 3")]
+    fresh.queue.clear()
+
+
+def test_process_memory_turn_skips_sensitive_turn(monkeypatch, isolated_state, tmp_path) -> None:
+    monkeypatch.setattr(server.core, "memory_db_path", tmp_path / "memory.db")
+    monkeypatch.setattr(server.core, "memory_index_path", tmp_path / "memory_index.faiss")
+    monkeypatch.setattr(server.core, "memory_texts_path", tmp_path / "memory_texts.json")
+    server.core.memory_store = None
+    called = []
+    monkeypatch.setattr(server, "extract_facts_with_llm", lambda p, r, g: called.append((p, r)) or ())
+    server._process_memory_turn("api_key = sk-abc123", "Ru: Được ạ.")
+    assert called == []
+    assert server.core.get_memory_store().count_active() == 0

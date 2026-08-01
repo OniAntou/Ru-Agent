@@ -32,6 +32,7 @@ from mini_gpt.headless_runner import (
     BACKEND_TRANSFORMERS,
 )
 from mini_gpt.memory import MemoryKind
+from mini_gpt.memory_extraction import is_sensitive_or_unsafe
 from mini_gpt.memory_learning import ExtractFact, extract_facts_with_llm
 from mini_gpt.speech_runtime import (
     CapturedAudio,
@@ -789,6 +790,9 @@ def _process_memory_turn(prompt: str, reply: str) -> None:
         logger.debug("Model busy; skipping self-learning turn")
         return
     try:
+        if is_sensitive_or_unsafe(prompt) or is_sensitive_or_unsafe(reply):
+            logger.debug("Bỏ qua self-learning vì lượt trò chuyện nhạy cảm")
+            return
         facts = extract_facts_with_llm(
             prompt,
             reply,
@@ -813,6 +817,7 @@ def _process_memory_turn(prompt: str, reply: str) -> None:
                 confidence=fact.confidence,
                 importance=fact.importance,
             )
+            existing.add(fact.content.casefold())
     except Exception as error:
         logger.warning("Self-learning failed: %s", error)
     finally:
@@ -849,6 +854,7 @@ async def chat_endpoint(websocket: WebSocket):
         _safe_put(loop, chat_queue, {"type": "chunk", "content": delta})
 
     def run_generation(prompt: str, session_id: str):
+        full_reply = None
         try:
             settings = load_settings()
             _MEMORY_TURN_LOCK.acquire()
@@ -871,8 +877,6 @@ async def chat_endpoint(websocket: WebSocket):
             )
 
             core.remember(prompt, full_reply)
-
-            _learn_from_turn(prompt, full_reply)
 
             _session_append_messages(session_id, [{"role": "ai", "content": full_reply}])
 
@@ -902,6 +906,8 @@ async def chat_endpoint(websocket: WebSocket):
         finally:
             _MEMORY_TURN_LOCK.release()
             _TURN_LOCK.release()
+            if full_reply is not None:
+                _learn_from_turn(prompt, full_reply)
 
     try:
         while True:

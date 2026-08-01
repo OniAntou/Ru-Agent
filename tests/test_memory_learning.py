@@ -62,6 +62,29 @@ def test_invalid_kind_is_dropped() -> None:
     assert facts[0].kind == MemoryKind.DECISION
 
 
+def test_unhashable_kind_is_dropped() -> None:
+    generator = _json_generator(
+        json.dumps([
+            {"kind": {"x": 1}, "content": "x", "confidence": 0.5, "importance": 0.5},
+            {"kind": "decision", "content": "y", "confidence": 0.5, "importance": 0.5},
+        ])
+    )
+    facts = extract_facts_with_llm("chào", "chào", generator)
+    assert len(facts) == 1
+    assert facts[0].kind == MemoryKind.DECISION
+
+
+def test_non_finite_confidence_and_importance_are_dropped() -> None:
+    generator = _json_generator(
+        '[{"kind": "profile", "content": "nan fact", "confidence": NaN, "importance": 0.5}]'
+    )
+    assert extract_facts_with_llm("chào", "chào", generator) == ()
+    generator = _json_generator(
+        '[{"kind": "profile", "content": "inf fact", "confidence": 0.5, "importance": Infinity}]'
+    )
+    assert extract_facts_with_llm("chào", "chào", generator) == ()
+
+
 def test_sensitive_content_is_dropped() -> None:
     generator = _json_generator(
         json.dumps([

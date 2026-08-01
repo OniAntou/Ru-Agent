@@ -1,5 +1,8 @@
 # Codebase Review & Fixes — 2026-07-31
 
+> Status: historical audit log. Current runtime behavior is documented in
+> `README.md`; current verification is recorded in the 2026-08-01 hardening plan.
+
 ## Summary
 
 Full codebase review of `D:\LLM` (Ru — Local Llama Conversational Runtime) resulted in **6 fixes** across **7 files** and **1 new shared utility module**.
@@ -290,8 +293,10 @@ Lõi chat của GUI Tauri chạy được hết: backend FastAPI + WebSocket str
 - Probe thật: warmup OK, `/voice/tts` trả WAV hợp lệ 24 kHz mono 2.09s.
 
 ### Dev workflow
-- `start_dev.bat`: backend chạy nền ẩn (không chiếm terminal), log vào `logs/server.log` + `logs/server_err.log`; frontend `npm run tauri dev` mở cửa sổ riêng.
-- Dừng server: `taskkill /F /IM python.exe` hoặc theo PID trên port 8000.
+- Historical note: this background-backend workflow is superseded by the active
+  Tauri-owned launch documented in `README.md`. Do not use broad
+  `taskkill /F /IM python.exe`; current Tauri builds place the backend and its
+  descendants in a kill-on-close Windows Job Object.
 
 ### Dependencies
 - `pyproject.toml` thêm extra `server = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.30,<1", "pydantic>=2,<3"]`; cài fastapi 0.141.1, uvicorn 0.52.0, pydantic 2.13.4, keyring.

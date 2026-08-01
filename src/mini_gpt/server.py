@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import binascii
+import hmac
 import json
 import logging
 import os
@@ -10,6 +11,7 @@ import socket
 import subprocess
 import threading
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -17,14 +19,16 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, Field
 
 from mini_gpt._atomic_write import atomic_write_json
+from mini_gpt._text_utils import append_stream_text, safe_streamed_text
 from mini_gpt.backend_core import MiniGPTCore
 from mini_gpt.chat import ChatTurn
+from mini_gpt.gpu_lifecycle import GpuLifecycle, VoiceServiceController
 from mini_gpt.headless_runner import (
     BACKEND_GGUF,
     BACKEND_KILO,
@@ -41,7 +45,7 @@ from mini_gpt.speech_runtime import (
     build_speech_recognizer,
 )
 from mini_gpt.vts_actions import VtsActions
-from mini_gpt.vts_catalog import parse_catalog_reply
+from mini_gpt.vts_catalog import VtsCatalog, catalog_instruction, parse_catalog_reply
 from mini_gpt.vts_manager import VTSManager
 from mini_gpt.voice_pacing import effective_voice_speed, voice_pace_for
 from mini_gpt.voice_runtime import (
@@ -54,15 +58,61 @@ from mini_gpt.voice_runtime import (
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="MiniGPT Headless Backend")
+@asynccontextmanager
+async def _application_lifespan(_app: FastAPI):
+    _apply_settings_on_startup()
+    try:
+        yield
+    finally:
+        _shutdown_runtime()
+
+
+app = FastAPI(title="MiniGPT Headless Backend", lifespan=_application_lifespan)
+
+_DESKTOP_ORIGINS = (
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+    "http://tauri.localhost",
+    "tauri://localhost",
+)
+_DESKTOP_TOKEN = os.environ.get("RU_DESKTOP_TOKEN", "").strip()
+MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=list(_DESKTOP_ORIGINS),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+def _valid_desktop_token(candidate: str) -> bool:
+    if not _DESKTOP_TOKEN:
+        return True
+    return hmac.compare_digest(candidate, _DESKTOP_TOKEN)
+
+
+@app.middleware("http")
+async def desktop_boundary(request: Request, call_next):
+    if request.method != "OPTIONS":
+        authorization = request.headers.get("authorization", "")
+        candidate = authorization.removeprefix("Bearer ").strip()
+        if not _valid_desktop_token(candidate):
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_REQUEST_BODY_BYTES:
+                return JSONResponse({"detail": "Request body too large"}, status_code=413)
+        except ValueError:
+            return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
+    if request.method in {"POST", "PUT", "PATCH"}:
+        body = await request.body()
+        if len(body) > MAX_REQUEST_BODY_BYTES:
+            return JSONResponse({"detail": "Request body too large"}, status_code=413)
+    return await call_next(request)
 
 SETTINGS_FILE = Path.home() / ".minigpt" / "settings.json"
 HISTORY_FILE = Path.home() / ".minigpt" / "history.json"
@@ -78,15 +128,18 @@ _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 _HISTORY_LOCK = threading.Lock()
 _TURN_LOCK = threading.Lock()
 _VOICE_LOCK = threading.Lock()
+_GPU_LOCK = threading.Lock()
 _VTS_LOCK = threading.Lock()
 _MEMORY_QUEUE_MAXSIZE = 50
 _MEMORY_TURN_LOCK = threading.Lock()
 _MEMORY_QUEUE: queue.Queue = queue.Queue(maxsize=_MEMORY_QUEUE_MAXSIZE)
 _MEMORY_WORKER_STARTED = threading.Event()
-_SESSION_TURNS: list[ChatTurn] = []
+_MEMORY_STOP = threading.Event()
 
 _VTS_MANAGER: VTSManager | None = None
 _VTS_THREAD: threading.Thread | None = None
+_VOICE_PROCESS: subprocess.Popen | None = None
+_GPU_LIFECYCLE: GpuLifecycle | None = None
 
 _VALID_BACKENDS = (BACKEND_TRANSFORMERS, BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO)
 
@@ -106,6 +159,7 @@ _DEFAULT_SETTINGS = {
     "top_k": 50,
     "allow_web_search": True,
     "enable_self_learning": True,
+    "share_memory_with_cloud": False,
     "checkpoint_path": "",
     "voice_label": "Ru (OmniVoice)",
     "voice_speed": 1.0,
@@ -121,6 +175,32 @@ def load_settings() -> dict:
         except (OSError, json.JSONDecodeError) as error:
             logger.warning("Could not read settings file %s: %s", SETTINGS_FILE, error)
     return {}
+
+
+def effective_settings() -> dict:
+    saved = load_settings()
+    merged = {
+        **_DEFAULT_SETTINGS,
+        **{key: saved[key] for key in _DEFAULT_SETTINGS if key in saved},
+    }
+
+    def bounded_number(key: str, lower: float, upper: float) -> None:
+        value = merged.get(key)
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            merged[key] = _DEFAULT_SETTINGS[key]
+            return
+        merged[key] = max(lower, min(upper, value))
+
+    bounded_number("max_tokens", 1, 1024)
+    bounded_number("temperature", 0.1, 2.0)
+    bounded_number("top_k", 1, 200)
+    bounded_number("voice_speed", 0.5, 2.0)
+    merged["max_tokens"] = int(merged["max_tokens"])
+    merged["top_k"] = int(merged["top_k"])
+    for key in ("allow_web_search", "enable_self_learning", "share_memory_with_cloud"):
+        if not isinstance(merged.get(key), bool):
+            merged[key] = _DEFAULT_SETTINGS[key]
+    return merged
 
 
 def save_settings_to_file(data: dict) -> None:
@@ -263,27 +343,26 @@ def _session_append_messages(session_id: str, messages: list[dict]) -> bool:
 
 
 def _rebuild_session_turns(session_id: str) -> dict | None:
-    """Load a session and rebuild the in-memory turn context from its messages."""
+    """Load one session; generation derives context from this file per request."""
+    return _load_session_file(session_id)
+
+
+def _session_turns(session_id: str) -> list[ChatTurn]:
     data = _load_session_file(session_id)
     if data is None:
-        return None
-    turns: list[list[str]] = []
+        return []
+    pending_prompt: str | None = None
+    turns: list[ChatTurn] = []
     for message in data.get("messages", []):
         content = str(message.get("content", "")).strip()
         if not content:
             continue
         if message.get("role") == "user":
-            turns.append([content])
-        elif turns:
-            turns[-1].append(content)
-    chat_turns: list[ChatTurn] = []
-    for turn in turns:
-        if len(turn) >= 2:
-            chat_turns.append(ChatTurn(turn[0], turn[1]))
-    with _HISTORY_LOCK:
-        _SESSION_TURNS.clear()
-        _SESSION_TURNS.extend(chat_turns[-_MAX_CONTEXT_TURNS:])
-    return data
+            pending_prompt = content
+        elif pending_prompt is not None:
+            turns.append(ChatTurn(pending_prompt, content))
+            pending_prompt = None
+    return turns[-_MAX_CONTEXT_TURNS:]
 
 
 def migrate_legacy_history() -> None:
@@ -312,7 +391,7 @@ def migrate_legacy_history() -> None:
 
 
 def _voice_selection() -> "VoiceSelection":
-    label = load_settings().get("voice_label", _DEFAULT_SETTINGS["voice_label"])
+    label = effective_settings()["voice_label"]
     return voice_selection_from_saved(label)
 
 
@@ -354,7 +433,8 @@ def ensure_voice_service() -> None:
             startup_info = subprocess.STARTUPINFO()
             startup_info.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
             startup_info.wShowWindow = subprocess.SW_HIDE
-        subprocess.Popen(
+        global _VOICE_PROCESS
+        _VOICE_PROCESS = subprocess.Popen(
             [executable, str(config.server_script)],
             cwd=str(PROJECT_ROOT),
             stdout=subprocess.DEVNULL,
@@ -366,6 +446,8 @@ def ensure_voice_service() -> None:
         while time.monotonic() < deadline:
             if voice_available():
                 return
+            if _VOICE_PROCESS.poll() is not None:
+                raise RuntimeError("OmniVoice process exited before opening port 5052")
             time.sleep(0.2)
         raise RuntimeError(
             "OmniVoice voice service did not start. Check the local voice environment (omnivoice_env)."
@@ -427,6 +509,37 @@ def request_voice_control(path: str, voice_label: str) -> dict:
     return decoded
 
 
+def _voice_lifecycle_request(path: str, payload: dict[str, str] | None) -> dict:
+    status, body = _post_voice(
+        path,
+        payload or {},
+        timeout=_VOICE_LIFECYCLE_TIMEOUT_SECONDS,
+    )
+    if status != 200:
+        raise RuntimeError("Voice service rejected lifecycle request.")
+    decoded = json.loads(body.decode("utf-8"))
+    if not isinstance(decoded, dict):
+        raise RuntimeError("Voice service returned an invalid lifecycle response.")
+    return decoded
+
+
+def _gpu_lifecycle() -> GpuLifecycle:
+    global _GPU_LIFECYCLE
+    if _GPU_LIFECYCLE is None:
+        _GPU_LIFECYCLE = GpuLifecycle(
+            _GPU_LOCK,
+            release_local_runtime=core.runner.release_gpu,
+            voice_services={
+                "omnivoice": VoiceServiceController(
+                    available=voice_available,
+                    ensure=ensure_voice_service,
+                    request=_voice_lifecycle_request,
+                )
+            },
+        )
+    return _GPU_LIFECYCLE
+
+
 def apply_saved_settings() -> str:
     """Apply persisted settings to the runner (backend, model, credentials)."""
     settings = load_settings()
@@ -449,7 +562,6 @@ def apply_saved_settings() -> str:
     )
 
 
-@app.on_event("startup")
 def _apply_settings_on_startup() -> None:
     try:
         migrate_legacy_history()
@@ -460,10 +572,6 @@ def _apply_settings_on_startup() -> None:
         logger.info("Applied saved settings on startup: %s", result)
     except Exception as error:
         logger.error("Failed to apply saved settings on startup: %s", error)
-    try:
-        threading.Thread(target=_start_voice_service, name="voice-auto-start", daemon=True).start()
-    except Exception as error:
-        logger.error("Failed to schedule voice service startup: %s", error)
     try:
         _start_memory_learner()
     except Exception as error:
@@ -478,39 +586,68 @@ def _start_voice_service() -> None:
         logger.error("Failed to auto-start voice service: %s", error)
 
 
+def _stop_owned_voice_service() -> None:
+    global _VOICE_PROCESS
+    process = _VOICE_PROCESS
+    _VOICE_PROCESS = None
+    if process is None or process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def _shutdown_runtime() -> None:
+    _MEMORY_STOP.set()
+    _MEMORY_WORKER_STARTED.clear()
+    manager = _VTS_MANAGER
+    if manager is not None and callable(getattr(manager, "shutdown", None)):
+        manager.shutdown()
+    _stop_owned_voice_service()
+    core.close()
+
+
 core = MiniGPTCore()
 
 
 class SettingsPayload(BaseModel):
-    backend: str | None = None
-    model: str | None = None
-    api_key: str = ""
-    api_variant: str | None = None
-    max_tokens: int | None = None
-    temperature: float | None = None
-    top_k: int | None = None
+    backend: str | None = Field(default=None, max_length=64)
+    model: str | None = Field(default=None, max_length=256)
+    api_key: str = Field(default="", max_length=4096)
+    api_variant: str | None = Field(default=None, max_length=64)
+    max_tokens: int | None = Field(default=None, ge=1, le=1024)
+    temperature: float | None = Field(default=None, ge=0.1, le=2.0)
+    top_k: int | None = Field(default=None, ge=1, le=200)
     allow_web_search: bool | None = None
     enable_self_learning: bool | None = None
-    checkpoint_path: str = ""
-    voice_label: str | None = None
-    voice_speed: float | None = None
+    share_memory_with_cloud: bool | None = None
+    checkpoint_path: str = Field(default="", max_length=1024)
+    voice_label: str | None = Field(default=None, max_length=128)
+    voice_speed: float | None = Field(default=None, ge=0.5, le=2.0)
 
 
 class VoiceTtsPayload(BaseModel):
-    text: str
-    voice_label: str | None = None
-    speed: float | None = None
+    text: str = Field(max_length=12_000)
+    voice_label: str | None = Field(default=None, max_length=128)
+    speed: float | None = Field(default=None, ge=0.5, le=2.0)
 
 
 class TranscribePayload(BaseModel):
-    audio_b64: str
-    sample_rate: int = 16_000
+    audio_b64: str = Field(max_length=7_500_000)
+    sample_rate: int = Field(default=16_000, ge=8_000, le=192_000)
 
 
 class VtsActionPayload(BaseModel):
-    facial: str | None = None
-    body: str | None = None
-    codes: str | None = None
+    facial: str | None = Field(default=None, max_length=64)
+    body: str | None = Field(default=None, max_length=64)
+    codes: str | None = Field(default=None, max_length=256)
+
+
+class VtsSpeakingPayload(BaseModel):
+    speaking: bool
 
 
 @app.get("/status")
@@ -545,16 +682,14 @@ async def get_models(backend: str = ""):
 
 @app.get("/settings")
 async def get_settings():
-    saved = load_settings()
-    merged = {**{key: _DEFAULT_SETTINGS.get(key) for key in _DEFAULT_SETTINGS}, **{key: saved[key] for key in _DEFAULT_SETTINGS if key in saved}}
-    return {"status": "ok", **merged}
+    return {"status": "ok", **effective_settings()}
 
 
 @app.post("/settings")
 async def save_settings(payload: SettingsPayload):
     if payload.backend is not None and payload.backend not in _VALID_BACKENDS:
         return {"status": "error", "message": f"unsupported backend: {payload.backend}"}
-    settings = load_settings()
+    settings = effective_settings()
     if payload.backend is not None:
         settings["backend"] = payload.backend
     if payload.model is not None:
@@ -571,6 +706,8 @@ async def save_settings(payload: SettingsPayload):
         settings["allow_web_search"] = payload.allow_web_search
     if payload.enable_self_learning is not None:
         settings["enable_self_learning"] = payload.enable_self_learning
+    if payload.share_memory_with_cloud is not None:
+        settings["share_memory_with_cloud"] = payload.share_memory_with_cloud
     if payload.checkpoint_path.strip():
         settings["checkpoint_path"] = payload.checkpoint_path.strip()
     if payload.voice_label is not None:
@@ -613,8 +750,10 @@ async def save_settings(payload: SettingsPayload):
 @app.delete("/memory")
 async def clear_memory():
     core.clear_memory()
-    save_history([])
-    return {"status": "success", "message": "Memory and history cleared."}
+    return {
+        "status": "success",
+        "message": "Structured memory cleared. Session history was retained.",
+    }
 
 
 @app.get("/history")
@@ -632,8 +771,6 @@ def session_new():
     session_id = _create_session_file()
     if session_id is None:
         return {"status": "error", "message": "Không tạo được session."}
-    with _HISTORY_LOCK:
-        _SESSION_TURNS.clear()
     return {"status": "ok", "session_id": session_id}
 
 
@@ -677,14 +814,14 @@ def voice_tts(payload: VoiceTtsPayload):
     text = payload.text.strip()
     if not text:
         return {"status": "error", "message": "text is required"}
-    settings = load_settings()
+    settings = effective_settings()
     voice_label = payload.voice_label or settings.get("voice_label", _DEFAULT_SETTINGS["voice_label"])
     speed = payload.speed if payload.speed is not None else settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"])
     pace = voice_pace_for(text)
     speed = effective_voice_speed(speed, auto_pace_enabled=True, pace=pace)
     text = _strip_voice_markers(text)
     try:
-        ensure_voice_service()
+        _gpu_lifecycle().prepare_speech(voice_selection_from_saved(voice_label))
         audio = request_voice_audio(text, voice_label, speed)
         return Response(content=audio, media_type="audio/wav")
     except Exception as error:
@@ -695,8 +832,9 @@ def voice_tts(payload: VoiceTtsPayload):
 @app.post("/voice/warmup")
 def voice_warmup():
     try:
-        ensure_voice_service()
-        result = request_voice_control("/warmup", _voice_selection().label)
+        selection = _voice_selection()
+        _gpu_lifecycle().prepare_speech(selection)
+        result = {"ready": True, "voice_profile": selection.profile_id}
         return {"status": "ok", "result": result}
     except Exception as error:
         logger.error("Voice warmup failed: %s", error)
@@ -791,18 +929,27 @@ def vts_action(payload: VtsActionPayload):
         actions = VtsActions(facial=payload.facial or None, body=payload.body or None)
         if actions.facial is None and actions.body is None:
             return {"status": "error", "message": "provide codes, facial, or body"}
-        manager.trigger_actions_sync(actions)
+        if not manager.trigger_actions_sync(actions):
+            return {"status": "error", "message": "requested action is unavailable or cooling down"}
         return {"status": "ok"}
     except Exception as error:
         logger.error("VTS action failed: %s", error)
         return {"status": "error", "message": str(error)}
 
 
-def _trigger_vts_catalog_codes(manager: VTSManager, codes: tuple[str, ...]) -> None:
+@app.post("/vts/speaking")
+def vts_speaking(payload: VtsSpeakingPayload):
+    manager = _VTS_MANAGER
+    if manager is None or not manager.is_connected:
+        return {"status": "ok", "connected": False}
+    manager.set_speaking(payload.speaking)
+    return {"status": "ok", "connected": True}
+
+
+def _trigger_vts_catalog_codes(
+    manager: VTSManager, catalog: VtsCatalog, codes: tuple[str, ...]
+) -> None:
     try:
-        catalog = manager.current_catalog_sync()
-        if catalog is None:
-            return
         manager.trigger_catalog_actions_sync(catalog, codes)
     except Exception as error:
         logger.debug("Background VTS catalog trigger failed: %s", error)
@@ -817,7 +964,7 @@ def _safe_put(loop: asyncio.AbstractEventLoop, queue: asyncio.Queue, message: di
 
 
 def _learn_from_turn(prompt: str, reply: str) -> None:
-    if not load_settings().get("enable_self_learning", _DEFAULT_SETTINGS["enable_self_learning"]):
+    if not effective_settings()["enable_self_learning"]:
         return
     try:
         _MEMORY_QUEUE.put_nowait((prompt, reply))
@@ -872,10 +1019,10 @@ def _process_memory_turn(prompt: str, reply: str) -> None:
 
 
 def _memory_learner_loop() -> None:
-    while True:
+    while not _MEMORY_STOP.is_set():
         try:
-            prompt, reply = _MEMORY_QUEUE.get()
-        except Exception:
+            prompt, reply = _MEMORY_QUEUE.get(timeout=0.5)
+        except queue.Empty:
             continue
         try:
             _process_memory_turn(prompt, reply)
@@ -886,25 +1033,46 @@ def _memory_learner_loop() -> None:
 def _start_memory_learner() -> None:
     if _MEMORY_WORKER_STARTED.is_set():
         return
+    _MEMORY_STOP.clear()
     _MEMORY_WORKER_STARTED.set()
     threading.Thread(target=_memory_learner_loop, name="memory-learner", daemon=True).start()
 
 
 @app.websocket("/chat")
 async def chat_endpoint(websocket: WebSocket):
+    if not _valid_desktop_token(websocket.query_params.get("token", "")):
+        await websocket.close(code=4401, reason="Unauthorized")
+        return
     await websocket.accept()
 
     loop = asyncio.get_event_loop()
     chat_queue = asyncio.Queue()
+    stream_state = {"raw": "", "visible": ""}
 
     def stream_callback(delta: str):
-        _safe_put(loop, chat_queue, {"type": "chunk", "content": delta})
+        raw = append_stream_text(stream_state["raw"], delta)
+        visible = safe_streamed_text(raw)
+        previous = stream_state["visible"]
+        stream_state["raw"] = raw
+        stream_state["visible"] = visible
+        if visible.startswith(previous) and len(visible) > len(previous):
+            _safe_put(
+                loop,
+                chat_queue,
+                {"type": "chunk", "content": visible[len(previous) :]},
+            )
+
+    def stream_reset_callback():
+        stream_state["raw"] = ""
+        stream_state["visible"] = ""
+        _safe_put(loop, chat_queue, {"type": "reset"})
 
     def run_generation(prompt: str, session_id: str):
         full_reply = None
         try:
-            settings = load_settings()
+            settings = effective_settings()
             _MEMORY_TURN_LOCK.acquire()
+            turns_history = _session_turns(session_id)
             if not _session_append_messages(session_id, [{"role": "user", "content": prompt}]):
                 _safe_put(
                     loop,
@@ -913,36 +1081,42 @@ async def chat_endpoint(websocket: WebSocket):
                 )
                 return
 
-            full_reply = core.generate_reply_with_memory(
+            manager = _VTS_MANAGER
+            catalog = None
+            if manager is not None and manager.is_connected:
+                try:
+                    catalog = manager.current_catalog_sync()
+                except Exception as error:
+                    logger.debug("VTS catalog read failed: %s", error)
+
+            if core.runner.backend not in (BACKEND_OPENCODE, BACKEND_KILO):
+                _gpu_lifecycle().prepare_local_generation()
+            raw_reply = core.generate_reply_with_memory(
                 prompt=prompt,
                 max_new_tokens=settings.get("max_tokens", _DEFAULT_SETTINGS["max_tokens"]),
                 temperature=settings.get("temperature", _DEFAULT_SETTINGS["temperature"]),
                 top_k=settings.get("top_k", _DEFAULT_SETTINGS["top_k"]),
                 allow_web_search=settings.get("allow_web_search", _DEFAULT_SETTINGS["allow_web_search"]),
-                turns_history=list(_SESSION_TURNS),
+                turns_history=turns_history,
                 on_stream_delta=stream_callback,
+                on_stream_reset=stream_reset_callback,
+                vts_instruction=catalog_instruction(catalog),
+                share_memory_with_cloud=settings.get(
+                    "share_memory_with_cloud",
+                    _DEFAULT_SETTINGS["share_memory_with_cloud"],
+                ),
             )
+            full_reply, codes = parse_catalog_reply(raw_reply, catalog)
+            full_reply = _strip_voice_markers(full_reply)
 
-            core.remember(prompt, full_reply)
+            if settings.get("enable_self_learning", _DEFAULT_SETTINGS["enable_self_learning"]):
+                core.remember(prompt, full_reply)
 
             _session_append_messages(session_id, [{"role": "ai", "content": full_reply}])
 
-            with _HISTORY_LOCK:
-                _SESSION_TURNS.append(ChatTurn(prompt, full_reply))
-                del _SESSION_TURNS[:-_MAX_CONTEXT_TURNS]
-
-            manager = _VTS_MANAGER
-            if manager is not None and manager.is_connected:
+            if manager is not None and manager.is_connected and catalog is not None and codes:
                 try:
-                    catalog = manager.current_catalog_sync()
-                    if catalog is not None:
-                        _, codes = parse_catalog_reply(full_reply, catalog)
-                        if codes:
-                            threading.Thread(
-                                target=_trigger_vts_catalog_codes,
-                                args=(manager, codes),
-                                daemon=True,
-                            ).start()
+                    _trigger_vts_catalog_codes(manager, catalog, codes)
                 except Exception as error:
                     logger.debug("VTS marker parse failed: %s", error)
 
@@ -962,6 +1136,11 @@ async def chat_endpoint(websocket: WebSocket):
             req = json.loads(data)
             prompt = str(req.get("prompt", "")).strip()
             if not prompt:
+                continue
+            if len(prompt) > 16_000:
+                await websocket.send_text(
+                    json.dumps({"type": "error", "content": "Prompt too long (max 16000 characters)."})
+                )
                 continue
             session_id = str(req.get("session_id", "")).strip()
             if not session_id or _load_session_file(session_id) is None:

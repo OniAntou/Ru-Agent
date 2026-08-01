@@ -6,7 +6,7 @@ from urllib.request import Request
 import pytest
 
 import mini_gpt.openai_runtime as runtime_module
-from mini_gpt.gui_presentation import append_stream_text
+from mini_gpt._text_utils import append_stream_text
 from mini_gpt.openai_runtime import OpenAIRuntime
 
 

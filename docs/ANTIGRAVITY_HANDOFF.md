@@ -1,9 +1,12 @@
 # Ru Llama Handoff
 
+> Status: historical model-pipeline handoff. Runtime launch and GUI details
+> below are superseded by `README.md` and the 2026-08-01 hardening plan.
+
 ## Active scope
 
 Ru is now a Llama-only local project. Keep the Llama 3.1 8B Instruct base,
-the v6 QLoRA adapter, its corpus/training path, and the Tkinter GUI. Qwen,
+the v6 QLoRA adapter, its corpus/training path, and the Tauri GUI. Qwen,
 Gemma, MiniGPT, and other non-Llama experiments were removed on 2026-07-26.
 
 ## Current runtime
@@ -12,7 +15,7 @@ Gemma, MiniGPT, and other non-Llama experiments were removed on 2026-07-26.
 - GUI default: `models\gguf\ru-llama3.1-8b-instruct-v6.2-lora.gguf`
 - GUI GGUF fallback order: v6.1 LoRA, then v6 LoRA
 - Transformers fallback checkpoint order: v6.2 fresh, v6.1, then v6
-- Launch: `& .\.venv\Scripts\python.exe -m mini_gpt.gui`
+- Launch: `& .\start_dev.bat` (Tauri owns the authenticated backend child)
 - Tests: `& .\.venv\Scripts\python.exe -m pytest -q`
 
 Persistent memory is enabled by default and remains local in

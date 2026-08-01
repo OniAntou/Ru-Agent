@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { speakText, stopVoice, ttsEnabled } from "../lib/playVoice";
+import { apiFetch } from "../lib/backendClient";
 
 const VOICE_OPTIONS = ["Ru (OmniVoice)", "Ái Vy (OmniVoice)"];
 
@@ -27,15 +28,15 @@ export default function VoiceTab() {
   const [vtsBusy, setVtsBusy] = useState(false);
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/voice/status")
+    apiFetch("/voice/status")
       .then((res) => res.json())
       .then((data) => setAvailable(data.available ?? false))
       .catch(() => setAvailable(false));
-    fetch("http://127.0.0.1:8000/vts/status")
+    apiFetch("/vts/status")
       .then((res) => res.json())
       .then((data) => setVtsConnected(data.connected ?? false))
       .catch(() => setVtsConnected(false));
-    fetch("http://127.0.0.1:8000/settings")
+    apiFetch("/settings")
       .then((res) => res.json())
       .then((data) => {
         if (data.status === "ok") {
@@ -58,7 +59,7 @@ export default function VoiceTab() {
     localStorage.setItem("ru_voice_label", voiceLabel);
     localStorage.setItem("ru_voice_speed", String(voiceSpeed));
     try {
-      const response = await fetch("http://127.0.0.1:8000/settings", {
+      const response = await apiFetch("/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ voice_label: voiceLabel, voice_speed: voiceSpeed }),
@@ -94,7 +95,7 @@ export default function VoiceTab() {
     setBusy(true);
     setStatus("Đang khởi động OmniVoice...");
     try {
-      const response = await fetch("http://127.0.0.1:8000/voice/warmup", { method: "POST" });
+      const response = await apiFetch("/voice/warmup", { method: "POST" });
       const data = await response.json();
       if (data.status === "ok") {
         setStatus("OmniVoice đã sẵn sàng!");
@@ -112,7 +113,7 @@ export default function VoiceTab() {
   const release = async () => {
     setBusy(true);
     try {
-      const response = await fetch("http://127.0.0.1:8000/voice/release", { method: "POST" });
+      const response = await apiFetch("/voice/release", { method: "POST" });
       const data = await response.json();
       setStatus(data.status === "ok" ? "Đã nhả GPU." : `Release failed: ${data.message || ""}`);
     } catch {
@@ -126,7 +127,7 @@ export default function VoiceTab() {
     setVtsBusy(true);
     setStatus("Đang kết nối VTube Studio... Mở VTube Studio và bật plugin Ru nếu chưa bật.");
     try {
-      const response = await fetch("http://127.0.0.1:8000/vts/connect", { method: "POST" });
+      const response = await apiFetch("/vts/connect", { method: "POST" });
       const data = await response.json();
       if (data.status === "ok") {
         setVtsConnected(true);
@@ -145,7 +146,7 @@ export default function VoiceTab() {
     setVtsBusy(true);
     setStatus("");
     try {
-      const response = await fetch("http://127.0.0.1:8000/vts/action", {
+      const response = await apiFetch("/vts/action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ facial, body }),

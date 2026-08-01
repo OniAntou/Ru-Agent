@@ -25,6 +25,52 @@ _STOP_TIMEOUT_SECONDS = 10.0
 _MAX_ERROR_BODY_BYTES = 4096
 _DEFAULT_GPU_LAYERS = "all"
 _GPU_LAYER_FALLBACKS = (_DEFAULT_GPU_LAYERS, "20", "0")
+_DEFAULT_REPEAT_PENALTY = 1.15
+_DEFAULT_REPEAT_LAST_N = 256
+_CHARS_PER_TOKEN_ESTIMATE = 4
+_CONTEXT_PROTOCOL_RESERVE_TOKENS = 64
+
+
+def fit_messages_to_context(
+    messages: Sequence[tuple[str, str]],
+    max_new_tokens: int,
+    *,
+    context_size_tokens: int = _CONTEXT_SIZE_TOKENS,
+) -> tuple[tuple[str, str], ...]:
+    """Conservatively fit messages into llama.cpp's fixed context window.
+
+    The base system contract and current user turn always survive. Saved memory
+    and the oldest completed turns are discarded first.
+    """
+    if not messages or messages[0][0] != "system" or messages[-1][0] != "user":
+        raise ValueError("messages must start with system and end with user")
+    input_tokens = context_size_tokens - max_new_tokens - _CONTEXT_PROTOCOL_RESERVE_TOKENS
+    if input_tokens <= 0:
+        raise ValueError("max new tokens leaves no room for the prompt")
+    budget = input_tokens * _CHARS_PER_TOKEN_ESTIMATE
+    first_role, first_content = messages[0]
+    last_role, last_content = messages[-1]
+    mandatory_size = len(first_content) + len(last_content)
+    if mandatory_size > budget:
+        system_budget = min(len(first_content), max(256, budget * 3 // 5))
+        user_budget = max(1, budget - system_budget)
+        return (
+            (first_role, first_content[:system_budget]),
+            (last_role, last_content[:user_budget]),
+        )
+
+    selected = {0, len(messages) - 1}
+    used = mandatory_size
+    for index in range(len(messages) - 2, 0, -1):
+        content_size = len(messages[index][1])
+        if used + content_size > budget:
+            continue
+        selected.add(index)
+        used += content_size
+    ordered = [messages[index] for index in sorted(selected)]
+    while len(ordered) > 2 and ordered[1][0] == "assistant":
+        ordered.pop(1)
+    return tuple(ordered)
 
 
 class LlamaCppRuntime:
@@ -102,7 +148,7 @@ class LlamaCppRuntime:
         ]
         lora_adapter = self.lora_adapter
         if lora_adapter is not None:
-            command[2:2] = ["--lora", str(lora_adapter)]
+            command[1:1] = ["--lora", str(lora_adapter)]
         return tuple(command)
 
     def validate_assets(self) -> None:
@@ -213,6 +259,8 @@ class LlamaCppRuntime:
         max_new_tokens: int,
         temperature: float,
         top_k: int,
+        *,
+        on_delta: Callable[[str], None] | None = None,
     ) -> str:
         if not messages or messages[-1][0] != "user":
             raise ValueError("messages must end with a user turn")
@@ -222,20 +270,79 @@ class LlamaCppRuntime:
             raise ValueError("temperature must be positive")
         if top_k < 0:
             raise ValueError("top k cannot be negative")
+        messages = fit_messages_to_context(messages, max_new_tokens)
         self.ensure_started()
         body = {
             "messages": [{"role": role, "content": normalize_text(text)} for role, text in messages],
             "max_tokens": max_new_tokens,
             "temperature": temperature,
             "top_k": top_k,
-            "stream": False,
+            "repeat_penalty": _DEFAULT_REPEAT_PENALTY,
+            "repeat_last_n": _DEFAULT_REPEAT_LAST_N,
+            "stream": on_delta is not None,
         }
-        response = self._request("/v1/chat/completions", body, timeout=_REQUEST_TIMEOUT_SECONDS)
-        choices = response.get("choices")
-        content = choices[0].get("message", {}).get("content") if isinstance(choices, list) and choices else None
+        if on_delta is None:
+            response = self._request("/v1/chat/completions", body, timeout=_REQUEST_TIMEOUT_SECONDS)
+            choices = response.get("choices")
+            content = choices[0].get("message", {}).get("content") if isinstance(choices, list) and choices else None
+        else:
+            content = self._request_stream("/v1/chat/completions", body, on_delta, timeout=_REQUEST_TIMEOUT_SECONDS)
         if not isinstance(content, str) or not content.strip():
             raise RuntimeError("llama.cpp returned an empty chat completion")
         return normalize_text(content)
+
+    def _request_stream(
+        self,
+        endpoint: str,
+        payload: dict[str, Any],
+        on_delta: Callable[[str], None],
+        *,
+        timeout: float,
+    ) -> str:
+        """POST a streaming chat completion and emit incremental text deltas."""
+        url = f"{self.base_url}{endpoint}"
+        data = json.dumps(payload).encode("utf-8")
+        request = Request(
+            url,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        accumulated = ""
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                for raw_line in response:
+                    line = raw_line.decode("utf-8").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    chunk = line.removeprefix("data:").strip()
+                    if chunk == "[DONE]":
+                        break
+                    try:
+                        decoded = json.loads(chunk)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(decoded, dict):
+                        continue
+                    if isinstance(decoded.get("error"), (str, dict)):
+                        raise RuntimeError(f"llama.cpp stream error: {decoded.get('error')}")
+                    choices = decoded.get("choices")
+                    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+                        continue
+                    delta = choices[0].get("delta")
+                    if not isinstance(delta, dict):
+                        continue
+                    content = delta.get("content")
+                    if not isinstance(content, str) or not content:
+                        continue
+                    accumulated += content
+                    on_delta(content)
+        except HTTPError as error:
+            detail = error.read(_MAX_ERROR_BODY_BYTES).decode("utf-8", errors="replace")
+            raise RuntimeError(f"llama.cpp HTTP {error.code}: {detail}") from error
+        except URLError as error:
+            raise RuntimeError(f"llama.cpp is not reachable at {url}: {error.reason}") from error
+        return accumulated
 
     def _request(self, endpoint: str, payload: dict[str, Any] | None, *, timeout: float) -> dict[str, Any]:
         return self._request_impl(endpoint, payload, timeout)

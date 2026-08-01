@@ -10,8 +10,8 @@ MiniGPT, and other base-model experiments have been removed.
 Use Python 3.13 and install the CUDA build of PyTorch first:
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe -m pip install --no-cache-dir torch==2.13.0 --index-url https://download.pytorch.org/whl/cu130
-& D:\LLM\.venv\Scripts\python.exe -m pip install -e "D:\LLM[runtime,dev]"
+& D:\LLM\.venv\Scripts\python.exe -m pip install --no-cache-dir torch==2.9.0 --index-url https://download.pytorch.org/whl/cu130
+& D:\LLM\.venv\Scripts\python.exe -m pip install -e "D:\LLM[runtime,server,gguf,dev]"
 ```
 
 Verify the environment:
@@ -35,15 +35,17 @@ removed.
 & D:\LLM\start_dev.bat
 ```
 
-`start_dev.bat` starts the backend **in the background** (no terminal is
-blocked) with logs at `logs\server.log` / `logs\server_err.log`, then opens
-the Tauri dev window. Stop the server with
-`taskkill /F /PID <pid>` (find it via `netstat -ano | findstr :8000`).
+`start_dev.bat` starts only Tauri. The Rust host generates a per-run secret,
+starts exactly one owned FastAPI child on loopback, waits for readiness, and
+places it in a Windows kill-on-close Job Object. Closing or crashing the
+desktop app therefore stops the backend and every runtime it started,
+including OmniVoice and `llama-server`. REST requests use a bearer token; the
+chat WebSocket uses the same secret. Browser CORS is restricted to the Tauri
+and fixed Vite development origins.
 
 or manually:
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe -m mini_gpt.server   # runs in foreground; use a dedicated terminal
 npm run tauri dev   # in gui-tauri/
 ```
 
@@ -67,17 +69,18 @@ selector prefers `checkpoints\ru-llama3.1-8b-instruct-v6.2-fresh`, then v6.1
 and v6. The backend keeps a bounded recent conversation context and validates
 runtime dependencies before loading the model.
 
-Persistent memory and online search remain runtime capabilities (see
-below); the Tauri GUI exposes the memory controls and an "Allow online
-search" toggle in Settings.
+Persistent structured memory and online search remain runtime capabilities.
+The Tauri GUI exposes independent controls for self-learning, online search,
+and cloud-memory sharing. Saved memory stays out of OpenCode/Kilo prompts by
+default; sharing it with a hosted model requires explicit opt-in.
 
-## OpenCode cloud replies
+## Cloud replies
 
-**OpenCode Zen API** is Ru's only cloud backend. In the **Settings** tab,
-provide an OpenCode API key and choose a model; the service URL is fixed by
-the backend.
+Ru supports **OpenCode Zen** and **Kilo Gateway** as optional hosted backends.
+In **Settings**, provide the matching API key and choose a model; each service
+URL is fixed by the backend and credentials are stored through the OS keyring.
 
-OpenCode responses stream into the in-progress Ru message. Model-directed
+Hosted responses stream into the in-progress Ru message. Model-directed
 `[SEARCH: ...]` commands stay hidden during the stream; a search command
 clears that provisional message before the grounded follow-up streams. The
 frontend receives only newly emitted text from the streaming runtime, so
@@ -253,9 +256,8 @@ to the equivalent OmniVoice choice. OmniVoice is the default. Ru uses
 `data\voices\omnivoice\ai_vy.wav` and its matching transcript. Do not change a
 reference audio without its matching transcript.
 
-Note: the Tauri GUI does not expose this voice selection yet; the runtime
-helpers (`voice_runtime`, `speech_runtime`, `tts_chunks`, `voice_pacing`)
-remain for the backend integration.
+The Tauri Voice tab exposes both voice profiles, base speed, warmup, release,
+test playback, microphone input, and VTube Studio controls.
 
 If the Ái Vy asset is absent on a fresh checkout, fetch only that reference
 file (not the removed Gwen model):
@@ -284,7 +286,7 @@ voices; **Ru (OmniVoice)** remains the runtime default.
 ### Voice pace
 
 Settings exposes a persisted **Base speed** control from 0.75x to 1.20x,
-defaulting to 0.90x. When **Let Ru adjust pace around this speed** is enabled,
+defaulting to 1.00x. When **Let Ru adjust pace around this speed** is enabled,
 Ru can select only slow, normal, or quick pacing within ±0.08x of that manual
 baseline and still within the global safety bounds. Pacing metadata is private:
 it never appears in the chat, TTS text, conversation history, or memory.
@@ -307,7 +309,8 @@ fall back to Google with a clear error.
 
 The Tauri GUI wires it through the backend `POST /voice/transcribe` endpoint:
 the mic button in the chat input records via the browser APIs
-(`getUserMedia` + `ScriptProcessorNode`), down-samples to 16 kHz PCM WAV, and
+(`getUserMedia` + `ScriptProcessorNode`), caps capture at 60 seconds,
+down-samples to 16 kHz PCM WAV, and
 fills the chat input with the recognized Vietnamese text.
 
 ## Ru identity and capabilities

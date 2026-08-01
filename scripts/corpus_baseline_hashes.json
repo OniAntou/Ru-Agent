@@ -12,10 +12,10 @@
     "manifest.json": "56ddc3a3f789e9d42ac6e8878ed44d6ab8ba80d2860d5d4dd4c497ed60ecf1da"
   },
   "v6_2_fresh": {
-    "train.jsonl": "42bc031552d74b8b5795b02793d1c759638e82cf3043c6405c1fbe6fe5bf5e8d",
+    "train.jsonl": "a73b80cb6dc7abf069bfdea46b3fbeecd2b4b3f7532599ddb3834dcf706345e9",
     "val.jsonl": "df1691656192724ae0ad24825eeab2adb813625b345cd576b3f263a75e39de01",
     "held_out.jsonl": "8c43f383caa0897f920837b337e6ec7cdb303d792f7f2669dd9523ebfa01ab3d",
-    "manifest.json": "e24959adb2576a06fe2f39c585b653f04baee308ef394f61e75ba89faf468398"
+    "manifest.json": "fa73d784f409dcb2645714a55d5d6ef45e9fe5ab6ef420d72f625f421dea0912"
   },
   "v6_3": {
     "train.jsonl": "42cc5e2cd4e0fc62af9222a26458afe837d734790f2f45bd13a061ce94e9d1f5",

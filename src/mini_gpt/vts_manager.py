@@ -78,6 +78,7 @@ class VTSManager:
         self._injection_paused = False
         self._sway_running = False
         self._sway_task: asyncio.Task | None = None
+        self._connect_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._request_lock: asyncio.Lock | None = None
         self._request_semaphore: asyncio.Semaphore | None = None
@@ -96,8 +97,16 @@ class VTSManager:
         loop = asyncio.new_event_loop()
         self._loop = loop
         asyncio.set_event_loop(loop)
+        self._sway_running = True
+
+        async def connect_until_available() -> None:
+            while self._sway_running and not self.is_connected:
+                await self.connect()
+                if not self.is_connected:
+                    await asyncio.sleep(RECONNECT_MIN_INTERVAL_SECONDS)
+
         try:
-            loop.run_until_complete(self.connect())
+            self._connect_task = loop.create_task(connect_until_available())
             loop.run_forever()
         finally:
             self.is_connected = False
@@ -206,6 +215,13 @@ class VTSManager:
             return
 
         async def close_connection() -> None:
+            connect_task = getattr(self, "_connect_task", None)
+            if connect_task is not None and not connect_task.done():
+                connect_task.cancel()
+                try:
+                    await connect_task
+                except (asyncio.CancelledError, Exception):
+                    pass
             sway_task = getattr(self, "_sway_task", None)
             if sway_task is not None and not sway_task.done():
                 sway_task.cancel()
@@ -568,23 +584,25 @@ class VTSManager:
             return
         self._run_on_vts_loop(self.trigger_hotkey(hotkey_name), wait=False)
 
-    def trigger_actions_sync(self, actions: VtsActions) -> None:
+    def trigger_actions_sync(self, actions: VtsActions) -> bool:
+        triggered = False
         with self._semantic_action_lock:
             for action in (actions.facial, actions.body):
                 if action is not None:
-                    self._trigger_action(action)
+                    triggered = self._trigger_action(action) or triggered
+        return triggered
 
-    def _trigger_action(self, action: str) -> None:
+    def _trigger_action(self, action: str) -> bool:
         configuration = ACTION_HOTKEYS.get(action)
         if configuration is None or not self.is_connected:
-            return
+            return False
 
         primary_hotkey, reset_hotkey, reset_delay = configuration
         now = time.monotonic()
         with self._action_lock:
             last_triggered = self._last_action_at.get(action)
             if last_triggered is not None and now - last_triggered < ACTION_COOLDOWN_SECONDS:
-                return
+                return False
             self._last_action_at[action] = now
 
         self.trigger_hotkey_sync(primary_hotkey)
@@ -596,6 +614,7 @@ class VTSManager:
             reset_timer.daemon = True
             self._timers.append(reset_timer)
             reset_timer.start()
+        return True
 
     async def _fetch_catalog(self) -> VtsCatalog | None:
         if not self.is_connected:

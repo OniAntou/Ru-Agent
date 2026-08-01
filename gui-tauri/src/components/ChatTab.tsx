@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { speakText, ttsEnabled } from "../lib/playVoice";
-import { startRecording, stopRecording } from "../lib/voiceInput";
+import { cancelRecording, startRecording, stopRecording } from "../lib/voiceInput";
+import { apiFetch, createChatSocket } from "../lib/backendClient";
 
 type Message = {
   role: "user" | "ai";
@@ -15,7 +16,6 @@ type ChatTabProps = {
   onTurnCompleted: () => void;
 };
 
-const WS_URL = "ws://127.0.0.1:8000/chat";
 const RECONNECT_DELAY_MS = 2000;
 
 const VTS_MARKER_RE = /\s*\[\[VTS:[^\]]*\]\]/g;
@@ -28,14 +28,12 @@ function stripDisplayMarkers(content: string): string {
 export default function ChatTab({ activeSessionId, onSessionCreated, onTurnCompleted }: ChatTabProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [ws, setWs] = useState<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sessionIdRef = useRef<string>("");
-  const pendingSessionRef = useRef<string>("");
 
   useEffect(() => {
     sessionIdRef.current = activeSessionId;
@@ -45,9 +43,20 @@ export default function ChatTab({ activeSessionId, onSessionCreated, onTurnCompl
     let disposed = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const connect = () => {
+    const connect = async () => {
       if (disposed) return;
-      const next = new WebSocket(WS_URL);
+      let next: WebSocket;
+      try {
+        next = await createChatSocket();
+      } catch (error) {
+        console.error("Failed to create chat socket", error);
+        if (!disposed) reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+        return;
+      }
+      if (disposed) {
+        next.close();
+        return;
+      }
       wsRef.current = next;
 
       next.onopen = () => {
@@ -64,8 +73,12 @@ export default function ChatTab({ activeSessionId, onSessionCreated, onTurnCompl
           return;
         }
         if (data.type === "session" && typeof data.session_id === "string") {
-          pendingSessionRef.current = data.session_id;
+          sessionIdRef.current = data.session_id;
           onSessionCreated(data.session_id);
+        } else if (data.type === "reset") {
+          setMessages((prev) =>
+            prev[prev.length - 1]?.role === "ai" ? prev.slice(0, -1) : prev,
+          );
         } else if (data.type === "chunk" && typeof data.content === "string") {
           setMessages((prev) => {
             const last = prev[prev.length - 1];
@@ -76,8 +89,16 @@ export default function ChatTab({ activeSessionId, onSessionCreated, onTurnCompl
           });
         } else if (data.type === "done") {
           setBusy(false);
+          if (typeof data.content === "string") {
+            setMessages((prev) => {
+              const canonical: Message = { role: "ai", content: data.content as string };
+              return prev[prev.length - 1]?.role === "ai"
+                ? [...prev.slice(0, -1), canonical]
+                : [...prev, canonical];
+            });
+          }
           if (typeof data.session_id === "string") {
-            pendingSessionRef.current = data.session_id;
+            sessionIdRef.current = data.session_id;
             onSessionCreated(data.session_id);
           }
           onTurnCompleted();
@@ -94,7 +115,7 @@ export default function ChatTab({ activeSessionId, onSessionCreated, onTurnCompl
           setMessages((prev) => [...prev, { role: "ai", content: `Error: ${data.content}` }]);
           setBusy(false);
           if (typeof data.session_id === "string") {
-            pendingSessionRef.current = data.session_id;
+            sessionIdRef.current = data.session_id;
             onSessionCreated(data.session_id);
           }
         }
@@ -115,12 +136,12 @@ export default function ChatTab({ activeSessionId, onSessionCreated, onTurnCompl
     };
 
     connect();
-    setWs(wsRef.current);
     return () => {
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       wsRef.current?.close();
       wsRef.current = null;
+      void cancelRecording();
     };
   }, []);
 
@@ -128,7 +149,7 @@ export default function ChatTab({ activeSessionId, onSessionCreated, onTurnCompl
     let disposed = false;
     const loadSession = async (id: string) => {
       try {
-        const response = await fetch(`http://127.0.0.1:8000/sessions/${id}/activate`, {
+        const response = await apiFetch(`/sessions/${id}/activate`, {
           method: "POST",
         });
         const data = await response.json();
@@ -160,11 +181,12 @@ export default function ChatTab({ activeSessionId, onSessionCreated, onTurnCompl
   }, [busy]);
 
   const handleSend = () => {
-    if (!input.trim() || !ws || busy) return;
-    const sessionId = pendingSessionRef.current || sessionIdRef.current || activeSessionId;
+    const socket = wsRef.current;
+    if (!input.trim() || !socket || socket.readyState !== WebSocket.OPEN || busy) return;
+    const sessionId = sessionIdRef.current || activeSessionId;
     const payload = sessionId ? { prompt: input, session_id: sessionId } : { prompt: input };
     setMessages((prev) => [...prev, { role: "user", content: input }]);
-    ws.send(JSON.stringify(payload));
+    socket.send(JSON.stringify(payload));
     setInput("");
     if (inputRef.current) {
       inputRef.current.style.height = "auto";

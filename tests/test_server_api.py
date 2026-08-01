@@ -17,12 +17,22 @@ def isolated_state(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(server, "HISTORY_FILE", tmp_path / "history.json")
     monkeypatch.setattr(server, "SESSION_DIR", tmp_path / "sessions")
-    server._SESSION_TURNS.clear()
     server.core.runner.backend = headless_runner.BACKEND_GGUF
     monkeypatch.setattr(server.core, "remember", lambda prompt, reply: None)
     monkeypatch.setattr(server._MEMORY_QUEUE, "put_nowait", lambda item: None)
+    monkeypatch.setattr(
+        server,
+        "_GPU_LIFECYCLE",
+        type(
+            "NoopGpuLifecycle",
+            (),
+            {
+                "prepare_local_generation": lambda self: None,
+                "prepare_speech": lambda self, selection: None,
+            },
+        )(),
+    )
     yield
-    server._SESSION_TURNS.clear()
     if server._TURN_LOCK.locked():
         server._TURN_LOCK.release()
     if server._MEMORY_TURN_LOCK.locked():
@@ -34,6 +44,45 @@ def test_status_endpoint() -> None:
         response = client.get("/status")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_foreign_browser_origin_is_not_allowed() -> None:
+    with TestClient(server.app) as client:
+        response = client.get("/status", headers={"Origin": "https://attacker.example"})
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_configured_desktop_token_protects_rest(monkeypatch) -> None:
+    monkeypatch.setattr(server, "_DESKTOP_TOKEN", "desktop-secret")
+    with TestClient(server.app) as client:
+        missing = client.get("/settings")
+        invalid = client.get("/settings", headers={"Authorization": "Bearer wrong"})
+        valid = client.get(
+            "/settings", headers={"Authorization": "Bearer desktop-secret"}
+        )
+    assert missing.status_code == 401
+    assert invalid.status_code == 401
+    assert valid.status_code == 200
+
+
+def test_configured_desktop_token_protects_websocket(monkeypatch) -> None:
+    monkeypatch.setattr(server, "_DESKTOP_TOKEN", "desktop-secret")
+    with TestClient(server.app) as client:
+        with pytest.raises(Exception):
+            with client.websocket_connect("/chat"):
+                pass
+        with client.websocket_connect("/chat?token=desktop-secret") as ws:
+            ws.close()
+
+
+def test_rejects_oversized_request_body() -> None:
+    with TestClient(server.app) as client:
+        response = client.post(
+            "/settings",
+            content=b"x" * (server.MAX_REQUEST_BODY_BYTES + 1),
+            headers={"Content-Type": "application/json"},
+        )
+    assert response.status_code == 413
 
 
 def test_settings_round_trip_and_no_api_key(monkeypatch, isolated_state) -> None:
@@ -61,6 +110,34 @@ def test_settings_round_trip_and_no_api_key(monkeypatch, isolated_state) -> None
     assert body["allow_web_search"] is False
     assert "api_key" not in body
     assert "apiKey" not in body
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"temperature": 0},
+        {"max_tokens": 0},
+        {"max_tokens": 2048},
+        {"top_k": 0},
+        {"voice_speed": 3.0},
+    ],
+)
+def test_settings_reject_invalid_runtime_bounds(payload, isolated_state) -> None:
+    with TestClient(server.app) as client:
+        response = client.post("/settings", json=payload)
+    assert response.status_code == 422
+
+
+def test_legacy_out_of_range_settings_are_safely_normalized(isolated_state) -> None:
+    server.save_settings_to_file(
+        {"max_tokens": 8192, "temperature": 0, "top_k": -1, "voice_speed": 9}
+    )
+    with TestClient(server.app) as client:
+        settings = client.get("/settings").json()
+    assert settings["max_tokens"] == 1024
+    assert settings["temperature"] == 0.1
+    assert settings["top_k"] == 1
+    assert settings["voice_speed"] == 2.0
 
 
 def test_settings_saves_kilo_api_key(monkeypatch, isolated_state) -> None:
@@ -317,7 +394,10 @@ def test_voice_warmup_and_release(monkeypatch, isolated_state) -> None:
     with TestClient(server.app) as client:
         warmup = client.post("/voice/warmup")
         release = client.post("/voice/release")
-    assert warmup.json() == {"status": "ok", "result": {"ok": True}}
+    assert warmup.json() == {
+        "status": "ok",
+        "result": {"ready": True, "voice_profile": "ru"},
+    }
     assert release.json() == {"status": "ok", "result": {"ok": True}}
 
 
@@ -344,7 +424,7 @@ def test_voice_transcribe_rejects_bad_audio(monkeypatch, isolated_state) -> None
         bad_rate = client.post("/voice/transcribe", json={"audio_b64": "AA==", "sample_rate": 0})
     assert empty.json()["status"] == "error"
     assert invalid.json()["status"] == "error"
-    assert bad_rate.json()["status"] == "error"
+    assert bad_rate.status_code == 422
 
 
 def test_voice_transcribe_surfaces_recognizer_error(monkeypatch, isolated_state) -> None:
@@ -377,6 +457,24 @@ def test_vts_status_and_connect_flows(monkeypatch, isolated_state) -> None:
     assert connect.json()["status"] == "error"
 
 
+def test_vts_speaking_endpoint_updates_motion_state(monkeypatch, isolated_state) -> None:
+    speaking = []
+
+    class FakeVts:
+        is_connected = True
+
+        def set_speaking(self, value):
+            speaking.append(value)
+
+    monkeypatch.setattr(server, "_VTS_MANAGER", FakeVts())
+    with TestClient(server.app) as client:
+        started = client.post("/vts/speaking", json={"speaking": True})
+        stopped = client.post("/vts/speaking", json={"speaking": False})
+    assert started.json()["status"] == "ok"
+    assert stopped.json()["status"] == "ok"
+    assert speaking == [True, False]
+
+
 def test_vts_connected_status_and_action(monkeypatch, isolated_state) -> None:
     calls: list[dict] = []
 
@@ -385,6 +483,7 @@ def test_vts_connected_status_and_action(monkeypatch, isolated_state) -> None:
 
         def trigger_actions_sync(self, actions):
             calls.append({"kind": "semantic", "facial": actions.facial, "body": actions.body})
+            return True
 
     fake = FakeVts()
     monkeypatch.setattr(server, "_VTS_MANAGER", fake)
@@ -396,6 +495,19 @@ def test_vts_connected_status_and_action(monkeypatch, isolated_state) -> None:
     assert action.json() == {"status": "ok"}
     assert calls == [{"kind": "semantic", "facial": "joy", "body": None}]
     assert empty.json()["status"] == "error"
+
+
+def test_vts_unknown_semantic_action_is_reported_as_error(monkeypatch, isolated_state) -> None:
+    class FakeVts:
+        is_connected = True
+
+        def trigger_actions_sync(self, actions):
+            return False
+
+    monkeypatch.setattr(server, "_VTS_MANAGER", FakeVts())
+    with TestClient(server.app) as client:
+        response = client.post("/vts/action", json={"facial": "not-on-this-model"})
+    assert response.json()["status"] == "error"
 
 
 def test_chat_websocket_streams_chunks_then_done(monkeypatch, isolated_state) -> None:
@@ -521,14 +633,104 @@ def test_conversation_context_passed_between_turns(monkeypatch, isolated_state) 
     with TestClient(server.app) as client:
         with client.websocket_connect("/chat") as ws:
             ws.send_text(json.dumps({"prompt": "turn one"}))
+            created = ws.receive_json()
+            assert created["type"] == "session"
+            session_id = created["session_id"]
             while ws.receive_json()["type"] != "done":
                 pass
-            ws.send_text(json.dumps({"prompt": "turn two"}))
+            ws.send_text(json.dumps({"prompt": "turn two", "session_id": session_id}))
             while ws.receive_json()["type"] != "done":
                 pass
     assert len(histories[0]) == 0
     assert len(histories[1]) == 1
     assert histories[1][0].prompt == "turn one"
+
+
+def test_chat_uses_context_from_requested_session_only(monkeypatch, isolated_state) -> None:
+    session_a = server._create_session_file()
+    session_b = server._create_session_file()
+    assert session_a and session_b
+    server._session_append_messages(
+        session_a,
+        [{"role": "user", "content": "secret A"}, {"role": "ai", "content": "answer A"}],
+    )
+    server._session_append_messages(
+        session_b,
+        [{"role": "user", "content": "topic B"}, {"role": "ai", "content": "answer B"}],
+    )
+    histories = []
+
+    def fake_generate(**kwargs):
+        histories.append(list(kwargs["turns_history"]))
+        return "reply B"
+
+    monkeypatch.setattr(server.core, "generate_reply_with_memory", fake_generate)
+    with TestClient(server.app) as client:
+        with client.websocket_connect("/chat") as ws:
+            ws.send_json({"prompt": "continue B", "session_id": session_b})
+            while ws.receive_json()["type"] != "done":
+                pass
+
+    assert [(turn.prompt, turn.response) for turn in histories[0]] == [("topic B", "answer B")]
+
+
+def test_chat_resets_provisional_stream_when_search_restarts(monkeypatch, isolated_state) -> None:
+    def fake_generate(**kwargs):
+        kwargs["on_stream_delta"]("draft")
+        kwargs["on_stream_reset"]()
+        kwargs["on_stream_delta"]("final")
+        return "final answer"
+
+    monkeypatch.setattr(server.core, "generate_reply_with_memory", fake_generate)
+    with TestClient(server.app) as client:
+        with client.websocket_connect("/chat") as ws:
+            ws.send_json({"prompt": "search"})
+            assert ws.receive_json()["type"] == "session"
+            messages = [ws.receive_json() for _ in range(4)]
+
+    assert [message["type"] for message in messages] == ["chunk", "reset", "chunk", "done"]
+    assert messages[-1]["content"] == "final answer"
+
+
+def test_private_markers_are_removed_before_every_persistence_path(monkeypatch, isolated_state) -> None:
+    from mini_gpt.vts_catalog import VtsCatalog, VtsCatalogEntry
+
+    catalog = VtsCatalog(
+        "model-1", "Ru", (VtsCatalogEntry("vts_01", "hotkey", "Joy", "hotkey-1"),)
+    )
+    triggered = []
+
+    class FakeVts:
+        is_connected = True
+
+        def current_catalog_sync(self):
+            return catalog
+
+        def trigger_catalog_actions_sync(self, selected, codes):
+            triggered.append((selected, codes))
+
+    remembered = []
+    captured = {}
+    monkeypatch.setattr(server, "_VTS_MANAGER", FakeVts())
+    monkeypatch.setattr(server.core, "remember", lambda prompt, reply: remembered.append((prompt, reply)))
+
+    def fake_generate(**kwargs):
+        captured.update(kwargs)
+        return "Chào anh [[VOICE_PACE:quick]] [[VTS:vts_01]]"
+
+    monkeypatch.setattr(server.core, "generate_reply_with_memory", fake_generate)
+    with TestClient(server.app) as client:
+        session_id = client.post("/sessions/new").json()["session_id"]
+        with client.websocket_connect("/chat") as ws:
+            ws.send_json({"prompt": "hello", "session_id": session_id})
+            done = ws.receive_json()
+        session = client.post(f"/sessions/{session_id}/activate").json()["session"]
+
+    assert done["content"] == "Chào anh"
+    assert remembered == [("hello", "Chào anh")]
+    assert session["messages"][-1]["content"] == "Chào anh"
+    assert "vts_01 = Joy" in captured["vts_instruction"]
+    assert triggered == [(catalog, ("vts_01",))]
 
 
 def test_startup_applies_saved_settings(monkeypatch, isolated_state) -> None:
@@ -590,7 +792,7 @@ def test_session_activate_rebuilds_turn_context(monkeypatch, isolated_state) -> 
     assert body["status"] == "ok"
     assert body["session"]["title"] == "Chào anh hôm nay"
     assert [m["role"] for m in body["session"]["messages"]] == ["user", "ai"]
-    assert [turn.prompt for turn in server._SESSION_TURNS] == ["Chào   anh hôm nay"]
+    assert [turn.prompt for turn in server._session_turns(session_id)] == ["Chào   anh hôm nay"]
 
 
 def test_session_activate_ignores_orphan_user_turn(monkeypatch, isolated_state) -> None:
@@ -608,7 +810,7 @@ def test_session_activate_ignores_orphan_user_turn(monkeypatch, isolated_state) 
         loaded = client.post(f"/sessions/{session_id}/activate")
     body = loaded.json()
     assert body["status"] == "ok"
-    assert [turn.prompt for turn in server._SESSION_TURNS] == ["Câu hỏi đầu"]
+    assert [turn.prompt for turn in server._session_turns(session_id)] == ["Câu hỏi đầu"]
 
 
 def test_ws_creates_session_when_id_missing(monkeypatch, isolated_state) -> None:

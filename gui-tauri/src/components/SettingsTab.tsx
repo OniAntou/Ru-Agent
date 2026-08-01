@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "../lib/backendClient";
 
 type SavedSettings = {
   backend: string;
@@ -9,6 +10,7 @@ type SavedSettings = {
   top_k: number;
   allow_web_search: boolean;
   enable_self_learning: boolean;
+  share_memory_with_cloud: boolean;
   checkpoint_path: string;
 };
 
@@ -22,6 +24,7 @@ export default function SettingsTab() {
   const [topK, setTopK] = useState(50);
   const [allowWebSearch, setAllowWebSearch] = useState(true);
   const [enableSelfLearning, setEnableSelfLearning] = useState(true);
+  const [shareMemoryWithCloud, setShareMemoryWithCloud] = useState(false);
   const [checkpointPath, setCheckpointPath] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
@@ -62,9 +65,7 @@ export default function SettingsTab() {
     if (backendName !== "OpenCode Zen" && backendName !== "Kilo Gateway") return;
     setModelLoading(true);
     try {
-      const response = await fetch(
-        `http://127.0.0.1:8000/models?backend=${encodeURIComponent(backendName)}`
-      );
+      const response = await apiFetch(`/models?backend=${encodeURIComponent(backendName)}`);
       const data = await response.json();
       if (data.status === "ok" && Array.isArray(data.models) && data.models.length > 0) {
         setModelOptions(data.models);
@@ -85,7 +86,7 @@ export default function SettingsTab() {
   };
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/settings")
+    apiFetch("/settings")
       .then((res) => res.json())
       .then((data: SavedSettings & { status?: string }) => {
         if (data.status !== "ok") return;
@@ -97,6 +98,7 @@ export default function SettingsTab() {
         setTopK(data.top_k ?? 50);
         setAllowWebSearch(data.allow_web_search ?? true);
         setEnableSelfLearning(data.enable_self_learning ?? true);
+        setShareMemoryWithCloud(data.share_memory_with_cloud ?? false);
         setCheckpointPath(data.checkpoint_path || "");
         fetchModels(data.backend);
       })
@@ -115,7 +117,7 @@ export default function SettingsTab() {
   const saveSettings = async () => {
     setStatus("");
     try {
-      const response = await fetch("http://127.0.0.1:8000/settings", {
+      const response = await apiFetch("/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -128,6 +130,7 @@ export default function SettingsTab() {
           top_k: topK,
           allow_web_search: allowWebSearch,
           enable_self_learning: enableSelfLearning,
+          share_memory_with_cloud: shareMemoryWithCloud,
           checkpoint_path: checkpointPath,
         }),
       });
@@ -223,7 +226,7 @@ export default function SettingsTab() {
               <input
                 type="range"
                 min="64"
-                max="8192"
+                max="1024"
                 step="64"
                 value={maxTokens}
                 onChange={(e) => setMaxTokens(Number(e.target.value))}
@@ -234,13 +237,27 @@ export default function SettingsTab() {
               <label>Temperature: {temperature}</label>
               <input
                 type="range"
-                min="0"
+                min="0.1"
                 max="2"
                 step="0.1"
                 value={temperature}
                 onChange={(e) => setTemperature(Number(e.target.value))}
               />
             </div>
+
+            {(backend === "OpenCode Zen" || backend === "Kilo Gateway") && (
+              <div className="form-group">
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    style={{ width: 16, height: 16 }}
+                    checked={shareMemoryWithCloud}
+                    onChange={(e) => setShareMemoryWithCloud(e.target.checked)}
+                  />
+                  Share relevant saved memory with the selected cloud model
+                </label>
+              </div>
+            )}
 
             <div className="form-group">
               <label>Top-K: {topK}</label>

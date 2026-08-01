@@ -52,12 +52,9 @@ def _build_into(version: str, destination: Path, seed: int) -> None:
     elif version == "v6_2":
         build_ru_v6_2_corpus(destination, seed=seed)
     elif version == "v6_2_fresh":
-        build_ru_v6_2_fresh_corpus(
-            destination,
-            approved_file=DATA_ROOT / "approved.jsonl",
-            memory_file=DATA_ROOT / "memory_texts.json",
-            seed=seed,
-        )
+        # The reproducibility gate must never depend on ignored/private user
+        # conversation files. Calibration imports have their own fixture tests.
+        build_ru_v6_2_fresh_corpus(destination, seed=seed)
     elif version == "v6_3":
         build_ru_v6_3_corpus(destination, seed=seed)
     else:

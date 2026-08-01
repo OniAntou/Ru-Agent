@@ -15,12 +15,11 @@ from hashlib import sha256
 from pathlib import Path
 from typing import List
 
-try:
-    import faiss
-    from sentence_transformers import SentenceTransformer
-except ImportError:
-    faiss = None
-    SentenceTransformer = None
+# The production memory path is SQLite/lexical. Keep the legacy compatibility
+# class disabled without importing multi-hundred-megabyte embedding stacks at
+# backend startup.
+faiss = None
+SentenceTransformer = None
 
 logger = logging.getLogger(__name__)
 

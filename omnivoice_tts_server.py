@@ -17,6 +17,37 @@ from mini_gpt.tts_chunks import split_tts_chunks
 from mini_gpt.voice_pacing import DEFAULT_VOICE_SPEED, clamp_voice_speed
 
 logger = logging.getLogger(__name__)
+_SINGLETON_GUARD: object | None = None
+
+
+def _acquire_single_instance() -> bool:
+    """Hold one OS-level guard for the heavyweight OmniVoice process."""
+    global _SINGLETON_GUARD
+    if _SINGLETON_GUARD is not None:
+        return True
+    if os.name == "nt":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.CreateMutexW(None, False, "Local\\RuOmniVoice5052")
+        if not handle:
+            raise OSError("CreateMutexW failed for OmniVoice singleton")
+        if kernel32.GetLastError() == 183:
+            kernel32.CloseHandle(handle)
+            return False
+        _SINGLETON_GUARD = handle
+        return True
+
+    import fcntl
+
+    guard = (Path(tempfile.gettempdir()) / "ru-omnivoice-5052.lock").open("a+b")
+    try:
+        fcntl.flock(guard.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        guard.close()
+        return False
+    _SINGLETON_GUARD = guard
+    return True
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 MODEL_CACHE = PROJECT_ROOT / "models" / "omnivoice"
@@ -131,12 +162,17 @@ def apply_voice_speed(audio, speed: float):
     except Exception as error:
         raise RuntimeError(f"Could not convert OmniVoice audio into a waveform: {error}") from error
     if speed == 1.0:
+        if waveform.shape[0] == 1:
+            return waveform.reshape(-1)
         return waveform
     if _librosa is None:
         import librosa
 
         _librosa = librosa
-    return _librosa.effects.time_stretch(waveform, rate=speed)
+    stretched = _librosa.effects.time_stretch(waveform, rate=speed)
+    if stretched.ndim == 2 and stretched.shape[0] == 1:
+        return stretched.reshape(-1)
+    return stretched
 
 
 def synthesize_fast(text: str, profile: str = "ru", speed: float = DEFAULT_VOICE_SPEED) -> str:
@@ -269,5 +305,13 @@ def create_app(synthesize: Callable[[str, str, float], str] | None = None) -> Fl
     return app
 
 
-if __name__ == "__main__":
+def run_server() -> int:
+    if not _acquire_single_instance():
+        logger.error("Another OmniVoice instance already owns the Ru voice service")
+        return 2
     create_app().run(host="127.0.0.1", port=5052, threaded=False)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run_server())

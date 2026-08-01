@@ -1,10 +1,15 @@
+import { apiFetch } from "./backendClient";
+
 let currentAudio: HTMLAudioElement | null = null;
+let currentUrl: string | null = null;
+let currentFinish: ((played: boolean) => void) | null = null;
+let currentAbort: AbortController | null = null;
 
 export function stopVoice(): void {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio = null;
-  }
+  currentAbort?.abort();
+  currentAbort = null;
+  currentAudio?.pause();
+  currentFinish?.(false);
 }
 
 export function ttsEnabled(): boolean {
@@ -16,13 +21,16 @@ export async function speakText(
   options?: { voiceLabel?: string; speed?: number }
 ): Promise<boolean> {
   stopVoice();
+  const abort = new AbortController();
+  currentAbort = abort;
   try {
     const voiceLabel = options?.voiceLabel ?? (localStorage.getItem("ru_voice_label") || undefined);
     const speed = options?.speed ?? (Number(localStorage.getItem("ru_voice_speed") ?? "1") || 1.0);
-    const response = await fetch("http://127.0.0.1:8000/voice/tts", {
+    const response = await apiFetch("/voice/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, voice_label: voiceLabel, speed }),
+      signal: abort.signal,
     });
     if (!response.ok) return false;
     const contentType = response.headers.get("content-type") || "";
@@ -39,15 +47,37 @@ export async function speakText(
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     currentAudio = audio;
-    await new Promise<void>((resolve) => {
-      audio.onended = () => resolve();
-      audio.onerror = () => resolve();
-      audio.play().catch(() => resolve());
+    currentUrl = url;
+    void apiFetch("/vts/speaking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speaking: true }),
+    }).catch(() => undefined);
+    return await new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (played: boolean) => {
+        if (settled) return;
+        settled = true;
+        if (currentAudio === audio) currentAudio = null;
+        if (currentUrl === url) currentUrl = null;
+        if (currentFinish === finish) currentFinish = null;
+        if (currentAbort === abort) currentAbort = null;
+        URL.revokeObjectURL(url);
+        void apiFetch("/vts/speaking", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ speaking: false }),
+        }).catch(() => undefined);
+        resolve(played);
+      };
+      currentFinish = finish;
+      audio.onended = () => finish(true);
+      audio.onerror = () => finish(false);
+      audio.play().catch(() => finish(false));
     });
-    URL.revokeObjectURL(url);
-    return true;
   } catch (error) {
-    console.error("Failed to play voice", error);
+    if (!abort.signal.aborted) console.error("Failed to play voice", error);
+    if (currentAbort === abort) currentAbort = null;
     return false;
   }
 }

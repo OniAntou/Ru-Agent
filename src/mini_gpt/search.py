@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import concurrent.futures
 import hashlib
 import logging
+import queue
 import re
+import threading
 
 logger = logging.getLogger(__name__)
 _SEARCH_TIMEOUT_SECONDS = 15
@@ -35,20 +36,29 @@ def perform_web_search(query: str, max_results: int = 3) -> str:
 
     max_results = max(1, min(int(max_results), _MAX_RESULTS))
     query_hash = hashlib.sha256(query.encode()).hexdigest()[:12]
-    # One executor per call so a hung DDGS request cannot permanently consume
-    # a shared pool; the worker thread is left to finish in the background.
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="websearch")
-    try:
-        future = executor.submit(lambda: DDGS().text(query, max_results=max_results))
-        results = future.result(timeout=_SEARCH_TIMEOUT_SECONDS)
-    except concurrent.futures.TimeoutError:
+    completed: queue.Queue[tuple[bool, object]] = queue.Queue(maxsize=1)
+
+    def search_worker() -> None:
+        try:
+            completed.put((True, DDGS().text(query, max_results=max_results)))
+        except Exception as error:
+            completed.put((False, error))
+
+    worker = threading.Thread(
+        target=search_worker,
+        name=f"websearch-{query_hash}",
+        daemon=True,
+    )
+    worker.start()
+    worker.join(_SEARCH_TIMEOUT_SECONDS)
+    if worker.is_alive():
         logger.warning("Web search timed out (hash=%s)", query_hash)
         return "Web search timed out."
-    except Exception as exc:
-        logger.warning("Web search error (hash=%s): %s", query_hash, exc)
+    ok, result = completed.get_nowait()
+    if not ok:
+        logger.warning("Web search error (hash=%s): %s", query_hash, result)
         return "An error occurred during web search."
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
+    results = result
 
     if not results:
         return "No web results found."

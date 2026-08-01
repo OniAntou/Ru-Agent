@@ -63,3 +63,8 @@ if ($LASTEXITCODE -ne 0) {
 if ($LASTEXITCODE -ne 0) {
     throw "CMake build failed with exit code $LASTEXITCODE."
 }
+
+& $cmake --build $build --config Release --target RUN_TESTS
+if ($LASTEXITCODE -ne 0) {
+    throw "Native overlay tests failed with exit code $LASTEXITCODE."
+}

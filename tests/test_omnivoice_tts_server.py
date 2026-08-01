@@ -6,6 +6,17 @@ import sys
 import omnivoice_tts_server as server
 
 
+def test_run_server_refuses_a_second_heavy_instance(monkeypatch) -> None:
+    monkeypatch.setattr(server, "_acquire_single_instance", lambda: False)
+    monkeypatch.setattr(
+        server,
+        "create_app",
+        lambda: (_ for _ in ()).throw(AssertionError("second instance must not create the app")),
+    )
+
+    assert server.run_server() == 2
+
+
 class FakeModel:
     def __init__(self) -> None:
         self.prompts: list[dict[str, str]] = []

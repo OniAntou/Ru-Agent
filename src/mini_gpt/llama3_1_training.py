@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import importlib.metadata
 import os
 import random
 import shutil
@@ -237,6 +239,7 @@ class LlamaTrainingConfig:
     physical_vram_cap_mib: float | None = None
     physical_vram_poll_seconds: float = 0.5
     wall_clock_seconds: float | None = None
+    training_status: Literal["not_started", "approved"] = "not_started"
 
     @classmethod
     def from_json(cls, path: str | Path) -> "LlamaTrainingConfig":
@@ -246,6 +249,50 @@ class LlamaTrainingConfig:
         if "target_modules" in payload:
             payload["target_modules"] = tuple(payload["target_modules"])
         return cls(**payload)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def training_dataset_fingerprint(dataset_dir: str | Path) -> dict[str, object]:
+    directory = Path(dataset_dir)
+    names = ("train.jsonl", "val.jsonl", "manifest.json")
+    files = {}
+    for name in names:
+        path = directory / name
+        if not path.is_file():
+            raise FileNotFoundError(f"Training dataset input is missing: {path}")
+        files[name] = _sha256_file(path)
+    canonical = json.dumps(files, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return {"files": files, "aggregate_sha256": hashlib.sha256(canonical).hexdigest()}
+
+
+def directory_fingerprint(directory: str | Path) -> str:
+    root = Path(directory)
+    if not root.is_dir():
+        raise FileNotFoundError(f"Fingerprint directory is missing: {root}")
+    digest = hashlib.sha256()
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(_sha256_file(path).encode("ascii"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def set_training_seed(seed: int) -> None:
+    import numpy as np
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def resolve_training_step_limit(
@@ -286,6 +333,10 @@ def write_adapter_manifest(
     base_model_path: str,
     source_adapter_dir: str | None = None,
     dataset_sha256: str,
+    dataset_files_sha256: dict[str, str],
+    training_config_sha256: str,
+    base_model_sha256: str,
+    source_adapter_sha256: str | None,
     best_validation_loss: float,
     peak_vram_mb: float,
     seed: int,
@@ -302,6 +353,23 @@ def write_adapter_manifest(
     aborted_reason: str | None = None,
 ) -> dict[str, object]:
     destination = Path(adapter_dir)
+    project_root = Path(__file__).resolve().parents[2]
+    try:
+        git_commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        git_commit = None
+    packages = {}
+    for package in ("torch", "transformers", "peft", "bitsandbytes", "numpy"):
+        try:
+            packages[package] = importlib.metadata.version(package)
+        except importlib.metadata.PackageNotFoundError:
+            packages[package] = None
     manifest = {
         "adapter_dir": str(destination),
         "backend": backend,
@@ -310,6 +378,10 @@ def write_adapter_manifest(
         "base_model_path": base_model_path,
         "source_adapter_dir": source_adapter_dir,
         "dataset_sha256": dataset_sha256,
+        "dataset_files_sha256": dataset_files_sha256,
+        "training_config_sha256": training_config_sha256,
+        "base_model_sha256": base_model_sha256,
+        "source_adapter_sha256": source_adapter_sha256,
         "best_validation_loss": best_validation_loss,
         "peak_vram_mb": peak_vram_mb,
         "physical_peak_mib": physical_peak_mib,
@@ -324,6 +396,8 @@ def write_adapter_manifest(
         "training_status": training_status,
         "wall_clock_seconds": wall_clock_seconds,
         "aborted_reason": aborted_reason,
+        "git_commit": git_commit,
+        "package_versions": packages,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
     destination.mkdir(parents=True, exist_ok=True)
@@ -363,22 +437,37 @@ def _save_adapter_atomically(model: object, destination: Path) -> None:
         raise
 
 def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = None) -> dict[str, object]:
-    from hashlib import sha256
+    if config.training_status != "approved":
+        raise RuntimeError(
+            "Training config is not approved. Set training_status to 'approved' only after the manual quality gate."
+        )
     import torch
     from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, modeling_utils
 
     if not torch.cuda.is_available():
         raise RuntimeError("QLoRA training requires CUDA")
-    base_path = Path(config.base_model_path)
+    set_training_seed(config.seed)
+    project_root = Path(__file__).resolve().parents[2]
+
+    def resolve_project_path(value: str) -> Path:
+        path = Path(value)
+        return path if path.is_absolute() else project_root / path
+
+    base_path = resolve_project_path(config.base_model_path)
     if not base_path.is_dir():
         raise FileNotFoundError(f"Model path {base_path} not found")
         
-    dataset_dir = Path(config.dataset_dir)
+    dataset_dir = resolve_project_path(config.dataset_dir)
     train_path, validation_path, manifest_path = dataset_dir / "train.jsonl", dataset_dir / "val.jsonl", dataset_dir / "manifest.json"
     if not train_path.is_file() or not validation_path.is_file() or not manifest_path.is_file():
         raise FileNotFoundError("Ru training, validation, or manifest data is missing")
-    dataset_sha256 = sha256(manifest_path.read_bytes()).hexdigest()
+    dataset_fingerprint = training_dataset_fingerprint(dataset_dir)
+    dataset_sha256 = str(dataset_fingerprint["aggregate_sha256"])
+    config_sha256 = hashlib.sha256(
+        json.dumps(asdict(config), sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    base_model_sha256 = directory_fingerprint(base_path)
     
     tokenizer = AutoTokenizer.from_pretrained(base_path)
     if tokenizer.pad_token_id is None:
@@ -408,7 +497,7 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
     
     model = prepare_model_for_kbit_training(model)
     if config.source_adapter_dir is not None:
-        source_adapter = Path(config.source_adapter_dir)
+        source_adapter = resolve_project_path(config.source_adapter_dir)
         if not source_adapter.is_dir():
             raise FileNotFoundError(f"Source adapter {source_adapter} not found")
         model = PeftModel.from_pretrained(model, source_adapter, is_trainable=True)
@@ -488,7 +577,7 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
         model.train()
         return sum(losses) / len(losses) if losses else float('inf')
 
-    adapter_dir = Path(config.adapter_dir)
+    adapter_dir = resolve_project_path(config.adapter_dir)
     model.train()
     optimizer.zero_grad(set_to_none=True)
     best_loss = float("inf")
@@ -595,6 +684,14 @@ def train_ru_adapter_llama(config: LlamaTrainingConfig, max_steps: int | None = 
         base_model_path=str(base_path),
         source_adapter_dir=config.source_adapter_dir,
         dataset_sha256=dataset_sha256,
+        dataset_files_sha256=dict(dataset_fingerprint["files"]),
+        training_config_sha256=config_sha256,
+        base_model_sha256=base_model_sha256,
+        source_adapter_sha256=(
+            directory_fingerprint(resolve_project_path(config.source_adapter_dir))
+            if config.source_adapter_dir is not None
+            else None
+        ),
         best_validation_loss=best_loss,
         peak_vram_mb=peak_vram_mb,
         physical_peak_mib=physical_peak_mib,

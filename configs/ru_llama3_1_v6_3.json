@@ -1,9 +1,9 @@
 {
   "base_model_id": "NousResearch/Meta-Llama-3.1-8B-Instruct",
-  "base_model_path": "D:/LLM/models/llama3.1-8b-instruct-hf",
-  "dataset_dir": "D:/LLM/data/conversations/ru_v6_3",
-  "source_adapter_dir": "D:/LLM/checkpoints/ru-llama3.1-8b-instruct-v6.2-fresh",
-  "adapter_dir": "D:/LLM/checkpoints/ru-llama3.1-8b-instruct-v6.3-targeted",
+  "base_model_path": "models/llama3.1-8b-instruct-hf",
+  "dataset_dir": "data/conversations/ru_v6_3",
+  "source_adapter_dir": "checkpoints/ru-llama3.1-8b-instruct-v6.2-fresh",
+  "adapter_dir": "checkpoints/ru-llama3.1-8b-instruct-v6.3-targeted",
   "max_length": 384,
   "seed": 63,
   "epochs": 3,

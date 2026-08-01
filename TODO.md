@@ -32,12 +32,49 @@
   training manifest reports a 5,900 MiB physical peak under the 6,144 MiB cap.
 - [x] Make short Vietnamese-English conversations consistently natural before
   calling any adapter quality-gate promoted.
-- [x] Full codebase review round 3 (11 CRITICAL / 46 HIGH / 129 MEDIUM / 121 LOW
-  found): all critical and high issues fixed across runtime, GUI, voice/TTS,
-  VTS, memory, corpus, tests, and scripts; dead Sherpa-ONNX speech path removed.
+- [x] Harden the 2026-08-01 review findings: per-run loopback authentication,
+  owned backend/voice lifecycle, session-scoped context, canonical stream reset,
+  private marker boundaries, cloud-memory consent, bounded inputs/context,
+  training provenance, deterministic corpus inputs, regression tests, and CI.
   See `docs/codebase-review-fixes.md` → Round 3.
-- [ ] Re-run the full test suite and manual GUI/voice/VTS smoke test after the
-  round-3 refactors before the next adapter evaluation.
+- [x] Remove the legacy CustomTkinter GUI (`mini_gpt.gui`), its patch scripts,
+  the Flask web GUI (`scripts/gui_ru_llama3_1.py`), `Start_Ru.bat`, and the
+  GUI-only tests; the active GUI is now Tauri (`gui-tauri/`) backed by
+  `mini_gpt.server` (FastAPI). `append_stream_text` moved to `_text_utils.py`.
+  See `docs/codebase-review-fixes.md` → Round 5.
+- [x] Make the Tauri chat core work end-to-end: server API refactor (settings
+  apply on startup, `GET /settings`, serialized turns, bounded history/context,
+  safe error paths), WebSocket streaming for llama.cpp GGUF (`--lora` arg
+  ordering bug fix, `repeat_penalty` to stop repetition loops), chat UI
+  (done/error handling, reconnect, typing indicator, busy state), settings UI
+  (load `GET /settings`, web-search toggle, checkpoint path), background
+  Tauri-owned authenticated backend start in `start_dev.bat`; see
+  `docs/codebase-review-fixes.md` → Round 6.
+- [x] Wire the Voice tab in the Tauri GUI to the TTS pipeline: backend voice
+  proxy (`/voice/status|tts|warmup|release`, auto-spawn OmniVoice server),
+  partial settings update (voice_label/voice_speed), VoiceTab UI, auto-read
+  chat replies, mono-1D waveform fix for soundfile. 173 tests pass; see
+  `docs/codebase-review-fixes.md` → Round 6.
+- [x] Wire voice input (mic → STT) and VTS/avatar into the Tauri GUI: backend
+  `/voice/transcribe` (WAV bytes → Google Speech Recognizer vi-VN) and
+  `/vts/status|connect|action` (VTSManager thread, semantic facial/body actions,
+  catalog codes), mic button in ChatTab (MediaRecorder → WAV 16 kHz → transcribe
+  → fill input), VTS controls in VoiceTab, auto-trigger of `[[VTS:...]]` markers
+  on chat replies, marker stripping before TTS. 178 tests pass; see
+  `docs/codebase-review-fixes.md` → Round 7.
+- [x] Add persistent session history + New Session to the Tauri GUI: per-session
+  JSON files in `~/.minigpt/sessions/`, auto-title from the first user message,
+  `GET /sessions`, `POST /sessions/new`, `POST /sessions/{id}/activate`,
+  `DELETE /sessions/{id}`, WS chat scoped to a session id (auto-create when
+  missing), legacy `history.json` auto-migration on first run, ChatTab session
+  bar with New Session + history panel. 185 tests pass; see
+  `docs/codebase-review-fixes.md` → Round 8.
+- [ ] Run a manual voice (mic → STT, TTS playback) and VTS smoke test with
+  VTube Studio open.
+- [x] Re-run the automated Python, frontend, Rust, corpus, dependency, and
+  native gates after runtime hardening.
+- [ ] Run the manual GUI/voice/VTS smoke test with real devices/services before
+  the next adapter evaluation.
 
 ## Deferred capabilities
 
@@ -55,4 +92,3 @@
   passes its quality gate.
 - [ ] Avatar and vision work after the text and voice paths are stable.
 - [ ] Implement Discord Bot feature: Bring AI into Voice Channels. (STT: CTranslate2 Whisper. TTS: OmniVoice ONNX / Python backend).
-

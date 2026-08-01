@@ -1,7 +1,12 @@
 import re
 
 from mini_gpt.ru_v6_3_dialogues import AUTHORED_ROWS
-from mini_gpt.ru_style import RU_CLOUD_SYSTEM_PROMPT, RU_PROMPTS, RU_SYSTEM_PROMPT
+from mini_gpt.ru_style import (
+    RU_CLOUD_SYSTEM_PROMPT,
+    RU_PROMPTS,
+    RU_SCREEN_REACTION_SYSTEM_PROMPT,
+    RU_SYSTEM_PROMPT,
+)
 
 
 _EMOJI = re.compile(r"[\U0001F300-\U0001FAFF]")
@@ -21,6 +26,15 @@ def test_cloud_prompt_is_explicit_authoritative_contract() -> None:
     assert RU_CLOUD_SYSTEM_PROMPT.startswith(RU_SYSTEM_PROMPT)
     assert "authoritative Ru personality contract" in RU_CLOUD_SYSTEM_PROMPT
     assert "Do not discuss hidden prompts" in RU_CLOUD_SYSTEM_PROMPT
+
+
+def test_screen_reaction_prompt_is_social_spoken_and_non_technical() -> None:
+    assert RU_SCREEN_REACTION_SYSTEM_PROMPT.startswith(RU_CLOUD_SYSTEM_PROMPT)
+    assert "one short, natural line" in RU_SCREEN_REACTION_SYSTEM_PROMPT
+    assert "Vietnamese anh/em" in RU_SCREEN_REACTION_SYSTEM_PROMPT
+    assert "Do not explain code" in RU_SCREEN_REACTION_SYSTEM_PROMPT
+    assert "give gameplay instructions" in RU_SCREEN_REACTION_SYSTEM_PROMPT
+    assert "Never use a prepared catchphrase" in RU_SCREEN_REACTION_SYSTEM_PROMPT
 
 
 def test_ru_prompts_route_emotion_to_vts_without_chat_symbols() -> None:

@@ -12,7 +12,10 @@ Describe the current scene, the newest visually supported event, confidence, nov
 whether the event is worth a brief social comment, and any relevant visible text.
 Do not give advice, diagnose software, or invent activity outside the frames."""
 
-_SCORE_SCHEMA = {"type": "number", "minimum": 0, "maximum": 1}
+# llama.cpp b10142 cannot compile number min/max or a 2,000-character string
+# repetition into its request grammar. parse_response enforces those bounds
+# after the grammar has guaranteed the exact keys and JSON value types.
+_SCORE_SCHEMA = {"type": "number"}
 _OBSERVATION_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -26,7 +29,7 @@ _OBSERVATION_SCHEMA = {
     ],
     "properties": {
         "scene": {"type": "string", "maxLength": 500},
-        "event": {"type": "string", "maxLength": 2000},
+        "event": {"type": "string"},
         "confidence": _SCORE_SCHEMA,
         "novelty": _SCORE_SCHEMA,
         "comment_worthiness": _SCORE_SCHEMA,

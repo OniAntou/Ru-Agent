@@ -85,12 +85,11 @@
   RAM-only frame sampling, cloud-generated reactions, mandatory Ru OmniVoice,
   and a 2.5-second median latency gate. See
   `docs/superpowers/specs/2026-08-01-ru-local-screen-awareness-design.md`.
-  - Blocked on 2026-08-02 at the first local-model hard gate. The pinned model
-    and mmproj download and load successfully, but llama.cpp b10142 rejects the
-    bounded observation schema with `Failed to initialize samplers: failed to
-    parse grammar`. Do not start capture/UI work until five consecutive local
-    observations validate against one deliberately revised structured-output
-    contract.
+  - Task 1 local-model gate passed on 2026-08-02: both pinned artifacts verify,
+    five consecutive observations parsed successfully, and synthetic-image
+    inference measured p50 1,680 ms / p95 1,921 ms. The b10142 wire schema must
+    omit unsupported numeric bounds and the 2,000-character event repetition;
+    the strict local parser still enforces those limits.
 - [ ] Design WASAPI system-audio understanding only after local vision passes
   its quality, latency, resource, and process-lifecycle gates.
 - [ ] Implement Discord Bot feature: Bring AI into Voice Channels. (STT: CTranslate2 Whisper. TTS: OmniVoice ONNX / Python backend).

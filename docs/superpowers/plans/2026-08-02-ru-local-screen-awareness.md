@@ -8,13 +8,12 @@
 
 **Tech Stack:** Windows DXGI Desktop Duplication, Rust 1.97, Tauri 2, `dxgi-capture-rs` 1.2.2, `image` 0.25.10, `reqwest` 0.13.4, React 19, TypeScript 5.8, Python 3.11+, FastAPI/Pydantic, llama.cpp b10142+, Qwen3-VL-2B-Instruct GGUF, OpenCode Zen/Kilo Gateway, OmniVoice.
 
-> **Execution status (2026-08-02): blocked at Task 1, Step 6.** Both pinned
-> artifacts pass size/SHA-256 validation and llama-server b10142 loads them,
-> reaches `/health`, and accepts the in-memory synthetic JPEG. The bounded
-> observation schema fails sampler initialization with HTTP 400 `Failed to
-> initialize samplers: failed to parse grammar`; unconstrained output does not
-> match the required names/types. Tasks 2–9 have not started. Revise and review
-> the structured-output contract before resuming this plan.
+> **Execution status (2026-08-02): Task 1 passed; Tasks 2–9 pending.** Both
+> pinned artifacts pass size/SHA-256 validation. Five consecutive synthetic
+> observations passed the strict parser at load 1,827 ms, inference p50 1,680
+> ms, and p95/worst 1,921 ms. llama.cpp b10142's compatible wire schema omits
+> unsupported numeric bounds and the 2,000-character event repetition while
+> `parse_response` still enforces every original bound locally.
 
 ## Global Constraints
 
@@ -212,7 +211,11 @@ def parse_response(payload: dict) -> dict:
     return decoded
 ```
 
-The schema must bound `scene` to 500 characters, `event` to 2,000 characters, `visible_text` to 16 strings of 200 characters, and all three scores to `[0, 1]`.
+The combined wire-schema/parser contract must bound `scene` to 500 characters,
+`event` to 2,000 characters, `visible_text` to 16 strings of 200 characters,
+and all three scores to `[0, 1]`. For llama.cpp b10142, the wire schema omits
+numeric min/max and `event.maxLength=2000` because that build cannot compile
+them; `parse_response` must enforce those omitted bounds before returning.
 
 - [ ] **Step 4: Implement the explicit hash-checked PowerShell downloader**
 

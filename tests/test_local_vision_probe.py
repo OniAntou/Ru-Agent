@@ -61,7 +61,7 @@ def test_server_command_is_loopback_only_and_multimodal(tmp_path: Path) -> None:
     assert "--no-webui" in command
 
 
-def test_request_accepts_one_to_four_images_and_enforces_bounded_schema() -> None:
+def test_request_uses_b10142_compatible_schema_and_keeps_supported_bounds() -> None:
     request = build_request(("first", "second"))
     content = request["messages"][0]["content"]
     schema = request["response_format"]["schema"]
@@ -73,11 +73,11 @@ def test_request_accepts_one_to_four_images_and_enforces_bounded_schema() -> Non
     assert request["response_format"]["type"] == "json_object"
     assert "json_schema" not in request["response_format"]
     assert schema["properties"]["scene"]["maxLength"] == 500
-    assert schema["properties"]["event"]["maxLength"] == 2000
+    assert schema["properties"]["event"] == {"type": "string"}
     assert schema["properties"]["visible_text"]["maxItems"] == 16
     assert schema["properties"]["visible_text"]["items"]["maxLength"] == 200
     for score in ("confidence", "novelty", "comment_worthiness"):
-        assert schema["properties"][score] == {"type": "number", "minimum": 0, "maximum": 1}
+        assert schema["properties"][score] == {"type": "number"}
 
 
 @pytest.mark.parametrize("images", [(), ("1", "2", "3", "4", "5")])

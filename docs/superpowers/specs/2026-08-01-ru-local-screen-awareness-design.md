@@ -1,9 +1,9 @@
 # Ru Local Screen Awareness — Design
 
 > Status: approved by the user on 2026-08-01. This document is the
-> implementation source of truth. Implementation is blocked as of 2026-08-02
-> at the pinned llama.cpp structured-output grammar gate; capture/UI work has
-> not started. See `docs/ANTIGRAVITY_HANDOFF.md` for exact evidence.
+> implementation source of truth. Implementation is in progress as of
+> 2026-08-02: the pinned local-model gate passes, while capture/UI work has not
+> started. See `docs/ANTIGRAVITY_HANDOFF.md` for exact evidence.
 
 ## Goal
 

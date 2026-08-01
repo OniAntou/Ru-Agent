@@ -209,27 +209,33 @@ milestone after vision passes quality, latency, GPU, and process-lifecycle
 gates.
 
 Implementation started on 2026-08-02 in
-`codex/ru-local-screen-awareness` and stopped at Task 1's required local-model
-hard gate. The two pinned Qwen3-VL artifacts were downloaded to ignored local
+`codex/ru-local-screen-awareness`. Task 1's required local-model hard gate now
+passes. The two pinned Qwen3-VL artifacts were downloaded to ignored local
 storage and passed exact size/SHA-256 validation. llama-server b10142 loads the
 model and mmproj, becomes healthy, accepts the in-memory synthetic JPEG, and
-can return unconstrained JSON. It cannot initialize the sampler for the full
-bounded observation schema and returns HTTP 400 with `Failed to initialize
-samplers: failed to parse grammar`. The attempted OpenAI-style nested schema
-and the b10142 `json_object` direct-schema path both fail this gate; a direct
-schema paired with the wrong `json_schema` type only produced unconstrained,
-wrongly named string fields and is not acceptable. Every diagnostic child was
-terminated and waited; no `llama-server.exe` remained afterward.
+returned five consecutive observations matching the strict local parser. The
+measured load time was 1,827 ms; inference p50 was 1,680 ms and p95/worst was
+1,921 ms. The benchmark's WDDM `nvidia-smi` probe reported zero rather than a
+usable per-process VRAM number, so Task 8 must still measure co-residency by a
+separate live process/GPU inspection.
 
-No DXGI capture, frame ring, backend reaction endpoint, UI toggle, screen
-content persistence, or live screen trial was implemented. Before resuming,
-amend the structured-output contract deliberately (for example a tested
-b10142-compatible grammar or a reviewed llama.cpp upgrade), then require five
-consecutive parsed responses from:
+The original HTTP 400 `Failed to initialize samplers: failed to parse grammar`
+was traced to llama.cpp b10142 JSON-Schema conversion limits. Its wire schema
+cannot compile numeric min/max for `type: number`, and an event `maxLength` of
+2,000 also exceeds the grammar path that this build accepts. The compatible
+wire schema enforces exact keys/types plus supported string/array bounds; the
+strict local parser independently rejects non-finite/out-of-range scores,
+events over 2,000 characters, and oversized visible-text arrays. Every
+diagnostic and benchmark child was terminated and waited; no
+`llama-server.exe` remained afterward.
+
+At this checkpoint no DXGI capture, frame ring, backend reaction endpoint, UI
+toggle, screen-content persistence, or live screen trial has been implemented.
+Re-run the local gate with:
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe scripts\benchmark_local_vision.py --runs 5
 ```
 
-Keep `TODO.md` open and do not proceed to capture/UI merely because model load
-succeeds.
+Keep `TODO.md` open until the complete quality, co-residency, latency, voice,
+and process-lifecycle gates pass.

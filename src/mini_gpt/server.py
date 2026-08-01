@@ -315,6 +315,14 @@ def _voice_selection() -> "VoiceSelection":
     return voice_selection_from_saved(label)
 
 
+_VOICE_MARKERS_RE = re.compile(r"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]\s*")
+
+
+def _strip_voice_markers(text: str) -> str:
+    """Remove internal VTS/VOICE_PACE markers before sending text to the TTS engine."""
+    return _VOICE_MARKERS_RE.sub(" ", text).strip()
+
+
 def _voice_config() -> "VoiceServiceConfig":
     return voice_service_config(_voice_selection(), PROJECT_ROOT)
 
@@ -671,6 +679,7 @@ def voice_tts(payload: VoiceTtsPayload):
     settings = load_settings()
     voice_label = payload.voice_label or settings.get("voice_label", _DEFAULT_SETTINGS["voice_label"])
     speed = payload.speed if payload.speed is not None else settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"])
+    text = _strip_voice_markers(text)
     try:
         ensure_voice_service()
         audio = request_voice_audio(text, voice_label, speed)

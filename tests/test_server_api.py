@@ -279,6 +279,24 @@ def test_voice_tts_rejects_empty_text(monkeypatch, isolated_state) -> None:
     assert response.json()["status"] == "error"
 
 
+def test_voice_tts_strips_internal_markers_before_synthesis(monkeypatch, isolated_state) -> None:
+    sent = []
+
+    def fake_audio(text, label, speed):
+        sent.append(text)
+        return b"RIFFWAVE-data"
+
+    monkeypatch.setattr(server, "ensure_voice_service", lambda: None)
+    monkeypatch.setattr(server, "request_voice_audio", fake_audio)
+    with TestClient(server.app) as client:
+        response = client.post(
+            "/voice/tts",
+            json={"text": "Chào anh nha! [[VOICE_PACE:quick]] [[VTS:joy]]"},
+        )
+    assert response.status_code == 200
+    assert sent == ["Chào anh nha!"]
+
+
 def test_voice_tts_surfaces_service_failure(monkeypatch, isolated_state) -> None:
     def boom(text, label, speed):
         raise RuntimeError("voice server offline")

@@ -14,6 +14,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Annotated
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -38,6 +39,13 @@ from mini_gpt.headless_runner import (
 from mini_gpt.memory import MemoryKind
 from mini_gpt.memory_extraction import is_sensitive_or_unsafe
 from mini_gpt.memory_learning import ExtractFact, extract_facts_with_llm
+from mini_gpt.openai_runtime import OpenAIGenerationCancelled
+from mini_gpt.screen_reaction import (
+    ReactionCoordinator,
+    ReactionRequest,
+    VisionObservation,
+    format_observation_prompt,
+)
 from mini_gpt.speech_runtime import (
     CapturedAudio,
     SpeechEngineConfig,
@@ -132,6 +140,7 @@ _GPU_LOCK = threading.Lock()
 _VTS_LOCK = threading.Lock()
 _MEMORY_QUEUE_MAXSIZE = 50
 _MEMORY_TURN_LOCK = threading.Lock()
+_SCREEN_REACTIONS = ReactionCoordinator()
 _MEMORY_QUEUE: queue.Queue = queue.Queue(maxsize=_MEMORY_QUEUE_MAXSIZE)
 _MEMORY_WORKER_STARTED = threading.Event()
 _MEMORY_STOP = threading.Event()
@@ -650,6 +659,27 @@ class VtsSpeakingPayload(BaseModel):
     speaking: bool
 
 
+class VisionObservationPayload(BaseModel):
+    scene: str = Field(max_length=500)
+    event: str = Field(max_length=2_000)
+    confidence: float = Field(ge=0.0, le=1.0)
+    novelty: float = Field(ge=0.0, le=1.0)
+    comment_worthiness: float = Field(ge=0.0, le=1.0)
+    visible_text: list[Annotated[str, Field(max_length=200)]] = Field(
+        default_factory=list, max_length=16
+    )
+
+
+class ObservationReactionPayload(BaseModel):
+    observation_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
+    event_age_ms: int = Field(ge=0, le=60_000)
+    observation: VisionObservationPayload
+
+
+class ObservationCancelPayload(BaseModel):
+    observation_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
+
+
 @app.get("/status")
 async def get_status():
     return {"status": "ok", "message": "Backend is running and ready for Tauri UI."}
@@ -678,6 +708,128 @@ async def get_models(backend: str = ""):
         logger.warning("Failed to fetch models for %s: %s", backend, error)
         return {"status": "error", "message": str(error)}
     return {"status": "ok", "models": [model["id"] for model in models]}
+
+
+@app.post("/observation/preflight")
+def observation_preflight():
+    if core.runner.backend not in (BACKEND_OPENCODE, BACKEND_KILO):
+        return {
+            "status": "error",
+            "message": "Screen reactions require an active OpenCode or Kilo cloud backend.",
+        }
+    try:
+        selection = _voice_selection()
+        _gpu_lifecycle().prepare_speech(selection)
+        settings = effective_settings()
+        return {
+            "status": "ok",
+            "voice_label": selection.label,
+            "voice_speed": float(
+                settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"])
+            ),
+        }
+    except Exception as error:
+        logger.warning("Observation voice preflight failed: %s", type(error).__name__)
+        return {"status": "error", "message": str(error)}
+
+
+@app.post("/observation/react")
+def observation_react(payload: ObservationReactionPayload):
+    request = ReactionRequest(
+        observation_id=payload.observation_id,
+        event_age_ms=payload.event_age_ms,
+        observation=VisionObservation(
+            scene=payload.observation.scene,
+            event=payload.observation.event,
+            confidence=payload.observation.confidence,
+            novelty=payload.observation.novelty,
+            comment_worthiness=payload.observation.comment_worthiness,
+            visible_text=tuple(payload.observation.visible_text),
+        ),
+    )
+    decision = _SCREEN_REACTIONS.begin(request)
+    if not decision.allowed:
+        return {"status": "skipped", "reason": decision.reason}
+    if not _TURN_LOCK.acquire(blocking=False):
+        _SCREEN_REACTIONS.fail(payload.observation_id)
+        return {"status": "skipped", "reason": "chat_busy"}
+    if not _MEMORY_TURN_LOCK.acquire(blocking=False):
+        _TURN_LOCK.release()
+        _SCREEN_REACTIONS.fail(payload.observation_id)
+        return {"status": "skipped", "reason": "chat_busy"}
+
+    try:
+        manager = _VTS_MANAGER
+        catalog = None
+        if manager is not None and manager.is_connected:
+            try:
+                catalog = manager.current_catalog_sync()
+            except Exception as error:
+                logger.debug("VTS catalog read failed for screen reaction: %s", type(error).__name__)
+
+        timing = {"seconds": None}
+        started = time.perf_counter()
+
+        def record_timing(seconds: float) -> None:
+            timing["seconds"] = max(0.0, seconds)
+
+        raw_reply = core.runner.generate_screen_reaction(
+            format_observation_prompt(
+                request.observation, _SCREEN_REACTIONS.recent_reactions()
+            ),
+            vts_instruction=catalog_instruction(catalog),
+            is_cancelled=lambda: _SCREEN_REACTIONS.is_cancelled(payload.observation_id),
+            on_complete_timing=record_timing,
+        )
+        pace = voice_pace_for(raw_reply)
+        cleaned, codes = parse_catalog_reply(raw_reply, catalog)
+        cleaned = _strip_voice_markers(cleaned)
+        if not cleaned:
+            _SCREEN_REACTIONS.fail(payload.observation_id)
+            return {"status": "skipped", "reason": "empty"}
+        if _SCREEN_REACTIONS.is_cancelled(payload.observation_id):
+            _SCREEN_REACTIONS.fail(payload.observation_id)
+            return {"status": "skipped", "reason": "superseded"}
+        if manager is not None and manager.is_connected and catalog is not None and codes:
+            _trigger_vts_catalog_codes(manager, catalog, codes)
+
+        selection = _voice_selection()
+        settings = effective_settings()
+        voice_speed = effective_voice_speed(
+            settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"]),
+            auto_pace_enabled=True,
+            pace=pace,
+        )
+        cloud_seconds = timing["seconds"]
+        if cloud_seconds is None:
+            cloud_seconds = max(0.0, time.perf_counter() - started)
+        _SCREEN_REACTIONS.complete(payload.observation_id, cleaned)
+        return {
+            "status": "ok",
+            "reaction": {
+                "observation_id": payload.observation_id,
+                "text": cleaned,
+                "voice_label": selection.label,
+                "voice_speed": voice_speed,
+                "cloud_ms": int(round(cloud_seconds * 1000)),
+            },
+        }
+    except OpenAIGenerationCancelled:
+        _SCREEN_REACTIONS.fail(payload.observation_id)
+        return {"status": "skipped", "reason": "superseded"}
+    except Exception as error:
+        _SCREEN_REACTIONS.fail(payload.observation_id)
+        logger.warning("Screen reaction generation failed: %s", type(error).__name__)
+        return {"status": "error", "message": str(error)}
+    finally:
+        _MEMORY_TURN_LOCK.release()
+        _TURN_LOCK.release()
+
+
+@app.post("/observation/cancel")
+def observation_cancel(payload: ObservationCancelPayload):
+    _SCREEN_REACTIONS.cancel(payload.observation_id)
+    return {"status": "ok"}
 
 
 @app.get("/settings")
@@ -1154,6 +1306,7 @@ async def chat_endpoint(websocket: WebSocket):
                 await websocket.send_text(
                     json.dumps({"type": "session", "session_id": session_id})
                 )
+            _SCREEN_REACTIONS.cancel_pending()
             if _TURN_LOCK.locked():
                 await websocket.send_text(
                     json.dumps({"type": "error", "content": "Ru is already replying; wait for the current reply to finish.", "session_id": session_id})

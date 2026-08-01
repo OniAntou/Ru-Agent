@@ -7,7 +7,7 @@ import pytest
 
 import mini_gpt.openai_runtime as runtime_module
 from mini_gpt._text_utils import append_stream_text
-from mini_gpt.openai_runtime import OpenAIRuntime
+from mini_gpt.openai_runtime import OpenAIGenerationCancelled, OpenAIRuntime
 
 
 class FakeStreamResponse:
@@ -142,3 +142,34 @@ def test_generate_rejects_empty_api_key() -> None:
     rt = OpenAIRuntime("")
     with pytest.raises(ValueError, match="missing"):
         rt.generate([("user", "hi")], max_new_tokens=100, temperature=0.7, top_k=20)
+
+
+def test_generate_passes_screen_timeout_and_stops_when_cancelled(monkeypatch) -> None:
+    cancelled = {"value": False}
+
+    class CancellingStream(FakeStreamResponse):
+        def __iter__(self):
+            yield b'data: {"choices":[{"delta":{"content":"Chao"}}]}\n'
+            cancelled["value"] = True
+            yield b'data: {"choices":[{"delta":{"content":" anh"}}]}\n'
+
+    seen: dict[str, float] = {}
+
+    def fake_open(_request, timeout):
+        seen["timeout"] = timeout
+        return CancellingStream([])
+
+    monkeypatch.setattr(runtime_module, "urlopen", fake_open)
+
+    with pytest.raises(OpenAIGenerationCancelled):
+        OpenAIRuntime("key").generate(
+            [("user", "event")],
+            64,
+            0.8,
+            40,
+            timeout_seconds=4.0,
+            max_retries=0,
+            is_cancelled=lambda: cancelled["value"],
+        )
+
+    assert seen["timeout"] == 4.0

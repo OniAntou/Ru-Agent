@@ -8,12 +8,16 @@
 
 **Tech Stack:** Windows DXGI Desktop Duplication, Rust 1.97, Tauri 2, `dxgi-capture-rs` 1.2.2, `image` 0.25.10, `reqwest` 0.13.4, React 19, TypeScript 5.8, Python 3.11+, FastAPI/Pydantic, llama.cpp b10142+, Qwen3-VL-2B-Instruct GGUF, OpenCode Zen/Kilo Gateway, OmniVoice.
 
-> **Execution status (2026-08-02): Task 1 passed; Tasks 2–9 pending.** Both
+> **Execution status (2026-08-02): Tasks 1–3 passed; Tasks 4–9 pending.** Both
 > pinned artifacts pass size/SHA-256 validation. Five consecutive synthetic
 > observations passed the strict parser at load 1,827 ms, inference p50 1,680
 > ms, and p95/worst 1,921 ms. llama.cpp b10142's compatible wire schema omits
 > unsupported numeric bounds and the 2,000-character event repetition while
-> `parse_response` still enforces every original bound locally.
+> `parse_response` still enforces every original bound locally. The hosted
+> reaction boundary now applies the in-memory cadence/cancellation policy,
+> forwards unfiltered observation text through authenticated endpoints, uses
+> the current OmniVoice/VTS contract, and passes 87 focused backend tests
+> without writing screen content to chat sessions, memory, or learning data.
 
 ## Global Constraints
 

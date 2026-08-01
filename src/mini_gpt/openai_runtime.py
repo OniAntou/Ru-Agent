@@ -26,6 +26,15 @@ class _NetworkStreamError(RuntimeError):
     """Transient network failure while reading the SSE stream (retryable)."""
 
 
+class OpenAIGenerationCancelled(RuntimeError):
+    pass
+
+
+def _raise_if_cancelled(is_cancelled: Callable[[], bool] | None) -> None:
+    if is_cancelled is not None and is_cancelled():
+        raise OpenAIGenerationCancelled("Hosted generation was superseded.")
+
+
 class OpenAIRuntime:
     """Uses the OpenCode OpenAI-compatible API to generate responses."""
 
@@ -109,14 +118,23 @@ class OpenAIRuntime:
                 return message.strip()
         return None
 
-    def _read_stream(self, request_factory: Callable[[], Request], on_delta: Callable[[str], None] | None) -> str:
+    def _read_stream(
+        self,
+        request_factory: Callable[[], Request],
+        on_delta: Callable[[str], None] | None,
+        *,
+        timeout_seconds: float = _STREAM_TIMEOUT_SECONDS,
+        is_cancelled: Callable[[], bool] | None = None,
+    ) -> str:
         accumulated = ""
         stream_mode: str | None = None  # 'cumulative' or 'incremental'
         saw_data_line = False
         try:
-            with urlopen(request_factory(), timeout=_STREAM_TIMEOUT_SECONDS) as response:
+            _raise_if_cancelled(is_cancelled)
+            with urlopen(request_factory(), timeout=timeout_seconds) as response:
                 # OpenCode API is expected to return text/event-stream
                 for raw_line in response:
+                    _raise_if_cancelled(is_cancelled)
                     line = raw_line.decode("utf-8").strip()
                     if not line:
                         continue
@@ -157,6 +175,7 @@ class OpenAIRuntime:
 
                     if new_text and on_delta is not None:
                         on_delta(new_text)
+            _raise_if_cancelled(is_cancelled)
         except HTTPError as error:
             # The error body may echo the request payload; log it separately
             # instead of embedding user content in the exception message.
@@ -188,6 +207,9 @@ class OpenAIRuntime:
         *,
         on_delta: Callable[[str], None] | None = None,
         on_complete_timing: Callable[[float], None] | None = None,
+        timeout_seconds: float = _STREAM_TIMEOUT_SECONDS,
+        max_retries: int = _MAX_RETRIES,
+        is_cancelled: Callable[[], bool] | None = None,
     ) -> str:
         if not messages or messages[-1][0] != "user":
             raise ValueError("messages must end with a user turn")
@@ -224,11 +246,17 @@ class OpenAIRuntime:
 
         started = perf_counter()
         content = ""
-        for attempt in range(_MAX_RETRIES + 1):
+        for attempt in range(max_retries + 1):
+            _raise_if_cancelled(is_cancelled)
             try:
                 # Only deliver streaming deltas on the first attempt.
                 # On retry the same text arrives again, which would duplicate UI output.
-                content = self._read_stream(make_request, on_delta if attempt == 0 else None)
+                content = self._read_stream(
+                    make_request,
+                    on_delta if attempt == 0 else None,
+                    timeout_seconds=timeout_seconds,
+                    is_cancelled=is_cancelled,
+                )
                 if content.strip():
                     break
                 logger.warning("OpenCode returned an empty stream (attempt %s); retrying", attempt + 1)
@@ -236,9 +264,10 @@ class OpenAIRuntime:
                 # Retry transient network failures only before any delta has
                 # been streamed to the UI (idempotent attempt).
                 logger.warning("OpenCode network error (attempt %s): %s", attempt + 1, error)
-                if attempt >= _MAX_RETRIES:
+                if attempt >= max_retries:
                     raise
-            if attempt < _MAX_RETRIES:
+            if attempt < max_retries:
+                _raise_if_cancelled(is_cancelled)
                 time.sleep(_RETRY_DELAY_SECONDS * (attempt + 1))
 
         if on_complete_timing is not None:

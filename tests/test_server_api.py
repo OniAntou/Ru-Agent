@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 import mini_gpt.headless_runner as headless_runner
 import mini_gpt.server as server
+from mini_gpt.screen_reaction import ReactionCoordinator, ReactionRequest, VisionObservation
 
 
 @pytest.fixture(autouse=True)
@@ -18,6 +19,7 @@ def isolated_state(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "HISTORY_FILE", tmp_path / "history.json")
     monkeypatch.setattr(server, "SESSION_DIR", tmp_path / "sessions")
     server.core.runner.backend = headless_runner.BACKEND_GGUF
+    monkeypatch.setattr(server, "_SCREEN_REACTIONS", ReactionCoordinator(), raising=False)
     monkeypatch.setattr(server.core, "remember", lambda prompt, reply: None)
     monkeypatch.setattr(server._MEMORY_QUEUE, "put_nowait", lambda item: None)
     monkeypatch.setattr(
@@ -37,6 +39,22 @@ def isolated_state(monkeypatch, tmp_path):
         server._TURN_LOCK.release()
     if server._MEMORY_TURN_LOCK.locked():
         server._MEMORY_TURN_LOCK.release()
+
+
+@pytest.fixture
+def valid_observation_payload() -> dict:
+    return {
+        "observation_id": "obs-1",
+        "event_age_ms": 100,
+        "observation": {
+            "scene": "game",
+            "event": "missed shots",
+            "confidence": 0.9,
+            "novelty": 0.9,
+            "comment_worthiness": 0.9,
+            "visible_text": ["private message abc"],
+        },
+    }
 
 
 def test_status_endpoint() -> None:
@@ -619,6 +637,136 @@ def test_web_search_flag_passed_through(monkeypatch, isolated_state) -> None:
             while ws.receive_json()["type"] != "done":
                 pass
     assert captured["search"] is False
+
+
+def test_observation_preflight_requires_cloud_and_warms_current_omnivoice(
+    monkeypatch,
+) -> None:
+    warmed: list[object] = []
+    lifecycle = type(
+        "RecordingGpuLifecycle",
+        (),
+        {"prepare_speech": lambda self, selection: warmed.append(selection)},
+    )()
+    monkeypatch.setattr(server, "_GPU_LIFECYCLE", lifecycle)
+
+    with TestClient(server.app) as client:
+        local = client.post("/observation/preflight")
+        server.core.runner.backend = headless_runner.BACKEND_OPENCODE
+        hosted = client.post("/observation/preflight")
+
+    assert local.json()["status"] == "error"
+    assert hosted.json() == {
+        "status": "ok",
+        "voice_label": "Ru (OmniVoice)",
+        "voice_speed": 1.0,
+    }
+    assert len(warmed) == 1
+    assert warmed[0].profile_id == "ru"
+
+
+def test_observation_react_passes_unfiltered_visible_text_to_cloud(
+    monkeypatch, valid_observation_payload
+) -> None:
+    captured: dict[str, object] = {}
+    server.core.runner.backend = headless_runner.BACKEND_OPENCODE
+    monkeypatch.setattr(server, "_SCREEN_REACTIONS", ReactionCoordinator(clock=lambda: 100.0))
+
+    def fake_reaction(prompt, **kwargs):
+        captured["prompt"] = prompt
+        kwargs["on_complete_timing"](0.123)
+        return "Đau mắt giùm anh luôn."
+
+    monkeypatch.setattr(server.core.runner, "generate_screen_reaction", fake_reaction)
+
+    with TestClient(server.app) as client:
+        response = client.post("/observation/react", json=valid_observation_payload)
+
+    body = response.json()
+    assert body["status"] == "ok"
+    assert "private message abc" in captured["prompt"]
+    assert body["reaction"]["cloud_ms"] == 123
+    assert body["reaction"]["text"] == "Đau mắt giùm anh luôn."
+
+
+def test_observation_react_does_not_write_session_memory_or_learning(
+    monkeypatch, valid_observation_payload
+) -> None:
+    server.core.runner.backend = headless_runner.BACKEND_OPENCODE
+    monkeypatch.setattr(server, "_SCREEN_REACTIONS", ReactionCoordinator(clock=lambda: 100.0))
+    monkeypatch.setattr(
+        server.core.runner,
+        "generate_screen_reaction",
+        lambda *args, **kwargs: "Một câu ngắn.",
+    )
+    for owner, name in (
+        (server.core, "remember"),
+        (server, "_learn_from_turn"),
+        (server, "_session_append_messages"),
+    ):
+        monkeypatch.setattr(
+            owner,
+            name,
+            lambda *args, **kwargs: pytest.fail("screen reaction persisted"),
+        )
+
+    with TestClient(server.app) as client:
+        response = client.post("/observation/react", json=valid_observation_payload)
+
+    assert response.json()["status"] == "ok"
+
+
+def test_observation_cancel_marks_pending_request(monkeypatch) -> None:
+    coordinator = ReactionCoordinator(clock=lambda: 100.0)
+    request = ReactionRequest(
+        observation_id="obs-1",
+        event_age_ms=100,
+        observation=VisionObservation("game", "miss", 0.9, 0.9, 0.9),
+    )
+    assert coordinator.begin(request).allowed
+    monkeypatch.setattr(server, "_SCREEN_REACTIONS", coordinator)
+
+    with TestClient(server.app) as client:
+        response = client.post("/observation/cancel", json={"observation_id": "obs-1"})
+
+    assert response.json() == {"status": "ok"}
+    assert coordinator.is_cancelled("obs-1") is True
+
+
+def test_chat_request_cancels_pending_screen_reaction_before_generation(
+    monkeypatch,
+) -> None:
+    cancelled = threading.Event()
+
+    class SpyCoordinator:
+        def cancel_pending(self) -> None:
+            cancelled.set()
+
+    def fake_generate(
+        prompt,
+        max_new_tokens,
+        temperature,
+        top_k,
+        allow_web_search,
+        turns_history,
+        on_stream_delta,
+        **kwargs,
+    ):
+        assert cancelled.is_set()
+        return "ok"
+
+    monkeypatch.setattr(server, "_SCREEN_REACTIONS", SpyCoordinator())
+    monkeypatch.setattr(server.core, "generate_reply_with_memory", fake_generate)
+
+    with TestClient(server.app) as client:
+        with client.websocket_connect("/chat") as ws:
+            ws.send_text(json.dumps({"prompt": "ưu tiên anh"}))
+            terminal = ws.receive_json()
+            while terminal["type"] not in {"done", "error"}:
+                terminal = ws.receive_json()
+
+    assert terminal["type"] == "done"
+    assert cancelled.is_set()
 
 
 def test_conversation_context_passed_between_turns(monkeypatch, isolated_state) -> None:

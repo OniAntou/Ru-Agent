@@ -19,7 +19,11 @@ from mini_gpt.llama3_1_runtime import (
     is_llama_generation_cached,
 )
 from mini_gpt.openai_runtime import OpenAIRuntime, OPENCODE_BASE_URL, KILO_GATEWAY_BASE_URL
-from mini_gpt.ru_style import RU_SYSTEM_PROMPT, RU_CLOUD_SYSTEM_PROMPT
+from mini_gpt.ru_style import (
+    RU_CLOUD_SYSTEM_PROMPT,
+    RU_SCREEN_REACTION_SYSTEM_PROMPT,
+    RU_SYSTEM_PROMPT,
+)
 from mini_gpt.reply_orchestration import execute_reply
 from mini_gpt.search import perform_web_search
 from mini_gpt.vts_actions import VTS_ACTION_INSTRUCTION
@@ -154,4 +158,36 @@ class ModelRunner:
             on_stream_delta=on_stream_delta,
             on_stream_reset=on_stream_reset,
             on_complete_timing=on_complete_timing,
+        )
+
+    def generate_screen_reaction(
+        self,
+        observation_prompt: str,
+        *,
+        vts_instruction: str,
+        is_cancelled,
+        on_complete_timing=None,
+    ) -> str:
+        if (
+            self.backend not in (BACKEND_OPENCODE, BACKEND_KILO)
+            or self.openai_runtime is None
+        ):
+            raise RuntimeError(
+                "Screen reactions require an active OpenCode or Kilo cloud backend."
+            )
+        system = (
+            RU_SCREEN_REACTION_SYSTEM_PROMPT
+            + VTS_ACTION_INSTRUCTION
+            + VOICE_PACE_INSTRUCTION
+            + vts_instruction
+        )
+        return self.openai_runtime.generate(
+            (("system", system), ("user", observation_prompt)),
+            64,
+            0.85,
+            40,
+            on_complete_timing=on_complete_timing,
+            timeout_seconds=4.0,
+            max_retries=0,
+            is_cancelled=is_cancelled,
         )

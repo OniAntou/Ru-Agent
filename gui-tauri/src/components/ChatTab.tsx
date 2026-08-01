@@ -82,7 +82,13 @@ export default function ChatTab({ activeSessionId, onSessionCreated, onTurnCompl
           }
           onTurnCompleted();
           if (ttsEnabled() && typeof data.content === "string" && data.content.trim()) {
-            speakText(data.content.replace(VTS_MARKER_RE, "").trim());
+            speakText(
+              data.content.replace(VTS_MARKER_RE, "").trim(),
+              {
+                voiceLabel: localStorage.getItem("ru_voice_label") ?? undefined,
+                speed: Number(localStorage.getItem("ru_voice_speed") ?? "1") || 1.0,
+              }
+            );
           }
         } else if (data.type === "error" && typeof data.content === "string") {
           setMessages((prev) => [...prev, { role: "ai", content: `Error: ${data.content}` }]);

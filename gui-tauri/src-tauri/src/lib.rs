@@ -7,6 +7,9 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{Manager, State};
 
+pub mod frame_buffer;
+pub mod screen_capture;
+
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 

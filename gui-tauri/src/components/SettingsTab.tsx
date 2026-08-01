@@ -25,6 +25,8 @@ export default function SettingsTab() {
   const [checkpointPath, setCheckpointPath] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [modelLoading, setModelLoading] = useState(false);
 
   const MODEL_OPTIONS: Record<string, string[]> = {
     "OpenCode Zen": [
@@ -34,9 +36,52 @@ export default function SettingsTab() {
       "gemini-2.0-flash",
       "llama-3.1-70b-instruct",
     ],
-    "Kilo Gateway": ["deepseek-r1", "deepseek-v3", "claude-3-5-sonnet", "gpt-4o"],
+    "Kilo Gateway": [
+      "kilo-auto/free",
+      "kilo-auto/frontier",
+      "kilo-auto/lightning",
+      "deepseek/deepseek-v4-flash-0731",
+      "deepseek-r1",
+      "deepseek-v3",
+      "claude-3-5-sonnet",
+      "gpt-4o",
+    ],
     "llama.cpp": ["local-model-gguf"],
     Transformers: ["ru-llama3.1-8b-instruct-v6.2-fresh"],
+  };
+
+  const ensureModelValid = (backendName: string, options: string[], current: string) => {
+    if (options.length === 0) return current;
+    if (options.includes(current)) return current;
+    const fallback =
+      backendName === "Kilo Gateway" ? "kilo-auto/free" : options[0];
+    return options.includes(fallback) ? fallback : options[0];
+  };
+
+  const fetchModels = async (backendName: string) => {
+    if (backendName !== "OpenCode Zen" && backendName !== "Kilo Gateway") return;
+    setModelLoading(true);
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8000/models?backend=${encodeURIComponent(backendName)}`
+      );
+      const data = await response.json();
+      if (data.status === "ok" && Array.isArray(data.models) && data.models.length > 0) {
+        setModelOptions(data.models);
+        setModel((current) => ensureModelValid(backendName, data.models, current));
+        return;
+      }
+      const fallback = MODEL_OPTIONS[backendName] ?? [];
+      setModelOptions(fallback);
+      setModel((current) => ensureModelValid(backendName, fallback, current));
+    } catch (e) {
+      console.error("Failed to fetch models", e);
+      const fallback = MODEL_OPTIONS[backendName] ?? [];
+      setModelOptions(fallback);
+      setModel((current) => ensureModelValid(backendName, fallback, current));
+    } finally {
+      setModelLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -53,6 +98,7 @@ export default function SettingsTab() {
         setAllowWebSearch(data.allow_web_search ?? true);
         setEnableSelfLearning(data.enable_self_learning ?? true);
         setCheckpointPath(data.checkpoint_path || "");
+        fetchModels(data.backend);
       })
       .catch((e) => console.error("Failed to load settings", e))
       .finally(() => setLoading(false));
@@ -64,8 +110,8 @@ export default function SettingsTab() {
     if (options && options.length > 0) {
       setModel(options[0]);
     }
+    fetchModels(newBackend);
   };
-
   const saveSettings = async () => {
     setStatus("");
     try {
@@ -89,6 +135,9 @@ export default function SettingsTab() {
       if (data.status === "success") {
         setStatus(data.message || "Settings applied!");
         setApiKey("");
+        if (backend === "OpenCode Zen" || backend === "Kilo Gateway") {
+          fetchModels(backend);
+        }
       } else {
         setStatus(`Failed: ${data.message || "unknown error"}`);
       }
@@ -119,12 +168,17 @@ export default function SettingsTab() {
             <div className="form-group">
               <label>Model Name</label>
               <select value={model} onChange={(e) => setModel(e.target.value)}>
-                {(MODEL_OPTIONS[backend] ?? []).map((m) => (
+                {(modelOptions.length > 0 ? modelOptions : MODEL_OPTIONS[backend] ?? []).map((m) => (
                   <option key={m} value={m}>
                     {m}
                   </option>
                 ))}
               </select>
+              {modelLoading && (
+                <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 13 }}>
+                  Đang tải danh sách model từ API...
+                </p>
+              )}
             </div>
 
             {(backend === "OpenCode Zen" || backend === "Kilo Gateway") && (

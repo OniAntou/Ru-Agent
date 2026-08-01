@@ -162,7 +162,15 @@ class OpenAIRuntime:
             # instead of embedding user content in the exception message.
             error_body = error.read(_MAX_ERROR_BODY_BYTES).decode("utf-8", errors="replace")
             logger.debug("OpenCode API error body (HTTP %s): %s", error.code, error_body)
-            raise RuntimeError(f"OpenCode API HTTP {error.code}: {error.reason}") from error
+            message = f"OpenCode API HTTP {error.code}: {error.reason}"
+            try:
+                payload = json.loads(error_body)
+                provider_message = (payload.get("error") or {}).get("message") or ""
+            except (ValueError, AttributeError):
+                provider_message = ""
+            if provider_message and not provider_message.casefold().startswith(error.reason.casefold()):
+                message = f"{message}: {provider_message}"
+            raise RuntimeError(message) from error
         except (socket.timeout, urllib.error.URLError) as e:
             raise _NetworkStreamError(f"Network error while communicating with OpenCode API: {e}") from e
         if not saw_data_line:

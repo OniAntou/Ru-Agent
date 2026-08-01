@@ -78,17 +78,13 @@
 
 ## Deferred capabilities
 
-- [ ] Voice input/output after the text-only Llama path passes its quality gate.
 - [ ] Add a local CPU Faster-Whisper provider for Vietnamese microphone input
   and Japanese reference-audio transcription; do not load it onto the 6 GB GPU
-  alongside Llama or Gwen.
-- [ ] Continue manual listening through the GUI with local
-  `g-group-ai-lab/gwen-tts-0.6B` and `tyc_talk.wav` as the Japanese reference.
-  Gwen is connected for experimental automatic playback; keep evaluating
-  Vietnamese pronunciation and the Tsukuyomi-like voice quality.
-
-- [ ] After voice quality is stable, queue sentence-sized TTS jobs while
-  preserving playback order; evaluate VAD/barge-in only after that foundation
-  passes its quality gate.
-- [ ] Avatar and vision work after the text and voice paths are stable.
+  alongside the active vision, Llama, or OmniVoice runtime.
+- [ ] Prototype local primary-monitor awareness with Qwen3-VL-2B, adaptive
+  RAM-only frame sampling, cloud-generated reactions, mandatory Ru OmniVoice,
+  and a 2.5-second median latency gate. See
+  `docs/superpowers/specs/2026-08-01-ru-local-screen-awareness-design.md`.
+- [ ] Design WASAPI system-audio understanding only after local vision passes
+  its quality, latency, resource, and process-lifecycle gates.
 - [ ] Implement Discord Bot feature: Bring AI into Voice Channels. (STT: CTranslate2 Whisper. TTS: OmniVoice ONNX / Python backend).

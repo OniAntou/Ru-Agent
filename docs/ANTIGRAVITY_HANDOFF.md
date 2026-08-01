@@ -190,3 +190,21 @@ to the independent OmniVoice voice-assets directory.
 On 2026-07-29, the isolated OmniVoice matrix completed with no benchmark errors.
 Manual listening remains the quality gate for Ru and Ái Vy across Vietnamese,
 English, and code-switch output.
+
+## Approved next design: local screen awareness
+
+The user approved the design in
+`docs/superpowers/specs/2026-08-01-ru-local-screen-awareness-design.md`; it is
+not implemented yet. The first milestone continuously observes only the
+Windows primary monitor, keeps sampled frames in a bounded RAM buffer, and
+tests Qwen3-VL-2B locally. OpenCode/Kilo receives the unfiltered textual local
+vision observation, never raw frames, and dynamically writes a short social
+reaction. Every emitted screen reaction must use the current Ru OmniVoice.
+
+The prototype targets median event-to-first-audio latency at or below 2.5
+seconds and an active cadence of roughly three to six distinct comments per
+minute. Observation is manual and visibly indicated. It adds no sensitive-data
+filter and no system-audio capture. System audio remains a separately designed
+milestone after vision passes quality, latency, GPU, and process-lifecycle
+gates. Do not download a VLM or implement this design until its implementation
+plan has been reviewed and approved.

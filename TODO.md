@@ -75,21 +75,25 @@
   native gates after runtime hardening.
 - [ ] Run the manual GUI/voice/VTS smoke test with real devices/services before
   the next adapter evaluation.
+- [ ] Finish the live acceptance gates for the implemented primary-monitor
+  observer: representative game/YouTube quality, actual Ru OmniVoice playback,
+  p50/p95/worst event-to-first-audio latency, three-to-six useful comments per
+  active minute, VTS actions, 20 observation cycles, 10 full app exits, forced
+  parent termination, and live RAM/VRAM/handle stability. The local Qwen gate,
+  DXGI/RAM-only pipeline, hosted reaction API, sidebar control, and process
+  ownership are implemented. A direct Ling probe produced its first spoken
+  content at 1.621 seconds and completed at 1.674 seconds; a three-frame Qwen
+  smoke while OmniVoice stayed resident completed in 917 ms with the reduced
+  2,048-context/256-image-token configuration. These are not yet measured
+  end-to-first-audio results. The final newest-frame 640×360 path plus
+  Ling-to-`openrouter/free` immediate-error fallback is implemented but has not
+  been live-tested; no screen reaction has reached audio yet.
 
 ## Deferred capabilities
 
 - [ ] Add a local CPU Faster-Whisper provider for Vietnamese microphone input
   and Japanese reference-audio transcription; do not load it onto the 6 GB GPU
   alongside the active vision, Llama, or OmniVoice runtime.
-- [ ] Prototype local primary-monitor awareness with Qwen3-VL-2B, adaptive
-  RAM-only frame sampling, cloud-generated reactions, mandatory Ru OmniVoice,
-  and a 2.5-second median latency gate. See
-  `docs/superpowers/specs/2026-08-01-ru-local-screen-awareness-design.md`.
-  - Task 1 local-model gate passed on 2026-08-02: both pinned artifacts verify,
-    five consecutive observations parsed successfully, and synthetic-image
-    inference measured p50 1,680 ms / p95 1,921 ms. The b10142 wire schema must
-    omit unsupported numeric bounds and the 2,000-character event repetition;
-    the strict local parser still enforces those limits.
 - [ ] Design WASAPI system-audio understanding only after local vision passes
   its quality, latency, resource, and process-lifecycle gates.
 - [ ] Implement Discord Bot feature: Bring AI into Voice Channels. (STT: CTranslate2 Whisper. TTS: OmniVoice ONNX / Python backend).

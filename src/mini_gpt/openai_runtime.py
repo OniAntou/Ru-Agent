@@ -129,11 +129,16 @@ class OpenAIRuntime:
         accumulated = ""
         stream_mode: str | None = None  # 'cumulative' or 'incremental'
         saw_data_line = False
+        deadline = perf_counter() + timeout_seconds
         try:
             _raise_if_cancelled(is_cancelled)
             with urlopen(request_factory(), timeout=timeout_seconds) as response:
                 # OpenCode API is expected to return text/event-stream
                 for raw_line in response:
+                    if perf_counter() > deadline:
+                        raise _NetworkStreamError(
+                            "Hosted generation exceeded its total response deadline"
+                        )
                     _raise_if_cancelled(is_cancelled)
                     line = raw_line.decode("utf-8").strip()
                     if not line:
@@ -210,6 +215,8 @@ class OpenAIRuntime:
         timeout_seconds: float = _STREAM_TIMEOUT_SECONDS,
         max_retries: int = _MAX_RETRIES,
         is_cancelled: Callable[[], bool] | None = None,
+        model_override: str | None = None,
+        reasoning_effort_override: str | None = None,
     ) -> str:
         if not messages or messages[-1][0] != "user":
             raise ValueError("messages must end with a user turn")
@@ -223,14 +230,16 @@ class OpenAIRuntime:
             raise ValueError("top k must be positive")
 
         body = {
-            "model": self.model_name,
+            "model": model_override or self.model_name,
             "messages": [{"role": role, "content": normalize_text(text)} for role, text in messages],
             "max_tokens": max_new_tokens,
             "temperature": temperature,
             "top_k": top_k,
             "stream": True,
         }
-        if self.api_variant and self.api_variant != "Default":
+        if reasoning_effort_override is not None:
+            body["reasoning"] = {"effort": reasoning_effort_override}
+        elif self.api_variant and self.api_variant != "Default":
             body["reasoning_effort"] = self.api_variant
 
         url = f"{self.base_url}/chat/completions"

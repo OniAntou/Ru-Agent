@@ -77,6 +77,9 @@ pub struct ObservationMetricsSnapshot {
     pub last_confidence: Option<f32>,
     pub last_novelty: Option<f32>,
     pub last_worthiness: Option<f32>,
+    pub last_pre_cloud_age_ms: Option<u64>,
+    pub last_cloud_ms: Option<u64>,
+    pub last_post_cloud_age_ms: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -107,6 +110,9 @@ struct ObservationMetrics {
     last_confidence: Option<f32>,
     last_novelty: Option<f32>,
     last_worthiness: Option<f32>,
+    last_pre_cloud_age_ms: Option<u64>,
+    last_cloud_ms: Option<u64>,
+    last_post_cloud_age_ms: Option<u64>,
 }
 
 impl ObservationMetrics {
@@ -156,6 +162,9 @@ impl ObservationMetrics {
             last_confidence: self.last_confidence,
             last_novelty: self.last_novelty,
             last_worthiness: self.last_worthiness,
+            last_pre_cloud_age_ms: self.last_pre_cloud_age_ms,
+            last_cloud_ms: self.last_cloud_ms,
+            last_post_cloud_age_ms: self.last_post_cloud_age_ms,
         }
     }
 }
@@ -214,6 +223,9 @@ impl ObservationState {
                 last_confidence: None,
                 last_novelty: None,
                 last_worthiness: None,
+                last_pre_cloud_age_ms: None,
+                last_cloud_ms: None,
+                last_post_cloud_age_ms: None,
             })
     }
 }
@@ -645,8 +657,17 @@ fn spawn_reaction_worker(
             };
             if let Ok(mut value) = metrics.lock() {
                 value.cloud_attempts += 1;
+                value.last_pre_cloud_age_ms = Some(age_ms);
             }
-            match bridge.react(&request) {
+            let cloud_started = Instant::now();
+            let reply = bridge.react(&request);
+            let cloud_ms = u64::try_from(cloud_started.elapsed().as_millis()).unwrap_or(u64::MAX);
+            let post_cloud_age_ms = now_unix_ms().saturating_sub(candidate.event_unix_ms);
+            if let Ok(mut value) = metrics.lock() {
+                value.last_cloud_ms = Some(cloud_ms);
+                value.last_post_cloud_age_ms = Some(post_cloud_age_ms);
+            }
+            match reply {
                 Ok(reply) => {
                     cloud_failures = 0;
                     clear_pending(&pending_id, &candidate.observation_id);
@@ -656,7 +677,7 @@ fn spawn_reaction_worker(
                         }
                         continue;
                     };
-                    if now_unix_ms().saturating_sub(candidate.event_unix_ms) > MAX_EVENT_AGE_MS {
+                    if post_cloud_age_ms > MAX_EVENT_AGE_MS {
                         record_stale(&snapshot, &metrics);
                         continue;
                     }
@@ -1035,6 +1056,9 @@ mod tests {
             last_confidence: Some(0.91),
             last_novelty: Some(0.42),
             last_worthiness: Some(0.38),
+            last_pre_cloud_age_ms: Some(900),
+            last_cloud_ms: Some(1_800),
+            last_post_cloud_age_ms: Some(2_700),
             ..ObservationMetrics::default()
         };
 
@@ -1053,6 +1077,9 @@ mod tests {
         assert_eq!(snapshot.last_confidence, Some(0.91));
         assert_eq!(snapshot.last_novelty, Some(0.42));
         assert_eq!(snapshot.last_worthiness, Some(0.38));
+        assert_eq!(snapshot.last_pre_cloud_age_ms, Some(900));
+        assert_eq!(snapshot.last_cloud_ms, Some(1_800));
+        assert_eq!(snapshot.last_post_cloud_age_ms, Some(2_700));
     }
 
     #[test]

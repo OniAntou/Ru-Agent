@@ -1,9 +1,10 @@
 # Ru Local Screen Awareness — Design
 
-> Status: approved by the user on 2026-08-01. This document is the
-> implementation source of truth. Implementation is in progress as of
-> 2026-08-02: the pinned local-model gate passes, while capture/UI work has not
-> started. See `docs/ANTIGRAVITY_HANDOFF.md` for exact evidence.
+> Status: approved by the user on 2026-08-01 and implemented on `main` as of
+> 2026-08-02. The automated model, policy, capture, API, UI, and lifecycle unit
+> gates pass. Representative live quality, end-to-first-audio latency, cadence,
+> co-residency, and repeated app-cycle acceptance gates remain open. See
+> `docs/ANTIGRAVITY_HANDOFF.md` for current evidence.
 
 ## Goal
 

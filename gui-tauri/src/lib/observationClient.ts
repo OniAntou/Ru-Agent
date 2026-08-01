@@ -40,6 +40,9 @@ export type ObservationMetricsSnapshot = {
   lastConfidence: number | null;
   lastNovelty: number | null;
   lastWorthiness: number | null;
+  lastPreCloudAgeMs: number | null;
+  lastCloudMs: number | null;
+  lastPostCloudAgeMs: number | null;
 };
 
 export const startObservation = () => invoke<ObservationSnapshot>("observation_start");

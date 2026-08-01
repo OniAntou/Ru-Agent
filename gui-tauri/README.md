@@ -10,6 +10,14 @@ also terminates OmniVoice, `llama-server`, and any other backend descendants.
 Frontend REST and WebSocket code must use `src/lib/backendClient.ts`; do not
 add unauthenticated direct calls to port 8000.
 
+The always-mounted sidebar observation control is manual and off on every app
+start. It observes only the Windows primary monitor, keeps frames in RAM, and
+forces accepted proactive reactions through Ru OmniVoice even when ordinary
+chat TTS is disabled. `src/lib/observationClient.ts` is the only frontend
+boundary for observation commands/events. Do not add a screen preview, direct
+vision-server calls, persistent observation content, or a substitute browser
+voice.
+
 Verification:
 
 ```powershell

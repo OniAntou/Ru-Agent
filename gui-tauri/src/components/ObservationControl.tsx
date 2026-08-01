@@ -53,11 +53,15 @@ const EMPTY_METRICS: ObservationMetricsSnapshot = {
   lastConfidence: null,
   lastNovelty: null,
   lastWorthiness: null,
+  lastPreCloudAgeMs: null,
+  lastCloudMs: null,
+  lastPostCloudAgeMs: null,
 };
 
 const eventAge = (eventUnixMs: number) => Math.max(0, Date.now() - eventUnixMs);
 const wordCount = (text: string) => text.trim().split(/\s+/u).filter(Boolean).length;
 const score = (value: number | null) => (value === null ? "-" : value.toFixed(2));
+const milliseconds = (value: number | null) => (value === null ? "-" : String(value));
 
 const commandErrorMessage = (error: unknown) => {
   if (typeof error === "string" && error.trim()) return error;
@@ -148,7 +152,7 @@ export default function ObservationControl() {
   const observationDetail =
     playbackStatus ??
     (snapshot.phase === "observing"
-      ? `Đang nhìn · frame ${metrics.framesCaptured} · vision ${metrics.visionAnalyses} · ứng viên ${metrics.visionCandidates} · thấp c/n/w ${metrics.rejectedConfidence}/${metrics.rejectedNovelty}/${metrics.rejectedWorthiness} · điểm cuối ${score(metrics.lastConfidence)}/${score(metrics.lastNovelty)}/${score(metrics.lastWorthiness)} · cloud ${metrics.cloudAttempts} · đã phát ${metrics.reactionsEmitted}`
+      ? `Đang nhìn · frame ${metrics.framesCaptured} · vision ${metrics.visionAnalyses} · ứng viên ${metrics.visionCandidates} · thấp c/n/w ${metrics.rejectedConfidence}/${metrics.rejectedNovelty}/${metrics.rejectedWorthiness} · điểm cuối ${score(metrics.lastConfidence)}/${score(metrics.lastNovelty)}/${score(metrics.lastWorthiness)} · cloud a/s/f ${metrics.cloudAttempts}/${metrics.cloudSkips}/${metrics.cloudFailures} · ms trước/cloud/sau ${milliseconds(metrics.lastPreCloudAgeMs)}/${milliseconds(metrics.lastCloudMs)}/${milliseconds(metrics.lastPostCloudAgeMs)} · stale ${metrics.droppedStale} · đã phát ${metrics.reactionsEmitted}`
       : snapshot.message);
 
   const toggle = async () => {
@@ -192,6 +196,9 @@ export default function ObservationControl() {
       data-last-confidence={metrics.lastConfidence ?? ""}
       data-last-novelty={metrics.lastNovelty ?? ""}
       data-last-worthiness={metrics.lastWorthiness ?? ""}
+      data-last-pre-cloud-age-ms={metrics.lastPreCloudAgeMs ?? ""}
+      data-last-cloud-ms={metrics.lastCloudMs ?? ""}
+      data-last-post-cloud-age-ms={metrics.lastPostCloudAgeMs ?? ""}
     >
       <button
         type="button"

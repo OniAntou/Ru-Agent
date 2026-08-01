@@ -8,7 +8,8 @@
 
 **Tech Stack:** Windows DXGI Desktop Duplication, Rust 1.97, Tauri 2, `dxgi-capture-rs` 1.2.2, `image` 0.25.10, `reqwest` 0.13.4, React 19, TypeScript 5.8, Python 3.11+, FastAPI/Pydantic, llama.cpp b10142+, Qwen3-VL-2B-Instruct GGUF, OpenCode Zen/Kilo Gateway, OmniVoice.
 
-> **Execution status (2026-08-02): Tasks 1–7 passed; Tasks 8–9 pending.** Both
+> **Execution status (2026-08-02): Tasks 1–7 passed; Tasks 8–9 partially
+> complete.** Both
 > pinned artifacts pass size/SHA-256 validation. Five consecutive synthetic
 > observations passed the strict parser at load 1,827 ms, inference p50 1,680
 > ms, and p95/worst 1,921 ms. llama.cpp b10142's compatible wire schema omits
@@ -37,6 +38,28 @@
 > accepted proactive line through Ru (OmniVoice). Proactive playback never
 > interrupts existing audio and reports first-playing/finish callbacks; all ten
 > frontend tests and the TypeScript/Vite production build pass.
+> Subsequent live diagnosis fixed the OmniVoice preflight timeout, a FastAPI
+> `Request` import collision, low local-VLM completion budget, overly strict
+> subjective-score vetoes, and hidden UI errors. Kilo `kilo-auto/free` was then
+> observed spending 64 and 256 output tokens entirely on hidden reasoning. The
+> screen-only route now uses the directly selected free
+> `inclusionai/ling-3.0-flash:free` model, a 256-token budget,
+> `reasoning.effort=none`, and a bounded standalone Ru prompt. A live Ling
+> probe produced first content at 1.621 s and completed at 1.674 s. The initial
+> Poolside route was rejected after it later stalled to the bridge timeout.
+> Co-resident vision was reduced from 4.61–5.20 s to 917 ms for a valid
+> three-frame synthetic parse by lowering context to 2,048 and image tokens to
+> 256 without reducing the 512-token JSON response budget.
+> Real 960×540 frames still reached cloud at age 3,309 ms, so production now
+> sends only the newest 640×360 frame while the 500 ms fingerprint gate remains
+> continuous. Ling remains primary with `openrouter/free` fallback only for
+> immediate HTTP 429/502/503/504 responses. This final resolution/fallback
+> combination is implemented but not live-verified; no screen reaction had
+> reached audio when work paused for quota.
+> Current focused verification is 99 Python tests, 11 frontend tests, and 30
+> Rust tests passing with one interactive capture test intentionally ignored.
+> This does not close the outstanding real-screen audio, cadence, resource, or
+> repeated-lifecycle gates.
 
 ## Global Constraints
 
@@ -166,8 +189,8 @@ def test_server_command_is_loopback_only_and_multimodal(tmp_path: Path) -> None:
     assert command[command.index("--host") + 1] == "127.0.0.1"
     assert command[command.index("--port") + 1] == "18111"
     assert "--mmproj" in command
-    assert command[command.index("--ctx-size") + 1] == "4096"
-    assert command[command.index("--image-max-tokens") + 1] == "512"
+    assert command[command.index("--ctx-size") + 1] == "2048"
+    assert command[command.index("--image-max-tokens") + 1] == "256"
     assert "--no-webui" in command
 ```
 
@@ -200,10 +223,10 @@ def build_server_command(config: VisionProbeConfig) -> list[str]:
         "--model", str(config.model_dir / "Qwen3VL-2B-Instruct-Q4_K_M.gguf"),
         "--mmproj", str(config.model_dir / "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf"),
         "--host", "127.0.0.1", "--port", str(config.port),
-        "--ctx-size", "4096", "--n-predict", "192", "--parallel", "1",
+        "--ctx-size", "2048", "--n-predict", "192", "--parallel", "1",
         "--n-gpu-layers", "99", "--flash-attn", "on",
         "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
-        "--image-max-tokens", "512", "--reasoning", "off", "--no-webui",
+        "--image-max-tokens", "256", "--reasoning", "off", "--no-webui",
     ]
 
 
@@ -981,7 +1004,7 @@ Reject non-finite/out-of-range scores, scene over 500 characters, event over 2,0
 `VisionServerConfig::for_project` resolves exact files from the pinned table and builds:
 
 ```text
-llama-server.exe --model D:\LLM\models\vision\qwen3-vl-2b-instruct\Qwen3VL-2B-Instruct-Q4_K_M.gguf --mmproj D:\LLM\models\vision\qwen3-vl-2b-instruct\mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf --host 127.0.0.1 --port 18111 --ctx-size 4096 --n-predict 192 --parallel 1 --n-gpu-layers 99 --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --image-max-tokens 512 --reasoning off --no-webui
+llama-server.exe --model D:\LLM\models\vision\qwen3-vl-2b-instruct\Qwen3VL-2B-Instruct-Q4_K_M.gguf --mmproj D:\LLM\models\vision\qwen3-vl-2b-instruct\mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf --host 127.0.0.1 --port 18111 --ctx-size 2048 --n-predict 192 --parallel 1 --n-gpu-layers 99 --flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --image-max-tokens 256 --reasoning off --no-webui
 ```
 
 `LlamaVisionRuntime::start` checks executable/file existence and exact byte size, chooses a free loopback port, spawns directly with null stdin/stdout/stderr, immediately assigns the child through `assign_child: &dyn Fn(&Child) -> io::Result<()>`, and waits at most 45 seconds for `/health`. On failure it kills/waits the exact owned child.
@@ -1193,7 +1216,7 @@ State messages are fixed UI status strings only; do not include observations or 
 
 - [ ] **Step 5: Implement three bounded workers**
 
-1. Capture worker samples every 500 ms, recreates DXGI after `AccessLost`, prepares frames, pushes into a 20-frame ring, and sends the newest three-frame batch through a bounded capacity-one channel when `AdaptiveGate` fires.
+1. Capture worker samples every 500 ms, recreates DXGI after `AccessLost`, prepares frames, pushes into a 20-frame ring, and sends the newest frame through a bounded capacity-one channel when `AdaptiveGate` fires.
 2. Vision worker consumes the newest batch, pauses while voice is reserved, calls local Qwen, and replaces a pending reaction-channel item with a newer high-value observation.
 3. Reaction worker cancels the previous backend request ID, computes `event_age_ms` with saturating subtraction from the selected frame's Unix-millisecond timestamp, sends structured text to `/observation/react`, rejects stale results, reserves voice, then emits `ru://screen-reaction`. Three consecutive cloud transport/provider failures set `paused`, close all three worker channels, clear the frame ring, and stop/wait the vision server so local chat fallback can claim the GPU. Policy skips such as `cooldown`, `repeat`, or `chat_busy` do not count as cloud failures.
 

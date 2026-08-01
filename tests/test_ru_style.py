@@ -29,7 +29,8 @@ def test_cloud_prompt_is_explicit_authoritative_contract() -> None:
 
 
 def test_screen_reaction_prompt_is_social_spoken_and_non_technical() -> None:
-    assert RU_SCREEN_REACTION_SYSTEM_PROMPT.startswith(RU_CLOUD_SYSTEM_PROMPT)
+    assert not RU_SCREEN_REACTION_SYSTEM_PROMPT.startswith(RU_CLOUD_SYSTEM_PROMPT)
+    assert len(RU_SCREEN_REACTION_SYSTEM_PROMPT) < 2_000
     assert "one short, natural line" in RU_SCREEN_REACTION_SYSTEM_PROMPT
     assert "Vietnamese anh/em" in RU_SCREEN_REACTION_SYSTEM_PROMPT
     assert "Do not explain code" in RU_SCREEN_REACTION_SYSTEM_PROMPT

@@ -89,6 +89,44 @@ opted-in web-search reply performs two OpenCode completions, the recorded
 API duration is their total. A protocol-valid but empty stream is retried
 once before the backend reports a failure.
 
+## Local screen observation
+
+The Tauri sidebar exposes a manual, off-by-default observer for the Windows
+primary monitor. Rust samples the desktop with DXGI, keeps only a bounded
+representative-frame ring in RAM, and sends in-memory JPEG data only to the
+owned Qwen3-VL `llama-server` on loopback. No screenshot, frame, observation,
+prompt, or reaction is written to disk or added to chat history or memory.
+
+The cloud backend receives only Qwen's structured text observation and writes
+a short social Ru reaction. Every accepted reaction is played through the
+current Ru OmniVoice profile; no substitute voice or text-only fallback is
+used. VTube Studio action metadata is parsed privately when the connected
+catalog provides a matching action. System audio is not captured or analyzed.
+
+With Kilo `kilo-auto/free` selected for chat, the latency-sensitive observation
+path currently uses `inclusionai/ling-3.0-flash:free` directly with a 256-token
+budget and `reasoning.effort=none`. Auto Free can route to a reasoning model
+that consumes a small output budget without emitting speech, while the first
+tested Poolside route later stalled until the ten-second bridge timeout.
+Explicit Kilo models and OpenCode selections are not overridden. Free-provider
+availability and rate limits remain external failure modes; after repeated
+cloud failures the observer pauses and releases vision resources instead of
+speaking a stale reaction. Immediate Ling HTTP 429/502/503/504 responses retry
+once through `openrouter/free`; slow or timed-out responses never chain into a
+second model.
+
+Prepare the pinned local vision assets once, then use **Bắt đầu quan sát**:
+
+```powershell
+& D:\LLM\scripts\setup_local_vision.ps1
+& D:\LLM\.venv\Scripts\python.exe scripts\benchmark_local_vision.py --runs 5
+```
+
+The live control reports RAM-only pipeline counters and latency metrics. The
+remaining acceptance work is a representative game/video trial, end-to-first-
+audio measurement, cadence review, and repeated lifecycle/resource cycling;
+see `TODO.md` and the approved design for the exact gates.
+
 ## GGUF runtime
 
 Ru v6.2 runs by default through local CUDA llama.cpp. It uses a separate

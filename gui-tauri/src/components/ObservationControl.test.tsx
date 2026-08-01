@@ -46,6 +46,9 @@ const metrics = {
   lastConfidence: 0.91,
   lastNovelty: 0.42,
   lastWorthiness: 0.38,
+  lastPreCloudAgeMs: 900,
+  lastCloudMs: 1800,
+  lastPostCloudAgeMs: 2700,
 };
 
 describe("ObservationControl", () => {
@@ -111,7 +114,7 @@ describe("ObservationControl", () => {
     act(() => stateHandler({ ...off, phase: "observing", message: "watching" }));
     expect(
       screen.getByText(
-        "Đang nhìn · frame 40 · vision 12 · ứng viên 4 · thấp c/n/w 0/8/10 · điểm cuối 0.91/0.42/0.38 · cloud 2 · đã phát 1",
+        "Đang nhìn · frame 40 · vision 12 · ứng viên 4 · thấp c/n/w 0/8/10 · điểm cuối 0.91/0.42/0.38 · cloud a/s/f 2/1/0 · ms trước/cloud/sau 900/1800/2700 · stale 1 · đã phát 1",
       ),
     ).toBeInTheDocument();
   });

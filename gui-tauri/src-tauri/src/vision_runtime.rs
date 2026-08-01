@@ -65,7 +65,7 @@ impl VisionServerConfig {
             "--port".to_owned(),
             self.port.to_string(),
             "--ctx-size".to_owned(),
-            "4096".to_owned(),
+            "2048".to_owned(),
             "--n-predict".to_owned(),
             "192".to_owned(),
             "--parallel".to_owned(),
@@ -79,7 +79,7 @@ impl VisionServerConfig {
             "--cache-type-v".to_owned(),
             "q8_0".to_owned(),
             "--image-max-tokens".to_owned(),
-            "512".to_owned(),
+            "256".to_owned(),
             "--reasoning".to_owned(),
             "off".to_owned(),
             "--no-webui".to_owned(),
@@ -423,6 +423,12 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair[0] == "--parallel" && pair[1] == "1"));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--ctx-size" && pair[1] == "2048"));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--image-max-tokens" && pair[1] == "256"));
         assert!(args.iter().any(|value| value == "--mmproj"));
         assert!(args.iter().any(|value| value == "--no-webui"));
         assert!(!args.iter().any(|value| value == "0.0.0.0"));

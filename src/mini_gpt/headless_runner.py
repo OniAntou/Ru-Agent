@@ -7,6 +7,9 @@ BACKEND_TRANSFORMERS = "Transformers"
 BACKEND_GGUF = "llama.cpp"
 BACKEND_OPENCODE = "OpenCode Zen"
 BACKEND_KILO = "Kilo Gateway"
+KILO_SCREEN_REACTION_MODEL = "inclusionai/ling-3.0-flash:free"
+KILO_SCREEN_REACTION_FALLBACK_MODEL = "openrouter/free"
+_IMMEDIATE_KILO_FALLBACK_STATUSES = ("HTTP 429", "HTTP 502", "HTTP 503", "HTTP 504")
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
@@ -177,17 +180,30 @@ class ModelRunner:
             )
         system = (
             RU_SCREEN_REACTION_SYSTEM_PROMPT
-            + VTS_ACTION_INSTRUCTION
-            + VOICE_PACE_INSTRUCTION
             + vts_instruction
         )
-        return self.openai_runtime.generate(
-            (("system", system), ("user", observation_prompt)),
-            64,
-            0.85,
-            40,
-            on_complete_timing=on_complete_timing,
-            timeout_seconds=4.0,
-            max_retries=0,
-            is_cancelled=is_cancelled,
+        model_override = (
+            KILO_SCREEN_REACTION_MODEL
+            if self.backend == BACKEND_KILO
+            and self.openai_runtime.model_name == "kilo-auto/free"
+            else None
         )
+        reasoning_effort_override = "none" if model_override is not None else None
+        messages = (("system", system), ("user", observation_prompt))
+        kwargs = {
+            "on_complete_timing": on_complete_timing,
+            "timeout_seconds": 4.0,
+            "max_retries": 0,
+            "is_cancelled": is_cancelled,
+            "model_override": model_override,
+            "reasoning_effort_override": reasoning_effort_override,
+        }
+        try:
+            return self.openai_runtime.generate(messages, 256, 0.85, 40, **kwargs)
+        except RuntimeError as error:
+            if model_override is None or not any(
+                status in str(error) for status in _IMMEDIATE_KILO_FALLBACK_STATUSES
+            ):
+                raise
+            kwargs["model_override"] = KILO_SCREEN_REACTION_FALLBACK_MODEL
+            return self.openai_runtime.generate(messages, 256, 0.85, 40, **kwargs)

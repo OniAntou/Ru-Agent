@@ -56,8 +56,8 @@ def test_server_command_is_loopback_only_and_multimodal(tmp_path: Path) -> None:
     assert command[command.index("--host") + 1] == "127.0.0.1"
     assert command[command.index("--port") + 1] == "18111"
     assert "--mmproj" in command
-    assert command[command.index("--ctx-size") + 1] == "4096"
-    assert command[command.index("--image-max-tokens") + 1] == "512"
+    assert command[command.index("--ctx-size") + 1] == "2048"
+    assert command[command.index("--image-max-tokens") + 1] == "256"
     assert "--no-webui" in command
 
 

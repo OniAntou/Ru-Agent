@@ -11,9 +11,9 @@ pub const RING_CAPACITY: usize = 20;
 pub const MAX_FRAME_AGE: Duration = Duration::from_secs(10);
 pub const MIN_ANALYSIS_INTERVAL: Duration = Duration::from_millis(1_500);
 pub const MAX_ANALYSIS_INTERVAL: Duration = Duration::from_millis(5_000);
-pub const ANALYSIS_BATCH_SIZE: usize = 3;
-pub const MAX_PREPARED_WIDTH: u32 = 960;
-pub const MAX_PREPARED_HEIGHT: u32 = 540;
+pub const ANALYSIS_BATCH_SIZE: usize = 1;
+pub const MAX_PREPARED_WIDTH: u32 = 640;
+pub const MAX_PREPARED_HEIGHT: u32 = 360;
 pub const JPEG_QUALITY: u8 = 80;
 
 const FINGERPRINT_WIDTH: u32 = 64;
@@ -279,7 +279,8 @@ mod tests {
     }
 
     #[test]
-    fn active_scene_batches_three_frames_but_static_scene_backs_off() {
+    fn active_scene_uses_latest_frame_and_static_scene_backs_off() {
+        assert_eq!(ANALYSIS_BATCH_SIZE, 1);
         let mut gate = AdaptiveGate::new();
         assert_eq!(gate.observe(0, 0.90), GateDecision::Analyze);
         assert_eq!(gate.observe(500, 0.90), GateDecision::Wait);
@@ -301,6 +302,8 @@ mod tests {
 
     #[test]
     fn prepare_frame_stays_in_memory_and_bounds_dimensions() {
+        assert_eq!(MAX_PREPARED_WIDTH, 640);
+        assert_eq!(MAX_PREPARED_HEIGHT, 360);
         let captured = CapturedFrame {
             width: 1_920,
             height: 1_080,

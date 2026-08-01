@@ -191,51 +191,68 @@ On 2026-07-29, the isolated OmniVoice matrix completed with no benchmark errors.
 Manual listening remains the quality gate for Ru and Ái Vy across Vietnamese,
 English, and code-switch output.
 
-## Approved next design: local screen awareness
+## Implemented feature awaiting live acceptance: local screen awareness
 
-The user approved the design and implementation plan in
-`docs/superpowers/specs/2026-08-01-ru-local-screen-awareness-design.md`; it is
-not implemented yet. The first milestone continuously observes only the
-Windows primary monitor, keeps sampled frames in a bounded RAM buffer, and
-tests Qwen3-VL-2B locally. OpenCode/Kilo receives the unfiltered textual local
-vision observation, never raw frames, and dynamically writes a short social
-reaction. Every emitted screen reaction must use the current Ru OmniVoice.
+The approved design is implemented on `main`. The manual, off-by-default
+sidebar control observes only the Windows primary monitor. Rust owns DXGI
+capture, a bounded RAM-only frame ring, adaptive event gating, the pinned local
+Qwen3-VL server, authenticated FastAPI reaction calls, and process cleanup.
+React plays every accepted line through the current Ru OmniVoice and privately
+triggers valid VTube Studio catalog actions. Raw pixels never leave loopback;
+only Qwen's unfiltered structured text may reach OpenCode/Kilo. Screen content
+is not written to disk, chat history, memory, learning data, or content-bearing
+logs. System audio remains out of scope.
 
-The prototype targets median event-to-first-audio latency at or below 2.5
-seconds and an active cadence of roughly three to six distinct comments per
-minute. Observation is manual and visibly indicated. It adds no sensitive-data
-filter and no system-audio capture. System audio remains a separately designed
-milestone after vision passes quality, latency, GPU, and process-lifecycle
-gates.
+The pinned assets pass size/SHA-256 validation. The original llama.cpp b10142
+grammar failure was resolved with a compatible wire schema while the strict
+local parser still rejects non-finite/out-of-range scores, oversized events,
+and oversized visible-text arrays. A fresh five-run local benchmark measured
+load 2,947 ms, inference p50 784 ms, and p95/worst 1,062 ms. The WDDM
+per-process VRAM reading remains unusable, so live co-residency inspection is
+still required.
 
-Implementation started on 2026-08-02 in
-`codex/ru-local-screen-awareness`. Task 1's required local-model hard gate now
-passes. The two pinned Qwen3-VL artifacts were downloaded to ignored local
-storage and passed exact size/SHA-256 validation. llama-server b10142 loads the
-model and mmproj, becomes healthy, accepts the in-memory synthetic JPEG, and
-returned five consecutive observations matching the strict local parser. The
-measured load time was 1,827 ms; inference p50 was 1,680 ms and p95/worst was
-1,921 ms. The benchmark's WDDM `nvidia-smi` probe reported zero rather than a
-usable per-process VRAM number, so Task 8 must still measure co-residency by a
-separate live process/GPU inspection.
+Live diagnosis also fixed the cold OmniVoice preflight timeout, a FastAPI
+`Request` import collision, insufficient Qwen completion budget, subjective
+novelty/worthiness vetoes, swallowed UI errors, and missing RAM-only pipeline
+counters. Kilo `kilo-auto/free` then produced only hidden reasoning and no
+spoken content at both 64 and 256 output tokens. A direct Poolside route passed
+initial probes but later stalled until the ten-second bridge timeout under the
+live observer. The screen-only Kilo Auto Free path therefore selects
+`inclusionai/ling-3.0-flash:free` with 256 output tokens,
+`reasoning.effort=none`, and a short standalone Ru prompt. A live Ling probe
+produced first spoken content at 1.621 seconds and completed at 1.674 seconds.
+The hosted stream reader also enforces a total deadline even when reasoning
+chunks continue arriving. Chat routing remains unchanged.
 
-The original HTTP 400 `Failed to initialize samplers: failed to parse grammar`
-was traced to llama.cpp b10142 JSON-Schema conversion limits. Its wire schema
-cannot compile numeric min/max for `type: number`, and an event `maxLength` of
-2,000 also exceeds the grammar path that this build accepts. The compatible
-wire schema enforces exact keys/types plus supported string/array bounds; the
-strict local parser independently rejects non-finite/out-of-range scores,
-events over 2,000 characters, and oversized visible-text arrays. Every
-diagnostic and benchmark child was terminated and waited; no
-`llama-server.exe` remained afterward.
+With OmniVoice resident, the original 4,096-context/512-image-token vision
+configuration spilled memory and took 4.61–5.20 seconds per synthetic request.
+The production and benchmark commands now use a 2,048 context and 256 image
+tokens with a 512-token JSON output budget. A controlled co-resident
+three-frame smoke parsed successfully in 917 ms, but real 960×540 frames still
+reached cloud at age 3,309 ms. Production therefore now sends only the newest
+640×360 frame per analysis; the 500 ms fingerprint gate still observes the
+continuous frame sequence.
 
-At this checkpoint no DXGI capture, frame ring, backend reaction endpoint, UI
-toggle, screen-content persistence, or live screen trial has been implemented.
-Re-run the local gate with:
+At pause, no live screen reaction had reached audio yet. The last completed
+trial before the 640×360 change measured pre-cloud/cloud/post-cloud ages of
+3,391/2,289/5,680 ms and correctly dropped the reply as stale. Ling also
+returned intermittent immediate provider errors. The implemented route keeps
+Ling primary and retries `openrouter/free` only for HTTP 429/502/503/504; a
+direct fallback probe completed in 1.066 seconds with correct anh/em address.
+The 640×360 plus provider-fallback combination has not been live-tested because
+the user paused work to conserve quota.
+
+Current focused verification is 99 Python tests, 11 frontend tests, and 30
+Rust tests passing; one Rust DXGI test is intentionally ignored outside an
+interactive desktop. Job Object cleanup has repeatedly left no owned listeners
+on ports 8000, 5052, or 18111 after app termination. Re-run the local gate with:
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe scripts\benchmark_local_vision.py --runs 5
 ```
 
-Keep `TODO.md` open until the complete quality, co-residency, latency, voice,
-and process-lifecycle gates pass.
+Do not mark the feature accepted until a representative real game/YouTube trial
+proves useful observations, actual Ru OmniVoice playback, p50/p95/worst
+event-to-first-audio latency, the approved cadence, VTS behavior, GPU/resource
+stability, 20 observation cycles, and 10 complete app exits. Keep `TODO.md`
+open for these gates.

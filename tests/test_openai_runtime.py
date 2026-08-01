@@ -173,3 +173,46 @@ def test_generate_passes_screen_timeout_and_stops_when_cancelled(monkeypatch) ->
         )
 
     assert seen["timeout"] == 4.0
+
+
+def test_generate_can_override_model_for_a_latency_sensitive_request(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_open(request, timeout):
+        captured.update(json.loads(request.data.decode("utf-8")))
+        return FakeStreamResponse([{"choices": [{"delta": {"content": "Chao anh"}}]}])
+
+    monkeypatch.setattr(runtime_module, "urlopen", fake_open)
+
+    result = OpenAIRuntime("key", model_name="kilo-auto/free").generate(
+        [("user", "event")],
+        64,
+        0.8,
+        40,
+        model_override="poolside/laguna-s-2.1:free",
+        reasoning_effort_override="none",
+        max_retries=0,
+    )
+
+    assert result == "Chao anh"
+    assert captured["model"] == "poolside/laguna-s-2.1:free"
+    assert captured["reasoning"] == {"effort": "none"}
+
+
+def test_stream_enforces_total_deadline_even_when_chunks_keep_arriving(monkeypatch) -> None:
+    stream = FakeStreamResponse(
+        [
+            {"choices": [{"delta": {"reasoning": "still thinking"}}]},
+            {"choices": [{"delta": {"content": "too late"}}]},
+        ]
+    )
+    ticks = iter((0.0, 1.0, 5.0))
+    monkeypatch.setattr(runtime_module, "perf_counter", lambda: next(ticks))
+    monkeypatch.setattr(runtime_module, "urlopen", lambda _request, timeout: stream)
+
+    with pytest.raises(RuntimeError, match="deadline"):
+        OpenAIRuntime("key")._read_stream(
+            lambda: Request("https://example.test/stream"),
+            None,
+            timeout_seconds=4.0,
+        )

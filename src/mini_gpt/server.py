@@ -509,6 +509,31 @@ async def get_status():
     return {"status": "ok", "message": "Backend is running and ready for Tauri UI."}
 
 
+@app.get("/models")
+async def get_models(backend: str = ""):
+    if backend not in (BACKEND_OPENCODE, BACKEND_KILO):
+        return {"status": "error", "message": f"unsupported backend: {backend!r}"}
+    from mini_gpt.openai_runtime import KILO_GATEWAY_BASE_URL, OPENCODE_BASE_URL
+
+    cred = core.opencode_cred if backend == BACKEND_OPENCODE else core.kilo_cred
+    try:
+        api_key = cred.get_key() or ""
+    except Exception as error:
+        logger.warning("Could not read the saved API key: %s", error)
+        api_key = ""
+    if not api_key:
+        return {"status": "error", "message": "API key is not set. Save it in Model Settings first."}
+    base_url = OPENCODE_BASE_URL if backend == BACKEND_OPENCODE else KILO_GATEWAY_BASE_URL
+    try:
+        from mini_gpt.openai_runtime import OpenAIRuntime
+
+        models = OpenAIRuntime.fetch_models(api_key, base_url)
+    except Exception as error:
+        logger.warning("Failed to fetch models for %s: %s", backend, error)
+        return {"status": "error", "message": str(error)}
+    return {"status": "ok", "models": [model["id"] for model in models]}
+
+
 @app.get("/settings")
 async def get_settings():
     saved = load_settings()
@@ -556,10 +581,17 @@ async def save_settings(payload: SettingsPayload):
             core.kilo_cred.set_key(payload.api_key)
 
     core.runner.select_backend(payload.backend)
+    api_key = payload.api_key
+    if payload.backend in (BACKEND_OPENCODE, BACKEND_KILO) and not api_key.strip():
+        store = core.opencode_cred if payload.backend == BACKEND_OPENCODE else core.kilo_cred
+        try:
+            api_key = store.get_key() or ""
+        except Exception as error:
+            logger.warning("Could not read the saved API key: %s", error)
     try:
         result = core.runner.load(
             checkpoint_path=payload.checkpoint_path or "",
-            api_key=payload.api_key,
+            api_key=api_key,
             model_name=payload.model or "",
             api_variant=payload.api_variant or "",
         )

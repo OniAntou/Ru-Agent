@@ -86,6 +86,47 @@ def test_settings_saves_kilo_api_key(monkeypatch, isolated_state) -> None:
     assert saved == ["kilo-test-key"]
 
 
+def test_models_endpoint_rejects_local_backend(monkeypatch, isolated_state) -> None:
+    with TestClient(server.app) as client:
+        response = client.get("/models", params={"backend": "llama.cpp"})
+    assert response.json() == {"status": "error", "message": "unsupported backend: 'llama.cpp'"}
+
+
+def test_models_endpoint_requires_api_key(monkeypatch, isolated_state) -> None:
+    class FakeCred:
+        def get_key(self) -> str | None:
+            return None
+
+    monkeypatch.setattr(server.core, "kilo_cred", FakeCred())
+    with TestClient(server.app) as client:
+        response = client.get("/models", params={"backend": "Kilo Gateway"})
+    assert response.json()["status"] == "error"
+
+
+def test_models_endpoint_returns_sorted_models(monkeypatch, isolated_state) -> None:
+    class FakeCred:
+        def get_key(self) -> str | None:
+            return "kilo-test-key"
+
+    fetched = []
+
+    def fake_fetch_models(api_key: str, base_url: str) -> list[dict]:
+        fetched.append((api_key, base_url))
+        return [{"id": "gpt-4o"}, {"id": "claude-3-5-sonnet"}, {"id": "deepseek-v3"}]
+
+    monkeypatch.setattr(server.core, "kilo_cred", FakeCred())
+    monkeypatch.setattr(
+        "mini_gpt.openai_runtime.OpenAIRuntime.fetch_models",
+        staticmethod(fake_fetch_models),
+    )
+    with TestClient(server.app) as client:
+        response = client.get("/models", params={"backend": "Kilo Gateway"})
+    body = response.json()
+    assert body["status"] == "ok"
+    assert set(body["models"]) == {"gpt-4o", "claude-3-5-sonnet", "deepseek-v3"}
+    assert fetched[0][0] == "kilo-test-key"
+
+
 def test_settings_empty_api_key_does_not_crash(monkeypatch, isolated_state) -> None:
     monkeypatch.setattr(server.core.runner, "load", lambda *a, **k: "Ready")
     with TestClient(server.app) as client:
@@ -101,6 +142,34 @@ def test_settings_empty_api_key_does_not_crash(monkeypatch, isolated_state) -> N
             },
         )
     assert response.status_code == 200
+
+
+def test_settings_reuses_saved_key_when_payload_key_empty(monkeypatch, isolated_state) -> None:
+    loaded = []
+
+    class FakeCred:
+        def get_key(self) -> str | None:
+            return "kilo-saved-key"
+
+    def fake_load(*args, **kwargs):
+        loaded.append(kwargs.get("api_key"))
+        return "Ready (Kilo Gateway API)"
+
+    monkeypatch.setattr(server.core, "kilo_cred", FakeCred())
+    monkeypatch.setattr(server.core.runner, "load", fake_load)
+    with TestClient(server.app) as client:
+        response = client.post(
+            "/settings",
+            json={
+                "backend": "Kilo Gateway",
+                "model": "deepseek-v3",
+                "api_key": "",
+                "api_variant": "Default",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+    assert loaded == ["kilo-saved-key"]
 
 
 def test_settings_load_failure_returns_error_not_crash(monkeypatch, isolated_state) -> None:

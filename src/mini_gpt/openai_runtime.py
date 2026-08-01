@@ -15,6 +15,7 @@ from ._text_utils import normalize_text
 logger = logging.getLogger(__name__)
 
 OPENCODE_BASE_URL = "https://opencode.ai/zen/v1"
+KILO_GATEWAY_BASE_URL = "https://api.kilo.ai/api/gateway"
 _STREAM_TIMEOUT_SECONDS = 120.0
 _MAX_ERROR_BODY_BYTES = 4096
 _RETRY_DELAY_SECONDS = 1.0

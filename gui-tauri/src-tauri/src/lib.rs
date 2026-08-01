@@ -9,6 +9,7 @@ use tauri::{Manager, State};
 
 pub mod frame_buffer;
 pub mod screen_capture;
+pub mod vision_runtime;
 
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};

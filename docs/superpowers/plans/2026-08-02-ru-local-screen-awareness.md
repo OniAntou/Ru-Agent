@@ -8,7 +8,7 @@
 
 **Tech Stack:** Windows DXGI Desktop Duplication, Rust 1.97, Tauri 2, `dxgi-capture-rs` 1.2.2, `image` 0.25.10, `reqwest` 0.13.4, React 19, TypeScript 5.8, Python 3.11+, FastAPI/Pydantic, llama.cpp b10142+, Qwen3-VL-2B-Instruct GGUF, OpenCode Zen/Kilo Gateway, OmniVoice.
 
-> **Execution status (2026-08-02): Tasks 1–4 passed; Tasks 5–9 pending.** Both
+> **Execution status (2026-08-02): Tasks 1–5 passed; Tasks 6–9 pending.** Both
 > pinned artifacts pass size/SHA-256 validation. Five consecutive synthetic
 > observations passed the strict parser at load 1,827 ms, inference p50 1,680
 > ms, and p95/worst 1,921 ms. llama.cpp b10142's compatible wire schema omits
@@ -21,7 +21,11 @@
 > The Rust capture foundation now bounds prepared frames to a 20-frame,
 > ten-second RAM ring, uses in-memory JPEG/fingerprints only, and passed an
 > interactive primary-monitor DXGI capture plus all unit, check, format, and
-> Clippy gates.
+> Clippy gates. The managed Rust vision boundary pins every llama-server
+> argument to loopback, validates model sizes, sends one-to-four in-memory data
+> URLs, strictly parses observations, and owns child cleanup. Its HTTP/process
+> tests pass, and a fresh five-run live Qwen gate measured load 2,947 ms,
+> inference p50 784 ms, and p95/worst 1,062 ms with no surviving vision process.
 
 ## Global Constraints
 

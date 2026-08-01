@@ -63,6 +63,29 @@ def test_settings_round_trip_and_no_api_key(monkeypatch, isolated_state) -> None
     assert "apiKey" not in body
 
 
+def test_settings_saves_kilo_api_key(monkeypatch, isolated_state) -> None:
+    saved = []
+    class FakeCred:
+        def set_key(self, key: str) -> None:
+            saved.append(key)
+
+    monkeypatch.setattr(server.core, "kilo_cred", FakeCred())
+    monkeypatch.setattr(server.core.runner, "load", lambda *a, **k: "Ready")
+    with TestClient(server.app) as client:
+        response = client.post(
+            "/settings",
+            json={
+                "backend": "Kilo Gateway",
+                "model": "deepseek-v3",
+                "api_key": "kilo-test-key",
+                "api_variant": "Default",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+    assert saved == ["kilo-test-key"]
+
+
 def test_settings_empty_api_key_does_not_crash(monkeypatch, isolated_state) -> None:
     monkeypatch.setattr(server.core.runner, "load", lambda *a, **k: "Ready")
     with TestClient(server.app) as client:

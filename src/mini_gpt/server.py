@@ -550,10 +550,10 @@ async def save_settings(payload: SettingsPayload):
 
     if payload.backend == BACKEND_OPENCODE:
         if payload.api_key.strip():
-            core.opencode_cred.set(payload.api_key)
+            core.opencode_cred.set_key(payload.api_key)
     elif payload.backend == BACKEND_KILO:
         if payload.api_key.strip():
-            core.kilo_cred.set(payload.api_key)
+            core.kilo_cred.set_key(payload.api_key)
 
     core.runner.select_backend(payload.backend)
     try:

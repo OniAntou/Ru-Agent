@@ -404,6 +404,10 @@ def _voice_selection() -> "VoiceSelection":
     return voice_selection_from_saved(label)
 
 
+def _screen_voice_selection() -> "VoiceSelection":
+    return VOICE_SELECTIONS[0]
+
+
 _VOICE_MARKERS_RE = re.compile(r"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]\s*")
 
 
@@ -718,7 +722,7 @@ def observation_preflight():
             "message": "Screen reactions require an active OpenCode or Kilo cloud backend.",
         }
     try:
-        selection = _voice_selection()
+        selection = _screen_voice_selection()
         _gpu_lifecycle().prepare_speech(selection)
         settings = effective_settings()
         return {
@@ -793,7 +797,7 @@ def observation_react(payload: ObservationReactionPayload):
         if manager is not None and manager.is_connected and catalog is not None and codes:
             _trigger_vts_catalog_codes(manager, catalog, codes)
 
-        selection = _voice_selection()
+        selection = _screen_voice_selection()
         settings = effective_settings()
         voice_speed = effective_voice_speed(
             settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"]),

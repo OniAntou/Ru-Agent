@@ -649,6 +649,14 @@ def test_observation_preflight_requires_cloud_and_warms_current_omnivoice(
         {"prepare_speech": lambda self, selection: warmed.append(selection)},
     )()
     monkeypatch.setattr(server, "_GPU_LIFECYCLE", lifecycle)
+    monkeypatch.setattr(
+        server,
+        "effective_settings",
+        lambda: {
+            **server._DEFAULT_SETTINGS,
+            "voice_label": server.VOICE_SELECTIONS[1].label,
+        },
+    )
 
     with TestClient(server.app) as client:
         local = client.post("/observation/preflight")

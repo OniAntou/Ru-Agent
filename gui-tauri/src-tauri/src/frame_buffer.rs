@@ -172,6 +172,13 @@ impl FrameRing {
         self.frames.is_empty()
     }
 
+    pub fn buffered_bytes(&self) -> usize {
+        self.frames
+            .iter()
+            .map(|frame| frame.jpeg.len() + frame.fingerprint.len())
+            .sum()
+    }
+
     #[cfg(test)]
     fn sequences(&self) -> Vec<u64> {
         self.frames.iter().map(|frame| frame.sequence).collect()

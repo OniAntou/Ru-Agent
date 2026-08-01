@@ -7,7 +7,15 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{Manager, State};
 
+use observation_runtime::{
+    observation_metrics, observation_start, observation_status, observation_stop,
+    observation_voice_finished, observation_voice_started, stop_observation_state,
+    ObservationState,
+};
+
+pub mod backend_bridge;
 pub mod frame_buffer;
+pub mod observation_runtime;
 pub mod screen_capture;
 pub mod vision_runtime;
 
@@ -25,15 +33,32 @@ const BACKEND_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST)
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct BackendRuntimeConfig {
+pub(crate) struct BackendRuntimeConfig {
     base_url: String,
     token: String,
 }
 
-struct BackendState {
+pub(crate) struct BackendState {
     runtime: BackendRuntimeConfig,
     child: Mutex<Option<Child>>,
     process_job: Mutex<Option<ProcessJob>>,
+}
+
+impl BackendState {
+    pub(crate) fn runtime_config(&self) -> BackendRuntimeConfig {
+        self.runtime.clone()
+    }
+
+    pub(crate) fn assign_owned_child(&self, child: &Child) -> io::Result<()> {
+        let guard = self
+            .process_job
+            .lock()
+            .map_err(|_| io::Error::other("Ru process job lock is poisoned"))?;
+        let job = guard
+            .as_ref()
+            .ok_or_else(|| io::Error::other("Ru process job is unavailable"))?;
+        job.assign(child)
+    }
 }
 
 #[cfg(windows)]
@@ -220,24 +245,40 @@ fn backend_runtime(state: State<'_, BackendState>) -> BackendRuntimeConfig {
 }
 
 fn stop_owned_backend(state: &BackendState) {
+    if let Ok(mut guard) = state.child.lock() {
+        if let Some(mut child) = guard.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
     if let Ok(mut guard) = state.process_job.lock() {
         guard.take();
-    }
-    let Ok(mut guard) = state.child.lock() else {
-        return;
-    };
-    if let Some(mut child) = guard.take() {
-        let _ = child.kill();
-        let _ = child.wait();
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let backend = start_backend_state().expect("could not start the owned Ru backend");
     let app = tauri::Builder::default()
-        .manage(backend)
-        .invoke_handler(tauri::generate_handler![backend_runtime])
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .setup(|app| {
+            app.manage(start_backend_state()?);
+            app.manage(ObservationState::new());
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            backend_runtime,
+            observation_start,
+            observation_stop,
+            observation_status,
+            observation_metrics,
+            observation_voice_started,
+            observation_voice_finished,
+        ])
         .build(tauri::generate_context!())
         .expect("error while building Ru desktop");
     app.run(|handle, event| {
@@ -245,6 +286,7 @@ pub fn run() {
             event,
             tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
         ) {
+            stop_observation_state(handle.state::<ObservationState>().inner());
             stop_owned_backend(handle.state::<BackendState>().inner());
         }
     });

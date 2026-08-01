@@ -177,9 +177,20 @@ pub struct LlamaVisionRuntime {
 
 impl LlamaVisionRuntime {
     pub fn start(
-        mut config: VisionServerConfig,
+        config: VisionServerConfig,
         assign_child: &dyn Fn(&Child) -> io::Result<()>,
     ) -> Result<Self, VisionError> {
+        Self::start_cancellable(config, assign_child, &|| false)
+    }
+
+    pub fn start_cancellable(
+        mut config: VisionServerConfig,
+        assign_child: &dyn Fn(&Child) -> io::Result<()>,
+        is_cancelled: &dyn Fn() -> bool,
+    ) -> Result<Self, VisionError> {
+        if is_cancelled() {
+            return Err(VisionError::Cancelled);
+        }
         validate_assets(&config)?;
         config.port = available_loopback_port(config.port)?;
         let client = reqwest::blocking::Client::builder()
@@ -202,9 +213,9 @@ impl LlamaVisionRuntime {
             terminate_child(&mut child);
             return Err(VisionError::ServerStart);
         }
-        if wait_for_health(&client, &config, &mut child).is_err() {
+        if let Err(error) = wait_for_health(&client, &config, &mut child, is_cancelled) {
             terminate_child(&mut child);
-            return Err(VisionError::ServerStart);
+            return Err(error);
         }
         Ok(Self {
             config,
@@ -297,10 +308,14 @@ fn wait_for_health(
     client: &reqwest::blocking::Client,
     config: &VisionServerConfig,
     child: &mut Child,
+    is_cancelled: &dyn Fn() -> bool,
 ) -> Result<(), VisionError> {
     let url = format!("http://127.0.0.1:{}/health", config.port);
     let deadline = Instant::now() + HEALTH_TIMEOUT;
     while Instant::now() < deadline {
+        if is_cancelled() {
+            return Err(VisionError::Cancelled);
+        }
         if child
             .try_wait()
             .map_err(|_| VisionError::ServerStart)?
@@ -433,6 +448,15 @@ mod tests {
             build_multimodal_request(&frames).unwrap_err(),
             VisionError::InvalidSchema
         );
+    }
+
+    #[test]
+    fn cancelled_start_never_touches_assets_or_spawns_a_child() {
+        let config = VisionServerConfig::for_project(Path::new("missing"), 18111);
+        assert!(matches!(
+            LlamaVisionRuntime::start_cancellable(config, &|_| Ok(()), &|| true),
+            Err(VisionError::Cancelled)
+        ));
     }
 
     #[test]

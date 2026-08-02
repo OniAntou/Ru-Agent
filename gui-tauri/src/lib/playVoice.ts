@@ -5,7 +5,20 @@ let currentUrl: string | null = null;
 let currentFinish: ((played: boolean) => void) | null = null;
 let currentAbort: AbortController | null = null;
 
+declare global {
+  interface Window {
+    __voiceLog?: string[];
+  }
+}
+
+function vlog(message: string): void {
+  const log = (window.__voiceLog ??= []);
+  log.push(`${new Date().toISOString().slice(17)} ${message}`);
+  if (log.length > 200) log.splice(0, log.length - 200);
+}
+
 export function stopVoice(): void {
+  vlog(`stopVoice called (abort=${currentAbort !== null}, audio=${currentAudio !== null})`);
   currentAbort?.abort();
   currentAbort = null;
   currentAudio?.pause();
@@ -28,7 +41,11 @@ export async function speakText(
   options: SpeakOptions = {}
 ): Promise<boolean> {
   const busy = currentAbort !== null || currentAudio !== null;
-  if (busy && options.interrupt === false) return false;
+  vlog(`speakText start text=${text.slice(0, 20)}... interrupt=${options.interrupt ?? "default"} busy=${busy}`);
+  if (busy && options.interrupt === false) {
+    vlog("rejected: busy and interrupt=false");
+    return false;
+  }
   if (options.interrupt !== false) stopVoice();
   const abort = new AbortController();
   currentAbort = abort;
@@ -42,6 +59,7 @@ export async function speakText(
       signal: abort.signal,
     });
     if (!response.ok) {
+      vlog(`TTS http ${response.status}`);
       if (currentAbort === abort) currentAbort = null;
       return false;
     }
@@ -92,13 +110,26 @@ export async function speakText(
       audio.onplaying = () => {
         if (playingReported) return;
         playingReported = true;
+        vlog("audio playing");
         options.onPlaying?.();
       };
-      audio.onended = () => finish(true);
-      audio.onerror = () => finish(false);
-      audio.play().catch(() => finish(false));
+      audio.onended = () => {
+        const currentTime = Number.isFinite(audio.currentTime) ? audio.currentTime.toFixed(2) : "?";
+        const duration = Number.isFinite(audio.duration) ? audio.duration.toFixed(2) : "?";
+        vlog(`audio ended: currentTime=${currentTime}s duration=${duration}s`);
+        finish(true);
+      };
+      audio.onerror = () => {
+        vlog(`audio error: ${audio.error?.code ?? "unknown"} ${audio.error?.message ?? ""}`);
+        finish(false);
+      };
+      audio.play().catch((error) => {
+        vlog(`audio.play rejected: ${error}`);
+        finish(false);
+      });
     });
   } catch (error) {
+    vlog(`speakText exception: ${error}`);
     if (!abort.signal.aborted) console.error("Failed to play voice", error);
     if (currentAbort === abort) currentAbort = null;
     return false;

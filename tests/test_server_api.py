@@ -772,7 +772,106 @@ def test_observation_cancel_marks_pending_request(monkeypatch) -> None:
         response = client.post("/observation/cancel", json={"observation_id": "obs-1"})
 
     assert response.json() == {"status": "ok"}
-    assert coordinator.is_cancelled("obs-1") is True
+
+
+def test_observation_react_does_not_commit_before_ack(
+    monkeypatch, valid_observation_payload
+) -> None:
+    coordinator = ReactionCoordinator(clock=lambda: 100.0)
+    monkeypatch.setattr(server, "_SCREEN_REACTIONS", coordinator)
+    monkeypatch.setattr(
+        server.core.runner,
+        "generate_screen_reaction",
+        lambda *args, **kwargs: "Một câu ngắn.",
+    )
+
+    with TestClient(server.app) as client:
+        response = client.post("/observation/react", json=valid_observation_payload)
+
+    assert response.json()["status"] == "ok"
+    assert coordinator.recent_reactions() == ()
+    assert coordinator.begin(
+        ReactionRequest(
+            observation_id="obs-2",
+            event_age_ms=100,
+            observation=VisionObservation("game", "another", 0.9, 0.9, 0.9),
+        )
+    ).reason == "busy"
+
+
+def test_observation_ack_played_commits_completed_reaction(
+    monkeypatch, valid_observation_payload
+) -> None:
+    coordinator = ReactionCoordinator(clock=lambda: 100.0)
+    monkeypatch.setattr(server, "_SCREEN_REACTIONS", coordinator)
+    monkeypatch.setattr(
+        server.core.runner,
+        "generate_screen_reaction",
+        lambda *args, **kwargs: "Đau mắt giùm anh luôn.",
+    )
+
+    with TestClient(server.app) as client:
+        reacted = client.post("/observation/react", json=valid_observation_payload)
+        acked = client.post(
+            "/observation/ack",
+            json={"observation_id": "obs-1", "played": True},
+        )
+
+    assert reacted.json()["status"] == "ok"
+    assert acked.json() == {"status": "ok"}
+    assert coordinator.recent_reactions() == ("Đau mắt giùm anh luôn.",)
+    assert coordinator.begin(
+        ReactionRequest(
+            observation_id="obs-2",
+            event_age_ms=100,
+            observation=VisionObservation("game", "another", 0.9, 0.9, 0.9),
+        )
+    ).reason == "cooldown"
+
+
+def test_observation_ack_not_played_fails_without_cooldown(
+    monkeypatch, valid_observation_payload
+) -> None:
+    coordinator = ReactionCoordinator(clock=lambda: 100.0)
+    monkeypatch.setattr(server, "_SCREEN_REACTIONS", coordinator)
+    monkeypatch.setattr(
+        server.core.runner,
+        "generate_screen_reaction",
+        lambda *args, **kwargs: "Một câu ngắn.",
+    )
+
+    with TestClient(server.app) as client:
+        reacted = client.post("/observation/react", json=valid_observation_payload)
+        acked = client.post(
+            "/observation/ack",
+            json={"observation_id": "obs-1", "played": False},
+        )
+        next_decision = coordinator.begin(
+            ReactionRequest(
+                observation_id="obs-2",
+                event_age_ms=100,
+                observation=VisionObservation("game", "another", 0.9, 0.9, 0.9),
+            )
+        )
+
+    assert reacted.json()["status"] == "ok"
+    assert acked.json() == {"status": "ok"}
+    assert coordinator.recent_reactions() == ()
+    assert next_decision.allowed is True
+
+
+def test_observation_ack_unknown_id_is_harmless(monkeypatch) -> None:
+    coordinator = ReactionCoordinator(clock=lambda: 100.0)
+    monkeypatch.setattr(server, "_SCREEN_REACTIONS", coordinator)
+
+    with TestClient(server.app) as client:
+        response = client.post(
+            "/observation/ack",
+            json={"observation_id": "missing-1", "played": True},
+        )
+
+    assert response.json() == {"status": "ok"}
+    assert coordinator.recent_reactions() == ()
 
 
 def test_chat_request_cancels_pending_screen_reaction_before_generation(

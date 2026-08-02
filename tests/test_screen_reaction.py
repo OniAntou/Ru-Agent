@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from mini_gpt.screen_reaction import (
+    ACK_TIMEOUT_SECONDS,
     ReactionCoordinator,
     ReactionRequest,
     VisionObservation,
@@ -120,6 +121,33 @@ def test_pending_request_blocks_another_until_failure_releases_it() -> None:
     coordinator.fail("current")
 
     assert coordinator.begin(observation("other", event="một sự kiện khác")).allowed
+
+
+def test_unacked_pending_expires_after_ack_timeout_without_cooldown() -> None:
+    now = {"value": 100.0}
+    coordinator = ReactionCoordinator(clock=lambda: now["value"])
+    assert coordinator.begin(observation("current")).allowed
+    assert coordinator.begin(observation("other", event="một sự kiện khác")).reason == "busy"
+
+    now["value"] = 100.0 + ACK_TIMEOUT_SECONDS + 0.1
+
+    decision = coordinator.begin(observation("other", event="một sự kiện khác"))
+    assert decision.allowed is True
+    assert decision.reason == "allowed"
+
+
+def test_failed_reaction_does_not_start_cooldown_or_recent_reactions() -> None:
+    now = {"value": 100.0}
+    coordinator = ReactionCoordinator(clock=lambda: now["value"])
+    assert coordinator.begin(observation("first")).allowed
+    coordinator.fail("first")
+
+    now["value"] = 100.5
+    decision = coordinator.begin(
+        observation("second", event="một sự kiện hoàn toàn khác")
+    )
+    assert decision.allowed is True
+    assert coordinator.recent_reactions() == ()
 
 
 def test_prompt_contains_exact_observation_and_only_six_recent_reactions() -> None:

@@ -679,6 +679,7 @@ fn spawn_reaction_worker(
                     };
                     if post_cloud_age_ms > MAX_EVENT_AGE_MS {
                         record_stale(&snapshot, &metrics);
+                        let _ = bridge.ack(&candidate.observation_id, false);
                         continue;
                     }
                     voice_reserved.store(true, Ordering::Release);
@@ -686,6 +687,7 @@ fn spawn_reaction_worker(
                         *awaiting =
                             Some((reaction.observation_id.clone(), candidate.event_unix_ms));
                     }
+                    let emitted_id = reaction.observation_id.clone();
                     if app
                         .emit(
                             "ru://screen-reaction",
@@ -699,6 +701,7 @@ fn spawn_reaction_worker(
                         )
                         .is_err()
                     {
+                        let _ = bridge.ack(&emitted_id, false);
                         voice_reserved.store(false, Ordering::Release);
                         if let Ok(mut awaiting) = awaiting_voice.lock() {
                             awaiting.take();
@@ -958,6 +961,7 @@ pub(crate) fn observation_voice_finished(
     }
     awaiting.take();
     runtime.voice_reserved.store(false, Ordering::Release);
+    let _ = runtime.bridge.ack(&observation_id, played);
     if played {
         let now = now_unix_ms();
         let comments = if let Ok(mut metrics) = state.metrics.lock() {

@@ -50,6 +50,7 @@ pub trait ReactionClient: Send + Sync {
     fn preflight(&self) -> Result<Preflight, BridgeError>;
     fn react(&self, request: &ReactionRequestBody) -> Result<ReactionReply, BridgeError>;
     fn cancel(&self, observation_id: &str) -> Result<(), BridgeError>;
+    fn ack(&self, observation_id: &str, played: bool) -> Result<(), BridgeError>;
 }
 
 #[derive(Clone, Debug)]
@@ -183,6 +184,25 @@ impl ReactionClient for BackendBridge {
         }
         Ok(())
     }
+
+    fn ack(&self, observation_id: &str, played: bool) -> Result<(), BridgeError> {
+        let response = self
+            .post("/observation/ack")
+            .json(&serde_json::json!({
+                "observation_id": observation_id,
+                "played": played,
+            }))
+            .send()
+            .map_err(|_| BridgeError::Transport)?;
+        Self::map_status(response.status())?;
+        let reply = response
+            .json::<StatusReply>()
+            .map_err(|_| BridgeError::InvalidResponse)?;
+        if reply.status != "ok" {
+            return Err(BridgeError::Provider);
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -294,5 +314,55 @@ mod tests {
 
         assert!(bridge.preflight().is_ok());
         server.join().unwrap();
+    }
+
+    #[test]
+    fn ack_posts_played_flag_to_loopback_with_bearer_token() {
+        let (base_url, server) = serve_once(r#"{"status":"ok"}"#);
+        let bridge = BackendBridge::new(BackendRuntimeConfig {
+            base_url,
+            token: "secret-token".to_owned(),
+        })
+        .unwrap();
+
+        assert!(bridge.ack("obs-7", true).is_ok());
+        let request = String::from_utf8(server.join().unwrap()).unwrap();
+
+        assert!(request.starts_with("POST /observation/ack HTTP/1.1"));
+        assert!(request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer secret-token"));
+        assert!(request.contains("\"observation_id\":\"obs-7\""));
+        assert!(request.contains("\"played\":true"));
+    }
+
+    #[test]
+    fn ack_failure_maps_to_bridge_error() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = vec![0_u8; 16_384];
+            let read = stream.read(&mut request).unwrap();
+            request.truncate(read);
+            write!(
+                stream,
+                "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+                "{}"
+            )
+            .unwrap();
+            request
+        });
+        let bridge = BackendBridge::new(BackendRuntimeConfig {
+            base_url,
+            token: "secret".to_owned(),
+        })
+        .unwrap();
+
+        assert_eq!(
+            bridge.ack("obs-1", false).unwrap_err(),
+            BridgeError::Unauthorized
+        );
+        handle.join().unwrap();
     }
 }

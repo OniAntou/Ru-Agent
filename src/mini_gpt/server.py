@@ -141,6 +141,8 @@ _VTS_LOCK = threading.Lock()
 _MEMORY_QUEUE_MAXSIZE = 50
 _MEMORY_TURN_LOCK = threading.Lock()
 _SCREEN_REACTIONS = ReactionCoordinator()
+_PENDING_REACTION_LOCK = threading.Lock()
+_PENDING_REACTION_TEXT: dict[str, tuple[str, float]] = {}
 _MEMORY_QUEUE: queue.Queue = queue.Queue(maxsize=_MEMORY_QUEUE_MAXSIZE)
 _MEMORY_WORKER_STARTED = threading.Event()
 _MEMORY_STOP = threading.Event()
@@ -684,6 +686,11 @@ class ObservationCancelPayload(BaseModel):
     observation_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
 
 
+class ObservationAckPayload(BaseModel):
+    observation_id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
+    played: bool
+
+
 @app.get("/status")
 async def get_status():
     return {"status": "ok", "message": "Backend is running and ready for Tauri UI."}
@@ -807,7 +814,12 @@ def observation_react(payload: ObservationReactionPayload):
         cloud_seconds = timing["seconds"]
         if cloud_seconds is None:
             cloud_seconds = max(0.0, time.perf_counter() - started)
-        _SCREEN_REACTIONS.complete(payload.observation_id, cleaned)
+        now = time.monotonic()
+        with _PENDING_REACTION_LOCK:
+            _PENDING_REACTION_TEXT[payload.observation_id] = (cleaned, now)
+            for stale_id, (_text, recorded_at) in list(_PENDING_REACTION_TEXT.items()):
+                if now - recorded_at > 60:
+                    del _PENDING_REACTION_TEXT[stale_id]
         return {
             "status": "ok",
             "reaction": {
@@ -833,6 +845,17 @@ def observation_react(payload: ObservationReactionPayload):
 @app.post("/observation/cancel")
 def observation_cancel(payload: ObservationCancelPayload):
     _SCREEN_REACTIONS.cancel(payload.observation_id)
+    return {"status": "ok"}
+
+
+@app.post("/observation/ack")
+def observation_ack(payload: ObservationAckPayload):
+    with _PENDING_REACTION_LOCK:
+        entry = _PENDING_REACTION_TEXT.pop(payload.observation_id, None)
+    if payload.played and entry is not None:
+        _SCREEN_REACTIONS.complete(payload.observation_id, entry[0])
+    else:
+        _SCREEN_REACTIONS.fail(payload.observation_id)
     return {"status": "ok"}
 
 

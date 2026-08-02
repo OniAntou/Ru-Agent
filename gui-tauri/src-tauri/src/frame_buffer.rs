@@ -12,8 +12,8 @@ pub const MAX_FRAME_AGE: Duration = Duration::from_secs(10);
 pub const MIN_ANALYSIS_INTERVAL: Duration = Duration::from_millis(1_500);
 pub const MAX_ANALYSIS_INTERVAL: Duration = Duration::from_millis(5_000);
 pub const ANALYSIS_BATCH_SIZE: usize = 1;
-pub const MAX_PREPARED_WIDTH: u32 = 640;
-pub const MAX_PREPARED_HEIGHT: u32 = 360;
+pub const MAX_PREPARED_WIDTH: u32 = 480;
+pub const MAX_PREPARED_HEIGHT: u32 = 270;
 pub const JPEG_QUALITY: u8 = 80;
 
 const FINGERPRINT_WIDTH: u32 = 64;
@@ -302,8 +302,8 @@ mod tests {
 
     #[test]
     fn prepare_frame_stays_in_memory_and_bounds_dimensions() {
-        assert_eq!(MAX_PREPARED_WIDTH, 640);
-        assert_eq!(MAX_PREPARED_HEIGHT, 360);
+        assert_eq!(MAX_PREPARED_WIDTH, 480);
+        assert_eq!(MAX_PREPARED_HEIGHT, 270);
         let captured = CapturedFrame {
             width: 1_920,
             height: 1_080,

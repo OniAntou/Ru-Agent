@@ -13,6 +13,7 @@ ROUTINE_REACTION_INTERVAL_SECONDS = 20.0
 REPEAT_WINDOW_SECONDS = 30.0
 MIN_CONFIDENCE = 0.55
 MAX_PROMPT_CHARACTERS = 6_000
+ACK_TIMEOUT_SECONDS = 15.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +47,7 @@ class ReactionCoordinator:
         self._recent_reactions: deque[str] = deque(maxlen=6)
         self._last_completed_at: float | None = None
         self._pending_id: str | None = None
+        self._pending_started_at: float | None = None
         self._cancelled_id: str | None = None
 
     def begin(self, request: ReactionRequest) -> ReactionDecision:
@@ -65,7 +67,15 @@ class ReactionCoordinator:
             if any(previous == key for previous, _at in self._recent_events):
                 return ReactionDecision(False, "repeat")
             if self._pending_id is not None:
-                return ReactionDecision(False, "busy")
+                pending_expired = (
+                    self._pending_started_at is not None
+                    and now - self._pending_started_at > ACK_TIMEOUT_SECONDS
+                )
+                if not pending_expired:
+                    return ReactionDecision(False, "busy")
+                self._pending_id = None
+                self._pending_started_at = None
+                self._cancelled_id = None
             elapsed = (
                 float("inf")
                 if self._last_completed_at is None
@@ -79,6 +89,7 @@ class ReactionCoordinator:
             if not high_value and elapsed < ROUTINE_REACTION_INTERVAL_SECONDS:
                 return ReactionDecision(False, "routine_cooldown")
             self._pending_id = request.observation_id
+            self._pending_started_at = now
             self._cancelled_id = None
             self._recent_events.append((key, now))
             return ReactionDecision(True, "allowed")
@@ -104,12 +115,14 @@ class ReactionCoordinator:
                 self._last_completed_at = self._clock()
                 self._recent_reactions.append(spoken_text.strip()[:500])
             self._pending_id = None
+            self._pending_started_at = None
             self._cancelled_id = None
 
     def fail(self, observation_id: str) -> None:
         with self._lock:
             if self._pending_id == observation_id:
                 self._pending_id = None
+                self._pending_started_at = None
                 self._cancelled_id = None
 
     def recent_reactions(self) -> tuple[str, ...]:

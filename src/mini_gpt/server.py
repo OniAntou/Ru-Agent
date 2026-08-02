@@ -407,7 +407,7 @@ def _voice_selection() -> "VoiceSelection":
 
 
 def _screen_voice_selection() -> "VoiceSelection":
-    return VOICE_SELECTIONS[0]
+    return _voice_selection()
 
 
 _VOICE_MARKERS_RE = re.compile(r"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]\s*")

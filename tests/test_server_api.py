@@ -700,11 +700,11 @@ def test_observation_preflight_requires_cloud_and_warms_current_omnivoice(
     assert local.json()["status"] == "error"
     assert hosted.json() == {
         "status": "ok",
-        "voice_label": "Ru (OmniVoice)",
+        "voice_label": "Ái Vy (OmniVoice)",
         "voice_speed": 1.0,
     }
     assert len(warmed) == 1
-    assert warmed[0].profile_id == "ru"
+    assert warmed[0].profile_id == "ai_vy"
 
 
 def test_observation_react_passes_unfiltered_visible_text_to_cloud(

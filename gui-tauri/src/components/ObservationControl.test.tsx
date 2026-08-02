@@ -119,7 +119,7 @@ describe("ObservationControl", () => {
     ).toBeInTheDocument();
   });
 
-  it("always uses Ru OmniVoice and reports first-playing latency even when chat TTS is off", async () => {
+  it("uses the reaction voice label and reports first-playing latency even when chat TTS is off", async () => {
     vi.spyOn(Date, "now").mockReturnValue(2_000);
     speakText.mockImplementation(async (_text, options) => {
       options.onPlaying();
@@ -133,7 +133,7 @@ describe("ObservationControl", () => {
       reactionHandler({
         observationId: "obs-1",
         text: "Anh hụt hơi nhiều rồi đó.",
-        voiceLabel: "untrusted",
+        voiceLabel: "Ái Vy (OmniVoice)",
         voiceSpeed: 1,
         eventUnixMs: 1_500,
       }),
@@ -141,7 +141,7 @@ describe("ObservationControl", () => {
 
     await waitFor(() =>
       expect(speakText).toHaveBeenCalledWith("Anh hụt hơi nhiều rồi đó.", {
-        voiceLabel: "Ru (OmniVoice)",
+        voiceLabel: "Ái Vy (OmniVoice)",
         speed: 1,
         interrupt: false,
         onPlaying: expect.any(Function),

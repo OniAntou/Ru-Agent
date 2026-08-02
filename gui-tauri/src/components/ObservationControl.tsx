@@ -91,9 +91,10 @@ export default function ObservationControl() {
     const playReaction = async (reaction: ScreenReactionEvent) => {
       const words = wordCount(reaction.text);
       let playingReported = false;
-      if (!disposed) setPlaybackStatus(`Đang chuẩn bị phản ứng ${words} từ bằng Ru (OmniVoice).`);
+      if (!disposed)
+        setPlaybackStatus(`Đang chuẩn bị phản ứng ${words} từ bằng ${reaction.voiceLabel}.`);
       const played = await speakText(reaction.text, {
-        voiceLabel: "Ru (OmniVoice)",
+        voiceLabel: reaction.voiceLabel || undefined,
         speed: reaction.voiceSpeed,
         interrupt: false,
         onPlaying: () => {

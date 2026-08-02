@@ -384,7 +384,7 @@ impl GeminiLiveVisionRuntime {
             .set_read_timeout(Some(READ_TICK))
             .map_err(|_| VisionError::Gemini("timeout setup".into()))?;
         let url = format!("wss://{GEMINI_WS_HOST}{GEMINI_WS_PATH}?key={api_key}");
-        let (socket, _) = client(&url, stream).map_err(|error| VisionError::Gemini(format!("connect: {error}")))?;
+        let (socket, _) = client(url.as_str(), stream).map_err(|error| VisionError::Gemini(format!("connect: {error}")))?;
         let mut runtime = Self {
             socket,
             api_key: api_key.to_owned(),

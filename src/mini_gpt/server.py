@@ -908,12 +908,19 @@ async def save_settings(payload: SettingsPayload):
         settings["voice_speed"] = payload.voice_speed
     save_settings_to_file(settings)
 
-    if payload.gemini_vision_api_key.strip():
-        try:
-            core.gemini_vision_cred.set_key(payload.gemini_vision_api_key)
-        except Exception as error:
-            logger.error("Failed to save the Gemini vision API key: %s", error)
-            return {"status": "error", "message": str(error)}
+    if "gemini_vision_api_key" in payload.model_fields_set:
+        if payload.gemini_vision_api_key.strip():
+            try:
+                core.gemini_vision_cred.set_key(payload.gemini_vision_api_key)
+            except Exception as error:
+                logger.error("Failed to save the Gemini vision API key: %s", error)
+                return {"status": "error", "message": str(error)}
+        else:
+            try:
+                core.gemini_vision_cred.delete_key()
+            except Exception as error:
+                logger.error("Failed to delete the Gemini vision API key: %s", error)
+                return {"status": "error", "message": str(error)}
 
     if payload.backend is None:
         return {"status": "success", "message": "Settings saved."}

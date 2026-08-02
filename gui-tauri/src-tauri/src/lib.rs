@@ -186,7 +186,7 @@ fn spawn_backend(root: &Path, token: &str) -> io::Result<Child> {
         .env("RU_DESKTOP_TOKEN", token)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::inherit());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

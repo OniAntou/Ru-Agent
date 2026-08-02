@@ -710,7 +710,12 @@ fn spawn_reaction_worker(
                         value.reactions_emitted += 1;
                     }
                 }
-                Err(BridgeError::Transport | BridgeError::Provider | BridgeError::Unauthorized) => {
+                Err(
+                    error @ (BridgeError::Transport
+                    | BridgeError::Provider
+                    | BridgeError::Unauthorized),
+                ) => {
+                    eprintln!("observation: cloud react failed: {:?}", error);
                     clear_pending(&pending_id, &candidate.observation_id);
                     cloud_failures += 1;
                     if let Ok(mut value) = metrics.lock() {
@@ -728,7 +733,8 @@ fn spawn_reaction_worker(
                         return;
                     }
                 }
-                Err(BridgeError::InvalidResponse) => {
+                Err(error @ BridgeError::InvalidResponse) => {
+                    eprintln!("observation: cloud react invalid response: {:?}", error);
                     clear_pending(&pending_id, &candidate.observation_id);
                     if let Ok(mut value) = metrics.lock() {
                         value.cloud_failures += 1;

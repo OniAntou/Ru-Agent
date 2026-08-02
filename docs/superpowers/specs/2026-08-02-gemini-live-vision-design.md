@@ -127,3 +127,52 @@ Thêm một vision engine thứ hai cho screen awareness: **Gemini Live API qua 
 - Vertex AI auth — chỉ AI Studio key
 - Audio/video streaming realtime — chỉ TEXT output cho phân tích màn hình
 - Session resumption (setup lại từ đầu khi reconnect)
+
+## Live Probe Results (2026-08-02)
+
+**Probe script:** `scripts/probe_gemini_vision.py`  
+**API key:** AI Studio key (provided by user)  
+**Date:** 2026-08-02
+
+### Available models (50 via `models.list`)
+
+Key models available with their supported methods:
+
+| Model | Supported Methods |
+|-------|-------------------|
+| `gemini-2.5-flash` | generateContent, countTokens, createCachedContent, batchGenerateContent |
+| `gemini-2.5-pro` | generateContent, countTokens, createCachedContent, batchGenerateContent |
+| `gemini-2.0-flash` | generateContent, countTokens, createCachedContent, batchGenerateContent |
+| `gemini-2.0-flash-001` | generateContent, countTokens, createCachedContent, batchGenerateContent |
+| `gemini-2.0-flash-lite-001` | generateContent, countTokens, createCachedContent, batchGenerateContent |
+| ... (44 more models) | ... |
+
+### Critical Finding
+
+**No models support `bidiGenerateContent` (Live API)** with this AI Studio API key.
+
+The Live API (BidiGenerateContent WebSocket streaming) requires:
+- Vertex AI project with the API enabled, OR
+- Special preview access program
+
+AI Studio keys only provide access to the REST `generateContent` API.
+
+### Implications for Implementation
+
+1. **Default model** in Rust code remains `gemini-2.5-flash-live-preview` (per plan)
+2. **Runtime behavior**: `GeminiLiveVisionRuntime.connect()` will fail with close code 1008 (model not found/not supported for bidiGenerateContent)
+3. **Fallback**: After 3 consecutive failures, `spawn_vision_worker` will automatically fall back to local Qwen3-VL
+4. **User experience**: If user provides AI Studio key, they will see brief Gemini attempts (logged) then seamless fallback to local — observation continues working
+5. **To enable Live API**: User needs Vertex AI project with `generativelanguage.googleapis.com` (BidiGenerateContent) enabled, or wait for public Live API access
+
+### Probe Exit Codes
+
+- `0`: Live API connection successful, model responded
+- `1`: Live API connection failed (network/auth/other)
+- `2`: API key valid but no Live API access (no models support bidiGenerateContent)
+
+**Result:** Exit code 2 — AI Studio key has no Live API access.
+
+---
+
+*Entry 16 — Probe completed 2026-08-02*

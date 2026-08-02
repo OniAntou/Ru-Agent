@@ -61,4 +61,26 @@ describe("SettingsTab Gemini vision key", () => {
     expect(body.gemini_vision_api_key).toBe("gem-key-abc");
     await waitFor(() => expect(input).toHaveValue(""));
   });
+
+  it("toggles visibility when eye icon button is clicked", async () => {
+    render(<SettingsTab />);
+    const input = await screen.findByLabelText("Gemini Vision API Key");
+
+    // Initially should be password type (hidden)
+    expect(input).toHaveAttribute("type", "password");
+
+    // Find and click the eye icon button (show)
+    const showButton = screen.getByRole("button", { name: /show gemini vision api key/i });
+    fireEvent.click(showButton);
+
+    // Should now be text type (visible)
+    await waitFor(() => expect(input).toHaveAttribute("type", "text"));
+
+    // Click again to hide
+    const hideButton = screen.getByRole("button", { name: /hide gemini vision api key/i });
+    fireEvent.click(hideButton);
+
+    // Should be password type again
+    await waitFor(() => expect(input).toHaveAttribute("type", "password"));
+  });
 });

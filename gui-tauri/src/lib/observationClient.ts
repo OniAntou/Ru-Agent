@@ -43,6 +43,7 @@ export type ObservationMetricsSnapshot = {
   lastPreCloudAgeMs: number | null;
   lastCloudMs: number | null;
   lastPostCloudAgeMs: number | null;
+  visionEngine: "local" | "gemini";
 };
 
 export const startObservation = () => invoke<ObservationSnapshot>("observation_start");

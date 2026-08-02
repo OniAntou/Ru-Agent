@@ -56,6 +56,7 @@ const EMPTY_METRICS: ObservationMetricsSnapshot = {
   lastPreCloudAgeMs: null,
   lastCloudMs: null,
   lastPostCloudAgeMs: null,
+  visionEngine: "local",
 };
 
 const eventAge = (eventUnixMs: number) => Math.max(0, Date.now() - eventUnixMs);
@@ -150,10 +151,10 @@ export default function ObservationControl() {
       `p50 ${metrics.p50Ms ?? "-"} ms · p95 ${metrics.p95Ms ?? "-"} ms · worst ${metrics.worstMs ?? "-"} ms`,
     [metrics],
   );
-  const observationDetail =
+const observationDetail =
     playbackStatus ??
     (snapshot.phase === "observing"
-      ? `Đang nhìn · frame ${metrics.framesCaptured} · vision ${metrics.visionAnalyses} · ứng viên ${metrics.visionCandidates} · thấp c/n/w ${metrics.rejectedConfidence}/${metrics.rejectedNovelty}/${metrics.rejectedWorthiness} · điểm cuối ${score(metrics.lastConfidence)}/${score(metrics.lastNovelty)}/${score(metrics.lastWorthiness)} · cloud a/s/f ${metrics.cloudAttempts}/${metrics.cloudSkips}/${metrics.cloudFailures} · ms trước/cloud/sau ${milliseconds(metrics.lastPreCloudAgeMs)}/${milliseconds(metrics.lastCloudMs)}/${milliseconds(metrics.lastPostCloudAgeMs)} · stale ${metrics.droppedStale} · đã phát ${metrics.reactionsEmitted}`
+      ? `Đang nhìn · frame ${metrics.framesCaptured} · vision ${metrics.visionEngine}/${metrics.visionAnalyses} · ứng viên ${metrics.visionCandidates} · thấp c/n/w ${metrics.rejectedConfidence}/${metrics.rejectedNovelty}/${metrics.rejectedWorthiness} · điểm cuối ${score(metrics.lastConfidence)}/${score(metrics.lastNovelty)}/${score(metrics.lastWorthiness)} · cloud a/s/f ${metrics.cloudAttempts}/${metrics.cloudSkips}/${metrics.cloudFailures} · ms trước/cloud/sau ${milliseconds(metrics.lastPreCloudAgeMs)}/${milliseconds(metrics.lastCloudMs)}/${milliseconds(metrics.lastPostCloudAgeMs)} · stale ${metrics.droppedStale} · đã phát ${metrics.reactionsEmitted}`
       : snapshot.message);
 
   const toggle = async () => {
@@ -174,7 +175,7 @@ export default function ObservationControl() {
     }
   };
 
-  return (
+return (
     <div
       className={`observation-control observation-${snapshot.phase}`}
       title={title}
@@ -200,6 +201,7 @@ export default function ObservationControl() {
       data-last-pre-cloud-age-ms={metrics.lastPreCloudAgeMs ?? ""}
       data-last-cloud-ms={metrics.lastCloudMs ?? ""}
       data-last-post-cloud-age-ms={metrics.lastPostCloudAgeMs ?? ""}
+      data-vision-engine={metrics.visionEngine}
     >
       <button
         type="button"

@@ -3,6 +3,7 @@ use crate::frame_buffer::{
     mean_absolute_difference, prepare_frame_with_sequence, AdaptiveGate, FrameRing, GateDecision,
     PreparedFrame, ANALYSIS_BATCH_SIZE, MAX_FRAME_AGE, RING_CAPACITY, SAMPLE_INTERVAL,
 };
+use crate::gemini_vision_runtime::GeminiLiveVisionRuntime;
 use crate::screen_capture::{CaptureFailure, DxgiPrimaryFrameSource, FrameSource};
 use crate::vision_runtime::{
     LlamaVisionRuntime, VisionAnalyzer, VisionError, VisionObservation, VisionServerConfig,
@@ -29,6 +30,14 @@ pub enum ObservationPhase {
     Observing,
     Paused,
     Error,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum VisionEngine {
+    #[default]
+    Local,
+    Gemini,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -80,6 +89,7 @@ pub struct ObservationMetricsSnapshot {
     pub last_pre_cloud_age_ms: Option<u64>,
     pub last_cloud_ms: Option<u64>,
     pub last_post_cloud_age_ms: Option<u64>,
+    pub vision_engine: VisionEngine,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -113,6 +123,7 @@ struct ObservationMetrics {
     last_pre_cloud_age_ms: Option<u64>,
     last_cloud_ms: Option<u64>,
     last_post_cloud_age_ms: Option<u64>,
+    vision_engine: VisionEngine,
 }
 
 impl ObservationMetrics {
@@ -165,6 +176,7 @@ impl ObservationMetrics {
             last_pre_cloud_age_ms: self.last_pre_cloud_age_ms,
             last_cloud_ms: self.last_cloud_ms,
             last_post_cloud_age_ms: self.last_post_cloud_age_ms,
+            vision_engine: self.vision_engine.clone(),
         }
     }
 }
@@ -226,6 +238,7 @@ impl ObservationState {
                 last_pre_cloud_age_ms: None,
                 last_cloud_ms: None,
                 last_post_cloud_age_ms: None,
+                vision_engine: VisionEngine::Local,
             })
     }
 }
@@ -489,39 +502,98 @@ fn spawn_vision_worker(
             stop.store(true, Ordering::Release);
             return;
         }
+        let mut preferred_engine = VisionEngine::Local;
+        let mut gemini_key = None;
+        if let Ok(config) = bridge.vision_config() {
+            if config.engine == "gemini"
+                && config
+                    .api_key
+                    .as_deref()
+                    .is_some_and(|key| !key.trim().is_empty())
+            {
+                preferred_engine = VisionEngine::Gemini;
+                gemini_key = Some(config.api_key.unwrap_or_default());
+            }
+        } else {
+            eprintln!("vision: failed to fetch vision-config, falling back to local");
+        }
         let mut restart_count = 0_u8;
+        let mut gemini_failures = 0_u8;
         loop {
             if stop.load(Ordering::Acquire) {
                 return;
             }
-            let config = VisionServerConfig::for_project(&project_root, 18111);
-            let assign_app = app.clone();
-            let runtime = LlamaVisionRuntime::start_cancellable(
-                config,
-                &move |child| assign_app.state::<BackendState>().assign_owned_child(child),
-                &|| stop.load(Ordering::Acquire),
-            );
-            let mut vision = match runtime {
-                Ok(runtime) => runtime,
-                Err(VisionError::Cancelled) => return,
-                Err(_) if restart_count < 2 => {
-                    restart_count += 1;
-                    set_restart_count(&snapshot, restart_count);
-                    sleep_interruptible(&stop, if restart_count == 1 { 1 } else { 3 });
-                    continue;
+            let mut vision: Box<dyn VisionAnalyzer> = match preferred_engine {
+                VisionEngine::Gemini => {
+                    let key = gemini_key.clone().unwrap_or_default();
+                    let stop_guard = stop.clone();
+                    match GeminiLiveVisionRuntime::connect(&key, &|| {
+                        stop_guard.load(Ordering::Acquire)
+                    }) {
+                        Ok(runtime) => Box::new(runtime),
+                        Err(VisionError::Cancelled) => return,
+                        Err(error) => {
+                            eprintln!("vision: gemini connect failed: {error:?}");
+                            gemini_failures += 1;
+                            if gemini_failures >= 3 {
+                                eprintln!("vision: gemini failed {gemini_failures}x, falling back to local");
+                                preferred_engine = VisionEngine::Local;
+                                restart_count = 0;
+                                if let Ok(mut value) = metrics.lock() {
+                                    value.vision_engine = VisionEngine::Local;
+                                }
+                            }
+                            if restart_count < 2 {
+                                restart_count += 1;
+                                set_restart_count(&snapshot, restart_count);
+                                sleep_interruptible(&stop, if restart_count == 1 { 1 } else { 3 });
+                                continue;
+                            }
+                            clear_frames(&ring, &buffered_bytes);
+                            set_phase(
+                                &snapshot,
+                                &app,
+                                ObservationPhase::Error,
+                                "Gemini vision could not start.",
+                            );
+                            stop.store(true, Ordering::Release);
+                            return;
+                        }
+                    }
                 }
-                Err(_) => {
-                    clear_frames(&ring, &buffered_bytes);
-                    set_phase(
-                        &snapshot,
-                        &app,
-                        ObservationPhase::Error,
-                        "Local vision could not start.",
-                    );
-                    stop.store(true, Ordering::Release);
-                    return;
+                VisionEngine::Local => {
+                    let config = VisionServerConfig::for_project(&project_root, 18111);
+                    let assign_app = app.clone();
+                    match LlamaVisionRuntime::start_cancellable(
+                        config,
+                        &move |child| assign_app.state::<BackendState>().assign_owned_child(child),
+                        &|| stop.load(Ordering::Acquire),
+                    ) {
+                        Ok(runtime) => Box::new(runtime),
+                        Err(VisionError::Cancelled) => return,
+                        Err(_) if restart_count < 2 => {
+                            restart_count += 1;
+                            set_restart_count(&snapshot, restart_count);
+                            sleep_interruptible(&stop, if restart_count == 1 { 1 } else { 3 });
+                            continue;
+                        }
+                        Err(_) => {
+                            clear_frames(&ring, &buffered_bytes);
+                            set_phase(
+                                &snapshot,
+                                &app,
+                                ObservationPhase::Error,
+                                "Local vision could not start.",
+                            );
+                            stop.store(true, Ordering::Release);
+                            return;
+                        }
+                    }
                 }
             };
+            if let Ok(mut value) = metrics.lock() {
+                value.vision_engine = preferred_engine.clone();
+            }
             set_phase(
                 &snapshot,
                 &app,
@@ -550,6 +622,7 @@ fn spawn_vision_worker(
                 }
                 match vision.analyze(&batch.frames) {
                     Ok(observation) => {
+                        gemini_failures = 0;
                         let rejected_confidence = observation.confidence < 0.55;
                         let rejected_novelty = observation.novelty < 0.55;
                         let rejected_worthiness = observation.comment_worthiness < 0.60;
@@ -590,8 +663,22 @@ fn spawn_vision_worker(
                             },
                         );
                     }
-                    Err(VisionError::ServerStart | VisionError::Http) => {
+                    Err(VisionError::Gemini(_) | VisionError::ServerStart | VisionError::Http) => {
                         vision.stop();
+                        if preferred_engine == VisionEngine::Gemini {
+                            gemini_failures += 1;
+                            if gemini_failures >= 3 {
+                                eprintln!(
+                                    "vision: gemini failed {gemini_failures}x during analysis, falling back to local"
+                                );
+                                preferred_engine = VisionEngine::Local;
+                                restart_count = 0;
+                                if let Ok(mut value) = metrics.lock() {
+                                    value.vision_engine = VisionEngine::Local;
+                                }
+                                break;
+                            }
+                        }
                         if restart_count < 2 {
                             restart_count += 1;
                             set_restart_count(&snapshot, restart_count);
@@ -602,7 +689,11 @@ fn spawn_vision_worker(
                             &snapshot,
                             &app,
                             ObservationPhase::Error,
-                            "Local vision stopped after repeated failures.",
+                            if preferred_engine == VisionEngine::Gemini {
+                                "Gemini vision stopped after repeated failures."
+                            } else {
+                                "Local vision stopped after repeated failures."
+                            },
                         );
                         clear_frames(&ring, &buffered_bytes);
                         stop.store(true, Ordering::Release);
@@ -611,8 +702,7 @@ fn spawn_vision_worker(
                     Err(
                         VisionError::InvalidSchema
                         | VisionError::Cancelled
-                        | VisionError::MissingAsset
-                        | VisionError::Gemini(_),
+                        | VisionError::MissingAsset,
                     ) => {}
                 }
             }
@@ -1091,6 +1181,16 @@ mod tests {
         assert_eq!(snapshot.last_pre_cloud_age_ms, Some(900));
         assert_eq!(snapshot.last_cloud_ms, Some(1_800));
         assert_eq!(snapshot.last_post_cloud_age_ms, Some(2_700));
+    }
+
+    #[test]
+    fn metrics_snapshot_exposes_vision_engine() {
+        let mut metrics = ObservationMetrics {
+            vision_engine: VisionEngine::Gemini,
+            ..Default::default()
+        };
+        let snapshot = metrics.snapshot(0);
+        assert_eq!(snapshot.vision_engine, VisionEngine::Gemini);
     }
 
     #[test]

@@ -21,6 +21,13 @@ pub struct Preflight {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct VisionConfig {
+    pub engine: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct ReactionPayload {
     pub observation_id: String,
     pub text: String,
@@ -110,6 +117,27 @@ impl BackendBridge {
             return Err(BridgeError::Provider);
         }
         Ok(())
+    }
+
+    fn get(&self, path: &str) -> reqwest::blocking::RequestBuilder {
+        self.client
+            .get(format!("{}{path}", self.base_url))
+            .bearer_auth(&self.token)
+    }
+
+    pub fn vision_config(&self) -> Result<VisionConfig, BridgeError> {
+        let response = self
+            .get("/observation/vision-config")
+            .send()
+            .map_err(|_| BridgeError::Transport)?;
+        Self::map_status(response.status())?;
+        let reply = response
+            .json::<VisionConfig>()
+            .map_err(|_| BridgeError::InvalidResponse)?;
+        if reply.engine != "gemini" && reply.engine != "local" {
+            return Err(BridgeError::InvalidResponse);
+        }
+        Ok(reply)
     }
 }
 
@@ -347,8 +375,7 @@ mod tests {
             request.truncate(read);
             write!(
                 stream,
-                "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
-                "{}"
+                "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
             )
             .unwrap();
             request
@@ -364,5 +391,26 @@ mod tests {
             BridgeError::Unauthorized
         );
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn vision_config_returns_engine_and_key_from_loopback() {
+        let (base_url, server) =
+            serve_once(r#"{"status":"ok","engine":"gemini","api_key":"gem-key"}"#);
+        let bridge = BackendBridge::new(BackendRuntimeConfig {
+            base_url,
+            token: "secret-token".to_owned(),
+        })
+        .unwrap();
+
+        let config = bridge.vision_config().unwrap();
+        let request = String::from_utf8(server.join().unwrap()).unwrap();
+
+        assert_eq!(config.engine, "gemini");
+        assert_eq!(config.api_key.as_deref(), Some("gem-key"));
+        assert!(request.starts_with("GET /observation/vision-config HTTP/1.1"));
+        assert!(request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer secret-token"));
     }
 }

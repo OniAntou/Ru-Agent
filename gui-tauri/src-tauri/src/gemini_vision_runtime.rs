@@ -56,7 +56,7 @@ pub(crate) fn build_client_content_message(frames: &[PreparedFrame]) -> Result<V
 }
 
 pub(crate) enum ServerEvent {
-    Text(String),
+    Text { text: String, turn_complete: bool },
     TurnComplete,
     Interrupted,
     SetupComplete,
@@ -91,14 +91,15 @@ pub(crate) fn parse_server_message(payload: &Value) -> Option<ServerEvent> {
             }
         }
     }
-    if content.get("turnComplete").and_then(Value::as_bool) == Some(true) {
-        if !text.is_empty() {
-            return Some(ServerEvent::Text(text));
-        }
-        return Some(ServerEvent::TurnComplete);
-    }
+    let turn_complete = content.get("turnComplete").and_then(Value::as_bool) == Some(true);
     if !text.is_empty() {
-        return Some(ServerEvent::Text(text));
+        return Some(ServerEvent::Text {
+            text,
+            turn_complete,
+        });
+    }
+    if turn_complete {
+        return Some(ServerEvent::TurnComplete);
     }
     None
 }
@@ -218,7 +219,21 @@ impl VisionAnalyzer for GeminiLiveVisionRuntime {
                 return Err(VisionError::Gemini("turn timeout".into()));
             }
             match self.read_message(&|| false)? {
-                Some(ServerEvent::Text(chunk)) => text.push_str(&chunk),
+                Some(ServerEvent::Text {
+                    text: chunk,
+                    turn_complete,
+                }) => {
+                    text.push_str(&chunk);
+                    if turn_complete {
+                        if text.trim().is_empty() {
+                            return Err(VisionError::Gemini("empty turn".into()));
+                        }
+                        let observation: VisionObservation =
+                            serde_json::from_str(&text).map_err(|_| VisionError::InvalidSchema)?;
+                        validate_observation(&observation)?;
+                        return Ok(observation);
+                    }
+                }
                 Some(ServerEvent::TurnComplete) => {
                     if text.trim().is_empty() {
                         return Err(VisionError::Gemini("empty turn".into()));
@@ -310,12 +325,22 @@ mod tests {
         let text = serde_json::json!({"serverContent": {"modelTurn": {"parts": [{"text": "{\"scene\":"}]}}});
         assert!(matches!(
             parse_server_message(&text),
-            Some(ServerEvent::Text(part)) if part.contains("scene")
+            Some(ServerEvent::Text { text: part, turn_complete: false }) if part.contains("scene")
         ));
         let complete = serde_json::json!({"serverContent": {"turnComplete": true}});
         assert!(matches!(
             parse_server_message(&complete),
             Some(ServerEvent::TurnComplete)
+        ));
+        let text_and_complete = serde_json::json!({
+            "serverContent": {
+                "modelTurn": {"parts": [{"text": "{\"scene\":\""}]},
+                "turnComplete": true
+            }
+        });
+        assert!(matches!(
+            parse_server_message(&text_and_complete),
+            Some(ServerEvent::Text { text: part, turn_complete: true }) if part.contains("scene")
         ));
         let interrupted = serde_json::json!({"serverContent": {"interrupted": true}});
         assert!(matches!(

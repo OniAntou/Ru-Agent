@@ -18,6 +18,8 @@ export default function SettingsTab() {
   const [backend, setBackend] = useState("llama.cpp");
   const [model, setModel] = useState("local-model-gguf");
   const [apiKey, setApiKey] = useState("");
+  const [geminiVisionApiKey, setGeminiVisionApiKey] = useState("");
+  const [showGeminiVisionKey, setShowGeminiVisionKey] = useState(false);
   const [apiVariant, setApiVariant] = useState("Default");
   const [maxTokens, setMaxTokens] = useState(1024);
   const [temperature, setTemperature] = useState(0.7);
@@ -124,6 +126,7 @@ export default function SettingsTab() {
           backend,
           model,
           api_key: apiKey,
+          gemini_vision_api_key: geminiVisionApiKey,
           api_variant: apiVariant,
           max_tokens: maxTokens,
           temperature,
@@ -138,6 +141,7 @@ export default function SettingsTab() {
       if (data.status === "success") {
         setStatus(data.message || "Settings applied!");
         setApiKey("");
+        setGeminiVisionApiKey("");
         if (backend === "OpenCode Zen" || backend === "Kilo Gateway") {
           fetchModels(backend);
         }
@@ -195,6 +199,38 @@ export default function SettingsTab() {
                 />
               </div>
             )}
+
+            <div className="form-group">
+              <label htmlFor="gemini-vision-api-key">Gemini Vision API Key</label>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={showGeminiVisionKey}
+                  onChange={(e) => setShowGeminiVisionKey(e.target.checked)}
+                  style={{ width: 16, height: 16 }}
+                />
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Show</span>
+              </div>
+              <input
+                id="gemini-vision-api-key"
+                type={showGeminiVisionKey ? "text" : "password"}
+                value={geminiVisionApiKey}
+                onChange={(e) => setGeminiVisionApiKey(e.target.value)}
+                placeholder="AIza..."
+                maxLength={4096}
+              />
+              <p style={{ color: "var(--text-secondary)", marginTop: 4, fontSize: 13 }}>
+                Screen observation uses Gemini Live automatically when this key is saved.{" "}
+                <a
+                  href="https://aistudio.google.com/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "var(--accent)", textDecoration: "underline" }}
+                >
+                  Get key from AI Studio
+                </a>
+              </p>
+            </div>
 
             {backend === "OpenCode Zen" && (
               <div className="form-group">

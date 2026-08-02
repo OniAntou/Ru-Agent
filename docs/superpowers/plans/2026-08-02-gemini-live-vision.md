@@ -101,18 +101,19 @@ Expected: FAIL — `AttributeError: 'MiniGPTCore' object has no attribute 'gemin
 `server.py` — trong `save_settings`, NGAY SAU `save_settings_to_file(settings)` (dòng ~896) và TRƯỚC `if payload.backend is None:`:
 
 ```python
-    if payload.gemini_vision_api_key.strip():
-        try:
-            core.gemini_vision_cred.set_key(payload.gemini_vision_api_key)
-        except Exception as error:
-            logger.error("Failed to save the Gemini vision API key: %s", error)
-            return {"status": "error", "message": str(error)}
-    else:
-        try:
-            core.gemini_vision_cred.delete_key()
-        except Exception as error:
-            logger.error("Failed to delete the Gemini vision API key: %s", error)
-            return {"status": "error", "message": str(error)}
+    if "gemini_vision_api_key" in payload.model_fields_set:
+        if payload.gemini_vision_api_key.strip():
+            try:
+                core.gemini_vision_cred.set_key(payload.gemini_vision_api_key)
+            except Exception as error:
+                logger.error("Failed to save the Gemini vision API key: %s", error)
+                return {"status": "error", "message": str(error)}
+        else:
+            try:
+                core.gemini_vision_cred.delete_key()
+            except Exception as error:
+                logger.error("Failed to delete the Gemini vision API key: %s", error)
+                return {"status": "error", "message": str(error)}
 ```
 
 `server.py` — endpoint mới, đặt ngay SAU `@app.post("/observation/preflight")` handler (sau dòng ~745):
@@ -1062,4 +1063,5 @@ git commit -m "docs(observation): record gemini live vision integration results"
 - `VisionError` mất derive `Copy` (thêm `Gemini(String)`); mọi usage hiện tại là pattern-match nên không phá code.
 - Fallback đếm qua biến cục bộ `gemini_failures` trong `spawn_vision_worker` — không arm cooldown reaction (chỉ đổi engine).
 - Fallback reset `restart_count = 0` để local được phép khởi động lại từ đầu (nếu không, restart_count = 2 sẽ chặn local trước khi nó được thử).
+
 

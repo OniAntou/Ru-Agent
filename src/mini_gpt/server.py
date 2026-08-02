@@ -642,6 +642,7 @@ class SettingsPayload(BaseModel):
     checkpoint_path: str = Field(default="", max_length=1024)
     voice_label: str | None = Field(default=None, max_length=128)
     voice_speed: float | None = Field(default=None, ge=0.5, le=2.0)
+    gemini_vision_api_key: str = Field(default="", max_length=4096)
 
 
 class VoiceTtsPayload(BaseModel):
@@ -742,6 +743,18 @@ def observation_preflight():
     except Exception as error:
         logger.warning("Observation voice preflight failed: %s", type(error).__name__)
         return {"status": "error", "message": str(error)}
+
+
+@app.get("/observation/vision-config")
+def observation_vision_config():
+    try:
+        key = core.gemini_vision_cred.get_key() or ""
+    except Exception as error:
+        logger.warning("Could not read the Gemini vision API key: %s", error)
+        key = ""
+    if key.strip():
+        return {"status": "ok", "engine": "gemini", "api_key": key}
+    return {"status": "ok", "engine": "local", "api_key": None}
 
 
 @app.post("/observation/react")
@@ -894,6 +907,13 @@ async def save_settings(payload: SettingsPayload):
     if payload.voice_speed is not None:
         settings["voice_speed"] = payload.voice_speed
     save_settings_to_file(settings)
+
+    if payload.gemini_vision_api_key.strip():
+        try:
+            core.gemini_vision_cred.set_key(payload.gemini_vision_api_key)
+        except Exception as error:
+            logger.error("Failed to save the Gemini vision API key: %s", error)
+            return {"status": "error", "message": str(error)}
 
     if payload.backend is None:
         return {"status": "success", "message": "Settings saved."}

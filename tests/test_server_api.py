@@ -181,6 +181,47 @@ def test_settings_saves_kilo_api_key(monkeypatch, isolated_state) -> None:
     assert saved == ["kilo-test-key"]
 
 
+def test_settings_saves_gemini_vision_key(monkeypatch, isolated_state) -> None:
+    saved = []
+    monkeypatch.setattr(
+        server.core, "gemini_vision_cred",
+        type("Fake", (), {
+            "set_key": lambda self, key: saved.append(key),
+            "get_key": lambda self: saved[0] if saved else None,
+        })(),
+    )
+    with TestClient(server.app) as client:
+        response = client.post("/settings", json={"gemini_vision_api_key": "gem-key-123"})
+        assert response.status_code == 200
+        body = client.get("/settings").json()
+        assert "gemini_vision_api_key" not in body
+        config = client.get("/observation/vision-config").json()
+    assert saved == ["gem-key-123"]
+    assert config == {"status": "ok", "engine": "gemini", "api_key": "gem-key-123"}
+
+
+def test_observation_vision_config_local_without_key(monkeypatch, isolated_state) -> None:
+    monkeypatch.setattr(
+        server.core, "gemini_vision_cred",
+        type("Fake", (), {"set_key": lambda self, key: None, "get_key": lambda self: None})(),
+    )
+    with TestClient(server.app) as client:
+        config = client.get("/observation/vision-config").json()
+    assert config == {"status": "ok", "engine": "local", "api_key": None}
+
+
+def test_settings_empty_gemini_key_does_not_crash(monkeypatch, isolated_state) -> None:
+    calls = []
+    monkeypatch.setattr(
+        server.core, "gemini_vision_cred",
+        type("Fake", (), {"set_key": lambda self, key: calls.append(key), "get_key": lambda self: None})(),
+    )
+    with TestClient(server.app) as client:
+        response = client.post("/settings", json={"gemini_vision_api_key": ""})
+    assert response.status_code == 200
+    assert calls == []
+
+
 def test_models_endpoint_rejects_local_backend(monkeypatch, isolated_state) -> None:
     with TestClient(server.app) as client:
         response = client.get("/models", params={"backend": "llama.cpp"})

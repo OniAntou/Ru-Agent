@@ -17,6 +17,7 @@ class MiniGPTCore:
 
         self.opencode_cred = CredentialStore("mini_gpt", "api_key")
         self.kilo_cred = CredentialStore("mini_gpt", "kilo_gateway_api_key")
+        self.gemini_vision_cred = CredentialStore("mini_gpt", "gemini_vision_api_key")
 
     def get_memory_store(self):
         if self.memory_store is None:

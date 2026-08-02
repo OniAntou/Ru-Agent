@@ -81,13 +81,16 @@
   active minute, VTS actions, 20 observation cycles, 10 full app exits, forced
   parent termination, and live RAM/VRAM/handle stability. The local Qwen gate,
   DXGI/RAM-only pipeline, hosted reaction API, sidebar control, and process
-  ownership are implemented. A direct Ling probe produced its first spoken
-  content at 1.621 seconds and completed at 1.674 seconds; a three-frame Qwen
-  smoke while OmniVoice stayed resident completed in 917 ms with the reduced
-  2,048-context/256-image-token configuration. These are not yet measured
-  end-to-first-audio results. The final newest-frame 640×360 path plus
-  Ling-to-`openrouter/free` immediate-error fallback is implemented but has not
-  been live-tested; no screen reaction has reached audio yet.
+  ownership are implemented. First audible acceptance on 2026-08-02: user
+  confirmed Ru's OmniVoice, `đã phát` reached 6, and post-cloud age stayed
+  3.2–4.1 s with 480×270/96-token frames and the ack-semantics fix (skips fell
+  from 70% to 12–22%). 20 observation cycles, 10 forced app kills, cloud-loss
+  pause, and single-instance checks all passed with no resource growth or
+  leftover processes. Remaining manual listening items: a representative
+  game/YouTube/subtitle/static/scene-transition quality trial and a dedicated
+  ten-minute cadence/repetition review with a known screen; cloud (Kilo) empty
+  streams remain an external provider instability to revisit only with user
+  approval to change providers or spend credits.
 
 ## Deferred capabilities
 

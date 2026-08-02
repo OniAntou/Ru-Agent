@@ -80,10 +80,10 @@ vision listeners.
 - `SAMPLE_INTERVAL = 500 ms`
 - `RING_CAPACITY = 20`, `MAX_FRAME_AGE = 10 s`
 - `ANALYSIS_BATCH_SIZE = 1` (only the newest frame enters Qwen)
-- prepared image maximum: `640×360`, JPEG quality `80`
+- prepared image maximum: `480×270`, JPEG quality `80`
 - llama-server: loopback only, one slot, Qwen3-VL-2B GGUF + pinned mmproj
 - context: `2048`
-- image token budget: `256`
+- image token budget: `96`
 - JSON completion budget: `512` (keep this unless parse reliability is
   re-proven; 192 tokens previously truncated most real outputs)
 - local reasoning: off
@@ -144,11 +144,31 @@ vision listeners.
    tokens) spilled memory and took 4.61–5.20 seconds per synthetic request.
    Reducing to 2048/256 produced a valid co-resident three-frame synthetic parse
    in 917 ms.
-9. Real 960×540 frames were still too slow, so production now sends only the
-   newest 640×360 frame. This final resolution has not been live-measured.
+ 9. Real 960×540 frames were still too slow, so production now sends only the
+    newest 640×360 frame. This final resolution has not been live-measured.
 10. Added counters separated candidate rejection, cloud skips/failures, stale
     drops, and playback emission. This proved that the earlier silence happened
     before TTS; `ru://screen-reaction` was never emitted.
+11. Live-measured at 640×360: `ms trước/cloud/sau 3937/4345/7832` and `đã phát 0`
+    because every reply crossed the 4500 ms stale gate. Reducing to 480×270 cut
+    pre-cloud to ~2.6–2.9 s.
+12. Coordinator acknowledgement bug: FastAPI called `complete()` at
+    `/observation/react` time, before Rust knew whether the reply was dropped
+    stale or actually spoken. Stale replies still armed the 10 s cooldown and
+    populated recent reactions, inflating `cloudSkips` to 70% (35/50). Fixed with
+    a dedicated authenticated `/observation/ack` endpoint: the coordinator
+    commits only after Tauri reports a real emitted/played outcome (with a 15 s
+    pending expiry fallback). Skips fell to 12–22%.
+13. At 480×270/128 tokens, pre-cloud was still 3.5–3.9 s under OmniVoice
+    residency, so post-cloud again crossed the gate (`stale 21/26`, `đã phát 0`).
+    Reducing image tokens to 96 brought pre-cloud to ~2.5–2.7 s and post-cloud
+    to ~3.2–4.1 s, letting accepted reactions through.
+14. Screen-reaction text generation uses the cloud (Kilo) route, not Qwen. Kilo
+    intermittently returns an empty SSE stream; each failure is one `Provider`
+    skip-free failure and three consecutive failures pause observation as
+    designed. Backend stderr now flows to the Tauri dev console and the Rust
+    bridge logs the failure kind so this remains diagnosable without persisting
+    prompts, keys, or screen content.
 
 ## Important live evidence
 
@@ -164,12 +184,49 @@ vision listeners.
   first spoken content at 1.621 s, complete at 1.674 s, natural `anh`/`em`.
 - Direct `openrouter/free` fallback probe:
   complete at 1.066 s with correct `anh`/`em`.
-- No actual reaction was heard. The final 640×360 plus fallback route was not
-  tested after its last Tauri rebuild.
+- **Audible success, 640×360 baseline**: `đã phát 1` with cloud
+  `a/s/f 22/11/6`; user confirmed the audible voice is Ru's existing OmniVoice.
+- **Audible success, 480×270/96 tokens**: `đã phát 6` accumulated; last line
+  `ms trước/cloud/sau 2589/1236/3825` (under the 4500 ms gate);
+  `cloud a/s/f 42/11/15` — the failures are Kilo empty-streams, not local.
+- Event-to-first-audio: 6 samples, p50 6549 ms, p95 8092 ms, worst 8092 ms.
+- Live cloud-loss pause observed: three consecutive `Provider` failures
+  transitioned the UI to "Observation tạm dừng" and released the vision server.
 
-## Highest-priority next steps
+## Verification status (2026-08-02)
 
-### 1. Live-test the exact committed configuration before changing code
+Live-verified end to end with `npm run tauri dev`:
+
+- `cloud attempts > skips + failures` and `post-cloud age < 4500 ms` — yes at
+  480×270/96 tokens (post-cloud 3239–4678 ms across runs; typical 3.2–4.1 s).
+- `đã phát > 0` and user confirmed the audible voice is Ru's OmniVoice.
+- Coordinator ack semantics fixed and covered by Python + Rust tests
+  (pending expiry, fail-without-cooldown, played-commit, unknown-id harmless).
+- Complete verification green: 286 pytest, 11 vitest + production build,
+  32 cargo (1 interactive DXGI ignored), fmt/clippy clean.
+- 20 observation on/off cycles: exactly one llama-server per active state, no
+  process duplication, total RAM oscillated 7.3–8.3 GB with no upward trend.
+- 10 forced parent kills: zero leftover processes and zero listeners on
+  8000/5052/18111 after each kill.
+- Single-instance: a second launch is refused at the Vite port and never
+  duplicates backend/voice/vision processes.
+- Cloud-loss pause: three consecutive provider failures pause observation and
+  release the vision server, exactly as designed.
+- No image/network leakage and no screen-content persistence: unchanged
+  (RAM-only pipeline; UI and logs show numeric diagnostics only).
+
+### Remaining observations (not code defects)
+
+- Cloud (Kilo) intermittently returns empty SSE streams; during degraded
+  windows ~40% of attempts failed and fewer reactions flowed. Each failure
+  counts once and does not arm the cooldown; three consecutive failures pause
+  as specified. Revisit provider stability (handoff step 3) only with user
+  approval to change providers or spend credits.
+- Representative quality trial across game/YouTube/subtitle/static/
+  scene-transition scenes, and a dedicated ten-minute cadence/repetition
+  review with a known screen, remain manual listening items.
+
+## Verification commands
 
 From `D:\LLM\gui-tauri`:
 
@@ -261,25 +318,8 @@ cargo test --locked
 cargo check --locked
 ```
 
-The last broad gates before the final 640×360/fallback edits were 99 focused
-Python tests, 11 frontend tests, and 30 Rust tests passing with one interactive
-DXGI test ignored. Focused tests for the later deadline, Ling route, provider
-fallback, newest-frame payload, 640×360 bounds, metrics, and UI diagnostics
-passed. The complete suite has **not** been rerun after the final edits.
-
-### 7. Complete the remaining acceptance gates
-
-- representative game, YouTube, subtitle, static desktop, and scene-transition
-  quality trial;
-- p50/p95/worst event-to-first-audio latency;
-- ten-minute cadence/repetition review;
-- every reaction audibly uses Ru OmniVoice and valid VTS behavior;
-- no image/network leakage and no screen-content persistence;
-- 20 observation on/off cycles without RAM/VRAM/handle growth;
-- 10 full app exits plus forced-parent termination with no owned process left;
-- cloud-loss pause and local-chat fallback without simultaneous local 8B text
-  and VLM residency;
-- single-instance launch does not duplicate backend/voice/vision processes.
+Status 2026-08-02 after the ack and token-budget edits: 286 pytest,
+11 vitest + production build, 32 cargo (1 interactive DXGI ignored) — all green.
 
 ## Key files
 

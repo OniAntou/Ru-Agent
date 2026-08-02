@@ -122,10 +122,14 @@ Prepare the pinned local vision assets once, then use **Bắt đầu quan sát**
 & D:\LLM\.venv\Scripts\python.exe scripts\benchmark_local_vision.py --runs 5
 ```
 
-The live control reports RAM-only pipeline counters and latency metrics. The
-remaining acceptance work is a representative game/video trial, end-to-first-
-audio measurement, cadence review, and repeated lifecycle/resource cycling;
-see `TODO.md` and the approved design for the exact gates.
+The live control reports RAM-only pipeline counters and latency metrics. First
+audible acceptance was reached on 2026-08-02: reactions speak through Ru's
+OmniVoice, post-cloud age stays within the 4,500 ms stale gate with 480×270 /
+96-image-token frames, and cloud skips dropped from 70% to 12–22% after the
+coordinator ack fix. Observation cycles, forced-exit cleanup, cloud-loss pause,
+and single-instance checks all pass. Remaining manual listening items are a
+representative game/video trial and a ten-minute cadence review; see `TODO.md`
+and the approved design for the exact gates.
 
 ## GGUF runtime
 

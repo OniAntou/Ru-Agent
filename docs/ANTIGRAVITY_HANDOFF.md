@@ -230,33 +230,37 @@ chunks continue arriving. Chat routing remains unchanged.
 
 With OmniVoice resident, the original 4,096-context/512-image-token vision
 configuration spilled memory and took 4.61–5.20 seconds per synthetic request.
-The production and benchmark commands now use a 2,048 context and 256 image
-tokens with a 512-token JSON output budget. A controlled co-resident
-three-frame smoke parsed successfully in 917 ms, but real 960×540 frames still
-reached cloud at age 3,309 ms. Production therefore now sends only the newest
-640×360 frame per analysis; the 500 ms fingerprint gate still observes the
+Live measurement at 640×360/256 tokens reached cloud at
+pre-cloud/cloud/post-cloud 3,937/4,345/7,832 ms with `đã phát 0`. Production
+now sends only the newest 480×270 frame with a 96-image-token budget (JSON
+output budget stays 512). The 500 ms fingerprint gate still observes the
 continuous frame sequence.
 
-At pause, no live screen reaction had reached audio yet. The last completed
-trial before the 640×360 change measured pre-cloud/cloud/post-cloud ages of
-3,391/2,289/5,680 ms and correctly dropped the reply as stale. Ling also
-returned intermittent immediate provider errors. The implemented route keeps
-Ling primary and retries `openrouter/free` only for HTTP 429/502/503/504; a
-direct fallback probe completed in 1.066 seconds with correct anh/em address.
-The 640×360 plus provider-fallback combination has not been live-tested because
-the user paused work to conserve quota.
+Live acceptance 2026-08-02: the first audible reaction was confirmed by the
+user as Ru's existing OmniVoice; `đã phát` climbed to 6 with post-cloud ages
+of 3,234–4,678 ms across runs (typically 3.2–4.1 s, inside the 4,500 ms stale
+gate). Event-to-first-audio: 6 samples, p50 6,549 ms, p95/worst 8,092 ms. The
+coordinator ack bug (complete-at-react-time arming cooldown for stale replies,
+70% `cloudSkips`) was fixed with an authenticated `/observation/ack` endpoint;
+skips fell to 12–22%.
 
-Current focused verification is 99 Python tests, 11 frontend tests, and 30
-Rust tests passing; one Rust DXGI test is intentionally ignored outside an
-interactive desktop. Job Object cleanup has repeatedly left no owned listeners
-on ports 8000, 5052, or 18111 after app termination. Re-run the local gate with:
+Cloud (Kilo) intermittently returns empty SSE streams; three consecutive
+failures pause observation and release the vision server as designed. Each
+failure counts once and never arms the cooldown. Revisit provider stability
+only with user approval to change providers or spend credits.
+
+Current verification is 286 Python tests, 11 frontend tests, and 32 Rust tests
+passing; one Rust DXGI test is intentionally ignored outside an interactive
+desktop. Job Object cleanup left no owned listeners on ports 8000, 5052, or
+18111 after each of 10 forced app kills. Twenty observation on/off cycles kept
+exactly one llama-server per active state with RAM oscillating 7.3–8.3 GB and
+no growth. Single-instance launches never duplicate backend/voice/vision
+processes. Re-run the local gate with:
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe scripts\benchmark_local_vision.py --runs 5
 ```
 
-Do not mark the feature accepted until a representative real game/YouTube trial
-proves useful observations, actual Ru OmniVoice playback, p50/p95/worst
-event-to-first-audio latency, the approved cadence, VTS behavior, GPU/resource
-stability, 20 observation cycles, and 10 complete app exits. Keep `TODO.md`
-open for these gates.
+Remaining manual listening items before closing `TODO.md`: a representative
+game/YouTube/subtitle/static/scene-transition quality trial and a dedicated
+ten-minute cadence/repetition review with a known screen.

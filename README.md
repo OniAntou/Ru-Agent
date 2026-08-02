@@ -99,9 +99,10 @@ prompt, or reaction is written to disk or added to chat history or memory.
 
 The cloud backend receives only Qwen's structured text observation and writes
 a short social Ru reaction. Every accepted reaction is played through the
-current Ru OmniVoice profile; no substitute voice or text-only fallback is
-used. VTube Studio action metadata is parsed privately when the connected
-catalog provides a matching action. System audio is not captured or analyzed.
+saved OmniVoice selection (Ru or Ái Vy); no substitute voice or text-only
+fallback is used. VTube Studio action metadata is parsed privately when the
+connected catalog provides a matching action. System audio is not captured or
+analyzed.
 
 With Kilo `kilo-auto/free` selected for chat, the latency-sensitive observation
 path currently uses `inclusionai/ling-3.0-flash:free` directly with a 256-token

@@ -298,8 +298,8 @@ cooldowns or allowing repetitive bursts.
 - Verify `/voice/tts` returns a complete WAV for the supplied reaction.
 - Verify `speakText` calls `onPlaying`, then reports
   `observation_voice_started` and `observation_voice_finished`.
-- Confirm the forced label is exactly `Ru (OmniVoice)` and the current Ru
-  reference assets are used.
+- Confirm the reaction uses the saved OmniVoice selection (Ru or Ái Vy) and
+  the corresponding reference assets are used.
 - Never fall back to browser/system TTS.
 
 ### 6. Run complete verification after the first audible success

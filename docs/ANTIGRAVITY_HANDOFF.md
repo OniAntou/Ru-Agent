@@ -201,11 +201,11 @@ The approved design is implemented on `main`. The manual, off-by-default
 sidebar control observes only the Windows primary monitor. Rust owns DXGI
 capture, a bounded RAM-only frame ring, adaptive event gating, the pinned local
 Qwen3-VL server, authenticated FastAPI reaction calls, and process cleanup.
-React plays every accepted line through the current Ru OmniVoice and privately
-triggers valid VTube Studio catalog actions. Raw pixels never leave loopback;
-only Qwen's unfiltered structured text may reach OpenCode/Kilo. Screen content
-is not written to disk, chat history, memory, learning data, or content-bearing
-logs. System audio remains out of scope.
+React plays every accepted line through the saved OmniVoice selection (Ru or
+Ái Vy) and privately triggers valid VTube Studio catalog actions. Raw pixels
+never leave loopback; only Qwen's unfiltered structured text may reach
+OpenCode/Kilo. Screen content is not written to disk, chat history, memory,
+learning data, or content-bearing logs. System audio remains out of scope.
 
 The pinned assets pass size/SHA-256 validation. The original llama.cpp b10142
 grammar failure was resolved with a compatible wire schema while the strict

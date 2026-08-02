@@ -169,6 +169,15 @@ vision listeners.
     designed. Backend stderr now flows to the Tauri dev console and the Rust
     bridge logs the failure kind so this remains diagnosable without persisting
     prompts, keys, or screen content.
+15. Reported voice truncation at the final word (UI still said "nói xong").
+    Direct TTS probes (Ru 5.07 s / Ái Vy 5.36 s) played fully with valid WAV
+    headers and natural endings, so TTS was ruled out. In-app `__voiceLog`
+    instrumentation caught three overlapping playbacks (17.0/20.1/21.8 s),
+    implying stale HMR module instances from edits during a running dev
+    session; after a full page reload every reaction played to its natural end
+    (currentTime == duration, 4.00/4.12/5.16 s samples) and the user confirmed
+    the truncation is gone. `playVoice.ts` now keeps lightweight speech
+    diagnostics (`__voiceLog`, capped 200 entries) for future regressions.
 
 ## Important live evidence
 

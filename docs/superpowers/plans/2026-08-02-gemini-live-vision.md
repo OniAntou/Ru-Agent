@@ -1,4 +1,4 @@
-# Gemini Live Vision Implementation Plan
+﻿# Gemini Live Vision Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -63,16 +63,22 @@ def test_observation_vision_config_local_without_key(monkeypatch, isolated_state
     assert config == {"status": "ok", "engine": "local", "api_key": None}
 
 
-def test_settings_empty_gemini_key_does_not_crash(monkeypatch, isolated_state) -> None:
-    calls = []
+def test_settings_empty_gemini_key_deletes_from_keyring(monkeypatch, isolated_state) -> None:
+    deleted = []
     monkeypatch.setattr(
         server.core, "gemini_vision_cred",
-        type("Fake", (), {"set_key": lambda self, key: calls.append(key), "get_key": lambda self: None})(),
+        type("Fake", (), {
+            "set_key": lambda self, key: None,
+            "delete_key": lambda self: deleted.append(True),
+            "get_key": lambda self: None,
+        })(),
     )
     with TestClient(server.app) as client:
         response = client.post("/settings", json={"gemini_vision_api_key": ""})
+        config = client.get("/observation/vision-config").json()
     assert response.status_code == 200
-    assert calls == []
+    assert deleted == [True]
+    assert config == {"status": "ok", "engine": "local", "api_key": None}
 ```
 
 - [ ] **Step 2: Chạy test xác nhận fail**
@@ -100,6 +106,12 @@ Expected: FAIL — `AttributeError: 'MiniGPTCore' object has no attribute 'gemin
             core.gemini_vision_cred.set_key(payload.gemini_vision_api_key)
         except Exception as error:
             logger.error("Failed to save the Gemini vision API key: %s", error)
+            return {"status": "error", "message": str(error)}
+    else:
+        try:
+            core.gemini_vision_cred.delete_key()
+        except Exception as error:
+            logger.error("Failed to delete the Gemini vision API key: %s", error)
             return {"status": "error", "message": str(error)}
 ```
 
@@ -1050,3 +1062,4 @@ git commit -m "docs(observation): record gemini live vision integration results"
 - `VisionError` mất derive `Copy` (thêm `Gemini(String)`); mọi usage hiện tại là pattern-match nên không phá code.
 - Fallback đếm qua biến cục bộ `gemini_failures` trong `spawn_vision_worker` — không arm cooldown reaction (chỉ đổi engine).
 - Fallback reset `restart_count = 0` để local được phép khởi động lại từ đầu (nếu không, restart_count = 2 sẽ chặn local trước khi nó được thử).
+

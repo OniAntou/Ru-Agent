@@ -65,7 +65,7 @@ describe("ObservationControl", () => {
     });
 
     const detail = screen.getByText(
-      "Đang nhìn · frame 40 · vision local/12 · ứng viên 4 · thấp c/n/w 0/8/10 · điểm cuối 0.91/0.42/0.38 · cloud a/s/f 2/1/0 · ms trước/cloud/sau 900/1800/2700 · stale 1 · đã phát 1"
+      "Đang nhìn · frame 40 · vision Local Qwen/12 · ứng viên 4 · thấp c/n/w 0/8/10 · điểm cuối 0.91/0.42/0.38 · cloud a/s/f 2/1/0 · ms trước/cloud/sau 900/1800/2700 · stale 1 · đã phát 1"
     );
     expect(detail).toBeInTheDocument();
   });

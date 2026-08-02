@@ -24,6 +24,15 @@ const LABELS: Record<ObservationPhase, string> = {
   error: "Observation gặp lỗi",
 };
 
+const VISION_ENGINE_LABELS: Record<string, string> = {
+  local: "Local Qwen",
+  gemini: "Gemini Live",
+};
+
+const getVisionEngineLabel = (engine: string): string => {
+  return VISION_ENGINE_LABELS[engine] ?? engine;
+};
+
 const OFF: ObservationSnapshot = {
   phase: "off",
   message: "Screen observation is off.",
@@ -154,7 +163,7 @@ export default function ObservationControl() {
 const observationDetail =
     playbackStatus ??
     (snapshot.phase === "observing"
-      ? `Đang nhìn · frame ${metrics.framesCaptured} · vision ${metrics.visionEngine}/${metrics.visionAnalyses} · ứng viên ${metrics.visionCandidates} · thấp c/n/w ${metrics.rejectedConfidence}/${metrics.rejectedNovelty}/${metrics.rejectedWorthiness} · điểm cuối ${score(metrics.lastConfidence)}/${score(metrics.lastNovelty)}/${score(metrics.lastWorthiness)} · cloud a/s/f ${metrics.cloudAttempts}/${metrics.cloudSkips}/${metrics.cloudFailures} · ms trước/cloud/sau ${milliseconds(metrics.lastPreCloudAgeMs)}/${milliseconds(metrics.lastCloudMs)}/${milliseconds(metrics.lastPostCloudAgeMs)} · stale ${metrics.droppedStale} · đã phát ${metrics.reactionsEmitted}`
+      ? `Đang nhìn · frame ${metrics.framesCaptured} · vision ${getVisionEngineLabel(metrics.visionEngine)}/${metrics.visionAnalyses} · ứng viên ${metrics.visionCandidates} · thấp c/n/w ${metrics.rejectedConfidence}/${metrics.rejectedNovelty}/${metrics.rejectedWorthiness} · điểm cuối ${score(metrics.lastConfidence)}/${score(metrics.lastNovelty)}/${score(metrics.lastWorthiness)} · cloud a/s/f ${metrics.cloudAttempts}/${metrics.cloudSkips}/${metrics.cloudFailures} · ms trước/cloud/sau ${milliseconds(metrics.lastPreCloudAgeMs)}/${milliseconds(metrics.lastCloudMs)}/${milliseconds(metrics.lastPostCloudAgeMs)} · stale ${metrics.droppedStale} · đã phát ${metrics.reactionsEmitted}`
       : snapshot.message);
 
   const toggle = async () => {

@@ -3,7 +3,7 @@ use crate::frame_buffer::{
     mean_absolute_difference, prepare_frame_with_sequence, AdaptiveGate, FrameRing, GateDecision,
     PreparedFrame, ANALYSIS_BATCH_SIZE, MAX_FRAME_AGE, RING_CAPACITY, SAMPLE_INTERVAL,
 };
-use crate::gemini_vision_runtime::GeminiLiveVisionRuntime;
+use crate::gemini_vision_runtime::{sanitize_error_string, GeminiLiveVisionRuntime};
 use crate::screen_capture::{CaptureFailure, DxgiPrimaryFrameSource, FrameSource};
 use crate::vision_runtime::{
     LlamaVisionRuntime, VisionAnalyzer, VisionError, VisionObservation, VisionServerConfig,
@@ -532,8 +532,11 @@ fn spawn_vision_worker(
                     }) {
                         Ok(runtime) => Box::new(runtime),
                         Err(VisionError::Cancelled) => return,
-                        Err(error) => {
-                            eprintln!("vision: gemini connect failed: {error:?}");
+                        Err(VisionError::Gemini(msg)) => {
+                            eprintln!(
+                                "vision: gemini connect failed: {}",
+                                sanitize_error_string(&msg)
+                            );
                             gemini_failures += 1;
                             if gemini_failures >= 3 {
                                 eprintln!("vision: gemini failed {gemini_failures}x, falling back to local");
@@ -543,6 +546,26 @@ fn spawn_vision_worker(
                                     value.vision_engine = VisionEngine::Local;
                                 }
                             }
+                            if restart_count < 2 {
+                                restart_count += 1;
+                                set_restart_count(&snapshot, restart_count);
+                                sleep_interruptible(&stop, if restart_count == 1 { 1 } else { 3 });
+                                continue;
+                            }
+                            clear_frames(&ring, &buffered_bytes);
+                            set_phase(
+                                &snapshot,
+                                &app,
+                                ObservationPhase::Error,
+                                "Gemini vision could not start.",
+                            );
+                            stop.store(true, Ordering::Release);
+                            return;
+                        }
+                        Err(other) => {
+                            eprintln!(
+                                "vision: gemini connect failed with unexpected error: {other:?}"
+                            );
                             if restart_count < 2 {
                                 restart_count += 1;
                                 set_restart_count(&snapshot, restart_count);

@@ -11,6 +11,12 @@ use tungstenite::client_tls;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Error as WsError, Message, WebSocket};
 
+pub(crate) fn sanitize_error_string(error_str: &str) -> String {
+    error_str
+        .replace("key=", "key=***")
+        .replace("?key=", "?key=***")
+}
+
 const GEMINI_LIVE_MODEL: &str = "gemini-2.5-flash-live-preview";
 const GEMINI_WS_HOST: &str = "generativelanguage.googleapis.com:443";
 const GEMINI_WS_PATH: &str =
@@ -124,7 +130,7 @@ impl GeminiLiveVisionRuntime {
             .map_err(|_| VisionError::Gemini("timeout setup".into()))?;
         let url = format!("wss://{GEMINI_WS_HOST}{GEMINI_WS_PATH}?key={api_key}");
         let (socket, _) = client_tls(url.as_str(), stream)
-            .map_err(|error| VisionError::Gemini(format!("connect: {error}")))?;
+            .map_err(|error| VisionError::Gemini(sanitize_error_string(&format!("{error:?}"))))?;
         let mut runtime = Self { socket };
         runtime.send_setup(is_cancelled)?;
         Ok(runtime)

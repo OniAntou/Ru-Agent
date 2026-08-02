@@ -13,7 +13,7 @@ const MODEL_BYTES: u64 = 1_107_409_952;
 const MMPROJ_BYTES: u64 = 445_053_216;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(45);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
-const VISION_PROMPT: &str = "Inspect these consecutive primary-monitor frames and return only JSON. Describe the current scene, the newest visually supported event, confidence, novelty, whether the event is worth a brief social comment, and any relevant visible text. Do not give advice, diagnose software, or invent activity outside the frames.";
+pub(crate) const VISION_PROMPT: &str = "Inspect these consecutive primary-monitor frames and return only JSON. Describe the current scene, the newest visually supported event, confidence, novelty, whether the event is worth a brief social comment, and any relevant visible text. Do not give advice, diagnose software, or invent activity outside the frames.";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -26,13 +26,14 @@ pub struct VisionObservation {
     pub visible_text: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VisionError {
     MissingAsset,
     ServerStart,
     Http,
     InvalidSchema,
     Cancelled,
+    Gemini(String),
 }
 
 #[derive(Clone, Debug)]

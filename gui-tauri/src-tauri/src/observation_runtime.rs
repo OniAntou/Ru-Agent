@@ -611,7 +611,8 @@ fn spawn_vision_worker(
                     Err(
                         VisionError::InvalidSchema
                         | VisionError::Cancelled
-                        | VisionError::MissingAsset,
+                        | VisionError::MissingAsset
+                        | VisionError::Gemini(_),
                     ) => {}
                 }
             }

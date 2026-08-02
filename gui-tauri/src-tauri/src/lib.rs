@@ -15,6 +15,7 @@ use observation_runtime::{
 
 pub mod backend_bridge;
 pub mod frame_buffer;
+pub mod gemini_vision_runtime;
 pub mod observation_runtime;
 pub mod screen_capture;
 pub mod vision_runtime;

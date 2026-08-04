@@ -88,6 +88,8 @@ def build_server_command(config: VisionProbeConfig) -> list[str]:
         "--reasoning",
         "off",
         "--no-webui",
+        # Same llama-server auto chat-parser guard as the main GGUF runtime.
+        "--skip-chat-parsing",
     ]
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import threading
 import time
@@ -15,7 +16,8 @@ from ._text_utils import normalize_text
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PORT = 8188
+# 8188 is ComfyUI's default port; pick a dedicated high port for llama-server.
+DEFAULT_PORT = 18088
 DEFAULT_START_TIMEOUT_SECONDS = 90.0
 _CONTEXT_SIZE_TOKENS = 2048
 _HEALTH_CHECK_TIMEOUT_SECONDS = 2.0
@@ -52,7 +54,7 @@ def fit_messages_to_context(
     last_role, last_content = messages[-1]
     mandatory_size = len(first_content) + len(last_content)
     if mandatory_size > budget:
-        system_budget = min(len(first_content), max(256, budget * 3 // 5))
+        system_budget = min(len(first_content), max(1, budget // 2))
         user_budget = max(1, budget - system_budget)
         return (
             (first_role, first_content[:system_budget]),
@@ -127,8 +129,7 @@ class LlamaCppRuntime:
         return f"http://127.0.0.1:{self.port}"
 
     def server_command(self, gpu_layers: str = _DEFAULT_GPU_LAYERS) -> tuple[str, ...]:
-        import psutil
-        threads = str(psutil.cpu_count(logical=False) or 4)
+        threads = str(os.cpu_count() or 4)
         command = [
             str(self.server_executable),
             "--model",
@@ -145,6 +146,12 @@ class LlamaCppRuntime:
             "1",
             "--threads",
             threads,
+            # llama-server b10142 auto-builds a PEG grammar from the chat
+            # template and hard-fails (HTTP 500 "does not match the expected
+            # peg-native format") whenever a plain-text reply does not parse.
+            # Ru does not use server-side tools, so force the pure content
+            # parser instead.
+            "--skip-chat-parsing",
         ]
         lora_adapter = self.lora_adapter
         if lora_adapter is not None:
@@ -284,7 +291,13 @@ class LlamaCppRuntime:
         if on_delta is None:
             response = self._request("/v1/chat/completions", body, timeout=_REQUEST_TIMEOUT_SECONDS)
             choices = response.get("choices")
-            content = choices[0].get("message", {}).get("content") if isinstance(choices, list) and choices else None
+            content = None
+            if isinstance(choices, list):
+                for choice in choices:
+                    if isinstance(choice, dict):
+                        content = choice.get("message", {}).get("content")
+                        if content is not None:
+                            break
         else:
             content = self._request_stream("/v1/chat/completions", body, on_delta, timeout=_REQUEST_TIMEOUT_SECONDS)
         if not isinstance(content, str) or not content.strip():

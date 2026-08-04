@@ -131,7 +131,7 @@ def test_search_error_returns_graceful_fallback() -> None:
 
 
 def test_empty_search_query_in_marker_skips_search() -> None:
-    """[SEARCH: ] or [SEARCH:] with empty query → passed through without searching."""
+    """[SEARCH: ] or [SEARCH:] with empty query → marker stripped, no search."""
     def generate(_messages, *_settings, **_kwargs):
         return "[SEARCH:] nothing here"
 
@@ -152,7 +152,7 @@ def test_empty_search_query_in_marker_skips_search() -> None:
         allow_web_search=True,
         web_search=search,
     )
-    assert result == "[SEARCH:] nothing here"
+    assert result == "nothing here"
     assert search_called is False
 
 

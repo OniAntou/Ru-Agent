@@ -33,6 +33,7 @@ _SCORE_WEIGHT_IMPORTANCE = 0.05
 _SCORE_WEIGHT_CONFIDENCE = 0.03
 _SCORE_WEIGHT_PINNED = 0.02
 _RETRIEVE_MIN_SCORE = 0.18
+_RETRIEVE_SCAN_LIMIT = 2000
 
 _memory_store_registry: weakref.WeakSet[MemoryStore] = weakref.WeakSet()
 
@@ -277,18 +278,34 @@ class StructuredMemoryStore:
 
     @staticmethod
     def _tokens(text: str) -> set[str]:
-        return set(re.findall(r"[\wÀ-ỹ]+", text.casefold()))
+        return set(re.findall(r"\w+", text.casefold()))
 
     def retrieve(self, query: str, *, limit: int = 5, max_chars: int = 1200) -> tuple[MemoryRecord, ...]:
         query_tokens = self._tokens(query)
+        if not query_tokens:
+            return ()
         query_scopes = re.findall(r"[A-Za-z]:\\[^\s,.;!?]+", query)
         ranked: list[tuple[float, MemoryRecord]] = []
-        for record in self.list_active():
+        now = _serialize_datetime(_utc_now())
+        # Avoid a full table scan every turn: score only the most recent
+        # candidates (pinned first), which is where fresh memories live.
+        with self._database_lock:
+            rows = self._db_conn.execute(
+                """
+                SELECT * FROM memories
+                WHERE status = 'active' AND (expires_at IS NULL OR expires_at > ? OR pinned = 1)
+                ORDER BY pinned DESC, updated_at DESC
+                LIMIT ?
+                """,
+                (now, _RETRIEVE_SCAN_LIMIT),
+            ).fetchall()
+        records = tuple(self._record_from_row(row) for row in rows)
+        for record in records:
             scope_match = bool(record.scope and any(scope.casefold() == record.scope.casefold() for scope in query_scopes))
             if query_scopes and record.scope and not scope_match:
                 continue
             overlap = len(query_tokens & self._tokens(f"{record.content} {record.scope or ''}"))
-            lexical_score = overlap / max(1, len(query_tokens))
+            lexical_score = overlap / len(query_tokens)
             score = (
                 _SCORE_WEIGHT_LEXICAL * lexical_score
                 + _SCORE_WEIGHT_SCOPE_MATCH * float(scope_match)

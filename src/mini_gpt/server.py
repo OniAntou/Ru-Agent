@@ -97,6 +97,7 @@ app.add_middleware(
 
 def _valid_desktop_token(candidate: str) -> bool:
     if not _DESKTOP_TOKEN:
+        logger.warning("API auth is disabled: RU_DESKTOP_TOKEN is not set")
         return True
     return hmac.compare_digest(candidate, _DESKTOP_TOKEN)
 
@@ -132,6 +133,7 @@ _MAX_CONTEXT_TURNS = 8
 _MAX_SESSION_TITLE_CHARS = 50
 _DEFAULT_SESSION_TITLE = "Cuộc trò chuyện mới"
 _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+_MAX_PROMPT_CHARS = 16_000
 
 _HISTORY_LOCK = threading.Lock()
 _TURN_LOCK = threading.Lock()
@@ -139,6 +141,7 @@ _VOICE_LOCK = threading.Lock()
 _GPU_LOCK = threading.Lock()
 _VTS_LOCK = threading.Lock()
 _MEMORY_QUEUE_MAXSIZE = 50
+_MEMORY_LOCK_TIMEOUT_SECONDS = 10.0
 _MEMORY_TURN_LOCK = threading.Lock()
 _SCREEN_REACTIONS = ReactionCoordinator()
 _PENDING_REACTION_LOCK = threading.Lock()
@@ -154,6 +157,19 @@ _GPU_LIFECYCLE: GpuLifecycle | None = None
 
 _VALID_BACKENDS = (BACKEND_TRANSFORMERS, BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO)
 
+_BACKEND_ALIASES: dict[str, str] = {
+    "gguf": BACKEND_GGUF,
+    "transformers": BACKEND_TRANSFORMERS,
+    "opencode": BACKEND_OPENCODE,
+    "kilo": BACKEND_KILO,
+}
+
+def _resolve_backend(value: str | None) -> str | None:
+    """Accept both canonical names and GUI short aliases."""
+    if value is None:
+        return None
+    return _BACKEND_ALIASES.get(value, value)
+
 VOICE_START_TIMEOUT_SECONDS = 45.0
 _VOICE_PROBE_TIMEOUT_SECONDS = 0.25
 _VOICE_TTS_TIMEOUT_SECONDS = 90.0
@@ -163,7 +179,9 @@ _MAX_ERROR_BODY_BYTES = 4096
 
 _DEFAULT_SETTINGS = {
     "backend": BACKEND_GGUF,
-    "model": "deepseek-v4-flash-free",
+    "model": "",
+    "opencode_model": "",
+    "kilo_model": "",
     "api_variant": "Default",
     "max_tokens": 1024,
     "temperature": 0.7,
@@ -406,10 +424,6 @@ def _voice_selection() -> "VoiceSelection":
     return voice_selection_from_saved(label)
 
 
-def _screen_voice_selection() -> "VoiceSelection":
-    return _voice_selection()
-
-
 _VOICE_MARKERS_RE = re.compile(r"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]\s*")
 
 
@@ -532,7 +546,10 @@ def _voice_lifecycle_request(path: str, payload: dict[str, str] | None) -> dict:
     )
     if status != 200:
         raise RuntimeError("Voice service rejected lifecycle request.")
-    decoded = json.loads(body.decode("utf-8"))
+    try:
+        decoded = json.loads(body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise RuntimeError("Voice service returned an invalid lifecycle response.") from error
     if not isinstance(decoded, dict):
         raise RuntimeError("Voice service returned an invalid lifecycle response.")
     return decoded
@@ -558,7 +575,8 @@ def _gpu_lifecycle() -> GpuLifecycle:
 def apply_saved_settings() -> str:
     """Apply persisted settings to the runner (backend, model, credentials)."""
     settings = load_settings()
-    backend = settings.get("backend")
+    backend = _resolve_backend(settings.get("backend"))
+    logger.info("Loading settings: backend=%s, raw_backend=%s", backend, settings.get("backend"))
     if backend not in _VALID_BACKENDS:
         return f"No persisted settings to apply (backend={backend!r})"
     api_key = ""
@@ -569,10 +587,26 @@ def apply_saved_settings() -> str:
         except Exception as error:
             logger.warning("Could not read the saved API key: %s", error)
     core.runner.select_backend(backend)
+
+    # Determine which model field to use based on backend
+    model_name = ""
+    if backend == BACKEND_OPENCODE:
+        model_name = settings.get("opencode_model", _DEFAULT_SETTINGS["opencode_model"])
+        logger.info("Using OpenCode model: %s", model_name)
+    elif backend == BACKEND_KILO:
+        model_name = settings.get("kilo_model", _DEFAULT_SETTINGS["kilo_model"])
+        logger.info("Using Kilo model: %s", model_name)
+    else:
+        model_name = settings.get("model", _DEFAULT_SETTINGS["model"])
+        logger.info("Using local model field: %s", model_name)
+
+    checkpoint_path = settings.get("checkpoint_path", "")
+    logger.info("Loading with checkpoint_path=%s, model_name=%s", checkpoint_path, model_name)
+
     return core.runner.load(
-        checkpoint_path=settings.get("checkpoint_path", ""),
+        checkpoint_path=checkpoint_path,
         api_key=api_key,
-        model_name=settings.get("model", _DEFAULT_SETTINGS["model"]),
+        model_name=model_name,
         api_variant=settings.get("api_variant", _DEFAULT_SETTINGS["api_variant"]),
     )
 
@@ -630,18 +664,29 @@ core = MiniGPTCore()
 
 class SettingsPayload(BaseModel):
     backend: str | None = Field(default=None, max_length=64)
+    backend_choice: str | None = Field(default=None, max_length=64)
     model: str | None = Field(default=None, max_length=256)
+    opencode_model: str | None = Field(default=None, max_length=256)
+    kilo_model: str | None = Field(default=None, max_length=256)
     api_key: str = Field(default="", max_length=4096)
+    opencode_api_key: str = Field(default="", max_length=4096)
+    kilo_api_key: str = Field(default="", max_length=4096)
     api_variant: str | None = Field(default=None, max_length=64)
     max_tokens: int | None = Field(default=None, ge=1, le=1024)
+    max_new_tokens: int | None = Field(default=None, ge=1, le=1024)
     temperature: float | None = Field(default=None, ge=0.1, le=2.0)
     top_k: int | None = Field(default=None, ge=1, le=200)
     allow_web_search: bool | None = None
+    allow_online_search: bool | None = None
     enable_self_learning: bool | None = None
+    self_learning_enabled: bool | None = None
     share_memory_with_cloud: bool | None = None
+    cloud_memory_consent: bool | None = None
     checkpoint_path: str = Field(default="", max_length=1024)
     voice_label: str | None = Field(default=None, max_length=128)
     voice_speed: float | None = Field(default=None, ge=0.5, le=2.0)
+    auto_pace_enabled: bool | None = None
+    auto_read_replies: bool | None = None
     gemini_vision_api_key: str = Field(default="", max_length=4096)
 
 
@@ -694,11 +739,12 @@ class ObservationAckPayload(BaseModel):
 
 @app.get("/status")
 async def get_status():
-    return {"status": "ok", "message": "Backend is running and ready for Tauri UI."}
+    return {"status": "ok", "message": "Backend is running and ready for the WinUI3 UI."}
 
 
 @app.get("/models")
 async def get_models(backend: str = ""):
+    backend = _resolve_backend(backend) or backend
     if backend not in (BACKEND_OPENCODE, BACKEND_KILO):
         return {"status": "error", "message": f"unsupported backend: {backend!r}"}
     from mini_gpt.openai_runtime import KILO_GATEWAY_BASE_URL, OPENCODE_BASE_URL
@@ -729,8 +775,13 @@ def observation_preflight():
             "status": "error",
             "message": "Screen reactions require an active OpenCode or Kilo cloud backend.",
         }
+    if _TURN_LOCK.locked():
+        return {
+            "status": "error",
+            "message": "Ru is generating a reply; try the observer again after it finishes.",
+        }
     try:
-        selection = _screen_voice_selection()
+        selection = _voice_selection()
         _gpu_lifecycle().prepare_speech(selection)
         settings = effective_settings()
         return {
@@ -817,7 +868,7 @@ def observation_react(payload: ObservationReactionPayload):
         if manager is not None and manager.is_connected and catalog is not None and codes:
             _trigger_vts_catalog_codes(manager, catalog, codes)
 
-        selection = _screen_voice_selection()
+        selection = _voice_selection()
         settings = effective_settings()
         voice_speed = effective_voice_speed(
             settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"]),
@@ -872,79 +923,172 @@ def observation_ack(payload: ObservationAckPayload):
     return {"status": "ok"}
 
 
+_OBSERVATION_ACTIVE = False
+_OBSERVATION_LOCK = threading.Lock()
+
+
+@app.post("/observation/start")
+def observation_start():
+    global _OBSERVATION_ACTIVE
+    with _OBSERVATION_LOCK:
+        _OBSERVATION_ACTIVE = True
+    return {"status": "ok", "active": True}
+
+
+@app.post("/observation/stop")
+def observation_stop():
+    global _OBSERVATION_ACTIVE
+    with _OBSERVATION_LOCK:
+        _OBSERVATION_ACTIVE = False
+    return {"status": "ok", "active": False}
+
+
+@app.get("/observation/status")
+def observation_status():
+    with _OBSERVATION_LOCK:
+        active = _OBSERVATION_ACTIVE
+    return {
+        "status": "ok",
+        "active": active,
+        "frame_count": 0,
+        "vision_count": 0,
+        "emitted_count": 0,
+        "stale_drops": 0,
+        "ms_before": 0,
+        "ms_cloud": 0,
+        "ms_after": 0,
+        "last_motion_delta": 0.0,
+        "engine": "UltraFast-WinUI3",
+    }
+
+
+
 @app.get("/settings")
 async def get_settings():
-    return {"status": "ok", **effective_settings()}
+    settings = effective_settings()
+    backend = settings.pop("backend", BACKEND_GGUF)
+    try:
+        opencode_key = core.opencode_cred.get_key() or ""
+    except Exception:
+        opencode_key = ""
+    try:
+        kilo_key = core.kilo_cred.get_key() or ""
+    except Exception:
+        kilo_key = ""
+    try:
+        gemini_vision_key = core.gemini_vision_cred.get_key() or ""
+    except Exception:
+        gemini_vision_key = ""
+        
+    # Build reverse alias: canonical -> short name for GUI consumption
+    _REVERSE_ALIASES = {v: k for k, v in _BACKEND_ALIASES.items()}
+    backend_short = _REVERSE_ALIASES.get(backend, backend)
+    return {
+        "status": "ok",
+        "backend": backend,
+        "backend_choice": backend_short,
+        **settings,
+        # Alias fields for GUI DTO compatibility
+        "allow_online_search": settings.get("allow_web_search", True),
+        "self_learning_enabled": settings.get("enable_self_learning", True),
+        "cloud_memory_consent": settings.get("share_memory_with_cloud", False),
+        "max_new_tokens": settings.get("max_tokens", 1024),
+        # Never echo stored API keys back to the GUI; report presence only.
+        "opencode_api_key": "",
+        "kilo_api_key": "",
+        "gemini_vision_api_key": "",
+        "has_opencode_key": bool(opencode_key),
+        "has_kilo_key": bool(kilo_key),
+        "has_gemini_vision_key": bool(gemini_vision_key),
+    }
 
 
 @app.post("/settings")
 async def save_settings(payload: SettingsPayload):
-    if payload.backend is not None and payload.backend not in _VALID_BACKENDS:
-        return {"status": "error", "message": f"unsupported backend: {payload.backend}"}
+    backend_val = _resolve_backend(payload.backend_choice or payload.backend)
+    if backend_val is not None and backend_val not in _VALID_BACKENDS:
+        return {"status": "error", "message": f"unsupported backend: {backend_val}"}
     settings = effective_settings()
-    if payload.backend is not None:
-        settings["backend"] = payload.backend
+    if backend_val is not None:
+        settings["backend"] = backend_val
     if payload.model is not None:
         settings["model"] = payload.model
+    if payload.opencode_model is not None:
+        settings["opencode_model"] = payload.opencode_model
+    if payload.kilo_model is not None:
+        settings["kilo_model"] = payload.kilo_model
     if payload.api_variant is not None:
         settings["api_variant"] = payload.api_variant
-    if payload.max_tokens is not None:
-        settings["max_tokens"] = payload.max_tokens
+    resolved_max_tokens = payload.max_tokens if payload.max_tokens is not None else payload.max_new_tokens
+    if resolved_max_tokens is not None:
+        settings["max_tokens"] = resolved_max_tokens
     if payload.temperature is not None:
         settings["temperature"] = payload.temperature
     if payload.top_k is not None:
         settings["top_k"] = payload.top_k
-    if payload.allow_web_search is not None:
-        settings["allow_web_search"] = payload.allow_web_search
-    if payload.enable_self_learning is not None:
-        settings["enable_self_learning"] = payload.enable_self_learning
-    if payload.share_memory_with_cloud is not None:
-        settings["share_memory_with_cloud"] = payload.share_memory_with_cloud
+    resolved_web_search = payload.allow_web_search if payload.allow_web_search is not None else payload.allow_online_search
+    if resolved_web_search is not None:
+        settings["allow_web_search"] = resolved_web_search
+    resolved_self_learning = payload.enable_self_learning if payload.enable_self_learning is not None else payload.self_learning_enabled
+    if resolved_self_learning is not None:
+        settings["enable_self_learning"] = resolved_self_learning
+    resolved_cloud_memory = payload.share_memory_with_cloud if payload.share_memory_with_cloud is not None else payload.cloud_memory_consent
+    if resolved_cloud_memory is not None:
+        settings["share_memory_with_cloud"] = resolved_cloud_memory
     if payload.checkpoint_path.strip():
         settings["checkpoint_path"] = payload.checkpoint_path.strip()
     if payload.voice_label is not None:
         settings["voice_label"] = payload.voice_label
     if payload.voice_speed is not None:
         settings["voice_speed"] = payload.voice_speed
+    if payload.auto_pace_enabled is not None:
+        settings["auto_pace_enabled"] = payload.auto_pace_enabled
+    if payload.auto_read_replies is not None:
+        settings["auto_read_replies"] = payload.auto_read_replies
     save_settings_to_file(settings)
 
-    if "gemini_vision_api_key" in payload.model_fields_set:
-        if payload.gemini_vision_api_key.strip():
-            try:
-                core.gemini_vision_cred.set_key(payload.gemini_vision_api_key)
-            except Exception as error:
-                logger.error("Failed to save the Gemini vision API key: %s", error)
-                return {"status": "error", "message": str(error)}
-        else:
-            try:
-                core.gemini_vision_cred.delete_key()
-            except Exception as error:
-                logger.error("Failed to delete the Gemini vision API key: %s", error)
-                return {"status": "error", "message": str(error)}
+    if payload.gemini_vision_api_key and payload.gemini_vision_api_key.strip():
+        try:
+            core.gemini_vision_cred.set_key(payload.gemini_vision_api_key.strip())
+        except Exception as error:
+            logger.error("Failed to save the Gemini vision API key: %s", error)
+            return {"status": "error", "message": str(error)}
 
-    if payload.backend is None:
+    if backend_val is None:
         return {"status": "success", "message": "Settings saved."}
 
-    if payload.backend == BACKEND_OPENCODE:
-        if payload.api_key.strip():
-            core.opencode_cred.set_key(payload.api_key)
-    elif payload.backend == BACKEND_KILO:
-        if payload.api_key.strip():
-            core.kilo_cred.set_key(payload.api_key)
+    if payload.opencode_api_key and payload.opencode_api_key.strip():
+        core.opencode_cred.set_key(payload.opencode_api_key)
+    elif payload.api_key.strip() and backend_val == BACKEND_OPENCODE:
+        core.opencode_cred.set_key(payload.api_key)
 
-    core.runner.select_backend(payload.backend)
+    if payload.kilo_api_key and payload.kilo_api_key.strip():
+        core.kilo_cred.set_key(payload.kilo_api_key)
+    elif payload.api_key.strip() and backend_val == BACKEND_KILO:
+        core.kilo_cred.set_key(payload.api_key)
+
+    core.runner.select_backend(backend_val)
+    
     api_key = payload.api_key
-    if payload.backend in (BACKEND_OPENCODE, BACKEND_KILO) and not api_key.strip():
-        store = core.opencode_cred if payload.backend == BACKEND_OPENCODE else core.kilo_cred
+    if backend_val in (BACKEND_OPENCODE, BACKEND_KILO) and not api_key.strip():
+        store = core.opencode_cred if backend_val == BACKEND_OPENCODE else core.kilo_cred
         try:
             api_key = store.get_key() or ""
         except Exception as error:
             logger.warning("Could not read the saved API key: %s", error)
+
+    # For loading, determine which model to actually use based on backend
+    model_name = payload.model or ""
+    if backend_val == BACKEND_OPENCODE and payload.opencode_model:
+        model_name = payload.opencode_model
+    elif backend_val == BACKEND_KILO and payload.kilo_model:
+        model_name = payload.kilo_model
+
     try:
         result = core.runner.load(
             checkpoint_path=payload.checkpoint_path or "",
             api_key=api_key,
-            model_name=payload.model or "",
+            model_name=model_name,
             api_variant=payload.api_variant or "",
         )
         return {"status": "success", "message": result}
@@ -955,11 +1099,19 @@ async def save_settings(payload: SettingsPayload):
 
 @app.delete("/memory")
 async def clear_memory():
-    core.clear_memory()
-    return {
-        "status": "success",
-        "message": "Structured memory cleared. Session history was retained.",
-    }
+    if not _MEMORY_TURN_LOCK.acquire(blocking=False):
+        return {
+            "status": "error",
+            "message": "Memory is busy (self-learning in progress); try again in a moment.",
+        }
+    try:
+        core.clear_memory()
+        return {
+            "status": "success",
+            "message": "Structured memory cleared. Session history was retained.",
+        }
+    finally:
+        _MEMORY_TURN_LOCK.release()
 
 
 @app.get("/history")
@@ -977,7 +1129,14 @@ def session_new():
     session_id = _create_session_file()
     if session_id is None:
         return {"status": "error", "message": "Không tạo được session."}
-    return {"status": "ok", "session_id": session_id}
+    return {
+        "status": "ok",
+        "session_id": session_id,
+        "session": {
+            "id": session_id,
+            "title": _DEFAULT_SESSION_TITLE,
+        },
+    }
 
 
 @app.post("/sessions/{session_id}/activate")
@@ -1012,7 +1171,10 @@ def session_delete(session_id: str):
 
 @app.get("/voice/status")
 def voice_status():
-    return {"status": "ok", "available": voice_available()}
+    return {
+        "status": "ok",
+        "available": voice_available(),
+    }
 
 
 @app.post("/voice/tts")
@@ -1027,6 +1189,11 @@ def voice_tts(payload: VoiceTtsPayload):
     speed = effective_voice_speed(speed, auto_pace_enabled=True, pace=pace)
     text = _strip_voice_markers(text)
     try:
+        if _TURN_LOCK.locked():
+            return {
+                "status": "error",
+                "message": "Ru is generating a reply; try voice again after it finishes.",
+            }
         _gpu_lifecycle().prepare_speech(voice_selection_from_saved(voice_label))
         audio = request_voice_audio(text, voice_label, speed)
         return Response(content=audio, media_type="audio/wav")
@@ -1038,6 +1205,11 @@ def voice_tts(payload: VoiceTtsPayload):
 @app.post("/voice/warmup")
 def voice_warmup():
     try:
+        if _TURN_LOCK.locked():
+            return {
+                "status": "error",
+                "message": "Ru is generating a reply; try warm-up after it finishes.",
+            }
         selection = _voice_selection()
         _gpu_lifecycle().prepare_speech(selection)
         result = {"ready": True, "voice_profile": selection.profile_id}
@@ -1250,6 +1422,7 @@ async def chat_endpoint(websocket: WebSocket):
         await websocket.close(code=4401, reason="Unauthorized")
         return
     await websocket.accept()
+    logger.info("WebSocket chat endpoint connected")
 
     loop = asyncio.get_event_loop()
     chat_queue = asyncio.Queue()
@@ -1262,10 +1435,12 @@ async def chat_endpoint(websocket: WebSocket):
         stream_state["raw"] = raw
         stream_state["visible"] = visible
         if visible.startswith(previous) and len(visible) > len(previous):
+            chunk = visible[len(previous) :]
+            logger.debug("Streaming chunk: %s chars", len(chunk))
             _safe_put(
                 loop,
                 chat_queue,
-                {"type": "chunk", "content": visible[len(previous) :]},
+                {"type": "chunk", "content": chunk},
             )
 
     def stream_reset_callback():
@@ -1275,17 +1450,25 @@ async def chat_endpoint(websocket: WebSocket):
 
     def run_generation(prompt: str, session_id: str):
         full_reply = None
+        user_appended = False
+        memory_lock_held = False
         try:
             settings = effective_settings()
-            _MEMORY_TURN_LOCK.acquire()
-            turns_history = _session_turns(session_id)
-            if not _session_append_messages(session_id, [{"role": "user", "content": prompt}]):
+            if not _MEMORY_TURN_LOCK.acquire(timeout=_MEMORY_LOCK_TIMEOUT_SECONDS):
                 _safe_put(
                     loop,
                     chat_queue,
-                    {"type": "error", "content": "Session không tồn tại hoặc không lưu được.", "session_id": session_id},
+                    {
+                        "type": "error",
+                        "content": "Ru is busy with self-learning; try again in a few seconds.",
+                        "session_id": session_id,
+                    },
                 )
                 return
+            memory_lock_held = True
+            turns_history = _session_turns(session_id)
+            if _session_append_messages(session_id, [{"role": "user", "content": prompt}]):
+                user_appended = True
 
             manager = _VTS_MANAGER
             catalog = None
@@ -1296,22 +1479,38 @@ async def chat_endpoint(websocket: WebSocket):
                     logger.debug("VTS catalog read failed: %s", error)
 
             if core.runner.backend not in (BACKEND_OPENCODE, BACKEND_KILO):
-                _gpu_lifecycle().prepare_local_generation()
-            raw_reply = core.generate_reply_with_memory(
-                prompt=prompt,
-                max_new_tokens=settings.get("max_tokens", _DEFAULT_SETTINGS["max_tokens"]),
-                temperature=settings.get("temperature", _DEFAULT_SETTINGS["temperature"]),
-                top_k=settings.get("top_k", _DEFAULT_SETTINGS["top_k"]),
-                allow_web_search=settings.get("allow_web_search", _DEFAULT_SETTINGS["allow_web_search"]),
-                turns_history=turns_history,
-                on_stream_delta=stream_callback,
-                on_stream_reset=stream_reset_callback,
-                vts_instruction=catalog_instruction(catalog),
-                share_memory_with_cloud=settings.get(
-                    "share_memory_with_cloud",
-                    _DEFAULT_SETTINGS["share_memory_with_cloud"],
-                ),
-            )
+                with _gpu_lifecycle().local_generation():
+                    raw_reply = core.generate_reply_with_memory(
+                        prompt=prompt,
+                        max_new_tokens=settings.get("max_tokens", _DEFAULT_SETTINGS["max_tokens"]),
+                        temperature=settings.get("temperature", _DEFAULT_SETTINGS["temperature"]),
+                        top_k=settings.get("top_k", _DEFAULT_SETTINGS["top_k"]),
+                        allow_web_search=settings.get("allow_web_search", _DEFAULT_SETTINGS["allow_web_search"]),
+                        turns_history=turns_history,
+                        on_stream_delta=stream_callback,
+                        on_stream_reset=stream_reset_callback,
+                        vts_instruction=catalog_instruction(catalog),
+                        share_memory_with_cloud=settings.get(
+                            "share_memory_with_cloud",
+                            _DEFAULT_SETTINGS["share_memory_with_cloud"],
+                        ),
+                    )
+            else:
+                raw_reply = core.generate_reply_with_memory(
+                    prompt=prompt,
+                    max_new_tokens=settings.get("max_tokens", _DEFAULT_SETTINGS["max_tokens"]),
+                    temperature=settings.get("temperature", _DEFAULT_SETTINGS["temperature"]),
+                    top_k=settings.get("top_k", _DEFAULT_SETTINGS["top_k"]),
+                    allow_web_search=settings.get("allow_web_search", _DEFAULT_SETTINGS["allow_web_search"]),
+                    turns_history=turns_history,
+                    on_stream_delta=stream_callback,
+                    on_stream_reset=stream_reset_callback,
+                    vts_instruction=catalog_instruction(catalog),
+                    share_memory_with_cloud=settings.get(
+                        "share_memory_with_cloud",
+                        _DEFAULT_SETTINGS["share_memory_with_cloud"],
+                    ),
+                )
             full_reply, codes = parse_catalog_reply(raw_reply, catalog)
             full_reply = _strip_voice_markers(full_reply)
 
@@ -1329,9 +1528,15 @@ async def chat_endpoint(websocket: WebSocket):
             _safe_put(loop, chat_queue, {"type": "done", "content": full_reply, "session_id": session_id})
         except Exception as error:
             logger.exception("Chat generation failed for prompt %r", prompt[:80])
+            if user_appended:
+                _session_append_messages(
+                    session_id,
+                    [{"role": "ai", "content": f"(Lỗi xử lý: {error})"}],
+                )
             _safe_put(loop, chat_queue, {"type": "error", "content": str(error), "session_id": session_id})
         finally:
-            _MEMORY_TURN_LOCK.release()
+            if memory_lock_held:
+                _MEMORY_TURN_LOCK.release()
             _TURN_LOCK.release()
             if full_reply is not None:
                 _learn_from_turn(prompt, full_reply)
@@ -1384,4 +1589,23 @@ async def chat_endpoint(websocket: WebSocket):
 
 
 if __name__ == "__main__":
-    uvicorn.run("mini_gpt.server:app", host="127.0.0.1", port=8000)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Ru FastAPI backend")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument(
+        "--secret-token",
+        default="",
+        help="Loopback bearer token supplied by the WinUI3 host (also honored via RU_DESKTOP_TOKEN).",
+    )
+    args = parser.parse_args()
+    if args.secret_token:
+        _DESKTOP_TOKEN = args.secret_token
+        os.environ["RU_DESKTOP_TOKEN"] = args.secret_token
+    else:
+        logger.warning(
+            "No --secret-token or RU_DESKTOP_TOKEN set: desktop API auth is disabled "
+            "(bind stays on loopback). Start the backend through the WinUI3 host to enable auth."
+        )
+    uvicorn.run("mini_gpt.server:app", host=args.host, port=args.port)

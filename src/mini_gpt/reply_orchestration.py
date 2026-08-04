@@ -85,7 +85,9 @@ def execute_reply(
 
     query = search_match.group(1).strip()
     if not query:
-        return response
+        # Never surface a dangling search marker when the model left it empty.
+        cleaned = _strip_search_marker(response)
+        return cleaned if cleaned else response
     try:
         search_results = web_search(query)
     except Exception as exc:

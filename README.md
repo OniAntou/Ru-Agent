@@ -23,44 +23,49 @@ Verify the environment:
 
 ## Active GUI
 
-The active desktop GUI is the **Tauri** app in `gui-tauri/` (React 19 +
-Tauri 2, Vite), backed by the local FastAPI server
-`mini_gpt.server` on `127.0.0.1:8000`. The legacy CustomTkinter GUI
-(`mini_gpt.gui`), its patch scripts (`edit_gui.py`, `rewrite_ui.py`,
-`rewrite_kilo.py`, `fix.py`), the old Flask web GUI
-(`scripts/gui_ru_llama3_1.py`), and the `Start_Ru.bat` launcher were
-removed.
+The active desktop GUI is the **native WinUI 3** app in `gui-winui3/`
+(C#, .NET 10 + Windows App SDK 1.6+, Fluent Design with Mica backdrop),
+producing `RuApp.exe`, backed by the local FastAPI server
+`mini_gpt.server` on `127.0.0.1:8000`. The retired Tauri 2 React GUI
+(`gui-tauri/`), the legacy CustomTkinter GUI (`mini_gpt.gui`), its patch
+scripts (`edit_gui.py`, `rewrite_ui.py`, `rewrite_kilo.py`, `fix.py`), the
+old Flask web GUI (`scripts/gui_ru_llama3_1.py`), and the `Start_Ru.bat`
+launcher are no longer part of the active runtime surface.
+
+Build once (self-contained, win-x64):
+
+```powershell
+& D:\LLM\build.bat
+```
+
+Run:
 
 ```powershell
 & D:\LLM\start_dev.bat
 ```
 
-`start_dev.bat` starts only Tauri. The Rust host generates a per-run secret,
-starts exactly one owned FastAPI child on loopback, waits for readiness, and
-places it in a Windows kill-on-close Job Object. Closing or crashing the
-desktop app therefore stops the backend and every runtime it started,
-including OmniVoice and `llama-server`. REST requests use a bearer token; the
-chat WebSocket uses the same secret. Browser CORS is restricted to the Tauri
-and fixed Vite development origins.
+`start_dev.bat` starts only RuApp. The C# host generates a per-run 64-hex
+secret, starts exactly one owned FastAPI child on loopback
+(`--secret-token`), waits for readiness, and places it in a Windows
+kill-on-close Job Object. Closing or crashing the desktop app therefore
+stops the backend and every runtime it started, including OmniVoice and
+`llama-server`. REST requests use a bearer token; the chat WebSocket uses
+the same secret.
 
-or manually:
-
-```powershell
-npm run tauri dev   # in gui-tauri/
-```
-
-The app has four tabs: **Chat** (WebSocket streaming to `/chat` with
+The app has five views: **Chat** (WebSocket streaming to `/chat` with
 auto-reconnect and typing indicator; persistent session history — each chat
 session is stored under `~/.minigpt/sessions/` with an auto title from the
 first message, a "New Session" button, and a history panel to reopen/delete
 old sessions; legacy `history.json` is auto-migrated once), **Memory** (clear
 saved memory via `DELETE /memory`), **Settings** (backend, model, API key, max
 tokens, temperature, top-k, web search toggle, checkpoint path — loads the
-current state from `GET /settings`), and **Voice** (TTS via the OmniVoice
+current state from `GET /settings`), **Voice** (TTS via the OmniVoice
 service: voice pick, speed, test, warm up, release GPU; toggle "read replies
-aloud" persists in the browser and auto-plays each chat reply; microphone
+aloud" persists in the app and auto-plays each chat reply; microphone
 input → speech recognition fills the chat box; VTube Studio avatar connection
-and expression controls).
+and expression controls), and **Observation** (a manual, off-by-default
+primary-monitor observe toggle with RAM-only pipeline counters and latency
+metrics).
 
 The backend defaults to the v6.2 LoRA GGUF at
 `models\gguf\ru-llama3.1-8b-instruct-v6.2-lora.gguf`, with v6.1 and v6 GGUF
@@ -70,7 +75,7 @@ and v6. The backend keeps a bounded recent conversation context and validates
 runtime dependencies before loading the model.
 
 Persistent structured memory and online search remain runtime capabilities.
-The Tauri GUI exposes independent controls for self-learning, online search,
+The WinUI3 app exposes independent controls for self-learning, online search,
 and cloud-memory sharing. Saved memory stays out of OpenCode/Kilo prompts by
 default; sharing it with a hosted model requires explicit opt-in.
 
@@ -91,8 +96,8 @@ once before the backend reports a failure.
 
 ## Local screen observation
 
-The Tauri sidebar exposes a manual, off-by-default observer for the Windows
-primary monitor. Rust samples the desktop with DXGI, keeps only a bounded
+The WinUI3 app exposes a manual, off-by-default observer for the Windows
+primary monitor. The app samples the desktop (GDI/DXGI), keeps only a bounded
 representative-frame ring in RAM, and sends in-memory JPEG data only to the
 owned Qwen3-VL `llama-server` on loopback. No screenshot, frame, observation,
 prompt, or reaction is written to disk or added to chat history or memory.
@@ -299,7 +304,7 @@ to the equivalent OmniVoice choice. OmniVoice is the default. Ru uses
 `data\voices\omnivoice\ai_vy.wav` and its matching transcript. Do not change a
 reference audio without its matching transcript.
 
-The Tauri Voice tab exposes both voice profiles, base speed, warmup, release,
+The WinUI3 Voice view exposes both voice profiles, base speed, warmup, release,
 test playback, microphone input, and VTube Studio controls.
 
 If the Ái Vy asset is absent on a fresh checkout, fetch only that reference
@@ -350,10 +355,9 @@ stored locally beyond the resulting transcript. The former Sherpa-ONNX offline
 engine was removed from the runtime; saved settings that still reference it
 fall back to Google with a clear error.
 
-The Tauri GUI wires it through the backend `POST /voice/transcribe` endpoint:
-the mic button in the chat input records via the browser APIs
-(`getUserMedia` + `ScriptProcessorNode`), caps capture at 60 seconds,
-down-samples to 16 kHz PCM WAV, and
+The WinUI3 app wires it through the backend `POST /voice/transcribe` endpoint:
+the mic button in the chat view records via the built-in microphone service
+(16 kHz mono PCM WAV), caps capture at 60 seconds, and
 fills the chat input with the recognized Vietnamese text.
 
 ## Ru identity and capabilities
@@ -377,7 +381,7 @@ that an action happened.
 
 The VTS runtime modules (`vts_manager`, `vts_catalog`, `vts_actions`,
 `vts_motion`) are wired through the backend (`/vts/status|connect|action`) and
-the Tauri Voice tab (connect, facial joy/surprised/gentle, body
+the WinUI3 Voice view (connect, facial joy/surprised/gentle, body
 raise_hand/tail_up). For every reply, the runtime reads the current VTube Studio
 model, its hotkeys,
 and its `.exp3.json` expressions. It supplies that model-scoped catalog to Ru

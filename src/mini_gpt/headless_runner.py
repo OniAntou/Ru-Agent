@@ -42,6 +42,7 @@ class ModelRunner:
     def select_backend(self, backend: str) -> None:
         if backend not in (BACKEND_TRANSFORMERS, BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO):
             raise ValueError(f"unsupported backend: {backend}")
+        logger.info("Selecting backend: %s (previous: %s)", backend, self.backend)
         self.backend = backend
 
     def load(
@@ -51,25 +52,27 @@ class ModelRunner:
         model_name: str = "deepseek-v4-flash-free",
         api_variant: str = "Default",
     ) -> str:
-        if self.backend == BACKEND_OPENCODE:
+        logger.info("Loading backend=%s, checkpoint_path=%s, model_name=%s", self.backend, checkpoint_path, model_name)
+        if self.backend in (BACKEND_OPENCODE, BACKEND_KILO):
+            # The local llama.cpp server must not keep the GPU warm while we
+            # are on a cloud backend.
+            self.gguf_runtime.stop()
+            base_url = OPENCODE_BASE_URL if self.backend == BACKEND_OPENCODE else KILO_GATEWAY_BASE_URL
             self.openai_runtime = OpenAIRuntime(
                 api_key,
-                base_url=OPENCODE_BASE_URL,
+                base_url=base_url,
                 model_name=model_name,
                 api_variant=api_variant,
             )
-            return "Ready (OpenCode Zen API)"
-        if self.backend == BACKEND_KILO:
-            self.openai_runtime = OpenAIRuntime(
-                api_key,
-                base_url=KILO_GATEWAY_BASE_URL,
-                model_name=model_name,
-                api_variant=api_variant,
-            )
-            return "Ready (Kilo Gateway API)"
+            logger.info("Loaded %s runtime with model: %s", self.backend, model_name)
+            return f"Ready ({self.backend} API)"
         if self.backend == BACKEND_GGUF:
+            logger.info("Loading GGUF runtime with checkpoint: %s", checkpoint_path)
             self.gguf_runtime.validate_assets()
+            if not str(checkpoint_path).strip():
+                raise ValueError("checkpoint_path is required for the llama.cpp GGUF backend")
             self.checkpoint_path = Path(checkpoint_path)
+            logger.info("GGUF runtime ready with checkpoint: %s", self.checkpoint_path)
             return f"Ready (llama.cpp GGUF experiment) | Ru {self.checkpoint_path.name.split('-')[-1]} LoRA"
         missing_dependencies = dependency_status()
         if missing_dependencies:
@@ -82,6 +85,7 @@ class ModelRunner:
         if not adapter_dir.is_dir():
             raise FileNotFoundError(f"adapter directory not found: {adapter_dir}")
         self.checkpoint_path = adapter_dir
+        logger.info("Transformers runtime ready with adapter: %s", adapter_dir)
         return f"Ready (Llama 3.1 8B QLoRA) | {adapter_dir.name}"
 
     def is_cached(self, checkpoint_path: str | Path) -> bool:

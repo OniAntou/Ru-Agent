@@ -20,6 +20,7 @@ _STREAM_TIMEOUT_SECONDS = 120.0
 _MAX_ERROR_BODY_BYTES = 4096
 _RETRY_DELAY_SECONDS = 1.0
 _MAX_RETRIES = 2
+_HTTP_UNAUTHORIZED = 401
 
 
 class _NetworkStreamError(RuntimeError):
@@ -28,6 +29,10 @@ class _NetworkStreamError(RuntimeError):
 
 class OpenAIGenerationCancelled(RuntimeError):
     pass
+
+
+class AuthenticationError(RuntimeError):
+    """The hosted API rejected the saved key (HTTP 401)."""
 
 
 def _raise_if_cancelled(is_cancelled: Callable[[], bool] | None) -> None:
@@ -69,16 +74,27 @@ class OpenAIRuntime:
         try:
             with urlopen(request, timeout=30) as response:
                 response_body = response.read().decode("utf-8")
+        except HTTPError as error:
+            if error.code == _HTTP_UNAUTHORIZED:
+                raise AuthenticationError(
+                    "API key was rejected (HTTP 401). Check the saved key in Settings."
+                ) from error
+            raise RuntimeError(f"Cannot fetch models: HTTP {error.code} {error.reason}") from error
         except Exception as error:
             raise RuntimeError(f"Cannot fetch models: {error}") from error
 
         try:
             decoded = json.loads(response_body)
-            models = [m for m in decoded.get("data", []) if "id" in m]
-            models.sort(key=lambda m: m["id"])
-            return models
         except json.JSONDecodeError as error:
             raise RuntimeError("API returned invalid JSON when fetching models") from error
+        if not isinstance(decoded, dict):
+            raise RuntimeError("API returned an invalid response when fetching models")
+        data = decoded.get("data")
+        if not isinstance(data, list):
+            raise RuntimeError("API returned an invalid model list")
+        models = [m for m in data if isinstance(m, dict) and isinstance(m.get("id"), str)]
+        models.sort(key=lambda m: m["id"])
+        return models
 
     def is_cached(self) -> bool:
         return False
@@ -194,6 +210,10 @@ class OpenAIRuntime:
                 provider_message = ""
             if provider_message and not provider_message.casefold().startswith(error.reason.casefold()):
                 message = f"{message}: {provider_message}"
+            if error.code == _HTTP_UNAUTHORIZED:
+                raise AuthenticationError(
+                    "API key was rejected (HTTP 401). Check the saved key in Settings."
+                ) from error
             raise RuntimeError(message) from error
         except (socket.timeout, urllib.error.URLError) as e:
             raise _NetworkStreamError(f"Network error while communicating with OpenCode API: {e}") from e

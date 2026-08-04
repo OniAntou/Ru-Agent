@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import queue
 import threading
@@ -31,6 +32,7 @@ def isolated_state(monkeypatch, tmp_path):
             {
                 "prepare_local_generation": lambda self: None,
                 "prepare_speech": lambda self, selection: None,
+                "local_generation": contextlib.nullcontext,
             },
         )(),
     )
@@ -194,7 +196,9 @@ def test_settings_saves_gemini_vision_key(monkeypatch, isolated_state) -> None:
         response = client.post("/settings", json={"gemini_vision_api_key": "gem-key-123"})
         assert response.status_code == 200
         body = client.get("/settings").json()
-        assert "gemini_vision_api_key" not in body
+        assert body["gemini_vision_api_key"] == ""
+        assert "gem-key-123" not in json.dumps(body)
+        assert body["has_gemini_vision_key"] is True
         config = client.get("/observation/vision-config").json()
     assert saved == ["gem-key-123"]
     assert config == {"status": "ok", "engine": "gemini", "api_key": "gem-key-123"}
@@ -210,7 +214,7 @@ def test_observation_vision_config_local_without_key(monkeypatch, isolated_state
     assert config == {"status": "ok", "engine": "local", "api_key": None}
 
 
-def test_settings_empty_gemini_key_deletes_from_keyring(monkeypatch, isolated_state) -> None:
+def test_settings_empty_gemini_key_keeps_existing_key(monkeypatch, isolated_state) -> None:
     deleted = []
     monkeypatch.setattr(
         server.core, "gemini_vision_cred",
@@ -222,10 +226,8 @@ def test_settings_empty_gemini_key_deletes_from_keyring(monkeypatch, isolated_st
     )
     with TestClient(server.app) as client:
         response = client.post("/settings", json={"gemini_vision_api_key": ""})
-        config = client.get("/observation/vision-config").json()
     assert response.status_code == 200
-    assert deleted == [True]
-    assert config == {"status": "ok", "engine": "local", "api_key": None}
+    assert deleted == [], "an empty key field must not wipe the saved key"
 
 
 def test_models_endpoint_rejects_local_backend(monkeypatch, isolated_state) -> None:

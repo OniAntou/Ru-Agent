@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from time import perf_counter
 
@@ -58,6 +59,19 @@ class GpuLifecycle:
             for controller in self._voice_services.values():
                 if controller.available():
                     self._release_voice_service(controller)
+
+    @contextlib.contextmanager
+    def local_generation(self) -> Iterator[None]:
+        """Hold the GPU lock for the full duration of a local generation.
+
+        A concurrent observation/voice warmup must not release the local model
+        (or unload voice services) in the middle of a running generation.
+        """
+        with self._lock:
+            for controller in self._voice_services.values():
+                if controller.available():
+                    self._release_voice_service(controller)
+            yield
 
     def prepare_speech(self, selection: VoiceSelection) -> None:
         with self._lock:

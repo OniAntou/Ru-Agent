@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "RuApp (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "RuApp (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

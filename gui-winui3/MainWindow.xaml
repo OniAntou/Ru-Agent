@@ -1,0 +1,149 @@
+<Window
+    x:Class="RuApp.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:RuApp.Models">
+
+    <Grid Background="#202020">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Main Content Area -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="SidebarColumn" Width="240" MinWidth="150" MaxWidth="400"/>
+                <ColumnDefinition Width="4"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Navigation Sidebar (Frosted Glass / Translucent) -->
+            <Border Grid.Column="0" Background="#1C1C1C" BorderBrush="#2E2E2E" BorderThickness="0,0,1,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Padding="0,24,0,0">
+                            <!-- Header -->
+                            <StackPanel x:Name="HeaderPanel" Orientation="Horizontal" Spacing="8" Margin="20,0,12,24">
+                                <FontIcon Glyph="&#xE914;" FontSize="18" Foreground="#A0C0FF" VerticalAlignment="Center"/>
+                                <TextBlock Text="Ru Assistant" FontSize="14" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" 
+                                        Foreground="White" VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <!-- Navigation Items -->
+                            <Button x:Name="NavNewChat" Click="OnNewChatClick" HorizontalAlignment="Stretch" Margin="8,2"
+                                    Background="Transparent" Foreground="White" Padding="8,6" CornerRadius="4" BorderThickness="0" HorizontalContentAlignment="Left">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <FontIcon Glyph="&#xE710;" FontSize="14"/>
+                                    <TextBlock x:Name="LabelNewChat" Text="Đoạn chat mới" FontSize="13" FontWeight="Medium"/>
+                                </StackPanel>
+                            </Button>
+
+                            <Button x:Name="NavChat" Tag="chat" Click="OnNavClick" HorizontalAlignment="Stretch" Margin="8,2"
+                                    Background="Transparent" Foreground="White" Padding="8,6" CornerRadius="4" BorderThickness="0" HorizontalContentAlignment="Left">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <FontIcon Glyph="&#xE8F2;" FontSize="14"/>
+                                    <TextBlock x:Name="LabelChat" Text="Trò chuyện" FontSize="13" FontWeight="Medium"/>
+                                </StackPanel>
+                            </Button>
+
+                            <Button x:Name="NavVoice" Tag="voice" Click="OnNavClick" HorizontalAlignment="Stretch" Margin="8,2"
+                                    Background="Transparent" Foreground="White" Padding="8,6" CornerRadius="4" BorderThickness="0" HorizontalContentAlignment="Left">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <FontIcon Glyph="&#xE720;" FontSize="14"/>
+                                    <TextBlock x:Name="LabelVoice" Text="Giọng nói" FontSize="13" FontWeight="Medium"/>
+                                </StackPanel>
+                            </Button>
+
+                            <Button x:Name="NavObservation" Tag="observation" Click="OnNavClick" HorizontalAlignment="Stretch" Margin="8,2"
+                                    Background="Transparent" Foreground="White" Padding="8,6" CornerRadius="4" BorderThickness="0" HorizontalContentAlignment="Left">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <FontIcon Glyph="&#xE81E;" FontSize="14"/>
+                                    <TextBlock x:Name="LabelObservation" Text="Quan sát" FontSize="13" FontWeight="Medium"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <TextBlock x:Name="LabelRecents" Grid.Row="1" Text="Recents" FontSize="11" FontWeight="SemiBold" Foreground="#666666" Margin="16,24,0,8" />
+                        
+                        <ListView x:Name="SidebarSessionList" Grid.Row="2" SelectionMode="Single" SelectionChanged="OnSessionSelectionChanged" Margin="8,0" Padding="0,0,0,16">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="MinHeight" Value="32" />
+                                    <Setter Property="Padding" Value="8,4" />
+                                    <Setter Property="CornerRadius" Value="8" />
+                                    <Setter Property="Margin" Value="0,1" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="models:SessionInfo">
+                                    <Grid PointerEntered="SessionItem_PointerEntered" PointerExited="SessionItem_PointerExited" Background="Transparent">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{x:Bind Title}" FontSize="13" Foreground="#DDDDDD" 
+                                                   TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Title}" 
+                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <Button Grid.Column="1" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
+                                                Width="20" Height="20" CornerRadius="4" Click="OnDeleteSessionClick" 
+                                                Tag="{x:Bind Id}" ToolTipService.ToolTip="Xóa" Visibility="Collapsed">
+                                            <FontIcon Glyph="&#xE74D;" FontSize="10" Foreground="#888888"/>
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Grid>
+
+                    <StackPanel Grid.Row="1" Padding="0,0,0,16">
+                        <Button x:Name="NavSettings" Tag="settings" Click="OnNavClick" HorizontalAlignment="Stretch" Margin="8,2"
+                                Background="Transparent" Foreground="White" Padding="8,6" CornerRadius="4" BorderThickness="0" HorizontalContentAlignment="Left">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <FontIcon Glyph="&#xE713;" FontSize="14"/>
+                                <TextBlock x:Name="LabelSettings" Text="Cài đặt" FontSize="13" FontWeight="Medium"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Resizer -->
+            <Border x:Name="SidebarResizer" Grid.Column="1" Background="Transparent"
+                    PointerPressed="Resizer_PointerPressed" PointerMoved="Resizer_PointerMoved" PointerReleased="Resizer_PointerReleased" />
+
+            <!-- Content Frame -->
+            <ContentControl x:Name="ContentFrame" Grid.Column="2" Margin="0" 
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
+        </Grid>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="1" Background="#1C1C1C" BorderBrush="#2E2E2E" BorderThickness="0,1,0,0">
+            <Grid Padding="24,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
+                    <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#4CAF50" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="StatusText" Text="Hệ thống đã sẵn sàng" FontSize="12" FontFamily="Segoe UI"
+                               Foreground="#AAAAAA" VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="Ru Assistant 2.0" FontSize="12" FontFamily="Segoe UI"
+                           Foreground="#666666" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

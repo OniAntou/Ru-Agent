@@ -1,0 +1,67 @@
+using System;
+using System.Collections.ObjectModel;
+using System.Threading.Tasks;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using RuApp.Models;
+using RuApp.Services;
+
+namespace RuApp.Views
+{
+    public sealed partial class MemoryView : UserControl
+    {
+        private ApiService? _apiService;
+        public ObservableCollection<MemoryItemDto> Memories { get; } = new();
+
+        public MemoryView()
+        {
+            this.InitializeComponent();
+            MemoryListView.ItemsSource = Memories;
+        }
+
+        public void Initialize(ApiService apiService)
+        {
+            _apiService = apiService;
+            _ = LoadMemoryAsync();
+        }
+
+        private async Task LoadMemoryAsync()
+        {
+            if (_apiService == null) return;
+            Memories.Clear();
+            var items = await _apiService.GetMemoryAsync();
+            if (items != null)
+            {
+                foreach (var item in items)
+                {
+                    Memories.Add(item);
+                }
+            }
+        }
+
+        private async void OnClearMemoryClick(object sender, RoutedEventArgs e)
+        {
+            if (_apiService == null) return;
+
+            var dialog = new ContentDialog
+            {
+                Title = "Xác nhận xóa bộ nhớ",
+                Content = "Bạn có chắc chắn muốn xóa toàn bộ bộ nhớ cục bộ đã lưu? Thao tác này không thể hoàn tác.",
+                PrimaryButtonText = "Xóa toàn bộ",
+                CloseButtonText = "Hủy",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = this.XamlRoot
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary)
+            {
+                bool ok = await _apiService.ClearMemoryAsync();
+                if (ok)
+                {
+                    Memories.Clear();
+                }
+            }
+        }
+    }
+}

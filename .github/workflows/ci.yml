@@ -19,29 +19,11 @@ jobs:
       - run: python scripts/verify_corpus_byte_identical.py
       - run: pip check
 
-  frontend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: gui-tauri
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: gui-tauri/package-lock.json
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
-
-  rust:
+  winui:
     runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: gui-tauri/src-tauri
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --locked
-      - run: cargo check --locked
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: dotnet build gui-winui3/RuApp.csproj -c Release -r win-x64

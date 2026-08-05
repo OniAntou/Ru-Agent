@@ -27,10 +27,8 @@ The active desktop GUI is the **native WinUI 3** app in `gui-winui3/`
 (C#, .NET 10 + Windows App SDK 1.6+, Fluent Design with Mica backdrop),
 producing `RuApp.exe`, backed by the local FastAPI server
 `mini_gpt.server` on `127.0.0.1:8000`. The retired Tauri 2 React GUI
-(`gui-tauri/`), the legacy CustomTkinter GUI (`mini_gpt.gui`), its patch
-scripts (`edit_gui.py`, `rewrite_ui.py`, `rewrite_kilo.py`, `fix.py`), the
-old Flask web GUI (`scripts/gui_ru_llama3_1.py`), and the `Start_Ru.bat`
-launcher are no longer part of the active runtime surface.
+(`gui-tauri/`), the legacy CustomTkinter GUI, and the old Flask web GUI
+have been removed from the repository.
 
 Build once (self-contained, win-x64):
 

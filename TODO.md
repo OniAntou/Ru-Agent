@@ -27,7 +27,7 @@
 - [x] Route Ru emotion through VTS: no Unicode emoji or ASCII emoticons in chat,
   with natural prose fallback when VTS is unavailable.
 - [x] Migrate Desktop App GUI from Tauri 2 React frontend to Native WinUI 3 C# (.NET 10 / Windows App SDK 1.6+) with Fluent Design, Mica backdrop, Job Object backend process management, strongly-typed REST and WebSocket streaming clients. Build succeeded (0 errors, 0 warnings) and self-contained binary published.
-- [x] Retire the Tauri 2 React GUI from the active runtime surface: the active GUI is now the native WinUI 3 app (`gui-winui3/`, `RuApp.exe`), launched by `start_dev.bat`; README/TODO updated accordingly. The retired `gui-tauri/` tree remains on disk but is no longer supported.
+- [x] Retire and remove the Tauri 2 React GUI from the runtime surface: the active GUI is the native WinUI 3 app (`gui-winui3/`, `RuApp.exe`), launched by `start_dev.bat`; the `gui-tauri/` tree was deleted and CI now builds the WinUI 3 app.
 - [ ] Complete manual bilingual/held-out review and verified physical-VRAM
   gate for v6.2 before calling it quality-gate promoted.
 - [x] Finish the bounded v6.1 candidate and its comparison evaluation; its

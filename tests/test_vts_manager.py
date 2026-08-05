@@ -57,3 +57,12 @@ def test_apply_config_is_thread_safe_under_load():
     for thread in threads:
         thread.join()
     assert errors == []
+def test_set_mouse_tracking_applies_sensitivity():
+    manager = VTSManager()
+    manager.set_mouse_tracking(True, 2.0)
+    assert manager._mouse_tracking_enabled is True
+    assert manager._mouse_eye_tracker._sensitivity == 2.0
+
+
+def test_last_connect_error_defaults_none():
+    assert VTSManager().last_connect_error is None

@@ -80,6 +80,7 @@ class VTSManager:
         self._eye_controller = EyeMotionController(self._motion_random)
         self._mouse_eye_tracker = MouseEyeTracker()
         self._mouse_tracking_enabled = False
+        self.last_connect_error: str | None = None
         self._pose_cycle_scheduler = PoseCycleScheduler(self._motion_random)
         self._last_micro_action_identifier: str | None = None
         self._injection_paused = False
@@ -249,6 +250,7 @@ class VTSManager:
             if not authenticated:
                 raise RuntimeError("VTube Studio did not authenticate Ru")
             self.is_connected = True
+            self.last_connect_error = None
             try:
                 response = await asyncio.wait_for(
                     self.vts.request(self.vts.vts_request.requestHotKeyList()),
@@ -265,6 +267,7 @@ class VTSManager:
             self._ensure_sway_task()
         except Exception as e:
             logger.warning("Failed to connect to VTube Studio: %s", e)
+            self.last_connect_error = str(e)
             self.is_connected = False
 
     def _ensure_sway_task(self) -> None:
@@ -486,8 +489,10 @@ class VTSManager:
                 authenticated = await self.vts.request_authenticate()
             if not authenticated:
                 logger.error("VTS reconnect auth failed")
+                self.last_connect_error = "VTube Studio did not authenticate Ru"
                 return
             self.is_connected = True
+            self.last_connect_error = None
             await self.setup_custom_parameters()
             self._catalog_cache = None
             self._reconnect_attempts = 0
@@ -496,21 +501,20 @@ class VTSManager:
             logger.info("VTS reconnected")
         except Exception as e:
             self.is_connected = False
+            self.last_connect_error = str(e)
             logger.error("VTS reconnect failed: %s", e)
 
     # ── Mouse eye tracking ──────────────────────────────────────────────
 
-    def set_mouse_tracking(self, enabled: bool) -> None:
+    def set_mouse_tracking(self, enabled: bool, sensitivity: float = 1.0) -> None:
         """Toggle cursor-follow gaze + head motion.
 
-        When *enabled* the ``sway_loop`` reads the cursor position directly
-        every tick (10 Hz) and feeds it to ``MouseEyeTracker`` so both eye
-        and head parameters move in sync — eyes quick, head slow.
-        When *disabled* the idle sine-wave head motion resumes.
+        *enabled* bật theo dõi chuột với độ nhạy ``sensitivity`` (0.1-3.0).
+        Khi bật, reset eye/head rồi cache kích thước màn hình; khi tắt chỉ reset.
         """
         self._mouse_tracking_enabled = bool(enabled)
+        self._mouse_eye_tracker.set_sensitivity(sensitivity)
         if enabled:
-            # Reset eye + head, giữ body để tránh giật
             self._mouse_eye_tracker.reset()
             self._mouse_eye_tracker.start()
         else:

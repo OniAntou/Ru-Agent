@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Windows.Media.Core;
@@ -53,18 +54,38 @@ namespace RuApp.Services
 
             player.MediaOpened += async (_, _) =>
             {
-                player.Play();
-                await Task.CompletedTask;
+                try
+                {
+                    player.Play();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[VoicePlayback] MediaOpened failed: {ex.Message}");
+                }
             };
             player.MediaEnded += async (_, _) =>
             {
-                CleanupPlayer();
-                await _apiService.SetVtsSpeakingAsync(false);
+                try
+                {
+                    CleanupPlayer();
+                    await _apiService.SetVtsSpeakingAsync(false);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[VoicePlayback] MediaEnded failed: {ex.Message}");
+                }
             };
             player.MediaFailed += async (_, _) =>
             {
-                CleanupPlayer();
-                await _apiService.SetVtsSpeakingAsync(false);
+                try
+                {
+                    CleanupPlayer();
+                    await _apiService.SetVtsSpeakingAsync(false);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[VoicePlayback] MediaFailed failed: {ex.Message}");
+                }
             };
 
             var stream = new InMemoryRandomAccessStream();
@@ -91,8 +112,22 @@ namespace RuApp.Services
             var player = _player;
             if (player == null) return;
             _player = null;
-            player.Pause();
-            player.Source = null;
+            try
+            {
+                player.Pause();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[VoicePlayback] Pause failed: {ex.Message}");
+            }
+            try
+            {
+                player.Source = null;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[VoicePlayback] Clear source failed: {ex.Message}");
+            }
             player.Dispose();
             _stream?.Dispose();
             _stream = null;

@@ -38,7 +38,6 @@ namespace RuApp.Services
                 venvPython = "python.exe";
             }
 
-            // Create Job Object with KillOnClose flag
             CreateJobObjectWithKillOnClose();
 
             var startInfo = new ProcessStartInfo
@@ -54,6 +53,10 @@ namespace RuApp.Services
 
             _process = new Process { StartInfo = startInfo };
             _process.Start();
+            // Drain the redirected stdout/stderr asynchronously. Without a
+            // reader the OS pipe (a few KB) fills up once the backend logs
+            // enough lines, and the child blocks on write forever.
+            _ = DrainChildOutputAsync(_process);
 
             if (_jobHandle != IntPtr.Zero)
             {
@@ -61,13 +64,12 @@ namespace RuApp.Services
                 {
                     AssignProcessToJobObject(_jobHandle, _process.Handle);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Safe fallback
+                    Debug.WriteLine($"[BackendProcessManager] AssignProcessToJobObject failed: {ex.Message}");
                 }
             }
 
-            // Wait for server readiness
             using var httpClient = new System.Net.Http.HttpClient();
             httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", AuthSecret);
 
@@ -82,9 +84,9 @@ namespace RuApp.Services
                         return true;
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Server starting up...
+                    Debug.WriteLine($"[BackendProcessManager] Backend not ready yet ({i + 1}/30): {ex.Message}");
                 }
                 await Task.Delay(500, cancellationToken);
             }
@@ -127,31 +129,60 @@ namespace RuApp.Services
             }
         }
 
-        public void Dispose()
+        private static async Task DrainChildOutputAsync(Process process)
         {
             try
             {
-                if (_process != null && !_process.HasExited)
-                {
-                    _process.Kill(entireProcessTree: true);
-                    _process.Dispose();
-                }
+                await Task.WhenAll(
+                    process.StandardOutput.ReadToEndAsync(),
+                    process.StandardError.ReadToEndAsync()
+                );
             }
-            catch { }
+            catch
+            {
+                // Streams end when the child exits; nothing else to do.
+            }
+        }
 
-            // Additional cleanup: wait for the backend process to exit gracefully.
+        public void Dispose()
+        {
+            var process = Interlocked.Exchange(ref _process, null);
+            if (process == null || process.HasExited)
+            {
+                return;
+            }
+
             try
             {
-                if (_process != null && !_process.HasExited)
-                {
-                    _process.WaitForExit(500);
-                }
+                process.Kill(entireProcessTree: true);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[BackendProcessManager] Kill failed: {ex.Message}");
+            }
+            finally
+            {
+                try
+                {
+                    process.WaitForExit(500);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[BackendProcessManager] WaitForExit failed: {ex.Message}");
+                }
+                process.Dispose();
+            }
 
             if (_jobHandle != IntPtr.Zero)
             {
-                CloseHandle(_jobHandle);
+                try
+                {
+                    CloseHandle(_jobHandle);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[BackendProcessManager] CloseHandle failed: {ex.Message}");
+                }
                 _jobHandle = IntPtr.Zero;
             }
         }

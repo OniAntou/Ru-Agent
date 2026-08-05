@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Dispatching;
 using RuApp.Models;
 using RuApp.Services;
 
@@ -30,12 +31,14 @@ namespace RuApp.Views
     {
         public DataTemplate? UserTemplate { get; set; }
         public DataTemplate? AssistantTemplate { get; set; }
+        public DataTemplate? StreamingTemplate { get; set; }
 
         protected override DataTemplate? SelectTemplateCore(object item, DependencyObject container)
         {
             if (item is ChatMessageItem msg)
             {
                 if (msg.Role == "user") return UserTemplate;
+                if (msg.IsStreaming) return StreamingTemplate ?? AssistantTemplate;
                 return AssistantTemplate;
             }
             return base.SelectTemplateCore(item, container);
@@ -67,8 +70,10 @@ namespace RuApp.Views
 
         private void OnRootGridSizeChanged(object sender, SizeChangedEventArgs e)
         {
-            // Keep the input bar centered while the window resizes on an
-            // empty session; once chatting it sits at the bottom already.
+            // Luôn đồng bộ chiều rộng vùng chat và khung nhập khi cửa sổ đổi kích thước.
+            ApplyInputWidth();
+
+            // Khi chưa có tin nhắn, tiếp tục giữ khung nhập ở giữa theo chiều dọc.
             if (_inputCentered)
             {
                 UpdateCenterDelta();
@@ -95,7 +100,6 @@ namespace RuApp.Views
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                TypingIndicator.IsActive = false;
             });
         }
 
@@ -111,7 +115,6 @@ namespace RuApp.Views
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                TypingIndicator.IsActive = false;
                 var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
                 if (last != null)
                 {
@@ -161,7 +164,6 @@ namespace RuApp.Views
                 if (string.IsNullOrEmpty(text) || _wsClient == null) return;
 
                 ChatInputTextBox.Text = string.Empty;
-                TypingIndicator.IsActive = true;
 
                 Messages.Add(new ChatMessageItem { Role = "user", Content = text });
                 var assistantMsg = new ChatMessageItem { Role = "assistant", Content = "", IsStreaming = true };
@@ -181,7 +183,6 @@ namespace RuApp.Views
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error in SendCurrentMessageAsync: {ex.Message}");
-                TypingIndicator.IsActive = false;
                 var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
                 if (last != null)
                 {
@@ -214,8 +215,27 @@ namespace RuApp.Views
 
         private void ApplyInputWidth()
         {
+            double contentWidth = Math.Max(
+                0,
+                Math.Min(InputMaxWidth, RootGrid.ActualWidth)
+            );
+
+            // Khung nhập.
             InputBorder.HorizontalAlignment = HorizontalAlignment.Center;
-            InputBorder.Width = Math.Max(0, Math.Min(InputMaxWidth, RootGrid.ActualWidth));
+            InputBorder.Width = contentWidth;
+
+            // Ép toàn bộ chuỗi Grid -> ScrollViewer -> ListView có cùng chiều rộng.
+            // Nếu chỉ đặt Width cho ChatColumn, ListView vẫn có thể co theo nội dung.
+            ChatColumn.HorizontalAlignment = HorizontalAlignment.Center;
+            ChatColumn.Width = contentWidth;
+
+            ChatScrollHost.HorizontalAlignment = HorizontalAlignment.Stretch;
+            ChatScrollHost.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            ChatScrollHost.Width = contentWidth;
+
+            ChatListView.HorizontalAlignment = HorizontalAlignment.Stretch;
+            ChatListView.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            ChatListView.Width = contentWidth;
         }
 
         private void UpdateCenterDelta()
@@ -285,6 +305,19 @@ namespace RuApp.Views
             if (ChatScrollHost.ScrollableHeight > 0)
             {
                 ChatScrollHost.ChangeView(null, ChatScrollHost.ScrollableHeight, null, disableAnimation: true);
+                return;
+            }
+            // Right after items are added the ListView has not measured yet, so
+            // ScrollableHeight is still 0. Retry on the next layout passes.
+            DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, RetryScrollAfterLayout);
+        }
+
+        private void RetryScrollAfterLayout()
+        {
+            ChatScrollHost.UpdateLayout();
+            if (ChatScrollHost.ScrollableHeight > 0)
+            {
+                ChatScrollHost.ChangeView(null, ChatScrollHost.ScrollableHeight, null, disableAnimation: true);
             }
         }
 
@@ -332,7 +365,6 @@ namespace RuApp.Views
                 {
                     try
                     {
-                        TypingIndicator.IsActive = false;
                         var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
                         if (last != null)
                         {
@@ -387,7 +419,6 @@ namespace RuApp.Views
             {
                 DispatcherQueue.TryEnqueue(() =>
                 {
-                    TypingIndicator.IsActive = false;
                     
                     var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
                     if (last == null)

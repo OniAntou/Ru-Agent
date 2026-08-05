@@ -13,6 +13,7 @@ namespace RuApp.Services
         private MediaCapture? _capture;
         private InMemoryRandomAccessStream? _stream;
         private MediaEncodingProfile? _profile;
+        private bool _isStopping;
 
         public bool IsRecording => _capture != null;
 
@@ -50,11 +51,20 @@ namespace RuApp.Services
 
         public async Task<byte[]?> StopAsync()
         {
+            if (_isStopping)
+            {
+                return null;
+            }
+            _isStopping = true;
+
             var capture = _capture;
             var stream = _stream;
             if (capture == null || stream == null)
             {
-                await StopAsync();
+                _capture = null;
+                _stream = null;
+                _profile = null;
+                _isStopping = false;
                 return null;
             }
 
@@ -78,7 +88,10 @@ namespace RuApp.Services
             }
             finally
             {
-                await StopAsync();
+                _capture = null;
+                _stream = null;
+                _profile = null;
+                _isStopping = false;
             }
             return wavBytes;
         }

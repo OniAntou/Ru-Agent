@@ -11,7 +11,6 @@
     HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
 
     <UserControl.Resources>
-        <!-- Template for User -->
         <DataTemplate x:Key="UserMessageTemplate" x:DataType="models:ChatMessageItem">
             <Grid Margin="0,8" HorizontalAlignment="Stretch">
                 <Grid HorizontalAlignment="Right" Margin="48,0,0,0">
@@ -22,7 +21,23 @@
             </Grid>
         </DataTemplate>
 
-        <!-- Template for Assistant -->
+        <DataTemplate x:Key="AssistantStreamingTemplate" x:DataType="models:ChatMessageItem">
+            <Grid Margin="0,8" HorizontalAlignment="Stretch">
+                <Grid HorizontalAlignment="Left" Margin="0,0,48,0">
+                    <Border Background="Transparent" CornerRadius="16" Padding="8,12">
+                        <TextBlock Text="..." FontSize="15" FontWeight="Bold" Foreground="#CCCCCC">
+                            <TextBlock.Resources>
+                                <Storyboard x:Name="StreamingDotsStoryboard" RepeatBehavior="Forever">
+                                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                     From="0.2" To="1.0" Duration="0:0:0.9" AutoReverse="True"/>
+                                </Storyboard>
+                            </TextBlock.Resources>
+                        </TextBlock>
+                    </Border>
+                </Grid>
+            </Grid>
+        </DataTemplate>
+
         <DataTemplate x:Key="AssistantMessageTemplate" x:DataType="models:ChatMessageItem">
             <Grid Margin="0,8" HorizontalAlignment="Stretch">
                 <Grid HorizontalAlignment="Left" Margin="0,0,48,0">
@@ -35,20 +50,41 @@
 
         <views:ChatMessageTemplateSelector x:Key="ChatTemplateSelector"
             UserTemplate="{StaticResource UserMessageTemplate}"
-            AssistantTemplate="{StaticResource AssistantMessageTemplate}" />
+            AssistantTemplate="{StaticResource AssistantMessageTemplate}"
+            StreamingTemplate="{StaticResource AssistantStreamingTemplate}" />
     </UserControl.Resources>
 
     <Grid x:Name="RootGrid" RowDefinitions="*,Auto" Background="Transparent">
         
         <!-- Chat List -->
-        <Grid x:Name="ChatColumn" Grid.Row="0" HorizontalAlignment="Center" MaxWidth="860">
-            <ScrollViewer x:Name="ChatScrollHost" VerticalContentAlignment="Bottom"
-                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                <ListView x:Name="ChatListView" Padding="0,16,0,24" SelectionMode="None"
+        <Grid x:Name="ChatColumn"
+              Grid.Row="0"
+              HorizontalAlignment="Center"
+              MaxWidth="860">
+            <ScrollViewer x:Name="ChatScrollHost"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
+                          VerticalContentAlignment="Bottom"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <ListView x:Name="ChatListView"
+                          Padding="0,16,0,24"
+                          SelectionMode="None"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Stretch"
                           ItemTemplateSelector="{StaticResource ChatTemplateSelector}"
-                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                          ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                    <ListView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <ItemsStackPanel Orientation="Vertical"
+                                             HorizontalAlignment="Stretch" />
+                        </ItemsPanelTemplate>
+                    </ListView.ItemsPanel>
+
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalAlignment" Value="Stretch" />
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="Margin" Value="0" />
                             <Setter Property="Padding" Value="0" />
@@ -79,11 +115,9 @@
                             <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
                         </TextBox.Resources>
                     </TextBox>
-                    
-                    <ProgressRing x:Name="TypingIndicator" Grid.Column="2" IsActive="False" Width="16" Height="16" Margin="0,0,8,0" Foreground="#A0C0FF"/>
 
-                    <Button x:Name="SendButton" Grid.Column="3" Click="OnSendClick" Width="36" Height="36" CornerRadius="18" Background="#2563EB" BorderThickness="0">
-                        <FontIcon Glyph="&#xE725;" FontSize="15" Foreground="#FFFFFF" Margin="-2,1,0,0"/>
+                    <Button x:Name="SendButton" Grid.Column="2" Click="OnSendClick" Width="36" Height="36" CornerRadius="18" Background="#2563EB" BorderThickness="0">
+                        <FontIcon Glyph="&#xE725;" FontSize="15" Foreground="#DDDDDD" Margin="-2,1,0,0"/>
                     </Button>
                 </Grid>
             </Border>

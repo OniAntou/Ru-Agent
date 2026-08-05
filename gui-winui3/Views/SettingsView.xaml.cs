@@ -11,8 +11,11 @@ namespace RuApp.Views
     public sealed partial class SettingsView : UserControl
     {
         private ApiService? _apiService;
+        private ScreenObserverService? _observerService;
         private bool _loading = false;
         private List<string> _allModels = new();
+        private DispatcherTimer? _autoSaveTimer;
+        private bool _saveInProgress;
 
         private static readonly Dictionary<string, string[]> FallbackModels = new()
         {
@@ -27,11 +30,109 @@ namespace RuApp.Views
             this.InitializeComponent();
         }
 
-        public void Initialize(ApiService apiService)
+        public void Initialize(ApiService apiService, ScreenObserverService observerService)
         {
             _apiService = apiService;
+            _observerService = observerService;
             MemoryControl.Initialize(apiService);
             _ = LoadSettingsAsync();
+            SetupAutoSave();
+            SetupObservation();
+        }
+
+        private void SetupObservation()
+        {
+            if (_observerService == null) return;
+            _observerService.OnMetricsUpdated += OnObservationMetricsUpdated;
+            UpdateObservationUiState();
+        }
+
+        private void SetupAutoSave()
+        {
+            _autoSaveTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(800)
+            };
+            _autoSaveTimer.Tick += async (_, __) =>
+            {
+                _autoSaveTimer.Stop();
+                await SaveSettingsAsync();
+            };
+
+            BackendComboBox.SelectionChanged += (_, __) => ScheduleAutoSave();
+            ModelComboBox.SelectionChanged += (_, __) => ScheduleAutoSave();
+            ModelSearchBox.TextChanged += (_, __) => ScheduleAutoSave();
+            OpenCodeApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
+            KiloApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
+            GeminiVisionKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
+            CheckpointPathBox.TextChanged += (_, __) => ScheduleAutoSave();
+            ApiVariantComboBox.SelectionChanged += (_, __) => ScheduleAutoSave();
+            TemperatureNumberBox.TextChanged += (_, __) => ScheduleAutoSave();
+            TopKNumberBox.TextChanged += (_, __) => ScheduleAutoSave();
+            MaxTokensNumberBox.TextChanged += (_, __) => ScheduleAutoSave();
+            AllowOnlineSearchToggle.Toggled += (_, __) => ScheduleAutoSave();
+            SelfLearningToggle.Toggled += (_, __) => ScheduleAutoSave();
+            CloudMemoryConsentToggle.Toggled += (_, __) => ScheduleAutoSave();
+        }
+
+        private void ScheduleAutoSave()
+        {
+            if (_apiService == null || _loading) return;
+            _autoSaveTimer?.Stop();
+            _autoSaveTimer?.Start();
+            AutoSaveStatusText.Text = "Đang lưu...";
+        }
+
+        private void OnObservationMetricsUpdated(ObservationMetricsDto metrics)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                FrameCountText.Text = metrics.FrameCount.ToString();
+                VisionCountText.Text = metrics.VisionCount.ToString();
+                EmittedCountText.Text = metrics.EmittedCount.ToString();
+                StaleDropsText.Text = metrics.StaleDrops.ToString();
+                LatencyText.Text = $"{metrics.LastMotionDelta:F2}% | {metrics.Engine} ({metrics.MsBefore} ms)";
+                UpdateObservationUiState();
+            });
+        }
+
+        private async void OnToggleObservationClick(object sender, RoutedEventArgs e)
+        {
+            if (_observerService == null) return;
+            ToggleObservationButton.IsEnabled = false;
+
+            try
+            {
+                if (_observerService.IsActive)
+                {
+                    await _observerService.StopAsync();
+                }
+                else
+                {
+                    await _observerService.StartAsync();
+                }
+            }
+            finally
+            {
+                ToggleObservationButton.IsEnabled = true;
+            }
+
+            UpdateObservationUiState();
+        }
+
+        private void UpdateObservationUiState()
+        {
+            bool active = _observerService?.IsActive ?? false;
+            if (active)
+            {
+                ToggleText.Text = "Dừng quan sát";
+                ToggleIcon.Glyph = "\uE71A";
+            }
+            else
+            {
+                ToggleText.Text = "Bắt đầu quan sát";
+                ToggleIcon.Glyph = "\uE714";
+            }
         }
 
         private async Task LoadSettingsAsync()
@@ -200,54 +301,49 @@ namespace RuApp.Views
             return null;
         }
 
-        private async void OnSaveSettingsClick(object sender, RoutedEventArgs e)
+        private async Task SaveSettingsAsync()
         {
-            if (_apiService == null) return;
+            if (_apiService == null || _saveInProgress) return;
+            _saveInProgress = true;
 
-            string backend = (BackendComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "gguf";
-
-            string modelChoice = SelectedModelText() ?? "";
-
-            var dto = new AppSettingsDto
+            try
             {
-                BackendChoice = backend,
-                OpenCodeApiKey = OpenCodeApiKeyBox.Password,
-                KiloApiKey = KiloApiKeyBox.Password,
-                GeminiVisionApiKey = GeminiVisionKeyBox.Password,
-                ApiVariant = (ApiVariantComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Default",
-                OpenCodeModel = backend == "opencode" ? (modelChoice ?? "") : "",
-                KiloModel = backend == "kilo" ? (modelChoice ?? "") : "",
-                CheckpointPath = CheckpointPathBox.Text,
-                Temperature = double.TryParse(TemperatureNumberBox.Text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double temp) ? temp : 0.7,
-                TopK = int.TryParse(TopKNumberBox.Text, out int topK) ? topK : 40,
-                MaxNewTokens = int.TryParse(MaxTokensNumberBox.Text, out int maxTokens) ? maxTokens : 512,
-                AllowOnlineSearch = AllowOnlineSearchToggle.IsOn,
-                SelfLearningEnabled = SelfLearningToggle.IsOn,
-                CloudMemoryConsent = CloudMemoryConsentToggle.IsOn
-            };
+                string backend = (BackendComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "gguf";
+                string modelChoice = SelectedModelText() ?? "";
 
-            bool ok = await _apiService.SaveSettingsAsync(dto);
-            if (ok)
-            {
-                var dialog = new ContentDialog
+                var dto = new AppSettingsDto
                 {
-                    Title = "Thông báo",
-                    Content = "Đã lưu cài đặt thành công!",
-                    CloseButtonText = "Đóng",
-                    XamlRoot = this.XamlRoot
+                    BackendChoice = backend,
+                    OpenCodeApiKey = OpenCodeApiKeyBox.Password,
+                    KiloApiKey = KiloApiKeyBox.Password,
+                    GeminiVisionApiKey = GeminiVisionKeyBox.Password,
+                    ApiVariant = (ApiVariantComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Default",
+                    OpenCodeModel = backend == "opencode" ? (modelChoice ?? "") : "",
+                    KiloModel = backend == "kilo" ? (modelChoice ?? "") : "",
+                    CheckpointPath = CheckpointPathBox.Text,
+                    Temperature = double.TryParse(TemperatureNumberBox.Text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double temp) ? temp : 0.7,
+                    TopK = int.TryParse(TopKNumberBox.Text, out int topK) ? topK : 40,
+                    MaxNewTokens = int.TryParse(MaxTokensNumberBox.Text, out int maxTokens) ? maxTokens : 512,
+                    AllowOnlineSearch = AllowOnlineSearchToggle.IsOn,
+                    SelfLearningEnabled = SelfLearningToggle.IsOn,
+                    CloudMemoryConsent = CloudMemoryConsentToggle.IsOn
                 };
-                await dialog.ShowAsync();
+
+                bool ok = await _apiService.SaveSettingsAsync(dto);
+                AutoSaveStatusText.Text = ok ? "Đã lưu" : "Lưu thất bại";
+                if (!ok)
+                {
+                    System.Diagnostics.Debug.WriteLine("[Settings] Auto-save failed");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                var dialog = new ContentDialog
-                {
-                    Title = "Lỗi",
-                    Content = "Không thể lưu cài đặt. Backend chưa khởi động xong hoặc đang lỗi.",
-                    CloseButtonText = "Đóng",
-                    XamlRoot = this.XamlRoot
-                };
-                await dialog.ShowAsync();
+                AutoSaveStatusText.Text = "Lỗi lưu";
+                System.Diagnostics.Debug.WriteLine($"[Settings] Auto-save error: {ex.Message}");
+            }
+            finally
+            {
+                _saveInProgress = false;
             }
         }
     }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -28,8 +29,9 @@ namespace RuApp.Services
             {
                 return await _httpClient.GetFromJsonAsync<AppSettingsDto>($"{_baseUrl}/settings");
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] GetSettingsAsync failed: {ex.Message}");
                 return null;
             }
         }
@@ -41,8 +43,9 @@ namespace RuApp.Services
                 var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", settings);
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] SaveSettingsAsync failed: {ex.Message}");
                 return false;
             }
         }
@@ -53,8 +56,9 @@ namespace RuApp.Services
             {
                 return await _httpClient.GetFromJsonAsync<SessionListResponse>($"{_baseUrl}/sessions");
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] GetSessionsAsync failed: {ex.Message}");
                 return null;
             }
         }
@@ -90,7 +94,10 @@ namespace RuApp.Services
                     return new SessionInfo { Id = id, Title = string.Empty };
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] CreateSessionAsync failed: {ex.Message}");
+            }
             return null;
         }
 
@@ -101,8 +108,9 @@ namespace RuApp.Services
                 var response = await _httpClient.PostAsync($"{_baseUrl}/sessions/{sessionId}/activate", null);
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] ActivateSessionAsync failed: {ex.Message}");
                 return false;
             }
         }
@@ -132,7 +140,10 @@ namespace RuApp.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] GetSessionMessagesAsync failed: {ex.Message}");
+            }
             return null;
         }
 
@@ -143,8 +154,9 @@ namespace RuApp.Services
                 var response = await _httpClient.DeleteAsync($"{_baseUrl}/sessions/{sessionId}");
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] DeleteSessionAsync failed: {ex.Message}");
                 return false;
             }
         }
@@ -155,8 +167,9 @@ namespace RuApp.Services
             {
                 return await _httpClient.GetFromJsonAsync<VoiceStatusDto>($"{_baseUrl}/voice/status");
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] GetVoiceStatusAsync failed: {ex.Message}");
                 return null;
             }
         }
@@ -175,8 +188,9 @@ namespace RuApp.Services
                 var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] UpdateVoiceAsync failed: {ex.Message}");
                 return false;
             }
         }
@@ -188,8 +202,9 @@ namespace RuApp.Services
                 var response = await _httpClient.PostAsync($"{_baseUrl}/voice/warmup", null);
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] WarmupVoiceAsync failed: {ex.Message}");
                 return false;
             }
         }
@@ -201,8 +216,9 @@ namespace RuApp.Services
                 var response = await _httpClient.PostAsync($"{_baseUrl}/voice/release", null);
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] ReleaseVoiceAsync failed: {ex.Message}");
                 return false;
             }
         }
@@ -214,8 +230,9 @@ namespace RuApp.Services
                 var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/voice/tts", new { text });
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] TestVoiceAsync failed: {ex.Message}");
                 return false;
             }
         }
@@ -237,7 +254,10 @@ namespace RuApp.Services
                     return await response.Content.ReadAsByteArrayAsync();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] SynthesizeTtsAsync failed: {ex.Message}");
+            }
             return null;
         }
 
@@ -248,8 +268,9 @@ namespace RuApp.Services
                 var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/vts/speaking", new { speaking });
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] SetVtsSpeakingAsync failed: {ex.Message}");
                 return false;
             }
         }
@@ -275,7 +296,10 @@ namespace RuApp.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] GetModelsAsync failed: {ex.Message}");
+            }
             return new List<string>();
         }
 
@@ -299,7 +323,10 @@ namespace RuApp.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] TranscribeAudioAsync failed: {ex.Message}");
+            }
             return null;
         }
 
@@ -309,8 +336,9 @@ namespace RuApp.Services
             {
                 return await _httpClient.GetFromJsonAsync<VtsStatusDto>($"{_baseUrl}/vts/status");
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] GetVtsStatusAsync failed: {ex.Message}");
                 return null;
             }
         }
@@ -322,8 +350,9 @@ namespace RuApp.Services
                 var response = await _httpClient.PostAsync($"{_baseUrl}/vts/connect", null);
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] ConnectVtsAsync failed: {ex.Message}");
                 return false;
             }
         }
@@ -335,8 +364,9 @@ namespace RuApp.Services
                 var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/vts/action", new { action });
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] TriggerVtsActionAsync failed: {ex.Message}");
                 return false;
             }
         }
@@ -347,8 +377,9 @@ namespace RuApp.Services
             {
                 return await _httpClient.GetFromJsonAsync<List<MemoryItemDto>>($"{_baseUrl}/memory");
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] GetMemoryAsync failed: {ex.Message}");
                 return null;
             }
         }
@@ -360,8 +391,9 @@ namespace RuApp.Services
                 var response = await _httpClient.DeleteAsync($"{_baseUrl}/memory");
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] ClearMemoryAsync failed: {ex.Message}");
                 return false;
             }
         }
@@ -372,8 +404,9 @@ namespace RuApp.Services
             {
                 return await _httpClient.GetFromJsonAsync<ObservationMetricsDto>($"{_baseUrl}/observation/status");
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] GetObservationMetricsAsync failed: {ex.Message}");
                 return null;
             }
         }
@@ -385,8 +418,9 @@ namespace RuApp.Services
                 var response = await _httpClient.PostAsync($"{_baseUrl}/observation/start", null);
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] StartObservationAsync failed: {ex.Message}");
                 return false;
             }
         }
@@ -398,8 +432,9 @@ namespace RuApp.Services
                 var response = await _httpClient.PostAsync($"{_baseUrl}/observation/stop", null);
                 return response.IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[ApiService] StopObservationAsync failed: {ex.Message}");
                 return false;
             }
         }

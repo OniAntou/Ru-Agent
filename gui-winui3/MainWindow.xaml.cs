@@ -22,7 +22,6 @@ namespace RuApp
 
         private ChatView? _chatView;
         private VoiceView? _voiceView;
-        private ObservationControlView? _observationView;
         private SettingsView? _settingsView;
         private DispatcherTimer? _sessionsTimer;
 
@@ -49,16 +48,46 @@ namespace RuApp
             }
         }
 
+        private static string? ResolveProjectRoot()
+        {
+            string? envRoot = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT");
+            if (!string.IsNullOrWhiteSpace(envRoot) && Directory.Exists(envRoot) && File.Exists(Path.Combine(envRoot, "pyproject.toml")))
+            {
+                return Path.GetFullPath(envRoot);
+            }
+
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string candidate = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", ".."));
+            if (File.Exists(Path.Combine(candidate, "pyproject.toml")))
+            {
+                return candidate;
+            }
+
+            string? walk = candidate;
+            while (walk != null && walk.Length > 3)
+            {
+                if (File.Exists(Path.Combine(walk, "pyproject.toml")))
+                {
+                    return walk;
+                }
+                walk = Path.GetDirectoryName(walk);
+            }
+
+            return null;
+        }
+
         private async Task InitializeAppAsync()
         {
             SidebarSessionList.ItemsSource = Sessions;
             StatusText.Text = "Đang khởi động Backend FastAPI...";
             StatusDot.Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
 
-            string projectRoot = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", ".."));
-            if (!File.Exists(Path.Combine(projectRoot, "pyproject.toml")))
+            string? projectRoot = ResolveProjectRoot();
+            if (projectRoot == null)
             {
-                projectRoot = @"D:\LLM";
+                StatusText.Text = "Không tìm thấy project root. Hãy đặt RuApp.exe trong hoặc dưới thư mục D:\\LLM.";
+                StatusDot.Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red);
+                return;
             }
 
             bool ok = await _processManager.StartBackendAsync(projectRoot);
@@ -81,11 +110,8 @@ namespace RuApp
                 _voiceView = new VoiceView();
                 _voiceView.Initialize(_apiService, _voicePlayback);
 
-                _observationView = new ObservationControlView();
-                _observationView.Initialize(_observerService);
-
                 _settingsView = new SettingsView();
-                _settingsView.Initialize(_apiService);
+                _settingsView.Initialize(_apiService, _observerService);
 
                 // Default: Chat
                 ContentFrame.Content = _chatView;
@@ -116,7 +142,6 @@ namespace RuApp
 
                 NavChat.Background = transparent;
                 NavVoice.Background = transparent;
-                NavObservation.Background = transparent;
                 NavSettings.Background = transparent;
 
                 btn.Background = active;
@@ -125,7 +150,6 @@ namespace RuApp
                 {
                     "chat" => _chatView,
                     "voice" => _voiceView,
-                    "observation" => _observationView,
                     "settings" => _settingsView,
                     _ => _chatView
                 };

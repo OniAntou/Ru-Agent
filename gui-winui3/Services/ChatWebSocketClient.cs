@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -53,9 +54,9 @@ namespace RuApp.Services
                 {
                     break;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Any transport failure triggers a silent retry.
+                    Debug.WriteLine($"[ChatWebSocket] BackgroundLoop error: {ex.Message}");
                 }
 
                 if (ct.IsCancellationRequested) break;

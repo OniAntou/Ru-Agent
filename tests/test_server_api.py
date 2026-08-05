@@ -1447,3 +1447,17 @@ def test_activity_log_respects_limit(monkeypatch, isolated_state):
     with TestClient(server.app) as client:
         client.get("/activity-log?limit=50")
     assert captured["limit"] == 50
+
+def test_chat_hooks_import_append():
+    from mini_gpt.routers import chat as chat_router
+    assert hasattr(chat_router, "append_activity_log")
+
+
+def test_vts_hooks_import_append():
+    from mini_gpt.routers import vts as vts_router
+    assert hasattr(vts_router, "append_activity_log")
+
+
+def test_observation_hooks_import_append():
+    from mini_gpt.routers import observation as obs_router
+    assert hasattr(obs_router, "append_activity_log")

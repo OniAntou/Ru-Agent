@@ -26,6 +26,7 @@ from ..overlay_control import (
     start_overlay,
     stop_overlay,
 )
+from ..activity_log import append as append_activity_log
 from ..vts_config import MotionConfig
 
 router = APIRouter()
@@ -118,7 +119,7 @@ def vts_overlay_save(payload: VtsOverlayPayload):
 
 @router.get("/vts/status")
 def vts_status():
-    manager = _VTS_MANAGER
+    manager = _vts_manager()
     connected = bool(manager is not None and manager.is_connected)
     config = manager.config.to_dict() if manager is not None else MotionConfig.defaults().to_dict()
     state = manager.current_state().value if manager is not None else "idle"
@@ -194,12 +195,22 @@ def vts_action(payload: VtsActionPayload):
             if unknown:
                 return {"status": "error", "message": f"unknown codes: {', '.join(unknown)}"}
             manager.trigger_catalog_actions_sync(catalog, codes)
+            append_activity_log({
+                "type": "vts_action",
+                "session_id": None,
+                "data": {"codes": codes, "facial": None, "body": None},
+            })
             return {"status": "ok"}
         actions = VtsActions(facial=payload.facial or None, body=payload.body or None)
         if actions.facial is None and actions.body is None:
             return {"status": "error", "message": "provide codes, facial, or body"}
         if not manager.trigger_actions_sync(actions):
             return {"status": "error", "message": "requested action is unavailable or cooling down"}
+        append_activity_log({
+            "type": "vts_action",
+            "session_id": None,
+            "data": {"codes": (), "facial": payload.facial, "body": payload.body},
+        })
         return {"status": "ok"}
     except Exception as error:
         logger.error("VTS action failed: %s", error)

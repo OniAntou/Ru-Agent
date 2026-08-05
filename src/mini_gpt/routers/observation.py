@@ -14,6 +14,7 @@ from mini_gpt.screen_reaction import (
     format_observation_prompt,
 )
 from mini_gpt.vts_catalog import catalog_instruction, parse_catalog_reply, split_reply_metadata
+from mini_gpt.activity_log import append as append_activity_log
 
 from .._server_shared import (
     BACKEND_OPENCODE,
@@ -181,6 +182,14 @@ def observation_react(payload: ObservationReactionPayload):
         cleaned = _strip_voice_markers(cleaned)
         if manager is not None:
             manager.note_emotion(emotion)
+        try:
+            append_activity_log({
+                "type": "emotion",
+                "session_id": None,
+                "data": {"emotion": emotion.value if emotion else None},
+            })
+        except Exception:
+            pass
         if not cleaned:
             _SCREEN_REACTIONS.fail(payload.observation_id)
             return {"status": "skipped", "reason": "empty"}

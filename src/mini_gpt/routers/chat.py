@@ -35,6 +35,8 @@ from .._server_shared import (
     _trigger_vts_catalog_codes,
 )
 
+from mini_gpt.activity_log import append as append_activity_log
+
 router = APIRouter()
 
 
@@ -172,6 +174,19 @@ async def chat_endpoint(websocket: WebSocket):
             _TURN_LOCK.release()
             if full_reply is not None:
                 _learn_from_turn(prompt, full_reply)
+                try:
+                    append_activity_log({
+                        "type": "chat",
+                        "session_id": session_id,
+                        "data": {"role": "user", "content": prompt},
+                    })
+                    append_activity_log({
+                        "type": "chat",
+                        "session_id": session_id,
+                        "data": {"role": "assistant", "content": full_reply, "emotion": emotion.value if emotion else None},
+                    })
+                except Exception:
+                    pass
 
     try:
         while True:

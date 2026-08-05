@@ -21,8 +21,7 @@ namespace RuApp.Views
         {
             ["opencode"] = Array.Empty<string>(),
             ["kilo"] = Array.Empty<string>(),
-            ["gguf"] = new[] { "local-model-gguf" },
-            ["transformers"] = new[] { "ru-llama3.1-8b-instruct-v6.2-fresh" }
+            ["gguf"] = new[] { "local-model-gguf" }
         };
 
         public SettingsView()
@@ -142,9 +141,12 @@ namespace RuApp.Views
             var settings = await _apiService.GetSettingsAsync();
             if (settings != null)
             {
+                // The HF Transformers backend is retired (training only); a stale
+                // saved "transformers" choice falls back to the local GGUF backend.
+                string backendChoice = settings.BackendChoice == "transformers" ? "gguf" : settings.BackendChoice;
                 foreach (ComboBoxItem item in BackendComboBox.Items)
                 {
-                    if ((item.Tag as string) == settings.BackendChoice)
+                    if ((item.Tag as string) == backendChoice)
                     {
                         BackendComboBox.SelectedItem = item;
                         break;

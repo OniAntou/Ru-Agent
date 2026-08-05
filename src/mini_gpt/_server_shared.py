@@ -25,7 +25,6 @@ from mini_gpt.headless_runner import (
     BACKEND_GGUF,
     BACKEND_KILO,
     BACKEND_OPENCODE,
-    BACKEND_TRANSFORMERS,
 )
 from mini_gpt.memory import MemoryKind
 from mini_gpt.memory_extraction import is_sensitive_or_unsafe
@@ -115,11 +114,10 @@ _DEFAULT_SETTINGS = {
     "voice_speed": 1.0,
 }
 
-_VALID_BACKENDS = (BACKEND_TRANSFORMERS, BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO)
+_VALID_BACKENDS = (BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO)
 
 _BACKEND_ALIASES: dict[str, str] = {
     "gguf": BACKEND_GGUF,
-    "transformers": BACKEND_TRANSFORMERS,
     "opencode": BACKEND_OPENCODE,
     "kilo": BACKEND_KILO,
 }

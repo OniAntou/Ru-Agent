@@ -336,8 +336,8 @@ def test_settings_checkpoint_path_round_trip(monkeypatch, isolated_state) -> Non
         response = client.post(
             "/settings",
             json={
-                "backend": "Transformers",
-                "model": "ru-llama3.1-8b-instruct-v6.2-fresh",
+                "backend": "llama.cpp",
+                "model": "local-model-gguf",
                 "max_tokens": 64,
                 "temperature": 0.7,
                 "checkpoint_path": "checkpoints/ru-llama3.1-8b-instruct-v6.2-fresh",
@@ -346,6 +346,24 @@ def test_settings_checkpoint_path_round_trip(monkeypatch, isolated_state) -> Non
         assert response.status_code == 200
         body = client.get("/settings").json()
     assert body["checkpoint_path"] == "checkpoints/ru-llama3.1-8b-instruct-v6.2-fresh"
+
+def test_settings_rejects_retired_transformers_backend(monkeypatch, isolated_state) -> None:
+    monkeypatch.setattr(server.core.runner, "load", lambda *a, **k: "Ready")
+    with TestClient(server.app) as client:
+        response = client.post(
+            "/settings",
+            json={
+                "backend": "Transformers",
+                "model": "ru-llama3.1-8b-instruct-v6.2-fresh",
+                "max_tokens": 64,
+                "temperature": 0.7,
+                "checkpoint_path": "checkpoints/ru-llama3.1-8b-instruct-v6.2-fresh",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "error"
+        body = client.get("/settings").json()
+    assert body["backend"] != "Transformers"
 
 def test_settings_voice_fields_round_trip(monkeypatch, isolated_state) -> None:
     monkeypatch.setattr(server.core.runner, "load", lambda *a, **k: "Ready")

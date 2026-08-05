@@ -21,7 +21,6 @@
                         <TextBlock Grid.Column="0" Text="Loại Backend" VerticalAlignment="Center" Foreground="#DDDDDD"/>
                         <ComboBox x:Name="BackendComboBox" Grid.Column="1" Width="280" SelectionChanged="OnBackendSelectionChanged">
                             <ComboBoxItem Content="Local GGUF (Llama 3.1 8B v6.2)" Tag="gguf"/>
-                            <ComboBoxItem Content="Transformers (Fallback HF Checkpoint)" Tag="transformers"/>
                             <ComboBoxItem Content="OpenCode Zen (Cloud API)" Tag="opencode"/>
                             <ComboBoxItem Content="Kilo Gateway (Cloud API)" Tag="kilo"/>
                         </ComboBox>
@@ -59,14 +58,6 @@
                         <PasswordBox x:Name="KiloApiKeyBox" Grid.Column="1" PlaceholderText="sk-kilo-..." Width="280"/>
                     </Grid>
                     
-                    <Grid x:Name="GeminiVisionRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
-                            <TextBlock Text="Gemini Vision API Key (Screen Observation Cloud)" Foreground="#DDDDDD"/>
-                            <TextBlock Text="Dùng cho Gemini Live. Lấy key tại aistudio.google.com/apikey" Foreground="#777777" FontSize="12" TextWrapping="Wrap"/>
-                        </StackPanel>
-                        <PasswordBox x:Name="GeminiVisionKeyBox" Grid.Column="1" PlaceholderText="AIza..." Width="280"/>
-                    </Grid>
-
                     <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
                         <TextBlock Grid.Column="0" Text="Hồ sơ Checkpoint" VerticalAlignment="Center" Foreground="#DDDDDD"/>
                         <TextBox x:Name="CheckpointPathBox" Grid.Column="1" PlaceholderText="checkpoints/ru-..." Width="280"/>
@@ -132,6 +123,14 @@
                                 <TextBlock x:Name="ToggleText" Text="Bắt đầu quan sát" FontWeight="Medium"/>
                             </StackPanel>
                         </Button>
+                    </Grid>
+
+                    <Grid x:Name="GeminiVisionRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                            <TextBlock Text="Gemini Vision API Key (Screen Observation Cloud)" Foreground="#DDDDDD"/>
+                            <TextBlock Text="Dùng cho Gemini Live. Lấy key tại aistudio.google.com/apikey" Foreground="#777777" FontSize="12" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <PasswordBox x:Name="GeminiVisionKeyBox" Grid.Column="1" PlaceholderText="AIza..." Width="280"/>
                     </Grid>
                 </StackPanel>
             </Border>

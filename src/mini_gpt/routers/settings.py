@@ -7,7 +7,6 @@ from .._server_shared import (
     BACKEND_GGUF,
     BACKEND_KILO,
     BACKEND_OPENCODE,
-    BACKEND_TRANSFORMERS,
     _resolve_backend,
     core,
     effective_settings,
@@ -65,7 +64,6 @@ def get_settings():
     
     _REVERSE_ALIASES = {v: k for k, v in {
         "gguf": BACKEND_GGUF,
-        "transformers": BACKEND_OPENCODE,
         "opencode": BACKEND_OPENCODE,
         "kilo": BACKEND_KILO,
     }.items()}
@@ -91,7 +89,7 @@ def get_settings():
 @router.post("/settings")
 def save_settings(payload: SettingsPayload):
     backend_val = _resolve_backend(payload.backend_choice or payload.backend)
-    if backend_val is not None and backend_val not in (BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO, BACKEND_TRANSFORMERS):
+    if backend_val is not None and backend_val not in (BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO):
         return {"status": "error", "message": f"unsupported backend: {backend_val}"}
     settings = effective_settings()
     if backend_val is not None:

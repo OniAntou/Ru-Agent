@@ -3,7 +3,6 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-BACKEND_TRANSFORMERS = "Transformers"
 BACKEND_GGUF = "llama.cpp"
 BACKEND_OPENCODE = "OpenCode Zen"
 BACKEND_KILO = "Kilo Gateway"
@@ -15,12 +14,6 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 from mini_gpt.chat import ChatTurn
 from mini_gpt.llama_cpp_runtime import LlamaCppRuntime
-from mini_gpt.llama3_1_runtime import (
-    clear_llama_generation_cache,
-    dependency_status,
-    generate_llama_response_hf,
-    is_llama_generation_cached,
-)
 from mini_gpt.openai_runtime import OpenAIRuntime, OPENCODE_BASE_URL, KILO_GATEWAY_BASE_URL
 from mini_gpt.ru_style import (
     RU_CLOUD_SYSTEM_PROMPT,
@@ -34,13 +27,12 @@ from mini_gpt.voice_pacing import VOICE_PACE_INSTRUCTION
 class ModelRunner:
     def __init__(self) -> None:
         self.checkpoint_path: Path | None = None
-        self.base_model_path: Path = PROJECT_ROOT / "models" / "llama3.1-8b-instruct-hf"
         self.backend = BACKEND_GGUF
         self.gguf_runtime = LlamaCppRuntime(project_root=PROJECT_ROOT)
         self.openai_runtime: OpenAIRuntime | None = None
 
     def select_backend(self, backend: str) -> None:
-        if backend not in (BACKEND_TRANSFORMERS, BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO):
+        if backend not in (BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO):
             raise ValueError(f"unsupported backend: {backend}")
         logger.info("Selecting backend: %s (previous: %s)", backend, self.backend)
         self.backend = backend
@@ -81,37 +73,16 @@ class ModelRunner:
             self.checkpoint_path = resolved
             logger.info("GGUF runtime ready with checkpoint: %s", self.checkpoint_path)
             return f"Ready (llama.cpp GGUF experiment) | Ru {self.checkpoint_path.name.split('-')[-1]} LoRA"
-        missing_dependencies = dependency_status()
-        if missing_dependencies:
-            packages = ", ".join(missing_dependencies)
-            raise RuntimeError(
-                f"Missing Ru runtime dependencies: {packages}. "
-                "Install the runtime extra before starting the model."
-            )
-        adapter_dir = Path(checkpoint_path).resolve()
-        if not adapter_dir.is_dir():
-            raise FileNotFoundError(f"adapter directory not found: {adapter_dir}")
-        allowed = (PROJECT_ROOT / "checkpoints", PROJECT_ROOT / "models")
-        if not any(
-            str(adapter_dir).startswith(str(allowed_dir.resolve()))
-            for allowed_dir in allowed
-        ):
-            raise ValueError(
-                f"checkpoint_path must be inside project checkpoints/ or models/, got: {checkpoint_path}"
-            )
-        self.checkpoint_path = adapter_dir
-        logger.info("Transformers runtime ready with adapter: %s", adapter_dir)
-        return f"Ready (Llama 3.1 8B QLoRA) | {adapter_dir.name}"
+        raise ValueError(f"unsupported backend: {self.backend}")
 
     def is_cached(self, checkpoint_path: str | Path) -> bool:
         if self.backend == BACKEND_OPENCODE:
             return True
         if self.backend == BACKEND_GGUF:
             return self.gguf_runtime.is_cached()
-        return is_llama_generation_cached(self.base_model_path, checkpoint_path)
+        return False
 
     def release_gpu(self) -> None:
-        clear_llama_generation_cache()
         self.gguf_runtime.stop()
 
     def _generate(
@@ -141,15 +112,7 @@ class ModelRunner:
             return self.gguf_runtime.generate(
                 messages, max_new_tokens, temperature, top_k, on_delta=on_stream_delta
             )
-        return generate_llama_response_hf(
-            str(self.base_model_path),
-            messages,
-            self.checkpoint_path,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            top_k=top_k,
-            do_sample=True,
-        )
+        raise RuntimeError(f"unsupported backend: {self.backend}")
     def generate_reply(
         self,
         prompt: str,

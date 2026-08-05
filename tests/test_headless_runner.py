@@ -1,4 +1,3 @@
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -7,26 +6,20 @@ import mini_gpt.headless_runner as runtime
 from mini_gpt.ru_style import RU_SCREEN_REACTION_SYSTEM_PROMPT
 
 
-def test_transformers_load_reports_missing_adapter_instead_of_name_error(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_select_backend_rejects_retired_transformers_backend() -> None:
     runner = runtime.ModelRunner()
-    runner.select_backend(runtime.BACKEND_TRANSFORMERS)
-    monkeypatch.setattr(runtime, "dependency_status", lambda: ())
-
-    with pytest.raises(FileNotFoundError, match="adapter directory not found"):
-        runner.load(tmp_path / "missing-adapter")
+    with pytest.raises(ValueError, match="unsupported backend"):
+        runner.select_backend("Transformers")
 
 
-def test_transformers_release_calls_runtime_cache_cleanup(monkeypatch) -> None:
-    released: list[str] = []
+def test_release_gpu_stops_gguf_runtime(monkeypatch) -> None:
+    stopped: list[str] = []
     runner = runtime.ModelRunner()
-    monkeypatch.setattr(runtime, "clear_llama_generation_cache", lambda: released.append("hf"))
-    monkeypatch.setattr(runner.gguf_runtime, "stop", lambda: released.append("gguf"))
+    monkeypatch.setattr(runner.gguf_runtime, "stop", lambda: stopped.append("gguf"))
 
     runner.release_gpu()
 
-    assert released == ["hf", "gguf"]
+    assert stopped == ["gguf"]
 
 
 def test_screen_reaction_uses_hosted_runtime_without_search_memory_or_history() -> None:

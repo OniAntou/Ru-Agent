@@ -118,6 +118,23 @@
                         <TextBlock Grid.Column="0" Text="Tần suất pose" VerticalAlignment="Center" Foreground="#DDDDDD"/>
                         <Slider x:Name="PoseSlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
                     </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                        <TextBlock Grid.Column="0" Text="Overlay desktop (avatar nổi trên màn hình)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                        <ToggleSwitch x:Name="OverlayToggle" Grid.Column="1" IsOn="False" Toggled="OnOverlayToggleChanged"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="Nhìn theo chuột (Mouse Look)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                        <ToggleSwitch x:Name="MouseLookToggle" Grid.Column="1" IsOn="False" IsEnabled="False" Toggled="OnMouseLookToggleChanged"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="Độ nhạy nhìn theo chuột" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                            <Slider x:Name="MouseSensitivitySlider" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="180" IsEnabled="False" ValueChanged="OnMouseSensitivityChanged"/>
+                            <TextBlock x:Name="MouseSensitivityText" Text="100%" Width="44" VerticalAlignment="Center" Foreground="#A0C0FF" TextAlignment="Right"/>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock x:Name="VtsOverlayErrorText" Text="" Foreground="#FF6B6B" FontSize="12" Margin="0,4,0,0" Visibility="Collapsed"/>
                 </StackPanel>
             </Border>
         </StackPanel>

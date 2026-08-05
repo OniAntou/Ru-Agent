@@ -14,6 +14,10 @@ namespace RuApp.Views
         private DispatcherTimer? _vtsConfigDebounce;
         private DispatcherTimer? _vtsStatusTimer;
         private bool _loadingVtsConfig;
+        private DispatcherTimer? _vtsControlDebounce;
+        private bool _syncingVtsControls;
+        private enum PendingVtsControl { None, Overlay, MouseLook, Sensitivity }
+        private PendingVtsControl _pendingVtsControl;
 
         public VoiceView()
         {
@@ -39,6 +43,13 @@ namespace RuApp.Views
             _vtsStatusTimer.Tick += async (_, __) => await PollVtsStatusAsync();
             _vtsStatusTimer.Start();
             _ = LoadVtsConfigAsync();
+
+            _vtsControlDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+            _vtsControlDebounce.Tick += async (_, __) =>
+            {
+                _vtsControlDebounce.Stop();
+                await FlushPendingVtsControlAsync();
+            };
         }
 
         private async Task LoadVoiceAndVtsStatusAsync()
@@ -67,9 +78,6 @@ namespace RuApp.Views
             var vts = await _apiService.GetVtsStatusAsync();
             if (vts != null)
             {
-                VtsStatusText.Text = vts.Connected
-                    ? $"Đã kết nối model: {vts.ModelName}"
-                    : "Trạng thái: Chưa kết nối";
             }
 
             _isUpdatingUi = false;
@@ -270,10 +278,82 @@ namespace RuApp.Views
             if (_apiService == null) return;
             var status = await _apiService.GetVtsStatusAsync();
             if (status == null) return;
-            VtsStatusText.Text = status.Connected ? "Trạng thái: Đã kết nối" : "Trạng thái: Chưa kết nối";
-            VtsStateText.Text = status.Connected && !string.IsNullOrEmpty(status.State)
-                ? "Motion: " + status.State
-                : "";
+            _syncingVtsControls = true;
+            try
+            {
+                if (status.Connected)
+                {
+                    VtsStatusText.Text = string.IsNullOrEmpty(status.ModelName)
+                        ? "Trạng thái: Đã kết nối"
+                        : $"Trạng thái: Đã kết nối · {status.ModelName}";
+                    VtsStateText.Text = string.IsNullOrEmpty(status.State) ? "" : "Motion: " + status.State;
+                }
+                else
+                {
+                    VtsStatusText.Text = "Trạng thái: Chưa kết nối";
+                    VtsStateText.Text = string.IsNullOrEmpty(status.ConnectError) ? "" : status.ConnectError;
+                }
+
+                OverlayToggle.IsOn = status.OverlayEnabled;
+                MouseLookToggle.IsOn = status.MouseLookEnabled;
+                MouseSensitivitySlider.IsEnabled = status.MouseLookEnabled;
+                MouseSensitivitySlider.Value = status.MouseLookSensitivity * 100;
+                MouseSensitivityText.Text = $"{status.MouseLookSensitivity * 100:0}%";
+
+                bool overlayBroken = status.OverlayEnabled && !status.OverlayRunning;
+                VtsOverlayErrorText.Text = "Overlay đang bật nhưng tiến trình không chạy (thiếu RuDesktopOverlay.exe?).";
+                VtsOverlayErrorText.Visibility = overlayBroken ? Visibility.Visible : Visibility.Collapsed;
+            }
+            finally
+            {
+                _syncingVtsControls = false;
+            }
+        }
+
+        private void OnOverlayToggleChanged(object sender, RoutedEventArgs e)
+        {
+            if (_syncingVtsControls) return;
+            _pendingVtsControl = PendingVtsControl.Overlay;
+            _vtsControlDebounce?.Stop();
+            _vtsControlDebounce?.Start();
+        }
+
+        private void OnMouseLookToggleChanged(object sender, RoutedEventArgs e)
+        {
+            if (_syncingVtsControls) return;
+            MouseSensitivitySlider.IsEnabled = MouseLookToggle.IsOn;
+            _pendingVtsControl = PendingVtsControl.MouseLook;
+            _vtsControlDebounce?.Stop();
+            _vtsControlDebounce?.Start();
+        }
+
+        private void OnMouseSensitivityChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            if (MouseSensitivityText != null)
+                MouseSensitivityText.Text = $"{e.NewValue:0}%";
+            if (_syncingVtsControls || !MouseLookToggle.IsOn) return;
+            _pendingVtsControl = PendingVtsControl.Sensitivity;
+            _vtsControlDebounce?.Stop();
+            _vtsControlDebounce?.Start();
+        }
+
+        private async Task FlushPendingVtsControlAsync()
+        {
+            if (_apiService == null || _pendingVtsControl == PendingVtsControl.None) return;
+            var pending = _pendingVtsControl;
+            _pendingVtsControl = PendingVtsControl.None;
+            switch (pending)
+            {
+                case PendingVtsControl.Overlay:
+                    await _apiService.SaveOverlayAsync(OverlayToggle.IsOn);
+                    break;
+                case PendingVtsControl.MouseLook:
+                    await _apiService.SaveMouseLookAsync(MouseLookToggle.IsOn, MouseSensitivitySlider.Value / 100.0);
+                    break;
+                case PendingVtsControl.Sensitivity:
+                    await _apiService.SaveMouseLookAsync(MouseLookToggle.IsOn, MouseSensitivitySlider.Value / 100.0);
+                    break;
+            }
         }
     }
 }

@@ -275,6 +275,46 @@ namespace RuApp.Services
             }
         }
 
+        public async Task<VtsConfigDto?> GetVtsConfigAsync()
+        {
+            try
+            {
+                var result = await _httpClient.GetFromJsonAsync<VtsConfigResponse>($"{_baseUrl}/vts/config");
+                return result?.Config;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] GetVtsConfigAsync failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task<bool> SaveVtsConfigAsync(VtsConfigDto config)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/vts/config", config);
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] SaveVtsConfigAsync failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task PushVtsActivityAsync(bool typing)
+        {
+            try
+            {
+                await _httpClient.PostAsJsonAsync($"{_baseUrl}/vts/activity", new { typing });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] PushVtsActivityAsync failed: {ex.Message}");
+            }
+        }
+
         public async Task<List<string>> GetModelsAsync(string backend)
         {
             try

@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using RuApp.Models;
 using RuApp.Services;
 
 namespace RuApp.Views
@@ -10,6 +11,9 @@ namespace RuApp.Views
     {
         private ApiService? _apiService;
         private bool _isUpdatingUi = false;
+        private DispatcherTimer? _vtsConfigDebounce;
+        private DispatcherTimer? _vtsStatusTimer;
+        private bool _loadingVtsConfig;
 
         public VoiceView()
         {
@@ -23,6 +27,18 @@ namespace RuApp.Views
             _apiService = apiService;
             _voicePlayback = voicePlayback;
             _ = LoadVoiceAndVtsStatusAsync();
+
+            _vtsConfigDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+            _vtsConfigDebounce.Tick += async (_, __) =>
+            {
+                _vtsConfigDebounce.Stop();
+                await SaveVtsConfigAsync();
+            };
+
+            _vtsStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+            _vtsStatusTimer.Tick += async (_, __) => await PollVtsStatusAsync();
+            _vtsStatusTimer.Start();
+            _ = LoadVtsConfigAsync();
         }
 
         private async Task LoadVoiceAndVtsStatusAsync()
@@ -163,6 +179,101 @@ namespace RuApp.Views
             {
                 await _apiService.TriggerVtsActionAsync(action);
             }
+        }
+
+        private void OnVtsConfigSliderChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            if (_loadingVtsConfig) return;
+            _vtsConfigDebounce?.Stop();
+            _vtsConfigDebounce?.Start();
+        }
+
+        private async Task LoadVtsConfigAsync()
+        {
+            if (_apiService == null) return;
+            _loadingVtsConfig = true;
+            var config = await _apiService.GetVtsConfigAsync();
+            if (config != null)
+            {
+                SwaySlider.Value = SwayAmplitudeToPercent(config.SwayAmplitudeIdle);
+                HeadSlider.Value = config.HeadScale;
+                EyeSlider.Value = config.EyeScale;
+                MicroSlider.Value = MicroDelayToPercent(config.MicroActionMinDelay);
+                PoseSlider.Value = PoseIntervalToPercent(config.PoseMinInterval);
+            }
+            _loadingVtsConfig = false;
+        }
+
+        private async Task SaveVtsConfigAsync()
+        {
+            if (_apiService == null) return;
+            var config = new VtsConfigDto
+            {
+                SwayAmplitudeIdle = SwayPercentToAmplitude(SwaySlider.Value, idle: true),
+                SwayAmplitudeSpeaking = SwayPercentToAmplitude(SwaySlider.Value, idle: false),
+                HeadScale = HeadSlider.Value,
+                EyeScale = EyeSlider.Value,
+                MicroActionMinDelay = MicroPercentToDelay(MicroSlider.Value, min: true),
+                MicroActionMaxDelay = MicroPercentToDelay(MicroSlider.Value, min: false),
+                PoseMinInterval = PosePercentToInterval(PoseSlider.Value, min: true),
+                PoseMaxInterval = PosePercentToInterval(PoseSlider.Value, min: false),
+                BreathAmplitude = 1.5,
+                BreathRate = 0.15,
+            };
+            await _apiService.SaveVtsConfigAsync(config);
+        }
+
+        private static double SwayPercentToAmplitude(double percent, bool idle)
+        {
+            double min = idle ? 5.0 : 5.0;
+            double max = idle ? 30.0 : 40.0;
+            return min + (max - min) * percent / 100.0;
+        }
+
+        private static double SwayAmplitudeToPercent(double amplitude)
+        {
+            if (amplitude <= 5.0) return 0.0;
+            if (amplitude >= 30.0) return 100.0;
+            return (amplitude - 5.0) / 25.0 * 100.0;
+        }
+
+        private static double MicroPercentToDelay(double percent, bool min)
+        {
+            double high = min ? 40.0 : 90.0;
+            double low = min ? 8.0 : 22.0;
+            return low + (high - low) * (100.0 - percent) / 100.0;
+        }
+
+        private static double MicroDelayToPercent(double delay)
+        {
+            if (delay <= 8.0) return 100.0;
+            if (delay >= 40.0) return 0.0;
+            return 100.0 - (delay - 8.0) / 32.0 * 100.0;
+        }
+
+        private static double PosePercentToInterval(double percent, bool min)
+        {
+            double high = min ? 300.0 : 600.0;
+            double low = min ? 90.0 : 130.0;
+            return low + (high - low) * (100.0 - percent) / 100.0;
+        }
+
+        private static double PoseIntervalToPercent(double interval)
+        {
+            if (interval <= 90.0) return 100.0;
+            if (interval >= 300.0) return 0.0;
+            return 100.0 - (interval - 90.0) / 210.0 * 100.0;
+        }
+
+        private async Task PollVtsStatusAsync()
+        {
+            if (_apiService == null) return;
+            var status = await _apiService.GetVtsStatusAsync();
+            if (status == null) return;
+            VtsStatusText.Text = status.Connected ? "Trạng thái: Đã kết nối" : "Trạng thái: Chưa kết nối";
+            VtsStateText.Text = status.Connected && !string.IsNullOrEmpty(status.State)
+                ? "Motion: " + status.State
+                : "";
         }
     }
 }

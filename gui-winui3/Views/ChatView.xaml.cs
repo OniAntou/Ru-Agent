@@ -59,6 +59,8 @@ namespace RuApp.Views
         private bool _isFirstMessage = true;
         private bool _inputCentered = true;
         private double _centerDelta;
+        private DispatcherTimer? _typingDebounce;
+        private bool _typingPushed;
 
         public ChatView()
         {
@@ -94,6 +96,34 @@ namespace RuApp.Views
             _wsClient.OnSessionReceived += OnWsSessionReceived;
             _wsClient.OnResetReceived += OnWsResetReceived;
             _wsClient.OnConnected += OnWsConnected;
+
+            ChatInputTextBox.TextChanged += OnChatInputTyping;
+            _typingDebounce = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
+            _typingDebounce.Tick += (_, __) =>
+            {
+                _typingDebounce.Stop();
+                if (!string.IsNullOrEmpty(ChatInputTextBox.Text) && !_typingPushed)
+                {
+                    _typingPushed = true;
+                    _ = _apiService?.PushVtsActivityAsync(true);
+                }
+            };
+        }
+
+        private void OnChatInputTyping(object sender, TextChangedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(ChatInputTextBox.Text))
+            {
+                _typingDebounce?.Stop();
+                if (_typingPushed)
+                {
+                    _typingPushed = false;
+                    _ = _apiService?.PushVtsActivityAsync(false);
+                }
+                return;
+            }
+            _typingDebounce?.Stop();
+            _typingDebounce?.Start();
         }
 
         private void OnWsConnected()
@@ -164,6 +194,11 @@ namespace RuApp.Views
                 if (string.IsNullOrEmpty(text) || _wsClient == null) return;
 
                 ChatInputTextBox.Text = string.Empty;
+                if (_typingPushed)
+                {
+                    _typingPushed = false;
+                    _ = _apiService?.PushVtsActivityAsync(false);
+                }
 
                 Messages.Add(new ChatMessageItem { Role = "user", Content = text });
                 var assistantMsg = new ChatMessageItem { Role = "assistant", Content = "", IsStreaming = true };

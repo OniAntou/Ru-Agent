@@ -216,6 +216,42 @@ namespace RuApp.Models
 
         [JsonPropertyName("config")]
         public VtsConfigDto? Config { get; set; }
+
+        [JsonPropertyName("mouse_look_enabled")]
+        public bool MouseLookEnabled { get; set; }
+
+        [JsonPropertyName("mouse_look_sensitivity")]
+        public double MouseLookSensitivity { get; set; } = 1.0;
+
+        [JsonPropertyName("overlay_enabled")]
+        public bool OverlayEnabled { get; set; }
+
+        [JsonPropertyName("overlay_running")]
+        public bool OverlayRunning { get; set; }
+
+        [JsonPropertyName("connect_error")]
+        public string? ConnectError { get; set; }
+    }
+
+    public class MouseLookDto
+    {
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; } = false;
+
+        [JsonPropertyName("sensitivity")]
+        public double Sensitivity { get; set; } = 1.0;
+    }
+
+    public class OverlayDto
+    {
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; } = false;
+
+        [JsonPropertyName("running")]
+        public bool Running { get; set; } = false;
+
+        [JsonPropertyName("error")]
+        public string? Error { get; set; }
     }
 
     public class VtsConfigDto

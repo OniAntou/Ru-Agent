@@ -315,6 +315,66 @@ namespace RuApp.Services
             }
         }
 
+        public async Task<MouseLookDto?> GetMouseLookAsync()
+        {
+            try
+            {
+                var result = await _httpClient.GetFromJsonAsync<JsonElement>($"{_baseUrl}/vts/mouse-look");
+                if (result.TryGetProperty("mouse_look", out var ml))
+                    return ml.Deserialize<MouseLookDto>();
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] GetMouseLookAsync failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task<bool> SaveMouseLookAsync(bool enabled, double sensitivity)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/vts/mouse-look", new { enabled, sensitivity });
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] SaveMouseLookAsync failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<OverlayDto?> GetOverlayAsync()
+        {
+            try
+            {
+                var result = await _httpClient.GetFromJsonAsync<JsonElement>($"{_baseUrl}/vts/overlay");
+                if (result.TryGetProperty("overlay", out var o))
+                    return o.Deserialize<OverlayDto>();
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] GetOverlayAsync failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task<bool> SaveOverlayAsync(bool enabled)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/vts/overlay", new { enabled });
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] SaveOverlayAsync failed: {ex.Message}");
+                return false;
+            }
+        }
+
         public async Task<List<string>> GetModelsAsync(string backend)
         {
             try

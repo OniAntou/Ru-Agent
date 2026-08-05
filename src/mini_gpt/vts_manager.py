@@ -4,13 +4,18 @@ import logging
 import random
 import threading
 import time
+from pathlib import Path
 
 import pyvts
 
 from .vts_actions import VtsActions
 from .vts_catalog import VtsCatalog, build_catalog
+from .vts_config import MotionConfig
+from .vts_context import MotionContextProvider
+from .vts_emotion import EmotionTag
 from .vts_motion import (
     body_pose_entries,
+    BreathController,
     EyeMotionController,
     head_nod_value,
     head_tilt_value,
@@ -21,7 +26,9 @@ from .vts_motion import (
     OrganicSwayController,
     PoseCycleScheduler,
     safe_micro_action_entries,
+    state_amplitude_scale,
 )
+from .vts_state import MotionStateMachine, VtsMotionState
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +38,14 @@ SWAY_LOOP_SLEEP_SECONDS = 0.1
 DISCONNECTED_POLL_SECONDS = 0.5
 ERROR_BACKOFF_SECONDS = 1.0
 RECONNECT_MIN_INTERVAL_SECONDS = 5.0
-RECONNECT_MAX_ATTEMPTS = 5
+RECONNECT_BACKOFF_CAP_SECONDS = 30.0
 MAX_CONCURRENT_REQUESTS = 4
 CATALOG_CACHE_TTL_SECONDS = 10.0
+
+
+def reconnect_delay(attempts: int) -> float:
+    """Backoff that grows with attempts and caps, never gives up."""
+    return min(RECONNECT_MIN_INTERVAL_SECONDS + 5.0 * min(attempts, 5), RECONNECT_BACKOFF_CAP_SECONDS)
 
 ACTION_HOTKEYS = {
     "joy": ("星星眼", "眼睛恢复", 2.0),
@@ -51,6 +63,7 @@ class VTSManager:
         plugin_info = {
             "plugin_name": "Ru Local Llama",
             "developer": "Antigravity",
+            "authentication_token_path": str(Path.home() / ".minigpt" / "pyvts_token.txt"),
         }
         self.vts = pyvts.vts(plugin_info=plugin_info)
         self.is_connected = False
@@ -84,7 +97,11 @@ class VTSManager:
         self._catalog_cache_at = 0.0
         self._last_reconnect_attempt_at = 0.0
         self._reconnect_attempts = 0
-        self._reconnect_exhausted_logged = False
+        self._context = MotionContextProvider()
+        self._fsm = MotionStateMachine()
+        self.config = MotionConfig.defaults()
+        self._breath_controller = BreathController(self._motion_random)
+        self._last_send_at = 0.0
 
     def run(self) -> None:
         """Own the VTube Studio websocket on one persistent background loop."""
@@ -131,15 +148,6 @@ class VTSManager:
         if not self._sway_running:
             return
         now = time.monotonic()
-        if self._reconnect_attempts >= RECONNECT_MAX_ATTEMPTS:
-            if not self._reconnect_exhausted_logged:
-                self._reconnect_exhausted_logged = True
-                logger.error(
-                    "VTS auto-reconnect exhausted after %d attempts",
-                    self._reconnect_attempts,
-                )
-            return
-        self._reconnect_exhausted_logged = False
         if now - self._last_reconnect_attempt_at < RECONNECT_MIN_INTERVAL_SECONDS:
             return
         self._last_reconnect_attempt_at = now
@@ -150,28 +158,20 @@ class VTSManager:
         if self._reconnect_lock is None:
             self._reconnect_lock = asyncio.Lock()
         async with self._reconnect_lock:
-            while self._reconnect_attempts < RECONNECT_MAX_ATTEMPTS:
-                await asyncio.sleep(RECONNECT_MIN_INTERVAL_SECONDS)
+            while self._sway_running and not self.is_connected:
+                await asyncio.sleep(reconnect_delay(self._reconnect_attempts))
                 if self.is_connected or not self._sway_running:
                     return
                 self._reconnect_attempts += 1
                 self._last_reconnect_attempt_at = time.monotonic()
                 logger.info(
-                    "VTS reconnect attempt %d/%d",
+                    "VTS reconnect attempt %d",
                     self._reconnect_attempts,
-                    RECONNECT_MAX_ATTEMPTS,
                 )
                 await self._reconnect()
                 if self.is_connected:
                     self._reconnect_attempts = 0
-                    self._reconnect_exhausted_logged = False
                     return
-            if not self._reconnect_exhausted_logged:
-                self._reconnect_exhausted_logged = True
-                logger.error(
-                    "VTS auto-reconnect exhausted after %d attempts",
-                    self._reconnect_attempts,
-                )
 
     def _run_on_vts_loop(self, coroutine, *, wait: bool):
         loop = getattr(self, "_loop", None)
@@ -261,7 +261,7 @@ class VTSManager:
             await self.setup_custom_parameters()
             self._catalog_cache = None
             self._reconnect_attempts = 0
-            self._reconnect_exhausted_logged = False
+            self._fsm.reset(time.monotonic())
             self._ensure_sway_task()
         except Exception as e:
             logger.warning("Failed to connect to VTube Studio: %s", e)
@@ -309,7 +309,10 @@ class VTSManager:
     async def sway_loop(self):
         self._sway_running = True
         self._sway_controller.reset()
-        start_time = time.monotonic()
+        now0 = time.monotonic()
+        self._fsm.reset(now0)
+        start_time = now0
+        prev_state: VtsMotionState | None = None
         try:
             while self._sway_running:
                 if not self.is_connected:
@@ -319,16 +322,29 @@ class VTSManager:
                 try:
                     now = time.monotonic()
                     elapsed = now - start_time
+                    snap = self._context.snapshot()
+                    state = self._fsm.update(snap, now)
+                    entered_post_reply = (
+                        state == VtsMotionState.POST_REPLY
+                        and prev_state != VtsMotionState.POST_REPLY
+                    )
+                    prev_state = state
+                    config = self.config
+                    scale = state_amplitude_scale(state)
+                    speaking = state == VtsMotionState.SPEAKING
 
-                    # ── Sway / Body ───────────────────────────────────────
+                    # ── Sway / Body + breath ──────────────────────────────
                     if self._mouse_tracking_enabled:
                         val = self._mouse_eye_tracker.read_body()
                     else:
                         val = self._sway_controller.update(
-                            now, elapsed, speaking=self.is_speaking
+                            now, elapsed, speaking, config=config, scale=scale
                         )
+                        val += self._breath_controller.value(now, config)
 
                     # ── Eye + Head motion ──────────────────────────────────
+                    head_scale = config.head_scale / 100.0
+                    eye_scale = config.eye_scale / 100.0
                     if self._mouse_tracking_enabled:
                         try:
                             cx, cy = self._cursor_pos()
@@ -348,17 +364,34 @@ class VTSManager:
                         req = self.vts.vts_request.requestSetMultiParameterValue(
                             parameters=["LLM_Sway", "LLM_EyeX", "LLM_EyeY",
                                         "LLM_HeadZ", "LLM_HeadY", "LLM_HeadX"],
-                            values=[val, eye_x, eye_y, hz, hy, hx],
+                            values=[
+                                val,
+                                eye_x * eye_scale, eye_y * eye_scale,
+                                hz * head_scale, hy * head_scale, hx * head_scale,
+                            ],
                         )
+                        self._last_send_at = now
                         self._spawn_background_task(self._send_request(req))
+                    elif now - self._last_send_at > 15.0:
+                        # keep-alive: VTS closes idle sockets after ~30s
+                        self._last_send_at = now
+                        ping = self.vts.vts_request.BaseRequest(
+                            "ExpressionStateRequest",
+                            {"details": False, "expressionFile": ""},
+                        )
+                        self._spawn_background_task(self._send_request(ping))
 
                     # ── Micro-actions ─────────────────────────────────────
-                    if self._micro_action_scheduler.update(now, self.is_speaking):
+                    if self._micro_action_scheduler.update(now, state, config):
                         self._spawn_background_task(self._trigger_micro_action())
 
-                    # ── Idle pose cycle ───────────────────────────────────
-                    if self._pose_cycle_scheduler.update(now, self.is_speaking):
-                        self._spawn_background_task(self._trigger_pose())
+                    # ── Idle pose cycle / post-reply pose ─────────────────
+                    if self._pose_cycle_scheduler.update(now, state, config):
+                        if not entered_post_reply or snap.emotion in (
+                            EmotionTag.JOY,
+                            EmotionTag.SURPRISED,
+                        ):
+                            self._spawn_background_task(self._trigger_pose())
 
                     await asyncio.sleep(SWAY_LOOP_SLEEP_SECONDS)  # 10 Hz
                 except Exception as e:
@@ -395,6 +428,26 @@ class VTSManager:
         self._injection_paused = bool(paused)
         self._run_on_vts_loop(self._run_injection_toggle(), wait=False)
         logger.info("VTS injection paused=%s", paused)
+
+    def apply_config(self, config: MotionConfig) -> None:
+        """Apply a validated motion config; survives disconnect/reconnect."""
+        self.config = config
+        logger.info("Applied VTS motion config: %s", config.to_dict())
+
+    def note_speaking(self, speaking: bool) -> None:
+        self._context.set_speaking(speaking)
+
+    def note_generating(self, generating: bool) -> None:
+        self._context.set_generating(generating)
+
+    def note_user_typing(self, typing: bool) -> None:
+        self._context.set_user_typing(typing)
+
+    def note_emotion(self, emotion: EmotionTag | str) -> None:
+        self._context.set_emotion(emotion)
+
+    def current_state(self) -> VtsMotionState:
+        return self._fsm.state
 
     async def _run_injection_toggle(self) -> None:
         chain = self._injection_chain
@@ -438,7 +491,7 @@ class VTSManager:
             await self.setup_custom_parameters()
             self._catalog_cache = None
             self._reconnect_attempts = 0
-            self._reconnect_exhausted_logged = False
+            self._fsm.reset(time.monotonic())
             self._ensure_sway_task()
             logger.info("VTS reconnected")
         except Exception as e:
@@ -500,7 +553,7 @@ class VTSManager:
             candidates = safe_micro_action_entries(
                 entry for entry in catalog.entries if entry.kind == "hotkey"
             )
-            if not self.is_speaking and candidates:
+            if not self._context.snapshot().speaking and candidates:
                 candidates = [
                     e for e in candidates
                     if is_idle_safe_micro_action(e.label, e.identifier)

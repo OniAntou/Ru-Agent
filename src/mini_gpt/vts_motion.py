@@ -6,28 +6,29 @@ import math
 import random
 from typing import Iterable
 
+from .vts_config import MotionConfig
+from .vts_state import VtsMotionState
+
 
 # ── Sway amplitudes ───────────────────────────────────────────────────────
 IDLE_SWAY_AMPLITUDE = 10.0       # Biên độ khi không nói (từ 5 → 10)
 SPEAKING_SWAY_AMPLITUDE = 16.0   # Biên độ khi nói (từ 14 → 16)
 
-# ── Micro-actions ─────────────────────────────────────────────────────────
-SPEAKING_MICRO_ACTION_MIN_DELAY = 10.0
-SPEAKING_MICRO_ACTION_MAX_DELAY = 22.0
-# Idle: dày hơn để trông sống động — cử chỉ nhỏ liên tục giúp model
-# không bị đứng hình dù không nói.
-IDLE_MICRO_ACTION_MIN_DELAY = 8.0
-IDLE_MICRO_ACTION_MAX_DELAY = 22.0
 
-
-def sway_value(elapsed: float, speaking: bool) -> float:
+def sway_value(
+    elapsed: float,
+    speaking: bool,
+    *,
+    idle_amplitude: float = IDLE_SWAY_AMPLITUDE,
+    speaking_amplitude: float = SPEAKING_SWAY_AMPLITUDE,
+) -> float:
     """Return a bounded, multi-layered sway target.
 
     4 sine-wave layers with incommensurate frequencies produce organic,
     non-repeating motion.  A slow amplitude-modulation envelope adds
     subtle "surges" that keep the movement feeling alive.
     """
-    amplitude = SPEAKING_SWAY_AMPLITUDE if speaking else IDLE_SWAY_AMPLITUDE
+    amplitude = speaking_amplitude if speaking else idle_amplitude
     t = float(elapsed)
     layers = (
         0.50 * math.sin(t * 1.12 + 0.0)
@@ -49,6 +50,32 @@ _HEAD_YAW_RATE  = 0.06      # ~1 chu kỳ mỗi 16.7s
 _HEAD_TILT_AMPLITUDE = 8.0
 _HEAD_NOD_AMPLITUDE  = 6.0
 _HEAD_YAW_AMPLITUDE  = 4.0
+
+
+STATE_AMPLITUDE_SCALE = {
+    VtsMotionState.IDLE: 0.6,
+    VtsMotionState.LISTENING: 0.5,
+    VtsMotionState.THINKING: 0.3,
+    VtsMotionState.SPEAKING: 1.0,
+    VtsMotionState.POST_REPLY: 0.7,
+}
+
+
+def state_amplitude_scale(state: VtsMotionState) -> float:
+    return STATE_AMPLITUDE_SCALE.get(state, 1.0)
+
+
+class BreathController:
+    """Slow, bounded breathing layer added on top of body sway."""
+
+    def __init__(self, random_source: object | None = None) -> None:
+        self.random_source = random_source or random
+        self._phase = self.random_source.uniform(0.0, 2.0 * math.pi)
+
+    def value(self, now: float, config: MotionConfig) -> float:
+        return config.breath_amplitude * math.sin(
+            2.0 * math.pi * config.breath_rate * float(now) + self._phase
+        )
 
 
 def head_tilt_value(elapsed: float) -> float:
@@ -83,13 +110,27 @@ class OrganicSwayController:
         self._drift_target = 0.0
         self._next_drift_at = None
 
-    def update(self, now: float, elapsed: float, speaking: bool) -> float:
+    def update(
+        self,
+        now: float,
+        elapsed: float,
+        speaking: bool,
+        *,
+        config: MotionConfig | None = None,
+        scale: float = 1.0,
+    ) -> float:
         if self._last_now is None:
             self._last_now = now
             return self._value
 
         delta = max(0.0, float(now) - self._last_now)
-        amplitude = SPEAKING_SWAY_AMPLITUDE if speaking else IDLE_SWAY_AMPLITUDE
+        if config is None:
+            amplitude = SPEAKING_SWAY_AMPLITUDE if speaking else IDLE_SWAY_AMPLITUDE
+            idle_amplitude, speaking_amplitude = IDLE_SWAY_AMPLITUDE, SPEAKING_SWAY_AMPLITUDE
+        else:
+            idle_amplitude = min(config.sway_amplitude_idle * scale, 30.0)
+            speaking_amplitude = min(config.sway_amplitude_speaking * scale, 40.0)
+            amplitude = speaking_amplitude if speaking else idle_amplitude
         if speaking:
             if self._next_drift_at is None:
                 self._next_drift_at = now + 0.8
@@ -108,7 +149,12 @@ class OrganicSwayController:
 
         drift_alpha = 1.0 - math.exp(-delta / 0.45)
         self._drift += (self._drift_target - self._drift) * drift_alpha
-        target = sway_value(elapsed, speaking) + self._drift
+        target = sway_value(
+            elapsed,
+            speaking,
+            idle_amplitude=idle_amplitude,
+            speaking_amplitude=speaking_amplitude,
+        ) + self._drift
         target = max(-amplitude, min(amplitude, target))
         alpha = 1.0 - math.exp(-delta / 0.22)
         self._value += (target - self._value) * alpha
@@ -199,33 +245,32 @@ class MicroActionScheduler:
     def reset(self) -> None:
         self.next_due_at = None
 
-    def update(self, now: float, speaking: bool) -> bool:
-        """Return ``True`` when a micro-action is due."""
+    def update(self, now: float, state: VtsMotionState, config: MotionConfig) -> bool:
+        """Return ``True`` when a micro-action is due in the given state.
 
+        Suppressed entirely in LISTENING/THINKING; idle timing is 1.5x sparser.
+        """
+        if state in (VtsMotionState.LISTENING, VtsMotionState.THINKING):
+            self.next_due_at = None
+            return False
+        speaking = state == VtsMotionState.SPEAKING
         if self.next_due_at is None:
-            self.next_due_at = now + self._next_delay(speaking)
+            self.next_due_at = now + self._next_delay(speaking, config)
             return False
 
         if now < self.next_due_at:
             return False
 
-        self.next_due_at = now + self._next_delay(speaking)
+        self.next_due_at = now + self._next_delay(speaking, config)
         return True
 
-    def _next_delay(self, speaking: bool) -> float:
-        if speaking:
-            return float(
-                self.random_source.uniform(
-                    SPEAKING_MICRO_ACTION_MIN_DELAY,
-                    SPEAKING_MICRO_ACTION_MAX_DELAY,
-                )
-            )
-        return float(
-            self.random_source.uniform(
-                IDLE_MICRO_ACTION_MIN_DELAY,
-                IDLE_MICRO_ACTION_MAX_DELAY,
-            )
-        )
+    def _next_delay(self, speaking: bool, config: MotionConfig) -> float:
+        minimum = config.micro_action_min_delay
+        maximum = config.micro_action_max_delay
+        if not speaking:
+            minimum *= 1.5
+            maximum *= 1.5
+        return float(self.random_source.uniform(minimum, maximum))
 
 
 # ── Eye motion (nhìn ngó lung tung) ─────────────────────────────────────
@@ -416,10 +461,6 @@ def is_body_pose_action(label: str, identifier: str) -> bool:
     return any(term.casefold() in searchable for term in _POSE_SAFE_TERMS)
 
 
-_POSE_CYCLE_MIN = 70
-_POSE_CYCLE_MAX = 130
-
-
 def body_pose_entries(entries: Iterable[object]) -> list[object]:
     """Filter catalog hotkeys that qualify as body poses."""
     return [
@@ -434,34 +475,38 @@ def body_pose_entries(entries: Iterable[object]) -> list[object]:
 
 
 class PoseCycleScheduler:
-    """Triggers a random body pose every ~90 s when idle (not speaking)."""
+    """Triggers a random body pose on POST_REPLY entry and on idle intervals."""
 
     def __init__(self, random_source: object | None = None) -> None:
         self.random_source = random_source or random
         self._next_at: float | None = None
         self._last_pose_code: str | None = None
-        self._was_speaking = False
+        self._post_reply_armed = False
 
     def reset(self) -> None:
         self._next_at = None
         self._last_pose_code = None
-        self._was_speaking = False
+        self._post_reply_armed = False
 
-    def update(self, now: float, speaking: bool) -> bool:
-        if speaking:
-            self._was_speaking = True
+    def update(self, now: float, state: VtsMotionState, config: MotionConfig) -> bool:
+        if state == VtsMotionState.POST_REPLY:
+            if not self._post_reply_armed:
+                self._post_reply_armed = True
+                self._next_at = now + self._roll_interval(config)
+                return True
             return False
-        if self._was_speaking:
-            # Vừa nói xong: re-roll thời gian pose kế tiếp, không trigger ngay
-            self._was_speaking = False
-            self._next_at = now + self._roll_interval()
+        if state == VtsMotionState.SPEAKING:
+            return False
+        self._post_reply_armed = False
+        if state != VtsMotionState.IDLE:
+            self._next_at = None
             return False
         if self._next_at is None:
-            self._next_at = now + self._roll_interval()
+            self._next_at = now + self._roll_interval(config)
             return False
         if now < self._next_at:
             return False
-        self._next_at = now + self._roll_interval()
+        self._next_at = now + self._roll_interval(config)
         return True
 
     def pick(self, candidates: list[object]) -> object | None:
@@ -477,7 +522,7 @@ class PoseCycleScheduler:
         self._last_pose_code = chosen.code
         return chosen
 
-    def _roll_interval(self) -> float:
+    def _roll_interval(self, config: MotionConfig) -> float:
         return float(
-            self.random_source.uniform(_POSE_CYCLE_MIN, _POSE_CYCLE_MAX)
+            self.random_source.uniform(config.pose_min_interval, config.pose_max_interval)
         )

@@ -25,16 +25,71 @@ def test_sway_amplitudes_match_the_active_policy():
 
 
 def test_scheduler_waits_for_a_randomized_interval_and_resets_on_new_session():
-    scheduler = MicroActionScheduler(random_source=FakeRandom([20.0, 14.0, 20.0]))
+    from mini_gpt.vts_config import MotionConfig
+    from mini_gpt.vts_state import VtsMotionState
 
-    assert scheduler.update(100.0, speaking=True) is False
-    assert scheduler.update(119.9, speaking=True) is False
-    assert scheduler.update(120.0, speaking=True) is True
-    scheduler.update(121.0, speaking=False)
-    assert scheduler.update(122.0, speaking=True) is False
+    scheduler = MicroActionScheduler(random_source=FakeRandom([20.0, 14.0, 20.0]))
+    config = MotionConfig.defaults()
+
+    assert scheduler.update(100.0, VtsMotionState.SPEAKING, config) is False
+    assert scheduler.update(119.9, VtsMotionState.SPEAKING, config) is False
+    assert scheduler.update(120.0, VtsMotionState.SPEAKING, config) is True
+    scheduler.update(121.0, VtsMotionState.IDLE, config)
+    assert scheduler.update(122.0, VtsMotionState.SPEAKING, config) is False
     assert scheduler.next_due_at == 134.0
     scheduler.reset()
     assert scheduler.next_due_at is None
+
+
+def test_scheduler_suppresses_micro_actions_while_listening_or_thinking():
+    from mini_gpt.vts_config import MotionConfig
+    from mini_gpt.vts_state import VtsMotionState
+
+    scheduler = MicroActionScheduler(random_source=FakeRandom([1.0, 1.0]))
+    config = MotionConfig.defaults()
+    scheduler.next_due_at = 0.0  # force due
+
+    assert scheduler.update(1.0, VtsMotionState.LISTENING, config) is False
+    assert scheduler.next_due_at is None
+    assert scheduler.update(1.0, VtsMotionState.THINKING, config) is False
+    assert scheduler.next_due_at is None
+    assert scheduler.update(1.0, VtsMotionState.SPEAKING, config) is False
+    assert scheduler.next_due_at == 2.0
+
+
+def test_breath_stays_bounded_and_uses_config():
+    from mini_gpt.vts_config import MotionConfig
+    from mini_gpt.vts_motion import BreathController
+
+    controller = BreathController()
+    config = MotionConfig.defaults()
+    values = [controller.value(index * 0.1, config) for index in range(300)]
+    assert max(abs(value) for value in values) <= config.breath_amplitude + 1e-9
+
+
+def test_state_amplitude_scale_mapping():
+    from mini_gpt.vts_motion import state_amplitude_scale
+    from mini_gpt.vts_state import VtsMotionState
+
+    assert state_amplitude_scale(VtsMotionState.SPEAKING) == 1.0
+    assert state_amplitude_scale(VtsMotionState.IDLE) == 0.6
+    assert state_amplitude_scale(VtsMotionState.THINKING) == 0.3
+    assert state_amplitude_scale(VtsMotionState.POST_REPLY) == 0.7
+
+
+def test_pose_scheduler_fires_once_on_post_reply_entry_and_idle_intervals():
+    from mini_gpt.vts_config import MotionConfig
+    from mini_gpt.vts_motion import PoseCycleScheduler
+    from mini_gpt.vts_state import VtsMotionState
+
+    scheduler = PoseCycleScheduler(random_source=FakeRandom([100.0, 100.0, 100.0]))
+    config = MotionConfig.defaults()
+
+    assert scheduler.update(10.0, VtsMotionState.POST_REPLY, config) is True
+    assert scheduler.update(10.1, VtsMotionState.POST_REPLY, config) is False
+    assert scheduler.update(10.2, VtsMotionState.SPEAKING, config) is False
+    assert scheduler.update(15.0, VtsMotionState.IDLE, config) is False  # timer set at 10.2
+    assert scheduler.update(110.2, VtsMotionState.IDLE, config) is True
 
 
 def test_micro_action_filter_excludes_pout_blush_clothing_and_unknown_motion():

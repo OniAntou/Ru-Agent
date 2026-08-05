@@ -558,8 +558,15 @@ def test_voice_transcribe_surfaces_recognizer_error(monkeypatch, isolated_state)
     assert response.json() == {"status": "error", "message": "Could not understand audio."}
 
 def test_vts_status_and_connect_flows(monkeypatch, isolated_state) -> None:
+    from mini_gpt.vts_config import MotionConfig
+    from mini_gpt.vts_state import VtsMotionState
+
     class FakeVts:
         is_connected = False
+        config = MotionConfig.defaults()
+
+        def current_state(self):
+            return VtsMotionState.IDLE
 
     fake = FakeVts()
     monkeypatch.setattr(server_shared, "_VTS_MANAGER", fake)
@@ -571,7 +578,10 @@ def test_vts_status_and_connect_flows(monkeypatch, isolated_state) -> None:
     with TestClient(server.app) as client:
         status = client.get("/vts/status")
         connect = client.post("/vts/connect")
-    assert status.json() == {"status": "ok", "connected": False}
+    assert status.json()["status"] == "ok"
+    assert status.json()["connected"] is False
+    assert status.json()["state"] == "idle"
+    assert "config" in status.json()
     assert connect.json()["status"] == "error"
 
 def test_vts_speaking_endpoint_updates_motion_state(monkeypatch, isolated_state) -> None:
@@ -580,7 +590,7 @@ def test_vts_speaking_endpoint_updates_motion_state(monkeypatch, isolated_state)
     class FakeVts:
         is_connected = True
 
-        def set_speaking(self, value):
+        def note_speaking(self, value):
             speaking.append(value)
 
     monkeypatch.setattr(server_shared, "_VTS_MANAGER", FakeVts())
@@ -595,10 +605,17 @@ def test_vts_speaking_endpoint_updates_motion_state(monkeypatch, isolated_state)
     assert speaking == [True, False]
 
 def test_vts_connected_status_and_action(monkeypatch, isolated_state) -> None:
+    from mini_gpt.vts_config import MotionConfig
+    from mini_gpt.vts_state import VtsMotionState
+
     calls: list[dict] = []
 
     class FakeVts:
         is_connected = True
+        config = MotionConfig.defaults()
+
+        def current_state(self):
+            return VtsMotionState.IDLE
 
         def trigger_actions_sync(self, actions):
             calls.append({"kind": "semantic", "facial": actions.facial, "body": actions.body})
@@ -613,7 +630,8 @@ def test_vts_connected_status_and_action(monkeypatch, isolated_state) -> None:
         status = client.get("/vts/status")
         action = client.post("/vts/action", json={"facial": "joy"})
         empty = client.post("/vts/action", json={})
-    assert status.json() == {"status": "ok", "connected": True}
+    assert status.json()["status"] == "ok"
+    assert status.json()["connected"] is True
     assert action.json() == {"status": "ok"}
     assert calls == [{"kind": "semantic", "facial": "joy", "body": None}]
     assert empty.json()["status"] == "error"

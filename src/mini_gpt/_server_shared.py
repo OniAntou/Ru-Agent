@@ -44,6 +44,7 @@ from mini_gpt.speech_runtime import (
 )
 from mini_gpt.vts_actions import VtsActions
 from mini_gpt.vts_catalog import VtsCatalog, catalog_instruction, parse_catalog_reply
+from mini_gpt.vts_config import MotionConfig
 from mini_gpt.vts_manager import VTSManager
 from mini_gpt.voice_pacing import effective_voice_speed, voice_pace_for
 from mini_gpt.voice_runtime import (
@@ -630,6 +631,7 @@ def _vts_manager() -> VTSManager:
         with _VTS_LOCK:
             if _VTS_MANAGER is None:
                 manager = VTSManager()
+                manager.apply_config(_load_vts_motion_config())
                 thread = threading.Thread(target=manager.run, name="vts-loop", daemon=True)
                 thread.start()
                 _VTS_MANAGER = manager
@@ -644,6 +646,21 @@ def _trigger_vts_catalog_codes(
         manager.trigger_catalog_actions_sync(catalog, codes)
     except Exception as error:
         logger.debug("Background VTS catalog trigger failed: %s", error)
+
+
+def _load_vts_motion_config() -> MotionConfig:
+    stored = load_settings().get("vts_motion") or {}
+    try:
+        return MotionConfig.from_dict(stored)
+    except ValueError as error:
+        logger.warning("Ignoring invalid stored vts_motion config: %s", error)
+        return MotionConfig.defaults()
+
+
+def _save_vts_motion_config(config: MotionConfig) -> None:
+    settings = load_settings()
+    settings["vts_motion"] = config.to_dict()
+    save_settings_to_file(settings)
 
 
 # ── memory / self-learning ────────────────────────────────────────────

@@ -11,11 +11,14 @@ from .._server_shared import (
     _VTS_MANAGER,
     _vts_manager,
     logger,
+    _load_vts_motion_config,
+    _save_vts_motion_config,
     _trigger_vts_catalog_codes,
     VtsActions,
     VTS_CONNECT_TIMEOUT_SECONDS,
     VTSManager,
 )
+from ..vts_config import MotionConfig
 
 router = APIRouter()
 
@@ -30,10 +33,30 @@ class VtsSpeakingPayload(BaseModel):
     speaking: bool
 
 
+class VtsConfigPayload(BaseModel):
+    sway_amplitude_idle: float = Field(default=10.0)
+    sway_amplitude_speaking: float = Field(default=16.0)
+    head_scale: float = Field(default=100.0)
+    eye_scale: float = Field(default=100.0)
+    micro_action_min_delay: float = Field(default=8.0)
+    micro_action_max_delay: float = Field(default=22.0)
+    pose_min_interval: float = Field(default=90.0)
+    pose_max_interval: float = Field(default=130.0)
+    breath_amplitude: float = Field(default=1.5)
+    breath_rate: float = Field(default=0.15)
+
+
+class VtsActivityPayload(BaseModel):
+    typing: bool
+
+
 @router.get("/vts/status")
 def vts_status():
     manager = _VTS_MANAGER
-    return {"status": "ok", "connected": bool(manager is not None and manager.is_connected)}
+    connected = bool(manager is not None and manager.is_connected)
+    config = manager.config.to_dict() if manager is not None else MotionConfig.defaults().to_dict()
+    state = manager.current_state().value if manager is not None else "idle"
+    return {"status": "ok", "connected": connected, "state": state, "config": config}
 
 
 @router.post("/vts/connect")
@@ -50,6 +73,32 @@ def vts_connect():
         "status": "error",
         "message": "VTube Studio is not running or did not authenticate. Open VTube Studio, allow Ru, then retry.",
     }
+
+
+@router.get("/vts/config")
+def vts_config_get():
+    return {"status": "ok", "config": _load_vts_motion_config().to_dict()}
+
+
+@router.post("/vts/config")
+def vts_config_save(payload: VtsConfigPayload):
+    try:
+        config = MotionConfig.from_dict(payload.model_dump())
+    except ValueError as error:
+        return {"status": "error", "message": str(error)}
+    _save_vts_motion_config(config)
+    manager = _VTS_MANAGER
+    if manager is not None:
+        manager.apply_config(config)
+    return {"status": "ok", "config": config.to_dict()}
+
+
+@router.post("/vts/activity")
+def vts_activity(payload: VtsActivityPayload):
+    manager = _VTS_MANAGER
+    if manager is not None:
+        manager.note_user_typing(payload.typing)
+    return {"status": "ok"}
 
 
 @router.post("/vts/action")
@@ -85,5 +134,5 @@ def vts_speaking(payload: VtsSpeakingPayload):
     manager = _VTS_MANAGER
     if manager is None or not manager.is_connected:
         return {"status": "ok", "connected": False}
-    manager.set_speaking(payload.speaking)
+    manager.note_speaking(payload.speaking)
     return {"status": "ok", "connected": True}

@@ -1,7 +1,6 @@
 import asyncio
 import concurrent.futures
 import logging
-import os
 import random
 import threading
 import time
@@ -35,10 +34,6 @@ RECONNECT_MIN_INTERVAL_SECONDS = 5.0
 RECONNECT_MAX_ATTEMPTS = 5
 MAX_CONCURRENT_REQUESTS = 4
 CATALOG_CACHE_TTL_SECONDS = 10.0
-VTS_TOKEN_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "vts_token.txt",
-)
 
 ACTION_HOTKEYS = {
     "joy": ("星星眼", "眼睛恢复", 2.0),
@@ -56,7 +51,6 @@ class VTSManager:
         plugin_info = {
             "plugin_name": "Ru Local Llama",
             "developer": "Antigravity",
-            "authentication_token_path": VTS_TOKEN_PATH,
         }
         self.vts = pyvts.vts(plugin_info=plugin_info)
         self.is_connected = False

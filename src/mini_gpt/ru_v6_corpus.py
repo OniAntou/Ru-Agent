@@ -17,7 +17,9 @@ from ._safety_patterns import VI_DEFAULT_VOICE
 from ._text_utils import normalize_text
 from ._corpus_quality import casual_rejection_reason
 from .ru_style import RU_SYSTEM_PROMPT
-from .ru_v6_dialogues import LICENSE, SOURCE
+
+SOURCE = "teacher-curated-project-owned"
+LICENSE = "project-owned"
 
 VERSION = "V6"
 EXPECTED_EXAMPLES = 400

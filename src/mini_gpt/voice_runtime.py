@@ -59,7 +59,7 @@ try:
 except ValueError:
     _OMNIVOICE_PORT = 5052
 _OMNIVOICE_ENV_DIR = "omnivoice_env"
-_OMNIVOICE_SERVER_SCRIPT = "omnivoice_tts_server.py"
+_OMNIVOICE_SERVER_SCRIPT = "src/mini_gpt/omnivoice_tts_server.py"
 
 
 def voice_service_config(selection: VoiceSelection, project_root: Path) -> VoiceServiceConfig:

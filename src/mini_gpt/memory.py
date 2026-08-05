@@ -120,8 +120,13 @@ class StructuredMemoryStore:
                 """
             )
 
+    def _require_open(self) -> None:
+        if self._db_conn is None:
+            raise RuntimeError("StructuredMemoryStore is closed")
+
     def vacuum_database(self) -> None:
         """Run VACUUM to defragment the database and reclaim disk space."""
+        self._require_open()
         with self._database_lock:
             # VACUUM cannot be run inside a transaction.
             self._db_conn.isolation_level = None
@@ -149,6 +154,7 @@ class StructuredMemoryStore:
         )
 
     def get(self, record_id: str) -> MemoryRecord | None:
+        self._require_open()
         with self._database_lock:
             row = self._db_conn.execute("SELECT * FROM memories WHERE id = ?", (record_id,)).fetchone()
         return self._record_from_row(row) if row is not None else None
@@ -167,6 +173,7 @@ class StructuredMemoryStore:
     ) -> MemoryRecord:
         content = content.strip()
         evidence = evidence.strip()
+        self._require_open()
         
         if not content or not evidence:
             raise ValueError("memory content and evidence cannot be blank")
@@ -248,6 +255,7 @@ class StructuredMemoryStore:
         )
 
     def count_active(self) -> int:
+        self._require_open()
         now = _serialize_datetime(_utc_now())
         with self._database_lock:
             row = self._db_conn.execute(
@@ -260,6 +268,7 @@ class StructuredMemoryStore:
         return int(row["count"])
 
     def list_active(self, query: str = "") -> tuple[MemoryRecord, ...]:
+        self._require_open()
         now = _serialize_datetime(_utc_now())
         with self._database_lock:
             rows = self._db_conn.execute(
@@ -281,6 +290,7 @@ class StructuredMemoryStore:
         return set(re.findall(r"\w+", text.casefold()))
 
     def retrieve(self, query: str, *, limit: int = 5, max_chars: int = 1200) -> tuple[MemoryRecord, ...]:
+        self._require_open()
         query_tokens = self._tokens(query)
         if not query_tokens:
             return ()
@@ -353,6 +363,7 @@ class StructuredMemoryStore:
         candidates = extract_candidates(prompt, response)
         if not candidates:
             return ()
+        self._require_open()
         now = _utc_now()
         records: list[MemoryRecord] = []
         with self._database_lock, self._db_conn:
@@ -372,6 +383,7 @@ class StructuredMemoryStore:
         return tuple(records)
 
     def clear(self) -> None:
+        self._require_open()
         with self._database_lock, self._db_conn:
             self._db_conn.execute("DELETE FROM memories")
             self._db_conn.execute("DELETE FROM legacy_memory_migrations")
@@ -392,6 +404,7 @@ class StructuredMemoryStore:
         from .memory_extraction import extract_candidates
 
         legacy_path = Path(legacy_texts_path)
+        self._require_open()
         if not legacy_path.is_file():
             return {"imported": 0, "rejected": 0}
         source = legacy_path.read_bytes()

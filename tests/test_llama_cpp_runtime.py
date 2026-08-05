@@ -33,9 +33,63 @@ def test_server_command_without_lora_has_no_flag(runtime: LlamaCppRuntime) -> No
     assert command[command.index("--model") + 1] == str(runtime.base_model)
 
 
+def test_server_command_includes_loopback_auth_key(runtime: LlamaCppRuntime) -> None:
+    command = runtime.server_command("0")
+
+    assert "--api-key" in command
+    key = command[command.index("--api-key") + 1]
+    assert len(key) == 64
+    assert key == runtime.api_key
+
+
+def test_request_headers_carry_bearer_token(runtime: LlamaCppRuntime) -> None:
+    headers = runtime._request_headers({"messages": []})
+
+    assert headers["Authorization"] == f"Bearer {runtime.api_key}"
+    assert headers["Content-Type"] == "application/json"
+
+    headers = runtime._request_headers(None)
+    assert headers["Authorization"] == f"Bearer {runtime.api_key}"
+    assert "Content-Type" not in headers
+
+
 def test_server_command_validates_assets_with_missing_lora(runtime: LlamaCppRuntime) -> None:
     with pytest.raises(FileNotFoundError, match="Ru LoRA GGUF"):
         runtime.validate_assets()
+
+
+def test_generate_sends_strong_repetition_guard() -> None:
+    captured: dict = {}
+
+    class FakeProcess:
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            pass
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    def fake_request(url: str, body: dict | None, timeout: float) -> dict[str, object]:
+        captured["body"] = body
+        return {"choices": [{"message": {"content": "Xin chao"}}]}
+
+    rt = LlamaCppRuntime(
+        project_root=Path("."),
+        request=fake_request,
+        popen=lambda *args, **kwargs: FakeProcess(),
+    )
+    out = rt.generate(
+        [("system", "rules"), ("user", "Xin chao")],
+        max_new_tokens=32,
+        temperature=0.7,
+        top_k=50,
+    )
+
+    assert out == "Xin chao"
+    assert captured["body"]["repeat_penalty"] == 1.4
+    assert captured["body"]["repeat_last_n"] == 512
 
 
 def test_context_fitting_preserves_contract_and_current_prompt_while_dropping_oldest_history() -> None:

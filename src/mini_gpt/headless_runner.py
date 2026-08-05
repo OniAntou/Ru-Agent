@@ -54,8 +54,6 @@ class ModelRunner:
     ) -> str:
         logger.info("Loading backend=%s, checkpoint_path=%s, model_name=%s", self.backend, checkpoint_path, model_name)
         if self.backend in (BACKEND_OPENCODE, BACKEND_KILO):
-            # The local llama.cpp server must not keep the GPU warm while we
-            # are on a cloud backend.
             self.gguf_runtime.stop()
             base_url = OPENCODE_BASE_URL if self.backend == BACKEND_OPENCODE else KILO_GATEWAY_BASE_URL
             self.openai_runtime = OpenAIRuntime(
@@ -71,7 +69,16 @@ class ModelRunner:
             self.gguf_runtime.validate_assets()
             if not str(checkpoint_path).strip():
                 raise ValueError("checkpoint_path is required for the llama.cpp GGUF backend")
-            self.checkpoint_path = Path(checkpoint_path)
+            resolved = Path(checkpoint_path).resolve()
+            allowed = (PROJECT_ROOT / "checkpoints", PROJECT_ROOT / "models")
+            if not any(
+                str(resolved).startswith(str(allowed_dir.resolve()))
+                for allowed_dir in allowed
+            ):
+                raise ValueError(
+                    f"checkpoint_path must be inside project checkpoints/ or models/, got: {checkpoint_path}"
+                )
+            self.checkpoint_path = resolved
             logger.info("GGUF runtime ready with checkpoint: %s", self.checkpoint_path)
             return f"Ready (llama.cpp GGUF experiment) | Ru {self.checkpoint_path.name.split('-')[-1]} LoRA"
         missing_dependencies = dependency_status()
@@ -81,9 +88,17 @@ class ModelRunner:
                 f"Missing Ru runtime dependencies: {packages}. "
                 "Install the runtime extra before starting the model."
             )
-        adapter_dir = Path(checkpoint_path)
+        adapter_dir = Path(checkpoint_path).resolve()
         if not adapter_dir.is_dir():
             raise FileNotFoundError(f"adapter directory not found: {adapter_dir}")
+        allowed = (PROJECT_ROOT / "checkpoints", PROJECT_ROOT / "models")
+        if not any(
+            str(adapter_dir).startswith(str(allowed_dir.resolve()))
+            for allowed_dir in allowed
+        ):
+            raise ValueError(
+                f"checkpoint_path must be inside project checkpoints/ or models/, got: {checkpoint_path}"
+            )
         self.checkpoint_path = adapter_dir
         logger.info("Transformers runtime ready with adapter: %s", adapter_dir)
         return f"Ready (Llama 3.1 8B QLoRA) | {adapter_dir.name}"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 import subprocess
 import threading
 import time
@@ -27,8 +28,8 @@ _STOP_TIMEOUT_SECONDS = 10.0
 _MAX_ERROR_BODY_BYTES = 4096
 _DEFAULT_GPU_LAYERS = "all"
 _GPU_LAYER_FALLBACKS = (_DEFAULT_GPU_LAYERS, "20", "0")
-_DEFAULT_REPEAT_PENALTY = 1.15
-_DEFAULT_REPEAT_LAST_N = 256
+_DEFAULT_REPEAT_PENALTY = 1.4
+_DEFAULT_REPEAT_LAST_N = 512
 _CHARS_PER_TOKEN_ESTIMATE = 4
 _CONTEXT_PROTOCOL_RESERVE_TOKENS = 64
 
@@ -90,6 +91,9 @@ class LlamaCppRuntime:
         self.project_root = Path(project_root)
         self.port = port
         self.start_timeout_seconds = start_timeout_seconds
+        # Per-process bearer key for the owned llama-server; any local process
+        # can reach 127.0.0.1:18088, so the server is not left unauthenticated.
+        self.api_key = secrets.token_hex(32)
         self._request_impl = request or self._request_json
         self._popen = popen
         self._process: Any | None = None
@@ -152,6 +156,8 @@ class LlamaCppRuntime:
             # Ru does not use server-side tools, so force the pure content
             # parser instead.
             "--skip-chat-parsing",
+            "--api-key",
+            self.api_key,
         ]
         lora_adapter = self.lora_adapter
         if lora_adapter is not None:
@@ -304,6 +310,13 @@ class LlamaCppRuntime:
             raise RuntimeError("llama.cpp returned an empty chat completion")
         return normalize_text(content)
 
+    def _request_headers(self, payload: dict[str, Any] | None) -> dict[str, str]:
+        headers: dict[str, str] = {}
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+        headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
     def _request_stream(
         self,
         endpoint: str,
@@ -318,7 +331,7 @@ class LlamaCppRuntime:
         request = Request(
             url,
             data=data,
-            headers={"Content-Type": "application/json"},
+            headers=self._request_headers(payload),
             method="POST",
         )
         accumulated = ""
@@ -363,8 +376,12 @@ class LlamaCppRuntime:
     def _request_json(self, endpoint: str, payload: dict[str, Any] | None, timeout: float) -> dict[str, Any]:
         url = f"{self.base_url}{endpoint}"
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
-        headers = {"Content-Type": "application/json"} if data is not None else {}
-        request = Request(url, data=data, headers=headers, method="POST" if data is not None else "GET")
+        request = Request(
+            url,
+            data=data,
+            headers=self._request_headers(payload),
+            method="POST" if data is not None else "GET",
+        )
         try:
             with urlopen(request, timeout=timeout) as response:
                 body = response.read().decode("utf-8")

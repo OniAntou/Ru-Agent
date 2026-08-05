@@ -21,7 +21,7 @@ def test_omnivoice_ai_vy_selection_and_service_config() -> None:
 
     assert config.base_url == "http://127.0.0.1:5052"
     assert config.python_path == PROJECT_ROOT / "omnivoice_env" / "Scripts" / "python.exe"
-    assert config.server_script == PROJECT_ROOT / "omnivoice_tts_server.py"
+    assert config.server_script == PROJECT_ROOT / "src" / "mini_gpt" / "omnivoice_tts_server.py"
 
 
 def test_saved_legacy_or_unknown_selection_migrates_to_gwen_ru() -> None:

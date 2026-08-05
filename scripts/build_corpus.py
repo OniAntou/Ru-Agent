@@ -10,8 +10,6 @@ from tempfile import TemporaryDirectory
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from mini_gpt.ru_v6_corpus import build_ru_v6_corpus
-from mini_gpt.ru_v6_dialogues import v6_dialogue_records
 from mini_gpt.ru_v6_1_corpus import build_ru_v6_1_corpus
 from mini_gpt.ru_v6_2_corpus import build_ru_v6_2_corpus
 from mini_gpt.ru_v6_2_fresh_corpus import build_ru_v6_2_fresh_corpus
@@ -58,18 +56,7 @@ def _dump(report: dict[str, object], held_out: list[dict[str, object]] | None = 
 
 
 def _run_v6(args: argparse.Namespace) -> int:
-    if args.audit_only:
-        raise SystemExit("--audit-only is not supported for v6; use --audit")
-    warnings.warn("V6 corpus is deprecated; use v6.1+ corpora instead", DeprecationWarning, stacklevel=2)
-    records = v6_dialogue_records()
-    if args.audit:
-        with TemporaryDirectory(prefix="ru-v6-audit-") as temporary_dir:
-            report = build_ru_v6_corpus(records, temporary_dir, seed=args.seed)
-            held_out = _rows(Path(temporary_dir) / "held_out.jsonl")
-        _dump(report, held_out)
-        return 0
-    _dump(build_ru_v6_corpus(records, args.output_dir, seed=args.seed))
-    return 0
+    raise SystemExit("V6 corpus has been removed; use --version v6_1 or later")
 
 
 def _run_v6_1_2(args: argparse.Namespace) -> int:

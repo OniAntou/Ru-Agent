@@ -2,13 +2,27 @@
 .venv311/
 gwen_env/
 omnivoice_env/
+# Dependencies
+node_modules/
+*.egg-info/
+
+# Build outputs
+*.bak
+*.restored
+gui-winui3.bak/
+
+# Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.venv/
+.venv311/
+
+# Data/cache (large or generated)
+.hf/
 .tmp/
 .worktrees/
 pip-cache/
-.hf/
 data/processed/
 data/conversations/
 data/gui_settings.json
@@ -20,6 +34,9 @@ data/v6_1_training/
 data/tokenizer.json
 data/raw/wikipedia_*.txt
 data/raw/wikipedia_manifest.json
+data/memory.db
+data/memory.db-wal
+data/memory.db-shm
 checkpoints/
 models/
 eval_results/
@@ -31,9 +48,13 @@ tools/ru_desktop_overlay/out/
 VBCABLE_Setup/
 logs/
 vts_token.txt
-data/memory.db
-data/memory.db-wal
-data/memory.db-shm
+
+# Misc
 rustup-init.exe
 *.wav
-*.egg-info/
+
+# Scratch/verification artifacts
+tmp_verify_fresh*/
+resources.pri.xml
+*.lnk
+test_settings.json

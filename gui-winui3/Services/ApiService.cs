@@ -375,6 +375,22 @@ namespace RuApp.Services
             }
         }
 
+        public async Task<List<ActivityLogEventDto>?> GetActivityLogAsync(int limit = 200)
+        {
+            try
+            {
+                var result = await _httpClient.GetFromJsonAsync<JsonElement>($"{_baseUrl}/activity-log?limit={limit}");
+                if (result.TryGetProperty("events", out var events))
+                    return events.Deserialize<List<ActivityLogEventDto>>();
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] GetActivityLogAsync failed: {ex.Message}");
+                return null;
+            }
+        }
+
         public async Task<List<string>> GetModelsAsync(string backend)
         {
             try

@@ -1420,3 +1420,30 @@ def test_restore_vts_gui_state_applies(monkeypatch):
     server_shared._restore_vts_gui_state(FakeManager())
     assert calls["overlay"] == 1
     assert calls["mouse"] == (True, 1.5)
+
+def test_activity_log_endpoint_returns_events(monkeypatch, isolated_state):
+    import time
+
+    fake_events = [
+        {"ts": time.monotonic(), "iso": "2026-08-05T10:00:00", "type": "chat", "session_id": "s1", "data": {"role": "assistant", "content": "hi"}},
+    ]
+    monkeypatch.setattr("mini_gpt.routers.status.read", lambda limit=200: fake_events)
+    with TestClient(server.app) as client:
+        resp = client.get("/activity-log")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "ok"
+        assert len(body["events"]) == 1
+        assert body["events"][0]["type"] == "chat"
+
+
+def test_activity_log_respects_limit(monkeypatch, isolated_state):
+    captured = {}
+    def fake_read(limit=200):
+        captured["limit"] = limit
+        return []
+
+    monkeypatch.setattr("mini_gpt.routers.status.read", fake_read)
+    with TestClient(server.app) as client:
+        client.get("/activity-log?limit=50")
+    assert captured["limit"] == 50

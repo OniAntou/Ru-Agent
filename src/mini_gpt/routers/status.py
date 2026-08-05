@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from .._server_shared import (
     BACKEND_KILO,
@@ -11,6 +11,7 @@ from .._server_shared import (
     load_history,
     logger,
 )
+from ..activity_log import read
 
 router = APIRouter()
 
@@ -18,6 +19,11 @@ router = APIRouter()
 @router.get("/status")
 async def get_status():
     return {"status": "ok", "message": "Backend is running and ready for the WinUI3 UI."}
+
+
+@router.get("/activity-log")
+async def get_activity_log(limit: int = Query(default=200, ge=1, le=500)):
+    return {"status": "ok", "events": read(limit=limit)}
 
 
 @router.get("/models")

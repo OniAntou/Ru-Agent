@@ -71,6 +71,15 @@ def fake_vts(monkeypatch, isolated_state) -> object:
         def note_speaking(self, speaking):
             pass
 
+        def set_mouse_tracking(self, enabled, sensitivity=1.0):
+            self.mouse = (bool(enabled), float(sensitivity))
+
+        def current_catalog_sync(self):
+            return None
+
+        def trigger_catalog_actions_sync(self, selected, codes):
+            pass
+
     fake = FakeVts()
     monkeypatch.setattr(server_shared, "_VTS_MANAGER", fake)
     monkeypatch.setattr(chat_router, "_VTS_MANAGER", fake, raising=False)
@@ -115,3 +124,67 @@ def test_vts_status_includes_state_and_config(fake_vts) -> None:
     assert body["connected"] is True
     assert body["state"] == "idle"
     assert "config" in body
+
+def test_mouse_look_roundtrip_persists(fake_vts) -> None:
+    with TestClient(server.app) as client:
+        resp = client.post("/vts/mouse-look", json={"enabled": True, "sensitivity": 2.0})
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+        got = client.get("/vts/mouse-look").json()["mouse_look"]
+        assert got == {"enabled": True, "sensitivity": 2.0}
+
+
+def test_mouse_look_rejects_out_of_range(fake_vts) -> None:
+    with TestClient(server.app) as client:
+        resp = client.post("/vts/mouse-look", json={"enabled": True, "sensitivity": 4.0})
+        assert resp.status_code == 422
+        resp2 = client.post("/vts/mouse-look", json={"enabled": True, "sensitivity": 0.0})
+        assert resp2.status_code == 422
+
+
+def test_mouse_look_accepts_boundaries(fake_vts) -> None:
+    with TestClient(server.app) as client:
+        for s in (0.1, 3.0):
+            resp = client.post("/vts/mouse-look", json={"enabled": False, "sensitivity": s})
+            assert resp.status_code == 200
+
+
+def test_overlay_get_reports_running_and_error(monkeypatch, fake_vts) -> None:
+    monkeypatch.setattr("mini_gpt.routers.vts.overlay_process_ids", lambda: ())
+    monkeypatch.setattr("mini_gpt.routers.vts.overlay_error", lambda: None)
+    with TestClient(server.app) as client:
+        resp = client.get("/vts/overlay").json()
+        assert resp["status"] == "ok"
+        assert resp["overlay"]["running"] is False
+
+
+def test_overlay_enable_spawns(monkeypatch, fake_vts) -> None:
+    calls = {"n": 0}
+    monkeypatch.setattr("mini_gpt.routers.vts.start_overlay", lambda: (calls.__setitem__("n", 1), True)[1])
+    monkeypatch.setattr("mini_gpt.routers.vts.overlay_process_ids", lambda: (777,))
+    with TestClient(server.app) as client:
+        resp = client.post("/vts/overlay", json={"enabled": True})
+        assert calls["n"] == 1
+        assert resp.status_code == 200
+        assert client.get("/vts/overlay").json()["overlay"]["running"] is True
+
+
+def test_overlay_disable_kills(monkeypatch, fake_vts) -> None:
+    calls = {"n": 0}
+    monkeypatch.setattr("mini_gpt.routers.vts.stop_overlay", lambda: (calls.__setitem__("n", 1), True)[1])
+    with TestClient(server.app) as client:
+        resp = client.post("/vts/overlay", json={"enabled": False})
+        assert calls["n"] == 1
+        assert resp.status_code == 200
+
+
+def test_overlay_missing_exe_reports_error(monkeypatch, fake_vts) -> None:
+    monkeypatch.setattr("mini_gpt.routers.vts.start_overlay", lambda: False)
+    monkeypatch.setattr("mini_gpt.routers.vts.overlay_error", lambda: "Overlay unavailable: ... not found")
+    with TestClient(server.app) as client:
+        resp = client.post("/vts/overlay", json={"enabled": True})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "error"
+        assert "not found" in body["message"]
+        assert client.get("/vts/overlay").json()["overlay"]["enabled"] is False

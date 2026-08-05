@@ -13,10 +13,18 @@ from .._server_shared import (
     logger,
     _load_vts_motion_config,
     _save_vts_motion_config,
+    _load_vts_gui_state,
+    _save_vts_gui_state,
     _trigger_vts_catalog_codes,
     VtsActions,
     VTS_CONNECT_TIMEOUT_SECONDS,
     VTSManager,
+)
+from ..overlay_control import (
+    overlay_error,
+    overlay_process_ids,
+    start_overlay,
+    stop_overlay,
 )
 from ..vts_config import MotionConfig
 
@@ -48,6 +56,64 @@ class VtsConfigPayload(BaseModel):
 
 class VtsActivityPayload(BaseModel):
     typing: bool
+
+
+class VtsMouseLookPayload(BaseModel):
+    enabled: bool
+    sensitivity: float = Field(default=1.0, ge=0.1, le=3.0)
+
+
+class VtsOverlayPayload(BaseModel):
+    enabled: bool
+
+
+@router.get("/vts/mouse-look")
+def vts_mouse_look_get():
+    state = _load_vts_gui_state()
+    return {"status": "ok", "mouse_look": {"enabled": state["mouse_look_enabled"], "sensitivity": state["mouse_look_sensitivity"]}}
+
+
+@router.post("/vts/mouse-look")
+def vts_mouse_look_save(payload: VtsMouseLookPayload):
+    manager = _vts_manager()
+    manager.set_mouse_tracking(payload.enabled, payload.sensitivity)
+    current = _load_vts_gui_state()
+    _save_vts_gui_state({
+        "overlay_enabled": current["overlay_enabled"],
+        "mouse_look_enabled": payload.enabled,
+        "mouse_look_sensitivity": payload.sensitivity,
+    })
+    return {"status": "ok"}
+
+
+@router.get("/vts/overlay")
+def vts_overlay_get():
+    state = _load_vts_gui_state()
+    return {
+        "status": "ok",
+        "overlay": {
+            "enabled": state["overlay_enabled"],
+            "running": bool(overlay_process_ids()),
+            "error": overlay_error(),
+        },
+    }
+
+
+@router.post("/vts/overlay")
+def vts_overlay_save(payload: VtsOverlayPayload):
+    if payload.enabled:
+        ok = start_overlay()
+        if not ok:
+            return {"status": "error", "message": overlay_error() or "overlay failed to start"}
+    else:
+        stop_overlay()
+    _save_vts_gui_state({**_load_vts_gui_state(), "overlay_enabled": payload.enabled})
+    return {
+        "status": "ok",
+        "enabled": payload.enabled,
+        "running": bool(overlay_process_ids()),
+        "error": overlay_error(),
+    }
 
 
 @router.get("/vts/status")

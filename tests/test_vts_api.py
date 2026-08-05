@@ -55,6 +55,7 @@ def fake_vts(monkeypatch, isolated_state) -> object:
     class FakeVts:
         is_connected = True
         config = MotionConfig.defaults()
+        last_connect_error = None
 
         def __init__(self):
             self.typing_calls: list[bool] = []
@@ -188,3 +189,12 @@ def test_overlay_missing_exe_reports_error(monkeypatch, fake_vts) -> None:
         assert body["status"] == "error"
         assert "not found" in body["message"]
         assert client.get("/vts/overlay").json()["overlay"]["enabled"] is False
+
+def test_status_includes_gui_state_fields(fake_vts) -> None:
+    with TestClient(server.app) as client:
+        body = client.get("/vts/status").json()
+    assert "mouse_look_enabled" in body
+    assert "mouse_look_sensitivity" in body
+    assert "overlay_enabled" in body
+    assert "overlay_running" in body
+    assert "connect_error" in body

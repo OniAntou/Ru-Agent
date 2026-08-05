@@ -122,7 +122,18 @@ def vts_status():
     connected = bool(manager is not None and manager.is_connected)
     config = manager.config.to_dict() if manager is not None else MotionConfig.defaults().to_dict()
     state = manager.current_state().value if manager is not None else "idle"
-    return {"status": "ok", "connected": connected, "state": state, "config": config}
+    gui = _load_vts_gui_state()
+    return {
+        "status": "ok",
+        "connected": connected,
+        "state": state,
+        "config": config,
+        "mouse_look_enabled": bool(gui["mouse_look_enabled"]),
+        "mouse_look_sensitivity": gui["mouse_look_sensitivity"],
+        "overlay_enabled": bool(gui["overlay_enabled"]),
+        "overlay_running": bool(overlay_process_ids()),
+        "connect_error": getattr(manager, "last_connect_error", None) if manager is not None else None,
+    }
 
 
 @router.post("/vts/connect")

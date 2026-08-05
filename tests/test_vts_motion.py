@@ -148,3 +148,38 @@ def test_controller_adds_bounded_direction_drift_after_a_short_hold():
         abs(value - sway_value(index * 0.05, speaking=True)) > 0.05
         for index, value in enumerate(values[20:], start=20)
     )
+
+from mini_gpt.vts_motion import MouseEyeTracker
+
+
+def _converged(tracker, x, y, steps=400):
+    for _ in range(steps):
+        tracker.feed_position(x, y)
+    return tracker
+
+
+def test_mouse_sensitivity_scales_eye_and_head():
+    t1 = MouseEyeTracker()
+    t2 = MouseEyeTracker(sensitivity=2.0)
+    _converged(t1, 300, 300)
+    _converged(t2, 300, 300)
+    ex1, ey1 = t1.read_eye()
+    ex2, ey2 = t2.read_eye()
+    assert abs(ex2 - ex1 * 2.0) < 1e-6
+    assert abs(ey2 - ey1 * 2.0) < 1e-6
+    hz1, hy1, hx1 = t1.read_head()
+    hz2, hy2, hx2 = t2.read_head()
+    assert abs(hz2 - hz1 * 2.0) < 1e-6
+    assert abs(hy2 - hy1 * 2.0) < 1e-6
+    assert abs(hx2 - hx1 * 2.0) < 1e-6
+    assert abs(t2.read_body() - t1.read_body() * 2.0) < 1e-6
+
+
+def test_set_sensitivity_clamps_to_range():
+    t = MouseEyeTracker()
+    t.set_sensitivity(0.05)
+    assert t._sensitivity == 0.1
+    t.set_sensitivity(10.0)
+    assert t._sensitivity == 3.0
+    t.set_sensitivity(1.5)
+    assert t._sensitivity == 1.5

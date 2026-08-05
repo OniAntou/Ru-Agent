@@ -368,7 +368,8 @@ class MouseEyeTracker:
     _BODY_SMOOTH = 0.92        # realtime
     _BODY_SCALE = 14.0         # range ±14 (LLM_Sway max ±30)
 
-    def __init__(self) -> None:
+    def __init__(self, sensitivity: float = 1.0) -> None:
+        self._sensitivity = max(0.1, min(3.0, float(sensitivity)))
         # eye state
         self._ex = 0.0
         self._ey = 0.0
@@ -380,6 +381,9 @@ class MouseEyeTracker:
         self._body = 0.0
         self._screen_w: int = 1920
         self._screen_h: int = 1080
+
+    def set_sensitivity(self, value: float) -> None:
+        self._sensitivity = max(0.1, min(3.0, float(value)))
 
     def start(self) -> None:
         """Cache screen dimensions (call once before first *feed_position*)."""
@@ -400,23 +404,24 @@ class MouseEyeTracker:
 
         nx = max(-1.0, min(1.0, (cursor_x / self._screen_w) * 2 - 1))   # -1 .. 1
         ny = max(-1.0, min(1.0, (cursor_y / self._screen_h) * 2 - 1))   # -1 .. 1 (top = -1)
+        s = self._sensitivity
 
         # ── Eye — quick, full range ──────────────────────────────────────
-        tx = -nx * self._EYE_SCALE_X                      # đảo X: chuột trái → mắt nhìn trái
-        ty = -ny * self._EYE_SCALE_Y                      # flip Y: up = +
+        tx = -nx * self._EYE_SCALE_X * s                      # đảo X: chuột trái → mắt nhìn trái
+        ty = -ny * self._EYE_SCALE_Y * s                      # flip Y: up = +
         self._ex += (tx - self._ex) * self._EYE_SMOOTH
         self._ey += (ty - self._ey) * self._EYE_SMOOTH
 
         # ── Head — slow, smaller range, lags behind eyes ────────────────
-        tz = nx * self._HEAD_SCALE_Z                      # nghiêng
-        ty_h = -ny * self._HEAD_SCALE_Y                   # gật
-        tx_h = nx * self._HEAD_SCALE_X                    # quay
+        tz = nx * self._HEAD_SCALE_Z * s                      # nghiêng
+        ty_h = -ny * self._HEAD_SCALE_Y * s                   # gật
+        tx_h = nx * self._HEAD_SCALE_X * s                    # quay
         self._hz += (tz - self._hz) * self._HEAD_SMOOTH
         self._hy += (ty_h - self._hy) * self._HEAD_SMOOTH
         self._hx += (tx_h - self._hx) * self._HEAD_SMOOTH
 
         # ── Body (LLM_Sway) — chậm, scale nhỏ ──────────────────────────
-        tb = -nx * self._BODY_SCALE                        # đảo X
+        tb = -nx * self._BODY_SCALE * s                        # đảo X
         self._body += (tb - self._body) * self._BODY_SMOOTH
 
     def read_eye(self) -> tuple[float, float]:

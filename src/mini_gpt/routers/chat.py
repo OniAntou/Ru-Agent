@@ -73,6 +73,7 @@ async def chat_endpoint(websocket: WebSocket):
 
     def run_generation(prompt: str, session_id: str):
         full_reply = None
+        manager = None
         user_appended = False
         memory_lock_held = False
         try:
@@ -100,6 +101,8 @@ async def chat_endpoint(websocket: WebSocket):
                     catalog = manager.current_catalog_sync()
                 except Exception as error:
                     logger.debug("VTS catalog read failed: %s", error)
+            if manager is not None:
+                manager.note_generating(True)
 
             if core.runner.backend not in ("opencode", "kilo"):
                 with _gpu_lifecycle().local_generation():
@@ -134,9 +137,12 @@ async def chat_endpoint(websocket: WebSocket):
                         _DEFAULT_SETTINGS["share_memory_with_cloud"],
                     ),
                 )
-            from .._server_shared import parse_catalog_reply
-            full_reply, codes = parse_catalog_reply(raw_reply, catalog)
+            from .._server_shared import split_reply_metadata
+            full_reply, codes, emotion = split_reply_metadata(raw_reply, catalog)
             full_reply = _strip_voice_markers(full_reply)
+            if manager is not None:
+                manager.note_generating(False)
+                manager.note_emotion(emotion)
 
             if settings.get("enable_self_learning", _DEFAULT_SETTINGS["enable_self_learning"]):
                 core.remember(prompt, full_reply)
@@ -159,6 +165,8 @@ async def chat_endpoint(websocket: WebSocket):
                 )
             _safe_put(loop, chat_queue, {"type": "error", "content": str(error), "session_id": session_id})
         finally:
+            if manager is not None:
+                manager.note_generating(False)
             if memory_lock_held:
                 _MEMORY_TURN_LOCK.release()
             _TURN_LOCK.release()

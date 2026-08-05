@@ -13,7 +13,7 @@ from mini_gpt.screen_reaction import (
     VisionObservation,
     format_observation_prompt,
 )
-from mini_gpt.vts_catalog import catalog_instruction, parse_catalog_reply
+from mini_gpt.vts_catalog import catalog_instruction, parse_catalog_reply, split_reply_metadata
 
 from .._server_shared import (
     BACKEND_OPENCODE,
@@ -148,6 +148,7 @@ def observation_react(payload: ObservationReactionPayload):
         _SCREEN_REACTIONS.fail(payload.observation_id)
         return {"status": "skipped", "reason": "chat_busy"}
 
+    manager = None
     try:
         manager = _VTS_MANAGER
         catalog = None
@@ -156,6 +157,8 @@ def observation_react(payload: ObservationReactionPayload):
                 catalog = manager.current_catalog_sync()
             except Exception as error:
                 logger.debug("VTS catalog read failed for screen reaction: %s", type(error).__name__)
+        if manager is not None:
+            manager.note_generating(True)
 
         timing = {"seconds": None}
         started = time.perf_counter()
@@ -171,9 +174,13 @@ def observation_react(payload: ObservationReactionPayload):
             is_cancelled=lambda: _SCREEN_REACTIONS.is_cancelled(payload.observation_id),
             on_complete_timing=record_timing,
         )
+        if manager is not None:
+            manager.note_generating(False)
         pace = voice_pace_for(raw_reply)
-        cleaned, codes = parse_catalog_reply(raw_reply, catalog)
+        cleaned, codes, emotion = split_reply_metadata(raw_reply, catalog)
         cleaned = _strip_voice_markers(cleaned)
+        if manager is not None:
+            manager.note_emotion(emotion)
         if not cleaned:
             _SCREEN_REACTIONS.fail(payload.observation_id)
             return {"status": "skipped", "reason": "empty"}
@@ -217,6 +224,8 @@ def observation_react(payload: ObservationReactionPayload):
         logger.warning("Screen reaction generation failed: %s", type(error).__name__)
         return {"status": "error", "message": str(error)}
     finally:
+        if manager is not None:
+            manager.note_generating(False)
         _MEMORY_TURN_LOCK.release()
         _TURN_LOCK.release()
 

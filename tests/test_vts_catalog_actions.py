@@ -1,4 +1,6 @@
 from mini_gpt.vts_catalog import build_catalog, catalog_instruction, parse_catalog_reply
+from mini_gpt.vts_catalog import split_reply_metadata
+from mini_gpt.vts_emotion import EmotionTag
 
 
 def test_catalog_instruction_invites_multiple_compatible_expression_codes():
@@ -93,3 +95,27 @@ def test_catalog_reply_without_a_marker_is_passed_through():
     )
 
     assert parse_catalog_reply("Chào anh hôm nay thế nào?", catalog) == ("Chào anh hôm nay thế nào?", ())
+
+
+def test_split_reply_metadata_strips_emo_then_vts_codes():
+    catalog = build_catalog(
+        model_id="model-1",
+        model_name="Ru",
+        hotkeys=[{"name": "Happy", "hotkeyID": "happy-id"}],
+        expressions=[],
+    )
+
+    clean, codes, emotion = split_reply_metadata(
+        "Hay quá! [[EMO:joy]] [[VTS:vts_01]]", catalog
+    )
+
+    assert clean == "Hay quá!"
+    assert codes == ("vts_01",)
+    assert emotion == EmotionTag.JOY
+
+
+def test_split_reply_metadata_falls_back_to_heuristic():
+    clean, codes, emotion = split_reply_metadata("Em buồn quá", None)
+    assert clean == "Em buồn quá"
+    assert codes == ()
+    assert emotion == EmotionTag.SAD

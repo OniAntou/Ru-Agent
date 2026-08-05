@@ -1089,6 +1089,12 @@ def test_private_markers_are_removed_before_every_persistence_path(monkeypatch, 
         def trigger_catalog_actions_sync(self, selected, codes):
             triggered.append((selected, codes))
 
+        def note_generating(self, generating):
+            pass
+
+        def note_emotion(self, emotion):
+            pass
+
     remembered = []
     captured = {}
     monkeypatch.setattr(server_shared, "_VTS_MANAGER", FakeVts())

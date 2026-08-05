@@ -4,6 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
+from .vts_emotion import EmotionTag, extract_reply_emotion
+
 
 VTS_CATALOG_MARKER = re.compile(r"\[\[VTS:([^\]]*)\]\]", re.IGNORECASE)
 CATALOG_INSTRUCTION_MAX_ENTRIES = 20
@@ -109,3 +111,12 @@ def parse_catalog_reply(reply: str, catalog: VtsCatalog | None) -> tuple[str, tu
     if any(code not in valid_codes for code in codes):
         return _strip_markers(reply), ()
     return _strip_markers(reply), codes
+
+
+def split_reply_metadata(
+    raw_reply: str, catalog: VtsCatalog | None
+) -> tuple[str, tuple[str, ...], EmotionTag]:
+    """Strip emotion marker first, then VTS codes; return both plus emotion."""
+    reply, emotion = extract_reply_emotion(raw_reply)
+    clean, codes = parse_catalog_reply(reply, catalog)
+    return clean, codes, emotion

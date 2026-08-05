@@ -43,7 +43,12 @@ from mini_gpt.speech_runtime import (
     build_speech_recognizer,
 )
 from mini_gpt.vts_actions import VtsActions
-from mini_gpt.vts_catalog import VtsCatalog, catalog_instruction, parse_catalog_reply
+from mini_gpt.vts_catalog import (
+    VtsCatalog,
+    catalog_instruction,
+    parse_catalog_reply,
+    split_reply_metadata,
+)
 from mini_gpt.vts_config import MotionConfig
 from mini_gpt.vts_manager import VTSManager
 from mini_gpt.voice_pacing import effective_voice_speed, voice_pace_for

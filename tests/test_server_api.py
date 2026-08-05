@@ -1364,3 +1364,59 @@ def test_process_memory_turn_skips_sensitive_turn(monkeypatch, isolated_state, t
     server._process_memory_turn("api_key = sk-abc123", "Ru: Được ạ.")
     assert called == []
     assert server.core.get_memory_store().count_active() == 0
+
+# -- vts_gui_state helpers ----------------------------------------------
+
+def test_vts_gui_state_defaults_and_roundtrip():
+    assert server_shared._load_vts_gui_state() == {
+        "overlay_enabled": False,
+        "mouse_look_enabled": False,
+        "mouse_look_sensitivity": 1.0,
+    }
+    server_shared._save_vts_gui_state(
+        {"overlay_enabled": True, "mouse_look_enabled": True, "mouse_look_sensitivity": 2.5}
+    )
+    assert server_shared._load_vts_gui_state()["mouse_look_sensitivity"] == 2.5
+
+
+def test_load_vts_gui_state_rejects_bad_types():
+    import json
+    from pathlib import Path
+
+    Path(server_shared.SETTINGS_FILE).write_text(
+        json.dumps({"vts_gui_state": {"mouse_look_sensitivity": "abc"}}), encoding="utf-8"
+    )
+    state = server_shared._load_vts_gui_state()
+    assert state["mouse_look_sensitivity"] == 1.0
+
+
+def test_restore_vts_gui_state_applies(monkeypatch):
+    import json
+    from pathlib import Path
+
+    Path(server_shared.SETTINGS_FILE).write_text(
+        json.dumps(
+            {
+                "vts_gui_state": {
+                    "overlay_enabled": True,
+                    "mouse_look_enabled": True,
+                    "mouse_look_sensitivity": 1.5,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls = {"overlay": 0, "mouse": None}
+
+    def fake_start_overlay():
+        calls["overlay"] += 1
+        return True
+
+    class FakeManager:
+        def set_mouse_tracking(self, enabled, sensitivity):
+            calls["mouse"] = (enabled, sensitivity)
+
+    monkeypatch.setattr(server_shared, "start_overlay", fake_start_overlay)
+    server_shared._restore_vts_gui_state(FakeManager())
+    assert calls["overlay"] == 1
+    assert calls["mouse"] == (True, 1.5)

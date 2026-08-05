@@ -42,6 +42,7 @@ from mini_gpt.speech_runtime import (
     SpeechRecognitionError,
     build_speech_recognizer,
 )
+from mini_gpt.overlay_control import start_overlay
 from mini_gpt.vts_actions import VtsActions
 from mini_gpt.vts_catalog import (
     VtsCatalog,
@@ -641,6 +642,7 @@ def _vts_manager() -> VTSManager:
                 thread.start()
                 _VTS_MANAGER = manager
                 _VTS_THREAD = thread
+                _restore_vts_gui_state(manager)
     return _VTS_MANAGER
 
 
@@ -666,6 +668,48 @@ def _save_vts_motion_config(config: MotionConfig) -> None:
     settings = load_settings()
     settings["vts_motion"] = config.to_dict()
     save_settings_to_file(settings)
+
+
+def _load_vts_gui_state() -> dict:
+    default = {
+        "overlay_enabled": False,
+        "mouse_look_enabled": False,
+        "mouse_look_sensitivity": 1.0,
+    }
+    stored = load_settings().get("vts_gui_state") or {}
+    try:
+        sensitivity = float(stored.get("mouse_look_sensitivity", 1.0))
+        sensitivity = 0.1 if sensitivity < 0.1 else (3.0 if sensitivity > 3.0 else sensitivity)
+        return {
+            "overlay_enabled": bool(stored.get("overlay_enabled", False)),
+            "mouse_look_enabled": bool(stored.get("mouse_look_enabled", False)),
+            "mouse_look_sensitivity": sensitivity,
+        }
+    except (TypeError, ValueError):
+        return dict(default)
+
+
+def _save_vts_gui_state(state: dict) -> None:
+    try:
+        sensitivity = float(state.get("mouse_look_sensitivity", 1.0))
+    except (TypeError, ValueError):
+        sensitivity = 1.0
+    sensitivity = 0.1 if sensitivity < 0.1 else (3.0 if sensitivity > 3.0 else sensitivity)
+    settings = load_settings()
+    settings["vts_gui_state"] = {
+        "overlay_enabled": bool(state.get("overlay_enabled", False)),
+        "mouse_look_enabled": bool(state.get("mouse_look_enabled", False)),
+        "mouse_look_sensitivity": sensitivity,
+    }
+    save_settings_to_file(settings)
+
+
+def _restore_vts_gui_state(manager) -> None:
+    state = _load_vts_gui_state()
+    if state["overlay_enabled"]:
+        start_overlay()
+    if state["mouse_look_enabled"]:
+        manager.set_mouse_tracking(True, state["mouse_look_sensitivity"])
 
 
 # ── memory / self-learning ────────────────────────────────────────────

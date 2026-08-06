@@ -12,7 +12,7 @@ $mainPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $omniPython = Join-Path $projectRoot "omnivoice_env\Scripts\python.exe"
 $referenceAudio = Join-Path $projectRoot "tyc_talk.wav"
 $referenceText = Join-Path $projectRoot "reference_text.txt"
-$manifest = Join-Path $projectRoot "data\evaluations\ru_tts_benchmark_v1.jsonl"
+$manifest = Join-Path $projectRoot "data\evaluations\ru_tts_quality_latency_v2.jsonl"
 $modelCache = Join-Path $projectRoot "models\omnivoice"
 $benchmarkScript = Join-Path $projectRoot "scripts\benchmark_tts.py"
 

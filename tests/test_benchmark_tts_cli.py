@@ -283,6 +283,24 @@ def test_run_benchmark_adds_profile_and_engine_metadata_to_every_record(tmp_path
     assert all(record["generation_config_id"] == "vi-normalized-20" for record in report["records"])
 
 
+def test_run_benchmark_records_privacy_safe_latency_fields(tmp_path: Path) -> None:
+    reference = tmp_path / "reference.wav"
+    reference.write_bytes(b"reference")
+
+    report = run_benchmark(
+        ReportEngine(),
+        [BenchmarkUtterance("vi-01", "vi", "Chào anh.")],
+        reference_audio=reference,
+        reference_text="reference text",
+        output_dir=tmp_path / "audio",
+        voice_profile="ru",
+    )
+
+    record = report["records"][0]
+    assert {"first_audio_ms", "synthesis_ms", "audio_duration_ms"} <= record.keys()
+    assert "text" not in record
+
+
 def test_run_benchmark_writes_a_load_timed_json_report(tmp_path: Path) -> None:
     reference = tmp_path / "reference.wav"
     reference.write_bytes(b"reference")

@@ -88,6 +88,7 @@ namespace RuApp.Services
                 if (terminal?.Type == "ended")
                 {
                     await playbackQueue.CompleteAsync(requestId);
+                    await ReportPlaybackAsync(requestId, "ended");
                 }
                 else
                 {
@@ -106,6 +107,11 @@ namespace RuApp.Services
             {
                 playbackQueue.Cancel(requestId);
                 Debug.WriteLine($"[VoicePlayback] Stream failed: {ex.Message}");
+
+                if (receivedAudio && !cts.IsCancellationRequested)
+                {
+                    await ReportPlaybackAsync(requestId, "failed");
+                }
 
                 if (!receivedAudio && !cts.IsCancellationRequested && IsCurrentRequest(requestId))
                 {
@@ -169,7 +175,7 @@ namespace RuApp.Services
 
         private async Task PlayChunkAsync(VoiceAudioChunk chunk, CancellationToken cancellationToken)
         {
-            await PlayWavAsync(chunk.Audio, cancellationToken);
+            await PlayWavAsync(chunk.Audio, cancellationToken, chunk.RequestId);
         }
 
         private async Task PlayFallbackAsync(string text, CancellationToken cancellationToken)
@@ -182,7 +188,10 @@ namespace RuApp.Services
             await PlayWavAsync(audio, cancellationToken);
         }
 
-        private async Task PlayWavAsync(byte[] audio, CancellationToken cancellationToken)
+        private async Task PlayWavAsync(
+            byte[] audio,
+            CancellationToken cancellationToken,
+            string? requestId = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var player = new MediaPlayer { AutoPlay = false };
@@ -218,11 +227,27 @@ namespace RuApp.Services
                         throw new InvalidOperationException("VTS speaking state was not accepted.");
                     }
                     _vtsSpeaking = true;
+                    if (requestId is not null)
+                    {
+                        await ReportPlaybackAsync(requestId, "started");
+                    }
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
                 player.Play();
                 await ended.Task.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                if (requestId is not null)
+                {
+                    await ReportPlaybackAsync(requestId, "failed");
+                }
+                throw;
             }
             finally
             {
@@ -259,11 +284,29 @@ namespace RuApp.Services
         {
             try
             {
+                await client.AcknowledgePlaybackAsync(requestId, "cancelled");
                 await client.CancelAsync(requestId);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[VoicePlayback] Stream cancellation failed: {ex.Message}");
+            }
+        }
+
+        private async Task ReportPlaybackAsync(string requestId, string state)
+        {
+            VoiceStreamClient? client = _streamClient;
+            if (client is null)
+            {
+                return;
+            }
+            try
+            {
+                await client.AcknowledgePlaybackAsync(requestId, state);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[VoicePlayback] Playback acknowledgement failed: {ex.Message}");
             }
         }
 

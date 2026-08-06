@@ -65,6 +65,22 @@ and expression controls), and **Observation** (a manual, off-by-default
 primary-monitor observe toggle with RAM-only pipeline counters and latency
 metrics).
 
+Auto-read replies use the authenticated `/voice/stream` WebSocket with ordered
+sentence-sized WAV chunks, cancellation, playback acknowledgements, and a
+complete-WAV fallback when streaming fails before the first chunk. Voice
+control markers and timing metadata remain private to the transport; they are
+not shown in chat or persisted. The default OmniVoice quality reference remains
+native 1.00x with the selected Vietnamese-normalized 16-step configuration.
+
+For a repeatable local latency/quality report (without storing raw audio in Git),
+run:
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe scripts\benchmark_tts.py `
+  --manifest data\evaluations\ru_tts_quality_latency_v2.jsonl `
+  --report eval_results\omnivoice\voice-quality-latency.jsonl
+```
+
 The backend defaults to the v6.2 LoRA GGUF at
 `models\gguf\ru-llama3.1-8b-instruct-v6.2-lora.gguf`, with v6.1 and v6 GGUF
 fallbacks if the preferred file is unavailable. The Transformers fallback

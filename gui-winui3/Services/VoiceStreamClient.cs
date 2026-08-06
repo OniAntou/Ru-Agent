@@ -46,6 +46,11 @@ public sealed class VoiceStreamClient : IDisposable
         return JsonSerializer.Serialize(new { type = "cancel", request_id = requestId }, JsonOptions);
     }
 
+    public static string SerializePlaybackFrame(string requestId, string state)
+    {
+        return JsonSerializer.Serialize(new { type = "playback", request_id = requestId, state }, JsonOptions);
+    }
+
     public async Task StartAsync(
         string requestId,
         string text,
@@ -153,6 +158,23 @@ public sealed class VoiceStreamClient : IDisposable
             return;
         }
         await SendTextAsync(socket, SerializeCancelFrame(requestId), cancellationToken);
+    }
+
+    public async Task AcknowledgePlaybackAsync(
+        string requestId,
+        string state,
+        CancellationToken cancellationToken = default)
+    {
+        ClientWebSocket? socket;
+        lock (_gate)
+        {
+            socket = _socket;
+        }
+        if (socket is null || socket.State != WebSocketState.Open)
+        {
+            return;
+        }
+        await SendTextAsync(socket, SerializePlaybackFrame(requestId, state), cancellationToken);
     }
 
     public void Dispose()

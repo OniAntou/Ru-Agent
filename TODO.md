@@ -38,6 +38,10 @@
   boundaries, configurable cloud-memory sharing (enabled by default), bounded
   inputs/context, training provenance,
   deterministic corpus inputs, regression tests, and CI.
+- [x] Add the measured OmniVoice baseline manifest, named generation
+  configurations, authenticated sentence streaming, ordered WinUI playback,
+  cancellation, and privacy-safe playback acknowledgements. Live listening and
+  latency promotion remain separate acceptance gates below.
 - [ ] Run a manual voice (mic → STT, TTS playback) and VTS smoke test with
   VTube Studio open.
 - [x] Re-run the automated Python, frontend, corpus, dependency, and

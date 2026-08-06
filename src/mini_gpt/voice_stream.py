@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Literal
 
 from .tts_chunks import split_tts_chunks
 from .voice_pacing import parse_voice_pace
+from .voice_observability import VoiceTiming
 from .voice_runtime import VoiceSelection, voice_selection_by_label
 
 VoiceStreamEventType = Literal["started", "audio", "ended", "cancelled", "failed"]
+VoicePlaybackState = Literal["started", "ended", "cancelled", "failed"]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +59,9 @@ class VoiceStreamCoordinator:
         self._lock_timeout = lock_timeout
         self._cancelled: set[str] = set()
         self._cancel_lock = threading.Lock()
+        self._timings: dict[str, VoiceTiming] = {}
+        self._timing_started: dict[str, float] = {}
+        self._current_request_id: str | None = None
 
     def cancel(self, request_id: str) -> None:
         with self._cancel_lock:
@@ -65,6 +74,33 @@ class VoiceStreamCoordinator:
     def _finish_request(self, request_id: str) -> None:
         with self._cancel_lock:
             self._cancelled.discard(request_id)
+
+    def acknowledge_playback(self, request_id: str, state: str) -> bool:
+        """Record one playback state for the latest request generation only."""
+        if state not in {"started", "ended", "cancelled", "failed"}:
+            return False
+        with self._cancel_lock:
+            if request_id != self._current_request_id:
+                return False
+            timing = self._timings.get(request_id)
+            started_at = self._timing_started.get(request_id)
+            if timing is None or started_at is None:
+                return False
+            if state == "started" and "playback_started_ms" in timing.values:
+                return False
+            if state != "started" and "playback_terminal_ms" in timing.values:
+                return False
+            elapsed_ms = max(0.0, (perf_counter() - started_at) * 1000.0)
+            timing.record(f"playback_{state}_ms", elapsed_ms)
+            if state != "started":
+                timing.record("playback_terminal_ms", elapsed_ms)
+            logger.debug("Voice playback acknowledgement: %s", timing.to_dict())
+            return True
+
+    def timing_snapshot(self, request_id: str) -> dict[str, object]:
+        with self._cancel_lock:
+            timing = self._timings.get(request_id)
+            return timing.to_dict() if timing is not None else {}
 
     async def start(
         self,
@@ -86,6 +122,12 @@ class VoiceStreamCoordinator:
         if not self._memory_lock.acquire(timeout=self._lock_timeout):
             yield VoiceStreamEvent("failed", request_id, 0, error_code="busy")
             return
+        with self._cancel_lock:
+            self._timings.clear()
+            self._timing_started.clear()
+            self._current_request_id = request_id
+            self._timings[request_id] = VoiceTiming(request_id, selection.profile_id, "vi-normalized-16")
+            self._timing_started[request_id] = perf_counter()
         try:
             await asyncio.to_thread(self._prepare_speech, selection)
             if self._is_cancelled(request_id):

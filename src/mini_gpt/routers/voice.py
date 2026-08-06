@@ -59,6 +59,16 @@ class VoiceStreamStartPayload(VoiceTtsPayload):
     request_id: str = Field(min_length=1, max_length=128)
 
 
+def _accept_playback_ack(coordinator: VoiceStreamCoordinator, payload: object) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    request_id = payload.get("request_id")
+    state = payload.get("state")
+    if not isinstance(request_id, str) or not isinstance(state, str):
+        return False
+    return coordinator.acknowledge_playback(request_id, state)
+
+
 def _voice_stream_coordinator() -> VoiceStreamCoordinator:
     return VoiceStreamCoordinator(
         prepare_speech=lambda selection: _gpu_lifecycle().prepare_speech(selection),
@@ -123,6 +133,9 @@ async def voice_stream(websocket: WebSocket):
                     if isinstance(request_id, str):
                         coordinator.cancel(request_id)
                     continue
+                if message_type == "playback":
+                    _accept_playback_ack(coordinator, payload)
+                    continue
                 if message_type != "start":
                     await _send_stream_failure(websocket, "", "invalid_request")
                     continue
@@ -167,6 +180,8 @@ async def voice_stream(websocket: WebSocket):
                 request_id = payload.get("request_id")
                 if request_id == active_request_id:
                     coordinator.cancel(request_id)
+            elif isinstance(payload, dict) and payload.get("type") == "playback":
+                _accept_playback_ack(coordinator, payload)
             else:
                 await _send_stream_failure(websocket, active_request_id or "", "stream_active")
     except WebSocketDisconnect:

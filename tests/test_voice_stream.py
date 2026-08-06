@@ -84,3 +84,34 @@ def test_voice_timing_serialization_has_no_text_or_negative_values() -> None:
     }
     with pytest.raises(ValueError):
         timing.record("bad", -1)
+
+
+def test_voice_playback_acknowledgements_are_current_and_terminal_once() -> None:
+    coordinator = VoiceStreamCoordinator(
+        prepare_speech=lambda selection: None,
+        request_audio=lambda text, voice_label, speed: text.encode(),
+        memory_lock=threading.Lock(),
+    )
+    collect_events(
+        coordinator,
+        request_id="r4",
+        text="Một câu.",
+        voice_label="Ru (OmniVoice)",
+        speed=1.0,
+    )
+
+    assert coordinator.acknowledge_playback("r4", "started") is True
+    assert coordinator.acknowledge_playback("r4", "started") is False
+    assert coordinator.acknowledge_playback("old", "ended") is False
+    assert coordinator.acknowledge_playback("r4", "ended") is True
+    assert coordinator.acknowledge_playback("r4", "failed") is False
+    assert coordinator.timing_snapshot("r4")["timings_ms"]
+
+    collect_events(
+        coordinator,
+        request_id="r5",
+        text="Câu mới.",
+        voice_label="Ru (OmniVoice)",
+        speed=1.0,
+    )
+    assert coordinator.acknowledge_playback("r4", "ended") is False

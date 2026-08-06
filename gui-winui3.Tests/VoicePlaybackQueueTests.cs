@@ -34,10 +34,13 @@ public sealed class VoicePlaybackQueueTests
     {
         var start = VoiceStreamClient.SerializeStartFrame("r1", "Chào anh.", "Ru (OmniVoice)", 1.0);
         var cancel = VoiceStreamClient.SerializeCancelFrame("r1");
+        var playback = VoiceStreamClient.SerializePlaybackFrame("r1", "ended");
 
         Assert.Contains("\"type\":\"start\"", start);
         Assert.Contains("\"request_id\":\"r1\"", start);
         Assert.Contains("\"type\":\"cancel\"", cancel);
+        Assert.Contains("\"type\":\"playback\"", playback);
+        Assert.Contains("\"state\":\"ended\"", playback);
         Assert.DoesNotContain("timing", start, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("audio", cancel, StringComparison.OrdinalIgnoreCase);
     }

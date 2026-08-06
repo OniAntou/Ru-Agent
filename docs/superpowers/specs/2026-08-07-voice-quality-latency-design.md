@@ -1,7 +1,7 @@
 # Voice quality and latency design
 
 Date: 2026-08-07
-Status: Proposed
+Status: Implemented in code; live audio/latency acceptance pending
 Scope: local OmniVoice output used by the WinUI 3 GUI
 
 ## Decision
@@ -36,9 +36,9 @@ until the current path has a reproducible baseline.
 - `src/mini_gpt/omnivoice_tts_server.py` currently creates a complete WAV for a
   request. The existing `tts_stream` endpoint still synthesizes every chunk
   and concatenates the result before returning it.
-- `src/mini_gpt/routers/voice.py` requests one complete WAV from the voice
-  service, and `gui-winui3/Services/VoicePlaybackService.cs` buffers that WAV
-  before starting `MediaPlayer`.
+- The compatibility path still requests one complete WAV, while the primary
+  GUI auto-read path now uses authenticated `/voice/stream` sentence chunks and
+  an ordered WinUI playback queue with complete-WAV fallback.
 - OmniVoice has a cached model and per-profile clone prompts, but Llama and
   OmniVoice cannot be assumed to coexist within the available VRAM.
 - The current GUI trial is Vietnamese-normalized OmniVoice with 16 steps. The
@@ -184,9 +184,10 @@ and all cancellation paths release GPU, media, and VTS state.
 2. **Quality selection:** compare the four OmniVoice configurations and both
    profiles at native 1.00x; select a configuration per profile.
 3. **Incremental playback:** implement ordered sentence chunks, cancellation,
-   and GUI queue playback behind a feature flag.
+   and GUI queue playback. Done in code; live audio acceptance remains pending.
 4. **Lifecycle hardening:** add playback acknowledgements, stale-chunk tests,
-   VTS reset tests, and GPU cleanup checks.
+   VTS reset behavior, and GPU cleanup checks. Done in code; repeated live
+   device/process-cycle acceptance remains pending.
 5. **Acceptance:** run real microphone/TTS/VTube smoke tests and compare cold
    and warm latency against the baseline before enabling the new path by
    default.

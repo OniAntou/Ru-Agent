@@ -601,6 +601,39 @@ def test_voice_stream_cancels_after_first_chunk_without_sending_stale_audio(
                 "sequence": 1,
             }
 
+
+def test_voice_stream_records_current_playback_ack_only_once(monkeypatch, isolated_state) -> None:
+    coordinator_holder = {}
+    original_factory = voice_router._voice_stream_coordinator
+
+    def capture_coordinator():
+        coordinator = original_factory()
+        coordinator_holder["value"] = coordinator
+        return coordinator
+
+    monkeypatch.setattr(voice_router, "_voice_stream_coordinator", capture_coordinator)
+    monkeypatch.setattr(voice_router, "request_voice_audio", lambda text, label, speed: text.encode())
+    monkeypatch.setattr(voice_router._gpu_lifecycle(), "prepare_speech", lambda selection: None)
+
+    with TestClient(server.app) as client:
+        with client.websocket_connect("/voice/stream") as websocket:
+            websocket.send_json({"type": "start", "request_id": "ack-1", "text": "A."})
+            assert websocket.receive_json()["type"] == "started"
+            assert websocket.receive_json()["type"] == "audio"
+            assert websocket.receive_bytes() == b"A."
+            assert websocket.receive_json()["type"] == "ended"
+            websocket.send_json({"type": "playback", "request_id": "ack-1", "state": "started"})
+            websocket.send_json({"type": "playback", "request_id": "ack-1", "state": "started"})
+            websocket.send_json({"type": "playback", "request_id": "ack-1", "state": "ended"})
+            websocket.send_json({"type": "playback", "request_id": "old", "state": "ended"})
+
+    snapshot = coordinator_holder["value"].timing_snapshot("ack-1")
+    assert set(snapshot["timings_ms"]) == {
+        "playback_started_ms",
+        "playback_ended_ms",
+        "playback_terminal_ms",
+    }
+
 def test_voice_warmup_and_release(monkeypatch, isolated_state) -> None:
     monkeypatch.setattr(server_shared, "ensure_voice_service", lambda: None)
     monkeypatch.setattr(voice_router, "ensure_voice_service", lambda: None, raising=False)

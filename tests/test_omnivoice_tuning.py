@@ -10,6 +10,7 @@ from mini_gpt.omnivoice_tuning import (
     TEXT_AWARE_20_SETTINGS,
     TEXT_AWARE_24_SETTINGS,
     OmniVoiceGenerationSettings,
+    settings_for_profile,
 )
 
 
@@ -75,3 +76,15 @@ def test_frozen_settings_define_the_entire_candidate_matrix_in_order() -> None:
         TEXT_AWARE_24_SETTINGS,
     )
     assert GUI_TRIAL_SETTINGS is TEXT_AWARE_16_SETTINGS
+
+
+def test_settings_for_profile_resolves_known_configuration() -> None:
+    assert settings_for_profile("ru", "vi-normalized-20").num_step == 20
+    assert settings_for_profile("ai_vy").config_id == "vi-normalized-16"
+
+
+def test_settings_for_profile_rejects_unknown_profile_or_configuration() -> None:
+    with pytest.raises(ValueError, match="Unsupported OmniVoice voice profile"):
+        settings_for_profile("unknown")
+    with pytest.raises(ValueError, match="Unsupported OmniVoice configuration"):
+        settings_for_profile("ru", "unknown")

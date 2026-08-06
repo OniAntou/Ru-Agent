@@ -12,7 +12,7 @@ from time import perf_counter
 from typing import Callable
 
 from flask import Flask, Response, jsonify, request
-from mini_gpt.omnivoice_tuning import get_gui_trial_settings
+from mini_gpt.omnivoice_tuning import settings_for_profile
 from mini_gpt.tts_chunks import split_tts_chunks
 from mini_gpt.voice_pacing import DEFAULT_VOICE_SPEED, clamp_voice_speed
 
@@ -175,25 +175,42 @@ def apply_voice_speed(audio, speed: float):
     return stretched
 
 
-def synthesize_fast(text: str, profile: str = "ru", speed: float = DEFAULT_VOICE_SPEED) -> str:
+def synthesize_fast(
+    text: str,
+    profile: str = "ru",
+    speed: float = DEFAULT_VOICE_SPEED,
+    *,
+    timing: Callable[[str, float], None] | None = None,
+) -> str:
+    total_started = perf_counter()
+    warmup_started = perf_counter()
     warm_model(profile)
+    if timing is not None:
+        timing("warmup_ms", (perf_counter() - warmup_started) * 1000)
     import soundfile as sf
     import torch
 
+    generation_started = perf_counter()
     with _MODEL_LOCK:
         with torch.inference_mode():
             audio = get_model().generate(
                 text=text,
                 voice_clone_prompt=_voice_clone_prompts[profile],
-                **get_gui_trial_settings().generate_kwargs(),
+                **settings_for_profile(profile).generate_kwargs(),
             )
+    if timing is not None:
+        timing("generate_ms", (perf_counter() - generation_started) * 1000)
     if not audio:
         raise RuntimeError("OmniVoice returned no audio.")
     waveform = apply_voice_speed(audio[0], speed)
     output = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
     output.close()
+    write_started = perf_counter()
     try:
         sf.write(output.name, waveform, MODEL_SAMPLE_RATE)
+        if timing is not None:
+            timing("write_ms", (perf_counter() - write_started) * 1000)
+            timing("total_ms", (perf_counter() - total_started) * 1000)
     except Exception:
         try:
             Path(output.name).unlink(missing_ok=True)

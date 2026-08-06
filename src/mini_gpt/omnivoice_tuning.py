@@ -61,6 +61,9 @@ CANDIDATE_SETTINGS = (
     TEXT_AWARE_24_SETTINGS,
 )
 
+SETTINGS_BY_ID = {settings.config_id: settings for settings in CANDIDATE_SETTINGS}
+_PROFILE_IDS = {"ru", "ai_vy"}
+
 # This alters the active OmniVoice GUI runtime; its selection remains reversible.
 GUI_TRIAL_SETTINGS = TEXT_AWARE_16_SETTINGS
 
@@ -68,3 +71,14 @@ GUI_TRIAL_SETTINGS = TEXT_AWARE_16_SETTINGS
 def get_gui_trial_settings() -> OmniVoiceGenerationSettings:
     """Return the current GUI trial settings, read at call time."""
     return GUI_TRIAL_SETTINGS
+
+
+def settings_for_profile(profile_id: str, config_id: str | None = None) -> OmniVoiceGenerationSettings:
+    if profile_id not in _PROFILE_IDS:
+        raise ValueError(f"Unsupported OmniVoice voice profile: {profile_id!r}")
+    if config_id is None:
+        return get_gui_trial_settings()
+    try:
+        return SETTINGS_BY_ID[config_id]
+    except KeyError as error:
+        raise ValueError(f"Unsupported OmniVoice configuration: {config_id!r}") from error

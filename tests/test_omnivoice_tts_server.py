@@ -193,3 +193,52 @@ def test_synthesize_fast_writes_1d_waveform(tmp_path, monkeypatch) -> None:
     assert Path(path).is_file()
     assert writes, "soundfile.write must be called"
     assert writes[0].ndim == 1, "waveform must be 1D for libsndfile"
+
+
+def test_synthesize_fast_reports_privacy_safe_timing(tmp_path, monkeypatch) -> None:
+    import numpy as np
+
+    class FakeInferenceMode:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback) -> None:
+            return None
+
+    class FakeTorch:
+        @staticmethod
+        def inference_mode() -> FakeInferenceMode:
+            return FakeInferenceMode()
+
+    class FakeModel:
+        def generate(self, **kwargs: object) -> list[object]:
+            return [np.zeros((1, 2400), dtype=np.float32)]
+
+    class FakeSoundFile:
+        @staticmethod
+        def write(path: str, data: object, samplerate: int) -> None:
+            Path(path).write_bytes(b"RIFF")
+
+    monkeypatch.setitem(sys.modules, "torch", FakeTorch())
+    monkeypatch.setitem(sys.modules, "soundfile", FakeSoundFile())
+    monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
+    monkeypatch.setattr(server, "get_model", lambda: FakeModel())
+    monkeypatch.setattr(server, "apply_voice_speed", lambda audio, speed: audio)
+    monkeypatch.setattr(
+        server.tempfile,
+        "NamedTemporaryFile",
+        lambda **kwargs: type(
+            "Output", (), {"name": str(tmp_path / "speech.wav"), "close": lambda self: None}
+        )(),
+    )
+    server._voice_clone_prompts.clear()
+    server._voice_clone_prompts.update({"ru": "ru-prompt"})
+    events: list[tuple[str, float]] = []
+
+    path = server.synthesize_fast(
+        "Chào anh.", "ru", timing=lambda name, value: events.append((name, value))
+    )
+
+    assert Path(path).is_file()
+    assert [name for name, _ in events] == ["warmup_ms", "generate_ms", "write_ms", "total_ms"]
+    assert all(isinstance(value, float) and value >= 0 for _, value in events)

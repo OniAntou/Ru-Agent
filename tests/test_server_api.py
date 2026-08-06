@@ -530,6 +530,77 @@ def test_voice_tts_surfaces_service_failure(monkeypatch, isolated_state) -> None
     assert body["status"] == "error"
     assert "voice server offline" in body["message"]
 
+
+def test_voice_stream_rejects_unauthorized_websocket(monkeypatch, isolated_state) -> None:
+    with RawTestClient(server.app) as client:
+        with pytest.raises(Exception):
+            with client.websocket_connect("/voice/stream"):
+                pass
+
+
+def test_voice_stream_sends_ordered_audio_and_end_event(monkeypatch, isolated_state) -> None:
+    monkeypatch.setattr(voice_router, "request_voice_audio", lambda text, label, speed: text.encode())
+    monkeypatch.setattr(voice_router._gpu_lifecycle(), "prepare_speech", lambda selection: None)
+
+    with TestClient(server.app) as client:
+        with client.websocket_connect("/voice/stream") as websocket:
+            websocket.send_json({"type": "start", "request_id": "r1", "text": "A. B."})
+            assert websocket.receive_json() == {"type": "started", "request_id": "r1", "sequence": 0}
+            assert websocket.receive_json() == {
+                "type": "audio",
+                "request_id": "r1",
+                "sequence": 0,
+                "sample_rate": 24_000,
+                "format": "wav",
+            }
+            assert websocket.receive_bytes() == b"A."
+            assert websocket.receive_json()["sequence"] == 1
+            assert websocket.receive_bytes() == b"B."
+            assert websocket.receive_json() == {"type": "ended", "request_id": "r1", "sequence": 2}
+
+
+def test_voice_stream_rejects_malformed_start(monkeypatch, isolated_state) -> None:
+    with TestClient(server.app) as client:
+        with client.websocket_connect("/voice/stream") as websocket:
+            websocket.send_json({"type": "start", "request_id": "r1", "text": ""})
+            assert websocket.receive_json() == {
+                "type": "failed",
+                "request_id": "r1",
+                "sequence": 0,
+                "error_code": "invalid_request",
+            }
+
+
+def test_voice_stream_cancels_after_first_chunk_without_sending_stale_audio(
+    monkeypatch, isolated_state
+) -> None:
+    second_started = threading.Event()
+    release_second = threading.Event()
+
+    def fake_audio(text, label, speed):
+        if text == "B.":
+            second_started.set()
+            release_second.wait(timeout=5)
+        return text.encode()
+
+    monkeypatch.setattr(voice_router, "request_voice_audio", fake_audio)
+    monkeypatch.setattr(voice_router._gpu_lifecycle(), "prepare_speech", lambda selection: None)
+
+    with TestClient(server.app) as client:
+        with client.websocket_connect("/voice/stream") as websocket:
+            websocket.send_json({"type": "start", "request_id": "r2", "text": "A. B."})
+            assert websocket.receive_json()["type"] == "started"
+            assert websocket.receive_json()["type"] == "audio"
+            assert websocket.receive_bytes() == b"A."
+            assert second_started.wait(timeout=2)
+            websocket.send_json({"type": "cancel", "request_id": "r2"})
+            release_second.set()
+            assert websocket.receive_json() == {
+                "type": "cancelled",
+                "request_id": "r2",
+                "sequence": 1,
+            }
+
 def test_voice_warmup_and_release(monkeypatch, isolated_state) -> None:
     monkeypatch.setattr(server_shared, "ensure_voice_service", lambda: None)
     monkeypatch.setattr(voice_router, "ensure_voice_service", lambda: None, raising=False)

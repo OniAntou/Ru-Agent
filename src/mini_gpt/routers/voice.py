@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import base64
 import binascii
+import asyncio
+import json
 from typing import Annotated
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from .._server_shared import (
@@ -29,6 +31,7 @@ from .._server_shared import (
     _MEMORY_LOCK_TIMEOUT_SECONDS,
     _VOICE_PROBE_TIMEOUT_SECONDS,
     VOICE_START_TIMEOUT_SECONDS,
+    _valid_desktop_token,
     CapturedAudio,
     SpeechEngineConfig,
     SpeechRecognitionError,
@@ -36,6 +39,7 @@ from .._server_shared import (
     request_voice_audio,
     request_voice_control,
 )
+from ..voice_stream import VoiceStreamCoordinator, VoiceStreamEvent
 
 router = APIRouter()
 
@@ -49,6 +53,129 @@ class VoiceTtsPayload(BaseModel):
 class TranscribePayload(BaseModel):
     audio_b64: str = Field(max_length=7_500_000)
     sample_rate: int = Field(default=16_000, ge=8_000, le=192_000)
+
+
+class VoiceStreamStartPayload(VoiceTtsPayload):
+    request_id: str = Field(min_length=1, max_length=128)
+
+
+def _voice_stream_coordinator() -> VoiceStreamCoordinator:
+    return VoiceStreamCoordinator(
+        prepare_speech=lambda selection: _gpu_lifecycle().prepare_speech(selection),
+        request_audio=request_voice_audio,
+        memory_lock=_MEMORY_TURN_LOCK,
+        lock_timeout=_MEMORY_LOCK_TIMEOUT_SECONDS,
+    )
+
+
+async def _send_voice_stream_events(
+    websocket: WebSocket,
+    coordinator: VoiceStreamCoordinator,
+    payload: VoiceStreamStartPayload,
+) -> None:
+    settings = effective_settings()
+    voice_label = payload.voice_label or settings.get("voice_label", _DEFAULT_SETTINGS["voice_label"])
+    speed_value = payload.speed
+    if speed_value is None:
+        speed_value = settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"])
+    speed = effective_voice_speed(speed_value, auto_pace_enabled=True, pace=voice_pace_for(payload.text))
+    async for event in coordinator.start(
+        request_id=payload.request_id,
+        text=_strip_voice_markers(payload.text),
+        voice_label=voice_label,
+        speed=speed,
+    ):
+        await websocket.send_json(event.control_payload())
+        if event.audio is not None:
+            await websocket.send_bytes(event.audio)
+
+
+async def _send_stream_failure(websocket: WebSocket, request_id: str, error_code: str) -> None:
+    await websocket.send_json(
+        VoiceStreamEvent("failed", request_id, 0, error_code=error_code).control_payload()
+    )
+
+
+@router.websocket("/voice/stream")
+async def voice_stream(websocket: WebSocket):
+    if not _valid_desktop_token(websocket.query_params.get("token", "")):
+        await websocket.close(code=4401, reason="Unauthorized")
+        return
+    await websocket.accept()
+    coordinator = _voice_stream_coordinator()
+    active_task: asyncio.Task[None] | None = None
+    active_request_id: str | None = None
+    try:
+        while True:
+            if active_task is None:
+                raw = await websocket.receive_text()
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError:
+                    await _send_stream_failure(websocket, "", "invalid_request")
+                    continue
+                if not isinstance(payload, dict):
+                    await _send_stream_failure(websocket, "", "invalid_request")
+                    continue
+                message_type = payload.get("type")
+                if message_type == "cancel":
+                    request_id = payload.get("request_id")
+                    if isinstance(request_id, str):
+                        coordinator.cancel(request_id)
+                    continue
+                if message_type != "start":
+                    await _send_stream_failure(websocket, "", "invalid_request")
+                    continue
+                try:
+                    start_payload = VoiceStreamStartPayload.model_validate(payload)
+                except Exception:
+                    request_id = payload.get("request_id")
+                    await _send_stream_failure(
+                        websocket,
+                        request_id if isinstance(request_id, str) else "",
+                        "invalid_request",
+                    )
+                    continue
+                if _TURN_LOCK.locked():
+                    await _send_stream_failure(websocket, start_payload.request_id, "busy_chat")
+                    continue
+                active_request_id = start_payload.request_id
+                active_task = asyncio.create_task(
+                    _send_voice_stream_events(websocket, coordinator, start_payload)
+                )
+                continue
+
+            receive_task = asyncio.create_task(websocket.receive_text())
+            done, _ = await asyncio.wait(
+                {active_task, receive_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if active_task in done:
+                active_task.result()
+                active_task = None
+                active_request_id = None
+                if not receive_task.done():
+                    receive_task.cancel()
+                continue
+            raw = receive_task.result()
+            try:
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
+                await _send_stream_failure(websocket, active_request_id or "", "invalid_request")
+                continue
+            if isinstance(payload, dict) and payload.get("type") == "cancel":
+                request_id = payload.get("request_id")
+                if request_id == active_request_id:
+                    coordinator.cancel(request_id)
+            else:
+                await _send_stream_failure(websocket, active_request_id or "", "stream_active")
+    except WebSocketDisconnect:
+        if active_request_id is not None:
+            coordinator.cancel(active_request_id)
+    except Exception:
+        if active_request_id is not None:
+            coordinator.cancel(active_request_id)
+        raise
 
 
 @router.get("/voice/status")

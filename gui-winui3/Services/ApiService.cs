@@ -15,12 +15,21 @@ namespace RuApp.Services
     {
         private readonly HttpClient _httpClient;
         private readonly string _baseUrl;
+        private readonly string _authSecret;
+        private readonly int _port;
 
         public ApiService(string authSecret, int port = 8000)
         {
+            _authSecret = authSecret;
+            _port = port;
             _baseUrl = $"http://127.0.0.1:{port}";
             _httpClient = new HttpClient();
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", authSecret);
+        }
+
+        public VoiceStreamClient CreateVoiceStreamClient()
+        {
+            return new VoiceStreamClient(_authSecret, _port);
         }
 
         public async Task<AppSettingsDto?> GetSettingsAsync()

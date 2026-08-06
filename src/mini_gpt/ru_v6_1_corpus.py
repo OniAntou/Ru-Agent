@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from .corpus_builder import build_standard_corpus
-from .ru_style import RU_SYSTEM_PROMPT
 from .ru_v6_1_dialogues import (
     EXPECTED_INTENSITY_COUNTS,
     EXPECTED_LANGUAGE_COUNTS,
@@ -34,7 +33,6 @@ def build_ru_v6_1_corpus(
         expected_turn_band_counts=dict(EXPECTED_TURN_BAND_COUNTS),
         source=SOURCE,
         license_name=LICENSE,
-        system_prompt=RU_SYSTEM_PROMPT,
         allow_approved=True,
         approved_source="user-approved-local",
         naturalness_gate=True,

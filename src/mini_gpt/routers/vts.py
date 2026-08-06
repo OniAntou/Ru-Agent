@@ -163,11 +163,15 @@ def vts_config_save(payload: VtsConfigPayload):
     try:
         config = MotionConfig.from_dict(payload.model_dump())
     except ValueError as error:
+        logger.warning("VTS config save rejected: %s", error)
         return {"status": "error", "message": str(error)}
     _save_vts_motion_config(config)
     manager = _VTS_MANAGER
     if manager is not None:
         manager.apply_config(config)
+        logger.info("Applied saved VTS motion config: %s", config.to_dict())
+    else:
+        logger.info("Saved VTS motion config (no active manager): %s", config.to_dict())
     return {"status": "ok", "config": config.to_dict()}
 
 
@@ -219,8 +223,10 @@ def vts_action(payload: VtsActionPayload):
 
 @router.post("/vts/speaking")
 def vts_speaking(payload: VtsSpeakingPayload):
-    manager = _VTS_MANAGER
+    manager = _vts_manager()
     if manager is None or not manager.is_connected:
         return {"status": "ok", "connected": False}
     manager.note_speaking(payload.speaking)
+    state = manager.current_state().value if manager is not None else "unknown"
+    logger.info("VTS speaking=%s state=%s", payload.speaking, state)
     return {"status": "ok", "connected": True}

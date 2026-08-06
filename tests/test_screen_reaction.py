@@ -33,16 +33,18 @@ def observation(
     )
 
 
-def test_policy_allows_distinct_high_value_event_and_preserves_visible_text() -> None:
+def test_policy_allows_distinct_high_value_event_and_redacts_visible_text() -> None:
     coordinator = ReactionCoordinator(clock=lambda: 100.0)
 
     decision = coordinator.begin(observation())
 
     assert decision.allowed is True
     assert decision.reason == "allowed"
-    assert "PRIVATE MESSAGE: mật khẩu là abc" in format_observation_prompt(
-        observation().observation, ()
-    )
+    prompt = format_observation_prompt(observation().observation, ())
+    assert "PRIVATE MESSAGE" in prompt
+    assert "mật khẩu" not in prompt
+    assert "abc" not in prompt.casefold()
+    assert "[REDACTED]" in prompt
 
 
 def test_policy_rejects_stale_repeated_and_too_frequent_events() -> None:
@@ -156,7 +158,7 @@ def test_prompt_contains_exact_observation_and_only_six_recent_reactions() -> No
     prompt = format_observation_prompt(observation().observation, recent)
 
     assert '"scene": "game bắn súng"' in prompt
-    assert '"visible_text": ["PRIVATE MESSAGE: mật khẩu là abc"]' in prompt
+    assert '"visible_text": ["PRIVATE MESSAGE: [REDACTED]"]' in prompt
     assert "reaction-0" not in prompt
     assert "reaction-1" not in prompt
     assert "reaction-2" in prompt

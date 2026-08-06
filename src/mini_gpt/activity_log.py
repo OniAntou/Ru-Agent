@@ -17,9 +17,16 @@ from pathlib import Path
 
 logger = logging.getLogger("mini_gpt.activity_log")
 
-LOG_FILE = Path.home() / ".minigpt" / "activity_log.jsonl"
+LOG_FILE = Path("D:") / ".minigpt" / "activity_log.jsonl"
 MAX_ENTRIES = 5000
 _log_lock = threading.Lock()
+
+
+def _ensure_log_dir() -> None:
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.warning("activity_log mkdir failed: %s", e)
 
 
 def _now_iso() -> str:
@@ -31,6 +38,7 @@ def append(event: dict) -> None:
     event.setdefault("iso", _now_iso())
     with _log_lock:
         try:
+            _ensure_log_dir()
             line = json.dumps(event, ensure_ascii=False)
             with LOG_FILE.open("a", encoding="utf-8") as fh:
                 fh.write(line + "\n")
@@ -46,6 +54,7 @@ def read(limit: int = 200) -> list[dict]:
     events: list[dict] = []
     with _log_lock:
         try:
+            _ensure_log_dir()
             with LOG_FILE.open("r", encoding="utf-8") as fh:
                 for line in fh:
                     line = line.strip()

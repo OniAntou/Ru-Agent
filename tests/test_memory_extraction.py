@@ -29,8 +29,13 @@ def test_rejects_url_in_prompt():
     assert extract_candidates("Anh thích https://example.com", "Ok") == ()
 
 
-def test_rejects_very_long_response():
-    assert extract_candidates("Anh thích pizza", "x" * 1500) == ()
+def test_very_long_response_does_not_block_learning():
+    # Length alone is never "sensitive": gating on length silently disabled
+    # self-learning for every long reply.
+    candidates = extract_candidates("Anh thích pizza", "x" * 1500)
+    assert [(item.kind, item.content) for item in candidates] == [
+        (MemoryKind.PREFERENCE, "Anh thích pizza.")
+    ]
 
 
 def test_strip_internal_metadata():

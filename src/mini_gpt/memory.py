@@ -9,7 +9,7 @@ import threading
 import uuid
 import weakref
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
@@ -34,6 +34,9 @@ _SCORE_WEIGHT_CONFIDENCE = 0.03
 _SCORE_WEIGHT_PINNED = 0.02
 _RETRIEVE_MIN_SCORE = 0.18
 _RETRIEVE_SCAN_LIMIT = 2000
+# Memories not touched for this long are not scanned by lexical retrieval;
+# they stay stored and become visible again when the user interacts with them.
+_RETRIEVE_LOOKBACK_DAYS = 90
 
 _memory_store_registry: weakref.WeakSet[MemoryStore] = weakref.WeakSet()
 
@@ -85,9 +88,48 @@ class StructuredMemoryStore:
         self.index_path = Path(index_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._database_lock = threading.RLock()
-        self._db_conn = sqlite3.connect(self.database_path, check_same_thread=False)
-        self._db_conn.row_factory = sqlite3.Row
-        self._initialize_schema()
+        self._db_conn = None
+        try:
+            self._db_conn = sqlite3.connect(self.database_path, check_same_thread=False, timeout=30)
+            self._db_conn.row_factory = sqlite3.Row
+            self._initialize_schema()
+        except sqlite3.DatabaseError:
+            # A corrupt or schema-lagging database must never take down the
+            # whole backend: quarantine the bad file and rebuild in place.
+            logger.exception("Memory database is corrupt; quarantining and rebuilding")
+            self._quarantine_database()
+            self._db_conn = sqlite3.connect(self.database_path, check_same_thread=False, timeout=30)
+            self._db_conn.row_factory = sqlite3.Row
+            self._initialize_schema()
+        self._purge_expired_locked()
+
+    def _quarantine_database(self) -> None:
+        stamped = self.database_path.with_suffix(".db.corrupt")
+        try:
+            if stamped.is_file():
+                stamped.write_bytes(self.database_path.read_bytes())
+            else:
+                os.replace(self.database_path, stamped)
+        except OSError:
+            logger.exception("Could not quarantine the corrupt memory database")
+        for extra in (
+            Path(f"{self.database_path}-wal"),
+            Path(f"{self.database_path}-shm"),
+            Path(f"{self.database_path}-journal"),
+        ):
+            extra.unlink(missing_ok=True)
+
+    def _purge_expired_locked(self) -> None:
+        """Delete expired, unpinned records on startup so the table cannot
+        grow without bound."""
+        try:
+            with self._database_lock, self._db_conn:
+                self._db_conn.execute(
+                    "DELETE FROM memories WHERE status = 'active' AND pinned = 0 AND expires_at IS NOT NULL AND expires_at < ?",
+                    (_serialize_datetime(_utc_now()),),
+                )
+        except sqlite3.Error:
+            logger.exception("Could not purge expired memories")
 
     def _initialize_schema(self) -> None:
         with self._database_lock, self._db_conn:
@@ -188,7 +230,12 @@ class StructuredMemoryStore:
             kind, content, scope, evidence, confidence, importance, expires_at, now
         )
         with self._database_lock, self._db_conn:
-            self._upsert_locked(record, supersedes_id, now)
+            stored_id = self._upsert_locked(record, supersedes_id, now)
+            if stored_id != record.id:
+                # Content already stored: return the existing active record.
+                row = self._db_conn.execute("SELECT * FROM memories WHERE id = ?", (stored_id,)).fetchone()
+                if row is not None:
+                    return self._record_from_row(row)
         return record
 
     @staticmethod
@@ -218,8 +265,31 @@ class StructuredMemoryStore:
             pinned=False,
         )
 
-    def _upsert_locked(self, record: MemoryRecord, supersedes_id: str | None, now: datetime) -> None:
-        """Insert *record*; caller must hold _database_lock with an open transaction."""
+    def _upsert_locked(self, record: MemoryRecord, supersedes_id: str | None, now: datetime) -> str:
+        """Insert *record*; caller must hold _database_lock with an open transaction.
+        Returns the id of the record that is actually stored: the new one, or the
+        existing active duplicate when the content already exists."""
+        duplicate = None
+        if supersedes_id is None:
+            duplicate = self._db_conn.execute(
+                """
+                SELECT id FROM memories
+                WHERE status = 'active'
+                  AND kind = ? AND content = ? COLLATE NOCASE
+                  AND (expires_at IS NULL OR expires_at > ?)
+                  AND (scope IS ? OR scope = ?)
+                LIMIT 1
+                """,
+                (
+                    record.kind.value,
+                    record.content.strip(),
+                    _serialize_datetime(now),
+                    None if record.scope is None else record.scope,
+                    record.scope,
+                ),
+            ).fetchone()
+        if duplicate is not None:
+            return str(duplicate["id"])
         if supersedes_id is not None:
             row = self._db_conn.execute(
                 "SELECT status FROM memories WHERE id = ?", (supersedes_id,)
@@ -253,6 +323,7 @@ class StructuredMemoryStore:
                 0,
             ),
         )
+        return record.id
 
     def count_active(self) -> int:
         self._require_open()
@@ -294,20 +365,24 @@ class StructuredMemoryStore:
         query_tokens = self._tokens(query)
         if not query_tokens:
             return ()
-        query_scopes = re.findall(r"[A-Za-z]:\\[^\s,.;!?]+", query)
+        from .memory_extraction import _PATH_PATTERN
+        query_scopes = re.findall(_PATH_PATTERN.pattern, query)
         ranked: list[tuple[float, MemoryRecord]] = []
         now = _serialize_datetime(_utc_now())
-        # Avoid a full table scan every turn: score only the most recent
-        # candidates (pinned first), which is where fresh memories live.
+        lookback = _serialize_datetime(_utc_now() - timedelta(days=_RETRIEVE_LOOKBACK_DAYS))
+        # Avoid a full table scan every turn: score pinned memories plus the
+        # most recently updated candidates within a lookback window.
         with self._database_lock:
             rows = self._db_conn.execute(
                 """
                 SELECT * FROM memories
-                WHERE status = 'active' AND (expires_at IS NULL OR expires_at > ? OR pinned = 1)
+                WHERE status = 'active'
+                  AND (expires_at IS NULL OR expires_at > ? OR pinned = 1)
+                  AND (pinned = 1 OR updated_at >= ?)
                 ORDER BY pinned DESC, updated_at DESC
                 LIMIT ?
                 """,
-                (now, _RETRIEVE_SCAN_LIMIT),
+                (now, lookback, _RETRIEVE_SCAN_LIMIT),
             ).fetchall()
         records = tuple(self._record_from_row(row) for row in rows)
         for record in records:
@@ -378,8 +453,9 @@ class StructuredMemoryStore:
                     None,
                     now,
                 )
-                self._upsert_locked(record, None, now)
-                records.append(record)
+                stored_id = self._upsert_locked(record, None, now)
+                if stored_id == record.id:
+                    records.append(record)
         return tuple(records)
 
     def clear(self) -> None:
@@ -447,10 +523,11 @@ class StructuredMemoryStore:
                         None,
                         now,
                     )
-                    self._upsert_locked(record, None, now)
-                    imported += 1
+                    stored_id = self._upsert_locked(record, None, now)
+                    if stored_id == record.id:
+                        imported += 1
             self._db_conn.execute(
-                "INSERT INTO legacy_memory_migrations (source_hash) VALUES (?)", (source_hash,)
+                "INSERT OR IGNORE INTO legacy_memory_migrations (source_hash) VALUES (?)", (source_hash,)
             )
         return {"imported": imported, "rejected": rejected}
 

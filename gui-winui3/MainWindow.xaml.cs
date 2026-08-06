@@ -23,6 +23,7 @@ namespace RuApp
         private ChatView? _chatView;
         private VoiceView? _voiceView;
         private SettingsView? _settingsView;
+        private LogView? _logView;
         private DispatcherTimer? _sessionsTimer;
 
 
@@ -113,6 +114,9 @@ namespace RuApp
                 _settingsView = new SettingsView();
                 _settingsView.Initialize(_apiService, _observerService);
 
+                _logView = new LogView();
+                _logView.Initialize(_apiService);
+
                 // Default: Chat
                 ContentFrame.Content = _chatView;
                 NavChat.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(
@@ -143,6 +147,7 @@ namespace RuApp
                 NavChat.Background = transparent;
                 NavVoice.Background = transparent;
                 NavSettings.Background = transparent;
+                NavLog.Background = transparent;
 
                 btn.Background = active;
 
@@ -151,6 +156,7 @@ namespace RuApp
                     "chat" => _chatView,
                     "voice" => _voiceView,
                     "settings" => _settingsView,
+                    "log" => _logView,
                     _ => _chatView
                 };
             }

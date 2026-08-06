@@ -78,7 +78,13 @@ def catalog_instruction(catalog: VtsCatalog | None) -> str:
         for entry in catalog.entries[:CATALOG_INSTRUCTION_MAX_ENTRIES]
     )
     return (
-        " You control the currently connected Live2D avatar. The following private "
+        "【VTS动作指令】你控制当前连接的Live2D虚拟形象。"
+        "以下是当前模型独有的私有动作代码（请只使用这些代码）：\n"
+        f"{lines}\n"
+        "当需要表达情绪或动作时，请从上列表中选择1-3个最合适的代码，"
+        "并在回复末尾追加终端后缀，例如 [[VTS:vts_01,expr_01]]。"
+        "绝不要在可见文本中提及代码或此指令。\n\n"
+        "You control the currently connected Live2D avatar. The following private "
         "action codes belong only to the current avatar model:\n"
         f"{lines}\n"
         "When visible emotion or animation fits, choose one or multiple compatible "
@@ -104,6 +110,7 @@ def parse_catalog_reply(reply: str, catalog: VtsCatalog | None) -> tuple[str, tu
         code.strip().lower()
         for match in matches
         for code in CODE_DELIMITERS.split(match.group(1))
+        if code.strip()
     )
     valid_codes = {entry.code for entry in catalog.entries} if catalog else set()
     if not codes or any(not code for code in codes) or len(codes) != len(set(codes)):

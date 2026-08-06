@@ -4,8 +4,10 @@ import enum
 import re
 import unicodedata
 
-EMOTION_MARKER = re.compile(r"\[\[EMO:([a-zA-Z_]+)\]\]", re.IGNORECASE)
-_STRIP_EMOTION_MARKER = re.compile(r"\[\[EMO:[a-zA-Z_]+\]\]", re.IGNORECASE)
+EMOTION_MARKER = re.compile(r"\[\[EMO:([^\[\]]+?)\]\]", re.IGNORECASE)
+# Strip any EMO marker, even a malformed/unmatched one, so it can never leak
+# into TTS output; normalize whitespace inside the tag first.
+_STRIP_EMOTION_MARKER = re.compile(r"\[\[EMO:[^\[\]]*\]\]", re.IGNORECASE)
 
 
 class EmotionTag(str, enum.Enum):
@@ -54,8 +56,9 @@ def extract_reply_emotion(reply: str) -> tuple[str, EmotionTag]:
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     match = EMOTION_MARKER.search(reply)
     if match:
+        tag = "".join(match.group(1).split()).lower()
         try:
-            return cleaned, EmotionTag(match.group(1).lower())
+            return cleaned, EmotionTag(tag)
         except ValueError:
             return cleaned, _heuristic_emotion(reply)
     return cleaned, _heuristic_emotion(reply)

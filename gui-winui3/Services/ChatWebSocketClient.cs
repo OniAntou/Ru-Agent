@@ -182,6 +182,10 @@ namespace RuApp.Services
                 {
                     throw new InvalidOperationException("WebSocket chưa kết nối trong vòng 10 giây.");
                 }
+                if (_disposed)
+                {
+                    throw new ObjectDisposedException(nameof(ChatWebSocketClient));
+                }
             }
 
             var socket = _webSocket;
@@ -205,10 +209,19 @@ namespace RuApp.Services
             {
                 if (_webSocket != null && _webSocket.State == WebSocketState.Open)
                 {
-                    _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by user", CancellationToken.None).Wait(500);
+                    try
+                    {
+                        _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by user", CancellationToken.None)
+                            .Wait(500);
+                    }
+                    catch (AggregateException)
+                    {
+                    }
                 }
             }
-            catch { }
+            catch (ObjectDisposedException)
+            {
+            }
             _webSocket?.Dispose();
             _webSocket = null;
             _cts?.Dispose();

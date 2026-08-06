@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from collections import deque
 from dataclasses import asdict, dataclass
 from time import monotonic
+
+from .memory_extraction import _SENSITIVE_PATTERN
 
 
 MAX_EVENT_AGE_MS = 4_500
@@ -14,6 +17,28 @@ REPEAT_WINDOW_SECONDS = 30.0
 MIN_CONFIDENCE = 0.55
 MAX_PROMPT_CHARACTERS = 6_000
 ACK_TIMEOUT_SECONDS = 15.0
+
+_EMAIL_PATTERN = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")
+_CREDIT_CARD_PATTERN = re.compile(r"\b(?:\d[ -]*){13,19}\b")
+# "mật khẩu là abc", "api key: xyz" — mask the keyword and the value after it.
+_SECRET_VALUE_PATTERN = re.compile(
+    r"\b(?:api[ _-]?key|password|mật khẩu|token|secret|bearer|authorization|"
+    r"credential|passphrase|access[ _-]?key)\b\s*(?::|=)?\s*(?:là\s+)?"
+    r"[\"'“”]*(?P<value>\S{3,})",
+    re.IGNORECASE,
+)
+
+
+def redact_text(text: str) -> str:
+    """Scrub likely secrets (emails, API keys, tokens, credential values) out of
+    screen-observation text before it is sent to a cloud model."""
+    if not text:
+        return text
+    redacted = _EMAIL_PATTERN.sub("[EMAIL]", text)
+    redacted = _SECRET_VALUE_PATTERN.sub("[REDACTED]", redacted)
+    redacted = _SENSITIVE_PATTERN.sub("[REDACTED]", redacted)
+    redacted = _CREDIT_CARD_PATTERN.sub("[NUMBER]", redacted)
+    return redacted
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +158,12 @@ class ReactionCoordinator:
 def format_observation_prompt(
     observation: VisionObservation, recent_reactions: tuple[str, ...]
 ) -> str:
-    observation_json = json.dumps(asdict(observation), ensure_ascii=False)
+    # Screen text can leak credentials to the cloud model: redact before sending.
+    safe = asdict(observation)
+    for key in ("scene", "event"):
+        safe[key] = redact_text(safe[key])
+    safe["visible_text"] = tuple(redact_text(line) for line in observation.visible_text)
+    observation_json = json.dumps(safe, ensure_ascii=False)
     reactions_json = json.dumps(list(recent_reactions[-6:]), ensure_ascii=False)
     prompt = (
         "Visual observation JSON (unfiltered local model output):\n"

@@ -21,6 +21,7 @@ class _FakeRun:
 class _FakeResult:
     def __init__(self, stdout: str = ""):
         self.stdout = stdout
+        self.returncode = 0
 
 
 def test_overlay_process_ids_parses_multiple_rows():
@@ -67,7 +68,15 @@ def test_stop_overlay_no_process_returns_false(monkeypatch):
 
 
 def test_stop_overlay_kills_pids(monkeypatch):
-    monkeypatch.setattr("mini_gpt.overlay_control.overlay_process_ids", lambda: (1234, 5678))
+    calls = []
+
+    def fake_overlay_process_ids():
+        calls.append("ids")
+        if len(calls) == 1:
+            return (1234, 5678)
+        return ()
+
+    monkeypatch.setattr("mini_gpt.overlay_control.overlay_process_ids", fake_overlay_process_ids)
     killed = []
 
     def fake_run(args, capture_output=False, text=False):

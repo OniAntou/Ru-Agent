@@ -9,11 +9,14 @@ from .memory import MemoryKind
 
 # Shared with StructuredMemoryStore.retrieve() in memory.py (inline pattern there).
 _PATH_PATTERN = re.compile(r"\b[A-Za-z]:\\[^\s,.;!?]+")
-_MAX_TEXT_CHARS = 1000
 _MAX_DECISION_CHARS = 500
 _USE_PATTERN = re.compile(r"\b(?:sẽ dùng|dùng|uses?|will use)\b\s+(?=[^\s.,;!?])", re.IGNORECASE)
 _SENSITIVE_PATTERN = re.compile(
-    r"\b(?:api[ _-]?key|password|mật khẩu|token|secret|sk-[\w-]+|ghp_[\w-]+|số tài khoản|bệnh án)\b|https?://|\[\[VTS:",
+    r"\b(?:api[ _-]?key|password|mật khẩu|token|secret|bearer|authorization|credential|"
+    r"passphrase|access[ _-]?key|số tài khoản|bệnh án)\b|"
+    r"(?:sk|pk|ghp|gho|github_pat)_[A-Za-z0-9_-]+|"
+    r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|"
+    r"https?://|\[\[(?:VTS|EMO|VOICE_PACE):",
     re.IGNORECASE,
 )
 
@@ -33,7 +36,10 @@ def strip_internal_metadata(text: str) -> str:
 
 
 def is_sensitive_or_unsafe(text: str) -> bool:
-    return not text.strip() or len(text) > _MAX_TEXT_CHARS or bool(_SENSITIVE_PATTERN.search(text))
+    # Length alone is never "sensitive": gating on length silently disabled
+    # self-learning for every reply longer than 1000 characters. Truncation
+    # happens at the extraction boundary instead.
+    return not text.strip() or bool(_SENSITIVE_PATTERN.search(text))
 
 
 def _scope_from(text: str) -> str | None:
@@ -44,8 +50,10 @@ def _scope_from(text: str) -> str | None:
 
 
 def _preference_pattern(address_name: str) -> re.Pattern[str]:
+    # "Em trai anh thích bóng đá" is about the brother, not the user: reject a
+    # possessive chain right before the address name ("trai anh", "bạn anh").
     return re.compile(
-        rf"\b{re.escape(address_name)}\s+(?:thích|muốn|ưu tiên)\s+(.+?)(?:\s+và\s+(?:dự án|project)\b|[.!?]|$)",
+        rf"(?<!\btrai\s)(?<!\bbạn\s)\b{re.escape(address_name)}\s+(?:thích|muốn|ưu tiên)\s+(.{{1,200}}?)(?:\s+và\s+(?:dự án|project)\b|[.!?]|$)",
         re.IGNORECASE,
     )
 

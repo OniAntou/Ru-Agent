@@ -8,6 +8,7 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient as RawTestClient
 
 import mini_gpt._server_shared as server_shared
 import mini_gpt.headless_runner as headless_runner
@@ -19,8 +20,32 @@ import mini_gpt.routers.voice as voice_router
 import mini_gpt.server as server
 from mini_gpt.screen_reaction import ReactionCoordinator, ReactionRequest, VisionObservation
 
+
+class AuthenticatedTestClient(TestClient):
+    """TestClient that sends the desktop bearer token by default. API auth
+    fails closed now, so every request must be authenticated."""
+
+    def __init__(self, app, **kwargs):
+        headers = dict(kwargs.pop("headers", {}))
+        headers.setdefault("Authorization", "Bearer desktop-secret")
+        super().__init__(app, headers=headers, **kwargs)
+
+    def websocket_connect(self, url, subprotocols=None, **kwargs):
+        from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+        parsed = urlparse(url)
+        query = dict(parse_qsl(parsed.query))
+        query.setdefault("token", "desktop-secret")
+        url = urlunparse(parsed._replace(query=urlencode(query)))
+        return super().websocket_connect(url, subprotocols=subprotocols, **kwargs)
+
+
 @pytest.fixture(autouse=True)
 def isolated_state(monkeypatch, tmp_path):
+    # API auth now fails closed: every test must authenticate.
+    monkeypatch.setenv("RU_DESKTOP_TOKEN", "desktop-secret")
+    import sys
+    monkeypatch.setattr(sys.modules[__name__], "TestClient", AuthenticatedTestClient)
     monkeypatch.setattr(server_shared, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(server, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(server_shared, "HISTORY_FILE", tmp_path / "history.json")
@@ -83,7 +108,7 @@ def test_foreign_browser_origin_is_not_allowed() -> None:
 
 def test_configured_desktop_token_protects_rest(monkeypatch) -> None:
     monkeypatch.setenv("RU_DESKTOP_TOKEN", "desktop-secret")
-    with TestClient(server.app) as client:
+    with RawTestClient(server.app) as client:
         missing = client.get("/settings")
         invalid = client.get("/settings", headers={"Authorization": "Bearer wrong"})
         valid = client.get(
@@ -93,9 +118,15 @@ def test_configured_desktop_token_protects_rest(monkeypatch) -> None:
     assert invalid.status_code == 401
     assert valid.status_code == 200
 
+def test_unconfigured_desktop_token_fails_closed(monkeypatch) -> None:
+    monkeypatch.delenv("RU_DESKTOP_TOKEN", raising=False)
+    with RawTestClient(server.app) as client:
+        response = client.get("/settings")
+    assert response.status_code == 401
+
 def test_configured_desktop_token_protects_websocket(monkeypatch) -> None:
     monkeypatch.setenv("RU_DESKTOP_TOKEN", "desktop-secret")
-    with TestClient(server.app) as client:
+    with RawTestClient(server.app) as client:
         with pytest.raises(Exception):
             with client.websocket_connect("/chat"):
                 pass
@@ -593,6 +624,10 @@ def test_vts_speaking_endpoint_updates_motion_state(monkeypatch, isolated_state)
         def note_speaking(self, value):
             speaking.append(value)
 
+        def current_state(self):
+            from mini_gpt.vts_state import VtsMotionState
+            return VtsMotionState.IDLE
+
     monkeypatch.setattr(server_shared, "_VTS_MANAGER", FakeVts())
     monkeypatch.setattr(chat_router, "_VTS_MANAGER", FakeVts(), raising=False)
     monkeypatch.setattr(observation_router, "_VTS_MANAGER", FakeVts(), raising=False)
@@ -680,7 +715,7 @@ def test_chat_error_sends_error_then_done(monkeypatch, isolated_state) -> None:
             ws.send_text(json.dumps({"prompt": "boom", "session_id": session_id}))
             error = ws.receive_json()
     assert error["type"] == "error"
-    assert "model exploded" in error["content"]
+    assert "Đã xảy ra lỗi xử lý yêu cầu" in error["content"]
 
 def test_prompts_are_processed_serially(monkeypatch, isolated_state) -> None:
     started = threading.Event()
@@ -1461,3 +1496,5 @@ def test_vts_hooks_import_append():
 def test_observation_hooks_import_append():
     from mini_gpt.routers import observation as obs_router
     assert hasattr(obs_router, "append_activity_log")
+
+

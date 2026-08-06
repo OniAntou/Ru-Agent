@@ -1,15 +1,15 @@
 {
   "v6_1": {
-    "train.jsonl": "8ecf19d145be0ae89c19bc5eb1ec3b9c7cb3d62873acab0485c2c3d627533d37",
-    "val.jsonl": "8316ba409d55047887fa66122af57473a72ce53a96f72a2d0621c6daea48bcec",
-    "held_out.jsonl": "6d462cf5037207820c26019b635ae8c145fb42d679ba1650437678c46d6da922",
-    "manifest.json": "6aeb7b2e95b968a2f8633ef7d1a2b438531fbadbd73abc10c1658c30f5ea6bf4"
+    "train.jsonl": "a289ec0829d0bbc9de7a87f6211879b835d0b9514f69d3a8345708c1699dfff6",
+    "val.jsonl": "af086d34b61c16db24bb1a599940afa740efd7cf9dda142762f411e920649928",
+    "held_out.jsonl": "14e5d339b60272fc8cd705921fac5f4ee574ba023e6018ede27b1739358aa3c2",
+    "manifest.json": "023808524f9f6ee6a0b0534a551b1debd99109a05656b59dd5c08cce03bf60f6"
   },
   "v6_2": {
-    "train.jsonl": "4af6a696b50397281c43926eb4610ab093cdb9e3a0aaee55a3a70f4538524acf",
-    "val.jsonl": "b4c8e604e62d23b4be17c8568bd44e76cab6782cf4abb70b163d9cd9df525fd8",
-    "held_out.jsonl": "62cd66e052d894b0c3ce166e66ba47774429fb2c6db7730f1a178605d1048258",
-    "manifest.json": "14a4704f7ec7eb79101b671a24e97947c4a94517f6fff7c3cee476e285301013"
+    "train.jsonl": "68e76a26ebeded61c8ff578fd3437bdc3a9c174387830910b034f899097f3bf3",
+    "val.jsonl": "4b6593872a99470dec4d006c89c99c2263726f7627665be270d083c84db1c9f4",
+    "held_out.jsonl": "ec193c8e28c0f84e9f4c3df6a18cce197bd588a21d17048c16f12d772f18caee",
+    "manifest.json": "3752aa4fb76da7a2f8c0f8f47d201bd4b2c7cbdde9808ecfb382b34411bf7cce"
   },
   "v6_2_fresh": {
     "train.jsonl": "d1c4dc8f9b9e6298d9797b1d085cab09b5f2f2558eef9269d135bf1b3b9e6c32",

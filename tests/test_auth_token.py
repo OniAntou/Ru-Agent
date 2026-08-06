@@ -13,6 +13,6 @@ def test_desktop_token_reads_environment_lazily(monkeypatch) -> None:
     assert server_shared._valid_desktop_token("") is False
 
 
-def test_desktop_token_disables_auth_when_unset(monkeypatch) -> None:
+def test_desktop_token_fails_closed_when_unset(monkeypatch) -> None:
     monkeypatch.delenv("RU_DESKTOP_TOKEN", raising=False)
-    assert server_shared._valid_desktop_token("anything") is True
+    assert server_shared._valid_desktop_token("anything") is False

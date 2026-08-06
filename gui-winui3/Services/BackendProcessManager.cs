@@ -16,10 +16,13 @@ namespace RuApp.Services
         public string AuthSecret { get; private set; } = string.Empty;
         public int Port { get; private set; } = 8000;
         public bool IsRunning => _process != null && !_process.HasExited;
+        private readonly HttpClient _httpClient;
 
         public BackendProcessManager()
         {
             AuthSecret = GenerateSecret();
+            _httpClient = new HttpClient();
+            _httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", AuthSecret);
         }
 
         private static string GenerateSecret()
@@ -43,19 +46,17 @@ namespace RuApp.Services
             var startInfo = new ProcessStartInfo
             {
                 FileName = venvPython,
-                Arguments = $"-m mini_gpt.server --host 127.0.0.1 --port {Port} --secret-token \"{AuthSecret}\"",
+                Arguments = $"-m mini_gpt.server --host 127.0.0.1 --port {Port}",
                 WorkingDirectory = projectRoot,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
+            startInfo.Environment["RU_DESKTOP_TOKEN"] = AuthSecret;
 
             _process = new Process { StartInfo = startInfo };
             _process.Start();
-            // Drain the redirected stdout/stderr asynchronously. Without a
-            // reader the OS pipe (a few KB) fills up once the backend logs
-            // enough lines, and the child blocks on write forever.
             _ = DrainChildOutputAsync(_process);
 
             if (_jobHandle != IntPtr.Zero)
@@ -70,15 +71,12 @@ namespace RuApp.Services
                 }
             }
 
-            using var httpClient = new System.Net.Http.HttpClient();
-            httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", AuthSecret);
-
             for (int i = 0; i < 30; i++)
             {
                 if (cancellationToken.IsCancellationRequested) return false;
                 try
                 {
-                    var response = await httpClient.GetAsync($"http://127.0.0.1:{Port}/settings", cancellationToken);
+                    var response = await _httpClient.GetAsync($"http://127.0.0.1:{Port}/settings", cancellationToken);
                     if (response.IsSuccessStatusCode)
                     {
                         return true;
@@ -149,6 +147,8 @@ namespace RuApp.Services
             var process = Interlocked.Exchange(ref _process, null);
             if (process == null || process.HasExited)
             {
+                CloseJobHandle();
+                _httpClient.Dispose();
                 return;
             }
 
@@ -173,18 +173,22 @@ namespace RuApp.Services
                 process.Dispose();
             }
 
-            if (_jobHandle != IntPtr.Zero)
+            CloseJobHandle();
+            _httpClient.Dispose();
+        }
+
+        private void CloseJobHandle()
+        {
+            if (_jobHandle == IntPtr.Zero) return;
+            try
             {
-                try
-                {
-                    CloseHandle(_jobHandle);
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"[BackendProcessManager] CloseHandle failed: {ex.Message}");
-                }
-                _jobHandle = IntPtr.Zero;
+                CloseHandle(_jobHandle);
             }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[BackendProcessManager] CloseHandle failed: {ex.Message}");
+            }
+            _jobHandle = IntPtr.Zero;
         }
 
         #region Win32 P/Invoke

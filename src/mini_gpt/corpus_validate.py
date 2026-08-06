@@ -23,7 +23,7 @@ from ._safety_patterns import (
     VI_SIGNAL as _VI_SIGNAL_PATTERN,
 )
 from ._text_utils import normalize_text
-from .ru_style import RU_SYSTEM_PROMPT
+from .ru_style import ru_system_prompt_for
 from .ru_v6_1_naturalness import (
     assert_authored_rows_are_natural,
     audit_rows,
@@ -66,7 +66,7 @@ def normalize_row(
     valid_turn_bands: frozenset[str],
     source: str,
     license_name: str,
-    system_prompt: str,
+    system_prompt: str | None = None,
     allow_approved: bool = False,
     approved_source: str | None = None,
 ) -> dict[str, object]:
@@ -93,10 +93,6 @@ def normalize_row(
             raise ValueError(f"{version} message content cannot be empty")
         messages.append({"role": role, "content": content})
 
-    if messages[0] != {"role": "system", "content": system_prompt}:
-        raise ValueError(f"{version} record must start with the Ru system prompt")
-    validate_alternating_roles(messages, version)
-
     response = raw_row["response"]
     language = raw_row["language"]
     mode = raw_row["mode"]
@@ -111,6 +107,9 @@ def normalize_row(
     response = normalize_text(response)
     if language not in valid_languages:
         raise ValueError(f"{version} record has an unsupported language")
+    if messages[0] != {"role": "system", "content": system_prompt or ru_system_prompt_for(language)}:
+        raise ValueError(f"{version} record must start with the Ru system prompt")
+    validate_alternating_roles(messages, version)
     if mode not in valid_modes:
         raise ValueError(f"{version} record has an unsupported mode")
     if intensity not in valid_intensities:
@@ -196,7 +195,7 @@ def build_corpus(
     valid_turn_bands: frozenset[str],
     source: str,
     license_name: str,
-    system_prompt: str = RU_SYSTEM_PROMPT,
+    system_prompt: str | None = None,
     allow_approved: bool = False,
     approved_source: str | None = None,
     naturalness_gate: bool = False,

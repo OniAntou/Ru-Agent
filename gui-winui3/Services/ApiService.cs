@@ -31,7 +31,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetSettingsAsync failed: {ex.Message}");
+                Debug.WriteLine($"[ApiService] GetSettingsAsync failed: {ex}");
                 return null;
             }
         }

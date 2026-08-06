@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -32,11 +33,12 @@ namespace RuApp.Views
             _voicePlayback = voicePlayback;
             _ = LoadVoiceAndVtsStatusAsync();
 
-            _vtsConfigDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+            _vtsConfigDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
             _vtsConfigDebounce.Tick += async (_, __) =>
             {
                 _vtsConfigDebounce.Stop();
                 await SaveVtsConfigAsync();
+                await LoadVtsConfigAsync();
             };
 
             _vtsStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
@@ -191,6 +193,7 @@ namespace RuApp.Views
 
         private void OnVtsConfigSliderChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
         {
+            System.Diagnostics.Debug.WriteLine($"[VoiceView] Slider changed: {sender?.GetType().Name} new={e.NewValue:0}");
             if (_loadingVtsConfig) return;
             _vtsConfigDebounce?.Stop();
             _vtsConfigDebounce?.Start();
@@ -228,7 +231,9 @@ namespace RuApp.Views
                 BreathAmplitude = 1.5,
                 BreathRate = 0.15,
             };
-            await _apiService.SaveVtsConfigAsync(config);
+            System.Diagnostics.Debug.WriteLine($"[VoiceView] SaveVtsConfigAsync: sway={config.SwayAmplitudeIdle:0.0}/{config.SwayAmplitudeSpeaking:0.0} head={config.HeadScale:0.0} eye={config.EyeScale:0.0}");
+            bool ok = await _apiService.SaveVtsConfigAsync(config);
+            System.Diagnostics.Debug.WriteLine($"[VoiceView] SaveVtsConfigAsync result={ok}");
         }
 
         private static double SwayPercentToAmplitude(double percent, bool idle)
@@ -295,8 +300,9 @@ namespace RuApp.Views
                 }
 
                 OverlayToggle.IsOn = status.OverlayEnabled;
+                MouseLookToggle.IsEnabled = status.Connected;
                 MouseLookToggle.IsOn = status.MouseLookEnabled;
-                MouseSensitivitySlider.IsEnabled = status.MouseLookEnabled;
+                MouseSensitivitySlider.IsEnabled = status.MouseLookEnabled && status.Connected;
                 MouseSensitivitySlider.Value = status.MouseLookSensitivity * 100;
                 MouseSensitivityText.Text = $"{status.MouseLookSensitivity * 100:0}%";
 

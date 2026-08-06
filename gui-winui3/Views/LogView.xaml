@@ -1,0 +1,24 @@
+<UserControl
+    x:Class="RuApp.Views.LogView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Border Background="#0C0C0C">
+        <ScrollViewer Padding="16" Background="Transparent" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="C:\Ru\Log&gt;" FontFamily="Consolas, Courier New" FontSize="13" Foreground="#00FF00" Margin="0,0,0,8"/>
+                <ListView x:Name="TerminalLines" ItemsSource="{x:Bind Lines, Mode=OneWay}" Background="Transparent" BorderThickness="0">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding .}" FontFamily="Consolas, Courier New" FontSize="13" Foreground="#CCCCCC" TextWrapping="Wrap" LineHeight="18" Margin="0,0,0,2"/>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+                <TextBlock Text="_" FontFamily="Consolas, Courier New" FontSize="13" Foreground="#00FF00" Margin="0,4,0,0"/>
+            </StackPanel>
+        </ScrollViewer>
+    </Border>
+</UserControl>

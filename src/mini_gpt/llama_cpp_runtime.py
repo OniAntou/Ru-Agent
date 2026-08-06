@@ -211,6 +211,7 @@ class LlamaCppRuntime:
 
     def _start_server(self, gpu_layers: str) -> None:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._kill_stale_servers()
         log_handle = self.log_path.open("a", encoding="utf-8")
         try:
             creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -242,6 +243,41 @@ class LlamaCppRuntime:
             f"llama.cpp server failed to start with n-gpu-layers={gpu_layers}: {last_error}. See {self.log_path}"
         )
 
+    def _kill_process_tree(self, pid: int) -> None:
+        """Terminate a process and every descendant (Windows tree kill)."""
+        if os.name != "nt" or pid <= 0:
+            return
+        # No external dependency: taskkill /T /F is built into Windows and
+        # removes the whole tree, including grandchildren that survive a
+        # plain terminate/kill of the server process itself.
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True,
+                timeout=_STOP_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            logger.warning("taskkill for PID %s failed; process may be orphaned", pid)
+
+    def _kill_stale_servers(self) -> None:
+        """Reap llama-server processes left behind by a crashed previous run,
+        otherwise they hold the port and VRAM forever."""
+        if os.name != "nt":
+            return
+        target = str(self.server_executable).lower()
+        try:
+            import psutil  # installed in the project venv
+
+            for process in psutil.process_iter(["pid", "exe"]):
+                try:
+                    if (process.info.get("exe") or "").lower() == target and process.info["pid"] != os.getpid():
+                        logger.warning("Reaping stale llama-server PID %s from a previous run", process.info["pid"])
+                        self._kill_process_tree(int(process.info["pid"]))
+                except (psutil.Error, OSError):
+                    continue
+        except ImportError:
+            logger.warning("psutil not available; stale llama-server processes are not reaped")
+
     def stop(self) -> None:
         with self._lifecycle_lock:
             process = self._process
@@ -258,6 +294,8 @@ class LlamaCppRuntime:
                             "llama.cpp server did not exit after SIGKILL within %ss; abandoning its handle",
                             _STOP_TIMEOUT_SECONDS,
                         )
+                if process.poll() is None or self._has_children(process.pid):
+                    self._kill_process_tree(process.pid)
             self._process = None
             if self._log_handle is not None:
                 try:
@@ -265,6 +303,14 @@ class LlamaCppRuntime:
                 except OSError:
                     pass
                 self._log_handle = None
+
+    def _has_children(self, pid: int) -> bool:
+        try:
+            import psutil
+
+            return bool(psutil.Process(pid).children(recursive=True))
+        except (ImportError, psutil.Error, OSError):
+            return False
 
     def generate(
         self,

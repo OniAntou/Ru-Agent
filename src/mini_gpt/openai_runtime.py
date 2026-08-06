@@ -20,11 +20,18 @@ _STREAM_TIMEOUT_SECONDS = 120.0
 _MAX_ERROR_BODY_BYTES = 4096
 _RETRY_DELAY_SECONDS = 1.0
 _MAX_RETRIES = 2
+_MAX_RETRY_DELAY_SECONDS = 60.0
 _HTTP_UNAUTHORIZED = 401
+_HTTP_TOO_MANY_REQUESTS = 429
 
 
 class _NetworkStreamError(RuntimeError):
-    """Transient network failure while reading the SSE stream (retryable)."""
+    """Transient failure while communicating with the hosted API (retryable)."""
+
+    def __init__(self, message: str, *, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        # Seconds the server asked us to wait (Retry-After / 429).
+        self.retry_after = retry_after
 
 
 class OpenAIGenerationCancelled(RuntimeError):
@@ -35,6 +42,25 @@ class AuthenticationError(RuntimeError):
     """The hosted API rejected the saved key (HTTP 401)."""
 
 
+def _parse_retry_after(value: str | None) -> float | None:
+    """Parse Retry-After as either delta-seconds or an HTTP-date."""
+    if not value:
+        return None
+    try:
+        seconds = float(value.strip())
+        return None if seconds < 0 else seconds
+    except ValueError:
+        pass
+    from email.utils import parsedate_to_datetime
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    return max(0.0, when.timestamp() - time.time())
+
+
 def _raise_if_cancelled(is_cancelled: Callable[[], bool] | None) -> None:
     if is_cancelled is not None and is_cancelled():
         raise OpenAIGenerationCancelled("Hosted generation was superseded.")
@@ -42,6 +68,12 @@ def _raise_if_cancelled(is_cancelled: Callable[[], bool] | None) -> None:
 
 class OpenAIRuntime:
     """Uses the OpenCode OpenAI-compatible API to generate responses."""
+
+    def __repr__(self) -> str:
+        return f"OpenAIRuntime(base_url={self.base_url!r}, model_name={self.model_name!r})"
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
     def __init__(
         self,
@@ -214,6 +246,12 @@ class OpenAIRuntime:
                 raise AuthenticationError(
                     "API key was rejected (HTTP 401). Check the saved key in Settings."
                 ) from error
+            if error.code == _HTTP_TOO_MANY_REQUESTS:
+                retry_after = _parse_retry_after(error.headers.get("Retry-After"))
+                raise _NetworkStreamError(
+                    "OpenCode API rate limited (HTTP 429); retrying after backoff",
+                    retry_after=retry_after,
+                ) from error
             raise RuntimeError(message) from error
         except (socket.timeout, urllib.error.URLError) as e:
             raise _NetworkStreamError(f"Network error while communicating with OpenCode API: {e}") from e
@@ -276,6 +314,7 @@ class OpenAIRuntime:
         started = perf_counter()
         content = ""
         for attempt in range(max_retries + 1):
+            retry_after: float | None = None
             _raise_if_cancelled(is_cancelled)
             try:
                 # Only deliver streaming deltas on the first attempt.
@@ -295,9 +334,15 @@ class OpenAIRuntime:
                 logger.warning("OpenCode network error (attempt %s): %s", attempt + 1, error)
                 if attempt >= max_retries:
                     raise
+                retry_after = error.retry_after
             if attempt < max_retries:
                 _raise_if_cancelled(is_cancelled)
-                time.sleep(_RETRY_DELAY_SECONDS * (attempt + 1))
+                if retry_after is None:
+                    backoff = _RETRY_DELAY_SECONDS * (attempt + 1)
+                else:
+                    # Never blindly follow a hostile/very long Retry-After.
+                    backoff = min(max(0.0, retry_after), _MAX_RETRY_DELAY_SECONDS)
+                time.sleep(backoff)
 
         if on_complete_timing is not None:
             on_complete_timing(max(0.0, perf_counter() - started))

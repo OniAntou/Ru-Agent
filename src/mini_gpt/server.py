@@ -119,7 +119,8 @@ if __name__ == "__main__":
         os.environ["RU_DESKTOP_TOKEN"] = args.secret_token
     else:
         logger.warning(
-            "No --secret-token or RU_DESKTOP_TOKEN set: desktop API auth is disabled "
-            "(bind stays on loopback). Start the backend through the WinUI3 host to enable auth."
+            "No --secret-token or RU_DESKTOP_TOKEN set: the desktop API will refuse "
+            "every request (auth fails closed). Start the backend through the WinUI3 "
+            "host or pass --secret-token to enable access."
         )
     uvicorn.run("mini_gpt.server:app", host=args.host, port=args.port)

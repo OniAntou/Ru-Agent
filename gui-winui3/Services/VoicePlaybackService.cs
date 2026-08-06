@@ -41,7 +41,7 @@ namespace RuApp.Services
 
             StopVoice();
 
-            var audio = await _apiService.SynthesizeTtsAsync(text.Trim(), VoiceLabel, VoiceSpeed);
+            var audio =             await _apiService.SynthesizeTtsAsync(text.Trim(), VoiceLabel, VoiceSpeed);
             if (audio == null || audio.Length == 0) return;
 
             var cts = new CancellationTokenSource();
@@ -50,12 +50,12 @@ namespace RuApp.Services
             player.AutoPlay = false;
             _player = player;
 
-            await _apiService.SetVtsSpeakingAsync(true);
-
             player.MediaOpened += async (_, _) =>
             {
                 try
                 {
+                    bool ok = await _apiService.SetVtsSpeakingAsync(true);
+                    Debug.WriteLine($"[VoicePlayback] MediaOpened SetVtsSpeakingAsync={ok}");
                     player.Play();
                 }
                 catch (Exception ex)
@@ -67,8 +67,9 @@ namespace RuApp.Services
             {
                 try
                 {
+                    bool ok = await _apiService.SetVtsSpeakingAsync(false);
+                    Debug.WriteLine($"[VoicePlayback] MediaEnded SetVtsSpeakingAsync={ok}");
                     CleanupPlayer();
-                    await _apiService.SetVtsSpeakingAsync(false);
                 }
                 catch (Exception ex)
                 {
@@ -79,8 +80,9 @@ namespace RuApp.Services
             {
                 try
                 {
+                    bool ok = await _apiService.SetVtsSpeakingAsync(false);
+                    Debug.WriteLine($"[VoicePlayback] MediaFailed SetVtsSpeakingAsync={ok}");
                     CleanupPlayer();
-                    await _apiService.SetVtsSpeakingAsync(false);
                 }
                 catch (Exception ex)
                 {

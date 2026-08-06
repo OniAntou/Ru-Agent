@@ -1,4 +1,5 @@
 import logging
+import threading
 from pathlib import Path
 from mini_gpt.headless_runner import BACKEND_KILO, BACKEND_OPENCODE, ModelRunner
 from mini_gpt.memory import StructuredMemoryStore, MemoryStore
@@ -14,22 +15,30 @@ class MiniGPTCore:
         self.memory_texts_path = PROJECT_ROOT / "data" / "conversations" / "memory_texts.json"
         self.memory_db_path = PROJECT_ROOT / "data" / "conversations" / "memory.db"
         self.memory_store = None
+        self._memory_store_lock = threading.Lock()
 
         self.opencode_cred = CredentialStore("mini_gpt", "api_key")
         self.kilo_cred = CredentialStore("mini_gpt", "kilo_gateway_api_key")
         self.gemini_vision_cred = CredentialStore("mini_gpt", "gemini_vision_api_key")
 
     def get_memory_store(self):
-        if self.memory_store is None:
-            self.memory_db_path.parent.mkdir(parents=True, exist_ok=True)
-            self.memory_store = StructuredMemoryStore(self.memory_db_path, index_path=self.memory_index_path)
-            # self.memory_store.migrate_legacy_transcripts(self.memory_texts_path)
-        return self.memory_store
+        with self._memory_store_lock:
+            if self.memory_store is None:
+                self.memory_db_path.parent.mkdir(parents=True, exist_ok=True)
+                self.memory_store = StructuredMemoryStore(self.memory_db_path, index_path=self.memory_index_path)
+                try:
+                    self.memory_store.migrate_legacy_transcripts(self.memory_texts_path)
+                except Exception:
+                    # A broken legacy file must never block the backend; it is
+                    # skipped and can be re-run later.
+                    logger.exception("Legacy transcript migration failed; skipping")
+            return self.memory_store
 
     def clear_memory(self):
-        if self.memory_store is not None:
-            self.memory_store.close()
-            self.memory_store = None
+        with self._memory_store_lock:
+            if self.memory_store is not None:
+                self.memory_store.close()
+                self.memory_store = None
         MemoryStore.clear_artifacts(self.memory_index_path, self.memory_texts_path)
         for path in (
             self.memory_db_path,
@@ -39,9 +48,10 @@ class MiniGPTCore:
             path.unlink(missing_ok=True)
 
     def close(self) -> None:
-        if self.memory_store is not None:
-            self.memory_store.close()
-            self.memory_store = None
+        with self._memory_store_lock:
+            if self.memory_store is not None:
+                self.memory_store.close()
+                self.memory_store = None
         self.runner.release_gpu()
 
     def remember(self, prompt: str, reply: str):

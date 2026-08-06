@@ -125,7 +125,7 @@
                     </Grid>
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Grid.Column="0" Text="Nhìn theo chuột (Mouse Look)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <ToggleSwitch x:Name="MouseLookToggle" Grid.Column="1" IsOn="False" IsEnabled="False" Toggled="OnMouseLookToggleChanged"/>
+                        <ToggleSwitch x:Name="MouseLookToggle" Grid.Column="1" IsOn="False" Toggled="OnMouseLookToggleChanged"/>
                     </Grid>
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Grid.Column="0" Text="Độ nhạy nhìn theo chuột" VerticalAlignment="Center" Foreground="#DDDDDD"/>

@@ -59,6 +59,8 @@ EXPRESSION_ACTIVE_SECONDS = 4.0
 
 
 class VTSManager:
+    _last_cursor: tuple[int, int] = (0, 0)
+
     def __init__(self, random_source=None):
         plugin_info = {
             "plugin_name": "Ru Local Llama",
@@ -115,7 +117,7 @@ class VTSManager:
             while self._sway_running and not self.is_connected:
                 await self.connect()
                 if not self.is_connected:
-                    await asyncio.sleep(RECONNECT_MIN_INTERVAL_SECONDS)
+                    await asyncio.sleep(reconnect_delay(self._reconnect_attempts))
 
         try:
             self._connect_task = loop.create_task(connect_until_available())
@@ -272,14 +274,18 @@ class VTSManager:
 
     def _ensure_sway_task(self) -> None:
         if self._loop is None or not self._loop.is_running():
+            logger.warning("VTS sway task skipped: loop not running")
             return
         task = getattr(self, "_sway_task", None)
         if task is not None and not task.done():
+            logger.debug("VTS sway task already running")
             return
+        logger.info("Starting VTS sway task")
         self._sway_task = asyncio.create_task(self.sway_loop())
 
     async def setup_custom_parameters(self):
         try:
+            logger.info("Setting up VTS custom parameters")
             req_create = self.vts.vts_request.requestCustomParameter(
                 parameter="LLM_Sway",
                 min=-30.0,
@@ -316,6 +322,7 @@ class VTSManager:
         self._fsm.reset(now0)
         start_time = now0
         prev_state: VtsMotionState | None = None
+        logger.info("VTS sway loop started")
         try:
             while self._sway_running:
                 if not self.is_connected:
@@ -375,6 +382,9 @@ class VTSManager:
                         )
                         self._last_send_at = now
                         self._spawn_background_task(self._send_request(req))
+                        logger.debug("VTS inject: sway=%.2f eye=(%.2f,%.2f) head=(%.2f,%.2f,%.2f)",
+                                     val, eye_x * eye_scale, eye_y * eye_scale,
+                                     hz * head_scale, hy * head_scale, hx * head_scale)
                     elif now - self._last_send_at > 15.0:
                         # keep-alive: VTS closes idle sockets after ~30s
                         self._last_send_at = now
@@ -413,7 +423,11 @@ class VTSManager:
         if not self.is_connected:
             return
         async with self._request_semaphore:
-            await self._request(request)
+            try:
+                await self._request(request)
+                logger.debug("VTS request sent: %s", request.get("messageType") or request.get("type") or "unknown")
+            except Exception as e:
+                logger.warning("VTS request failed: %s", e)
 
     def set_speaking(self, speaking: bool) -> None:
         """Update the speech state consumed by the background sway loop."""
@@ -528,14 +542,17 @@ class VTSManager:
             import ctypes.wintypes
             pt = ctypes.wintypes.POINT()
             if ctypes.windll.user32.GetCursorPos(ctypes.byref(pt)):
-                return (pt.x, pt.y)
+                VTSManager._last_cursor = (pt.x, pt.y)
+                return VTSManager._last_cursor
         except Exception:
             pass
         try:
             import pyautogui  # type: ignore[import-untyped]
-            return pyautogui.position()  # type: ignore[no-any-return]
+            pos = pyautogui.position()  # type: ignore[no-any-return]
+            VTSManager._last_cursor = (int(pos.x), int(pos.y))
+            return VTSManager._last_cursor
         except Exception:
-            return (0, 0)
+            return VTSManager._last_cursor
 
     async def _trigger_micro_action(self) -> None:
         """Trigger one safe catalog action without racing semantic actions.
@@ -658,6 +675,7 @@ class VTSManager:
 
         self.trigger_hotkey_sync(primary_hotkey)
         if reset_hotkey is not None and self.is_connected:
+            self._prune_timers()
             def _reset_with_guard() -> None:
                 if self.is_connected:
                     self.trigger_hotkey_sync(reset_hotkey)
@@ -744,10 +762,16 @@ class VTSManager:
             logger.warning("Could not trigger VTube catalog actions: %s", error)
 
     def _schedule_expression_deactivation(self, expression_key: tuple[str, str]) -> None:
+        self._prune_timers()
         timer = threading.Timer(EXPRESSION_ACTIVE_SECONDS, self._deactivate_expression_sync, args=(expression_key,))
         timer.daemon = True
         self._timers.append(timer)
         timer.start()
+
+    def _prune_timers(self) -> None:
+        active = [timer for timer in self._timers if timer.is_alive()]
+        if len(active) != len(self._timers):
+            self._timers = active
 
     async def _deactivate_expression(self, expression_key: tuple[str, str]) -> None:
         with self._expression_lock:
@@ -766,6 +790,21 @@ class VTSManager:
             )
         )
         with self._expression_lock:
+            if expression_key in self._active_expressions:
+                # A concurrent activation re-enabled this expression while the
+                # stale timer was turning it off: restore it and give it a
+                # fresh lifetime instead of leaving the avatar with a face that
+                # can only be cleared by re-activation.
+                try:
+                    await self._request(
+                        self.vts.vts_request.BaseRequest(
+                            "ExpressionActivationRequest",
+                            {"expressionFile": expression_key[1], "active": True, "fadeTime": 0.25},
+                        )
+                    )
+                finally:
+                    self._schedule_expression_deactivation(expression_key)
+                return
             self._active_expressions.discard(expression_key)
 
     def _deactivate_expression_sync(self, expression_key: tuple[str, str]) -> None:

@@ -27,6 +27,16 @@ def _search_executor() -> ThreadPoolExecutor:
     return _SEARCH_EXECUTOR
 
 
+def shutdown_search_executor() -> None:
+    global _SEARCH_EXECUTOR
+    if _SEARCH_EXECUTOR is not None:
+        try:
+            _SEARCH_EXECUTOR.shutdown(wait=False, cancel_futures=True)
+        except Exception as error:
+            logger.warning("Search executor shutdown failed: %s", error)
+        _SEARCH_EXECUTOR = None
+
+
 def _sanitize_web_text(text: str, limit: int) -> str:
     """Strip HTML tags and control characters, collapse whitespace, cap length."""
     if not text:

@@ -48,6 +48,8 @@ tools/ru_desktop_overlay/out/
 VBCABLE_Setup/
 logs/
 vts_token.txt
+.minigpt/
+pytest_v.log
 
 # Misc
 rustup-init.exe

@@ -47,7 +47,6 @@ from mini_gpt.vts_actions import VtsActions
 from mini_gpt.vts_catalog import (
     VtsCatalog,
     catalog_instruction,
-    parse_catalog_reply,
     split_reply_metadata,
 )
 from mini_gpt.vts_config import MotionConfig
@@ -70,8 +69,13 @@ def _valid_desktop_token(candidate: str) -> bool:
     # would leave API auth permanently disabled.
     token = os.environ.get("RU_DESKTOP_TOKEN", "").strip()
     if not token:
-        logger.warning("API auth is disabled: RU_DESKTOP_TOKEN is not set")
-        return True
+        # Fail closed: an unconfigured backend must not answer local callers
+        # without credentials (any local process could otherwise drive the
+        # model, TTS, or screen observations).
+        logger.warning(
+            "API auth is disabled: RU_DESKTOP_TOKEN is not set; refusing requests"
+        )
+        return False
     return hmac.compare_digest(candidate, token)
 
 
@@ -132,6 +136,7 @@ _BACKEND_ALIASES: dict[str, str] = {
 # ── shared state ──────────────────────────────────────────────────────
 
 _HISTORY_LOCK = threading.Lock()
+_SETTINGS_LOCK = threading.Lock()
 _TURN_LOCK = threading.Lock()
 _VOICE_LOCK = threading.Lock()
 _GPU_LOCK = threading.Lock()
@@ -144,6 +149,7 @@ _MEMORY_LOCK_TIMEOUT_SECONDS = 10.0
 _MEMORY_QUEUE: queue.Queue = queue.Queue(maxsize=_MEMORY_QUEUE_MAXSIZE)
 _MEMORY_WORKER_STARTED = threading.Event()
 _MEMORY_STOP = threading.Event()
+_MEMORY_THREAD: threading.Thread | None = None
 
 _SCREEN_REACTIONS = ReactionCoordinator()
 _PENDING_REACTION_TEXT: dict[str, tuple[str, float]] = {}
@@ -187,6 +193,8 @@ def _valid_session_messages(messages: object) -> list[dict]:
     ]
 
 
+_SESSION_LOCK = threading.Lock()
+
 def _load_session_file(session_id: str) -> dict | None:
     if not _session_id_is_valid(session_id):
         return None
@@ -224,6 +232,11 @@ def _session_title_from_messages(messages: list[dict]) -> str:
 
 
 def load_settings() -> dict:
+    with _SETTINGS_LOCK:
+        return _load_settings_unlocked()
+
+
+def _load_settings_unlocked() -> dict:
     if SETTINGS_FILE.exists():
         try:
             data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
@@ -267,7 +280,51 @@ def effective_settings() -> dict:
 
 
 def save_settings_to_file(data: dict) -> None:
-    atomic_write_json(SETTINGS_FILE, data, indent=2)
+    with _SETTINGS_LOCK:
+        atomic_write_json(SETTINGS_FILE, data, indent=2)
+
+
+def _merge_settings(mutate: "Callable[[dict], None]") -> None:
+    """Read-modify-write of the settings file under one lock so concurrent
+    updates (settings API + VTS state + motion config) cannot clobber each other."""
+    with _SETTINGS_LOCK:
+        settings = _effective_settings_unlocked()
+        mutate(settings)
+        atomic_write_json(SETTINGS_FILE, settings, indent=2)
+
+
+def _effective_settings_unlocked() -> dict:
+    """effective_settings() without acquiring _SETTINGS_LOCK (caller must
+    already hold it, or be in a lock-free read-only context)."""
+    saved = _load_settings_unlocked()
+    merged = {
+        **_DEFAULT_SETTINGS,
+        **{key: saved[key] for key in _DEFAULT_SETTINGS if key in saved},
+    }
+
+    backend = saved.get("backend", _DEFAULT_SETTINGS["backend"])
+    if backend == BACKEND_KILO and not merged.get("kilo_model"):
+        merged["kilo_model"] = saved.get("model", "")
+    elif backend == BACKEND_OPENCODE and not merged.get("opencode_model"):
+        merged["opencode_model"] = saved.get("model", "")
+
+    def bounded_number(key: str, lower: float, upper: float) -> None:
+        value = merged.get(key)
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            merged[key] = _DEFAULT_SETTINGS[key]
+            return
+        merged[key] = max(lower, min(upper, value))
+
+    bounded_number("max_tokens", 1, 1024)
+    bounded_number("temperature", 0.1, 2.0)
+    bounded_number("top_k", 1, 200)
+    bounded_number("voice_speed", 0.5, 2.0)
+    merged["max_tokens"] = int(merged["max_tokens"])
+    merged["top_k"] = int(merged["top_k"])
+    for key in ("allow_web_search", "enable_self_learning", "share_memory_with_cloud"):
+        if not isinstance(merged.get(key), bool):
+            merged[key] = _DEFAULT_SETTINGS[key]
+    return merged
 
 
 def load_history() -> list[dict[str, str]]:
@@ -335,37 +392,40 @@ def load_sessions() -> list[dict]:
 
 
 def _session_append_messages(session_id: str, messages: list[dict]) -> bool:
-    data = _load_session_file(session_id)
-    if data is None:
-        return False
-    merged = data.get("messages", []) + messages
-    data["messages"] = merged[-_MAX_HISTORY_MESSAGES:]
-    if not data.get("title") or data.get("title") == _DEFAULT_SESSION_TITLE:
-        data["title"] = _session_title_from_messages(merged)
-    data["updated_at"] = _utc_now_iso()
-    return _save_session_file(session_id, data)
+    with _SESSION_LOCK:
+        data = _load_session_file(session_id)
+        if data is None:
+            return False
+        merged = data.get("messages", []) + messages
+        data["messages"] = merged[-_MAX_HISTORY_MESSAGES:]
+        if not data.get("title") or data.get("title") == _DEFAULT_SESSION_TITLE:
+            data["title"] = _session_title_from_messages(merged)
+        data["updated_at"] = _utc_now_iso()
+        return _save_session_file(session_id, data)
 
 
 def _rebuild_session_turns(session_id: str) -> dict | None:
-    return _load_session_file(session_id)
+    with _SESSION_LOCK:
+        return _load_session_file(session_id)
 
 
 def _session_turns(session_id: str) -> list[ChatTurn]:
-    data = _load_session_file(session_id)
-    if data is None:
-        return []
-    pending_prompt: str | None = None
-    turns: list[ChatTurn] = []
-    for message in data.get("messages", []):
-        content = str(message.get("content", "")).strip()
-        if not content:
-            continue
-        if message.get("role") == "user":
-            pending_prompt = content
-        elif pending_prompt is not None:
-            turns.append(ChatTurn(pending_prompt, content))
-            pending_prompt = None
-    return turns[-_MAX_CONTEXT_TURNS:]
+    with _SESSION_LOCK:
+        data = _load_session_file(session_id)
+        if data is None:
+            return []
+        pending_prompt: str | None = None
+        turns: list[ChatTurn] = []
+        for message in data.get("messages", []):
+            content = str(message.get("content", "")).strip()
+            if not content:
+                continue
+            if message.get("role") == "user":
+                pending_prompt = content
+            elif pending_prompt is not None:
+                turns.append(ChatTurn(pending_prompt, content))
+                pending_prompt = None
+        return turns[-_MAX_CONTEXT_TURNS:]
 
 
 def migrate_legacy_history() -> None:
@@ -428,7 +488,14 @@ def ensure_voice_service() -> None:
         config = _voice_config()
         validate_voice_environment(config)
         pythonw = config.python_path.with_name("pythonw.exe")
-        executable = str(pythonw) if pythonw.is_file() else str(config.python_path)
+        if pythonw.is_file():
+            executable = str(pythonw)
+        elif config.python_path.is_file():
+            executable = str(config.python_path)
+        else:
+            raise FileNotFoundError(
+                f"OmniVoice Python interpreter not found: {config.python_path}"
+            )
         creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         startup_info = None
         if os.name == "nt":
@@ -440,10 +507,23 @@ def ensure_voice_service() -> None:
             [executable, str(config.server_script)],
             cwd=str(PROJECT_ROOT),
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             creationflags=creation_flags,
             startupinfo=startup_info,
         )
+        if _VOICE_PROCESS.stderr is not None:
+            def _drain_voice_stderr(pipe):
+                try:
+                    for line in iter(pipe.readline, b""):
+                        logger.debug("OmniVoice stderr: %s", line.decode("utf-8", errors="replace").rstrip())
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        pipe.close()
+                    except Exception:
+                        pass
+            threading.Thread(target=_drain_voice_stderr, args=(_VOICE_PROCESS.stderr,), daemon=True).start()
         deadline = time.monotonic() + VOICE_START_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if voice_available():
@@ -616,12 +696,33 @@ def _stop_owned_voice_service() -> None:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
         process.kill()
-        process.wait(timeout=5)
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            logger.warning("Voice process did not exit after SIGKILL; abandoning handle")
+            return
+    if process.returncode != 0:
+        stderr = process.stderr
+        if stderr is not None:
+            try:
+                err_text = stderr.read(_MAX_ERROR_BODY_BYTES).decode("utf-8", errors="replace")
+            except Exception:
+                err_text = ""
+        else:
+            err_text = ""
+        logger.warning("Voice process exited with code %s: %s", process.returncode, err_text.strip())
 
 
 def _shutdown_runtime() -> None:
     _MEMORY_STOP.set()
     _MEMORY_WORKER_STARTED.clear()
+    global _MEMORY_THREAD
+    if _MEMORY_THREAD is not None and _MEMORY_THREAD.is_alive():
+        try:
+            _MEMORY_THREAD.join(timeout=2.0)
+        except Exception as error:
+            logger.warning("Memory learner thread join failed: %s", error)
+    _MEMORY_THREAD = None
     manager = _VTS_MANAGER
     if manager is not None and callable(getattr(manager, "shutdown", None)):
         manager.shutdown()
@@ -665,9 +766,7 @@ def _load_vts_motion_config() -> MotionConfig:
 
 
 def _save_vts_motion_config(config: MotionConfig) -> None:
-    settings = load_settings()
-    settings["vts_motion"] = config.to_dict()
-    save_settings_to_file(settings)
+    _merge_settings(lambda settings: settings.update({"vts_motion": config.to_dict()}))
 
 
 def _load_vts_gui_state() -> dict:
@@ -695,13 +794,15 @@ def _save_vts_gui_state(state: dict) -> None:
     except (TypeError, ValueError):
         sensitivity = 1.0
     sensitivity = 0.1 if sensitivity < 0.1 else (3.0 if sensitivity > 3.0 else sensitivity)
-    settings = load_settings()
-    settings["vts_gui_state"] = {
-        "overlay_enabled": bool(state.get("overlay_enabled", False)),
-        "mouse_look_enabled": bool(state.get("mouse_look_enabled", False)),
-        "mouse_look_sensitivity": sensitivity,
-    }
-    save_settings_to_file(settings)
+
+    def _mutate(settings: dict) -> None:
+        settings["vts_gui_state"] = {
+            "overlay_enabled": bool(state.get("overlay_enabled", False)),
+            "mouse_look_enabled": bool(state.get("mouse_look_enabled", False)),
+            "mouse_look_sensitivity": sensitivity,
+        }
+
+    _merge_settings(_mutate)
 
 
 def _restore_vts_gui_state(manager) -> None:
@@ -731,13 +832,13 @@ def _learn_from_turn(prompt: str, reply: str) -> None:
 
 
 def _process_memory_turn(prompt: str, reply: str) -> None:
+    if is_sensitive_or_unsafe(prompt) or is_sensitive_or_unsafe(reply):
+        logger.debug("Bỏ qua self-learning vì lượt trò chuyện nhạy cảm")
+        return
     if not _MEMORY_TURN_LOCK.acquire(blocking=False):
         logger.debug("Model busy; skipping self-learning turn")
         return
     try:
-        if is_sensitive_or_unsafe(prompt) or is_sensitive_or_unsafe(reply):
-            logger.debug("Bỏ qua self-learning vì lượt trò chuyện nhạy cảm")
-            return
         facts = extract_facts_with_llm(
             prompt,
             reply,
@@ -786,7 +887,9 @@ def _start_memory_learner() -> None:
         return
     _MEMORY_STOP.clear()
     _MEMORY_WORKER_STARTED.set()
-    threading.Thread(target=_memory_learner_loop, name="memory-learner", daemon=True).start()
+    global _MEMORY_THREAD
+    _MEMORY_THREAD = threading.Thread(target=_memory_learner_loop, name="memory-learner", daemon=True)
+    _MEMORY_THREAD.start()
 
 
 # ── chat helpers ──────────────────────────────────────────────────────
@@ -806,4 +909,6 @@ async def _application_lifespan(_app):
     try:
         yield
     finally:
+        from mini_gpt.search import shutdown_search_executor
+        shutdown_search_executor()
         _shutdown_runtime()

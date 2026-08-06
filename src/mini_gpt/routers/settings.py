@@ -11,7 +11,7 @@ from .._server_shared import (
     core,
     effective_settings,
     logger,
-    save_settings_to_file,
+    _merge_settings,
 )
 
 router = APIRouter()
@@ -91,44 +91,46 @@ def save_settings(payload: SettingsPayload):
     backend_val = _resolve_backend(payload.backend_choice or payload.backend)
     if backend_val is not None and backend_val not in (BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO):
         return {"status": "error", "message": f"unsupported backend: {backend_val}"}
-    settings = effective_settings()
-    if backend_val is not None:
-        settings["backend"] = backend_val
-    if payload.model is not None:
-        settings["model"] = payload.model
-    if payload.opencode_model is not None:
-        settings["opencode_model"] = payload.opencode_model
-    if payload.kilo_model is not None:
-        settings["kilo_model"] = payload.kilo_model
-    if payload.api_variant is not None:
-        settings["api_variant"] = payload.api_variant
-    resolved_max_tokens = payload.max_tokens if payload.max_tokens is not None else payload.max_new_tokens
-    if resolved_max_tokens is not None:
-        settings["max_tokens"] = resolved_max_tokens
-    if payload.temperature is not None:
-        settings["temperature"] = payload.temperature
-    if payload.top_k is not None:
-        settings["top_k"] = payload.top_k
-    resolved_web_search = payload.allow_web_search if payload.allow_web_search is not None else payload.allow_online_search
-    if resolved_web_search is not None:
-        settings["allow_web_search"] = resolved_web_search
-    resolved_self_learning = payload.enable_self_learning if payload.enable_self_learning is not None else payload.self_learning_enabled
-    if resolved_self_learning is not None:
-        settings["enable_self_learning"] = resolved_self_learning
-    resolved_cloud_memory = payload.share_memory_with_cloud if payload.share_memory_with_cloud is not None else payload.cloud_memory_consent
-    if resolved_cloud_memory is not None:
-        settings["share_memory_with_cloud"] = resolved_cloud_memory
-    if payload.checkpoint_path.strip():
-        settings["checkpoint_path"] = payload.checkpoint_path.strip()
-    if payload.voice_label is not None:
-        settings["voice_label"] = payload.voice_label
-    if payload.voice_speed is not None:
-        settings["voice_speed"] = payload.voice_speed
-    if payload.auto_pace_enabled is not None:
-        settings["auto_pace_enabled"] = payload.auto_pace_enabled
-    if payload.auto_read_replies is not None:
-        settings["auto_read_replies"] = payload.auto_read_replies
-    save_settings_to_file(settings)
+
+    def _apply(settings: dict) -> None:
+        if backend_val is not None:
+            settings["backend"] = backend_val
+        if payload.model is not None:
+            settings["model"] = payload.model
+        if payload.opencode_model is not None:
+            settings["opencode_model"] = payload.opencode_model
+        if payload.kilo_model is not None:
+            settings["kilo_model"] = payload.kilo_model
+        if payload.api_variant is not None:
+            settings["api_variant"] = payload.api_variant
+        resolved_max_tokens = payload.max_tokens if payload.max_tokens is not None else payload.max_new_tokens
+        if resolved_max_tokens is not None:
+            settings["max_tokens"] = resolved_max_tokens
+        if payload.temperature is not None:
+            settings["temperature"] = payload.temperature
+        if payload.top_k is not None:
+            settings["top_k"] = payload.top_k
+        resolved_web_search = payload.allow_web_search if payload.allow_web_search is not None else payload.allow_online_search
+        if resolved_web_search is not None:
+            settings["allow_web_search"] = resolved_web_search
+        resolved_self_learning = payload.enable_self_learning if payload.enable_self_learning is not None else payload.self_learning_enabled
+        if resolved_self_learning is not None:
+            settings["enable_self_learning"] = resolved_self_learning
+        resolved_cloud_memory = payload.share_memory_with_cloud if payload.share_memory_with_cloud is not None else payload.cloud_memory_consent
+        if resolved_cloud_memory is not None:
+            settings["share_memory_with_cloud"] = resolved_cloud_memory
+        if payload.checkpoint_path.strip():
+            settings["checkpoint_path"] = payload.checkpoint_path.strip()
+        if payload.voice_label is not None:
+            settings["voice_label"] = payload.voice_label
+        if payload.voice_speed is not None:
+            settings["voice_speed"] = payload.voice_speed
+        if payload.auto_pace_enabled is not None:
+            settings["auto_pace_enabled"] = payload.auto_pace_enabled
+        if payload.auto_read_replies is not None:
+            settings["auto_read_replies"] = payload.auto_read_replies
+
+    _merge_settings(_apply)
 
     if payload.gemini_vision_api_key and payload.gemini_vision_api_key.strip():
         try:

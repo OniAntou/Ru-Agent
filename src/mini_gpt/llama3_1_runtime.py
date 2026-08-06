@@ -19,6 +19,9 @@ _MODEL_LOCKS: dict[tuple[str, str | None], threading.Lock] = {}
 _IN_USE_COUNTS: dict[tuple[str, str | None], int] = {}
 _MAX_CACHE_SIZE = 2
 _MAX_EVICTIONS_PER_LOAD = 2
+# Keep at least this much GPU memory free after a load; used as a floor to
+# justify evicting idle cached models before the next load runs out of VRAM.
+_VRAM_EVICTION_FLOOR_BYTES = 1_500_000_000
 _RUNTIME_PACKAGES = ("accelerate", "bitsandbytes", "peft", "transformers")
 
 
@@ -96,23 +99,62 @@ def clear_llama_generation_cache() -> None:
     _release_cuda_memory()
 
 
-def _evict_cache_if_needed() -> None:
+def _evict_cache_if_needed(base_path: str | Path) -> None:
     # Must be called while holding _CACHE_LOCK.
-    evicted = 0
-    scanned = 0
-    while (
-        len(_GENERATION_CACHE) >= _MAX_CACHE_SIZE
-        and evicted < _MAX_EVICTIONS_PER_LOAD
-        and scanned < len(_GENERATION_CACHE)
-    ):
-        oldest_key = next(iter(_GENERATION_CACHE))
-        scanned += 1
-        if _IN_USE_COUNTS.get(oldest_key, 0) > 0:
-            _GENERATION_CACHE.move_to_end(oldest_key)
-            continue
-        _GENERATION_CACHE.pop(oldest_key, None)
-        _MODEL_LOCKS.pop(oldest_key, None)
-        evicted += 1
+
+    def evict_idle(max_evictions: int) -> int:
+        evicted = 0
+        scanned = 0
+        while evicted < max_evictions and scanned < len(_GENERATION_CACHE):
+            oldest_key = next(iter(_GENERATION_CACHE))
+            scanned += 1
+            if _IN_USE_COUNTS.get(oldest_key, 0) > 0:
+                _GENERATION_CACHE.move_to_end(oldest_key)
+                continue
+            _GENERATION_CACHE.pop(oldest_key, None)
+            _MODEL_LOCKS.pop(oldest_key, None)
+            evicted += 1
+        return evicted
+
+    evict_idle(_MAX_EVICTIONS_PER_LOAD)
+
+    # VRAM-aware pass: the entry cap alone does not protect the GPU. Estimate
+    # the new model's 4-bit footprint from its weights on disk and evict idle
+    # entries until the free memory floor would be met.
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return
+        free, _total = torch.cuda.mem_get_info()
+        required = _estimate_model_gpu_bytes(base_path)
+        if free >= required + _VRAM_EVICTION_FLOOR_BYTES:
+            return
+        evict_idle(_MAX_EVICTIONS_PER_LOAD)
+        free, _total = torch.cuda.mem_get_info()
+        if free < required + _VRAM_EVICTION_FLOOR_BYTES:
+            in_use = [key for key, count in _IN_USE_COUNTS.items() if count > 0]
+            raise RuntimeError(
+                "not enough GPU VRAM to load another model; cached models still in use: "
+                + ", ".join(key[0] for key in in_use)
+            )
+    except ImportError:
+        pass
+
+
+def _estimate_model_gpu_bytes(base_path: str | Path) -> int:
+    """Approximate the on-GPU size of the 4-bit model from its weights on disk.
+    fp32 weights are ~4x the 4-bit footprint, so the raw size is a safe upper
+    bound; it is used only to trigger eviction, never to admit the load."""
+    root = Path(base_path)
+    total_bytes = 0
+    for pattern in ("*.safetensors", "*.bin"):
+        for file in root.glob(pattern):
+            try:
+                total_bytes += file.stat().st_size
+            except OSError:
+                continue
+    return total_bytes // 4
 
 
 def _generation_cache_key(base_path: str | Path, adapter_dir: str | Path | None) -> tuple[str, str | None]:
@@ -148,7 +190,7 @@ def _get_or_load_model(
                 _GENERATION_CACHE.move_to_end(cache_key)
                 _IN_USE_COUNTS[cache_key] = _IN_USE_COUNTS.get(cache_key, 0) + 1
                 return entry
-            _evict_cache_if_needed()
+            _evict_cache_if_needed(base_path)
             loaded = _load_llama_for_generation(base_path, adapter_dir)
             _GENERATION_CACHE[cache_key] = loaded
             _MODEL_LOCKS[cache_key] = threading.Lock()

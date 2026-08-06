@@ -64,6 +64,13 @@
                                     <TextBlock x:Name="LabelVoice" Text="Giọng nói" FontSize="13" FontWeight="Medium"/>
                                 </StackPanel>
                             </Button>
+                            <Button x:Name="NavLog" Tag="log" Click="OnNavClick" HorizontalAlignment="Stretch" Margin="8,2"
+                                    Background="Transparent" Foreground="White" Padding="8,6" CornerRadius="4" BorderThickness="0" HorizontalContentAlignment="Left">
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <FontIcon Glyph="&#xE8F2;" FontSize="14"/>
+                                    <TextBlock x:Name="LabelLog" Text="Nhật ký" FontSize="13" FontWeight="Medium"/>
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
 
                         <TextBlock x:Name="LabelRecents" Grid.Row="1" Text="Recents" FontSize="11" FontWeight="SemiBold" Foreground="#666666" Margin="16,24,0,8" />

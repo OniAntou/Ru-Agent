@@ -12,7 +12,6 @@ from .._server_shared import (
     _TURN_LOCK,
     _MEMORY_TURN_LOCK,
     _VTS_MANAGER,
-    _MEMORY_QUEUE,
     _MEMORY_STOP,
     _MEMORY_WORKER_STARTED,
     _SCREEN_REACTIONS,
@@ -34,6 +33,7 @@ from .._server_shared import (
     _valid_desktop_token,
     _trigger_vts_catalog_codes,
 )
+from mini_gpt.headless_runner import BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO
 
 from mini_gpt.activity_log import append as append_activity_log
 
@@ -48,7 +48,7 @@ async def chat_endpoint(websocket: WebSocket):
     await websocket.accept()
     logger.info("WebSocket chat endpoint connected")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     chat_queue = asyncio.Queue()
     stream_state = {"raw": "", "visible": ""}
 
@@ -73,14 +73,52 @@ async def chat_endpoint(websocket: WebSocket):
         stream_state["visible"] = ""
         _safe_put(loop, chat_queue, {"type": "reset"})
 
+    def _generate_reply(prompt: str, session_id: str, settings: dict, turns_history: list, catalog) -> str:
+        kwargs = dict(
+            prompt=prompt,
+            max_new_tokens=settings.get("max_tokens", _DEFAULT_SETTINGS["max_tokens"]),
+            temperature=settings.get("temperature", _DEFAULT_SETTINGS["temperature"]),
+            top_k=settings.get("top_k", _DEFAULT_SETTINGS["top_k"]),
+            allow_web_search=settings.get("allow_web_search", _DEFAULT_SETTINGS["allow_web_search"]),
+            turns_history=turns_history,
+            on_stream_delta=stream_callback,
+            on_stream_reset=stream_reset_callback,
+            vts_instruction=catalog_instruction(catalog),
+            share_memory_with_cloud=settings.get(
+                "share_memory_with_cloud",
+                _DEFAULT_SETTINGS["share_memory_with_cloud"],
+            ),
+        )
+        if core.runner.backend == BACKEND_GGUF:
+            with _gpu_lifecycle().local_generation():
+                return core.generate_reply_with_memory(**kwargs)
+        return core.generate_reply_with_memory(**kwargs)
+
     def run_generation(prompt: str, session_id: str):
         full_reply = None
         manager = None
         user_appended = False
         memory_lock_held = False
+        turn_lock_held = False
+        emotion = None
         try:
+            if not _TURN_LOCK.acquire(blocking=False):
+                _safe_put(
+                    loop,
+                    chat_queue,
+                    {
+                        "type": "error",
+                        "content": "Ru is already replying; wait for the current reply to finish.",
+                        "session_id": session_id,
+                    },
+                )
+                return
+            turn_lock_held = True
             settings = effective_settings()
-            if not _MEMORY_TURN_LOCK.acquire(timeout=10.0):
+            # The self-learning worker may briefly own the memory lock while it
+            # extracts facts; wait out a full extraction instead of failing the
+            # user's message with a spurious "busy" error.
+            if not _MEMORY_TURN_LOCK.acquire(timeout=120.0):
                 _safe_put(
                     loop,
                     chat_queue,
@@ -106,39 +144,7 @@ async def chat_endpoint(websocket: WebSocket):
             if manager is not None:
                 manager.note_generating(True)
 
-            if core.runner.backend not in ("opencode", "kilo"):
-                with _gpu_lifecycle().local_generation():
-                    raw_reply = core.generate_reply_with_memory(
-                        prompt=prompt,
-                        max_new_tokens=settings.get("max_tokens", _DEFAULT_SETTINGS["max_tokens"]),
-                        temperature=settings.get("temperature", _DEFAULT_SETTINGS["temperature"]),
-                        top_k=settings.get("top_k", _DEFAULT_SETTINGS["top_k"]),
-                        allow_web_search=settings.get("allow_web_search", _DEFAULT_SETTINGS["allow_web_search"]),
-                        turns_history=turns_history,
-                        on_stream_delta=stream_callback,
-                        on_stream_reset=stream_reset_callback,
-                        vts_instruction=catalog_instruction(catalog),
-                        share_memory_with_cloud=settings.get(
-                            "share_memory_with_cloud",
-                            _DEFAULT_SETTINGS["share_memory_with_cloud"],
-                        ),
-                    )
-            else:
-                raw_reply = core.generate_reply_with_memory(
-                    prompt=prompt,
-                    max_new_tokens=settings.get("max_tokens", _DEFAULT_SETTINGS["max_tokens"]),
-                    temperature=settings.get("temperature", _DEFAULT_SETTINGS["temperature"]),
-                    top_k=settings.get("top_k", _DEFAULT_SETTINGS["top_k"]),
-                    allow_web_search=settings.get("allow_web_search", _DEFAULT_SETTINGS["allow_web_search"]),
-                    turns_history=turns_history,
-                    on_stream_delta=stream_callback,
-                    on_stream_reset=stream_reset_callback,
-                    vts_instruction=catalog_instruction(catalog),
-                    share_memory_with_cloud=settings.get(
-                        "share_memory_with_cloud",
-                        _DEFAULT_SETTINGS["share_memory_with_cloud"],
-                    ),
-                )
+            raw_reply = _generate_reply(prompt, session_id, settings, turns_history, catalog)
             from .._server_shared import split_reply_metadata
             full_reply, codes, emotion = split_reply_metadata(raw_reply, catalog)
             full_reply = _strip_voice_markers(full_reply)
@@ -163,15 +169,16 @@ async def chat_endpoint(websocket: WebSocket):
             if user_appended:
                 _session_append_messages(
                     session_id,
-                    [{"role": "ai", "content": f"(Lỗi xử lý: {error})"}],
+                    [{"role": "ai", "content": "(Lỗi xử lý: không phản hồi được yêu cầu này.)"}],
                 )
-            _safe_put(loop, chat_queue, {"type": "error", "content": str(error), "session_id": session_id})
+            _safe_put(loop, chat_queue, {"type": "error", "content": "Đã xảy ra lỗi xử lý yêu cầu.", "session_id": session_id})
         finally:
             if manager is not None:
                 manager.note_generating(False)
             if memory_lock_held:
                 _MEMORY_TURN_LOCK.release()
-            _TURN_LOCK.release()
+            if turn_lock_held:
+                _TURN_LOCK.release()
             if full_reply is not None:
                 _learn_from_turn(prompt, full_reply)
                 try:
@@ -185,8 +192,8 @@ async def chat_endpoint(websocket: WebSocket):
                         "session_id": session_id,
                         "data": {"role": "assistant", "content": full_reply, "emotion": emotion.value if emotion else None},
                     })
-                except Exception:
-                    pass
+                except Exception as log_error:
+                    logger.warning("Activity log failed: %s", log_error)
 
     try:
         while True:
@@ -196,7 +203,18 @@ async def chat_endpoint(websocket: WebSocket):
                     json.dumps({"type": "error", "content": "Message too large."})
                 )
                 continue
-            req = json.loads(data)
+            try:
+                req = json.loads(data)
+            except json.JSONDecodeError:
+                await websocket.send_text(
+                    json.dumps({"type": "error", "content": "Malformed message."})
+                )
+                continue
+            if not isinstance(req, dict):
+                await websocket.send_text(
+                    json.dumps({"type": "error", "content": "Malformed message."})
+                )
+                continue
             prompt = str(req.get("prompt", "")).strip()
             if not prompt:
                 continue
@@ -223,12 +241,14 @@ async def chat_endpoint(websocket: WebSocket):
                     json.dumps({"type": "error", "content": "Ru is already replying; wait for the current reply to finish.", "session_id": session_id})
                 )
                 continue
-            _TURN_LOCK.acquire()
             try:
                 threading.Thread(target=run_generation, args=(prompt, session_id), daemon=True).start()
             except Exception:
-                _TURN_LOCK.release()
-                raise
+                logger.exception("Failed to start the chat generation thread")
+                await websocket.send_text(
+                    json.dumps({"type": "error", "content": "Không khởi động được xử lý yêu cầu.", "session_id": session_id})
+                )
+                continue
             while True:
                 message = await chat_queue.get()
                 await websocket.send_text(json.dumps(message))

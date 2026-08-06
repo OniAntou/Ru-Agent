@@ -52,12 +52,6 @@ def voice_selection_from_saved(value: object) -> VoiceSelection:
 
 
 # OmniVoice service defaults (overridable via environment)
-_OMNIVOICE_HOST = os.environ.get("RU_VOICE_HOST", "127.0.0.1")
-_OMNIVOICE_PORT = 5052
-try:
-    _OMNIVOICE_PORT = int(os.environ.get("RU_VOICE_PORT", _OMNIVOICE_PORT))
-except ValueError:
-    _OMNIVOICE_PORT = 5052
 _OMNIVOICE_ENV_DIR = "omnivoice_env"
 _OMNIVOICE_SERVER_SCRIPT = "src/mini_gpt/omnivoice_tts_server.py"
 
@@ -65,11 +59,16 @@ _OMNIVOICE_SERVER_SCRIPT = "src/mini_gpt/omnivoice_tts_server.py"
 def voice_service_config(selection: VoiceSelection, project_root: Path) -> VoiceServiceConfig:
     if selection.engine_id != "omnivoice":
         raise ValueError(f"Unsupported voice engine: {selection.engine_id!r}")
+    host = os.environ.get("RU_VOICE_HOST", "127.0.0.1")
+    try:
+        port = int(os.environ.get("RU_VOICE_PORT", "5052"))
+    except ValueError:
+        port = 5052
     return VoiceServiceConfig(
         engine_id=selection.engine_id,
-        base_url=f"http://{_OMNIVOICE_HOST}:{_OMNIVOICE_PORT}",
-        host=_OMNIVOICE_HOST,
-        port=_OMNIVOICE_PORT,
+        base_url=f"http://{host}:{port}",
+        host=host,
+        port=port,
         python_path=project_root / _OMNIVOICE_ENV_DIR / "Scripts" / "python.exe",
         server_script=project_root / _OMNIVOICE_SERVER_SCRIPT,
     )

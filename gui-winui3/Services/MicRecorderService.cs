@@ -1,6 +1,5 @@
 using System;
-using System.IO;
-using System.Text;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Windows.Media.Capture;
 using Windows.Media.MediaProperties;
@@ -103,7 +102,17 @@ namespace RuApp.Services
 
         public void Dispose()
         {
-            _ = StopAsync();
+            try
+            {
+                StopAsync().GetAwaiter().GetResult();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MicRecorder] Dispose cleanup failed: {ex.Message}");
+            }
         }
     }
 }

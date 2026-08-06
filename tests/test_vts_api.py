@@ -16,8 +16,21 @@ from mini_gpt.vts_config import MotionConfig
 from mini_gpt.vts_state import VtsMotionState
 
 
+class AuthenticatedTestClient(TestClient):
+    """TestClient that sends the desktop bearer token by default. API auth
+    fails closed now, so every request must be authenticated."""
+
+    def __init__(self, app, **kwargs):
+        headers = dict(kwargs.pop("headers", {}))
+        headers.setdefault("Authorization", "Bearer desktop-secret")
+        super().__init__(app, headers=headers, **kwargs)
+
+
 @pytest.fixture(autouse=True)
 def isolated_state(monkeypatch, tmp_path):
+    monkeypatch.setenv("RU_DESKTOP_TOKEN", "desktop-secret")
+    import sys
+    monkeypatch.setattr(sys.modules[__name__], "TestClient", AuthenticatedTestClient)
     monkeypatch.setattr(server_shared, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(server, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(server_shared, "HISTORY_FILE", tmp_path / "history.json")

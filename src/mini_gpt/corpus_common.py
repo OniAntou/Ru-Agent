@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from random import Random
 
-from .ru_style import RU_SYSTEM_PROMPT
+from .ru_style import ru_system_prompt_for
 
 
 @dataclass(frozen=True)
@@ -208,7 +208,7 @@ def record(
     self_reference: re.Pattern[str],
     source: str,
     license_name: str,
-    system_prompt: str = RU_SYSTEM_PROMPT,
+    system_prompt: str | None = None,
 ) -> dict[str, object]:
     safe_turns = [
         (role, self_reference.sub("anh", content) if role == "assistant" else content)
@@ -216,7 +216,7 @@ def record(
     ]
     return {
         "messages": [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": system_prompt or ru_system_prompt_for(language)},
             *({"role": role, "content": content} for role, content in safe_turns),
         ],
         "response": self_reference.sub("anh", response),

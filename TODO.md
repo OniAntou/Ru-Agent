@@ -6,7 +6,7 @@
 - [x] Bound GUI conversation context; persistent memory and search can be
   disabled in Settings.
 - [x] Remove discontinued Qwen LLM, Gemma, MiniGPT, and V5 corpus code/data
-  from the supported runtime surface. Gwen's isolated Qwen TTS dependency remains active.
+  from the supported runtime surface.
 - [ ] Collect reviewed useful conversation examples.
 - [x] Prepare a fresh v6.2 roleplay candidate with train-only, safety-filtered
   imports from approved conversations and local memory (1,200 authored + 39
@@ -26,54 +26,20 @@
   contextual profanity metadata, and an authoritative OpenCode cloud prompt.
 - [x] Route Ru emotion through VTS: no Unicode emoji or ASCII emoticons in chat,
   with natural prose fallback when VTS is unavailable.
-- [x] Migrate Desktop App GUI from Tauri 2 React frontend to Native WinUI 3 C# (.NET 10 / Windows App SDK 1.6+) with Fluent Design, Mica backdrop, Job Object backend process management, strongly-typed REST and WebSocket streaming clients. Build succeeded (0 errors, 0 warnings) and self-contained binary published.
-- [x] Retire and remove the Tauri 2 React GUI from the runtime surface: the active GUI is the native WinUI 3 app (`gui-winui3/`, `RuApp.exe`), launched by `start_dev.bat`; the `gui-tauri/` tree was deleted and CI now builds the WinUI 3 app.
+- [x] Migrate Desktop App GUI to Native WinUI 3 C# (.NET 10 / Windows App SDK 1.6+) with Fluent Design, Mica backdrop, Job Object backend process management, strongly-typed REST and WebSocket streaming clients.
 - [ ] Complete manual bilingual/held-out review and verified physical-VRAM
   gate for v6.2 before calling it quality-gate promoted.
 - [x] Finish the bounded v6.1 candidate and its comparison evaluation; its
   training manifest reports a 5,900 MiB physical peak under the 6,144 MiB cap.
 - [x] Make short Vietnamese-English conversations consistently natural before
   calling any adapter quality-gate promoted.
-- [x] Harden the 2026-08-01 review findings: per-run loopback authentication,
-  owned backend/voice lifecycle, session-scoped context, canonical stream reset,
-  private marker boundaries, cloud-memory consent, bounded inputs/context,
-  training provenance, deterministic corpus inputs, regression tests, and CI.
-  See `docs/codebase-review-fixes.md` → Round 3.
-- [x] Remove the legacy CustomTkinter GUI (`mini_gpt.gui`), its patch scripts,
-  the Flask web GUI (`scripts/gui_ru_llama3_1.py`), `Start_Ru.bat`, and the
-  GUI-only tests; the active GUI is now Tauri (`gui-tauri/`) backed by
-  `mini_gpt.server` (FastAPI). `append_stream_text` moved to `_text_utils.py`.
-  See `docs/codebase-review-fixes.md` → Round 5.
-- [x] Make the Tauri chat core work end-to-end: server API refactor (settings
-  apply on startup, `GET /settings`, serialized turns, bounded history/context,
-  safe error paths), WebSocket streaming for llama.cpp GGUF (`--lora` arg
-  ordering bug fix, `repeat_penalty` to stop repetition loops), chat UI
-  (done/error handling, reconnect, typing indicator, busy state), settings UI
-  (load `GET /settings`, web-search toggle, checkpoint path), background
-  Tauri-owned authenticated backend start in `start_dev.bat`; see
-  `docs/codebase-review-fixes.md` → Round 6.
-- [x] Wire the Voice tab in the Tauri GUI to the TTS pipeline: backend voice
-  proxy (`/voice/status|tts|warmup|release`, auto-spawn OmniVoice server),
-  partial settings update (voice_label/voice_speed), VoiceTab UI, auto-read
-  chat replies, mono-1D waveform fix for soundfile. 173 tests pass; see
-  `docs/codebase-review-fixes.md` → Round 6.
-- [x] Wire voice input (mic → STT) and VTS/avatar into the Tauri GUI: backend
-  `/voice/transcribe` (WAV bytes → Google Speech Recognizer vi-VN) and
-  `/vts/status|connect|action` (VTSManager thread, semantic facial/body actions,
-  catalog codes), mic button in ChatTab (MediaRecorder → WAV 16 kHz → transcribe
-  → fill input), VTS controls in VoiceTab, auto-trigger of `[[VTS:...]]` markers
-  on chat replies, marker stripping before TTS. 178 tests pass; see
-  `docs/codebase-review-fixes.md` → Round 7.
-- [x] Add persistent session history + New Session to the Tauri GUI: per-session
-  JSON files in `~/.minigpt/sessions/`, auto-title from the first user message,
-  `GET /sessions`, `POST /sessions/new`, `POST /sessions/{id}/activate`,
-  `DELETE /sessions/{id}`, WS chat scoped to a session id (auto-create when
-  missing), legacy `history.json` auto-migration on first run, ChatTab session
-  bar with New Session + history panel. 185 tests pass; see
-  `docs/codebase-review-fixes.md` → Round 8.
+- [x] Harden the codebase: per-run loopback authentication, owned backend/voice
+  lifecycle, session-scoped context, canonical stream reset, private marker
+  boundaries, cloud-memory consent, bounded inputs/context, training provenance,
+  deterministic corpus inputs, regression tests, and CI.
 - [ ] Run a manual voice (mic → STT, TTS playback) and VTS smoke test with
   VTube Studio open.
-- [x] Re-run the automated Python, frontend, Rust, corpus, dependency, and
+- [x] Re-run the automated Python, frontend, corpus, dependency, and
   native gates after runtime hardening.
 - [ ] Run the manual GUI/voice/VTS smoke test with real devices/services before
   the next adapter evaluation.

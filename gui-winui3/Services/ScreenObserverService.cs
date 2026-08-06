@@ -11,6 +11,7 @@ namespace RuApp.Services
     {
         private readonly ApiService _apiService;
         private CancellationTokenSource? _observerCts;
+        private Task? _observationTask;
 
         public event Action<ObservationMetricsDto>? OnMetricsUpdated;
         public bool IsActive { get; private set; } = false;
@@ -31,7 +32,7 @@ namespace RuApp.Services
             if (ok)
             {
                 IsActive = true;
-                StartObservationLoop();
+                await StartObservationLoopAsync();
             }
             return ok;
         }
@@ -40,17 +41,17 @@ namespace RuApp.Services
         {
             bool ok = await _apiService.StopObservationAsync();
             IsActive = false;
-            StopObservationLoop();
+            await StopObservationLoopAsync();
             return ok;
         }
 
-        private void StartObservationLoop()
+        private async Task StartObservationLoopAsync()
         {
-            StopObservationLoop();
+            await StopObservationLoopAsync();
             _observerCts = new CancellationTokenSource();
             var ct = _observerCts.Token;
 
-            _ = Task.Run(async () =>
+            _observationTask = Task.Run(async () =>
             {
                 var stopwatch = new Stopwatch();
 
@@ -59,14 +60,12 @@ namespace RuApp.Services
                     stopwatch.Restart();
                     _frameCount++;
 
-                    // 1. Capture 320x180 downsampled screen thumbnail using Win32 GDI StretchBlt
                     byte[]? bgraPixels = CaptureScreenThumbnail(320, 180);
                     double delta = 0.0;
                     long elapsedMs = 0;
 
                     if (bgraPixels != null)
                     {
-                        // 2. Compute 32x18 grayscale fingerprint
                         byte[] currFingerprint = ComputeFingerprint(bgraPixels, 320, 180, 32, 18);
 
                         if (_prevFingerprint != null)
@@ -75,15 +74,12 @@ namespace RuApp.Services
                         }
                         _prevFingerprint = currFingerprint;
 
-                        // 3. Motion Gating Check
                         if (delta < 0.04 && _frameCount > 1)
                         {
-                            // Static screen -> Skip vision AI processing
                             _staleDrops++;
                         }
                         else
                         {
-                            // Noticeable motion -> Increment vision count
                             _visionCount++;
                         }
                     }
@@ -107,7 +103,6 @@ namespace RuApp.Services
 
                     OnMetricsUpdated?.Invoke(metrics);
 
-                    // Adaptive Delay: 1500 ms sampling interval
                     try
                     {
                         await Task.Delay(1500, ct);
@@ -120,9 +115,24 @@ namespace RuApp.Services
             }, ct);
         }
 
-        private void StopObservationLoop()
+        private async Task StopObservationLoopAsync()
         {
             _observerCts?.Cancel();
+            if (_observationTask != null)
+            {
+                try
+                {
+                    await _observationTask;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[ScreenObserver] Observation loop error: {ex.Message}");
+                }
+                _observationTask = null;
+            }
             _observerCts?.Dispose();
             _observerCts = null;
         }

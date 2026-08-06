@@ -23,7 +23,7 @@ def build_standard_corpus(
     expected_turn_band_counts: dict[str, int],
     source: str,
     license_name: str,
-    system_prompt: str,
+    system_prompt: str | None = None,
     allow_approved: bool = False,
     approved_source: str | None = None,
     naturalness_gate: bool = False,

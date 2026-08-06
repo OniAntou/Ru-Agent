@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import time
 from pathlib import Path
 
 logger = logging.getLogger("mini_gpt.overlay_control")
@@ -80,11 +81,21 @@ def stop_overlay() -> bool:
         _overlay_error = None
         return False
     try:
-        subprocess.run(
+        kill = subprocess.run(
             ["taskkill", "/PID", *(str(pid) for pid in ids), "/T", "/F"],
             capture_output=True,
             text=True,
         )
+        if kill.returncode != 0:
+            _overlay_error = f"Overlay stop failed: taskkill rc={kill.returncode}: {kill.stderr or kill.stdout}"
+            logger.warning(_overlay_error)
+            return False
+        time.sleep(0.3)
+        remaining = overlay_process_ids()
+        if remaining:
+            _overlay_error = f"Overlay still running after kill: pids={remaining}"
+            logger.warning(_overlay_error)
+            return False
     except OSError as error:
         _overlay_error = f"Overlay stop failed: {error}"
         logger.warning(_overlay_error)

@@ -71,6 +71,9 @@ complete-WAV fallback when streaming fails before the first chunk. Voice
 control markers and timing metadata remain private to the transport; they are
 not shown in chat or persisted. The default OmniVoice quality reference remains
 native 1.00x with the selected Vietnamese-normalized 16-step configuration.
+When a hosted chat backend is active, the GUI begins voice synthesis as soon as
+the first complete sentence arrives and queues later sentences; local Llama
+keeps the existing GPU lock boundary and waits until generation is complete.
 
 For a repeatable local latency/quality report (without storing raw audio in Git),
 run:

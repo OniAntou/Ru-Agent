@@ -45,6 +45,18 @@ public sealed class VoicePlaybackQueueTests
         Assert.DoesNotContain("audio", cancel, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void SentenceBufferEmitsCompletedSentencesBeforeReplyEnds()
+    {
+        var buffer = new VoiceReplySentenceBuffer();
+
+        Assert.Equal(new[] { "Câu đầu." }, buffer.Append("Câu đầu. Câu"));
+        Assert.Empty(buffer.Append(" thứ hai"));
+        Assert.Equal(new[] { "Câu thứ hai." }, buffer.Append("."));
+        Assert.Empty(buffer.Append(" Phần còn lại"));
+        Assert.Equal(new[] { "Phần còn lại" }, buffer.Flush());
+    }
+
     private static VoiceAudioChunk Chunk(string requestId, int sequence) =>
         new(requestId, sequence, new byte[] { 0x52, 0x49, 0x46, 0x46 }, 24_000, "wav");
 }

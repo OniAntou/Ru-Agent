@@ -184,7 +184,9 @@ and all cancellation paths release GPU, media, and VTS state.
 2. **Quality selection:** compare the four OmniVoice configurations and both
    profiles at native 1.00x; select a configuration per profile.
 3. **Incremental playback:** implement ordered sentence chunks, cancellation,
-   and GUI queue playback. Done in code; live audio acceptance remains pending.
+   and GUI queue playback. Hosted replies now begin at completed sentence
+   boundaries; local Llama retains the single-GPU lock. Live audio acceptance
+   remains pending.
 4. **Lifecycle hardening:** add playback acknowledgements, stale-chunk tests,
    VTS reset behavior, and GPU cleanup checks. Done in code; repeated live
    device/process-cycle acceptance remains pending.

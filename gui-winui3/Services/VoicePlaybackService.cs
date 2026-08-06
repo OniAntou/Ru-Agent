@@ -2,7 +2,9 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 using Windows.Media.Core;
 using Windows.Media.Playback;
 using Windows.Storage.Streams;
@@ -18,8 +20,17 @@ namespace RuApp.Services
         private VoiceStreamClient? _streamClient;
         private VoicePlaybackQueue? _playbackQueue;
         private string? _activeRequestId;
+        private CancellationTokenSource? _replyStreamCts;
+        private Channel<string>? _replyTextChannel;
+        private VoiceReplySentenceBuffer? _replySentenceBuffer;
+        private Task? _replyStreamWorker;
+        private bool _replyHasInput;
         private bool _vtsSpeaking;
         private bool _disposed;
+
+        private static readonly Regex VoiceMarkerPattern = new(
+            @"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]\s*",
+            RegexOptions.Compiled);
 
         public string VoiceLabel { get; set; } = "Ru (OmniVoice)";
         public double VoiceSpeed { get; set; } = 1.0;
@@ -142,18 +153,104 @@ namespace RuApp.Services
             }
         }
 
+        public void BeginReplyStream()
+        {
+            if (_disposed) return;
+            StopVoice();
+            var cts = new CancellationTokenSource();
+            var channel = Channel.CreateUnbounded<string>(
+                new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+            _replyStreamCts = cts;
+            _replyTextChannel = channel;
+            _replySentenceBuffer = new VoiceReplySentenceBuffer();
+            _replyHasInput = false;
+            _replyStreamWorker = ConsumeReplyStreamAsync(channel.Reader, cts.Token);
+        }
+
+        public void AppendReplyDelta(string delta)
+        {
+            if (_disposed || string.IsNullOrEmpty(delta)) return;
+            var channel = _replyTextChannel;
+            var buffer = _replySentenceBuffer;
+            if (channel is null || buffer is null) return;
+
+            _replyHasInput = true;
+            foreach (string sentence in buffer.Append(delta))
+            {
+                TryQueueReplySentence(channel.Writer, sentence);
+            }
+        }
+
+        public async Task CompleteReplyStreamAsync(string fallbackText = "")
+        {
+            var cts = _replyStreamCts;
+            var channel = _replyTextChannel;
+            var buffer = _replySentenceBuffer;
+            var worker = _replyStreamWorker;
+            if (cts is null || channel is null || buffer is null || worker is null)
+            {
+                return;
+            }
+
+            if (!_replyHasInput && !string.IsNullOrWhiteSpace(fallbackText))
+            {
+                _replyHasInput = true;
+                foreach (string sentence in buffer.Append(fallbackText))
+                {
+                    TryQueueReplySentence(channel.Writer, sentence);
+                }
+            }
+            foreach (string sentence in buffer.Flush())
+            {
+                TryQueueReplySentence(channel.Writer, sentence);
+            }
+            channel.Writer.TryComplete();
+
+            try
+            {
+                await worker;
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+            }
+            finally
+            {
+                if (ReferenceEquals(_replyStreamCts, cts))
+                {
+                    _replyStreamCts = null;
+                    _replyTextChannel = null;
+                    _replySentenceBuffer = null;
+                    _replyStreamWorker = null;
+                    cts.Dispose();
+                }
+            }
+        }
+
         public void StopVoice()
         {
             string? requestId = _activeRequestId;
             CancellationTokenSource? cts = _cts;
             VoiceStreamClient? streamClient = _streamClient;
             VoicePlaybackQueue? playbackQueue = _playbackQueue;
+            CancellationTokenSource? replyCts = _replyStreamCts;
+            Channel<string>? replyChannel = _replyTextChannel;
+            Task? replyWorker = _replyStreamWorker;
 
             _activeRequestId = null;
             _cts = null;
             _streamClient = null;
             _playbackQueue = null;
+            _replyStreamCts = null;
+            _replyTextChannel = null;
+            _replySentenceBuffer = null;
+            _replyStreamWorker = null;
 
+            replyCts?.Cancel();
+            replyChannel?.Writer.TryComplete();
+            if (replyCts is not null && replyWorker is not null)
+            {
+                _ = ObserveReplyWorkerAsync(replyWorker, replyCts);
+            }
             if (requestId is not null)
             {
                 playbackQueue?.Cancel(requestId);
@@ -171,6 +268,49 @@ namespace RuApp.Services
                 _ = ResetVtsSpeakingAsync();
             }
             CleanupPlayer();
+        }
+
+        private async Task ConsumeReplyStreamAsync(
+            ChannelReader<string> reader,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                await foreach (string sentence in reader.ReadAllAsync(cancellationToken))
+                {
+                    await SpeakTextAsync(sentence, interrupt: false);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+        }
+
+        private static void TryQueueReplySentence(ChannelWriter<string> writer, string sentence)
+        {
+            string clean = VoiceMarkerPattern.Replace(sentence, " ").Trim();
+            if (!string.IsNullOrWhiteSpace(clean))
+            {
+                writer.TryWrite(clean);
+            }
+        }
+
+        private static async Task ObserveReplyWorkerAsync(
+            Task worker,
+            CancellationTokenSource cancellation)
+        {
+            try
+            {
+                await worker;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[VoicePlayback] Reply stream worker stopped: {ex.Message}");
+            }
+            finally
+            {
+                cancellation.Dispose();
+            }
         }
 
         private async Task PlayChunkAsync(VoiceAudioChunk chunk, CancellationToken cancellationToken)

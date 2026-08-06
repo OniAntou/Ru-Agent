@@ -42,6 +42,8 @@
   configurations, authenticated sentence streaming, ordered WinUI playback,
   cancellation, and privacy-safe playback acknowledgements. Live listening and
   latency promotion remain separate acceptance gates below.
+- [x] Start hosted-backend voice playback at completed sentence boundaries while
+  preserving the single-GPU lock for local Llama generation.
 - [ ] Run a manual voice (mic → STT, TTS playback) and VTS smoke test with
   VTube Studio open.
 - [x] Re-run the automated Python, frontend, corpus, dependency, and

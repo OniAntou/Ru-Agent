@@ -193,6 +193,8 @@ namespace RuApp.Views
                 string text = ChatInputTextBox.Text.Trim();
                 if (string.IsNullOrEmpty(text) || _wsClient == null) return;
 
+                _voicePlayback?.StopVoice();
+
                 ChatInputTextBox.Text = string.Empty;
                 if (_typingPushed)
                 {
@@ -203,6 +205,10 @@ namespace RuApp.Views
                 Messages.Add(new ChatMessageItem { Role = "user", Content = text });
                 var assistantMsg = new ChatMessageItem { Role = "assistant", Content = "", IsStreaming = true };
                 Messages.Add(assistantMsg);
+                if (_voicePlayback?.AutoReadReplies == true)
+                {
+                    _voicePlayback.BeginReplyStream();
+                }
 
                 // Move input to bottom after first message
                 if (_isFirstMessage)
@@ -218,6 +224,7 @@ namespace RuApp.Views
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error in SendCurrentMessageAsync: {ex.Message}");
+                _voicePlayback?.StopVoice();
                 var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
                 if (last != null)
                 {
@@ -378,6 +385,10 @@ namespace RuApp.Views
                                 IsStreaming = true
                             };
                             ScrollChatToBottom();
+                            if (_voicePlayback?.AutoReadReplies == true)
+                            {
+                                _voicePlayback.AppendReplyDelta(delta);
+                            }
                         }
                     }
                     catch (Exception ex)
@@ -401,6 +412,8 @@ namespace RuApp.Views
                     try
                     {
                         var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
+                        string finalVoiceText = StripDisplayMarkers(
+                            string.IsNullOrWhiteSpace(content) ? last?.Content ?? "" : content);
                         if (last != null)
                         {
                             string display = string.IsNullOrWhiteSpace(content)
@@ -431,9 +444,9 @@ namespace RuApp.Views
                             _activeSessionId = sessionId;
                         }
 
-                        if (_voicePlayback != null && _voicePlayback.AutoReadReplies && !string.IsNullOrWhiteSpace(content))
+                        if (_voicePlayback != null && _voicePlayback.AutoReadReplies)
                         {
-                            await _voicePlayback.SpeakTextAsync(StripDisplayMarkers(content));
+                            await _voicePlayback.CompleteReplyStreamAsync(finalVoiceText);
                         }
                     }
                     catch (Exception ex)

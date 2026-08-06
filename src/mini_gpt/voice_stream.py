@@ -50,7 +50,7 @@ class VoiceStreamCoordinator:
         *,
         prepare_speech: Callable[[VoiceSelection], None],
         request_audio: Callable[[str, str, float], bytes],
-        memory_lock: threading.Lock,
+        memory_lock: threading.Lock | None,
         lock_timeout: float = 120.0,
     ) -> None:
         self._prepare_speech = prepare_speech
@@ -119,9 +119,12 @@ class VoiceStreamCoordinator:
         except ValueError:
             yield VoiceStreamEvent("failed", request_id, 0, error_code="unsupported_voice")
             return
-        if not self._memory_lock.acquire(timeout=self._lock_timeout):
-            yield VoiceStreamEvent("failed", request_id, 0, error_code="busy")
-            return
+        lock_acquired = self._memory_lock is None
+        if self._memory_lock is not None:
+            if not self._memory_lock.acquire(timeout=self._lock_timeout):
+                yield VoiceStreamEvent("failed", request_id, 0, error_code="busy")
+                return
+            lock_acquired = True
         with self._cancel_lock:
             self._timings.clear()
             self._timing_started.clear()
@@ -154,5 +157,6 @@ class VoiceStreamCoordinator:
         except Exception:
             yield VoiceStreamEvent("failed", request_id, 0, error_code="synthesis_failed")
         finally:
-            self._memory_lock.release()
+            if lock_acquired and self._memory_lock is not None:
+                self._memory_lock.release()
             self._finish_request(request_id)

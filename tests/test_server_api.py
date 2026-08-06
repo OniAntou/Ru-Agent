@@ -559,6 +559,25 @@ def test_voice_stream_sends_ordered_audio_and_end_event(monkeypatch, isolated_st
             assert websocket.receive_json() == {"type": "ended", "request_id": "r1", "sequence": 2}
 
 
+def test_voice_stream_can_overlap_hosted_chat_generation(monkeypatch, isolated_state) -> None:
+    server.core.runner.backend = headless_runner.BACKEND_KILO
+    server_shared._TURN_LOCK.acquire()
+    monkeypatch.setattr(voice_router, "request_voice_audio", lambda text, label, speed: text.encode())
+    monkeypatch.setattr(voice_router._gpu_lifecycle(), "prepare_speech", lambda selection: None)
+
+    try:
+        with TestClient(server.app) as client:
+            with client.websocket_connect("/voice/stream") as websocket:
+                websocket.send_json({"type": "start", "request_id": "hosted-overlap", "text": "A."})
+                assert websocket.receive_json()["type"] == "started"
+                assert websocket.receive_json()["type"] == "audio"
+                assert websocket.receive_bytes() == b"A."
+                assert websocket.receive_json()["type"] == "ended"
+    finally:
+        if server_shared._TURN_LOCK.locked():
+            server_shared._TURN_LOCK.release()
+
+
 def test_voice_stream_rejects_malformed_start(monkeypatch, isolated_state) -> None:
     with TestClient(server.app) as client:
         with client.websocket_connect("/voice/stream") as websocket:

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from .._server_shared import (
     _TURN_LOCK,
     _MEMORY_TURN_LOCK,
+    core,
     _VOICE_LOCK,
     _gpu_lifecycle,
     _post_voice,
@@ -39,6 +40,7 @@ from .._server_shared import (
     request_voice_audio,
     request_voice_control,
 )
+from ..headless_runner import BACKEND_KILO, BACKEND_OPENCODE
 from ..voice_stream import VoiceStreamCoordinator, VoiceStreamEvent
 
 router = APIRouter()
@@ -69,11 +71,20 @@ def _accept_playback_ack(coordinator: VoiceStreamCoordinator, payload: object) -
     return coordinator.acknowledge_playback(request_id, state)
 
 
+def _hosted_chat_is_active() -> bool:
+    return (
+        core.runner.backend in (BACKEND_OPENCODE, BACKEND_KILO)
+        and _TURN_LOCK.locked()
+    )
+
+
 def _voice_stream_coordinator() -> VoiceStreamCoordinator:
     return VoiceStreamCoordinator(
         prepare_speech=lambda selection: _gpu_lifecycle().prepare_speech(selection),
         request_audio=request_voice_audio,
-        memory_lock=_MEMORY_TURN_LOCK,
+        # Hosted chat does not own the local GPU. Allow TTS to overlap its
+        # response stream; local Llama keeps the memory/GPU lock boundary.
+        memory_lock=None if _hosted_chat_is_active() else _MEMORY_TURN_LOCK,
         lock_timeout=_MEMORY_LOCK_TIMEOUT_SECONDS,
     )
 
@@ -149,7 +160,7 @@ async def voice_stream(websocket: WebSocket):
                         "invalid_request",
                     )
                     continue
-                if _TURN_LOCK.locked():
+                if _TURN_LOCK.locked() and not _hosted_chat_is_active():
                     await _send_stream_failure(websocket, start_payload.request_id, "busy_chat")
                     continue
                 active_request_id = start_payload.request_id

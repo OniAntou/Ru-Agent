@@ -224,7 +224,7 @@ def voice_tts(payload: VoiceTtsPayload):
     speed = effective_voice_speed(speed, auto_pace_enabled=True, pace=pace)
     text = _strip_voice_markers(text)
     try:
-        if _TURN_LOCK.locked():
+        if _TURN_LOCK.locked() and not _hosted_chat_is_active():
             return {
                 "status": "error",
                 "message": "Ru is generating a reply; try voice again after it finishes.",

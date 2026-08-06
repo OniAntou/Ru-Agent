@@ -79,7 +79,9 @@ decision to drop stale audio. The coordinator must not expose internal VTS or
 voice-pacing markers to the GUI as user text.
 
 The coordinator will prefer sentence-sized chunks. It will synthesize the
-first sentence immediately and enqueue later sentences in order. A short
+first sentence immediately and enqueue later sentences in order. The GUI keeps
+generation and playback in separate bounded stages, so later audio can be
+prefetched while the current sentence plays without overlapping output. A short
 sentence is the minimum unit because splitting inside a sentence risks harming
 prosody and voice identity.
 
@@ -185,8 +187,8 @@ and all cancellation paths release GPU, media, and VTS state.
    profiles at native 1.00x; select a configuration per profile.
 3. **Incremental playback:** implement ordered sentence chunks, cancellation,
    and GUI queue playback. Hosted replies now begin at completed sentence
-   boundaries; local Llama retains the single-GPU lock. Live audio acceptance
-   remains pending.
+   boundaries and prefetch later audio while the current chunk plays; local
+   Llama retains the single-GPU lock. Live audio acceptance remains pending.
 4. **Lifecycle hardening:** add playback acknowledgements, stale-chunk tests,
    VTS reset behavior, and GPU cleanup checks. Done in code; repeated live
    device/process-cycle acceptance remains pending.

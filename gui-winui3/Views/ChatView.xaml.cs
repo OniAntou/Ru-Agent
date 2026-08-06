@@ -367,6 +367,14 @@ namespace RuApp.Views
         {
             try
             {
+                // Feed voice synthesis from the WebSocket callback directly. The
+                // visual message can wait for the UI dispatcher without delaying
+                // the first complete speech unit.
+                if (_voicePlayback?.AutoReadReplies == true)
+                {
+                    _voicePlayback.AppendReplyDelta(delta);
+                }
+
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     try
@@ -385,10 +393,6 @@ namespace RuApp.Views
                                 IsStreaming = true
                             };
                             ScrollChatToBottom();
-                            if (_voicePlayback?.AutoReadReplies == true)
-                            {
-                                _voicePlayback.AppendReplyDelta(delta);
-                            }
                         }
                     }
                     catch (Exception ex)

@@ -578,6 +578,23 @@ def test_voice_stream_can_overlap_hosted_chat_generation(monkeypatch, isolated_s
             server_shared._TURN_LOCK.release()
 
 
+def test_voice_tts_fallback_can_overlap_hosted_chat_generation(monkeypatch, isolated_state) -> None:
+    server.core.runner.backend = headless_runner.BACKEND_KILO
+    server_shared._TURN_LOCK.acquire()
+    monkeypatch.setattr(voice_router, "request_voice_audio", lambda text, label, speed: b"RIFFWAVE-data")
+    monkeypatch.setattr(voice_router._gpu_lifecycle(), "prepare_speech", lambda selection: None)
+
+    try:
+        with TestClient(server.app) as client:
+            response = client.post("/voice/tts", json={"text": "A."})
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "audio/wav"
+        assert response.content == b"RIFFWAVE-data"
+    finally:
+        if server_shared._TURN_LOCK.locked():
+            server_shared._TURN_LOCK.release()
+
+
 def test_voice_stream_rejects_malformed_start(monkeypatch, isolated_state) -> None:
     with TestClient(server.app) as client:
         with client.websocket_connect("/voice/stream") as websocket:

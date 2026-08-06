@@ -30,6 +30,41 @@ public sealed class VoicePlaybackQueueTests
     }
 
     [Fact]
+    public async Task ReplyAudioQueueAcceptsNextChunkWhileCurrentChunkIsPlaying()
+    {
+        var firstChunkStarted = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstChunk = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var played = new List<int>();
+
+        using var queue = new VoiceReplyAudioQueue(
+            async (chunk, cancellationToken) =>
+            {
+                if (chunk.Sequence == 0)
+                {
+                    firstChunkStarted.TrySetResult(true);
+                    await releaseFirstChunk.Task.WaitAsync(cancellationToken);
+                }
+
+                lock (played)
+                {
+                    played.Add(chunk.Sequence);
+                }
+            });
+
+        await queue.EnqueueAsync(Chunk("r1", 0));
+        await firstChunkStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        await queue.EnqueueAsync(Chunk("r1", 1)).WaitAsync(TimeSpan.FromSeconds(1));
+
+        releaseFirstChunk.TrySetResult(true);
+        await queue.CompleteAsync();
+
+        Assert.Equal(new[] { 0, 1 }, played);
+    }
+
+    [Fact]
     public void StartAndCancelFramesContainOnlyProtocolFields()
     {
         var start = VoiceStreamClient.SerializeStartFrame("r1", "Chào anh.", "Ru (OmniVoice)", 1.0);

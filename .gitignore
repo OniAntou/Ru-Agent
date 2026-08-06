@@ -10,6 +10,8 @@ node_modules/
 *.bak
 *.restored
 gui-winui3.bak/
+gui-winui3.Tests/bin/
+gui-winui3.Tests/obj/
 
 # Python
 __pycache__/

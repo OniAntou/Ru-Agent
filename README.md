@@ -74,8 +74,10 @@ runtime dependencies before loading the model.
 
 Persistent structured memory and online search remain runtime capabilities.
 The WinUI3 app exposes independent controls for self-learning, online search,
-and cloud-memory sharing. Saved memory stays out of OpenCode/Kilo prompts by
-default; sharing it with a hosted model requires explicit opt-in.
+and cloud-memory sharing. Cloud-memory sharing is enabled by default so hosted
+backends can use the same structured memory as the local backend; turn the
+setting off explicitly to keep saved memory out of OpenCode/Kilo prompts and
+to skip hosted self-learning extraction.
 
 ## Cloud replies
 
@@ -90,7 +92,8 @@ frontend receives only newly emitted text from the streaming runtime, so
 cumulative provider snapshots do not duplicate text. If an
 opted-in web-search reply performs two OpenCode completions, the recorded
 API duration is their total. A protocol-valid but empty stream is retried
-once before the backend reports a failure.
+once before the backend reports a failure; a retry after a partial network
+failure emits a canonical stream reset before the replacement text.
 
 ## Local screen observation
 
@@ -323,6 +326,10 @@ does not install packages or download a model. It starts
 `omnivoice_tts_server.py` only when that selected engine is needed, on loopback
 port 5052. The D-only setup script installs OmniVoice and its Flask loopback
 service dependency in `omnivoice_env`.
+
+`scripts\run_omnivoice_benchmark.ps1` benchmarks the active OmniVoice path only.
+The removed Gwen service is historical and is not a supported setup or runtime
+dependency.
 
 For the pending pronunciation listening trial, both OmniVoice labels use the
 measured `vi-normalized-16` settings (`language="Vietnamese"`, text

@@ -6,12 +6,13 @@ from .._server_shared import (
     BACKEND_KILO,
     BACKEND_OPENCODE,
     _MEMORY_TURN_LOCK,
+    _invalidate_memory_queue,
     _resolve_backend,
     core,
     load_history,
     logger,
 )
-from ..activity_log import read
+from ..activity_log import clear, read
 
 router = APIRouter()
 
@@ -24,6 +25,12 @@ async def get_status():
 @router.get("/activity-log")
 async def get_activity_log(limit: int = Query(default=200, ge=1, le=500)):
     return {"status": "ok", "events": read(limit=limit)}
+
+
+@router.delete("/activity-log")
+async def clear_activity_log():
+    clear()
+    return {"status": "ok"}
 
 
 @router.get("/models")
@@ -65,6 +72,7 @@ async def clear_memory():
             "message": "Memory is busy (self-learning in progress); try again in a moment.",
         }
     try:
+        _invalidate_memory_queue()
         core.clear_memory()
         return {
             "status": "success",

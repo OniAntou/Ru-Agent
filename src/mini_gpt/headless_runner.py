@@ -64,7 +64,7 @@ class ModelRunner:
             resolved = Path(checkpoint_path).resolve()
             allowed = (PROJECT_ROOT / "checkpoints", PROJECT_ROOT / "models")
             if not any(
-                str(resolved).startswith(str(allowed_dir.resolve()))
+                resolved.is_relative_to(allowed_dir.resolve())
                 for allowed_dir in allowed
             ):
                 raise ValueError(
@@ -93,6 +93,7 @@ class ModelRunner:
         top_k: int,
         *,
         on_stream_delta=None,
+        on_stream_reset=None,
         on_complete_timing=None,
     ) -> str:
         if self.backend in (BACKEND_OPENCODE, BACKEND_KILO) and self.openai_runtime:
@@ -101,6 +102,8 @@ class ModelRunner:
             }
             if on_stream_delta is not None:
                 kwargs["on_delta"] = on_stream_delta
+            if on_stream_reset is not None:
+                kwargs["on_reset"] = on_stream_reset
             return self.openai_runtime.generate(
                 messages,
                 max_new_tokens,

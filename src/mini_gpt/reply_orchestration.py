@@ -69,6 +69,7 @@ def execute_reply(
         temperature,
         top_k,
         on_stream_delta=on_stream_delta,
+        on_stream_reset=on_stream_reset,
         on_complete_timing=on_complete_timing,
     )
     search_match = _SEARCH_MARKER.search(response)
@@ -105,6 +106,7 @@ def execute_reply(
             temperature,
             top_k,
             on_stream_delta=on_stream_delta,
+            on_stream_reset=on_stream_reset,
             on_complete_timing=on_complete_timing,
         )
     except Exception as error:

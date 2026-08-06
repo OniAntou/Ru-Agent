@@ -4,21 +4,90 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:converters="using:RuApp.Converters"
     mc:Ignorable="d">
 
+    <UserControl.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+    </UserControl.Resources>
+
     <Border Background="#0C0C0C">
-        <ScrollViewer Padding="16" Background="Transparent" VerticalScrollBarVisibility="Auto">
-            <StackPanel>
-                <TextBlock Text="C:\Ru\Log&gt;" FontFamily="Consolas, Courier New" FontSize="13" Foreground="#00FF00" Margin="0,0,0,8"/>
-                <ListView x:Name="TerminalLines" ItemsSource="{x:Bind Lines, Mode=OneWay}" Background="Transparent" BorderThickness="0">
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding .}" FontFamily="Consolas, Courier New" FontSize="13" Foreground="#CCCCCC" TextWrapping="Wrap" LineHeight="18" Margin="0,0,0,2"/>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
-                <TextBlock Text="_" FontFamily="Consolas, Courier New" FontSize="13" Foreground="#00FF00" Margin="0,4,0,0"/>
-            </StackPanel>
-        </ScrollViewer>
+        <Grid Padding="16" RowDefinitions="Auto,*">
+
+            <!-- Header -->
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="0,0,0,12" VerticalAlignment="Center">
+                <TextBlock Grid.Column="0" Text="Nhật ký hoạt động" FontSize="16" FontWeight="SemiBold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+
+                <ToggleButton Grid.Column="1" x:Name="FilterChat" Content="💬 Chat" FontSize="12" Padding="10,4" Margin="8,0,4,0"
+                              Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#3C87FF"
+                              Background="#00000000" BorderBrush="#3C87FF" BorderThickness="1" CornerRadius="14" IsChecked="True"/>
+                <ToggleButton Grid.Column="2" x:Name="FilterEmotion" Content="🎭 Cảm xúc" FontSize="12" Padding="10,4" Margin="4,0"
+                              Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#B06EF0"
+                              Background="#00000000" BorderBrush="#B06EF0" BorderThickness="1" CornerRadius="14" IsChecked="True"/>
+                <ToggleButton Grid.Column="3" x:Name="FilterVts" Content="🤖 VTS" FontSize="12" Padding="10,4" Margin="4,0"
+                              Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#FF5C92"
+                              Background="#00000000" BorderBrush="#FF5C92" BorderThickness="1" CornerRadius="14" IsChecked="True"/>
+                <Button Grid.Column="4" x:Name="ClearButton" Content="🗑 Xoá" FontSize="13" Padding="10,4" Margin="8,2,0,0"
+                        Click="OnClearClicked" Foreground="#FF7A7A" Background="#00000000"
+                        BorderBrush="#FF7A7A" BorderThickness="1" CornerRadius="14" HorizontalAlignment="Right"/>
+            </Grid>
+
+            <!-- Timeline -->
+            <ListView x:Name="TimelineList" Grid.Row="1"
+                      ItemsSource="{x:Bind Rows}"
+                      IsItemClickEnabled="True"
+                      ItemClick="OnRowClicked"
+                      SelectionMode="None"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      Padding="0"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="MinHeight" Value="0"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Padding="0,5" ColumnDefinitions="Auto,74,Auto,*">
+                            <!-- Dot -->
+                            <Ellipse Grid.Column="0" Width="8" Height="8"
+                                     Fill="{Binding DotBrush}" VerticalAlignment="Top" Margin="0,7,10,0"/>
+
+                            <!-- Time -->
+                            <TextBlock Grid.Column="1" Text="{Binding Time}" FontFamily="Consolas, Courier New"
+                                       FontSize="12" Foreground="#8A8A8A" VerticalAlignment="Top" Margin="0,5,8,0"/>
+
+                            <!-- Type badge -->
+                            <Border Grid.Column="2" Background="{Binding LabelBrush}" CornerRadius="4"
+                                    Padding="7,2" Margin="0,3,8,0" VerticalAlignment="Top">
+                                <TextBlock Text="{Binding Badge}" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="#FFFFFF"/>
+                            </Border>
+
+                            <!-- Content + detail -->
+                            <StackPanel Grid.Column="3">
+                                <TextBlock Text="{Binding Content}" TextWrapping="Wrap" Foreground="#E0E0E0"
+                                           FontSize="13.5" VerticalAlignment="Top" Margin="0,3,0,4"/>
+
+                                <Border Background="#1A1A1A" CornerRadius="6" Padding="10" Margin="0,2,0,6"
+                                        Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
+                                    <StackPanel>
+                                        <TextBlock Text="CHI TIẾT" FontSize="10" Foreground="#6E6E6E" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                                        <TextBlock Text="{Binding Detail}" FontFamily="Consolas, Courier New"
+                                                   FontSize="12" Foreground="#B0B0B0" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+        </Grid>
     </Border>
 </UserControl>

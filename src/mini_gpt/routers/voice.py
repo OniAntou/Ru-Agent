@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from .._server_shared import (
     _TURN_LOCK,
+    _MEMORY_TURN_LOCK,
     _VOICE_LOCK,
     _gpu_lifecycle,
     _post_voice,
@@ -25,6 +26,7 @@ from .._server_shared import (
     _DEFAULT_SETTINGS,
     _VOICE_TTS_TIMEOUT_SECONDS,
     _VOICE_LIFECYCLE_TIMEOUT_SECONDS,
+    _MEMORY_LOCK_TIMEOUT_SECONDS,
     _VOICE_PROBE_TIMEOUT_SECONDS,
     VOICE_START_TIMEOUT_SECONDS,
     CapturedAudio,
@@ -74,9 +76,14 @@ def voice_tts(payload: VoiceTtsPayload):
                 "status": "error",
                 "message": "Ru is generating a reply; try voice again after it finishes.",
             }
-        _gpu_lifecycle().prepare_speech(voice_selection_from_saved(voice_label))
-        audio = request_voice_audio(text, voice_label, speed)
-        return Response(content=audio, media_type="audio/wav")
+        if not _MEMORY_TURN_LOCK.acquire(timeout=_MEMORY_LOCK_TIMEOUT_SECONDS):
+            return {"status": "error", "message": "Ru is busy with self-learning; try voice again in a moment."}
+        try:
+            _gpu_lifecycle().prepare_speech(voice_selection_from_saved(voice_label))
+            audio = request_voice_audio(text, voice_label, speed)
+            return Response(content=audio, media_type="audio/wav")
+        finally:
+            _MEMORY_TURN_LOCK.release()
     except Exception as error:
         logger.error("TTS failed: %s", error)
         return {"status": "error", "message": str(error)}
@@ -91,9 +98,14 @@ def voice_warmup():
                 "message": "Ru is generating a reply; try warm-up after it finishes.",
             }
         selection = _voice_selection()
-        _gpu_lifecycle().prepare_speech(selection)
-        result = {"ready": True, "voice_profile": selection.profile_id}
-        return {"status": "ok", "result": result}
+        if not _MEMORY_TURN_LOCK.acquire(timeout=_MEMORY_LOCK_TIMEOUT_SECONDS):
+            return {"status": "error", "message": "Ru is busy with self-learning; try warm-up again in a moment."}
+        try:
+            _gpu_lifecycle().prepare_speech(selection)
+            result = {"ready": True, "voice_profile": selection.profile_id}
+            return {"status": "ok", "result": result}
+        finally:
+            _MEMORY_TURN_LOCK.release()
     except Exception as error:
         logger.error("Voice warmup failed: %s", error)
         return {"status": "error", "message": str(error)}

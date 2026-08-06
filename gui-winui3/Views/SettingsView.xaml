@@ -10,179 +10,257 @@
     <Pivot>
         <PivotItem Header="Cài đặt hệ thống" Margin="0,16,0,0">
             <ScrollViewer Padding="32,0,32,32" Background="Transparent">
-        <StackPanel Spacing="24" HorizontalAlignment="Stretch">
-            <TextBlock Text="Cài đặt hệ thống" FontSize="24" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
+                <StackPanel Spacing="24" HorizontalAlignment="Stretch">
+                    <TextBlock Text="Cài đặt hệ thống" FontSize="24" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
 
-            <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="Mô hình &amp; Runtime Backend" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
+                    <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Mô hình &amp; Runtime Backend" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
 
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <TextBlock Grid.Column="0" Text="Loại Backend" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <ComboBox x:Name="BackendComboBox" Grid.Column="1" Width="280" SelectionChanged="OnBackendSelectionChanged">
-                            <ComboBoxItem Content="Local GGUF (Llama 3.1 8B v6.2)" Tag="gguf"/>
-                            <ComboBoxItem Content="OpenCode Zen (Cloud API)" Tag="opencode"/>
-                            <ComboBoxItem Content="Kilo Gateway (Cloud API)" Tag="kilo"/>
-                        </ComboBox>
-                    </Grid>
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <TextBlock Grid.Column="0" Text="Loại Backend" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <ComboBox x:Name="BackendComboBox" Grid.Column="1" Width="280" SelectionChanged="OnBackendSelectionChanged">
+                                    <ComboBoxItem Content="Local GGUF (Llama 3.1 8B v6.2)" Tag="gguf"/>
+                                    <ComboBoxItem Content="OpenCode Zen (Cloud API)" Tag="opencode"/>
+                                    <ComboBoxItem Content="Kilo Gateway (Cloud API)" Tag="kilo"/>
+                                </ComboBox>
+                            </Grid>
 
-                    <Grid x:Name="ModelRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
-                            <TextBlock Text="Model Name" Foreground="#DDDDDD"/>
-                            <TextBlock x:Name="ModelLoadingText" Text="Đang tải danh sách model từ API..." Foreground="#888888" FontSize="13" Visibility="Collapsed"/>
+                            <Grid x:Name="ModelRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Model Name" Foreground="#DDDDDD"/>
+                                    <TextBlock x:Name="ModelLoadingText" Text="Đang tải danh sách model từ API..." Foreground="#888888" FontSize="13" Visibility="Collapsed"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="4" Width="280">
+                                    <TextBox x:Name="ModelSearchBox" PlaceholderText="Tìm kiếm model..." TextChanged="OnModelSearchBoxTextChanged"/>
+                                    <ComboBox x:Name="ModelComboBox" Width="280" IsEditable="False"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid x:Name="OpenCodeApiRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
+                                <TextBlock Grid.Column="0" Text="OpenCode API Key" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <PasswordBox x:Name="OpenCodeApiKeyBox" Grid.Column="1" PlaceholderText="sk-opencode-..." Width="280"/>
+                            </Grid>
+
+                            <Grid x:Name="ApiVariantRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
+                                <TextBlock Grid.Column="0" Text="Reasoning Effort" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <ComboBox x:Name="ApiVariantComboBox" Grid.Column="1" Width="280">
+                                    <ComboBoxItem Content="Default" Tag="Default"/>
+                                    <ComboBoxItem Content="Low" Tag="low"/>
+                                    <ComboBoxItem Content="Medium" Tag="medium"/>
+                                    <ComboBoxItem Content="High" Tag="high"/>
+                                    <ComboBoxItem Content="Max" Tag="max"/>
+                                </ComboBox>
+                            </Grid>
+
+                            <Grid x:Name="KiloApiRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
+                                <TextBlock Grid.Column="0" Text="Kilo API Key" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <PasswordBox x:Name="KiloApiKeyBox" Grid.Column="1" PlaceholderText="sk-kilo-..." Width="280"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <TextBlock Grid.Column="0" Text="Hồ sơ Checkpoint" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <TextBox x:Name="CheckpointPathBox" Grid.Column="1" PlaceholderText="checkpoints/ru-..." Width="280"/>
+                            </Grid>
                         </StackPanel>
-                        <StackPanel Grid.Column="1" Spacing="4" Width="280">
-                            <TextBox x:Name="ModelSearchBox" PlaceholderText="Tìm kiếm model..." TextChanged="OnModelSearchBoxTextChanged"/>
-                            <ComboBox x:Name="ModelComboBox" Width="280" IsEditable="False"/>
+                    </Border>
+
+                    <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Tham số sinh văn bản (Generation)" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
+
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <TextBlock Grid.Column="0" Text="Temperature (Độ sáng tạo)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <TextBox x:Name="TemperatureNumberBox" Grid.Column="1" Text="0.7" Width="160" Background="Transparent" BorderThickness="0,0,0,1"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <TextBlock Grid.Column="0" Text="Top-K" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <TextBox x:Name="TopKNumberBox" Grid.Column="1" Text="40" Width="160" Background="Transparent" BorderThickness="0,0,0,1"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <TextBlock Grid.Column="0" Text="Max New Tokens (Độ dài tối đa)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <TextBox x:Name="MaxTokensNumberBox" Grid.Column="1" Text="512" Width="160" Background="Transparent" BorderThickness="0,0,0,1"/>
+                            </Grid>
                         </StackPanel>
-                    </Grid>
+                    </Border>
 
-                    <Grid x:Name="OpenCodeApiRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
-                        <TextBlock Grid.Column="0" Text="OpenCode API Key" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <PasswordBox x:Name="OpenCodeApiKeyBox" Grid.Column="1" PlaceholderText="sk-opencode-..." Width="280"/>
-                    </Grid>
+                    <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Tính năng mở rộng" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
 
-                    <Grid x:Name="ApiVariantRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
-                        <TextBlock Grid.Column="0" Text="Reasoning Effort" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <ComboBox x:Name="ApiVariantComboBox" Grid.Column="1" Width="280">
-                            <ComboBoxItem Content="Default" Tag="Default"/>
-                            <ComboBoxItem Content="Low" Tag="low"/>
-                            <ComboBoxItem Content="Medium" Tag="medium"/>
-                            <ComboBoxItem Content="High" Tag="high"/>
-                            <ComboBoxItem Content="Max" Tag="max"/>
-                        </ComboBox>
-                    </Grid>
+                            <Grid x:Name="OnlineSearchRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <TextBlock Grid.Column="0" Text="Cho phép tìm kiếm Web online" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <ToggleSwitch x:Name="AllowOnlineSearchToggle" Grid.Column="1" IsOn="True"/>
+                            </Grid>
 
-                    <Grid x:Name="KiloApiRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
-                        <TextBlock Grid.Column="0" Text="Kilo API Key" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <PasswordBox x:Name="KiloApiKeyBox" Grid.Column="1" PlaceholderText="sk-kilo-..." Width="280"/>
-                    </Grid>
-                    
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <TextBlock Grid.Column="0" Text="Hồ sơ Checkpoint" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <TextBox x:Name="CheckpointPathBox" Grid.Column="1" PlaceholderText="checkpoints/ru-..." Width="280"/>
-                    </Grid>
-                </StackPanel>
-            </Border>
+                            <Grid x:Name="SelfLearningRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <TextBlock Grid.Column="0" Text="Tự động ghi nhớ fact từ cuộc trò chuyện (Self-Learning)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <ToggleSwitch x:Name="SelfLearningToggle" Grid.Column="1" IsOn="True"/>
+                            </Grid>
 
-            <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="Tham số sinh văn bản (Generation)" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
-
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <TextBlock Grid.Column="0" Text="Temperature (Độ sáng tạo)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <TextBox x:Name="TemperatureNumberBox" Grid.Column="1" Text="0.7" Width="160" Background="Transparent" BorderThickness="0,0,0,1"/>
-                    </Grid>
-
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <TextBlock Grid.Column="0" Text="Top-K" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <TextBox x:Name="TopKNumberBox" Grid.Column="1" Text="40" Width="160" Background="Transparent" BorderThickness="0,0,0,1"/>
-                    </Grid>
-
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <TextBlock Grid.Column="0" Text="Max New Tokens (Độ dài tối đa)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <TextBox x:Name="MaxTokensNumberBox" Grid.Column="1" Text="512" Width="160" Background="Transparent" BorderThickness="0,0,0,1"/>
-                    </Grid>
-                </StackPanel>
-            </Border>
-
-            <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="Tính năng mở rộng" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
-
-                    <Grid x:Name="OnlineSearchRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <TextBlock Grid.Column="0" Text="Cho phép tìm kiếm Web online" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <ToggleSwitch x:Name="AllowOnlineSearchToggle" Grid.Column="1" IsOn="True"/>
-                    </Grid>
-                    
-                    <Grid x:Name="SelfLearningRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <TextBlock Grid.Column="0" Text="Tự động ghi nhớ fact từ cuộc trò chuyện (Self-Learning)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <ToggleSwitch x:Name="SelfLearningToggle" Grid.Column="1" IsOn="True"/>
-                    </Grid>
-                    
-                    <Grid x:Name="CloudMemoryRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
-                        <TextBlock Grid.Column="0" Text="Cho phép chia sẻ bộ nhớ cục bộ với Cloud Model" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <ToggleSwitch x:Name="CloudMemoryConsentToggle" Grid.Column="1" IsOn="False"/>
-                    </Grid>
-                </StackPanel>
-            </Border>
-
-            <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="Nhận thức Màn hình (Screen Observer)" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
-
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <StackPanel Grid.Column="0" Spacing="8">
-                            <TextBlock Text="Quan sát màn hình chính (DXGI -&gt; Local Qwen3-VL -&gt; OmniVoice)" FontSize="14" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
-                            <TextBlock Text="Màn hình được quan sát cục bộ qua vòng lặp RAM. Không ghi đĩa hay lưu trữ bất kỳ hình ảnh nào." Foreground="#AAAAAA" FontSize="13"/>
+                            <Grid x:Name="CloudMemoryRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
+                                <TextBlock Grid.Column="0" Text="Cho phép chia sẻ bộ nhớ cục bộ với Cloud Model" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <ToggleSwitch x:Name="CloudMemoryConsentToggle" Grid.Column="1" IsOn="True"/>
+                            </Grid>
                         </StackPanel>
+                    </Border>
 
-                        <Button x:Name="ToggleObservationButton" Grid.Column="1" Click="OnToggleObservationClick" VerticalAlignment="Center" Padding="24,12" CornerRadius="8" Background="#20FFFFFF" BorderThickness="1" BorderBrush="#10FFFFFF">
-                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                <FontIcon x:Name="ToggleIcon" Glyph="&#xE714;" FontSize="16"/>
-                                <TextBlock x:Name="ToggleText" Text="Bắt đầu quan sát" FontWeight="Medium"/>
-                            </StackPanel>
-                        </Button>
-                    </Grid>
-
-                    <Grid x:Name="GeminiVisionRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
-                            <TextBlock Text="Gemini Vision API Key (Screen Observation Cloud)" Foreground="#DDDDDD"/>
-                            <TextBlock Text="Dùng cho Gemini Live. Lấy key tại aistudio.google.com/apikey" Foreground="#777777" FontSize="12" TextWrapping="Wrap"/>
-                        </StackPanel>
-                        <PasswordBox x:Name="GeminiVisionKeyBox" Grid.Column="1" PlaceholderText="AIza..." Width="280"/>
-                    </Grid>
+                    <TextBlock x:Name="AutoSaveStatusText" Text="" FontSize="13" Foreground="#888888" HorizontalAlignment="Right" Margin="0,8,0,0"/>
                 </StackPanel>
-            </Border>
-
-            <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
-                <StackPanel Spacing="20">
-                    <TextBlock Text="Chỉ số vận hành Realtime (RAM-only)" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
-
-                    <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" RowSpacing="16" ColumnSpacing="16">
-                        <Border Grid.Row="0" Grid.Column="0" Background="#20FFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="20" CornerRadius="8">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Tổng frame đã chụp" FontSize="13" Foreground="#999999"/>
-                                <TextBlock x:Name="FrameCountText" Text="0" FontSize="28" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="White"/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Grid.Row="0" Grid.Column="1" Background="#20FFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="20" CornerRadius="8">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Phân tích VLM" FontSize="13" Foreground="#999999"/>
-                                <TextBlock x:Name="VisionCountText" Text="0" FontSize="28" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="White"/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Grid.Row="0" Grid.Column="2" Background="#152515" BorderBrush="#2040FF40" BorderThickness="1" Padding="20" CornerRadius="8">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Phản hồi đã phát giọng" FontSize="13" Foreground="#88CC88"/>
-                                <TextBlock x:Name="EmittedCountText" Text="0" FontSize="28" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="#4CAF50"/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Grid.Row="1" Grid.Column="0" Background="#251515" BorderBrush="#40FF4040" BorderThickness="1" Padding="20" CornerRadius="8">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Bỏ qua do màn hình tĩnh (Stale)" FontSize="13" Foreground="#CC8888"/>
-                                <TextBlock x:Name="StaleDropsText" Text="0" FontSize="28" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="#FF5252"/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Background="#20FFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="20" CornerRadius="8">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="Thay đổi màn hình (MAD Delta) / Engine" FontSize="13" Foreground="#999999"/>
-                                <TextBlock x:Name="LatencyText" Text="0.0% | UltraFast-GDI-Native" FontSize="20" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA" VerticalAlignment="Center" Margin="0,4,0,0"/>
-                            </StackPanel>
-                        </Border>
-                    </Grid>
-                </StackPanel>
-            </Border>
-
-            <TextBlock x:Name="AutoSaveStatusText" Text="" FontSize="13" Foreground="#888888" HorizontalAlignment="Right" Margin="0,8,0,0"/>
-        </StackPanel>
             </ScrollViewer>
         </PivotItem>
-        
+
+        <PivotItem Header="Nhận thức Màn hình" Margin="0,16,0,0">
+            <ScrollViewer Padding="32,0,32,32" Background="Transparent">
+                <StackPanel Spacing="24" HorizontalAlignment="Stretch">
+                    <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
+                        <StackPanel Spacing="16">
+                            <TextBlock Text="Nhận thức Màn hình (Screen Observer)" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
+
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <StackPanel Grid.Column="0" Spacing="8">
+                                    <TextBlock Text="Quan sát màn hình chính (DXGI -&gt; Local Qwen3-VL -&gt; OmniVoice)" FontSize="14" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
+                                    <TextBlock Text="Màn hình được quan sát cục bộ qua vòng lặp RAM. Không ghi đĩa hay lưu trữ bất kỳ hình ảnh nào." Foreground="#AAAAAA" FontSize="13"/>
+                                </StackPanel>
+
+                                <Button x:Name="ToggleObservationButton" Grid.Column="1" Click="OnToggleObservationClick" VerticalAlignment="Center" Padding="24,12" CornerRadius="8" Background="#20FFFFFF" BorderThickness="1" BorderBrush="#10FFFFFF">
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <FontIcon x:Name="ToggleIcon" Glyph="&#xE714;" FontSize="16"/>
+                                        <TextBlock x:Name="ToggleText" Text="Bắt đầu quan sát" FontWeight="Medium"/>
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+
+                            <Grid x:Name="GeminiVisionRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <TextBlock Text="Gemini Vision API Key (Screen Observation Cloud)" Foreground="#DDDDDD"/>
+                                    <TextBlock Text="Dùng cho Gemini Live. Lấy key tại aistudio.google.com/apikey" Foreground="#777777" FontSize="12" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <PasswordBox x:Name="GeminiVisionKeyBox" Grid.Column="1" PlaceholderText="AIza..." Width="280"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
+                        <StackPanel Spacing="20">
+                            <TextBlock Text="Chỉ số vận hành Realtime (RAM-only)" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
+
+                            <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" RowSpacing="16" ColumnSpacing="16">
+                                <Border Grid.Row="0" Grid.Column="0" Background="#20FFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="20" CornerRadius="8">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Tổng frame đã chụp" FontSize="13" Foreground="#999999"/>
+                                        <TextBlock x:Name="FrameCountText" Text="0" FontSize="28" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="White"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="0" Grid.Column="1" Background="#20FFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="20" CornerRadius="8">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Phân tích VLM" FontSize="13" Foreground="#999999"/>
+                                        <TextBlock x:Name="VisionCountText" Text="0" FontSize="28" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="White"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="0" Grid.Column="2" Background="#152515" BorderBrush="#2040FF40" BorderThickness="1" Padding="20" CornerRadius="8">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Phản hồi đã phát giọng" FontSize="13" Foreground="#88CC88"/>
+                                        <TextBlock x:Name="EmittedCountText" Text="0" FontSize="28" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="#4CAF50"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Grid.Column="0" Background="#251515" BorderBrush="#40FF4040" BorderThickness="1" Padding="20" CornerRadius="8">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Bỏ qua do màn hình tĩnh (Stale)" FontSize="13" Foreground="#CC8888"/>
+                                        <TextBlock x:Name="StaleDropsText" Text="0" FontSize="28" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="#FF5252"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Background="#20FFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="20" CornerRadius="8">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Thay đổi màn hình (MAD Delta) / Engine" FontSize="13" Foreground="#999999"/>
+                                        <TextBlock x:Name="LatencyText" Text="0.0% | UltraFast-GDI-Native" FontSize="20" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA" VerticalAlignment="Center" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </PivotItem>
+
+        <PivotItem Header="VTube Studio" Margin="0,16,0,0">
+            <ScrollViewer Padding="32,0,32,32" Background="Transparent">
+                <StackPanel Spacing="24" HorizontalAlignment="Stretch">
+                    <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
+                        <StackPanel Spacing="16">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" Spacing="4">
+                                    <TextBlock Text="VTube Studio Avatar Live2D" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
+                                    <TextBlock x:Name="VtsStatusText" Text="Trạng thái: Chưa kết nối" Foreground="#888888"/>
+                                    <TextBlock x:Name="VtsStateText" Text="" Foreground="#666666" FontSize="12"/>
+                                </StackPanel>
+                                <Button x:Name="ConnectVtsButton" Grid.Column="1" Click="OnConnectVtsClick" Padding="16,10" CornerRadius="8" Background="#20FFFFFF" BorderThickness="1" BorderBrush="#10FFFFFF">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE703;" FontSize="14"/>
+                                        <TextBlock Text="Kết nối VTS" FontWeight="Medium"/>
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+
+                            <TextBlock Text="Kích hoạt thủ công biểu cảm &amp; cử động:" FontSize="13" Foreground="#AAAAAA" Margin="0,8,0,0"/>
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Button Content="Vui vẻ" Click="OnVtsActionClick" Tag="joy" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
+                                <Button Content="Ngạc nhiên" Click="OnVtsActionClick" Tag="surprised" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
+                                <Button Content="Dịu dàng" Click="OnVtsActionClick" Tag="gentle" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
+                                <Button Content="Giơ tay" Click="OnVtsActionClick" Tag="raise_hand" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
+                                <Button Content="Dựng đuôi" Click="OnVtsActionClick" Tag="tail_up" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
+                            </StackPanel>
+
+                            <TextBlock Text="Cường độ chuyển động (áp dụng ngay):" FontSize="13" Foreground="#AAAAAA" Margin="0,16,0,0"/>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Sway (thân)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <Slider x:Name="SwaySlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Đầu" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <Slider x:Name="HeadSlider" Grid.Column="1" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Mắt" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <Slider x:Name="EyeSlider" Grid.Column="1" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Tần suất micro-action" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <Slider x:Name="MicroSlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Tần suất pose" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <Slider x:Name="PoseSlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                                <TextBlock Grid.Column="0" Text="Overlay desktop (avatar nổi trên màn hình)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <ToggleSwitch x:Name="OverlayToggle" Grid.Column="1" IsOn="False" Toggled="OnOverlayToggleChanged"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Nhìn theo chuột (Mouse Look)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <ToggleSwitch x:Name="MouseLookToggle" Grid.Column="1" IsOn="False" Toggled="OnMouseLookToggleChanged"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="Độ nhạy nhìn theo chuột" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                                    <Slider x:Name="MouseSensitivitySlider" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="180" IsEnabled="False" ValueChanged="OnMouseSensitivityChanged"/>
+                                    <TextBlock x:Name="MouseSensitivityText" Text="100%" Width="44" VerticalAlignment="Center" Foreground="#A0C0FF" TextAlignment="Right"/>
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock x:Name="VtsOverlayErrorText" Text="" Foreground="#FF6B6B" FontSize="12" Margin="0,4,0,0" Visibility="Collapsed"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </PivotItem>
+
         <PivotItem Header="Bộ nhớ" Margin="0,16,0,0">
             <views:MemoryView x:Name="MemoryControl" />
         </PivotItem>

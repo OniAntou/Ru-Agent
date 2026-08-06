@@ -1,20 +1,30 @@
 [CmdletBinding()]
 param(
     [string]$ModelCache = "D:\LLM\models\omnivoice",
+    [string]$SourcePython = "",
     [switch]$ConfirmModelDownload,
     [switch]$WhatIf
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$sourcePython = Join-Path $projectRoot "gwen_env\Scripts\python.exe"
+$sourcePython = if ($SourcePython.Trim()) {
+    $SourcePython
+} else {
+    Join-Path $projectRoot ".venv\Scripts\python.exe"
+}
 $environmentPath = Join-Path $projectRoot "omnivoice_env"
 $environmentPython = Join-Path $environmentPath "Scripts\python.exe"
 $pipCache = Join-Path $projectRoot "pip-cache\omnivoice"
 $temporaryDirectory = Join-Path $projectRoot ".tmp\omnivoice-install"
 
 if (-not (Test-Path -LiteralPath $sourcePython -PathType Leaf)) {
-    throw "Python 3.11 source is missing: $sourcePython"
+    $pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
+    if ($pythonCommand) {
+        $sourcePython = $pythonCommand.Source
+    } else {
+        throw "Python source is missing: $sourcePython. Pass -SourcePython with a Python 3.11+ executable."
+    }
 }
 
 if ($WhatIf) {

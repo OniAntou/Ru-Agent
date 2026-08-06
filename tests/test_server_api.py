@@ -1295,6 +1295,8 @@ def test_self_learning_setting_default_true_and_round_trip(monkeypatch, isolated
     with TestClient(server.app) as client:
         body = client.get("/settings").json()
         assert body["enable_self_learning"] is True
+        assert body["share_memory_with_cloud"] is True
+        assert body["cloud_memory_consent"] is True
         saved = client.post(
             "/settings", json={"backend": "llama.cpp", "enable_self_learning": False}
         )
@@ -1314,7 +1316,7 @@ def test_learn_from_turn_enqueues_when_enabled(monkeypatch, isolated_state) -> N
     monkeypatch.setattr(server_shared._MEMORY_QUEUE, "put_nowait", lambda item: calls.append(item))
     server.save_settings_to_file({"enable_self_learning": True})
     server._learn_from_turn("prompt", "reply")
-    assert calls == [("prompt", "reply")]
+    assert [(item[1], item[2]) for item in calls] == [("prompt", "reply")]
 
 def test_process_memory_turn_skips_when_model_busy(monkeypatch, isolated_state) -> None:
     extracted = []
@@ -1325,6 +1327,20 @@ def test_process_memory_turn_skips_when_model_busy(monkeypatch, isolated_state) 
         server._process_memory_turn("prompt", "reply")
     finally:
         server._MEMORY_TURN_LOCK.release()
+    assert extracted == []
+
+def test_process_memory_turn_skips_hosted_extraction_without_cloud_consent(monkeypatch, isolated_state) -> None:
+    extracted = []
+    server.core.runner.backend = headless_runner.BACKEND_KILO
+    server.save_settings_to_file({"share_memory_with_cloud": False})
+    monkeypatch.setattr(
+        server_shared,
+        "extract_facts_with_llm",
+        lambda p, r, g: extracted.append((p, r)) or (),
+    )
+
+    server._process_memory_turn("prompt", "reply")
+
     assert extracted == []
 
 def test_process_memory_turn_stores_facts_and_dedups(monkeypatch, isolated_state, tmp_path) -> None:
@@ -1385,8 +1401,23 @@ def test_learn_from_turn_queue_full_drops_oldest(monkeypatch, isolated_state) ->
     server._learn_from_turn("prompt 1", "reply 1")
     server._learn_from_turn("prompt 2", "reply 2")
     server._learn_from_turn("prompt 3", "reply 3")
-    assert list(fresh.queue) == [("prompt 2", "reply 2"), ("prompt 3", "reply 3")]
+    assert [(item[1], item[2]) for item in fresh.queue] == [
+        ("prompt 2", "reply 2"),
+        ("prompt 3", "reply 3"),
+    ]
     fresh.queue.clear()
+
+def test_memory_queue_generation_invalidates_turns_after_clear(monkeypatch, isolated_state) -> None:
+    fresh = queue.Queue(maxsize=2)
+    monkeypatch.setattr(server_shared, "_MEMORY_QUEUE", fresh)
+    server.save_settings_to_file({"enable_self_learning": True})
+
+    server._learn_from_turn("old prompt", "old reply")
+    generation = fresh.queue[0][0]
+    server._invalidate_memory_queue()
+
+    assert server._memory_turn_generation_is_current(generation) is False
+    assert fresh.empty()
 
 def test_process_memory_turn_skips_sensitive_turn(monkeypatch, isolated_state, tmp_path) -> None:
     monkeypatch.setattr(server.core, "memory_db_path", tmp_path / "memory.db")
@@ -1482,6 +1513,19 @@ def test_activity_log_respects_limit(monkeypatch, isolated_state):
     with TestClient(server.app) as client:
         client.get("/activity-log?limit=50")
     assert captured["limit"] == 50
+
+
+def test_activity_log_clear_endpoint(monkeypatch, isolated_state):
+    cleared = []
+
+    def fake_clear():
+        cleared.append(True)
+
+    monkeypatch.setattr("mini_gpt.routers.status.clear", fake_clear)
+    with TestClient(server.app) as client:
+        resp = client.delete("/activity-log")
+        assert resp.status_code == 200
+    assert cleared == [True]
 
 def test_chat_hooks_import_append():
     from mini_gpt.routers import chat as chat_router

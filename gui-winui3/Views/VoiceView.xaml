@@ -8,7 +8,7 @@
 
     <ScrollViewer Padding="32" Background="Transparent">
         <StackPanel Spacing="24" HorizontalAlignment="Stretch">
-            <TextBlock Text="Cài đặt Giọng nói &amp; VTube Studio" FontSize="24" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
+            <TextBlock Text="Cài đặt Giọng nói" FontSize="24" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
 
             <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
                 <StackPanel Spacing="16">
@@ -69,72 +69,6 @@
                             </StackPanel>
                         </Button>
                     </Grid>
-                </StackPanel>
-            </Border>
-
-            <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
-                <StackPanel Spacing="16">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel Grid.Column="0" Spacing="4">
-                            <TextBlock Text="VTube Studio Avatar Live2D" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
-                            <TextBlock x:Name="VtsStatusText" Text="Trạng thái: Chưa kết nối" Foreground="#888888"/>
-                            <TextBlock x:Name="VtsStateText" Text="" Foreground="#666666" FontSize="12"/>
-                        </StackPanel>
-                        <Button x:Name="ConnectVtsButton" Grid.Column="1" Click="OnConnectVtsClick" Padding="16,10" CornerRadius="8" Background="#20FFFFFF" BorderThickness="1" BorderBrush="#10FFFFFF">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE703;" FontSize="14"/>
-                                <TextBlock Text="Kết nối VTS" FontWeight="Medium"/>
-                            </StackPanel>
-                        </Button>
-                    </Grid>
-
-                    <TextBlock Text="Kích hoạt thủ công biểu cảm &amp; cử động:" FontSize="13" Foreground="#AAAAAA" Margin="0,8,0,0"/>
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <Button Content="Vui vẻ" Click="OnVtsActionClick" Tag="joy" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
-                        <Button Content="Ngạc nhiên" Click="OnVtsActionClick" Tag="surprised" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
-                        <Button Content="Dịu dàng" Click="OnVtsActionClick" Tag="gentle" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
-                        <Button Content="Giơ tay" Click="OnVtsActionClick" Tag="raise_hand" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
-                        <Button Content="Dựng đuôi" Click="OnVtsActionClick" Tag="tail_up" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
-                    </StackPanel>
-
-                    <TextBlock Text="Cường độ chuyển động (áp dụng ngay):" FontSize="13" Foreground="#AAAAAA" Margin="0,16,0,0"/>
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Grid.Column="0" Text="Sway (thân)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <Slider x:Name="SwaySlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
-                    </Grid>
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Grid.Column="0" Text="Đầu" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <Slider x:Name="HeadSlider" Grid.Column="1" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
-                    </Grid>
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Grid.Column="0" Text="Mắt" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <Slider x:Name="EyeSlider" Grid.Column="1" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
-                    </Grid>
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Grid.Column="0" Text="Tần suất micro-action" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <Slider x:Name="MicroSlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
-                    </Grid>
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Grid.Column="0" Text="Tần suất pose" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <Slider x:Name="PoseSlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
-                    </Grid>
-
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
-                        <TextBlock Grid.Column="0" Text="Overlay desktop (avatar nổi trên màn hình)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <ToggleSwitch x:Name="OverlayToggle" Grid.Column="1" IsOn="False" Toggled="OnOverlayToggleChanged"/>
-                    </Grid>
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Grid.Column="0" Text="Nhìn theo chuột (Mouse Look)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <ToggleSwitch x:Name="MouseLookToggle" Grid.Column="1" IsOn="False" Toggled="OnMouseLookToggleChanged"/>
-                    </Grid>
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Grid.Column="0" Text="Độ nhạy nhìn theo chuột" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
-                            <Slider x:Name="MouseSensitivitySlider" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="180" IsEnabled="False" ValueChanged="OnMouseSensitivityChanged"/>
-                            <TextBlock x:Name="MouseSensitivityText" Text="100%" Width="44" VerticalAlignment="Center" Foreground="#A0C0FF" TextAlignment="Right"/>
-                        </StackPanel>
-                    </Grid>
-                    <TextBlock x:Name="VtsOverlayErrorText" Text="" Foreground="#FF6B6B" FontSize="12" Margin="0,4,0,0" Visibility="Collapsed"/>
                 </StackPanel>
             </Border>
         </StackPanel>

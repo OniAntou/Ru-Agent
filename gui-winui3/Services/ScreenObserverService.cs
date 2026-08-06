@@ -7,7 +7,7 @@ using RuApp.Models;
 
 namespace RuApp.Services
 {
-    public class ScreenObserverService
+    public class ScreenObserverService : IAsyncDisposable
     {
         private readonly ApiService _apiService;
         private CancellationTokenSource? _observerCts;
@@ -39,10 +39,29 @@ namespace RuApp.Services
 
         public async Task<bool> StopAsync()
         {
-            bool ok = await _apiService.StopObservationAsync();
-            IsActive = false;
-            await StopObservationLoopAsync();
+            bool ok = false;
+            try
+            {
+                ok = await _apiService.StopObservationAsync();
+            }
+            finally
+            {
+                IsActive = false;
+                await StopObservationLoopAsync();
+            }
             return ok;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (IsActive)
+            {
+                await StopAsync();
+            }
+            else
+            {
+                await StopObservationLoopAsync();
+            }
         }
 
         private async Task StartObservationLoopAsync()

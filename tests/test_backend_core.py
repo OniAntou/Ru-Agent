@@ -38,6 +38,30 @@ def test_cloud_backend_does_not_receive_saved_memory_without_consent(monkeypatch
     assert captured["memory_context"] is None
 
 
+def test_cloud_backend_reads_memory_by_default(monkeypatch) -> None:
+    core = MiniGPTCore()
+    core.runner.backend = BACKEND_KILO
+
+    class Store:
+        def retrieve(self, prompt):
+            return ["remembered"]
+
+        def render_context(self, records):
+            assert records == ["remembered"]
+            return "memory context"
+
+    captured = {}
+    monkeypatch.setattr(core, "get_memory_store", lambda: Store())
+    monkeypatch.setattr(
+        core.runner,
+        "generate_reply",
+        lambda **kwargs: captured.update(kwargs) or "ok",
+    )
+
+    assert core.generate_reply_with_memory("hello") == "ok"
+    assert captured["memory_context"] == "memory context"
+
+
 def test_generation_forwards_stream_reset_and_vts_instruction(monkeypatch) -> None:
     core = MiniGPTCore()
     captured = {}

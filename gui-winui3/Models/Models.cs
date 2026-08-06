@@ -176,7 +176,7 @@ namespace RuApp.Models
         public bool SelfLearningEnabled { get; set; } = true;
 
         [JsonPropertyName("cloud_memory_consent")]
-        public bool CloudMemoryConsent { get; set; } = false;
+        public bool CloudMemoryConsent { get; set; } = true;
     }
 
     public class VoiceStatusDto

@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -41,7 +42,10 @@ namespace RuApp.Services
                 venvPython = "python.exe";
             }
 
-            CreateJobObjectWithKillOnClose();
+            if (!CreateJobObjectWithKillOnClose())
+            {
+                throw new InvalidOperationException("Could not create the backend Job Object; refusing to start an unowned process.");
+            }
 
             var startInfo = new ProcessStartInfo
             {
@@ -57,17 +61,25 @@ namespace RuApp.Services
 
             _process = new Process { StartInfo = startInfo };
             _process.Start();
-            _ = DrainChildOutputAsync(_process);
+            _ = DrainChildOutputAsync(_process, projectRoot);
 
             if (_jobHandle != IntPtr.Zero)
             {
                 try
                 {
-                    AssignProcessToJobObject(_jobHandle, _process.Handle);
+                    if (!AssignProcessToJobObject(_jobHandle, _process.Handle))
+                    {
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "AssignProcessToJobObject failed.");
+                    }
                 }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"[BackendProcessManager] AssignProcessToJobObject failed: {ex.Message}");
+                    try { _process.Kill(entireProcessTree: true); } catch { }
+                    _process.Dispose();
+                    _process = null;
+                    CloseJobHandle();
+                    throw;
                 }
             }
 
@@ -92,12 +104,12 @@ namespace RuApp.Services
             return IsRunning;
         }
 
-        private void CreateJobObjectWithKillOnClose()
+        private bool CreateJobObjectWithKillOnClose()
         {
             try
             {
                 _jobHandle = CreateJobObject(IntPtr.Zero, null);
-                if (_jobHandle == IntPtr.Zero) return;
+                if (_jobHandle == IntPtr.Zero) return false;
 
                 var info = new JOBOBJECT_BASIC_LIMIT_INFORMATION
                 {
@@ -114,31 +126,50 @@ namespace RuApp.Services
                 try
                 {
                     Marshal.StructureToPtr(extendedInfo, extendedInfoPtr, false);
-                    SetInformationJobObject(_jobHandle, JobObjectInfoType.ExtendedLimitInformation, extendedInfoPtr, (uint)length);
+                    if (!SetInformationJobObject(_jobHandle, JobObjectInfoType.ExtendedLimitInformation, extendedInfoPtr, (uint)length))
+                    {
+                        throw new Win32Exception(Marshal.GetLastWin32Error(), "SetInformationJobObject failed.");
+                    }
                 }
                 finally
                 {
                     Marshal.FreeHGlobal(extendedInfoPtr);
                 }
+            return true;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[BackendProcessManager] Job Object setup failed: {ex.Message}");
+                CloseJobHandle();
                 _jobHandle = IntPtr.Zero;
+                return false;
             }
         }
 
-        private static async Task DrainChildOutputAsync(Process process)
+        private static async Task DrainChildOutputAsync(Process process, string projectRoot)
         {
             try
             {
+                string logDirectory = Path.Combine(projectRoot, "logs");
+                Directory.CreateDirectory(logDirectory);
                 await Task.WhenAll(
-                    process.StandardOutput.ReadToEndAsync(),
-                    process.StandardError.ReadToEndAsync()
+                    CopyOutputAsync(process.StandardOutput, Path.Combine(logDirectory, "server_out.log")),
+                    CopyOutputAsync(process.StandardError, Path.Combine(logDirectory, "server_err.log"))
                 );
             }
-            catch
+            catch (Exception ex)
             {
-                // Streams end when the child exits; nothing else to do.
+                Debug.WriteLine($"[BackendProcessManager] Could not persist backend output: {ex.Message}");
+            }
+        }
+
+        private static async Task CopyOutputAsync(StreamReader reader, string path)
+        {
+            using var writer = new StreamWriter(path, append: true, Encoding.UTF8);
+            await writer.WriteLineAsync($"--- {DateTimeOffset.Now:O} ---");
+            while (await reader.ReadLineAsync() is { } line)
+            {
+                await writer.WriteLineAsync(line);
             }
         }
 
@@ -235,13 +266,13 @@ namespace RuApp.Services
             public UIntPtr PeakJobMemoryUsed;
         }
 
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string? lpName);
 
-        [DllImport("kernel32.dll")]
+        [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool SetInformationJobObject(IntPtr hJob, JobObjectInfoType JobObjectInfoClass, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
 
-        [DllImport("kernel32.dll")]
+        [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
 
         [DllImport("kernel32.dll")]

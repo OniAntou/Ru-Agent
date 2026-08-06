@@ -27,3 +27,18 @@ jobs:
         with:
           dotnet-version: "10.0.x"
       - run: dotnet build gui-winui3/RuApp.csproj -c Release -r win-x64
+
+  native-overlay:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bootstrap manifest vcpkg
+        shell: pwsh
+        run: |
+          $vcpkgRoot = Join-Path $env:GITHUB_WORKSPACE '.tmp\vcpkg'
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $vcpkgRoot) | Out-Null
+          git clone --depth 1 https://github.com/microsoft/vcpkg $vcpkgRoot
+          & (Join-Path $vcpkgRoot 'bootstrap-vcpkg.bat')
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg bootstrap failed with exit code $LASTEXITCODE." }
+          $env:VCPKG_ROOT = $vcpkgRoot
+          & .\scripts\build_ru_desktop_overlay.ps1 -BootstrapVcpkg

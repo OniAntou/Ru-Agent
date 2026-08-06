@@ -11,7 +11,7 @@ using RuApp.Models;
 
 namespace RuApp.Services
 {
-    public class ApiService
+    public class ApiService : IDisposable
     {
         private readonly HttpClient _httpClient;
         private readonly string _baseUrl;
@@ -391,6 +391,20 @@ namespace RuApp.Services
             }
         }
 
+        public async Task<bool> ClearActivityLogAsync()
+        {
+            try
+            {
+                var response = await _httpClient.DeleteAsync($"{_baseUrl}/activity-log");
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] ClearActivityLogAsync failed: {ex.Message}");
+                return false;
+            }
+        }
+
         public async Task<List<string>> GetModelsAsync(string backend)
         {
             try
@@ -553,6 +567,11 @@ namespace RuApp.Services
                 Debug.WriteLine($"[ApiService] StopObservationAsync failed: {ex.Message}");
                 return false;
             }
+        }
+
+        public void Dispose()
+        {
+            _httpClient.Dispose();
         }
     }
 }

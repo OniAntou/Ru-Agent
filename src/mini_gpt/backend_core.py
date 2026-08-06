@@ -69,7 +69,7 @@ class MiniGPTCore:
         on_stream_delta=None,
         on_stream_reset=None,
         vts_instruction: str = "",
-        share_memory_with_cloud: bool = False,
+        share_memory_with_cloud: bool = True,
     ):
         hosted = self.runner.backend in (BACKEND_OPENCODE, BACKEND_KILO)
         context = None

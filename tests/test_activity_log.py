@@ -1,10 +1,11 @@
 import json
 import threading
+import time
 from pathlib import Path
 
 import pytest
 
-from mini_gpt.activity_log import LOG_FILE, append, read
+from mini_gpt.activity_log import LOG_FILE, append, clear, read
 
 
 @pytest.fixture(autouse=True)
@@ -18,6 +19,17 @@ def test_append_and_read_roundtrip():
     assert len(events) == 1
     assert events[0]["type"] == "chat"
     assert events[0]["data"]["content"] == "hi"
+
+
+def test_append_default_timestamp_is_unix_epoch():
+    # The GUI filters/renders by Unix epoch seconds (e.Ts * 1000 vs epoch ms).
+    # time.monotonic() values (~1e5) are invisible to that filter.
+    before = time.time()
+    append({"type": "chat", "session_id": None, "data": {"role": "user", "content": "hi"}})
+    after = time.time()
+    ts = read()[0]["ts"]
+    assert before - 1 <= ts <= after + 1
+    assert ts > 1_000_000_000
 
 
 def test_read_respects_limit():
@@ -48,3 +60,17 @@ def test_append_thread_safe():
     for t in threads: t.join()
     assert not errors
     assert len(read()) == 80
+
+
+def test_clear_empties_log():
+    append({"type": "chat", "session_id": None, "data": {"role": "user", "content": "hi"}})
+    assert len(read()) == 1
+    clear()
+    assert read() == []
+    append({"type": "chat", "session_id": None, "data": {"role": "user", "content": "after"}})
+    assert [e["data"]["content"] for e in read()] == ["after"]
+
+
+def test_clear_missing_file_is_noop():
+    clear()
+    assert read() == []

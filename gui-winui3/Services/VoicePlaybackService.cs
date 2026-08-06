@@ -14,6 +14,7 @@ namespace RuApp.Services
         private MediaPlayer? _player;
         private InMemoryRandomAccessStream? _stream;
         private CancellationTokenSource? _cts;
+        private bool _vtsSpeaking;
 
         public string VoiceLabel { get; set; } = "Ru (OmniVoice)";
         public double VoiceSpeed { get; set; } = 1.0;
@@ -39,7 +40,14 @@ namespace RuApp.Services
         {
             if (string.IsNullOrWhiteSpace(text)) return;
 
-            StopVoice();
+            if (interrupt)
+            {
+                StopVoice();
+            }
+            else if (IsPlaying)
+            {
+                return;
+            }
 
             var audio =             await _apiService.SynthesizeTtsAsync(text.Trim(), VoiceLabel, VoiceSpeed);
             if (audio == null || audio.Length == 0) return;
@@ -56,6 +64,12 @@ namespace RuApp.Services
                 {
                     bool ok = await _apiService.SetVtsSpeakingAsync(true);
                     Debug.WriteLine($"[VoicePlayback] MediaOpened SetVtsSpeakingAsync={ok}");
+                    if (!ok || cts.IsCancellationRequested || !ReferenceEquals(_player, player))
+                    {
+                        await _apiService.SetVtsSpeakingAsync(false);
+                        return;
+                    }
+                    _vtsSpeaking = true;
                     player.Play();
                 }
                 catch (Exception ex)
@@ -67,6 +81,7 @@ namespace RuApp.Services
             {
                 try
                 {
+                    _vtsSpeaking = false;
                     bool ok = await _apiService.SetVtsSpeakingAsync(false);
                     Debug.WriteLine($"[VoicePlayback] MediaEnded SetVtsSpeakingAsync={ok}");
                     CleanupPlayer();
@@ -80,6 +95,7 @@ namespace RuApp.Services
             {
                 try
                 {
+                    _vtsSpeaking = false;
                     bool ok = await _apiService.SetVtsSpeakingAsync(false);
                     Debug.WriteLine($"[VoicePlayback] MediaFailed SetVtsSpeakingAsync={ok}");
                     CleanupPlayer();
@@ -106,7 +122,24 @@ namespace RuApp.Services
         {
             _cts?.Cancel();
             _cts = null;
+            if (_vtsSpeaking)
+            {
+                _vtsSpeaking = false;
+                _ = ResetVtsSpeakingAsync();
+            }
             CleanupPlayer();
+        }
+
+        private async Task ResetVtsSpeakingAsync()
+        {
+            try
+            {
+                await _apiService.SetVtsSpeakingAsync(false);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[VoicePlayback] Reset VTS speaking failed: {ex.Message}");
+            }
         }
 
         private void CleanupPlayer()
@@ -138,6 +171,18 @@ namespace RuApp.Services
         public void Dispose()
         {
             StopVoice();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            _cts?.Cancel();
+            _cts = null;
+            CleanupPlayer();
+            if (_vtsSpeaking)
+            {
+                _vtsSpeaking = false;
+                await ResetVtsSpeakingAsync();
+            }
         }
     }
 }

@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-import socket
 import time
-import urllib.error
 from collections.abc import Callable, Sequence
 from time import perf_counter
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
+
+import httpx
+from httpx import HTTPStatusError, RequestError, TimeoutException
 
 from ._text_utils import normalize_text
 
@@ -30,7 +29,6 @@ class _NetworkStreamError(RuntimeError):
 
     def __init__(self, message: str, *, retry_after: float | None = None) -> None:
         super().__init__(message)
-        # Seconds the server asked us to wait (Retry-After / 429).
         self.retry_after = retry_after
 
 
@@ -102,17 +100,18 @@ class OpenAIRuntime:
             "Authorization": f"Bearer {api_key}",
             "User-Agent": "Ru-LocalLLM/0.1",
         }
-        request = Request(url, headers=headers, method="GET")
         try:
-            with urlopen(request, timeout=30) as response:
-                response_body = response.read().decode("utf-8")
-        except HTTPError as error:
-            if error.code == _HTTP_UNAUTHORIZED:
+            with httpx.Client() as client:
+                response = client.get(url, headers=headers, timeout=30)
+                response.raise_for_status()
+                response_body = response.read()
+        except HTTPStatusError as error:
+            if error.response.status_code == _HTTP_UNAUTHORIZED:
                 raise AuthenticationError(
                     "API key was rejected (HTTP 401). Check the saved key in Settings."
                 ) from error
-            raise RuntimeError(f"Cannot fetch models: HTTP {error.code} {error.reason}") from error
-        except Exception as error:
+            raise RuntimeError(f"Cannot fetch models: HTTP {error.response.status_code}") from error
+        except RequestError as error:
             raise RuntimeError(f"Cannot fetch models: {error}") from error
 
         try:
@@ -168,27 +167,35 @@ class OpenAIRuntime:
 
     def _read_stream(
         self,
-        request_factory: Callable[[], Request],
+        url: str,
+        headers: dict[str, str],
+        data: bytes,
         on_delta: Callable[[str], None] | None,
         *,
         timeout_seconds: float = _STREAM_TIMEOUT_SECONDS,
         is_cancelled: Callable[[], bool] | None = None,
     ) -> str:
         accumulated = ""
-        stream_mode: str | None = None  # 'cumulative' or 'incremental'
+        stream_mode: str | None = None
         saw_data_line = False
         deadline = perf_counter() + timeout_seconds
         try:
             _raise_if_cancelled(is_cancelled)
-            with urlopen(request_factory(), timeout=timeout_seconds) as response:
-                # OpenCode API is expected to return text/event-stream
-                for raw_line in response:
+            with httpx.stream(
+                "POST",
+                url,
+                headers=headers,
+                content=data,
+                timeout=timeout_seconds,
+            ) as response:
+                response.raise_for_status()
+                for raw_line in response.iter_lines():
                     if perf_counter() > deadline:
                         raise _NetworkStreamError(
                             "Hosted generation exceeded its total response deadline"
                         )
                     _raise_if_cancelled(is_cancelled)
-                    line = raw_line.decode("utf-8").strip()
+                    line = raw_line.strip()
                     if not line:
                         continue
                     if not line.startswith("data:"):
@@ -201,7 +208,6 @@ class OpenAIRuntime:
                     try:
                         decoded = json.loads(payload)
                     except json.JSONDecodeError as error:
-                        # Fallback for unexpected payloads (e.g. HTML error pages mixed into stream)
                         raise RuntimeError(f"OpenCode returned invalid JSON: {payload[:50]}") from error
 
                     error_detail = self._stream_error(decoded)
@@ -211,11 +217,6 @@ class OpenAIRuntime:
                     if raw_delta is None:
                         continue
 
-                    # Providers vary: some emit the full text so far on every
-                    # chunk (cumulative), the standard OpenAI format emits
-                    # only the new suffix (incremental). Detect the mode once
-                    # on the second event and stay consistent afterwards so
-                    # text is never duplicated or dropped.
                     if stream_mode is None:
                         stream_mode = "cumulative" if raw_delta.startswith(accumulated) else "incremental"
                     if stream_mode == "cumulative" and raw_delta.startswith(accumulated):
@@ -229,31 +230,33 @@ class OpenAIRuntime:
                     if new_text and on_delta is not None:
                         on_delta(new_text)
             _raise_if_cancelled(is_cancelled)
-        except HTTPError as error:
-            # The error body may echo the request payload; log it separately
-            # instead of embedding user content in the exception message.
-            error_body = error.read(_MAX_ERROR_BODY_BYTES).decode("utf-8", errors="replace")
-            logger.debug("OpenCode API error body (HTTP %s): %s", error.code, error_body)
-            message = f"OpenCode API HTTP {error.code}: {error.reason}"
+        except HTTPStatusError as error:
+            error_body = error.response.read()
+            logger.debug(
+                "OpenCode API error body (HTTP %s): %s",
+                error.response.status_code,
+                error_body[:_MAX_ERROR_BODY_BYTES],
+            )
+            message = f"OpenCode API HTTP {error.response.status_code}: {error.response.reason_phrase}"
             try:
                 payload = json.loads(error_body)
                 provider_message = (payload.get("error") or {}).get("message") or ""
             except (ValueError, AttributeError):
                 provider_message = ""
-            if provider_message and not provider_message.casefold().startswith(error.reason.casefold()):
+            if provider_message and not provider_message.casefold().startswith(error.response.reason_phrase.casefold()):
                 message = f"{message}: {provider_message}"
-            if error.code == _HTTP_UNAUTHORIZED:
+            if error.response.status_code == _HTTP_UNAUTHORIZED:
                 raise AuthenticationError(
                     "API key was rejected (HTTP 401). Check the saved key in Settings."
                 ) from error
-            if error.code == _HTTP_TOO_MANY_REQUESTS:
-                retry_after = _parse_retry_after(error.headers.get("Retry-After"))
+            if error.response.status_code == _HTTP_TOO_MANY_REQUESTS:
+                retry_after = _parse_retry_after(error.response.headers.get("Retry-After"))
                 raise _NetworkStreamError(
                     "OpenCode API rate limited (HTTP 429); retrying after backoff",
                     retry_after=retry_after,
                 ) from error
             raise RuntimeError(message) from error
-        except (socket.timeout, urllib.error.URLError) as e:
+        except (TimeoutException, RequestError) as e:
             raise _NetworkStreamError(f"Network error while communicating with OpenCode API: {e}") from e
         if not saw_data_line:
             raise RuntimeError(
@@ -269,6 +272,7 @@ class OpenAIRuntime:
         top_k: int,
         *,
         on_delta: Callable[[str], None] | None = None,
+        on_reset: Callable[[], None] | None = None,
         on_complete_timing: Callable[[float], None] | None = None,
         timeout_seconds: float = _STREAM_TIMEOUT_SECONDS,
         max_retries: int = _MAX_RETRIES,
@@ -308,20 +312,25 @@ class OpenAIRuntime:
             "User-Agent": "Ru-LocalLLM/0.1",
         }
 
-        def make_request() -> Request:
-            return Request(url, data=data, headers=headers, method="POST")
-
         started = perf_counter()
         content = ""
         for attempt in range(max_retries + 1):
             retry_after: float | None = None
+            attempt_emitted = False
+
+            def emit_delta(delta: str) -> None:
+                nonlocal attempt_emitted
+                attempt_emitted = True
+                if on_delta is not None:
+                    on_delta(delta)
+
             _raise_if_cancelled(is_cancelled)
             try:
-                # Only deliver streaming deltas on the first attempt.
-                # On retry the same text arrives again, which would duplicate UI output.
                 content = self._read_stream(
-                    make_request,
-                    on_delta if attempt == 0 else None,
+                    url,
+                    headers,
+                    data,
+                    emit_delta,
                     timeout_seconds=timeout_seconds,
                     is_cancelled=is_cancelled,
                 )
@@ -329,18 +338,17 @@ class OpenAIRuntime:
                     break
                 logger.warning("OpenCode returned an empty stream (attempt %s); retrying", attempt + 1)
             except _NetworkStreamError as error:
-                # Retry transient network failures only before any delta has
-                # been streamed to the UI (idempotent attempt).
                 logger.warning("OpenCode network error (attempt %s): %s", attempt + 1, error)
                 if attempt >= max_retries:
                     raise
+                if attempt_emitted and on_reset is not None:
+                    on_reset()
                 retry_after = error.retry_after
             if attempt < max_retries:
                 _raise_if_cancelled(is_cancelled)
                 if retry_after is None:
                     backoff = _RETRY_DELAY_SECONDS * (attempt + 1)
                 else:
-                    # Never blindly follow a hostile/very long Retry-After.
                     backoff = min(max(0.0, retry_after), _MAX_RETRY_DELAY_SECONDS)
                 time.sleep(backoff)
 

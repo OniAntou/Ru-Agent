@@ -35,7 +35,8 @@
   calling any adapter quality-gate promoted.
 - [x] Harden the codebase: per-run loopback authentication, owned backend/voice
   lifecycle, session-scoped context, canonical stream reset, private marker
-  boundaries, cloud-memory consent, bounded inputs/context, training provenance,
+  boundaries, configurable cloud-memory sharing (enabled by default), bounded
+  inputs/context, training provenance,
   deterministic corpus inputs, regression tests, and CI.
 - [ ] Run a manual voice (mic → STT, TTS playback) and VTS smoke test with
   VTube Studio open.

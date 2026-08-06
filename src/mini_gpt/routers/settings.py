@@ -48,7 +48,7 @@ class SettingsPayload(BaseModel):
 @router.get("/settings")
 def get_settings():
     settings = effective_settings()
-    backend = settings.pop("backend", BACKEND_GGUF)
+    backend = settings.get("backend", BACKEND_GGUF)
     try:
         opencode_key = core.opencode_cred.get_key() or ""
     except Exception:
@@ -75,7 +75,7 @@ def get_settings():
         **settings,
         "allow_online_search": settings.get("allow_web_search", True),
         "self_learning_enabled": settings.get("enable_self_learning", True),
-        "cloud_memory_consent": settings.get("share_memory_with_cloud", False),
+        "cloud_memory_consent": settings.get("share_memory_with_cloud", True),
         "max_new_tokens": settings.get("max_tokens", 1024),
         "opencode_api_key": "",
         "kilo_api_key": "",

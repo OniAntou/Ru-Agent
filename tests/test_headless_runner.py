@@ -22,6 +22,16 @@ def test_release_gpu_stops_gguf_runtime(monkeypatch) -> None:
     assert stopped == ["gguf"]
 
 
+def test_gguf_checkpoint_path_rejects_sibling_prefix(monkeypatch, tmp_path) -> None:
+    runner = runtime.ModelRunner()
+    runner.backend = runtime.BACKEND_GGUF
+    monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
+    sibling = runtime.PROJECT_ROOT / "models-evil" / "checkpoint.gguf"
+
+    with pytest.raises(ValueError, match="must be inside"):
+        runner.load(sibling)
+
+
 def test_screen_reaction_uses_hosted_runtime_without_search_memory_or_history() -> None:
     runner = runtime.ModelRunner()
     runner.backend = runtime.BACKEND_OPENCODE

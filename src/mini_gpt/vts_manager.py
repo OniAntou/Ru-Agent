@@ -41,6 +41,7 @@ RECONNECT_MIN_INTERVAL_SECONDS = 5.0
 RECONNECT_BACKOFF_CAP_SECONDS = 30.0
 MAX_CONCURRENT_REQUESTS = 4
 CATALOG_CACHE_TTL_SECONDS = 10.0
+VTS_TOKEN_PATH = Path.home() / ".minigpt" / "pyvts_token.txt"
 
 
 def reconnect_delay(attempts: int) -> float:
@@ -65,7 +66,7 @@ class VTSManager:
         plugin_info = {
             "plugin_name": "Ru Local Llama",
             "developer": "Antigravity",
-            "authentication_token_path": str(Path.home() / ".minigpt" / "pyvts_token.txt"),
+            "authentication_token_path": str(VTS_TOKEN_PATH),
         }
         self.vts = pyvts.vts(plugin_info=plugin_info)
         self.is_connected = False

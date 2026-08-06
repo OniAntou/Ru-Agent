@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 import hmac
 import json
 import logging
@@ -119,7 +119,7 @@ _DEFAULT_SETTINGS = {
     "top_k": 50,
     "allow_web_search": True,
     "enable_self_learning": True,
-    "share_memory_with_cloud": False,
+    "share_memory_with_cloud": True,
     "checkpoint_path": "",
     "voice_label": "Ru (OmniVoice)",
     "voice_speed": 1.0,
@@ -146,7 +146,11 @@ _PENDING_REACTION_LOCK = threading.Lock()
 
 _MEMORY_QUEUE_MAXSIZE = 50
 _MEMORY_LOCK_TIMEOUT_SECONDS = 10.0
+_MEMORY_SHUTDOWN_TIMEOUT_SECONDS = 120.0
 _MEMORY_QUEUE: queue.Queue = queue.Queue(maxsize=_MEMORY_QUEUE_MAXSIZE)
+_MEMORY_QUEUE_LOCK = threading.Lock()
+_MEMORY_QUEUE_GENERATION = 0
+_MEMORY_SENTINEL = object()
 _MEMORY_WORKER_STARTED = threading.Event()
 _MEMORY_STOP = threading.Event()
 _MEMORY_THREAD: threading.Thread | None = None
@@ -717,17 +721,29 @@ def _shutdown_runtime() -> None:
     _MEMORY_STOP.set()
     _MEMORY_WORKER_STARTED.clear()
     global _MEMORY_THREAD
-    if _MEMORY_THREAD is not None and _MEMORY_THREAD.is_alive():
+    _invalidate_memory_queue()
+    try:
+        _MEMORY_QUEUE.put_nowait(_MEMORY_SENTINEL)
+    except queue.Full:
+        pass
+    memory_thread = _MEMORY_THREAD
+    if memory_thread is not None and memory_thread.is_alive():
         try:
-            _MEMORY_THREAD.join(timeout=2.0)
+            memory_thread.join(timeout=_MEMORY_SHUTDOWN_TIMEOUT_SECONDS)
         except Exception as error:
             logger.warning("Memory learner thread join failed: %s", error)
-    _MEMORY_THREAD = None
+    if memory_thread is not None and memory_thread.is_alive():
+        logger.error(
+            "Memory learner did not stop before runtime shutdown; leaving core open to avoid a use-after-close"
+        )
+    else:
+        _MEMORY_THREAD = None
     manager = _VTS_MANAGER
     if manager is not None and callable(getattr(manager, "shutdown", None)):
         manager.shutdown()
     _stop_owned_voice_service()
-    core.close()
+    if memory_thread is None or not memory_thread.is_alive():
+        core.close()
 
 
 # ── VTS helpers ───────────────────────────────────────────────────────
@@ -815,23 +831,60 @@ def _restore_vts_gui_state(manager) -> None:
 
 # ── memory / self-learning ────────────────────────────────────────────
 
+def _memory_turn_generation_is_current(generation: int) -> bool:
+    with _MEMORY_QUEUE_LOCK:
+        return generation == _MEMORY_QUEUE_GENERATION
+
+
+def _invalidate_memory_queue() -> None:
+    global _MEMORY_QUEUE_GENERATION
+    with _MEMORY_QUEUE_LOCK:
+        _MEMORY_QUEUE_GENERATION += 1
+    while True:
+        try:
+            _MEMORY_QUEUE.get_nowait()
+        except queue.Empty:
+            return
+        else:
+            try:
+                _MEMORY_QUEUE.task_done()
+            except ValueError:
+                pass
+
+
 def _learn_from_turn(prompt: str, reply: str) -> None:
     if not effective_settings()["enable_self_learning"]:
         return
+    with _MEMORY_QUEUE_LOCK:
+        generation = _MEMORY_QUEUE_GENERATION
+    item = (generation, prompt, reply)
     try:
-        _MEMORY_QUEUE.put_nowait((prompt, reply))
+        _MEMORY_QUEUE.put_nowait(item)
     except queue.Full:
         try:
             _MEMORY_QUEUE.get_nowait()
         except queue.Empty:
             pass
+        else:
+            try:
+                _MEMORY_QUEUE.task_done()
+            except ValueError:
+                pass
         try:
-            _MEMORY_QUEUE.put_nowait((prompt, reply))
+            _MEMORY_QUEUE.put_nowait(item)
         except queue.Full:
             logger.debug("Memory queue full; dropping learning turn")
 
 
-def _process_memory_turn(prompt: str, reply: str) -> None:
+def _process_memory_turn(prompt: str, reply: str, generation: int | None = None) -> None:
+    if generation is not None and not _memory_turn_generation_is_current(generation):
+        logger.debug("Skipping stale self-learning turn after memory clear")
+        return
+    settings = effective_settings()
+    hosted = core.runner.backend in (BACKEND_OPENCODE, BACKEND_KILO)
+    if hosted and not settings.get("share_memory_with_cloud", _DEFAULT_SETTINGS["share_memory_with_cloud"]):
+        logger.debug("Skipping hosted self-learning because cloud-memory sharing is disabled")
+        return
     if is_sensitive_or_unsafe(prompt) or is_sensitive_or_unsafe(reply):
         logger.debug("Bỏ qua self-learning vì lượt trò chuyện nhạy cảm")
         return
@@ -839,17 +892,25 @@ def _process_memory_turn(prompt: str, reply: str) -> None:
         logger.debug("Model busy; skipping self-learning turn")
         return
     try:
-        facts = extract_facts_with_llm(
-            prompt,
-            reply,
-            lambda fact_prompt, max_new_tokens, temperature, top_k, allow_web_search: core.runner.generate_reply(
-                prompt=fact_prompt,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_k=top_k,
-                allow_web_search=allow_web_search,
-            ),
+        if generation is not None and not _memory_turn_generation_is_current(generation):
+            return
+        generation_context = (
+            _gpu_lifecycle().local_generation()
+            if core.runner.backend == BACKEND_GGUF
+            else nullcontext()
         )
+        with generation_context:
+            facts = extract_facts_with_llm(
+                prompt,
+                reply,
+                lambda fact_prompt, max_new_tokens, temperature, top_k, allow_web_search: core.runner.generate_reply(
+                    prompt=fact_prompt,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_k=top_k,
+                    allow_web_search=allow_web_search,
+                ),
+            )
         store = core.get_memory_store()
         existing = {record.content.casefold() for record in store.list_active()}
         for fact in facts:
@@ -873,21 +934,29 @@ def _process_memory_turn(prompt: str, reply: str) -> None:
 def _memory_learner_loop() -> None:
     while not _MEMORY_STOP.is_set():
         try:
-            prompt, reply = _MEMORY_QUEUE.get(timeout=0.5)
+            item = _MEMORY_QUEUE.get(timeout=0.5)
         except queue.Empty:
             continue
         try:
-            _process_memory_turn(prompt, reply)
+            if item is _MEMORY_SENTINEL:
+                return
+            generation, prompt, reply = item
+            _process_memory_turn(prompt, reply, generation)
         except Exception as error:
             logger.warning("Self-learning worker error: %s", error)
+        finally:
+            try:
+                _MEMORY_QUEUE.task_done()
+            except ValueError:
+                pass
 
 
 def _start_memory_learner() -> None:
-    if _MEMORY_WORKER_STARTED.is_set():
+    global _MEMORY_THREAD
+    if _MEMORY_WORKER_STARTED.is_set() and _MEMORY_THREAD is not None and _MEMORY_THREAD.is_alive():
         return
     _MEMORY_STOP.clear()
     _MEMORY_WORKER_STARTED.set()
-    global _MEMORY_THREAD
     _MEMORY_THREAD = threading.Thread(target=_memory_learner_loop, name="memory-learner", daemon=True)
     _MEMORY_THREAD.start()
 

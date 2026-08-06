@@ -54,7 +54,16 @@ if (-not (Test-Path -LiteralPath $toolchain)) {
     throw "vcpkg toolchain was not found: $toolchain"
 }
 
-& $cmake -S $source -B $build "-DCMAKE_TOOLCHAIN_FILE=$toolchain"
+$cache = Join-Path $build 'CMakeCache.txt'
+if (Test-Path -LiteralPath $cache) {
+    $cachedToolchain = Select-String -LiteralPath $cache -Pattern '^CMAKE_TOOLCHAIN_FILE:FILEPATH=' |
+        Select-Object -First 1
+    if ($cachedToolchain -and $cachedToolchain.Line -notlike "*${toolchain}*") {
+        Write-Output "Reconfiguring stale native build with the active vcpkg toolchain: $toolchain"
+    }
+}
+
+& $cmake -S $source -B $build "-DCMAKE_TOOLCHAIN_FILE=$toolchain" '-DVCPKG_MANIFEST_MODE=ON'
 if ($LASTEXITCODE -ne 0) {
     throw "CMake configure failed with exit code $LASTEXITCODE."
 }

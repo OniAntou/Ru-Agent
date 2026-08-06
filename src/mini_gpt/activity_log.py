@@ -34,7 +34,7 @@ def _now_iso() -> str:
 
 
 def append(event: dict) -> None:
-    event.setdefault("ts", time.monotonic())
+    event.setdefault("ts", time.time())
     event.setdefault("iso", _now_iso())
     with _log_lock:
         try:
@@ -45,6 +45,15 @@ def append(event: dict) -> None:
             _maybe_trim()
         except OSError as e:
             logger.warning("activity_log append failed: %s", e)
+
+
+def clear() -> None:
+    """Xoá toàn bộ nhật ký hiện có. File sẽ được tạo lại khi append lần sau."""
+    with _log_lock:
+        try:
+            LOG_FILE.unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning("activity_log clear failed: %s", e)
 
 
 def read(limit: int = 200) -> list[dict]:

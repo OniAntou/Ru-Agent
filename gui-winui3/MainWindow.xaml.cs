@@ -162,9 +162,35 @@ namespace RuApp
             }
         }
 
-        private void OnWindowClosed(object sender, WindowEventArgs args)
+        private async void OnWindowClosed(object sender, WindowEventArgs args)
         {
+            _sessionsTimer?.Stop();
+            _settingsView?.Dispose();
+            _logView?.Dispose();
+            if (_observerService != null)
+            {
+                try
+                {
+                    await _observerService.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[MainWindow] Observer shutdown failed: {ex.Message}");
+                }
+            }
+            if (_voicePlayback != null)
+            {
+                try
+                {
+                    await _voicePlayback.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[MainWindow] Voice shutdown failed: {ex.Message}");
+                }
+            }
             _wsClient?.Dispose();
+            _apiService?.Dispose();
             _processManager.Dispose();
         }
 

@@ -33,6 +33,8 @@ from mini_gpt._server_shared import (
     _session_turns,
     _learn_from_turn,
     _process_memory_turn,
+    _invalidate_memory_queue,
+    _memory_turn_generation_is_current,
     _start_voice_service,
     _post_voice,
     _DEFAULT_SETTINGS,

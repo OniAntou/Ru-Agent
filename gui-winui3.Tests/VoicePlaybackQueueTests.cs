@@ -102,6 +102,39 @@ public sealed class VoicePlaybackQueueTests
             buffer.Append("Dạ anh, em sẽ kiểm tra kỹ phần quan trọng này trước rồi báo lại cho anh ngay khi có kết quả"));
     }
 
+    [Theory]
+    [InlineData("Dạ anh, em sẽ đọc chính xác giá trị quan trọng là 1 000 000đồngngaybâygiờkhôngtách")]
+    [InlineData("Dạ anh, em sẽ đọc chính xác giá trị quan trọng là 1\u00A0000\u00A0000đồngngaybâygiờkhôngtách")]
+    public void SentenceBufferDoesNotSplitGroupedNumbersAtWhitespace(string text)
+    {
+        var buffer = new VoiceReplySentenceBuffer();
+
+        Assert.Empty(buffer.Append(text));
+    }
+
+    [Theory]
+    [InlineData("Dạ anh, em sẽ giữ nguyên [voice marker nội bộ tuyệt đối không được tách cho tới đây] rồi trả lời")]
+    [InlineData("Dạ anh, em sẽ giữ nguyên (voice marker nội bộ tuyệt đối không được tách cho tới đây) rồi trả lời")]
+    [InlineData("Dạ anh, em sẽ giữ nguyên {voice marker nội bộ tuyệt đối không được tách cho tới đây} rồi trả lời")]
+    [InlineData("Dạ anh, em sẽ giữ nguyên <voice marker nội bộ tuyệt đối không được tách cho tới đây> rồi trả lời")]
+    [InlineData("Dạ anh, em sẽ giữ nguyên `voice marker nội bộ tuyệt đối không được tách cho tới đây` rồi trả lời")]
+    public void SentenceBufferDoesNotSplitInsideDelimitedOrBacktickTokens(string text)
+    {
+        var buffer = new VoiceReplySentenceBuffer();
+
+        Assert.Empty(buffer.Append(text));
+    }
+
+    [Fact]
+    public void SentenceBufferUsesFirstSafeFallbackBoundaryFrom61Through72()
+    {
+        var buffer = new VoiceReplySentenceBuffer();
+
+        Assert.Equal(
+            new[] { "Dạ anh, em sẽ kiểm tra kỹ phần quan trọng nàytrướckhôngtáchdài" },
+            buffer.Append("Dạ anh, em sẽ kiểm tra kỹ phần quan trọng nàytrướckhôngtáchdài rồi báo lại cho anh"));
+    }
+
     [Fact]
     public void SentenceBufferReturnsToSentenceBoundariesAfterOpeningPhrase()
     {
@@ -112,6 +145,29 @@ public sealed class VoicePlaybackQueueTests
         Assert.Equal(
             new[] { "rồi báo lại cho anh ngay khi có kết quả và không để sót điểm nào." },
             buffer.Append("."));
+    }
+
+    [Fact]
+    public void SentenceBufferUsesFirstSafeFallbackBoundaryAfterGroupedNumber()
+    {
+        var buffer = new VoiceReplySentenceBuffer();
+        string prefix = new('a', 47);
+        const string groupedNumber = "1\u00A0000\u00A0000";
+        string input = $"{prefix} {groupedNumber} sau đó em sẽ trả lời đầy đủ hơn cho anh";
+
+        Assert.Equal(
+            new[] { $"{prefix} {groupedNumber} sau" },
+            buffer.Append(input));
+    }
+
+    [Fact]
+    public void SentenceBufferDoesNotSplitDelimitedTokenAtInternalWhitespace()
+    {
+        var buffer = new VoiceReplySentenceBuffer();
+        string input = $"{new string('a', 48)}[voice marker token] continuing words after this payload";
+
+        Assert.Empty(buffer.Append(input));
+        Assert.Equal(new[] { input }, buffer.Flush());
     }
 
     private static VoiceAudioChunk Chunk(string requestId, int sequence) =>

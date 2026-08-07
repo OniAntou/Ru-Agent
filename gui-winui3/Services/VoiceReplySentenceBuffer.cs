@@ -89,9 +89,56 @@ public sealed class VoiceReplySentenceBuffer
     {
         int start = Math.Max(0, minimumChars);
         int end = Math.Min(_pending.Length - 1, maximumChars);
-        for (int index = start; index <= end; index++)
+        int squareDepth = 0;
+        int parenthesisDepth = 0;
+        int braceDepth = 0;
+        int angleDepth = 0;
+        int backtickDelimiterLength = 0;
+
+        for (int index = 0; index <= end; index++)
         {
-            if (char.IsWhiteSpace(_pending[index]))
+            char current = _pending[index];
+            if (current == '`')
+            {
+                int runLength = 1;
+                while (index + runLength < _pending.Length && _pending[index + runLength] == '`')
+                {
+                    runLength++;
+                }
+
+                if (backtickDelimiterLength == 0)
+                {
+                    backtickDelimiterLength = runLength;
+                }
+                else if (backtickDelimiterLength == runLength)
+                {
+                    backtickDelimiterLength = 0;
+                }
+
+                index += runLength - 1;
+                continue;
+            }
+
+            if (backtickDelimiterLength == 0)
+            {
+                switch (current)
+                {
+                    case '[': squareDepth++; break;
+                    case ']': squareDepth = Math.Max(0, squareDepth - 1); break;
+                    case '(': parenthesisDepth++; break;
+                    case ')': parenthesisDepth = Math.Max(0, parenthesisDepth - 1); break;
+                    case '{': braceDepth++; break;
+                    case '}': braceDepth = Math.Max(0, braceDepth - 1); break;
+                    case '<': angleDepth++; break;
+                    case '>': angleDepth = Math.Max(0, angleDepth - 1); break;
+                }
+            }
+
+            bool insideDelimitedRun = backtickDelimiterLength > 0 || squareDepth > 0 ||
+                parenthesisDepth > 0 || braceDepth > 0 || angleDepth > 0;
+            if (index >= start && char.IsWhiteSpace(current) && !insideDelimitedRun &&
+                index > 0 && index + 1 < _pending.Length &&
+                char.IsLetter(_pending[index - 1]) && char.IsLetter(_pending[index + 1]))
             {
                 return index;
             }

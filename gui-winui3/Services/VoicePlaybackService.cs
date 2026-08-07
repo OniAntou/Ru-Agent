@@ -178,12 +178,8 @@ namespace RuApp.Services
             bool resetVts;
             lock (_replyGate)
             {
-                // A reply worker can already have reported a terminal failure
-                // before the hosted provider emits its retry reset event. In
-                // that case its old tracker is no longer reusable, but the
-                // stale pipeline still has to be discarded so the retry can
-                // synthesize through a fresh local attempt.
-                VoiceReplyLatencyTracker tracker = _replyLatencyTracker ?? new VoiceReplyLatencyTracker();
+                VoiceReplyLatencyTracker? tracker = _replyLatencyTracker;
+                if (tracker is null) return;
 
                 previousCts = _replyStreamCts;
                 previousChannel = _replyTextChannel;
@@ -224,7 +220,7 @@ namespace RuApp.Services
             bool resetVts;
             lock (_replyGate)
             {
-                if (_replyStreamCts is null)
+                if (_replyStreamCts is null && _replyLatencyTracker is null)
                 {
                     return;
                 }
@@ -323,6 +319,7 @@ namespace RuApp.Services
             }
             if (cts is null || channel is null || buffer is null || audioQueue is null || worker is null)
             {
+                CompleteDetachedReplyLatency(latencyTracker);
                 return;
             }
 
@@ -366,7 +363,7 @@ namespace RuApp.Services
             }
             catch
             {
-                CompleteAndReportReplyLatency(latencyTracker, VoiceReplyOutcome.Failed, cts);
+                CompleteDetachedReplyLatency(latencyTracker);
                 throw;
             }
             finally
@@ -488,10 +485,10 @@ namespace RuApp.Services
             }
             catch
             {
-                CompleteAndReportReplyLatency(
+                DetachReplyPipelineAfterWorkerFailure(
                     latencyTracker,
-                    VoiceReplyOutcome.Failed,
-                    streamCancellation);
+                    streamCancellation,
+                    audioQueue);
                 throw;
             }
             finally
@@ -506,6 +503,49 @@ namespace RuApp.Services
                     _vtsSpeaking = false;
                     await ResetVtsSpeakingAsync();
                 }
+            }
+        }
+
+        private void DetachReplyPipelineAfterWorkerFailure(
+            VoiceReplyLatencyTracker tracker,
+            CancellationTokenSource failedStream,
+            VoiceReplyAudioQueue audioQueue)
+        {
+            Channel<string>? failedChannel;
+            VoiceStreamClient? failedStreamClient;
+            bool resetVts;
+            lock (_replyGate)
+            {
+                if (!ReferenceEquals(_replyStreamCts, failedStream) ||
+                    !ReferenceEquals(_replyLatencyTracker, tracker))
+                {
+                    return;
+                }
+
+                failedChannel = _replyTextChannel;
+                failedStreamClient = _replyStreamClient;
+                _replyStreamCts = null;
+                _replyTextChannel = null;
+                _replySentenceBuffer = null;
+                _replyAudioQueue = null;
+                _replyStreamClient = null;
+                _replyStreamWorker = null;
+                _replyHasInput = false;
+                resetVts = _vtsSpeaking;
+                _vtsSpeaking = false;
+                CleanupPlayer();
+            }
+
+            // Keep the tracker alive for a hosted retry, but ensure a reply
+            // that ultimately ends without replacement audio is classified
+            // as failed at its real terminal boundary.
+            tracker.MarkSynthesisFailure();
+            failedChannel?.Writer.TryComplete();
+            audioQueue.Cancel();
+            failedStreamClient?.Dispose();
+            if (resetVts)
+            {
+                _ = ResetVtsSpeakingAsync();
             }
         }
 
@@ -638,6 +678,30 @@ namespace RuApp.Services
                     return;
                 }
                 snapshot = tracker.TryComplete(outcome);
+                if (ReferenceEquals(_replyLatencyTracker, tracker))
+                {
+                    _replyLatencyTracker = null;
+                }
+            }
+            ReportReplyLatency(snapshot);
+        }
+
+        private void CompleteDetachedReplyLatency(VoiceReplyLatencyTracker? tracker)
+        {
+            if (tracker is null)
+            {
+                return;
+            }
+
+            VoiceReplyLatencySnapshot? snapshot;
+            lock (_replyGate)
+            {
+                if (!ReferenceEquals(_replyLatencyTracker, tracker) || _replyStreamCts is not null)
+                {
+                    return;
+                }
+
+                snapshot = tracker.TryComplete(VoiceReplyOutcome.Completed);
                 if (ReferenceEquals(_replyLatencyTracker, tracker))
                 {
                     _replyLatencyTracker = null;

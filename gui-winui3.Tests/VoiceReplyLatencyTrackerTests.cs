@@ -64,22 +64,69 @@ public sealed class VoiceReplyLatencyTrackerTests
     }
 
     [Fact]
-    public async Task RetryResetRestartsPipelineAfterWorkerFailureDetachedTheTracker()
+    public async Task RetryResetReusesWorkerFailureTrackerAndReportsOnlyOnce()
     {
         using var capture = new VoiceLatencyCaptureServer();
         using var api = capture.CreateApiService();
         using var service = new VoicePlaybackService(api);
         service.BeginReplyStream();
 
-        // A reply-worker fault terminalizes and detaches this tracker before
-        // the hosted provider can issue its retry reset event.
-        FieldInfo trackerField = Assert.IsAssignableFrom<FieldInfo>(typeof(VoicePlaybackService)
-            .GetField("_replyLatencyTracker", BindingFlags.Instance | BindingFlags.NonPublic));
-        trackerField.SetValue(service, null);
+        VoiceReplyLatencyTracker tracker = DetachPipelineForWorkerFailure(service);
 
         service.ResetReplyStreamForRetry();
+        Assert.Same(tracker, GetReplyLatencyTracker(service));
         service.AppendReplyDelta("[[VTS:neutral]]");
         await service.CompleteReplyStreamAsync();
+
+        VoiceReplyLatencySnapshot snapshot = await capture.WaitForReportAsync();
+        Assert.Equal(VoiceReplyOutcome.Failed, snapshot.Outcome);
+        Assert.Equal(1, capture.ReportCount);
+    }
+
+    [Fact]
+    public async Task CompletionReportsFailedAfterWorkerFailureDetachedThePipeline()
+    {
+        using var capture = new VoiceLatencyCaptureServer();
+        using var api = capture.CreateApiService();
+        using var service = new VoicePlaybackService(api);
+        service.BeginReplyStream();
+
+        DetachPipelineForWorkerFailure(service);
+        await service.CompleteReplyStreamAsync();
+
+        VoiceReplyLatencySnapshot snapshot = await capture.WaitForReportAsync();
+        Assert.Equal(VoiceReplyOutcome.Failed, snapshot.Outcome);
+        Assert.Equal(1, capture.ReportCount);
+    }
+
+    [Fact]
+    public async Task CompletionKeepsCompletedAfterWorkerFailureWhenAudioAlreadyArrived()
+    {
+        using var capture = new VoiceLatencyCaptureServer();
+        using var api = capture.CreateApiService();
+        using var service = new VoicePlaybackService(api);
+        service.BeginReplyStream();
+
+        VoiceReplyLatencyTracker tracker = GetReplyLatencyTracker(service);
+        tracker.MarkFirstAudioReceived();
+        DetachPipelineForWorkerFailure(service);
+        await service.CompleteReplyStreamAsync();
+
+        VoiceReplyLatencySnapshot snapshot = await capture.WaitForReportAsync();
+        Assert.Equal(VoiceReplyOutcome.Completed, snapshot.Outcome);
+        Assert.Equal(1, capture.ReportCount);
+    }
+
+    [Fact]
+    public async Task TerminalFailureReportsAfterWorkerFailureDetachedThePipeline()
+    {
+        using var capture = new VoiceLatencyCaptureServer();
+        using var api = capture.CreateApiService();
+        using var service = new VoicePlaybackService(api);
+        service.BeginReplyStream();
+
+        DetachPipelineForWorkerFailure(service);
+        service.FailReplyStream();
 
         VoiceReplyLatencySnapshot snapshot = await capture.WaitForReportAsync();
         Assert.Equal(VoiceReplyOutcome.Failed, snapshot.Outcome);
@@ -220,6 +267,30 @@ public sealed class VoiceReplyLatencyTrackerTests
             });
 
         Assert.Single(snapshots);
+    }
+
+    private static VoiceReplyLatencyTracker DetachPipelineForWorkerFailure(VoicePlaybackService service)
+    {
+        const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
+        VoiceReplyLatencyTracker tracker = GetReplyLatencyTracker(service);
+        FieldInfo streamField = Assert.IsAssignableFrom<FieldInfo>(typeof(VoicePlaybackService)
+            .GetField("_replyStreamCts", PrivateInstance));
+        FieldInfo audioQueueField = Assert.IsAssignableFrom<FieldInfo>(typeof(VoicePlaybackService)
+            .GetField("_replyAudioQueue", PrivateInstance));
+        var stream = Assert.IsType<CancellationTokenSource>(streamField.GetValue(service));
+        var audioQueue = Assert.IsType<VoiceReplyAudioQueue>(audioQueueField.GetValue(service));
+        MethodInfo failureHandler = Assert.IsAssignableFrom<MethodInfo>(typeof(VoicePlaybackService)
+            .GetMethod("DetachReplyPipelineAfterWorkerFailure", PrivateInstance));
+
+        failureHandler.Invoke(service, new object?[] { tracker, stream, audioQueue });
+        return tracker;
+    }
+
+    private static VoiceReplyLatencyTracker GetReplyLatencyTracker(VoicePlaybackService service)
+    {
+        FieldInfo trackerField = Assert.IsAssignableFrom<FieldInfo>(typeof(VoicePlaybackService)
+            .GetField("_replyLatencyTracker", BindingFlags.Instance | BindingFlags.NonPublic));
+        return Assert.IsType<VoiceReplyLatencyTracker>(trackerField.GetValue(service));
     }
 
     private sealed class VoiceLatencyCaptureServer : IDisposable

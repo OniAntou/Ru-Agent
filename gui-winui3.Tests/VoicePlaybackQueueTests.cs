@@ -149,6 +149,16 @@ public sealed class VoicePlaybackQueueTests
     }
 
     [Fact]
+    public void SentenceBufferIgnoresFormattingDelimiterInsideProtectedToken()
+    {
+        var buffer = new VoiceReplySentenceBuffer();
+        string prefix = new('a', 32);
+        string input = $"{prefix}[internal * marker] then chạy tiếp cho anh";
+
+        Assert.Equal(new[] { $"{prefix}[internal * marker] then" }, buffer.Append(input));
+    }
+
+    [Fact]
     public void SentenceBufferReturnsToSentenceBoundariesAfterOpeningPhrase()
     {
         var buffer = new VoiceReplySentenceBuffer();

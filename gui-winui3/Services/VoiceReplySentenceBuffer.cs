@@ -117,7 +117,9 @@ public sealed class VoiceReplySentenceBuffer
                 continue;
             }
 
-            if (backtickDelimiterLength == 0)
+            bool insideStructuredRun = squareDepth > 0 || parenthesisDepth > 0 ||
+                braceDepth > 0 || angleDepth > 0;
+            if (backtickDelimiterLength == 0 && !insideStructuredRun)
             {
                 if (current is '*' or '_' or '~')
                 {
@@ -136,7 +138,10 @@ public sealed class VoiceReplySentenceBuffer
                     index += runLength - 1;
                     continue;
                 }
+            }
 
+            if (backtickDelimiterLength == 0)
+            {
                 switch (current)
                 {
                     case '[': squareDepth++; break;

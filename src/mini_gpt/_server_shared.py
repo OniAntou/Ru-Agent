@@ -59,7 +59,12 @@ from mini_gpt.voice_runtime import (
     voice_service_config,
     validate_voice_environment,
 )
-from mini_gpt.voice_style import ORIGINAL_STYLE_ID, voice_style_from_saved
+from mini_gpt.voice_style import (
+    ORIGINAL_STYLE_ID,
+    VoiceStyleId,
+    voice_style_by_id,
+    voice_style_from_saved,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -584,11 +589,22 @@ def _post_voice(path: str, payload: dict, *, timeout: float) -> tuple[int, bytes
         raise RuntimeError("Voice server is offline. Start OmniVoice and try again.") from error
 
 
-def request_voice_audio(text: str, voice_label: str, speed: float) -> bytes:
+def request_voice_audio(
+    text: str,
+    voice_label: str,
+    speed: float,
+    voice_style_id: VoiceStyleId = ORIGINAL_STYLE_ID,
+) -> bytes:
     selection = voice_selection_by_label(voice_label) or VOICE_SELECTIONS[0]
+    style = voice_style_by_id(voice_style_id)
     status, body = _post_voice(
         "/tts",
-        {"text": text, "voice_profile": selection.profile_id, "speed": speed},
+        {
+            "text": text,
+            "voice_profile": selection.profile_id,
+            "speed": speed,
+            "voice_style_id": style.id,
+        },
         timeout=_VOICE_TTS_TIMEOUT_SECONDS,
     )
     if status != 200:

@@ -22,7 +22,9 @@ def test_voice_stream_coordinator_emits_ordered_audio_without_private_markers() 
 
     coordinator = VoiceStreamCoordinator(
         prepare_speech=lambda selection: prepared.append(selection.profile_id),
-        request_audio=lambda text, voice_label, speed: requested.append(text) or text.encode(),
+        request_audio=lambda text, voice_label, speed, style_id: (
+            requested.append(text) or text.encode()
+        ),
         memory_lock=threading.Lock(),
     )
 
@@ -48,7 +50,12 @@ def test_voice_stream_coordinator_discards_future_chunks_after_cancel() -> None:
     requested: list[str] = []
     coordinator: VoiceStreamCoordinator
 
-    def request_audio(text: str, voice_label: str, speed: float) -> bytes:
+    def request_audio(
+        text: str,
+        voice_label: str,
+        speed: float,
+        style_id: str,
+    ) -> bytes:
         requested.append(text)
         if len(requested) == 1:
             coordinator.cancel("r2")
@@ -72,6 +79,37 @@ def test_voice_stream_coordinator_discards_future_chunks_after_cancel() -> None:
     assert requested == ["Một câu."]
 
 
+def test_voice_stream_coordinator_forwards_one_style_to_every_chunk() -> None:
+    received: list[tuple[str, str]] = []
+    coordinator = VoiceStreamCoordinator(
+        prepare_speech=lambda selection: None,
+        request_audio=lambda text, voice_label, speed, style_id: (
+            received.append((text, style_id)) or text.encode()
+        ),
+        memory_lock=threading.Lock(),
+    )
+
+    events = collect_events(
+        coordinator,
+        request_id="style-1",
+        text="Một câu. Câu thứ hai.",
+        voice_label="Ru (OmniVoice)",
+        speed=1.0,
+        voice_style_id="whisper",
+    )
+
+    assert [event.event_type for event in events] == [
+        "started",
+        "audio",
+        "audio",
+        "ended",
+    ]
+    assert received == [
+        ("Một câu.", "whisper"),
+        ("Câu thứ hai.", "whisper"),
+    ]
+
+
 def test_voice_timing_serialization_has_no_text_or_negative_values() -> None:
     timing = VoiceTiming("r3", "ru", "vi-normalized-16")
     timing.record("first_audio_ms", 12.5)
@@ -89,7 +127,7 @@ def test_voice_timing_serialization_has_no_text_or_negative_values() -> None:
 def test_voice_playback_acknowledgements_are_current_and_terminal_once() -> None:
     coordinator = VoiceStreamCoordinator(
         prepare_speech=lambda selection: None,
-        request_audio=lambda text, voice_label, speed: text.encode(),
+        request_audio=lambda text, voice_label, speed, style_id: text.encode(),
         memory_lock=threading.Lock(),
     )
     collect_events(

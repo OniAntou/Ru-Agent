@@ -68,7 +68,9 @@ def test_http_contract_does_not_load_for_status_and_validates_tts(tmp_path, monk
     server.release_model()
     audio = tmp_path / "speech.wav"
     audio.write_bytes(b"RIFF")
-    app = server.create_app(synthesize=lambda text, profile, speed: str(audio))
+    app = server.create_app(
+        synthesize=lambda text, profile, speed, voice_style_id: str(audio)
+    )
     client = app.test_client()
 
     assert client.get("/status").get_json() == {"model_loaded": False}
@@ -84,11 +86,46 @@ def test_http_contract_does_not_load_for_status_and_validates_tts(tmp_path, monk
 
 
 def test_http_reports_synthesis_error() -> None:
-    app = server.create_app(synthesize=lambda text, profile, speed: (_ for _ in ()).throw(RuntimeError("broken")))
+    app = server.create_app(
+        synthesize=lambda text, profile, speed, voice_style_id: (
+            _ for _ in ()
+        ).throw(RuntimeError("broken"))
+    )
     response = app.test_client().post("/tts", json={"text": "xin chào", "voice_profile": "ru"})
 
     assert response.status_code == 500
     assert response.get_json() == {"error": "Synthesis failed. Check the server logs."}
+
+
+def test_http_tts_passes_only_validated_voice_style(tmp_path) -> None:
+    audio = tmp_path / "speech.wav"
+    audio.write_bytes(b"RIFF")
+    calls: list[tuple[str, str, float, str]] = []
+
+    def synthesize(text: str, profile: str, speed: float, voice_style_id: str) -> str:
+        calls.append((text, profile, speed, voice_style_id))
+        return str(audio)
+
+    client = server.create_app(synthesize=synthesize).test_client()
+
+    response = client.post(
+        "/tts",
+        json={
+            "text": "xin chào",
+            "voice_profile": "ai_vy",
+            "speed": 1.05,
+            "voice_style_id": "whisper",
+        },
+    )
+    invalid = client.post(
+        "/tts",
+        json={"text": "xin chào", "voice_style_id": "free-form"},
+    )
+
+    assert response.status_code == 200
+    assert calls == [("xin chào", "ai_vy", 1.05, "whisper")]
+    assert invalid.status_code == 400
+    assert invalid.get_json() == {"error": "Unsupported OmniVoice voice style."}
 
 
 def test_synthesis_uses_the_selected_16_step_vietnamese_trial_settings(tmp_path, monkeypatch) -> None:
@@ -131,9 +168,13 @@ def test_synthesis_uses_the_selected_16_step_vietnamese_trial_settings(tmp_path,
 
     ru_audio = server.synthesize_fast("Chào anh.", "ru")
     ai_vy_audio = server.synthesize_fast("Chào em.", "ai_vy")
+    low_pitch_audio = server.synthesize_fast(
+        "Chào anh.", "ru", voice_style_id="low_pitch"
+    )
 
     assert Path(ru_audio).is_file()
     assert Path(ai_vy_audio).is_file()
+    assert Path(low_pitch_audio).is_file()
     assert model.calls == [
         {
             "text": "Chào anh.",
@@ -148,6 +189,14 @@ def test_synthesis_uses_the_selected_16_step_vietnamese_trial_settings(tmp_path,
             "language": "Vietnamese",
             "normalize_text": True,
             "num_step": 16,
+        },
+        {
+            "text": "Chào anh.",
+            "voice_clone_prompt": "ru-prompt",
+            "language": "Vietnamese",
+            "normalize_text": True,
+            "num_step": 16,
+            "instruct": "low pitch",
         },
     ]
 

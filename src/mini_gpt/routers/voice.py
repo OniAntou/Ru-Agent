@@ -43,6 +43,7 @@ from .._server_shared import (
 )
 from ..headless_runner import BACKEND_KILO, BACKEND_OPENCODE
 from ..voice_stream import VoiceStreamCoordinator, VoiceStreamEvent
+from ..voice_style import voice_style_from_saved
 
 router = APIRouter()
 
@@ -128,6 +129,7 @@ async def _send_voice_stream_events(
 ) -> None:
     settings = effective_settings()
     voice_label = payload.voice_label or settings.get("voice_label", _DEFAULT_SETTINGS["voice_label"])
+    voice_style = voice_style_from_saved(settings.get("voice_style_id"))
     speed_value = payload.speed
     if speed_value is None:
         speed_value = settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"])
@@ -137,6 +139,7 @@ async def _send_voice_stream_events(
         text=_strip_voice_markers(payload.text),
         voice_label=voice_label,
         speed=speed,
+        voice_style_id=voice_style.id,
     ):
         await websocket.send_json(event.control_payload())
         if event.audio is not None:
@@ -267,6 +270,7 @@ def voice_tts(payload: VoiceTtsPayload):
         return {"status": "error", "message": "text is required"}
     settings = effective_settings()
     voice_label = payload.voice_label or settings.get("voice_label", _DEFAULT_SETTINGS["voice_label"])
+    voice_style = voice_style_from_saved(settings.get("voice_style_id"))
     speed = payload.speed if payload.speed is not None else settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"])
     pace = voice_pace_for(text)
     speed = effective_voice_speed(speed, auto_pace_enabled=True, pace=pace)
@@ -281,7 +285,7 @@ def voice_tts(payload: VoiceTtsPayload):
             return {"status": "error", "message": "Ru is busy with self-learning; try voice again in a moment."}
         try:
             _gpu_lifecycle().prepare_speech(voice_selection_from_saved(voice_label))
-            audio = request_voice_audio(text, voice_label, speed)
+            audio = request_voice_audio(text, voice_label, speed, voice_style.id)
             return Response(content=audio, media_type="audio/wav")
         finally:
             _MEMORY_TURN_LOCK.release()

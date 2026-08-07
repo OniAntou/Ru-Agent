@@ -15,6 +15,12 @@ from flask import Flask, Response, jsonify, request
 from mini_gpt.omnivoice_tuning import settings_for_profile
 from mini_gpt.tts_chunks import split_tts_chunks
 from mini_gpt.voice_pacing import DEFAULT_VOICE_SPEED, clamp_voice_speed
+from mini_gpt.voice_style import (
+    ORIGINAL_STYLE_ID,
+    VoiceStyle,
+    VoiceStyleId,
+    voice_style_by_id,
+)
 
 logger = logging.getLogger(__name__)
 _SINGLETON_GUARD: object | None = None
@@ -180,6 +186,7 @@ def synthesize_fast(
     profile: str = "ru",
     speed: float = DEFAULT_VOICE_SPEED,
     *,
+    voice_style_id: VoiceStyleId = ORIGINAL_STYLE_ID,
     timing: Callable[[str, float], None] | None = None,
 ) -> str:
     total_started = perf_counter()
@@ -191,13 +198,17 @@ def synthesize_fast(
     import torch
 
     generation_started = perf_counter()
+    style = voice_style_by_id(voice_style_id)
+    generate_kwargs: dict[str, object] = {
+        "text": text,
+        "voice_clone_prompt": _voice_clone_prompts[profile],
+        **settings_for_profile(profile).generate_kwargs(),
+    }
+    if style.instruct is not None:
+        generate_kwargs["instruct"] = style.instruct
     with _MODEL_LOCK:
         with torch.inference_mode():
-            audio = get_model().generate(
-                text=text,
-                voice_clone_prompt=_voice_clone_prompts[profile],
-                **settings_for_profile(profile).generate_kwargs(),
-            )
+            audio = get_model().generate(**generate_kwargs)
     if timing is not None:
         timing("generate_ms", (perf_counter() - generation_started) * 1000)
     if not audio:
@@ -220,7 +231,16 @@ def synthesize_fast(
     return output.name
 
 
-def create_app(synthesize: Callable[[str, str, float], str] | None = None) -> Flask:
+def _voice_style_from_request(data: dict[str, object]) -> VoiceStyle:
+    raw_style_id = data.get("voice_style_id", ORIGINAL_STYLE_ID)
+    if not isinstance(raw_style_id, str):
+        raise ValueError("Unsupported OmniVoice voice style.")
+    return voice_style_by_id(raw_style_id)
+
+
+def create_app(
+    synthesize: Callable[[str, str, float, VoiceStyleId], str] | None = None,
+) -> Flask:
     app = Flask(__name__)
 
     @app.get("/status")
@@ -252,6 +272,10 @@ def create_app(synthesize: Callable[[str, str, float], str] | None = None) -> Fl
         text = raw_text.strip() if isinstance(raw_text, str) else ""
         profile = data.get("voice_profile", "ru")
         speed = clamp_voice_speed(data.get("speed", DEFAULT_VOICE_SPEED))
+        try:
+            style = _voice_style_from_request(data)
+        except ValueError:
+            return jsonify({"error": "Unsupported OmniVoice voice style."}), 400
         if not text:
             return jsonify({"error": "No text provided"}), 400
         if len(text) > MAX_TTS_TEXT_CHARS:
@@ -260,7 +284,14 @@ def create_app(synthesize: Callable[[str, str, float], str] | None = None) -> Fl
         try:
             started = perf_counter()
             audio_path = (
-                synthesize(text, profile, speed) if synthesize is not None else synthesize_fast(text, profile, speed)
+                synthesize(text, profile, speed, style.id)
+                if synthesize is not None
+                else synthesize_fast(
+                    text,
+                    profile,
+                    speed,
+                    voice_style_id=style.id,
+                )
             )
             if not isinstance(audio_path, str) or not Path(audio_path).is_file():
                 raise RuntimeError("OmniVoice did not create a playable audio file.")
@@ -293,6 +324,10 @@ def create_app(synthesize: Callable[[str, str, float], str] | None = None) -> Fl
         text = raw_text.strip() if isinstance(raw_text, str) else ""
         profile = data.get("voice_profile", "ru")
         speed = clamp_voice_speed(data.get("speed", DEFAULT_VOICE_SPEED))
+        try:
+            style = _voice_style_from_request(data)
+        except ValueError:
+            return jsonify({"error": "Unsupported OmniVoice voice style."}), 400
         if not text:
             return jsonify({"error": "No text provided"}), 400
         if len(text) > MAX_TTS_TEXT_CHARS:
@@ -305,7 +340,12 @@ def create_app(synthesize: Callable[[str, str, float], str] | None = None) -> Fl
                 output.setsampwidth(2)
                 output.setframerate(MODEL_SAMPLE_RATE)
                 for chunk in split_tts_chunks(text):
-                    chunk_path = synthesize_fast(chunk, profile, speed)
+                    chunk_path = synthesize_fast(
+                        chunk,
+                        profile,
+                        speed,
+                        voice_style_id=style.id,
+                    )
                     try:
                         with wave.open(chunk_path, "rb") as source:
                             output.writeframes(source.readframes(source.getnframes()))

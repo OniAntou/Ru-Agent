@@ -12,6 +12,7 @@ from .tts_chunks import split_tts_chunks
 from .voice_pacing import parse_voice_pace
 from .voice_observability import VoiceTiming
 from .voice_runtime import VoiceSelection, voice_selection_by_label
+from .voice_style import ORIGINAL_STYLE_ID, VoiceStyleId
 
 VoiceStreamEventType = Literal["started", "audio", "ended", "cancelled", "failed"]
 VoicePlaybackState = Literal["started", "ended", "cancelled", "failed"]
@@ -49,7 +50,7 @@ class VoiceStreamCoordinator:
         self,
         *,
         prepare_speech: Callable[[VoiceSelection], None],
-        request_audio: Callable[[str, str, float], bytes],
+        request_audio: Callable[[str, str, float, VoiceStyleId], bytes],
         memory_lock: threading.Lock | None,
         lock_timeout: float = 120.0,
     ) -> None:
@@ -108,6 +109,7 @@ class VoiceStreamCoordinator:
         text: str,
         voice_label: str,
         speed: float,
+        voice_style_id: VoiceStyleId = ORIGINAL_STYLE_ID,
     ) -> AsyncIterator[VoiceStreamEvent]:
         clean_text, _ = parse_voice_pace(text)
         chunks = split_tts_chunks(clean_text)
@@ -141,7 +143,13 @@ class VoiceStreamCoordinator:
                 if self._is_cancelled(request_id):
                     yield VoiceStreamEvent("cancelled", request_id, sequence)
                     return
-                audio = await asyncio.to_thread(self._request_audio, chunk, voice_label, speed)
+                audio = await asyncio.to_thread(
+                    self._request_audio,
+                    chunk,
+                    voice_label,
+                    speed,
+                    voice_style_id,
+                )
                 if self._is_cancelled(request_id):
                     yield VoiceStreamEvent("cancelled", request_id, sequence)
                     return

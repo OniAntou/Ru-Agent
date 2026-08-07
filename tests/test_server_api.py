@@ -590,11 +590,57 @@ def test_post_voice_uses_urllib_request_instead_of_fastapi_request(monkeypatch) 
     assert captured["timeout"] == 30.0
     assert (status, body) == (200, b'{"ready":true}')
 
+
+def test_request_voice_audio_posts_only_the_validated_style_id(monkeypatch) -> None:
+    captured = {}
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return b"RIFF"
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(server_shared, "urlopen", fake_urlopen)
+
+    audio = server_shared.request_voice_audio(
+        "xin chào", "Ru (OmniVoice)", 1.0, "whisper"
+    )
+
+    assert audio == b"RIFF"
+    assert json.loads(captured["request"].data) == {
+        "text": "xin chào",
+        "voice_profile": "ru",
+        "speed": 1.0,
+        "voice_style_id": "whisper",
+    }
+    assert captured["timeout"] == 90.0
+
+
 def test_voice_tts_returns_wav_bytes(monkeypatch, isolated_state) -> None:
     monkeypatch.setattr(server_shared, "ensure_voice_service", lambda: None)
     monkeypatch.setattr(voice_router, "ensure_voice_service", lambda: None, raising=False)
-    monkeypatch.setattr(server_shared, "request_voice_audio", lambda text, label, speed: b"RIFFWAVE-data")
-    monkeypatch.setattr(voice_router, "request_voice_audio", lambda text, label, speed: b"RIFFWAVE-data", raising=False)
+    monkeypatch.setattr(
+        server_shared,
+        "request_voice_audio",
+        lambda text, label, speed, style: b"RIFFWAVE-data",
+    )
+    monkeypatch.setattr(
+        voice_router,
+        "request_voice_audio",
+        lambda text, label, speed, style: b"RIFFWAVE-data",
+        raising=False,
+    )
     with TestClient(server.app) as client:
         response = client.post("/voice/tts", json={"text": "xin chào"})
     assert response.status_code == 200
@@ -612,7 +658,7 @@ def test_voice_tts_rejects_empty_text(monkeypatch, isolated_state) -> None:
 def test_voice_tts_strips_internal_markers_before_synthesis(monkeypatch, isolated_state) -> None:
     sent = []
 
-    def fake_audio(text, label, speed):
+    def fake_audio(text, label, speed, style):
         sent.append(text)
         return b"RIFFWAVE-data"
 
@@ -628,8 +674,39 @@ def test_voice_tts_strips_internal_markers_before_synthesis(monkeypatch, isolate
     assert response.status_code == 200
     assert sent == ["Chào anh nha!"]
 
+
+def test_voice_tts_uses_saved_style_without_leaking_it_into_text(
+    monkeypatch, isolated_state
+) -> None:
+    sent = []
+
+    def fake_audio(text, label, speed, style):
+        sent.append((text, label, speed, style))
+        return b"RIFFWAVE-data"
+
+    monkeypatch.setattr(server_shared, "ensure_voice_service", lambda: None)
+    monkeypatch.setattr(
+        voice_router, "ensure_voice_service", lambda: None, raising=False
+    )
+    monkeypatch.setattr(server_shared, "request_voice_audio", fake_audio)
+    monkeypatch.setattr(
+        voice_router, "request_voice_audio", fake_audio, raising=False
+    )
+    with TestClient(server.app) as client:
+        client.post("/settings", json={"voice_style_id": "high_pitch"})
+        response = client.post(
+            "/voice/tts",
+            json={"text": "Chào anh. [[VOICE_PACE:quick]]"},
+        )
+
+    assert response.status_code == 200
+    assert sent == [
+        ("Chào anh.", "Ru (OmniVoice)", 1.08, "high_pitch")
+    ]
+
+
 def test_voice_tts_surfaces_service_failure(monkeypatch, isolated_state) -> None:
-    def boom(text, label, speed):
+    def boom(text, label, speed, style):
         raise RuntimeError("voice server offline")
 
     monkeypatch.setattr(server_shared, "ensure_voice_service", lambda: None)
@@ -652,7 +729,11 @@ def test_voice_stream_rejects_unauthorized_websocket(monkeypatch, isolated_state
 
 
 def test_voice_stream_sends_ordered_audio_and_end_event(monkeypatch, isolated_state) -> None:
-    monkeypatch.setattr(voice_router, "request_voice_audio", lambda text, label, speed: text.encode())
+    monkeypatch.setattr(
+        voice_router,
+        "request_voice_audio",
+        lambda text, label, speed, style: text.encode(),
+    )
     monkeypatch.setattr(voice_router._gpu_lifecycle(), "prepare_speech", lambda selection: None)
 
     with TestClient(server.app) as client:
@@ -675,7 +756,11 @@ def test_voice_stream_sends_ordered_audio_and_end_event(monkeypatch, isolated_st
 def test_voice_stream_can_overlap_hosted_chat_generation(monkeypatch, isolated_state) -> None:
     server.core.runner.backend = headless_runner.BACKEND_KILO
     server_shared._TURN_LOCK.acquire()
-    monkeypatch.setattr(voice_router, "request_voice_audio", lambda text, label, speed: text.encode())
+    monkeypatch.setattr(
+        voice_router,
+        "request_voice_audio",
+        lambda text, label, speed, style: text.encode(),
+    )
     monkeypatch.setattr(voice_router._gpu_lifecycle(), "prepare_speech", lambda selection: None)
 
     try:
@@ -694,7 +779,11 @@ def test_voice_stream_can_overlap_hosted_chat_generation(monkeypatch, isolated_s
 def test_voice_tts_fallback_can_overlap_hosted_chat_generation(monkeypatch, isolated_state) -> None:
     server.core.runner.backend = headless_runner.BACKEND_KILO
     server_shared._TURN_LOCK.acquire()
-    monkeypatch.setattr(voice_router, "request_voice_audio", lambda text, label, speed: b"RIFFWAVE-data")
+    monkeypatch.setattr(
+        voice_router,
+        "request_voice_audio",
+        lambda text, label, speed, style: b"RIFFWAVE-data",
+    )
     monkeypatch.setattr(voice_router._gpu_lifecycle(), "prepare_speech", lambda selection: None)
 
     try:
@@ -726,7 +815,7 @@ def test_voice_stream_cancels_after_first_chunk_without_sending_stale_audio(
     second_started = threading.Event()
     release_second = threading.Event()
 
-    def fake_audio(text, label, speed):
+    def fake_audio(text, label, speed, style):
         if text == "B.":
             second_started.set()
             release_second.wait(timeout=5)
@@ -761,7 +850,11 @@ def test_voice_stream_records_current_playback_ack_only_once(monkeypatch, isolat
         return coordinator
 
     monkeypatch.setattr(voice_router, "_voice_stream_coordinator", capture_coordinator)
-    monkeypatch.setattr(voice_router, "request_voice_audio", lambda text, label, speed: text.encode())
+    monkeypatch.setattr(
+        voice_router,
+        "request_voice_audio",
+        lambda text, label, speed, style: text.encode(),
+    )
     monkeypatch.setattr(voice_router._gpu_lifecycle(), "prepare_speech", lambda selection: None)
 
     with TestClient(server.app) as client:

@@ -15,10 +15,13 @@ import mini_gpt.headless_runner as headless_runner
 import mini_gpt.routers.chat as chat_router
 import mini_gpt.routers.observation as observation_router
 import mini_gpt.routers.sessions as sessions_router
+import mini_gpt.routers.settings as settings_router
 import mini_gpt.routers.vts as vts_router
 import mini_gpt.routers.voice as voice_router
 import mini_gpt.server as server
+from mini_gpt.headless_runner import BACKEND_GGUF, BACKEND_KILO, BACKEND_OPENCODE
 from mini_gpt.screen_reaction import ReactionCoordinator, ReactionRequest, VisionObservation
+from mini_gpt.voice_runtime import VoiceSelection
 
 
 class AuthenticatedTestClient(TestClient):
@@ -669,6 +672,177 @@ def test_voice_stream_records_current_playback_ack_only_once(monkeypatch, isolat
         "playback_ended_ms",
         "playback_terminal_ms",
     }
+
+
+def test_schedule_cloud_voice_warmup_starts_once_for_hosted_auto_read(monkeypatch) -> None:
+    """Catches removing the hosted, auto-read OmniVoice eligibility branch."""
+
+    class DeferredThread:
+        created: list["DeferredThread"] = []
+
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+            self.name = name
+            self.daemon = daemon
+            self.started = False
+            self.created.append(self)
+
+        def start(self):
+            self.started = True
+
+    events: list[object] = []
+    monkeypatch.setattr(server_shared, "_CLOUD_VOICE_WARMUP_LOCK", threading.Lock(), raising=False)
+    monkeypatch.setattr(server_shared.core.runner, "backend", BACKEND_KILO)
+    monkeypatch.setattr(server_shared, "effective_settings", lambda: {"auto_read_replies": True})
+    monkeypatch.setattr(
+        server_shared,
+        "_voice_selection",
+        lambda: VoiceSelection("Ru (OmniVoice)", "omnivoice", "ru"),
+    )
+    monkeypatch.setattr(
+        server_shared,
+        "_gpu_lifecycle",
+        lambda: type(
+            "Lifecycle",
+            (),
+            {
+                "warm_voice_for_cloud": lambda self, selection, status: (
+                    status("Warming OmniVoice voice..."),
+                    events.append(("warm", selection.profile_id)),
+                    0.0,
+                )[-1],
+            },
+        )(),
+    )
+    monkeypatch.setattr(server_shared.logger, "info", lambda message, *args: events.append(("status", message)))
+    monkeypatch.setattr(server_shared.threading, "Thread", DeferredThread)
+
+    assert server_shared._schedule_cloud_voice_warmup() is True
+    assert server_shared._schedule_cloud_voice_warmup() is False
+    assert len(DeferredThread.created) == 1
+    assert DeferredThread.created[0].name == "cloud-voice-warmup"
+    assert DeferredThread.created[0].daemon is True
+    assert DeferredThread.created[0].started is True
+    DeferredThread.created[0].target()
+    assert events == [
+        ("status", "Warming OmniVoice voice..."),
+        ("warm", "ru"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("backend", "auto_read"),
+    [
+        (BACKEND_GGUF, True),
+        (BACKEND_KILO, False),
+    ],
+)
+def test_schedule_cloud_voice_warmup_skips_ineligible_runtime(monkeypatch, backend, auto_read) -> None:
+    """Catches scheduling in a local runtime or with reply reading disabled."""
+
+    monkeypatch.setattr(server_shared, "_CLOUD_VOICE_WARMUP_LOCK", threading.Lock(), raising=False)
+    monkeypatch.setattr(server_shared.core.runner, "backend", backend)
+    monkeypatch.setattr(server_shared, "effective_settings", lambda: {"auto_read_replies": auto_read})
+    monkeypatch.setattr(
+        server_shared,
+        "_voice_selection",
+        lambda: VoiceSelection("Ru (OmniVoice)", "omnivoice", "ru"),
+    )
+
+    assert server_shared._schedule_cloud_voice_warmup() is False
+
+
+def test_schedule_cloud_voice_warmup_releases_lock_after_worker_failure(monkeypatch) -> None:
+    """Catches a failed worker permanently suppressing later hosted warm-ups."""
+
+    class DeferredThread:
+        created: list["DeferredThread"] = []
+
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+            self.name = name
+            self.daemon = daemon
+            self.created.append(self)
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(server_shared, "_CLOUD_VOICE_WARMUP_LOCK", threading.Lock(), raising=False)
+    monkeypatch.setattr(server_shared.core.runner, "backend", BACKEND_OPENCODE)
+    monkeypatch.setattr(server_shared, "effective_settings", lambda: {"auto_read_replies": True})
+    monkeypatch.setattr(
+        server_shared,
+        "_voice_selection",
+        lambda: VoiceSelection("Ru (OmniVoice)", "omnivoice", "ru"),
+    )
+    monkeypatch.setattr(
+        server_shared,
+        "_gpu_lifecycle",
+        lambda: type(
+            "FailingLifecycle",
+            (),
+            {"warm_voice_for_cloud": lambda self, selection, status: (_ for _ in ()).throw(RuntimeError("boom"))},
+        )(),
+    )
+    monkeypatch.setattr(server_shared.threading, "Thread", DeferredThread)
+
+    assert server_shared._schedule_cloud_voice_warmup() is True
+    DeferredThread.created[0].target()
+    assert server_shared._schedule_cloud_voice_warmup() is True
+
+
+def test_voice_only_settings_save_schedules_cloud_voice_warmup(monkeypatch) -> None:
+    """Catches omitting warm-up after a non-loading voice settings save."""
+
+    scheduled: list[None] = []
+    monkeypatch.setattr(settings_router, "_schedule_cloud_voice_warmup", lambda: scheduled.append(None), raising=False)
+
+    with TestClient(server.app) as client:
+        response = client.post("/settings", json={"auto_read_replies": True})
+
+    assert response.json() == {"status": "success", "message": "Settings saved."}
+    assert scheduled == [None]
+
+
+def test_non_voice_settings_save_does_not_schedule_cloud_voice_warmup(monkeypatch) -> None:
+    """Catches scheduling from an unrelated settings-only save."""
+
+    scheduled: list[None] = []
+    monkeypatch.setattr(settings_router, "_schedule_cloud_voice_warmup", lambda: scheduled.append(None), raising=False)
+
+    with TestClient(server.app) as client:
+        response = client.post("/settings", json={"temperature": 0.6})
+
+    assert response.json() == {"status": "success", "message": "Settings saved."}
+    assert scheduled == []
+
+
+@pytest.mark.parametrize(
+    ("backend", "load_error", "expected_schedule"),
+    [
+        (BACKEND_KILO, None, True),
+        (BACKEND_KILO, RuntimeError("load failed"), False),
+        (BACKEND_GGUF, None, False),
+    ],
+)
+def test_backend_settings_save_schedules_only_after_successful_hosted_load(
+    monkeypatch, backend, load_error, expected_schedule
+) -> None:
+    """Catches warm-up before a failed load or after a local backend load."""
+
+    scheduled: list[None] = []
+    monkeypatch.setattr(settings_router, "_schedule_cloud_voice_warmup", lambda: scheduled.append(None), raising=False)
+    monkeypatch.setattr(server.core.runner, "select_backend", lambda selected: None)
+    if load_error is None:
+        monkeypatch.setattr(server.core.runner, "load", lambda **kwargs: "Ready")
+    else:
+        monkeypatch.setattr(server.core.runner, "load", lambda **kwargs: (_ for _ in ()).throw(load_error))
+
+    with TestClient(server.app) as client:
+        response = client.post("/settings", json={"backend": backend})
+
+    assert response.json()["status"] == ("error" if load_error else "success")
+    assert scheduled == ([None] if expected_schedule else [])
 
 def test_voice_warmup_and_release(monkeypatch, isolated_state) -> None:
     monkeypatch.setattr(server_shared, "ensure_voice_service", lambda: None)

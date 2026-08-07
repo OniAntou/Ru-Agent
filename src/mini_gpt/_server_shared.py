@@ -123,6 +123,7 @@ _DEFAULT_SETTINGS = {
     "checkpoint_path": "",
     "voice_label": "Ru (OmniVoice)",
     "voice_speed": 1.0,
+    "auto_read_replies": True,
 }
 
 _VALID_BACKENDS = (BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO)
@@ -143,6 +144,7 @@ _GPU_LOCK = threading.Lock()
 _VTS_LOCK = threading.Lock()
 _MEMORY_TURN_LOCK = threading.Lock()
 _PENDING_REACTION_LOCK = threading.Lock()
+_CLOUD_VOICE_WARMUP_LOCK = threading.Lock()
 
 _MEMORY_QUEUE_MAXSIZE = 50
 _MEMORY_LOCK_TIMEOUT_SECONDS = 10.0
@@ -277,7 +279,7 @@ def effective_settings() -> dict:
     bounded_number("voice_speed", 0.5, 2.0)
     merged["max_tokens"] = int(merged["max_tokens"])
     merged["top_k"] = int(merged["top_k"])
-    for key in ("allow_web_search", "enable_self_learning", "share_memory_with_cloud"):
+    for key in ("allow_web_search", "enable_self_learning", "share_memory_with_cloud", "auto_read_replies"):
         if not isinstance(merged.get(key), bool):
             merged[key] = _DEFAULT_SETTINGS[key]
     return merged
@@ -325,7 +327,7 @@ def _effective_settings_unlocked() -> dict:
     bounded_number("voice_speed", 0.5, 2.0)
     merged["max_tokens"] = int(merged["max_tokens"])
     merged["top_k"] = int(merged["top_k"])
-    for key in ("allow_web_search", "enable_self_learning", "share_memory_with_cloud"):
+    for key in ("allow_web_search", "enable_self_learning", "share_memory_with_cloud", "auto_read_replies"):
         if not isinstance(merged.get(key), bool):
             merged[key] = _DEFAULT_SETTINGS[key]
     return merged
@@ -627,6 +629,33 @@ def _gpu_lifecycle() -> GpuLifecycle:
             },
         )
     return _GPU_LIFECYCLE
+
+
+def _should_warm_voice_for_cloud(settings: dict[str, object]) -> bool:
+    return (
+        core.runner.backend in (BACKEND_OPENCODE, BACKEND_KILO)
+        and settings.get("auto_read_replies", True) is True
+        and _voice_selection().engine_id == "omnivoice"
+    )
+
+
+def _schedule_cloud_voice_warmup() -> bool:
+    if not _should_warm_voice_for_cloud(effective_settings()):
+        return False
+    if not _CLOUD_VOICE_WARMUP_LOCK.acquire(blocking=False):
+        return False
+    selection = _voice_selection()
+
+    def warm() -> None:
+        try:
+            _gpu_lifecycle().warm_voice_for_cloud(selection, logger.info)
+        except Exception:
+            logger.exception("Background cloud voice warm-up failed")
+        finally:
+            _CLOUD_VOICE_WARMUP_LOCK.release()
+
+    threading.Thread(target=warm, name="cloud-voice-warmup", daemon=True).start()
+    return True
 
 
 def apply_saved_settings() -> str:
@@ -975,6 +1004,7 @@ def _safe_put(loop: asyncio.AbstractEventLoop, queue: asyncio.Queue, message: di
 @asynccontextmanager
 async def _application_lifespan(_app):
     _apply_settings_on_startup()
+    _schedule_cloud_voice_warmup()
     try:
         yield
     finally:

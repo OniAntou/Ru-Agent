@@ -8,6 +8,7 @@ from .._server_shared import (
     BACKEND_KILO,
     BACKEND_OPENCODE,
     _resolve_backend,
+    _schedule_cloud_voice_warmup,
     core,
     effective_settings,
     logger,
@@ -132,6 +133,16 @@ def save_settings(payload: SettingsPayload):
 
     _merge_settings(_apply)
 
+    voice_only_save = backend_val is None and any(
+        value is not None
+        for value in (
+            payload.voice_label,
+            payload.voice_speed,
+            payload.auto_pace_enabled,
+            payload.auto_read_replies,
+        )
+    )
+
     if payload.gemini_vision_api_key and payload.gemini_vision_api_key.strip():
         try:
             core.gemini_vision_cred.set_key(payload.gemini_vision_api_key.strip())
@@ -140,6 +151,8 @@ def save_settings(payload: SettingsPayload):
             return {"status": "error", "message": str(error)}
 
     if backend_val is None:
+        if voice_only_save:
+            _schedule_cloud_voice_warmup()
         return {"status": "success", "message": "Settings saved."}
 
     if payload.opencode_api_key and payload.opencode_api_key.strip():
@@ -175,6 +188,8 @@ def save_settings(payload: SettingsPayload):
             model_name=model_name,
             api_variant=payload.api_variant or "",
         )
+        if backend_val in (BACKEND_OPENCODE, BACKEND_KILO):
+            _schedule_cloud_voice_warmup()
         return {"status": "success", "message": result}
     except Exception as error:
         logger.error("Failed to load backend %s: %s", payload.backend, error)

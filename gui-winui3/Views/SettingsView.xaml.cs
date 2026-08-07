@@ -104,6 +104,7 @@ namespace RuApp.Views
             AllowOnlineSearchToggle.Toggled += (_, __) => ScheduleAutoSave();
             SelfLearningToggle.Toggled += (_, __) => ScheduleAutoSave();
             CloudMemoryConsentToggle.Toggled += (_, __) => ScheduleAutoSave();
+            KiloReasoningToggle.Toggled += (_, __) => ScheduleAutoSave();
         }
 
         private void ScheduleAutoSave()
@@ -215,6 +216,7 @@ namespace RuApp.Views
                 AllowOnlineSearchToggle.IsOn = settings.AllowOnlineSearch;
                 SelfLearningToggle.IsOn = settings.SelfLearningEnabled;
                 CloudMemoryConsentToggle.IsOn = settings.CloudMemoryConsent;
+                KiloReasoningToggle.IsOn = settings.KiloReasoningEnabled;
 
                 await LoadModelsForBackendAsync(settings.BackendChoice, settings, settings.OpenCodeModel, settings.KiloModel);
                 UpdateVisibilityForBackend(settings.BackendChoice);
@@ -300,6 +302,7 @@ namespace RuApp.Views
             OpenCodeApiRow.Visibility = (choice == "opencode") ? Visibility.Visible : Visibility.Collapsed;
             ApiVariantRow.Visibility = (choice == "opencode") ? Visibility.Visible : Visibility.Collapsed;
             KiloApiRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
+            KiloReasoningRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
 
             // These are only for cloud
             CloudMemoryRow.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
@@ -373,7 +376,8 @@ namespace RuApp.Views
                     MaxNewTokens = int.TryParse(MaxTokensNumberBox.Text, out int maxTokens) ? maxTokens : 512,
                     AllowOnlineSearch = AllowOnlineSearchToggle.IsOn,
                     SelfLearningEnabled = SelfLearningToggle.IsOn,
-                    CloudMemoryConsent = CloudMemoryConsentToggle.IsOn
+                    CloudMemoryConsent = CloudMemoryConsentToggle.IsOn,
+                    KiloReasoningEnabled = KiloReasoningToggle.IsOn
                 };
 
                 bool ok = await _apiService.SaveSettingsAsync(dto);

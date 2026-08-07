@@ -118,6 +118,11 @@ to skip hosted self-learning extraction.
 Ru supports **OpenCode Zen** and **Kilo Gateway** as optional hosted backends.
 In **Settings**, provide the matching API key and choose a model; each service
 URL is fixed by the backend and credentials are stored through the OS keyring.
+For normal Kilo chat, reasoning is disabled by default to reduce the time to
+the first streamed response. The **Reasoning cho tác vụ phức tạp** setting
+re-enables it when a task needs more deliberate reasoning. This setting does
+not change the selected Kilo model or cloud-memory policy; cloud-memory sharing
+remains enabled by default.
 
 Hosted responses stream into the in-progress Ru message. Model-directed
 `[SEARCH: ...]` commands stay hidden during the stream; a search command

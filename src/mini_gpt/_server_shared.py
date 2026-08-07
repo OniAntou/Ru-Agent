@@ -120,6 +120,7 @@ _DEFAULT_SETTINGS = {
     "allow_web_search": True,
     "enable_self_learning": True,
     "share_memory_with_cloud": True,
+    "kilo_reasoning_enabled": False,
     "checkpoint_path": "",
     "voice_label": "Ru (OmniVoice)",
     "voice_speed": 1.0,
@@ -280,7 +281,14 @@ def effective_settings() -> dict:
     bounded_number("voice_speed", 0.5, 2.0)
     merged["max_tokens"] = int(merged["max_tokens"])
     merged["top_k"] = int(merged["top_k"])
-    for key in ("allow_web_search", "enable_self_learning", "share_memory_with_cloud", "auto_pace_enabled", "auto_read_replies"):
+    for key in (
+        "allow_web_search",
+        "enable_self_learning",
+        "share_memory_with_cloud",
+        "kilo_reasoning_enabled",
+        "auto_pace_enabled",
+        "auto_read_replies",
+    ):
         if not isinstance(merged.get(key), bool):
             merged[key] = _DEFAULT_SETTINGS[key]
     return merged
@@ -328,7 +336,14 @@ def _effective_settings_unlocked() -> dict:
     bounded_number("voice_speed", 0.5, 2.0)
     merged["max_tokens"] = int(merged["max_tokens"])
     merged["top_k"] = int(merged["top_k"])
-    for key in ("allow_web_search", "enable_self_learning", "share_memory_with_cloud", "auto_pace_enabled", "auto_read_replies"):
+    for key in (
+        "allow_web_search",
+        "enable_self_learning",
+        "share_memory_with_cloud",
+        "kilo_reasoning_enabled",
+        "auto_pace_enabled",
+        "auto_read_replies",
+    ):
         if not isinstance(merged.get(key), bool):
             merged[key] = _DEFAULT_SETTINGS[key]
     return merged
@@ -700,6 +715,7 @@ def apply_saved_settings() -> str:
         api_key=api_key,
         model_name=model_name,
         api_variant=settings.get("api_variant", _DEFAULT_SETTINGS["api_variant"]),
+        kilo_reasoning_enabled=effective_settings()["kilo_reasoning_enabled"],
     )
 
 

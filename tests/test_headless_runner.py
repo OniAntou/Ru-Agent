@@ -22,6 +22,33 @@ def test_release_gpu_stops_gguf_runtime(monkeypatch) -> None:
     assert stopped == ["gguf"]
 
 
+def test_kilo_chat_disables_reasoning_by_default() -> None:
+    runner = runtime.ModelRunner()
+    runner.backend = runtime.BACKEND_KILO
+    captured: dict[str, object] = {}
+    runner.openai_runtime = SimpleNamespace(
+        generate=lambda _messages, *_args, **kwargs: captured.update(kwargs) or "reply"
+    )
+
+    runner._generate((("user", "Xin chào"),), 128, 0.7, 40)
+
+    assert captured["reasoning_effort_override"] == "none"
+
+
+def test_kilo_chat_keeps_reasoning_when_explicitly_enabled() -> None:
+    runner = runtime.ModelRunner()
+    runner.backend = runtime.BACKEND_KILO
+    runner.kilo_reasoning_enabled = True
+    captured: dict[str, object] = {}
+    runner.openai_runtime = SimpleNamespace(
+        generate=lambda _messages, *_args, **kwargs: captured.update(kwargs) or "reply"
+    )
+
+    runner._generate((("user", "Giải bài này"),), 128, 0.7, 40)
+
+    assert "reasoning_effort_override" not in captured
+
+
 def test_gguf_checkpoint_path_rejects_sibling_prefix(monkeypatch, tmp_path) -> None:
     runner = runtime.ModelRunner()
     runner.backend = runtime.BACKEND_GGUF

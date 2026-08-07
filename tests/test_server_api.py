@@ -1608,6 +1608,29 @@ def test_startup_applies_saved_settings(monkeypatch, isolated_state) -> None:
     assert result == "Ready"
     assert server.core.runner.backend == headless_runner.BACKEND_OPENCODE
 
+def test_startup_applies_saved_kilo_reasoning_setting(monkeypatch, isolated_state) -> None:
+    server.save_settings_to_file(
+        {
+            "backend": "Kilo Gateway",
+            "kilo_model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+            "kilo_reasoning_enabled": True,
+        }
+    )
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(server.core.kilo_cred, "get_key", lambda: None)
+    monkeypatch.setattr(
+        server.core.runner,
+        "load",
+        lambda *args, **kwargs: captured.update(kwargs) or "Ready",
+    )
+
+    result = server.apply_saved_settings()
+
+    assert result == "Ready"
+    assert server.core.runner.backend == headless_runner.BACKEND_KILO
+    assert captured["kilo_reasoning_enabled"] is True
+
+
 def test_startup_auto_starts_voice_service(monkeypatch, isolated_state) -> None:
     started = []
     monkeypatch.setattr(server_shared, "ensure_voice_service", lambda: started.append(True))
@@ -1738,6 +1761,36 @@ def test_self_learning_setting_default_true_and_round_trip(monkeypatch, isolated
         assert saved.status_code == 200
         loaded = client.get("/settings").json()
     assert loaded["enable_self_learning"] is False
+
+def test_kilo_reasoning_setting_defaults_off_and_reloads_runner(
+    monkeypatch, isolated_state
+) -> None:
+    load_calls: list[dict] = []
+    monkeypatch.setattr(
+        server.core.runner,
+        "load",
+        lambda *args, **kwargs: load_calls.append(kwargs) or "Ready",
+    )
+
+    with TestClient(server.app) as client:
+        defaults = client.get("/settings").json()
+        assert defaults["kilo_reasoning_enabled"] is False
+        assert defaults["share_memory_with_cloud"] is True
+
+        saved = client.post(
+            "/settings",
+            json={
+                "backend_choice": "kilo",
+                "kilo_reasoning_enabled": True,
+            },
+        )
+        assert saved.status_code == 200
+        loaded = client.get("/settings").json()
+
+    assert loaded["kilo_reasoning_enabled"] is True
+    assert loaded["share_memory_with_cloud"] is True
+    assert load_calls[-1]["kilo_reasoning_enabled"] is True
+
 
 def test_learn_from_turn_disabled_setting_skips_queue(monkeypatch, isolated_state) -> None:
     calls = []

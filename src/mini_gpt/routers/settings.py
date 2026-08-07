@@ -28,6 +28,7 @@ class SettingsPayload(BaseModel):
     opencode_api_key: str = Field(default="", max_length=4096)
     kilo_api_key: str = Field(default="", max_length=4096)
     api_variant: str | None = Field(default=None, max_length=64)
+    kilo_reasoning_enabled: bool | None = None
     max_tokens: int | None = Field(default=None, ge=1, le=1024)
     max_new_tokens: int | None = Field(default=None, ge=1, le=1024)
     temperature: float | None = Field(default=None, ge=0.1, le=2.0)
@@ -104,6 +105,8 @@ def save_settings(payload: SettingsPayload):
             settings["kilo_model"] = payload.kilo_model
         if payload.api_variant is not None:
             settings["api_variant"] = payload.api_variant
+        if payload.kilo_reasoning_enabled is not None:
+            settings["kilo_reasoning_enabled"] = payload.kilo_reasoning_enabled
         resolved_max_tokens = payload.max_tokens if payload.max_tokens is not None else payload.max_new_tokens
         if resolved_max_tokens is not None:
             settings["max_tokens"] = resolved_max_tokens
@@ -187,6 +190,7 @@ def save_settings(payload: SettingsPayload):
             api_key=api_key,
             model_name=model_name,
             api_variant=payload.api_variant or "",
+            kilo_reasoning_enabled=effective_settings()["kilo_reasoning_enabled"],
         )
         if backend_val in (BACKEND_OPENCODE, BACKEND_KILO):
             _schedule_cloud_voice_warmup()

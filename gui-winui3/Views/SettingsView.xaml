@@ -58,6 +58,14 @@
                                 <PasswordBox x:Name="KiloApiKeyBox" Grid.Column="1" PlaceholderText="sk-kilo-..." Width="280"/>
                             </Grid>
 
+                            <Grid x:Name="KiloReasoningRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
+                                <StackPanel Grid.Column="0" Spacing="2">
+                                    <TextBlock Text="Reasoning cho tác vụ phức tạp" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                    <TextBlock Text="Tắt để phản hồi nhanh hơn" FontSize="12" Foreground="#999999"/>
+                                </StackPanel>
+                                <ToggleSwitch x:Name="KiloReasoningToggle" Grid.Column="1" IsOn="False"/>
+                            </Grid>
+
                             <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
                                 <TextBlock Grid.Column="0" Text="Hồ sơ Checkpoint" VerticalAlignment="Center" Foreground="#DDDDDD"/>
                                 <TextBox x:Name="CheckpointPathBox" Grid.Column="1" PlaceholderText="checkpoints/ru-..." Width="280"/>

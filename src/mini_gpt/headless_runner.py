@@ -30,6 +30,7 @@ class ModelRunner:
         self.backend = BACKEND_GGUF
         self.gguf_runtime = LlamaCppRuntime(project_root=PROJECT_ROOT)
         self.openai_runtime: OpenAIRuntime | None = None
+        self.kilo_reasoning_enabled = False
 
     def select_backend(self, backend: str) -> None:
         if backend not in (BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO):
@@ -43,7 +44,9 @@ class ModelRunner:
         api_key: str = "",
         model_name: str = "deepseek-v4-flash-free",
         api_variant: str = "Default",
+        kilo_reasoning_enabled: bool = False,
     ) -> str:
+        self.kilo_reasoning_enabled = bool(kilo_reasoning_enabled)
         logger.info("Loading backend=%s, checkpoint_path=%s, model_name=%s", self.backend, checkpoint_path, model_name)
         if self.backend in (BACKEND_OPENCODE, BACKEND_KILO):
             self.gguf_runtime.stop()
@@ -100,6 +103,8 @@ class ModelRunner:
             kwargs = {
                 "on_complete_timing": on_complete_timing,
             }
+            if self.backend == BACKEND_KILO and not self.kilo_reasoning_enabled:
+                kwargs["reasoning_effort_override"] = "none"
             if on_stream_delta is not None:
                 kwargs["on_delta"] = on_stream_delta
             if on_stream_reset is not None:

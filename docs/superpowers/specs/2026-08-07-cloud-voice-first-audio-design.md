@@ -1,7 +1,7 @@
 # Cloud Voice First-Audio Optimization Design
 
 Date: 2026-08-07
-Status: Implemented; live cloud acceptance and provider A/B pending
+Status: Implemented; direct Kilo stream correction verified; GUI first-audio acceptance and provider A/B pending
 Scope: hosted-chat replies that auto-read through local OmniVoice in the WinUI 3 GUI
 
 ## Problem and evidence
@@ -15,8 +15,25 @@ not explained by warm OmniVoice inference alone.
 Before this iteration, the GUI waited for a completed sentence before it queued
 speech, and the runtime started the OmniVoice process at most rather than
 loading its model and clone prompt before the first reply. The current saved
-chat backend is Kilo `kilo-auto/free`; its model routing and time-to-first-token
-are external and deliberately unchanged by this iteration.
+chat backend at that time was Kilo `kilo-auto/free`; its model routing and
+time-to-first-token were external and deliberately unchanged by that iteration.
+
+## Kilo normal-chat follow-up (2026-08-07)
+
+A later live diagnosis isolated the much larger delay in normal Kilo chat to
+provider-side reasoning. With the same full Ru chat request, the active
+reasoning-capable Kilo model first streamed after 7,458.9 ms under its default
+reasoning behavior and after 1,423.9 ms with `reasoning.effort=none`. The
+implemented `ModelRunner` path was then probed with normal chat generation and
+first streamed in 1,452.5 ms.
+
+Normal Kilo chat now sends `reasoning.effort=none` by default. A persisted GUI
+toggle, **Reasoning cho tác vụ phức tạp**, lets the user re-enable provider
+reasoning when the quality trade-off is appropriate. This does not change the
+selected provider/model, the screen-observation route, the prompt, or
+`share_memory_with_cloud`, which remains true by default. The direct probe did
+not exercise GUI rendering, first-phrase buffering, OmniVoice synthesis, or
+audible playback, so it is not an end-to-end first-audio acceptance result.
 
 ## Decision
 
@@ -28,10 +45,13 @@ Implement three bounded changes together:
    reply has no sentence punctuation yet.
 3. Record numeric-only, loopback-only end-to-end latency milestones for each
    auto-read reply.
+4. Disable provider reasoning for normal Kilo chat by default, with a
+   user-visible opt-in for complex tasks.
 
 The selected cloud provider, model, prompt, cloud-memory setting, OmniVoice
 generation configuration, voice profile, speed, and local-GGUF policy remain
-unchanged. `share_memory_with_cloud` remains true by default.
+unchanged. The only Kilo-chat request-shape change is the explicit default
+`reasoning.effort=none`; `share_memory_with_cloud` remains true by default.
 
 ## Alternatives considered
 
@@ -121,9 +141,12 @@ Failed telemetry delivery must not affect synthesis or playback.
 ## Files and boundaries
 
 - `src/mini_gpt/_server_shared.py`: cloud-warm eligibility and one deduplicated
-  background warm-up scheduler.
+  background warm-up scheduler, plus the persisted Kilo reasoning default.
+- `src/mini_gpt/headless_runner.py`: applies `reasoning.effort=none` only to
+  normal Kilo chat while the setting is disabled.
 - `src/mini_gpt/routers/settings.py`: schedule a background warm-up after a
-  successful relevant settings save; never block the settings response.
+  successful relevant settings save and carry the Kilo reasoning setting into
+  the active runner.
 - `src/mini_gpt/routers/voice.py`: authenticated, strict numeric telemetry
   endpoint only.
 - `gui-winui3/Services/VoiceReplySentenceBuffer.cs`: pure first-phrase
@@ -134,6 +157,8 @@ Failed telemetry delivery must not affect synthesis or playback.
   stream, TTS first audio, and first playback request.
 - `gui-winui3/Services/ApiService.cs`: best-effort authenticated loopback
   telemetry call.
+- `gui-winui3/Models/Models.cs` and `gui-winui3/Views/SettingsView.*`: persist
+  and expose the Kilo reasoning opt-in only for the Kilo backend.
 
 ## Tests and verification
 
@@ -164,6 +189,11 @@ Failed telemetry delivery must not affect synthesis or playback.
 - This is local-runtime evidence only. No cloud chat was invoked, no live cloud
   p50/p95 was measured, no user listened to the generated audio, and no
   provider/model A/B comparison was run.
+- The Kilo follow-up passed red-green runtime, settings, startup, and GUI DTO
+  contract tests. The full sequential gates then passed: Python `416 passed`,
+  WinUI `46 passed`, and self-contained GUI publish. The direct Kilo
+  `ModelRunner` probe measured first delta at 1,452.5 ms with reasoning
+  disabled; GUI/audio acceptance remains pending.
 
 ## Historical Phase 1 context
 

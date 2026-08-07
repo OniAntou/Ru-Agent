@@ -46,6 +46,11 @@
   phrase before sentence punctuation, and numeric-only local loopback latency
   telemetry. Local GGUF keeps its existing GPU lifecycle; these changes do not
   measure or claim a cloud latency improvement.
+- [x] Disable normal Kilo-chat reasoning by default, with a persisted Settings
+  toggle to re-enable it for complex tasks. A direct post-change ModelRunner
+  probe reached its first Kilo delta in 1,452.5 ms; this is provider-stream
+  evidence only, not GUI first-audio acceptance. Cloud-memory sharing remains
+  enabled by default.
 - [x] Run the Task 4 integrated automated gate sequentially: Python `411`
   passed, WinUI tests `27` passed, self-contained publish passed, and
   `git diff --check` had no whitespace errors.

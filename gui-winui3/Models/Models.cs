@@ -139,6 +139,9 @@ namespace RuApp.Models
         [JsonPropertyName("kilo_model")]
         public string KiloModel { get; set; } = "kilo-auto/free";
 
+        [JsonPropertyName("kilo_reasoning_enabled")]
+        public bool KiloReasoningEnabled { get; set; } = false;
+
         [JsonPropertyName("checkpoint_path")]
         public string CheckpointPath { get; set; } = string.Empty;
 

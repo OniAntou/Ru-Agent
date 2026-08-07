@@ -175,7 +175,6 @@ namespace RuApp.Services
             VoiceReplyAudioQueue? previousAudioQueue;
             VoiceStreamClient? previousStreamClient;
             Task? previousWorker;
-            bool resetVts;
             lock (_replyGate)
             {
                 VoiceReplyLatencyTracker? tracker = _replyLatencyTracker;
@@ -192,8 +191,6 @@ namespace RuApp.Services
                 previousAudioQueue?.Cancel();
                 previousStreamClient?.Dispose();
                 CleanupPlayer();
-                resetVts = _vtsSpeaking;
-                _vtsSpeaking = false;
                 StartReplyPipelineLocked(tracker);
             }
 
@@ -201,10 +198,6 @@ namespace RuApp.Services
             if (previousCts is not null && previousWorker is not null)
             {
                 _ = ObserveReplyWorkerAsync(previousWorker, previousCts);
-            }
-            if (resetVts)
-            {
-                _ = ResetVtsSpeakingAsync();
             }
         }
 
@@ -513,7 +506,7 @@ namespace RuApp.Services
         {
             Channel<string>? failedChannel;
             VoiceStreamClient? failedStreamClient;
-            bool resetVts;
+            Task? failedWorker;
             lock (_replyGate)
             {
                 if (!ReferenceEquals(_replyStreamCts, failedStream) ||
@@ -522,8 +515,13 @@ namespace RuApp.Services
                     return;
                 }
 
+                // Record the failure before exposing the detached state so a
+                // concurrent terminal completion cannot classify a no-audio
+                // reply as completed.
+                tracker.MarkSynthesisFailure();
                 failedChannel = _replyTextChannel;
                 failedStreamClient = _replyStreamClient;
+                failedWorker = _replyStreamWorker;
                 _replyStreamCts = null;
                 _replyTextChannel = null;
                 _replySentenceBuffer = null;
@@ -531,21 +529,15 @@ namespace RuApp.Services
                 _replyStreamClient = null;
                 _replyStreamWorker = null;
                 _replyHasInput = false;
-                resetVts = _vtsSpeaking;
-                _vtsSpeaking = false;
                 CleanupPlayer();
             }
 
-            // Keep the tracker alive for a hosted retry, but ensure a reply
-            // that ultimately ends without replacement audio is classified
-            // as failed at its real terminal boundary.
-            tracker.MarkSynthesisFailure();
             failedChannel?.Writer.TryComplete();
             audioQueue.Cancel();
             failedStreamClient?.Dispose();
-            if (resetVts)
+            if (failedWorker is not null)
             {
-                _ = ResetVtsSpeakingAsync();
+                _ = ObserveReplyWorkerAsync(failedWorker, failedStream);
             }
         }
 
@@ -694,6 +686,7 @@ namespace RuApp.Services
             }
 
             VoiceReplyLatencySnapshot? snapshot;
+            bool resetVts;
             lock (_replyGate)
             {
                 if (!ReferenceEquals(_replyLatencyTracker, tracker) || _replyStreamCts is not null)
@@ -702,12 +695,21 @@ namespace RuApp.Services
                 }
 
                 snapshot = tracker.TryComplete(VoiceReplyOutcome.Completed);
+                resetVts = snapshot is not null && _vtsSpeaking;
+                if (resetVts)
+                {
+                    _vtsSpeaking = false;
+                }
                 if (ReferenceEquals(_replyLatencyTracker, tracker))
                 {
                     _replyLatencyTracker = null;
                 }
             }
             ReportReplyLatency(snapshot);
+            if (resetVts)
+            {
+                _ = ResetVtsSpeakingAsync();
+            }
         }
 
         private bool IsCurrentReplyStream(CancellationTokenSource stream)

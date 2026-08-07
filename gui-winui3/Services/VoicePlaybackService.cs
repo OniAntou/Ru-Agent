@@ -178,8 +178,12 @@ namespace RuApp.Services
             bool resetVts;
             lock (_replyGate)
             {
-                VoiceReplyLatencyTracker? tracker = _replyLatencyTracker;
-                if (tracker is null) return;
+                // A reply worker can already have reported a terminal failure
+                // before the hosted provider emits its retry reset event. In
+                // that case its old tracker is no longer reusable, but the
+                // stale pipeline still has to be discarded so the retry can
+                // synthesize through a fresh local attempt.
+                VoiceReplyLatencyTracker tracker = _replyLatencyTracker ?? new VoiceReplyLatencyTracker();
 
                 previousCts = _replyStreamCts;
                 previousChannel = _replyTextChannel;

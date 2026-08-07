@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text.Json;
 using RuApp.Services;
 using Xunit;
@@ -59,6 +60,29 @@ public sealed class VoiceReplyLatencyTrackerTests
         Assert.Equal(VoiceReplyOutcome.Failed, snapshot.Outcome);
         Assert.NotNull(snapshot.SubmitToFirstDeltaMs);
         Assert.Null(snapshot.SubmitToFirstPhraseMs);
+        Assert.Equal(1, capture.ReportCount);
+    }
+
+    [Fact]
+    public async Task RetryResetRestartsPipelineAfterWorkerFailureDetachedTheTracker()
+    {
+        using var capture = new VoiceLatencyCaptureServer();
+        using var api = capture.CreateApiService();
+        using var service = new VoicePlaybackService(api);
+        service.BeginReplyStream();
+
+        // A reply-worker fault terminalizes and detaches this tracker before
+        // the hosted provider can issue its retry reset event.
+        FieldInfo trackerField = Assert.IsAssignableFrom<FieldInfo>(typeof(VoicePlaybackService)
+            .GetField("_replyLatencyTracker", BindingFlags.Instance | BindingFlags.NonPublic));
+        trackerField.SetValue(service, null);
+
+        service.ResetReplyStreamForRetry();
+        service.AppendReplyDelta("[[VTS:neutral]]");
+        await service.CompleteReplyStreamAsync();
+
+        VoiceReplyLatencySnapshot snapshot = await capture.WaitForReportAsync();
+        Assert.Equal(VoiceReplyOutcome.Failed, snapshot.Outcome);
         Assert.Equal(1, capture.ReportCount);
     }
 

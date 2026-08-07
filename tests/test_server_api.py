@@ -418,6 +418,28 @@ def test_settings_voice_fields_round_trip(monkeypatch, isolated_state) -> None:
     assert body["voice_label"] == "Ái Vy (OmniVoice)"
     assert body["voice_speed"] == 1.05
 
+def test_settings_voice_style_round_trip_and_status(monkeypatch, isolated_state) -> None:
+    monkeypatch.setattr(server_shared, "voice_available", lambda: True)
+    monkeypatch.setattr(voice_router, "voice_available", lambda: True, raising=False)
+
+    with TestClient(server.app) as client:
+        saved = client.post("/settings", json={"voice_style_id": "low_pitch"})
+        settings = client.get("/settings").json()
+        status = client.get("/voice/status").json()
+
+    assert saved.json()["status"] == "success"
+    assert settings["voice_style_id"] == "low_pitch"
+    assert status["voice_style_id"] == "low_pitch"
+    assert settings["share_memory_with_cloud"] is True
+
+
+def test_settings_reject_unknown_voice_style(isolated_state) -> None:
+    with TestClient(server.app) as client:
+        response = client.post("/settings", json={"voice_style_id": "free-form"})
+
+    assert response.status_code == 422
+
+
 def test_settings_partial_update_keeps_backend(monkeypatch, isolated_state) -> None:
     load_calls = {"n": 0}
 
@@ -472,6 +494,7 @@ def test_voice_status_returns_effective_disabled_auto_read_setting(monkeypatch) 
         "status": "ok",
         "available": True,
         "voice_label": "Ái Vy (OmniVoice)",
+        "voice_style_id": "original",
         "voice_speed": 1.05,
         "auto_pace_enabled": False,
         "auto_read_replies": False,

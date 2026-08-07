@@ -243,6 +243,9 @@ def voice_status():
         "status": "ok",
         "available": voice_available(),
         "voice_label": settings.get("voice_label", _DEFAULT_SETTINGS["voice_label"]),
+        "voice_style_id": settings.get(
+            "voice_style_id", _DEFAULT_SETTINGS["voice_style_id"]
+        ),
         "voice_speed": settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"]),
         "auto_pace_enabled": settings.get("auto_pace_enabled", True),
         "auto_read_replies": settings.get(

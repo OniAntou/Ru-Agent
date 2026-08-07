@@ -14,6 +14,7 @@ from .._server_shared import (
     logger,
     _merge_settings,
 )
+from ..voice_style import VoiceStyleId
 
 router = APIRouter()
 
@@ -41,6 +42,7 @@ class SettingsPayload(BaseModel):
     cloud_memory_consent: bool | None = None
     checkpoint_path: str = Field(default="", max_length=1024)
     voice_label: str | None = Field(default=None, max_length=128)
+    voice_style_id: VoiceStyleId | None = None
     voice_speed: float | None = Field(default=None, ge=0.5, le=2.0)
     auto_pace_enabled: bool | None = None
     auto_read_replies: bool | None = None
@@ -127,6 +129,8 @@ def save_settings(payload: SettingsPayload):
             settings["checkpoint_path"] = payload.checkpoint_path.strip()
         if payload.voice_label is not None:
             settings["voice_label"] = payload.voice_label
+        if payload.voice_style_id is not None:
+            settings["voice_style_id"] = payload.voice_style_id
         if payload.voice_speed is not None:
             settings["voice_speed"] = payload.voice_speed
         if payload.auto_pace_enabled is not None:
@@ -140,6 +144,7 @@ def save_settings(payload: SettingsPayload):
         value is not None
         for value in (
             payload.voice_label,
+            payload.voice_style_id,
             payload.voice_speed,
             payload.auto_pace_enabled,
             payload.auto_read_replies,

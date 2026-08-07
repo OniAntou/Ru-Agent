@@ -59,6 +59,7 @@ from mini_gpt.voice_runtime import (
     voice_service_config,
     validate_voice_environment,
 )
+from mini_gpt.voice_style import ORIGINAL_STYLE_ID, voice_style_from_saved
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,7 @@ _DEFAULT_SETTINGS = {
     "kilo_reasoning_enabled": False,
     "checkpoint_path": "",
     "voice_label": "Ru (OmniVoice)",
+    "voice_style_id": ORIGINAL_STYLE_ID,
     "voice_speed": 1.0,
     "auto_pace_enabled": True,
     "auto_read_replies": True,
@@ -291,6 +293,9 @@ def effective_settings() -> dict:
     ):
         if not isinstance(merged.get(key), bool):
             merged[key] = _DEFAULT_SETTINGS[key]
+    merged["voice_style_id"] = voice_style_from_saved(
+        merged.get("voice_style_id")
+    ).id
     return merged
 
 
@@ -346,6 +351,9 @@ def _effective_settings_unlocked() -> dict:
     ):
         if not isinstance(merged.get(key), bool):
             merged[key] = _DEFAULT_SETTINGS[key]
+    merged["voice_style_id"] = voice_style_from_saved(
+        merged.get("voice_style_id")
+    ).id
     return merged
 
 

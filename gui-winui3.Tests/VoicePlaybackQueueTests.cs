@@ -128,6 +128,26 @@ public sealed class VoicePlaybackQueueTests
         Assert.Empty(buffer.Append(text));
     }
 
+    [Theory]
+    [InlineData("[meta. still protected]")]
+    [InlineData("(meta! still protected)")]
+    [InlineData("{meta? still protected}")]
+    [InlineData("<meta. still protected>")]
+    [InlineData("`meta. still protected`")]
+    [InlineData("```meta. still protected```")]
+    [InlineData("*meta. still protected*")]
+    [InlineData("**meta. still protected**")]
+    [InlineData("_meta. still protected_")]
+    [InlineData("__meta. still protected__")]
+    [InlineData("~~meta. still protected~~")]
+    public void SentenceBufferDoesNotEmitPunctuationInsideProtectedSpans(string text)
+    {
+        var buffer = new VoiceReplySentenceBuffer();
+
+        Assert.Empty(buffer.Append(text));
+        Assert.Equal(new[] { text }, buffer.Flush());
+    }
+
     [Fact]
     public void SentenceBufferUsesFirstSafeFallbackBoundaryFrom61Through72()
     {

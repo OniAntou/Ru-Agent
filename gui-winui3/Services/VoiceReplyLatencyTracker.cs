@@ -70,6 +70,17 @@ namespace RuApp.Services
 
         public void MarkFirstAudioReceived() => MarkFirst(ref _firstAudioReceivedTicks);
 
+        public bool HasAudioReceived
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _firstAudioReceivedTicks is not null;
+                }
+            }
+        }
+
         public void MarkPlaybackRequested() => MarkFirst(ref _playbackRequestedTicks);
 
         public void MarkSynthesisFailure()

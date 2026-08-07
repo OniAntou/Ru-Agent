@@ -123,6 +123,7 @@ _DEFAULT_SETTINGS = {
     "checkpoint_path": "",
     "voice_label": "Ru (OmniVoice)",
     "voice_speed": 1.0,
+    "auto_pace_enabled": True,
     "auto_read_replies": True,
 }
 
@@ -279,7 +280,7 @@ def effective_settings() -> dict:
     bounded_number("voice_speed", 0.5, 2.0)
     merged["max_tokens"] = int(merged["max_tokens"])
     merged["top_k"] = int(merged["top_k"])
-    for key in ("allow_web_search", "enable_self_learning", "share_memory_with_cloud", "auto_read_replies"):
+    for key in ("allow_web_search", "enable_self_learning", "share_memory_with_cloud", "auto_pace_enabled", "auto_read_replies"):
         if not isinstance(merged.get(key), bool):
             merged[key] = _DEFAULT_SETTINGS[key]
     return merged
@@ -327,7 +328,7 @@ def _effective_settings_unlocked() -> dict:
     bounded_number("voice_speed", 0.5, 2.0)
     merged["max_tokens"] = int(merged["max_tokens"])
     merged["top_k"] = int(merged["top_k"])
-    for key in ("allow_web_search", "enable_self_learning", "share_memory_with_cloud", "auto_read_replies"):
+    for key in ("allow_web_search", "enable_self_learning", "share_memory_with_cloud", "auto_pace_enabled", "auto_read_replies"):
         if not isinstance(merged.get(key), bool):
             merged[key] = _DEFAULT_SETTINGS[key]
     return merged

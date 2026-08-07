@@ -445,7 +445,37 @@ def test_voice_status_reports_availability(monkeypatch, isolated_state) -> None:
     with TestClient(server.app) as client:
         response = client.get("/voice/status")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "available": False}
+    assert response.json()["status"] == "ok"
+    assert response.json()["available"] is False
+
+
+def test_voice_status_returns_effective_disabled_auto_read_setting(monkeypatch) -> None:
+    monkeypatch.setattr(server_shared, "voice_available", lambda: True)
+    monkeypatch.setattr(voice_router, "voice_available", lambda: True, raising=False)
+
+    with TestClient(server.app) as client:
+        saved = client.post(
+            "/settings",
+            json={
+                "voice_label": "Ái Vy (OmniVoice)",
+                "voice_speed": 1.05,
+                "auto_pace_enabled": False,
+                "auto_read_replies": False,
+            },
+        )
+        response = client.get("/voice/status")
+
+    assert saved.status_code == 200
+    assert saved.json()["status"] == "success"
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "available": True,
+        "voice_label": "Ái Vy (OmniVoice)",
+        "voice_speed": 1.05,
+        "auto_pace_enabled": False,
+        "auto_read_replies": False,
+    }
 
 
 def test_voice_latency_accepts_only_numeric_private_milestones(caplog) -> None:

@@ -55,10 +55,18 @@ public sealed class VoiceReplySentenceBuffer
 
     private int FindBoundary()
     {
+        var protection = new ProtectedSpanState();
         for (int index = 0; index < _pending.Length; index++)
         {
             char current = _pending[index];
+            int delimiterLength = protection.Consume(this, index, current);
             if (current is not ('.' or '!' or '?' or '。' or '！' or '？' or '…'))
+            {
+                index += delimiterLength - 1;
+                continue;
+            }
+
+            if (protection.IsProtected)
             {
                 continue;
             }
@@ -89,81 +97,19 @@ public sealed class VoiceReplySentenceBuffer
     {
         int start = Math.Max(0, minimumChars);
         int end = Math.Min(_pending.Length - 1, maximumChars);
-        int squareDepth = 0;
-        int parenthesisDepth = 0;
-        int braceDepth = 0;
-        int angleDepth = 0;
-        int backtickDelimiterLength = 0;
-        char formattingDelimiter = '\0';
-        int formattingDelimiterLength = 0;
+        var protection = new ProtectedSpanState();
 
         for (int index = 0; index <= end; index++)
         {
             char current = _pending[index];
-            if (current == '`')
-            {
-                int runLength = DelimiterRunLength(index);
-
-                if (backtickDelimiterLength == 0)
-                {
-                    backtickDelimiterLength = runLength;
-                }
-                else if (backtickDelimiterLength == runLength)
-                {
-                    backtickDelimiterLength = 0;
-                }
-
-                index += runLength - 1;
-                continue;
-            }
-
-            bool insideStructuredRun = squareDepth > 0 || parenthesisDepth > 0 ||
-                braceDepth > 0 || angleDepth > 0;
-            if (backtickDelimiterLength == 0 && !insideStructuredRun)
-            {
-                if (current is '*' or '_' or '~')
-                {
-                    int runLength = DelimiterRunLength(index);
-                    if (formattingDelimiterLength == 0)
-                    {
-                        formattingDelimiter = current;
-                        formattingDelimiterLength = runLength;
-                    }
-                    else if (formattingDelimiter == current && formattingDelimiterLength == runLength)
-                    {
-                        formattingDelimiter = '\0';
-                        formattingDelimiterLength = 0;
-                    }
-
-                    index += runLength - 1;
-                    continue;
-                }
-            }
-
-            if (backtickDelimiterLength == 0)
-            {
-                switch (current)
-                {
-                    case '[': squareDepth++; break;
-                    case ']': squareDepth = Math.Max(0, squareDepth - 1); break;
-                    case '(': parenthesisDepth++; break;
-                    case ')': parenthesisDepth = Math.Max(0, parenthesisDepth - 1); break;
-                    case '{': braceDepth++; break;
-                    case '}': braceDepth = Math.Max(0, braceDepth - 1); break;
-                    case '<' when HasClosingAngleDelimiter(index): angleDepth++; break;
-                    case '>': angleDepth = Math.Max(0, angleDepth - 1); break;
-                }
-            }
-
-            bool insideDelimitedRun = backtickDelimiterLength > 0 || squareDepth > 0 ||
-                parenthesisDepth > 0 || braceDepth > 0 || angleDepth > 0 ||
-                formattingDelimiterLength > 0;
-            if (index >= start && char.IsWhiteSpace(current) && !insideDelimitedRun &&
+            int delimiterLength = protection.Consume(this, index, current);
+            if (index >= start && char.IsWhiteSpace(current) && !protection.IsProtected &&
                 index > 0 && index + 1 < _pending.Length &&
                 char.IsLetter(_pending[index - 1]) && char.IsLetter(_pending[index + 1]))
             {
                 return index;
             }
+            index += delimiterLength - 1;
         }
         return -1;
     }
@@ -189,6 +135,73 @@ public sealed class VoiceReplySentenceBuffer
             }
         }
         return false;
+    }
+
+    private sealed class ProtectedSpanState
+    {
+        private int _squareDepth;
+        private int _parenthesisDepth;
+        private int _braceDepth;
+        private int _angleDepth;
+        private int _backtickDelimiterLength;
+        private char _formattingDelimiter;
+        private int _formattingDelimiterLength;
+
+        public bool IsProtected => _backtickDelimiterLength > 0 || _squareDepth > 0 ||
+            _parenthesisDepth > 0 || _braceDepth > 0 || _angleDepth > 0 ||
+            _formattingDelimiterLength > 0;
+
+        public int Consume(VoiceReplySentenceBuffer owner, int index, char current)
+        {
+            if (current == '`')
+            {
+                int runLength = owner.DelimiterRunLength(index);
+                if (_backtickDelimiterLength == 0)
+                {
+                    _backtickDelimiterLength = runLength;
+                }
+                else if (_backtickDelimiterLength == runLength)
+                {
+                    _backtickDelimiterLength = 0;
+                }
+                return runLength;
+            }
+
+            bool insideStructuredRun = _squareDepth > 0 || _parenthesisDepth > 0 ||
+                _braceDepth > 0 || _angleDepth > 0;
+            if (_backtickDelimiterLength == 0 && !insideStructuredRun &&
+                current is '*' or '_' or '~')
+            {
+                int runLength = owner.DelimiterRunLength(index);
+                if (_formattingDelimiterLength == 0)
+                {
+                    _formattingDelimiter = current;
+                    _formattingDelimiterLength = runLength;
+                }
+                else if (_formattingDelimiter == current && _formattingDelimiterLength == runLength)
+                {
+                    _formattingDelimiter = '\0';
+                    _formattingDelimiterLength = 0;
+                }
+                return runLength;
+            }
+
+            if (_backtickDelimiterLength == 0)
+            {
+                switch (current)
+                {
+                    case '[': _squareDepth++; break;
+                    case ']': _squareDepth = Math.Max(0, _squareDepth - 1); break;
+                    case '(': _parenthesisDepth++; break;
+                    case ')': _parenthesisDepth = Math.Max(0, _parenthesisDepth - 1); break;
+                    case '{': _braceDepth++; break;
+                    case '}': _braceDepth = Math.Max(0, _braceDepth - 1); break;
+                    case '<' when owner.HasClosingAngleDelimiter(index): _angleDepth++; break;
+                    case '>': _angleDepth = Math.Max(0, _angleDepth - 1); break;
+                }
+            }
+            return 1;
+        }
     }
 
     private void AddSentence(List<string> sentences, int length)

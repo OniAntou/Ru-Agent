@@ -143,6 +143,7 @@ namespace RuApp.Views
 
         private void OnWsResetReceived()
         {
+            _voicePlayback?.ResetReplyStreamForRetry();
             DispatcherQueue.TryEnqueue(() =>
             {
                 var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
@@ -469,6 +470,7 @@ namespace RuApp.Views
         {
             try
             {
+                _voicePlayback?.FailReplyStream();
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     

@@ -238,9 +238,16 @@ async def voice_stream(websocket: WebSocket):
 
 @router.get("/voice/status")
 def voice_status():
+    settings = effective_settings()
     return {
         "status": "ok",
         "available": voice_available(),
+        "voice_label": settings.get("voice_label", _DEFAULT_SETTINGS["voice_label"]),
+        "voice_speed": settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"]),
+        "auto_pace_enabled": settings.get("auto_pace_enabled", True),
+        "auto_read_replies": settings.get(
+            "auto_read_replies", _DEFAULT_SETTINGS["auto_read_replies"]
+        ),
     }
 
 

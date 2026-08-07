@@ -447,6 +447,63 @@ def test_voice_status_reports_availability(monkeypatch, isolated_state) -> None:
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "available": False}
 
+
+def test_voice_latency_accepts_only_numeric_private_milestones(caplog) -> None:
+    with TestClient(server.app) as client:
+        response = client.post(
+            "/voice/latency",
+            json={
+                "submit_to_first_delta_ms": 120.0,
+                "submit_to_first_phrase_ms": 380.0,
+                "phrase_to_first_audio_ms": 1140.0,
+                "submit_to_playback_requested_ms": 1580.0,
+                "outcome": "completed",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert "text" not in caplog.text.lower()
+
+
+def test_voice_latency_rejects_text_payload() -> None:
+    with TestClient(server.app) as client:
+        response = client.post(
+            "/voice/latency",
+            json={"outcome": "completed", "text": "secret"},
+        )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"outcome": "completed", "provider": "secret"},
+        {"outcome": "completed", "submit_to_first_delta_ms": -0.01},
+        {"outcome": "completed", "submit_to_first_delta_ms": 120_000.01},
+    ],
+)
+def test_voice_latency_rejects_unknown_or_non_finite_out_of_range_values(
+    payload,
+) -> None:
+    with TestClient(server.app) as client:
+        response = client.post("/voice/latency", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_voice_latency_rejects_nan() -> None:
+    with TestClient(server.app) as client:
+        response = client.post(
+            "/voice/latency",
+            content='{"outcome":"completed","submit_to_first_delta_ms":NaN}',
+            headers={"Content-Type": "application/json"},
+        )
+
+    assert response.status_code == 422
+
+
 def test_post_voice_uses_urllib_request_instead_of_fastapi_request(monkeypatch) -> None:
     captured = {}
 

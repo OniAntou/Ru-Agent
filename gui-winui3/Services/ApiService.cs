@@ -218,6 +218,23 @@ namespace RuApp.Services
             }
         }
 
+        public async Task<bool> ReportVoiceLatencyAsync(VoiceReplyLatencySnapshot snapshot)
+        {
+            try
+            {
+                using var response = await _httpClient.PostAsJsonAsync(
+                    $"{_baseUrl}/voice/latency",
+                    snapshot.ToWirePayload());
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(
+                    $"[ApiService] ReportVoiceLatencyAsync failed: {ex.GetType().Name}: {ex.Message}");
+                return false;
+            }
+        }
+
         public async Task<bool> ReleaseVoiceAsync()
         {
             try

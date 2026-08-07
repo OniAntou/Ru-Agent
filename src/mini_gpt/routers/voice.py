@@ -4,10 +4,11 @@ import base64
 import binascii
 import asyncio
 import json
-from typing import Annotated
+import math
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Response, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, field_validator
 
 from .._server_shared import (
     _TURN_LOCK,
@@ -55,6 +56,37 @@ class VoiceTtsPayload(BaseModel):
 class TranscribePayload(BaseModel):
     audio_b64: str = Field(max_length=7_500_000)
     sample_rate: int = Field(default=16_000, ge=8_000, le=192_000)
+
+
+class VoiceLatencyPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    submit_to_first_delta_ms: Annotated[
+        FiniteFloat | None, Field(default=None, ge=0, le=120_000)
+    ]
+    submit_to_first_phrase_ms: Annotated[
+        FiniteFloat | None, Field(default=None, ge=0, le=120_000)
+    ]
+    phrase_to_first_audio_ms: Annotated[
+        FiniteFloat | None, Field(default=None, ge=0, le=120_000)
+    ]
+    submit_to_playback_requested_ms: Annotated[
+        FiniteFloat | None, Field(default=None, ge=0, le=120_000)
+    ]
+    outcome: Literal["completed", "cancelled", "failed"]
+
+    @field_validator(
+        "submit_to_first_delta_ms",
+        "submit_to_first_phrase_ms",
+        "phrase_to_first_audio_ms",
+        "submit_to_playback_requested_ms",
+        mode="before",
+    )
+    @classmethod
+    def reject_non_finite_duration(cls, value):
+        if isinstance(value, float) and not math.isfinite(value):
+            raise HTTPException(status_code=422, detail="duration must be finite")
+        return value
 
 
 class VoiceStreamStartPayload(VoiceTtsPayload):
@@ -210,6 +242,12 @@ def voice_status():
         "status": "ok",
         "available": voice_available(),
     }
+
+
+@router.post("/voice/latency")
+def voice_latency(payload: VoiceLatencyPayload):
+    logger.info("VOICE_REPLY_LATENCY %s", payload.model_dump(exclude_none=True))
+    return {"status": "ok"}
 
 
 @router.post("/voice/tts")

@@ -27,6 +27,7 @@ namespace RuApp.Services
         private VoiceReplyAudioQueue? _replyAudioQueue;
         private VoiceStreamClient? _replyStreamClient;
         private Task? _replyStreamWorker;
+        private VoiceReplyLatencyTracker? _replyLatencyTracker;
         private bool _replyHasInput;
         private bool _vtsSpeaking;
         private bool _disposed;
@@ -160,17 +161,21 @@ namespace RuApp.Services
         {
             if (_disposed) return;
             StopVoice();
+            var latencyTracker = new VoiceReplyLatencyTracker();
             var cts = new CancellationTokenSource();
             var channel = Channel.CreateUnbounded<string>(
                 new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
-            var audioQueue = new VoiceReplyAudioQueue(PlayReplyChunkAsync);
-            Task worker = ConsumeReplyStreamAsync(channel.Reader, audioQueue, cts);
+            var audioQueue = new VoiceReplyAudioQueue(
+                (chunk, cancellationToken) =>
+                    PlayReplyChunkAsync(chunk, cancellationToken, latencyTracker));
+            Task worker = ConsumeReplyStreamAsync(channel.Reader, audioQueue, cts, latencyTracker);
             lock (_replyGate)
             {
                 _replyStreamCts = cts;
                 _replyTextChannel = channel;
                 _replySentenceBuffer = new VoiceReplySentenceBuffer();
                 _replyAudioQueue = audioQueue;
+                _replyLatencyTracker = latencyTracker;
                 _replyHasInput = false;
                 _replyStreamWorker = worker;
             }
@@ -185,10 +190,15 @@ namespace RuApp.Services
                 var buffer = _replySentenceBuffer;
                 if (channel is null || buffer is null) return;
 
+                VoiceReplyLatencyTracker? latencyTracker = _replyLatencyTracker;
+                latencyTracker?.MarkFirstChatDelta();
                 _replyHasInput = true;
                 foreach (string sentence in buffer.Append(delta))
                 {
-                    TryQueueReplySentence(channel.Writer, sentence);
+                    if (TryQueueReplySentence(channel.Writer, sentence))
+                    {
+                        latencyTracker?.MarkFirstPhraseQueued();
+                    }
                 }
             }
         }
@@ -199,6 +209,7 @@ namespace RuApp.Services
             Channel<string>? channel;
             VoiceReplySentenceBuffer? buffer;
             VoiceReplyAudioQueue? audioQueue;
+            VoiceReplyLatencyTracker? latencyTracker;
             Task? worker;
             lock (_replyGate)
             {
@@ -206,6 +217,7 @@ namespace RuApp.Services
                 channel = _replyTextChannel;
                 buffer = _replySentenceBuffer;
                 audioQueue = _replyAudioQueue;
+                latencyTracker = _replyLatencyTracker;
                 worker = _replyStreamWorker;
             }
             if (cts is null || channel is null || buffer is null || audioQueue is null || worker is null)
@@ -220,14 +232,20 @@ namespace RuApp.Services
                     _replyHasInput = true;
                     foreach (string sentence in buffer.Append(fallbackText))
                     {
-                        TryQueueReplySentence(channel.Writer, sentence);
+                        if (TryQueueReplySentence(channel.Writer, sentence))
+                        {
+                            latencyTracker?.MarkFirstPhraseQueued();
+                        }
                     }
                 }
                 if (ReferenceEquals(_replyStreamCts, cts))
                 {
                     foreach (string sentence in buffer.Flush())
                     {
-                        TryQueueReplySentence(channel.Writer, sentence);
+                        if (TryQueueReplySentence(channel.Writer, sentence))
+                        {
+                            latencyTracker?.MarkFirstPhraseQueued();
+                        }
                     }
                     channel.Writer.TryComplete();
                 }
@@ -236,9 +254,15 @@ namespace RuApp.Services
             try
             {
                 await worker;
+                CompleteAndReportReplyLatency(latencyTracker, VoiceReplyOutcome.Completed);
             }
             catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
+            }
+            catch
+            {
+                CompleteAndReportReplyLatency(latencyTracker, VoiceReplyOutcome.Failed);
+                throw;
             }
             finally
             {
@@ -269,6 +293,7 @@ namespace RuApp.Services
             VoiceReplyAudioQueue? replyAudioQueue;
             VoiceStreamClient? replyStreamClient;
             Task? replyWorker;
+            VoiceReplyLatencySnapshot? replyLatencySnapshot;
 
             _activeRequestId = null;
             _cts = null;
@@ -281,14 +306,17 @@ namespace RuApp.Services
                 replyAudioQueue = _replyAudioQueue;
                 replyStreamClient = _replyStreamClient;
                 replyWorker = _replyStreamWorker;
+                replyLatencySnapshot = _replyLatencyTracker?.TryComplete(VoiceReplyOutcome.Cancelled);
                 _replyStreamCts = null;
                 _replyTextChannel = null;
                 _replySentenceBuffer = null;
                 _replyAudioQueue = null;
                 _replyStreamClient = null;
                 _replyStreamWorker = null;
+                _replyLatencyTracker = null;
             }
 
+            ReportReplyLatency(replyLatencySnapshot);
             replyCts?.Cancel();
             replyChannel?.Writer.TryComplete();
             replyAudioQueue?.Cancel();
@@ -319,29 +347,44 @@ namespace RuApp.Services
         private async Task ConsumeReplyStreamAsync(
             ChannelReader<string> reader,
             VoiceReplyAudioQueue audioQueue,
-            CancellationTokenSource streamCancellation)
+            CancellationTokenSource streamCancellation,
+            VoiceReplyLatencyTracker latencyTracker)
         {
             CancellationToken cancellationToken = streamCancellation.Token;
             try
             {
-                await foreach (string sentence in reader.ReadAllAsync(cancellationToken))
+                try
                 {
-                    await GenerateReplySentenceAsync(sentence, audioQueue, cancellationToken);
+                    await foreach (string sentence in reader.ReadAllAsync(cancellationToken))
+                    {
+                        await GenerateReplySentenceAsync(
+                            sentence,
+                            audioQueue,
+                            latencyTracker,
+                            cancellationToken);
+                    }
+                }
+                finally
+                {
+                    try
+                    {
+                        await audioQueue.CompleteAsync();
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                    }
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
             }
+            catch
+            {
+                CompleteAndReportReplyLatency(latencyTracker, VoiceReplyOutcome.Failed);
+                throw;
+            }
             finally
             {
-                try
-                {
-                    await audioQueue.CompleteAsync();
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                }
-
                 bool isCurrentReply;
                 lock (_replyGate)
                 {
@@ -358,6 +401,7 @@ namespace RuApp.Services
         private async Task GenerateReplySentenceAsync(
             string sentence,
             VoiceReplyAudioQueue audioQueue,
+            VoiceReplyLatencyTracker latencyTracker,
             CancellationToken cancellationToken)
         {
             string requestId = Guid.NewGuid().ToString("N");
@@ -376,8 +420,9 @@ namespace RuApp.Services
                     VoiceSpeed,
                     async chunk =>
                     {
-                        receivedAudio = true;
                         await audioQueue.EnqueueAsync(chunk, cancellationToken);
+                        latencyTracker.MarkFirstAudioReceived();
+                        receivedAudio = true;
                     },
                     _ => Task.CompletedTask,
                     cancellationToken);
@@ -388,6 +433,7 @@ namespace RuApp.Services
                         requestId,
                         sentence,
                         audioQueue,
+                        latencyTracker,
                         cancellationToken);
                 }
             }
@@ -403,6 +449,7 @@ namespace RuApp.Services
                         requestId,
                         sentence,
                         audioQueue,
+                        latencyTracker,
                         cancellationToken);
                 }
             }
@@ -423,6 +470,7 @@ namespace RuApp.Services
             string requestId,
             string sentence,
             VoiceReplyAudioQueue audioQueue,
+            VoiceReplyLatencyTracker latencyTracker,
             CancellationToken cancellationToken)
         {
             byte[]? audio = await _apiService.SynthesizeTtsAsync(sentence, VoiceLabel, VoiceSpeed);
@@ -434,21 +482,54 @@ namespace RuApp.Services
             await audioQueue.EnqueueAsync(
                 new VoiceAudioChunk(requestId, 0, audio, 24_000, "wav"),
                 cancellationToken);
+            latencyTracker.MarkFirstAudioReceived();
         }
 
         private Task PlayReplyChunkAsync(
             VoiceAudioChunk chunk,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            VoiceReplyLatencyTracker latencyTracker)
         {
+            latencyTracker.MarkPlaybackRequested();
             return PlayWavAsync(chunk.Audio, cancellationToken);
         }
 
-        private static void TryQueueReplySentence(ChannelWriter<string> writer, string sentence)
+        private static bool TryQueueReplySentence(ChannelWriter<string> writer, string sentence)
         {
             string clean = VoiceMarkerPattern.Replace(sentence, " ").Trim();
             if (!string.IsNullOrWhiteSpace(clean))
             {
-                writer.TryWrite(clean);
+                return writer.TryWrite(clean);
+            }
+            return false;
+        }
+
+        private void CompleteAndReportReplyLatency(
+            VoiceReplyLatencyTracker? tracker,
+            VoiceReplyOutcome outcome)
+        {
+            if (tracker is null)
+            {
+                return;
+            }
+
+            VoiceReplyLatencySnapshot? snapshot;
+            lock (_replyGate)
+            {
+                snapshot = tracker.TryComplete(outcome);
+                if (ReferenceEquals(_replyLatencyTracker, tracker))
+                {
+                    _replyLatencyTracker = null;
+                }
+            }
+            ReportReplyLatency(snapshot);
+        }
+
+        private void ReportReplyLatency(VoiceReplyLatencySnapshot? snapshot)
+        {
+            if (snapshot is not null)
+            {
+                _ = Task.Run(() => _apiService.ReportVoiceLatencyAsync(snapshot));
             }
         }
 

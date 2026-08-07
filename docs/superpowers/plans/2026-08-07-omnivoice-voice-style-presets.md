@@ -1,5 +1,7 @@
 # OmniVoice Voice-Style Presets Implementation Plan
 
+> Status: superseded by `2026-08-07-omnivoice-measurable-pitch.md`; retained as a historical record of the rejected prompt-based approach.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
 
 **Goal:** Add persisted, quality-safe OmniVoice voice-style presets to Ru without changing the default clone voice or leaking voice metadata into conversation content.
@@ -471,8 +473,13 @@ zero failures/errors through JUnit; WinUI reported 48 passing tests; the
 self-contained Release GUI publish succeeded; and `git diff --check` passed.
 After the explicitly approved reload, both profiles produced all four 24 kHz
 mono presets. Each preset has a distinct WAV hash within its profile. The Ái Vy
-asset lookup was corrected to the repository `data\\voices` path; human
-listening acceptance remains pending.
+asset lookup was corrected to the repository `data\\voices` path. That byte
+difference was later shown to be insufficient evidence: a same-seed,
+`position_temperature=0.0` probe kept the two `original` WAVs byte-identical
+but placed all non-default median F0 values within 4.15 Hz of the original and
+failed to move `low_pitch` and `high_pitch` in opposite directions. User
+listening feedback reported that the presets sound alike. The implementation is
+therefore rejected as a user-facing style control pending a replacement.
 
 - [x] **Step 4: Update documents with actual results only.**
 

@@ -350,18 +350,18 @@ controls.
 
 ### Voice-style presets
 
-**Điều chỉnh giọng** saves one validated `voice_style_id` with the existing
-voice settings. The available presets are **Giữ giọng gốc** (`original`),
-**Trầm hơn** (`low_pitch`), **Cao hơn** (`high_pitch`), and **Thì thầm**
-(`whisper`). **Giữ giọng gốc** is the default and deliberately sends no
-OmniVoice `instruct` value, retaining the clone-only quality and latency path.
+The local DSP pitch experiment is **rejected for user-facing use** and its
+controls are removed. The voice style contract now supports only **Giữ giọng
+gốc** (`original`), which is the accepted quality baseline and sends no
+OmniVoice `instruct` value. Historical `low_pitch`, `high_pitch`, and
+`whisper` values safely resolve to **Giữ giọng gốc** when loaded; fresh API
+and loopback requests for any retired value are rejected.
 
 The application accepts no free-form voice prompt. The preset ID is resolved
 only inside the local TTS transport immediately before generation; it never
 becomes chat text, TTS input text, conversation history, memory,
-self-learning input, or VTube metadata. Non-default presets are optional
-experimental adjustments: compare a Vietnamese sample with **Giữ giọng gốc**
-after reloading OmniVoice before treating one as a quality improvement.
+self-learning input, or VTube metadata. The WinUI Voice view no longer exposes
+a pitch/style selector and saves the stable `original` ID for compatibility.
 
 If the Ái Vy asset is absent on a fresh checkout, fetch only that reference
 file (not the removed Gwen model):
@@ -369,6 +369,15 @@ file (not the removed Gwen model):
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\download_omnivoice_ai_vy_voice.py
 ```
+
+The earlier clone-plus-`instruct` presets were rejected after deterministic and
+listening evidence showed no reliable directional difference. The replacement
+passed a 24 kHz sine-wave frequency check, but failed the actual Vietnamese
+listening check on 2026-08-07: both shifted presets sound metallic. A
+same-waveform round-trip probe measured 17.67–30.34 dB log-spectral difference
+for the pitch processor, so a mathematically correct frequency shift is not a
+quality acceptance result. The experimental controls must be removed or
+replaced before a release claim.
 
 The recovery script writes `data\voices\omnivoice\ai_vy.wav`; this is the
 same repository-level path that the OmniVoice service resolves at runtime.
@@ -402,10 +411,23 @@ voices; **Ru (OmniVoice)** remains the runtime default.
 ### Voice pace
 
 Settings exposes a persisted **Base speed** control from 0.75x to 1.20x,
-defaulting to 1.00x. When **Let Ru adjust pace around this speed** is enabled,
-Ru can select only slow, normal, or quick pacing within ±0.08x of that manual
-baseline and still within the global safety bounds. Pacing metadata is private:
-it never appears in the chat, TTS text, conversation history, or memory.
+defaulting to 1.00x. **Let Ru adjust pace around this speed** is opt-in and
+defaults to off; saved choices persist. When enabled, Ru keeps the effective
+speed within the bounded slow/normal/quick range around the manual baseline
+and inside the global safety bounds. When disabled, the TTS, stream, and
+screen-observation routes send the saved manual speed unchanged.
+
+Non-1.00x speed is applied through OmniVoice's native
+`model.generate(..., speed=...)` argument; the loopback writes the generated
+mono waveform directly to WAV with no local pitch or time-stretch processor.
+At exactly 1.00x the argument is omitted, preserving the clone-only quality
+path. A sequential live Ru probe confirmed the native path returns 24 kHz
+mono WAV at every tested speed, with wall-clock audio duration scaling as
+`1/speed` (1.00x: 3.28 s, 0.92x: 3.56 s, 1.08x: 3.04 s). Human listening
+remains the final quality gate for non-1.00x native speed.
+
+Pacing metadata is private: it never appears in the chat, TTS text,
+conversation history, or memory.
 
 Before warming OmniVoice, Ru releases the local Llama runtime. Before local
 generation, it releases OmniVoice. A voice failure is reported as unavailable

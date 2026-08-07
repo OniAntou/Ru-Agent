@@ -1,7 +1,7 @@
 # OmniVoice voice-style presets design
 
 Date: 2026-08-07
-Status: Implemented; automated and live-generation checks complete; user listening acceptance pending
+Status: superseded by `2026-08-07-omnivoice-measurable-pitch-design.md`; retained as a rejected historical record
 Scope: controlled OmniVoice `instruct` adjustments for the WinUI 3 Voice view
 
 ## Decision
@@ -136,17 +136,28 @@ Observed on 2026-08-07: the full Python suite passed 429 tests with no failures
 or errors; the WinUI test suite passed 48 tests; and the self-contained Release
 publish completed. OmniVoice was reloaded from the feature source, rejected an
 invalid loopback style with HTTP 400, and generated one 24 kHz mono WAV for
-every preset of both profiles. The four WAV hashes differ within each profile,
-confirming that the presets affect the generated audio bytes. The follow-up
+every preset of both profiles. The four WAV hashes differ within each profile.
+This confirms only that the preset requests affect generated audio bytes. It
+does not confirm an audible or directionally correct style change. The follow-up
 fixed the Ái Vy reference lookup to use `data\\voices\\omnivoice\\ai_vy.wav`,
 where the recovery script already stores the asset.
+
+The later deterministic probe used the same Vietnamese text and seed for every
+sample, with the active 16-step configuration and `position_temperature=0.0`.
+The two `original` samples were byte-identical. Their median F0 was 357.39 Hz;
+`low_pitch` was 361.54 Hz, `high_pitch` was 361.54 Hz, and `whisper` was
+359.46 Hz. The requested pitch directions were therefore not achieved, and the
+whisper sample remained comparably voiced. User listening feedback also
+reported that the presets sound alike. The clone-prompt-plus-`instruct`
+mechanism is rejected as a user-facing style control until a replacement passes
+both deterministic and listening acceptance.
 
 For a repeatable listening decision, generate the same short
 Vietnamese and Vietnamese-English samples for Ru and Ái Vy at 1.00x across all
 four presets. Compare pronunciation, identity, artifacts, and first-audio
-timing against `original`. The feature is shipped with `original` selected;
-non-default presets are presented as experimental adjustments until the user
-confirms the listening result.
+timing against `original`. The feature remains shipped with `original`
+selected; non-default presets must not be represented as working style
+adjustments until a replacement reaches listening acceptance.
 
 ## Documentation updates
 

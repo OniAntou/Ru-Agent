@@ -42,9 +42,17 @@
   configurations, authenticated sentence streaming, ordered WinUI playback,
   cancellation, and privacy-safe playback acknowledgements. Live listening and
   latency promotion remain separate acceptance gates below.
-- [x] Start hosted-backend voice playback at completed sentence boundaries and
-  prefetch later audio while the current sentence plays, while preserving the
-  single-GPU lock for local Llama generation.
+- [x] Implement hosted-only OmniVoice background warm-up, one word-safe opening
+  phrase before sentence punctuation, and numeric-only local loopback latency
+  telemetry. Local GGUF keeps its existing GPU lifecycle; these changes do not
+  measure or claim a cloud latency improvement.
+- [x] Run the Task 4 integrated automated gate sequentially: Python `411`
+  passed, WinUI tests `27` passed, self-contained publish passed, and
+  `git diff --check` had no whitespace errors.
+- [ ] Collect user-listened hosted audio evidence and numeric live-cloud p50/p95
+  before calling the first-audio rollout accepted. Keep the provider/model A/B
+  comparison pending until that evidence exists; do not change providers or
+  spend credits as part of this task.
 - [ ] Run a manual voice (mic → STT, TTS playback) and VTS smoke test with
   VTube Studio open.
 - [x] Re-run the automated Python, frontend, corpus, dependency, and

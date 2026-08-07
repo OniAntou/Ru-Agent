@@ -66,16 +66,29 @@ primary-monitor observe toggle with RAM-only pipeline counters and latency
 metrics).
 
 Auto-read replies use the authenticated `/voice/stream` WebSocket with ordered
-sentence-sized WAV chunks, cancellation, playback acknowledgements, and a
-complete-WAV fallback when streaming fails before the first chunk. Voice
-control markers and timing metadata remain private to the transport; they are
-not shown in chat or persisted. The default OmniVoice quality reference remains
-native 1.00x with the selected Vietnamese-normalized 16-step configuration.
-When a hosted chat backend is active, the GUI begins voice synthesis as soon as
-the first complete sentence arrives. A bounded generation queue prefetches later
-sentence audio while the current sentence is playing, without overlapping
-playback; local Llama keeps the existing GPU lock boundary and waits until
-generation is complete.
+WAV chunks, cancellation, playback acknowledgements, and a complete-WAV
+fallback when streaming fails before the first chunk. Voice control markers and
+timing metadata remain private to the transport; they are not shown in chat or
+persisted. The default OmniVoice quality reference remains native 1.00x with
+the selected Vietnamese-normalized 16-step configuration.
+
+For an eligible hosted backend with **read replies aloud** and OmniVoice
+selected, the backend schedules a deduplicated background warm-up of the
+selected voice profile. It runs outside readiness and settings responses;
+local GGUF does not schedule it and retains the existing GPU lifecycle boundary.
+For hosted streams, a complete sentence still starts synthesis immediately. If
+the opening has no sentence punctuation, the buffer may emit exactly one
+word-safe opening phrase (first valid boundary from characters 48--60, then
+61--72); later output returns to sentence-first delivery. A bounded generation
+queue prefetches later sentence audio while the current sentence is playing,
+without overlapping playback.
+
+Reply-latency telemetry is numeric-only and sent only to an authenticated local
+loopback endpoint after a reply completes, fails, or is cancelled. It contains
+monotonic duration milestones and a fixed outcome, never reply text, raw audio,
+identifiers, or private voice/VTS markers. This implementation and its local
+loopback smoke do not establish a live cloud p50/p95 improvement; user-listened
+cloud acceptance and any provider A/B remain pending.
 
 For a repeatable local latency/quality report (without storing raw audio in Git),
 run:
@@ -351,6 +364,11 @@ service dependency in `omnivoice_env`.
 `scripts\run_omnivoice_benchmark.ps1` benchmarks the active OmniVoice path only.
 The removed Gwen service is historical and is not a supported setup or runtime
 dependency.
+
+The Task 4 offline loopback smoke warmed the `ru` profile and returned a
+representative warm `/tts` WAV in 1,768.04 ms (server synthesis header:
+1,682 ms). It is local runtime evidence only, not a live-cloud percentile or
+listening acceptance result.
 
 For the pending pronunciation listening trial, both OmniVoice labels use the
 measured `vi-normalized-16` settings (`language="Vietnamese"`, text

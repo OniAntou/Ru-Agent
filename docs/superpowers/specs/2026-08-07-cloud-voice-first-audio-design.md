@@ -1,7 +1,7 @@
 # Cloud Voice First-Audio Optimization Design
 
 Date: 2026-08-07
-Status: Approved direction; written review pending before implementation
+Status: Implemented; live cloud acceptance and provider A/B pending
 Scope: hosted-chat replies that auto-read through local OmniVoice in the WinUI 3 GUI
 
 ## Problem and evidence
@@ -12,11 +12,11 @@ cold model warm-up, 1.06-2.00 seconds for warm `/tts`, and 1.18-1.65 seconds
 through the backend voice coordinator. Therefore a 5-10 second real reply is
 not explained by warm OmniVoice inference alone.
 
-The current GUI waits for a completed sentence before it queues speech. The
-current saved chat backend is Kilo `kilo-auto/free`; its model routing and
-time-to-first-token are external and are deliberately not changed in this
-iteration. The current runtime also starts the OmniVoice process at most; it
-does not automatically load the model and clone prompt before the first reply.
+Before this iteration, the GUI waited for a completed sentence before it queued
+speech, and the runtime started the OmniVoice process at most rather than
+loading its model and clone prompt before the first reply. The current saved
+chat backend is Kilo `kilo-auto/free`; its model routing and time-to-first-token
+are external and deliberately unchanged by this iteration.
 
 ## Decision
 
@@ -31,8 +31,7 @@ Implement three bounded changes together:
 
 The selected cloud provider, model, prompt, cloud-memory setting, OmniVoice
 generation configuration, voice profile, speed, and local-GGUF policy remain
-unchanged. `share_memory_with_cloud` remains true by default and is not read
-or emitted by telemetry.
+unchanged. `share_memory_with_cloud` remains true by default.
 
 ## Alternatives considered
 
@@ -87,7 +86,7 @@ If no sentence boundary appears, it may emit one early phrase only under these
 rules:
 
 - wait until at least 48 characters are pending;
-- select the latest safe word boundary from character 48 through character 60;
+- select the first safe word boundary from character 48 through character 60;
   if that range has none, select the first safe word boundary from character
   61 through character 72; a comma, semicolon, colon, dash, or whitespace is
   safe only when it follows a complete word;
@@ -150,6 +149,28 @@ Failed telemetry delivery must not affect synthesis or playback.
 - Full Python tests, GUI tests, GUI publish, and a sequential live local TTS
   probe run after implementation. The live cloud provider benchmark is a
   separate approved-next step and is not part of this change.
+
+## Implementation verification (2026-08-07)
+
+- Sequential automated gates passed: Python `pytest -q` (`411 passed`, two
+  third-party deprecation warnings), WinUI tests (`27 passed`), and
+  `cmd /c build.bat` (self-contained publish). `git diff --check` reported no
+  whitespace errors.
+- A temporary, HF-offline local OmniVoice loopback service warmed the `ru`
+  profile in 16,345.76 ms. Its representative warm `/tts` request returned a
+  WAV in 1,768.04 ms (server synthesis header: 1,682 ms). The task then issued
+  `/release`, stopped only its temporary server processes, and verified that
+  port 5052 and those GPU PIDs were released.
+- This is local-runtime evidence only. No cloud chat was invoked, no live cloud
+  p50/p95 was measured, no user listened to the generated audio, and no
+  provider/model A/B comparison was run.
+
+## Historical Phase 1 context
+
+`2026-08-07-voice-quality-latency-design.md` remains the historical Phase 1
+record for local OmniVoice quality and latency work. This design extends that
+record with hosted first-audio scheduling and privacy-safe loopback telemetry;
+it does not replace or delete Phase 1 acceptance work.
 
 ## Acceptance criteria
 

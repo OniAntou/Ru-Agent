@@ -94,17 +94,15 @@ public sealed class VoiceReplySentenceBuffer
         int braceDepth = 0;
         int angleDepth = 0;
         int backtickDelimiterLength = 0;
+        char formattingDelimiter = '\0';
+        int formattingDelimiterLength = 0;
 
         for (int index = 0; index <= end; index++)
         {
             char current = _pending[index];
             if (current == '`')
             {
-                int runLength = 1;
-                while (index + runLength < _pending.Length && _pending[index + runLength] == '`')
-                {
-                    runLength++;
-                }
+                int runLength = DelimiterRunLength(index);
 
                 if (backtickDelimiterLength == 0)
                 {
@@ -121,6 +119,24 @@ public sealed class VoiceReplySentenceBuffer
 
             if (backtickDelimiterLength == 0)
             {
+                if (current is '*' or '_' or '~')
+                {
+                    int runLength = DelimiterRunLength(index);
+                    if (formattingDelimiterLength == 0)
+                    {
+                        formattingDelimiter = current;
+                        formattingDelimiterLength = runLength;
+                    }
+                    else if (formattingDelimiter == current && formattingDelimiterLength == runLength)
+                    {
+                        formattingDelimiter = '\0';
+                        formattingDelimiterLength = 0;
+                    }
+
+                    index += runLength - 1;
+                    continue;
+                }
+
                 switch (current)
                 {
                     case '[': squareDepth++; break;
@@ -129,13 +145,14 @@ public sealed class VoiceReplySentenceBuffer
                     case ')': parenthesisDepth = Math.Max(0, parenthesisDepth - 1); break;
                     case '{': braceDepth++; break;
                     case '}': braceDepth = Math.Max(0, braceDepth - 1); break;
-                    case '<': angleDepth++; break;
+                    case '<' when HasClosingAngleDelimiter(index): angleDepth++; break;
                     case '>': angleDepth = Math.Max(0, angleDepth - 1); break;
                 }
             }
 
             bool insideDelimitedRun = backtickDelimiterLength > 0 || squareDepth > 0 ||
-                parenthesisDepth > 0 || braceDepth > 0 || angleDepth > 0;
+                parenthesisDepth > 0 || braceDepth > 0 || angleDepth > 0 ||
+                formattingDelimiterLength > 0;
             if (index >= start && char.IsWhiteSpace(current) && !insideDelimitedRun &&
                 index > 0 && index + 1 < _pending.Length &&
                 char.IsLetter(_pending[index - 1]) && char.IsLetter(_pending[index + 1]))
@@ -144,6 +161,29 @@ public sealed class VoiceReplySentenceBuffer
             }
         }
         return -1;
+    }
+
+    private int DelimiterRunLength(int startIndex)
+    {
+        char delimiter = _pending[startIndex];
+        int runLength = 1;
+        while (startIndex + runLength < _pending.Length && _pending[startIndex + runLength] == delimiter)
+        {
+            runLength++;
+        }
+        return runLength;
+    }
+
+    private bool HasClosingAngleDelimiter(int openingIndex)
+    {
+        for (int index = openingIndex + 1; index < _pending.Length; index++)
+        {
+            if (_pending[index] == '>')
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void AddSentence(List<string> sentences, int length)

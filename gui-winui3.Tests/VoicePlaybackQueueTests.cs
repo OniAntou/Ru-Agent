@@ -118,6 +118,9 @@ public sealed class VoicePlaybackQueueTests
     [InlineData("Dạ anh, em sẽ giữ nguyên {voice marker nội bộ tuyệt đối không được tách cho tới đây} rồi trả lời")]
     [InlineData("Dạ anh, em sẽ giữ nguyên <voice marker nội bộ tuyệt đối không được tách cho tới đây> rồi trả lời")]
     [InlineData("Dạ anh, em sẽ giữ nguyên `voice marker nội bộ tuyệt đối không được tách cho tới đây` rồi trả lời")]
+    [InlineData("Dạ anh, em sẽ giữ nguyên **voice marker nội bộ tuyệt đối không được tách cho tới đây** rồi trả lời")]
+    [InlineData("Dạ anh, em sẽ giữ nguyên _voice marker nội bộ tuyệt đối không được tách cho tới đây_ rồi trả lời")]
+    [InlineData("Dạ anh, em sẽ giữ nguyên ~~voice marker nội bộ tuyệt đối không được tách cho tới đây~~ rồi trả lời")]
     public void SentenceBufferDoesNotSplitInsideDelimitedOrBacktickTokens(string text)
     {
         var buffer = new VoiceReplySentenceBuffer();
@@ -133,6 +136,16 @@ public sealed class VoicePlaybackQueueTests
         Assert.Equal(
             new[] { "Dạ anh, em sẽ kiểm tra kỹ phần quan trọng nàytrướckhôngtáchdài" },
             buffer.Append("Dạ anh, em sẽ kiểm tra kỹ phần quan trọng nàytrướckhôngtáchdài rồi báo lại cho anh"));
+    }
+
+    [Fact]
+    public void SentenceBufferDoesNotTreatUnmatchedAngleAsAnOpenToken()
+    {
+        var buffer = new VoiceReplySentenceBuffer();
+        string prefix = new('a', 48);
+        string input = $"{prefix} < threshold rồi báo lại cho anh";
+
+        Assert.Equal(new[] { $"{prefix} < threshold" }, buffer.Append(input));
     }
 
     [Fact]

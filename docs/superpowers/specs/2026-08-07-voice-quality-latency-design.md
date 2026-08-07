@@ -1,8 +1,13 @@
 # Voice quality and latency design
 
 Date: 2026-08-07
-Status: Implemented in code; live audio/latency acceptance pending
+Status: Phase 1 implemented in code; live audio/latency acceptance pending
 Scope: local OmniVoice output used by the WinUI 3 GUI
+
+Follow-up: the approved cloud first-audio iteration is specified in
+`2026-08-07-cloud-voice-first-audio-design.md`. It keeps this document's
+quality, privacy, and single-GPU constraints while addressing latency before
+the first completed chat sentence.
 
 ## Decision
 

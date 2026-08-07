@@ -6,7 +6,12 @@ namespace RuApp.Services;
 
 public sealed class VoiceReplySentenceBuffer
 {
+    private const int FirstPhraseMinimumChars = 48;
+    private const int FirstPhrasePreferredChars = 60;
+    private const int FirstPhraseMaximumChars = 72;
+
     private readonly StringBuilder _pending = new();
+    private bool _hasEmittedFirstSpeechUnit;
 
     public IReadOnlyList<string> Append(string text)
     {
@@ -27,6 +32,14 @@ public sealed class VoiceReplySentenceBuffer
             int boundary = FindBoundary();
             if (boundary < 0)
             {
+                if (!_hasEmittedFirstSpeechUnit)
+                {
+                    int phraseBoundary = FindFirstPhraseBoundary();
+                    if (phraseBoundary >= 0)
+                    {
+                        AddSentence(sentences, phraseBoundary);
+                    }
+                }
                 break;
             }
 
@@ -64,6 +77,28 @@ public sealed class VoiceReplySentenceBuffer
         return -1;
     }
 
+    private int FindFirstPhraseBoundary()
+    {
+        int preferredBoundary = FindPhraseBoundary(FirstPhraseMinimumChars, FirstPhrasePreferredChars);
+        return preferredBoundary >= 0
+            ? preferredBoundary
+            : FindPhraseBoundary(FirstPhrasePreferredChars + 1, FirstPhraseMaximumChars);
+    }
+
+    private int FindPhraseBoundary(int minimumChars, int maximumChars)
+    {
+        int start = Math.Max(0, minimumChars);
+        int end = Math.Min(_pending.Length - 1, maximumChars);
+        for (int index = start; index <= end; index++)
+        {
+            if (char.IsWhiteSpace(_pending[index]))
+            {
+                return index;
+            }
+        }
+        return -1;
+    }
+
     private void AddSentence(List<string> sentences, int length)
     {
         string sentence = _pending.ToString(0, length).Trim();
@@ -71,6 +106,7 @@ public sealed class VoiceReplySentenceBuffer
         if (!string.IsNullOrWhiteSpace(sentence))
         {
             sentences.Add(sentence);
+            _hasEmittedFirstSpeechUnit = true;
         }
     }
 }

@@ -92,6 +92,28 @@ public sealed class VoicePlaybackQueueTests
         Assert.Equal(new[] { "Phần còn lại" }, buffer.Flush());
     }
 
+    [Fact]
+    public void SentenceBufferEmitsOneWordSafeOpeningPhraseWithoutPunctuation()
+    {
+        var buffer = new VoiceReplySentenceBuffer();
+
+        Assert.Equal(
+            new[] { "Dạ anh, em sẽ kiểm tra kỹ phần quan trọng này trước" },
+            buffer.Append("Dạ anh, em sẽ kiểm tra kỹ phần quan trọng này trước rồi báo lại cho anh ngay khi có kết quả"));
+    }
+
+    [Fact]
+    public void SentenceBufferReturnsToSentenceBoundariesAfterOpeningPhrase()
+    {
+        var buffer = new VoiceReplySentenceBuffer();
+        buffer.Append("Dạ anh, em sẽ kiểm tra kỹ phần quan trọng này trước rồi báo lại cho anh ngay khi có kết quả");
+
+        Assert.Empty(buffer.Append(" và không để sót điểm nào"));
+        Assert.Equal(
+            new[] { "rồi báo lại cho anh ngay khi có kết quả và không để sót điểm nào." },
+            buffer.Append("."));
+    }
+
     private static VoiceAudioChunk Chunk(string requestId, int sequence) =>
         new(requestId, sequence, new byte[] { 0x52, 0x49, 0x46, 0x46 }, 24_000, "wav");
 }

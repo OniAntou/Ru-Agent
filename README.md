@@ -344,8 +344,24 @@ to the equivalent OmniVoice choice. OmniVoice is the default. Ru uses
 `data\voices\omnivoice\ai_vy.wav` and its matching transcript. Do not change a
 reference audio without its matching transcript.
 
-The WinUI3 Voice view exposes both voice profiles, base speed, warmup, release,
-test playback, microphone input, and VTube Studio controls.
+The WinUI3 Voice view exposes both voice profiles, fixed voice-style presets,
+base speed, warmup, release, test playback, microphone input, and VTube Studio
+controls.
+
+### Voice-style presets
+
+**Điều chỉnh giọng** saves one validated `voice_style_id` with the existing
+voice settings. The available presets are **Giữ giọng gốc** (`original`),
+**Trầm hơn** (`low_pitch`), **Cao hơn** (`high_pitch`), and **Thì thầm**
+(`whisper`). **Giữ giọng gốc** is the default and deliberately sends no
+OmniVoice `instruct` value, retaining the clone-only quality and latency path.
+
+The application accepts no free-form voice prompt. The preset ID is resolved
+only inside the local TTS transport immediately before generation; it never
+becomes chat text, TTS input text, conversation history, memory,
+self-learning input, or VTube metadata. Non-default presets are optional
+experimental adjustments: compare a Vietnamese sample with **Giữ giọng gốc**
+after reloading OmniVoice before treating one as a quality improvement.
 
 If the Ái Vy asset is absent on a fresh checkout, fetch only that reference
 file (not the removed Gwen model):

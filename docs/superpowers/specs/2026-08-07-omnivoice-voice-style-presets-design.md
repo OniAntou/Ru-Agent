@@ -1,7 +1,7 @@
 # OmniVoice voice-style presets design
 
 Date: 2026-08-07
-Status: Approved design; implementation pending
+Status: Implemented; live Vietnamese listening acceptance pending OmniVoice reload
 Scope: controlled OmniVoice `instruct` adjustments for the WinUI 3 Voice view
 
 ## Decision
@@ -121,7 +121,7 @@ second, divergent GUI playback state.
 
 ## Verification
 
-Automated coverage will prove:
+Automated coverage proves:
 
 - mapping and validation of every supported ID;
 - default and legacy values resolve to `original`;
@@ -132,7 +132,13 @@ Automated coverage will prove:
 - unknown IDs are rejected or safely normalized at the appropriate boundary;
 - GUI DTO/load/save behaviour retains the selected preset.
 
-After automated tests and a Release GUI build, generate the same short
+Observed on 2026-08-07: the full Python suite passed 428 tests with no failures
+or errors; the WinUI test suite passed 48 tests; and the self-contained Release
+publish completed. The active OmniVoice service was started before this feature
+and had its model loaded, so it was not restarted automatically. Therefore no
+new-preset WAV is treated as a listening result yet.
+
+After an explicit OmniVoice reload, generate the same short
 Vietnamese and Vietnamese-English samples for Ru and Ái Vy at 1.00x across all
 four presets. Compare pronunciation, identity, artifacts, and first-audio
 timing against `original`. The feature is shipped with `original` selected;

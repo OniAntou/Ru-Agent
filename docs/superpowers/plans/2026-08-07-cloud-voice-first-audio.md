@@ -49,7 +49,7 @@
 - The worker calls `GpuLifecycle.warm_voice_for_cloud(selection, set_status)` exactly once and logs success/failure locally.
 - The settings endpoint always returns its existing response shape without awaiting model warm-up.
 
-- [ ] **Step 1: Write failing scheduler tests**
+- [x] **Step 1: Write failing scheduler tests**
 
   Add focused tests that monkeypatch the runner backend, effective settings, selected voice, lifecycle, and thread construction. Cover one hosted + auto-read OmniVoice request, local GGUF, auto-read disabled, and duplicate schedule calls:
 
@@ -112,7 +112,7 @@
       assert server_shared._schedule_cloud_voice_warmup() is False
   ```
 
-- [ ] **Step 2: Run the new tests and verify RED**
+- [x] **Step 2: Run the new tests and verify RED**
 
   Run:
 
@@ -122,7 +122,7 @@
 
   Expected: FAIL because `_schedule_cloud_voice_warmup` does not exist.
 
-- [ ] **Step 3: Implement the smallest scheduler in `_server_shared.py`**
+- [x] **Step 3: Implement the smallest scheduler in `_server_shared.py`**
 
   Add `auto_read_replies: True` to `_DEFAULT_SETTINGS`. Add a module-level
   non-blocking lock and helper functions with this exact policy:
@@ -155,14 +155,14 @@
   Call `_schedule_cloud_voice_warmup()` after `_apply_settings_on_startup()` in
   `_application_lifespan`. Do not await it and do not invoke it for GGUF.
 
-- [ ] **Step 4: Trigger the scheduler after relevant settings saves**
+- [x] **Step 4: Trigger the scheduler after relevant settings saves**
 
   Import `_schedule_cloud_voice_warmup` in `routers/settings.py`. Call it after
   `_merge_settings(_apply)` on a voice-only save and after a successful
   `core.runner.load(...)` for a hosted backend. Do not call it when loading
   fails; preserve the current settings response and error handling.
 
-- [ ] **Step 5: Run focused backend tests and verify GREEN**
+- [x] **Step 5: Run focused backend tests and verify GREEN**
 
   Run:
 
@@ -173,7 +173,7 @@
   Expected: PASS. The tests prove one eligible background warm-up, no startup
   blocking, no warm-up in local mode, and preserved lifecycle rollback.
 
-- [ ] **Step 6: Commit the isolated backend lifecycle change**
+- [x] **Step 6: Commit the isolated backend lifecycle change**
 
   ```powershell
   git add src/mini_gpt/_server_shared.py src/mini_gpt/routers/settings.py tests/test_server_api.py
@@ -196,7 +196,7 @@
   boundary in 48-60 characters, or the first valid boundary in 61-72 characters.
 - `Flush()` emits all remaining text exactly once.
 
-- [ ] **Step 1: Write failing first-phrase tests**
+- [x] **Step 1: Write failing first-phrase tests**
 
   Add these tests to `VoicePlaybackQueueTests` using a long, unpunctuated
   Vietnamese opening whose selected phrase ends at a whitespace after character
@@ -229,7 +229,7 @@
 
   Also keep the existing completed-sentence and final-flush regression test.
 
-- [ ] **Step 2: Run the GUI test project and verify RED**
+- [x] **Step 2: Run the GUI test project and verify RED**
 
   Run:
 
@@ -239,7 +239,7 @@
 
   Expected: FAIL because an unpunctuated opening currently remains buffered.
 
-- [ ] **Step 3: Add minimal phrase selection to `VoiceReplySentenceBuffer`**
+- [x] **Step 3: Add minimal phrase selection to `VoiceReplySentenceBuffer`**
 
   Add private constants and state:
 
@@ -259,7 +259,7 @@
   Never add a timer, never split a token, and do not emit a second phrase before
   sentence punctuation.
 
-- [ ] **Step 4: Run GUI tests and build to verify GREEN**
+- [x] **Step 4: Run GUI tests and build to verify GREEN**
 
   Run:
 
@@ -271,7 +271,7 @@
   Expected: PASS. Existing sentence, decimal, queue-order, and cancellation
   behavior remains unchanged.
 
-- [ ] **Step 5: Commit the speech-boundary change**
+- [x] **Step 5: Commit the speech-boundary change**
 
   ```powershell
   git add gui-winui3/Services/VoiceReplySentenceBuffer.cs gui-winui3.Tests/VoicePlaybackQueueTests.cs
@@ -302,7 +302,7 @@
 - `POST /voice/latency` accepts only validated numeric durations in [0, 120000]
   and `outcome` in `completed|cancelled|failed`.
 
-- [ ] **Step 1: Write failing pure C# tracker tests**
+- [x] **Step 1: Write failing pure C# tracker tests**
 
   Create `VoiceReplyLatencyTrackerTests.cs` with an injected timestamp source
   so no test sleeps. Cover ordered milestones, first-value-wins behavior,
@@ -331,7 +331,7 @@
   Use a valid monotonic delegate/index implementation in the final test; avoid
   sleeping and do not introduce a reply text parameter.
 
-- [ ] **Step 2: Run the C# tests and verify RED**
+- [x] **Step 2: Run the C# tests and verify RED**
 
   Run:
 
@@ -341,7 +341,7 @@
 
   Expected: FAIL because the tracker types do not exist.
 
-- [ ] **Step 3: Implement the pure tracker**
+- [x] **Step 3: Implement the pure tracker**
 
   Create a record plus class that uses `Stopwatch.GetTimestamp` and
   `Stopwatch.Frequency` by default. Each `Mark...` method records only its first
@@ -350,7 +350,7 @@
   `ToWirePayload()` returns an anonymous/dictionary shape with only the five
   approved fields.
 
-- [ ] **Step 4: Add failing FastAPI contract tests**
+- [x] **Step 4: Add failing FastAPI contract tests**
 
   Add an authenticated endpoint test with a valid payload and negative cases
   for a raw `text` field, an unknown field, a negative duration, a duration
@@ -372,7 +372,7 @@
       assert client.post("/voice/latency", json={"outcome": "completed", "text": "secret"}).status_code == 422
   ```
 
-- [ ] **Step 5: Run the endpoint tests and verify RED**
+- [x] **Step 5: Run the endpoint tests and verify RED**
 
   Run:
 
@@ -382,7 +382,7 @@
 
   Expected: FAIL with route-not-found or absent strict model validation.
 
-- [ ] **Step 6: Implement the strict loopback endpoint**
+- [x] **Step 6: Implement the strict loopback endpoint**
 
   In `routers/voice.py`, add:
 
@@ -400,7 +400,7 @@
   return `{"status": "ok"}`. Do not store it in chat/history/memory and do not
   add a cloud request.
 
-- [ ] **Step 7: Wire the tracker into reply playback**
+- [x] **Step 7: Wire the tracker into reply playback**
 
   In `VoicePlaybackService`:
 
@@ -418,7 +418,7 @@
   all transport exceptions, write only the exception type/message to Debug, and
   return `false` instead of affecting playback.
 
-- [ ] **Step 8: Run focused Python and C# tests to verify GREEN**
+- [x] **Step 8: Run focused Python and C# tests to verify GREEN**
 
   Run sequentially:
 
@@ -431,7 +431,7 @@
   Expected: PASS. The tracker reports once, endpoint rejects non-private
   payloads, and normal reply playback still compiles.
 
-- [ ] **Step 9: Commit telemetry without content**
+- [x] **Step 9: Commit telemetry without content**
 
   ```powershell
   git add gui-winui3/Services/VoiceReplyLatencyTracker.cs gui-winui3/Services/VoicePlaybackService.cs gui-winui3/Services/ApiService.cs gui-winui3.Tests/VoiceReplyLatencyTrackerTests.cs src/mini_gpt/routers/voice.py tests/test_server_api.py

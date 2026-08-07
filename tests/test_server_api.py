@@ -791,6 +791,40 @@ def test_schedule_cloud_voice_warmup_releases_lock_after_worker_failure(monkeypa
     assert server_shared._schedule_cloud_voice_warmup() is True
 
 
+def test_schedule_cloud_voice_warmup_releases_lock_when_thread_start_fails(monkeypatch) -> None:
+    """Catches scheduler setup failures that would leak the deduplication lock."""
+
+    class StartFailsOnceThread:
+        start_attempts = 0
+
+        def __init__(self, *, target, name, daemon):
+            self.target = target
+            self.name = name
+            self.daemon = daemon
+
+        def start(self):
+            type(self).start_attempts += 1
+            if type(self).start_attempts == 1:
+                raise RuntimeError("thread start failed")
+
+    logged: list[str] = []
+    monkeypatch.setattr(server_shared, "_CLOUD_VOICE_WARMUP_LOCK", threading.Lock(), raising=False)
+    monkeypatch.setattr(server_shared.core.runner, "backend", BACKEND_KILO)
+    monkeypatch.setattr(server_shared, "effective_settings", lambda: {"auto_read_replies": True})
+    monkeypatch.setattr(
+        server_shared,
+        "_voice_selection",
+        lambda: VoiceSelection("Ru (OmniVoice)", "omnivoice", "ru"),
+    )
+    monkeypatch.setattr(server_shared.logger, "exception", lambda message, *args: logged.append(message))
+    monkeypatch.setattr(server_shared.threading, "Thread", StartFailsOnceThread)
+
+    assert server_shared._schedule_cloud_voice_warmup() is False
+    assert server_shared._schedule_cloud_voice_warmup() is True
+    assert StartFailsOnceThread.start_attempts == 2
+    assert logged
+
+
 def test_voice_only_settings_save_schedules_cloud_voice_warmup(monkeypatch) -> None:
     """Catches omitting warm-up after a non-loading voice settings save."""
 

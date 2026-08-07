@@ -640,21 +640,29 @@ def _should_warm_voice_for_cloud(settings: dict[str, object]) -> bool:
 
 
 def _schedule_cloud_voice_warmup() -> bool:
-    if not _should_warm_voice_for_cloud(effective_settings()):
-        return False
-    if not _CLOUD_VOICE_WARMUP_LOCK.acquire(blocking=False):
-        return False
-    selection = _voice_selection()
+    lock_acquired = False
+    try:
+        if not _should_warm_voice_for_cloud(effective_settings()):
+            return False
+        if not _CLOUD_VOICE_WARMUP_LOCK.acquire(blocking=False):
+            return False
+        lock_acquired = True
+        selection = _voice_selection()
 
-    def warm() -> None:
-        try:
-            _gpu_lifecycle().warm_voice_for_cloud(selection, logger.info)
-        except Exception:
-            logger.exception("Background cloud voice warm-up failed")
-        finally:
+        def warm() -> None:
+            try:
+                _gpu_lifecycle().warm_voice_for_cloud(selection, logger.info)
+            except Exception:
+                logger.exception("Background cloud voice warm-up failed")
+            finally:
+                _CLOUD_VOICE_WARMUP_LOCK.release()
+
+        threading.Thread(target=warm, name="cloud-voice-warmup", daemon=True).start()
+    except Exception:
+        if lock_acquired:
             _CLOUD_VOICE_WARMUP_LOCK.release()
-
-    threading.Thread(target=warm, name="cloud-voice-warmup", daemon=True).start()
+        logger.exception("Failed to schedule background cloud voice warm-up")
+        return False
     return True
 
 

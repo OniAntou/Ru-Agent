@@ -133,7 +133,13 @@ async def _send_voice_stream_events(
     speed_value = payload.speed
     if speed_value is None:
         speed_value = settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"])
-    speed = effective_voice_speed(speed_value, auto_pace_enabled=True, pace=voice_pace_for(payload.text))
+    speed = effective_voice_speed(
+        speed_value,
+        auto_pace_enabled=settings.get(
+            "auto_pace_enabled", _DEFAULT_SETTINGS["auto_pace_enabled"]
+        ),
+        pace=voice_pace_for(payload.text),
+    )
     async for event in coordinator.start(
         request_id=payload.request_id,
         text=_strip_voice_markers(payload.text),
@@ -250,7 +256,9 @@ def voice_status():
             "voice_style_id", _DEFAULT_SETTINGS["voice_style_id"]
         ),
         "voice_speed": settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"]),
-        "auto_pace_enabled": settings.get("auto_pace_enabled", True),
+        "auto_pace_enabled": settings.get(
+            "auto_pace_enabled", _DEFAULT_SETTINGS["auto_pace_enabled"]
+        ),
         "auto_read_replies": settings.get(
             "auto_read_replies", _DEFAULT_SETTINGS["auto_read_replies"]
         ),
@@ -273,7 +281,13 @@ def voice_tts(payload: VoiceTtsPayload):
     voice_style = voice_style_from_saved(settings.get("voice_style_id"))
     speed = payload.speed if payload.speed is not None else settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"])
     pace = voice_pace_for(text)
-    speed = effective_voice_speed(speed, auto_pace_enabled=True, pace=pace)
+    speed = effective_voice_speed(
+        speed,
+        auto_pace_enabled=settings.get(
+            "auto_pace_enabled", _DEFAULT_SETTINGS["auto_pace_enabled"]
+        ),
+        pace=pace,
+    )
     text = _strip_voice_markers(text)
     try:
         if _TURN_LOCK.locked() and not _hosted_chat_is_active():

@@ -24,23 +24,39 @@ public sealed class SettingsDtoTests
     {
         string payload = JsonSerializer.Serialize(new VoiceSettingsUpdateDto
         {
-            VoiceStyleId = "low_pitch",
+            VoiceStyleId = "original",
         });
 
         using JsonDocument document = JsonDocument.Parse(payload);
 
         Assert.Equal(
-            "low_pitch",
+            "original",
             document.RootElement.GetProperty("voice_style_id").GetString());
     }
 
     [Fact]
-    public void SettingsDtoReadsTheSavedVoiceStyle()
+    public void SettingsDtoReadsASupportedVoiceStyle()
     {
         AppSettingsDto? settings = JsonSerializer.Deserialize<AppSettingsDto>(
-            """{"voice_style_id":"whisper"}""");
+            """{"voice_style_id":"original"}""");
 
         Assert.NotNull(settings);
-        Assert.Equal("whisper", settings!.VoiceStyleId);
+        Assert.Equal("original", settings!.VoiceStyleId);
+    }
+
+    [Fact]
+    public void VoiceSettingsDefaultToOriginalWithoutAutomaticPace()
+    {
+        var settings = new VoiceSettingsUpdateDto();
+
+        Assert.Equal("original", settings.VoiceStyleId);
+        Assert.False(settings.AutoPaceEnabled);
+    }
+
+    [Fact]
+    public void ManagedVoiceSettingsDefaultToAutomaticPaceDisabled()
+    {
+        Assert.False(new AppSettingsDto().AutoPaceEnabled);
+        Assert.False(new VoiceStatusDto().AutoPaceEnabled);
     }
 }

@@ -161,7 +161,7 @@ namespace RuApp.Models
         public double VoiceSpeed { get; set; } = 1.0;
 
         [JsonPropertyName("auto_pace_enabled")]
-        public bool AutoPaceEnabled { get; set; } = true;
+        public bool AutoPaceEnabled { get; set; } = false;
 
         [JsonPropertyName("auto_read_replies")]
         public bool AutoReadReplies { get; set; } = true;
@@ -197,7 +197,7 @@ namespace RuApp.Models
         public double VoiceSpeed { get; set; } = 1.0;
 
         [JsonPropertyName("auto_pace_enabled")]
-        public bool AutoPaceEnabled { get; set; } = true;
+        public bool AutoPaceEnabled { get; set; } = false;
 
         [JsonPropertyName("auto_read_replies")]
         public bool AutoReadReplies { get; set; } = true;
@@ -218,7 +218,7 @@ namespace RuApp.Models
         public double VoiceSpeed { get; set; } = 1.0;
 
         [JsonPropertyName("auto_pace_enabled")]
-        public bool AutoPaceEnabled { get; set; } = true;
+        public bool AutoPaceEnabled { get; set; } = false;
 
         [JsonPropertyName("auto_read_replies")]
         public bool AutoReadReplies { get; set; } = true;

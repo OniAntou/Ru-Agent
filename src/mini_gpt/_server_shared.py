@@ -131,7 +131,7 @@ _DEFAULT_SETTINGS = {
     "voice_label": "Ru (OmniVoice)",
     "voice_style_id": ORIGINAL_STYLE_ID,
     "voice_speed": 1.0,
-    "auto_pace_enabled": True,
+    "auto_pace_enabled": False,
     "auto_read_replies": True,
 }
 

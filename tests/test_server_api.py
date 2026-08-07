@@ -418,24 +418,31 @@ def test_settings_voice_fields_round_trip(monkeypatch, isolated_state) -> None:
     assert body["voice_label"] == "Ái Vy (OmniVoice)"
     assert body["voice_speed"] == 1.05
 
-def test_settings_voice_style_round_trip_and_status(monkeypatch, isolated_state) -> None:
+def test_legacy_pitch_style_is_normalized_to_original_in_settings_and_status(monkeypatch, isolated_state) -> None:
     monkeypatch.setattr(server_shared, "voice_available", lambda: True)
     monkeypatch.setattr(voice_router, "voice_available", lambda: True, raising=False)
+    server.save_settings_to_file({"voice_style_id": "low_pitch"})
 
     with TestClient(server.app) as client:
-        saved = client.post("/settings", json={"voice_style_id": "low_pitch"})
         settings = client.get("/settings").json()
         status = client.get("/voice/status").json()
 
-    assert saved.json()["status"] == "success"
-    assert settings["voice_style_id"] == "low_pitch"
-    assert status["voice_style_id"] == "low_pitch"
+    assert settings["voice_style_id"] == "original"
+    assert status["voice_style_id"] == "original"
     assert settings["share_memory_with_cloud"] is True
 
 
 def test_settings_reject_unknown_voice_style(isolated_state) -> None:
     with TestClient(server.app) as client:
         response = client.post("/settings", json={"voice_style_id": "free-form"})
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("retired", ["low_pitch", "high_pitch", "whisper"])
+def test_settings_rejects_retired_voice_style(retired, isolated_state) -> None:
+    with TestClient(server.app) as client:
+        response = client.post("/settings", json={"voice_style_id": retired})
 
     assert response.status_code == 422
 
@@ -469,6 +476,14 @@ def test_voice_status_reports_availability(monkeypatch, isolated_state) -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.json()["available"] is False
+
+
+def test_fresh_settings_default_to_disabled_auto_pace(isolated_state) -> None:
+    with TestClient(server.app) as client:
+        settings = client.get("/settings").json()
+
+    assert settings["auto_pace_enabled"] is False
+    assert settings["share_memory_with_cloud"] is True
 
 
 def test_voice_status_returns_effective_disabled_auto_read_setting(monkeypatch) -> None:
@@ -614,7 +629,7 @@ def test_request_voice_audio_posts_only_the_validated_style_id(monkeypatch) -> N
     monkeypatch.setattr(server_shared, "urlopen", fake_urlopen)
 
     audio = server_shared.request_voice_audio(
-        "xin chào", "Ru (OmniVoice)", 1.0, "whisper"
+        "xin chào", "Ru (OmniVoice)", 1.0, "original"
     )
 
     assert audio == b"RIFF"
@@ -622,7 +637,7 @@ def test_request_voice_audio_posts_only_the_validated_style_id(monkeypatch) -> N
         "text": "xin chào",
         "voice_profile": "ru",
         "speed": 1.0,
-        "voice_style_id": "whisper",
+        "voice_style_id": "original",
     }
     assert captured["timeout"] == 90.0
 
@@ -675,7 +690,7 @@ def test_voice_tts_strips_internal_markers_before_synthesis(monkeypatch, isolate
     assert sent == ["Chào anh nha!"]
 
 
-def test_voice_tts_uses_saved_style_without_leaking_it_into_text(
+def test_voice_tts_respects_disabled_auto_pace_without_leaking_markers(
     monkeypatch, isolated_state
 ) -> None:
     sent = []
@@ -693,7 +708,7 @@ def test_voice_tts_uses_saved_style_without_leaking_it_into_text(
         voice_router, "request_voice_audio", fake_audio, raising=False
     )
     with TestClient(server.app) as client:
-        client.post("/settings", json={"voice_style_id": "high_pitch"})
+        client.post("/settings", json={"auto_pace_enabled": False})
         response = client.post(
             "/voice/tts",
             json={"text": "Chào anh. [[VOICE_PACE:quick]]"},
@@ -701,7 +716,35 @@ def test_voice_tts_uses_saved_style_without_leaking_it_into_text(
 
     assert response.status_code == 200
     assert sent == [
-        ("Chào anh.", "Ru (OmniVoice)", 1.08, "high_pitch")
+        ("Chào anh.", "Ru (OmniVoice)", 1.0, "original")
+    ]
+
+
+def test_voice_tts_uses_enabled_auto_pace(monkeypatch, isolated_state) -> None:
+    sent = []
+
+    def fake_audio(text, label, speed, style):
+        sent.append((text, label, speed, style))
+        return b"RIFFWAVE-data"
+
+    monkeypatch.setattr(server_shared, "ensure_voice_service", lambda: None)
+    monkeypatch.setattr(
+        voice_router, "ensure_voice_service", lambda: None, raising=False
+    )
+    monkeypatch.setattr(server_shared, "request_voice_audio", fake_audio)
+    monkeypatch.setattr(
+        voice_router, "request_voice_audio", fake_audio, raising=False
+    )
+    with TestClient(server.app) as client:
+        client.post("/settings", json={"auto_pace_enabled": True})
+        response = client.post(
+            "/voice/tts",
+            json={"text": "Chào anh. [[VOICE_PACE:quick]]"},
+        )
+
+    assert response.status_code == 200
+    assert sent == [
+        ("Chào anh.", "Ru (OmniVoice)", 1.08, "original")
     ]
 
 
@@ -751,6 +794,33 @@ def test_voice_stream_sends_ordered_audio_and_end_event(monkeypatch, isolated_st
             assert websocket.receive_json()["sequence"] == 1
             assert websocket.receive_bytes() == b"B."
             assert websocket.receive_json() == {"type": "ended", "request_id": "r1", "sequence": 2}
+
+
+def test_voice_stream_respects_disabled_auto_pace(monkeypatch, isolated_state) -> None:
+    sent_speeds: list[float] = []
+    monkeypatch.setattr(
+        voice_router,
+        "request_voice_audio",
+        lambda text, label, speed, style: sent_speeds.append(speed) or text.encode(),
+    )
+    monkeypatch.setattr(voice_router._gpu_lifecycle(), "prepare_speech", lambda selection: None)
+
+    with TestClient(server.app) as client:
+        client.post("/settings", json={"auto_pace_enabled": False})
+        with client.websocket_connect("/voice/stream") as websocket:
+            websocket.send_json(
+                {
+                    "type": "start",
+                    "request_id": "pace-disabled",
+                    "text": "Nhanh lên nào! [[VOICE_PACE:quick]]",
+                }
+            )
+            assert websocket.receive_json()["type"] == "started"
+            assert websocket.receive_json()["type"] == "audio"
+            assert websocket.receive_bytes() == "Nhanh lên nào!".encode()
+            assert websocket.receive_json()["type"] == "ended"
+
+    assert sent_speeds == [1.0]
 
 
 def test_voice_stream_can_overlap_hosted_chat_generation(monkeypatch, isolated_state) -> None:
@@ -1403,6 +1473,25 @@ def test_observation_react_passes_unfiltered_visible_text_to_cloud(
     assert "private message abc" in captured["prompt"]
     assert body["reaction"]["cloud_ms"] == 123
     assert body["reaction"]["text"] == "Đau mắt giùm anh luôn."
+
+
+def test_observation_react_respects_disabled_auto_pace(
+    monkeypatch, isolated_state, valid_observation_payload
+) -> None:
+    monkeypatch.setattr(
+        server.core.runner,
+        "generate_screen_reaction",
+        lambda *args, **kwargs: "Nhanh lên nào! [[VOICE_PACE:quick]]",
+    )
+
+    with TestClient(server.app) as client:
+        saved = client.post("/settings", json={"auto_pace_enabled": False})
+        response = client.post("/observation/react", json=valid_observation_payload)
+
+    assert saved.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.json()["reaction"]["voice_speed"] == 1.0
+
 
 def test_observation_react_does_not_write_session_memory_or_learning(
     monkeypatch, valid_observation_payload

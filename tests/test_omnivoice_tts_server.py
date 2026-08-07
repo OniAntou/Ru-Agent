@@ -113,7 +113,7 @@ def test_http_reports_synthesis_error() -> None:
     assert response.get_json() == {"error": "Synthesis failed. Check the server logs."}
 
 
-def test_http_tts_passes_only_validated_voice_style(tmp_path) -> None:
+def test_http_tts_accepts_only_original_voice_style(tmp_path) -> None:
     audio = tmp_path / "speech.wav"
     audio.write_bytes(b"RIFF")
     calls: list[tuple[str, str, float, str]] = []
@@ -130,21 +130,34 @@ def test_http_tts_passes_only_validated_voice_style(tmp_path) -> None:
             "text": "xin chào",
             "voice_profile": "ai_vy",
             "speed": 1.05,
-            "voice_style_id": "whisper",
+            "voice_style_id": "original",
         },
     )
+    retired = [
+        client.post(
+            "/tts",
+            json={"text": "xin chào", "voice_style_id": style_id},
+        )
+        for style_id in ("low_pitch", "high_pitch", "whisper")
+    ]
     invalid = client.post(
         "/tts",
         json={"text": "xin chào", "voice_style_id": "free-form"},
     )
 
     assert response.status_code == 200
-    assert calls == [("xin chào", "ai_vy", 1.05, "whisper")]
+    assert calls == [("xin chào", "ai_vy", 1.05, "original")]
+    assert [item.status_code for item in retired] == [400, 400, 400]
+    assert [item.get_json() for item in retired] == [
+        {"error": "Unsupported OmniVoice voice style."},
+        {"error": "Unsupported OmniVoice voice style."},
+        {"error": "Unsupported OmniVoice voice style."},
+    ]
     assert invalid.status_code == 400
     assert invalid.get_json() == {"error": "Unsupported OmniVoice voice style."}
 
 
-def test_synthesis_uses_the_selected_16_step_vietnamese_trial_settings(tmp_path, monkeypatch) -> None:
+def test_synthesis_uses_native_speed_without_local_waveform_effects(tmp_path, monkeypatch) -> None:
     class FakeInferenceMode:
         def __enter__(self):
             return self
@@ -175,22 +188,33 @@ def test_synthesis_uses_the_selected_16_step_vietnamese_trial_settings(tmp_path,
     monkeypatch.setitem(sys.modules, "soundfile", FakeSoundFile())
     monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
     monkeypatch.setattr(server, "get_model", lambda: model)
-    monkeypatch.setattr(server, "apply_voice_speed", lambda audio, speed: audio)
+    monkeypatch.setattr(
+        server,
+        "apply_voice_speed",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("synthesis must not time-stretch the completed waveform")
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        server,
+        "apply_voice_pitch",
+        lambda *_args: (_ for _ in ()).throw(
+            AssertionError("synthesis must not pitch-shift the completed waveform")
+        ),
+        raising=False,
+    )
     monkeypatch.setattr(server.tempfile, "NamedTemporaryFile", lambda **kwargs: type("Output", (), {
         "name": str(tmp_path / "speech.wav"), "close": lambda self: None,
     })())
     server._voice_clone_prompts.clear()
     server._voice_clone_prompts.update({"ru": "ru-prompt", "ai_vy": "ai-vy-prompt"})
 
-    ru_audio = server.synthesize_fast("Chào anh.", "ru")
-    ai_vy_audio = server.synthesize_fast("Chào em.", "ai_vy")
-    low_pitch_audio = server.synthesize_fast(
-        "Chào anh.", "ru", voice_style_id="low_pitch"
-    )
+    fast_audio = server.synthesize_fast("Chào anh.", "ru", speed=1.08)
+    baseline_audio = server.synthesize_fast("Chào anh.", "ru", speed=1.0)
 
-    assert Path(ru_audio).is_file()
-    assert Path(ai_vy_audio).is_file()
-    assert Path(low_pitch_audio).is_file()
+    assert Path(fast_audio).is_file()
+    assert Path(baseline_audio).is_file()
     assert model.calls == [
         {
             "text": "Chào anh.",
@@ -198,13 +222,7 @@ def test_synthesis_uses_the_selected_16_step_vietnamese_trial_settings(tmp_path,
             "language": "Vietnamese",
             "normalize_text": True,
             "num_step": 16,
-        },
-        {
-            "text": "Chào em.",
-            "voice_clone_prompt": "ai-vy-prompt",
-            "language": "Vietnamese",
-            "normalize_text": True,
-            "num_step": 16,
+            "speed": 1.08,
         },
         {
             "text": "Chào anh.",
@@ -212,17 +230,21 @@ def test_synthesis_uses_the_selected_16_step_vietnamese_trial_settings(tmp_path,
             "language": "Vietnamese",
             "normalize_text": True,
             "num_step": 16,
-            "instruct": "low pitch",
         },
     ]
 
 
-def test_apply_voice_speed_mono_shape_is_1d() -> None:
+def test_completed_omnivoice_audio_is_written_as_a_mono_waveform() -> None:
     import numpy as np
 
-    waveform = server.apply_voice_speed(np.zeros((1, 2400), dtype=np.float32), 1.0)
+    waveform = server._as_waveform(np.zeros((1, 2400), dtype=np.float32))
     assert waveform.ndim == 1
     assert waveform.shape[0] == 2400
+
+
+def test_omnivoice_server_exposes_no_local_waveform_effects() -> None:
+    assert not hasattr(server, "apply_voice_speed")
+    assert not hasattr(server, "apply_voice_pitch")
 
 
 def test_synthesize_fast_writes_1d_waveform(tmp_path, monkeypatch) -> None:
@@ -288,7 +310,6 @@ def test_synthesize_fast_reports_privacy_safe_timing(tmp_path, monkeypatch) -> N
     monkeypatch.setitem(sys.modules, "soundfile", FakeSoundFile())
     monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
     monkeypatch.setattr(server, "get_model", lambda: FakeModel())
-    monkeypatch.setattr(server, "apply_voice_speed", lambda audio, speed: audio)
     monkeypatch.setattr(
         server.tempfile,
         "NamedTemporaryFile",
@@ -305,5 +326,10 @@ def test_synthesize_fast_reports_privacy_safe_timing(tmp_path, monkeypatch) -> N
     )
 
     assert Path(path).is_file()
-    assert [name for name, _ in events] == ["warmup_ms", "generate_ms", "write_ms", "total_ms"]
+    assert [name for name, _ in events] == [
+        "warmup_ms",
+        "generate_ms",
+        "write_ms",
+        "total_ms",
+    ]
     assert all(isinstance(value, float) and value >= 0 for _, value in events)

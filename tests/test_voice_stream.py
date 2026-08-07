@@ -79,7 +79,7 @@ def test_voice_stream_coordinator_discards_future_chunks_after_cancel() -> None:
     assert requested == ["Một câu."]
 
 
-def test_voice_stream_coordinator_forwards_one_style_to_every_chunk() -> None:
+def test_voice_stream_coordinator_forwards_original_style_to_every_chunk() -> None:
     received: list[tuple[str, str]] = []
     coordinator = VoiceStreamCoordinator(
         prepare_speech=lambda selection: None,
@@ -95,7 +95,7 @@ def test_voice_stream_coordinator_forwards_one_style_to_every_chunk() -> None:
         text="Một câu. Câu thứ hai.",
         voice_label="Ru (OmniVoice)",
         speed=1.0,
-        voice_style_id="whisper",
+        voice_style_id="original",
     )
 
     assert [event.event_type for event in events] == [
@@ -105,8 +105,8 @@ def test_voice_stream_coordinator_forwards_one_style_to_every_chunk() -> None:
         "ended",
     ]
     assert received == [
-        ("Một câu.", "whisper"),
-        ("Câu thứ hai.", "whisper"),
+        ("Một câu.", "original"),
+        ("Câu thứ hai.", "original"),
     ]
 
 

@@ -4,12 +4,7 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 
-VoiceStyleId: TypeAlias = Literal[
-    "original",
-    "low_pitch",
-    "high_pitch",
-    "whisper",
-]
+VoiceStyleId: TypeAlias = Literal["original"]
 
 ORIGINAL_STYLE_ID: VoiceStyleId = "original"
 
@@ -18,14 +13,10 @@ ORIGINAL_STYLE_ID: VoiceStyleId = "original"
 class VoiceStyle:
     id: VoiceStyleId
     label: str
-    instruct: str | None
 
 
 VOICE_STYLES: tuple[VoiceStyle, ...] = (
-    VoiceStyle("original", "Giữ giọng gốc", None),
-    VoiceStyle("low_pitch", "Trầm hơn", "low pitch"),
-    VoiceStyle("high_pitch", "Cao hơn", "high pitch"),
-    VoiceStyle("whisper", "Thì thầm", "whisper"),
+    VoiceStyle("original", "Giữ giọng gốc"),
 )
 _VOICE_STYLES_BY_ID: dict[str, VoiceStyle] = {
     style.id: style for style in VOICE_STYLES

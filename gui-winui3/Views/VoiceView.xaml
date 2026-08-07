@@ -23,16 +23,6 @@
                     </Grid>
 
                     <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <TextBlock Grid.Column="0" Text="Điều chỉnh giọng" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <ComboBox x:Name="VoiceStyleComboBox" Grid.Column="1" Width="240" SelectionChanged="OnVoiceStyleChanged">
-                            <ComboBoxItem Content="Giữ giọng gốc" Tag="original"/>
-                            <ComboBoxItem Content="Trầm hơn" Tag="low_pitch"/>
-                            <ComboBoxItem Content="Cao hơn" Tag="high_pitch"/>
-                            <ComboBoxItem Content="Thì thầm" Tag="whisper"/>
-                        </ComboBox>
-                    </Grid>
-
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
                         <TextBlock Grid.Column="0" Text="Tốc độ giọng đọc (Base speed)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
                             <Slider x:Name="SpeedSlider" Minimum="0.75" Maximum="1.20" StepFrequency="0.05" Value="1.0" Width="180" ValueChanged="OnSpeedSliderChanged"/>
@@ -42,7 +32,7 @@
 
                     <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
                         <TextBlock Grid.Column="0" Text="Cho phép Ru tự điều chỉnh nhịp nói (Auto-pace ±0.08x)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                        <ToggleSwitch x:Name="AutoPaceToggle" Grid.Column="1" IsOn="True" Toggled="OnAutoPaceToggled"/>
+                        <ToggleSwitch x:Name="AutoPaceToggle" Grid.Column="1" IsOn="False" Toggled="OnAutoPaceToggled"/>
                     </Grid>
 
                     <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">

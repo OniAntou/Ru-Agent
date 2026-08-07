@@ -78,7 +78,6 @@ VOICE_PROFILES = {
 _model = None
 _voice_clone_prompts: dict[str, object] = {}
 _MODEL_LOCK = threading.RLock()
-_librosa = None
 
 
 def get_model():
@@ -153,11 +152,9 @@ def release_model() -> None:
             pass
 
 
-def apply_voice_speed(audio, speed: float):
-    global _librosa
+def _as_waveform(audio):
     import numpy as np
 
-    speed = clamp_voice_speed(speed)
     if hasattr(audio, "detach"):
         audio = audio.detach().cpu().numpy()
     try:
@@ -168,18 +165,9 @@ def apply_voice_speed(audio, speed: float):
             raise ValueError(f"Unexpected audio shape: {waveform.shape}")
     except Exception as error:
         raise RuntimeError(f"Could not convert OmniVoice audio into a waveform: {error}") from error
-    if speed == 1.0:
-        if waveform.shape[0] == 1:
-            return waveform.reshape(-1)
-        return waveform
-    if _librosa is None:
-        import librosa
-
-        _librosa = librosa
-    stretched = _librosa.effects.time_stretch(waveform, rate=speed)
-    if stretched.ndim == 2 and stretched.shape[0] == 1:
-        return stretched.reshape(-1)
-    return stretched
+    if waveform.shape[0] == 1:
+        return waveform.reshape(-1)
+    return waveform
 
 
 def synthesize_fast(
@@ -199,14 +187,15 @@ def synthesize_fast(
     import torch
 
     generation_started = perf_counter()
-    style = voice_style_by_id(voice_style_id)
+    voice_style_by_id(voice_style_id)
+    speed = clamp_voice_speed(speed)
     generate_kwargs: dict[str, object] = {
         "text": text,
         "voice_clone_prompt": _voice_clone_prompts[profile],
         **settings_for_profile(profile).generate_kwargs(),
     }
-    if style.instruct is not None:
-        generate_kwargs["instruct"] = style.instruct
+    if speed != DEFAULT_VOICE_SPEED:
+        generate_kwargs["speed"] = speed
     with _MODEL_LOCK:
         with torch.inference_mode():
             audio = get_model().generate(**generate_kwargs)
@@ -214,7 +203,7 @@ def synthesize_fast(
         timing("generate_ms", (perf_counter() - generation_started) * 1000)
     if not audio:
         raise RuntimeError("OmniVoice returned no audio.")
-    waveform = apply_voice_speed(audio[0], speed)
+    waveform = _as_waveform(audio[0])
     output = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
     output.close()
     write_started = perf_counter()

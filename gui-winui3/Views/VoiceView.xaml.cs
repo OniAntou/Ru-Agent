@@ -41,19 +41,6 @@ namespace RuApp.Views
                     }
                 }
 
-                foreach (ComboBoxItem item in VoiceStyleComboBox.Items)
-                {
-                    if ((item.Tag as string) == settings.VoiceStyleId)
-                    {
-                        VoiceStyleComboBox.SelectedItem = item;
-                        break;
-                    }
-                }
-                if (VoiceStyleComboBox.SelectedItem == null && VoiceStyleComboBox.Items.Count > 0)
-                {
-                    VoiceStyleComboBox.SelectedIndex = 0;
-                }
-
                 SpeedSlider.Value = settings.VoiceSpeed;
                 SpeedText.Text = $"{settings.VoiceSpeed:F2}x";
                 AutoPaceToggle.IsOn = settings.AutoPaceEnabled;
@@ -64,12 +51,6 @@ namespace RuApp.Views
         }
 
         private async void OnVoiceProfileChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (_isUpdatingUi || _apiService == null) return;
-            await SaveVoiceSettingsAsync();
-        }
-
-        private async void OnVoiceStyleChanged(object sender, SelectionChangedEventArgs e)
         {
             if (_isUpdatingUi || _apiService == null) return;
             await SaveVoiceSettingsAsync();
@@ -101,13 +82,12 @@ namespace RuApp.Views
         {
             if (_apiService == null) return;
             string label = (VoiceProfileComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Ru (OmniVoice)";
-            string styleId = (VoiceStyleComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "original";
             await _apiService.UpdateVoiceAsync(
                 label,
                 SpeedSlider.Value,
                 AutoPaceToggle.IsOn,
                 AutoReadToggle.IsOn,
-                styleId);
+                "original");
             if (_voicePlayback != null)
             {
                 await _voicePlayback.RefreshSettingsAsync();

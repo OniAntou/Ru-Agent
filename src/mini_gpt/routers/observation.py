@@ -203,7 +203,9 @@ def observation_react(payload: ObservationReactionPayload):
         settings = effective_settings()
         voice_speed = effective_voice_speed(
             settings.get("voice_speed", _DEFAULT_SETTINGS["voice_speed"]),
-            auto_pace_enabled=True,
+            auto_pace_enabled=settings.get(
+                "auto_pace_enabled", _DEFAULT_SETTINGS["auto_pace_enabled"]
+            ),
             pace=pace,
         )
         cloud_seconds = timing["seconds"]

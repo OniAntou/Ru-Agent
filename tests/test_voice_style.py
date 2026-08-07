@@ -9,28 +9,29 @@ from mini_gpt.voice_style import (
 )
 
 
-@pytest.mark.parametrize(
-    ("style_id", "instruct"),
-    [
-        ("original", None),
-        ("low_pitch", "low pitch"),
-        ("high_pitch", "high pitch"),
-        ("whisper", "whisper"),
-    ],
-)
-def test_known_voice_styles_are_stable_and_explicit(
-    style_id: str, instruct: str | None
-) -> None:
-    style = voice_style_by_id(style_id)
+def test_original_is_the_only_supported_voice_style() -> None:
+    style = voice_style_by_id("original")
 
-    assert style.id == style_id
-    assert style.instruct == instruct
+    assert style.id == ORIGINAL_STYLE_ID
+    assert style.label
+    assert not hasattr(style, "pitch_semitones")
+
+
+@pytest.mark.parametrize("retired", ["low_pitch", "high_pitch", "whisper"])
+def test_saved_retired_style_falls_back_to_original(retired: str) -> None:
+    assert voice_style_from_saved(retired).id == ORIGINAL_STYLE_ID
 
 
 def test_saved_missing_or_malformed_style_falls_back_to_original() -> None:
     assert voice_style_from_saved(None).id == ORIGINAL_STYLE_ID
     assert voice_style_from_saved("invalid").id == ORIGINAL_STYLE_ID
     assert voice_style_from_saved(["invalid"]).id == ORIGINAL_STYLE_ID
+
+
+@pytest.mark.parametrize("retired", ["low_pitch", "high_pitch", "whisper"])
+def test_direct_retired_style_is_rejected(retired: str) -> None:
+    with pytest.raises(ValueError, match="Unsupported OmniVoice voice style"):
+        voice_style_by_id(retired)
 
 
 def test_direct_unknown_style_is_rejected() -> None:

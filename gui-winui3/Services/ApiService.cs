@@ -183,16 +183,22 @@ namespace RuApp.Services
             }
         }
 
-        public async Task<bool> UpdateVoiceAsync(string voiceLabel, double voiceSpeed, bool autoPace, bool autoRead)
+        public async Task<bool> UpdateVoiceAsync(
+            string voiceLabel,
+            double voiceSpeed,
+            bool autoPace,
+            bool autoRead,
+            string voiceStyleId)
         {
             try
             {
-                var payload = new
+                var payload = new VoiceSettingsUpdateDto
                 {
-                    voice_label = voiceLabel,
-                    voice_speed = voiceSpeed,
-                    auto_pace_enabled = autoPace,
-                    auto_read_replies = autoRead
+                    VoiceLabel = voiceLabel,
+                    VoiceSpeed = voiceSpeed,
+                    AutoPaceEnabled = autoPace,
+                    AutoReadReplies = autoRead,
+                    VoiceStyleId = voiceStyleId,
                 };
                 var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
                 return response.IsSuccessStatusCode;

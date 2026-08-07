@@ -154,6 +154,9 @@ namespace RuApp.Models
         [JsonPropertyName("voice_label")]
         public string VoiceLabel { get; set; } = "Ru (OmniVoice)";
 
+        [JsonPropertyName("voice_style_id")]
+        public string VoiceStyleId { get; set; } = "original";
+
         [JsonPropertyName("voice_speed")]
         public double VoiceSpeed { get; set; } = 1.0;
 
@@ -187,6 +190,9 @@ namespace RuApp.Models
         [JsonPropertyName("voice_label")]
         public string VoiceLabel { get; set; } = "Ru (OmniVoice)";
 
+        [JsonPropertyName("voice_style_id")]
+        public string VoiceStyleId { get; set; } = "original";
+
         [JsonPropertyName("voice_speed")]
         public double VoiceSpeed { get; set; } = 1.0;
 
@@ -198,6 +204,24 @@ namespace RuApp.Models
 
         [JsonPropertyName("server_running")]
         public bool ServerRunning { get; set; } = false;
+    }
+
+    public sealed class VoiceSettingsUpdateDto
+    {
+        [JsonPropertyName("voice_label")]
+        public string VoiceLabel { get; set; } = "Ru (OmniVoice)";
+
+        [JsonPropertyName("voice_style_id")]
+        public string VoiceStyleId { get; set; } = "original";
+
+        [JsonPropertyName("voice_speed")]
+        public double VoiceSpeed { get; set; } = 1.0;
+
+        [JsonPropertyName("auto_pace_enabled")]
+        public bool AutoPaceEnabled { get; set; } = true;
+
+        [JsonPropertyName("auto_read_replies")]
+        public bool AutoReadReplies { get; set; } = true;
     }
 
     public class VtsStatusDto

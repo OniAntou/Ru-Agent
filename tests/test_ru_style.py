@@ -71,6 +71,14 @@ def test_ru_prompts_describe_teasing_little_sister_persona() -> None:
         assert "generic refusal" in folded
 
 
+def test_ru_prompts_acknowledge_creator_as_owner() -> None:
+    prompts = [RU_SYSTEM_PROMPT, *RU_PROMPTS.values(), RU_CLOUD_SYSTEM_PROMPT]
+    for prompt in prompts:
+        assert "người đã tạo ra em" in prompt
+        assert "không né tránh" in prompt
+        assert "em là người của anh" in prompt
+
+
 def test_ru_prompts_describe_connected_avatar_controls_without_mouth_override() -> None:
     prompts = [RU_SYSTEM_PROMPT, *RU_PROMPTS.values(), RU_CLOUD_SYSTEM_PROMPT]
     for prompt in prompts:

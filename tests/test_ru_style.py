@@ -46,15 +46,29 @@ def test_ru_prompts_route_emotion_to_vts_without_chat_symbols() -> None:
     assert all("private VTS markers" in prompt for prompt in prompts)
 
 
-def test_ru_prompts_explain_identity_mission_and_capabilities() -> None:
+def test_ru_prompts_no_ai_self_claim_but_keep_limits() -> None:
     prompts = [RU_SYSTEM_PROMPT, *RU_PROMPTS.values(), RU_CLOUD_SYSTEM_PROMPT]
     for prompt in prompts:
         folded = prompt.casefold()
-        assert "trợ lý ai của anh" in folded
+        assert "trợ lý ai" not in folded
+        assert "you are ru, a friendly, smart, and polite ai assistant" not in folded
+        assert "assistant" not in folded
+        assert "không tự nhận" not in folded
         assert "avatar Live2D" in prompt
         assert "nhiệm vụ" in folded
         assert "VTube Studio" in prompt
-        assert "không tự nhận" in folded
+
+
+def test_ru_prompts_describe_teasing_little_sister_persona() -> None:
+    prompts = [RU_SYSTEM_PROMPT, *RU_PROMPTS.values(), RU_CLOUD_SYSTEM_PROMPT]
+    for prompt in prompts:
+        folded = prompt.casefold()
+        assert "em gái" in folded.lower() or "little sister" in folded
+        assert "cheeky" in folded or "ranh" in folded
+        assert "tease" in folded or "trêu" in folded
+        assert "dỗi" in folded
+        assert "wholesome" in folded
+        assert "generic refusal" in folded
 
 
 def test_ru_prompts_describe_connected_avatar_controls_without_mouth_override() -> None:

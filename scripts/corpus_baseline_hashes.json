@@ -1,26 +1,26 @@
 {
   "v6_1": {
-    "train.jsonl": "a289ec0829d0bbc9de7a87f6211879b835d0b9514f69d3a8345708c1699dfff6",
-    "val.jsonl": "af086d34b61c16db24bb1a599940afa740efd7cf9dda142762f411e920649928",
-    "held_out.jsonl": "14e5d339b60272fc8cd705921fac5f4ee574ba023e6018ede27b1739358aa3c2",
-    "manifest.json": "023808524f9f6ee6a0b0534a551b1debd99109a05656b59dd5c08cce03bf60f6"
+    "train.jsonl": "fc602325158bdcdc3dcffb7fbc153ce72142e31d064232aa69ca80d0d711c601",
+    "val.jsonl": "3095477804a8e21d28a7869a46b39e14f76b7b0719d0ea7f41344fa956df016b",
+    "held_out.jsonl": "51bb16e59dcc902b001bbbfa53fa605fd90ea3cec53eba34e86f0378405d844b",
+    "manifest.json": "de5ea26863bb83a1a5b861d22ae5d96e3d1a0dee3c15b118f1f8a6326f3efa6d"
   },
   "v6_2": {
-    "train.jsonl": "68e76a26ebeded61c8ff578fd3437bdc3a9c174387830910b034f899097f3bf3",
-    "val.jsonl": "4b6593872a99470dec4d006c89c99c2263726f7627665be270d083c84db1c9f4",
-    "held_out.jsonl": "ec193c8e28c0f84e9f4c3df6a18cce197bd588a21d17048c16f12d772f18caee",
-    "manifest.json": "3752aa4fb76da7a2f8c0f8f47d201bd4b2c7cbdde9808ecfb382b34411bf7cce"
+    "train.jsonl": "ffcac605c340a6615a87224a041dfc10ad1e13e38327ad6ffef815f11d469443",
+    "val.jsonl": "e3c96fa321bc7318b21331da3ebb446a5b135b928be37a64cdaaea47694922f4",
+    "held_out.jsonl": "43121b6f0cc0f8931cde8f0414e8829de411d0cafed50b55f767f4e3a8886ed7",
+    "manifest.json": "b8df205cbc742823c2800a7119b36c98d472464a7d82d2be269161735e214651"
   },
   "v6_2_fresh": {
-    "train.jsonl": "d1c4dc8f9b9e6298d9797b1d085cab09b5f2f2558eef9269d135bf1b3b9e6c32",
-    "val.jsonl": "f0317801beb7d2804af218b7c01139e6efa00b9e371106a09c76080de9bd2045",
-    "held_out.jsonl": "59569ca97be0b56588635c66fdc00e2f0baed9e37a923bfe3bfcbf2c7221d178",
-    "manifest.json": "0f765f8f4f68eac76ca3caa5fc92ab60014b319d44ac658e8c6f0dbb323f493c"
+    "train.jsonl": "62c83c2e6723530a68e8893c2cf236e58899880c102c264f96ae759a23813f9e",
+    "val.jsonl": "004efd9924614da4bd3e5126cde65e83b22d215072ff7bc61a195f8e7df7950c",
+    "held_out.jsonl": "9acddaf9b398a4e1a6a6583df9ccb25aaed704a67040e398989f16cd9b886b08",
+    "manifest.json": "309c18940edc9b157c027f66d2217dfa1c82e9aec3c0643cf46d040633a60892"
   },
   "v6_3": {
-    "train.jsonl": "dd07f9bea95de17bf9e5bede7c94685b6dd55d40550add327257446241ae1d97",
-    "val.jsonl": "a0f02dd23b61fe2f77c7b152e3caf9674f78175971fb88adadd93caa7022d83c",
-    "held_out.jsonl": "78f6a58e67343840a088b2ec77bb6f17860014e60af56a9a8b82a6ab7264dbd8",
-    "manifest.json": "ad518ef80afa2ce94da7489605d5705df62052f8830778e3f9872a0afe952250"
+    "train.jsonl": "2a900cf621ba07735d325d360e3d3cfbe2723ec68325dd0488986b9734bb429d",
+    "val.jsonl": "1a78cac2102f232d264fcc9fb3057d237f3d0181d16adc1c8435ce76697bffd2",
+    "held_out.jsonl": "94a6696c06fbbb3ed63e01b20135145340cf37d3af0c7d5628c2fc918cc7909c",
+    "manifest.json": "f6801f3958ef9c55690186f02445a566d4fb5aa8273af597a0bb0da90726dc2d"
   }
 }

@@ -56,10 +56,11 @@ def _acquire_single_instance() -> bool:
     return True
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+REPOSITORY_ROOT = PROJECT_ROOT.parent.parent
 MODEL_CACHE = PROJECT_ROOT / "models" / "omnivoice"
 REFERENCE_AUDIO = PROJECT_ROOT / "tyc_talk.wav"
 REFERENCE_TEXT = PROJECT_ROOT / "reference_text.txt"
-AI_VY_AUDIO = PROJECT_ROOT / "data" / "voices" / "omnivoice" / "ai_vy.wav"
+AI_VY_AUDIO = REPOSITORY_ROOT / "data" / "voices" / "omnivoice" / "ai_vy.wav"
 AI_VY_TEXT = (
     "việt nam đang kiêu hãnh bước vào kỷ nguyên vươn mình rực rỡ với khát vọng "
     "mãnh liệt, trí tuệ đổi mới và tinh thần đoàn kết đất nước, tự tin bứt phá, "

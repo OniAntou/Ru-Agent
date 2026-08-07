@@ -453,7 +453,7 @@ cmd /c build.bat
 
 Expected: a self-contained executable exists at gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe.
 
-- [ ] **Step 3: Run sequential Vietnamese listening probes.**
+- [x] **Step 3: Run sequential Vietnamese listening probes.**
 
 With no local Llama process resident, use the already-installed OmniVoice environment and call the real adapter one profile/style at a time:
 
@@ -466,12 +466,13 @@ With no local Llama process resident, use the already-installed OmniVoice enviro
 
 Keep each printed temporary WAV path until it has been played. Record only pass/fail, profile, preset, and timing; never commit raw audio or spoken text. If a non-default preset has broken pronunciation, lost clone identity, or obvious artifacts, retain it as optional and report the listening result rather than changing the default.
 
-**Observed 2026-08-07:** The full Python suite reported 428 passing tests with
+**Observed 2026-08-07:** The full Python suite reported 429 passing tests with
 zero failures/errors through JUnit; WinUI reported 48 passing tests; the
 self-contained Release GUI publish succeeded; and `git diff --check` passed.
-The running OmniVoice service had loaded its model before the feature commits,
-so it was intentionally not restarted. Step 3 remains pending an explicit
-reload and a real Vietnamese listening decision.
+After the explicitly approved reload, both profiles produced all four 24 kHz
+mono presets. Each preset has a distinct WAV hash within its profile. The Ái Vy
+asset lookup was corrected to the repository `data\\voices` path; human
+listening acceptance remains pending.
 
 - [x] **Step 4: Update documents with actual results only.**
 

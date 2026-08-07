@@ -370,6 +370,9 @@ file (not the removed Gwen model):
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\download_omnivoice_ai_vy_voice.py
 ```
 
+The recovery script writes `data\voices\omnivoice\ai_vy.wav`; this is the
+same repository-level path that the OmniVoice service resolves at runtime.
+
 All choices retain the same VTube Studio `VoiceVolume` lip-sync behavior and
 sentence queue. VTube metadata is removed before synthesis.
 

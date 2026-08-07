@@ -64,6 +64,22 @@ def test_profile_validation_and_release_clear_runtime() -> None:
     assert server._voice_clone_prompts == {}
 
 
+def test_ai_vy_profile_uses_the_repository_voice_asset(monkeypatch) -> None:
+    expected = (
+        Path(server.__file__).resolve().parents[2]
+        / "data"
+        / "voices"
+        / "omnivoice"
+        / "ai_vy.wav"
+    )
+    monkeypatch.setattr(Path, "is_file", lambda path: path == expected)
+
+    audio, transcript = server.voice_profile("ai_vy")
+
+    assert audio == expected
+    assert transcript == server.AI_VY_TEXT
+
+
 def test_http_contract_does_not_load_for_status_and_validates_tts(tmp_path, monkeypatch) -> None:
     server.release_model()
     audio = tmp_path / "speech.wav"

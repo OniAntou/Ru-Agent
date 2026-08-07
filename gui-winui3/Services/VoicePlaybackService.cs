@@ -429,7 +429,7 @@ namespace RuApp.Services
 
                 if (!receivedAudio && !cancellationToken.IsCancellationRequested)
                 {
-                    await EnqueueFallbackReplyAudioAsync(
+                    receivedAudio = await EnqueueFallbackReplyAudioAsync(
                         requestId,
                         sentence,
                         audioQueue,
@@ -445,7 +445,7 @@ namespace RuApp.Services
                 Debug.WriteLine($"[VoicePlayback] Reply sentence stream failed: {ex.Message}");
                 if (!receivedAudio && !cancellationToken.IsCancellationRequested)
                 {
-                    await EnqueueFallbackReplyAudioAsync(
+                    receivedAudio = await EnqueueFallbackReplyAudioAsync(
                         requestId,
                         sentence,
                         audioQueue,
@@ -455,6 +455,10 @@ namespace RuApp.Services
             }
             finally
             {
+                if (!receivedAudio && !cancellationToken.IsCancellationRequested)
+                {
+                    latencyTracker.MarkSynthesisFailure();
+                }
                 lock (_replyGate)
                 {
                     if (ReferenceEquals(_replyStreamClient, streamClient))
@@ -466,7 +470,7 @@ namespace RuApp.Services
             }
         }
 
-        private async Task EnqueueFallbackReplyAudioAsync(
+        private async Task<bool> EnqueueFallbackReplyAudioAsync(
             string requestId,
             string sentence,
             VoiceReplyAudioQueue audioQueue,
@@ -476,13 +480,14 @@ namespace RuApp.Services
             byte[]? audio = await _apiService.SynthesizeTtsAsync(sentence, VoiceLabel, VoiceSpeed);
             if (audio is null || audio.Length == 0 || cancellationToken.IsCancellationRequested)
             {
-                return;
+                return false;
             }
 
             await audioQueue.EnqueueAsync(
                 new VoiceAudioChunk(requestId, 0, audio, 24_000, "wav"),
                 cancellationToken);
             latencyTracker.MarkFirstAudioReceived();
+            return true;
         }
 
         private Task PlayReplyChunkAsync(

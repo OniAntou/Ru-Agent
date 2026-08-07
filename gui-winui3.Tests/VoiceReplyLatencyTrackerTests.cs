@@ -88,6 +88,37 @@ public sealed class VoiceReplyLatencyTrackerTests
     }
 
     [Fact]
+    public void TrackerReportsFailedWhenGenerationFailsBeforeFirstAudio()
+    {
+        var tracker = new VoiceReplyLatencyTracker(() => 0, ticksPerSecond: 1_000);
+
+        tracker.MarkSynthesisFailure();
+
+        VoiceReplyLatencySnapshot snapshot = Assert.IsType<VoiceReplyLatencySnapshot>(
+            tracker.TryComplete(VoiceReplyOutcome.Completed));
+
+        Assert.Equal(VoiceReplyOutcome.Failed, snapshot.Outcome);
+    }
+
+    [Fact]
+    public void TrackerKeepsCompletedWhenLaterGenerationFailsAfterAudio()
+    {
+        long[] ticks = [0, 10];
+        int index = 0;
+        var tracker = new VoiceReplyLatencyTracker(
+            () => ticks[index++],
+            ticksPerSecond: 1_000);
+
+        tracker.MarkFirstAudioReceived();
+        tracker.MarkSynthesisFailure();
+
+        VoiceReplyLatencySnapshot snapshot = Assert.IsType<VoiceReplyLatencySnapshot>(
+            tracker.TryComplete(VoiceReplyOutcome.Completed));
+
+        Assert.Equal(VoiceReplyOutcome.Completed, snapshot.Outcome);
+    }
+
+    [Fact]
     public void TrackerReportsExactlyOnceWhenTerminalOutcomesRace()
     {
         var tracker = new VoiceReplyLatencyTracker(() => 0, ticksPerSecond: 1_000);

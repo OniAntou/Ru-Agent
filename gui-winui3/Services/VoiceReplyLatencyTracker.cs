@@ -47,6 +47,7 @@ namespace RuApp.Services
         private long? _firstPhraseQueuedTicks;
         private long? _firstAudioReceivedTicks;
         private long? _playbackRequestedTicks;
+        private bool _generationFailed;
         private bool _completed;
 
         public VoiceReplyLatencyTracker(
@@ -71,6 +72,17 @@ namespace RuApp.Services
 
         public void MarkPlaybackRequested() => MarkFirst(ref _playbackRequestedTicks);
 
+        public void MarkSynthesisFailure()
+        {
+            lock (_gate)
+            {
+                if (!_completed)
+                {
+                    _generationFailed = true;
+                }
+            }
+        }
+
         public VoiceReplyLatencySnapshot? TryComplete(VoiceReplyOutcome outcome)
         {
             lock (_gate)
@@ -81,12 +93,16 @@ namespace RuApp.Services
                 }
 
                 _completed = true;
+                VoiceReplyOutcome terminalOutcome = outcome == VoiceReplyOutcome.Completed &&
+                    _generationFailed && _firstAudioReceivedTicks is null
+                    ? VoiceReplyOutcome.Failed
+                    : outcome;
                 return new VoiceReplyLatencySnapshot(
                     ToMilliseconds(_firstChatDeltaTicks, _submitTicks),
                     ToMilliseconds(_firstPhraseQueuedTicks, _submitTicks),
                     ToMilliseconds(_firstAudioReceivedTicks, _firstPhraseQueuedTicks),
                     ToMilliseconds(_playbackRequestedTicks, _submitTicks),
-                    outcome);
+                    terminalOutcome);
             }
         }
 

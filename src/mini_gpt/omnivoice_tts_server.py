@@ -170,20 +170,18 @@ def _as_waveform(audio):
     return waveform
 
 
-def synthesize_fast(
+def _generate_source_audio(
     text: str,
-    profile: str = "ru",
-    speed: float = DEFAULT_VOICE_SPEED,
+    profile: str,
+    speed: float,
+    voice_style_id: VoiceStyleId,
     *,
-    voice_style_id: VoiceStyleId = ORIGINAL_STYLE_ID,
     timing: Callable[[str, float], None] | None = None,
-) -> str:
-    total_started = perf_counter()
+):
     warmup_started = perf_counter()
     warm_model(profile)
     if timing is not None:
         timing("warmup_ms", (perf_counter() - warmup_started) * 1000)
-    import soundfile as sf
     import torch
 
     generation_started = perf_counter()
@@ -203,11 +201,44 @@ def synthesize_fast(
         timing("generate_ms", (perf_counter() - generation_started) * 1000)
     if not audio:
         raise RuntimeError("OmniVoice returned no audio.")
-    waveform = _as_waveform(audio[0])
+    return _as_waveform(audio[0])
+
+
+def _waveform_to_wav(waveform, sample_rate: int) -> bytes:
+    import numpy as np
+    import wave as wave_module
+
+    data = np.asarray(waveform, dtype=np.float32)
+    if data.ndim == 2:
+        data = data.reshape(-1)
+    pcm = (np.clip(data, -1.0, 1.0) * 32767.0).astype("<i2")
+    buffer = io.BytesIO()
+    with wave_module.open(buffer, "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(sample_rate)
+        output.writeframes(pcm.tobytes())
+    return buffer.getvalue()
+
+
+def synthesize_fast(
+    text: str,
+    profile: str = "ru",
+    speed: float = DEFAULT_VOICE_SPEED,
+    *,
+    voice_style_id: VoiceStyleId = ORIGINAL_STYLE_ID,
+    timing: Callable[[str, float], None] | None = None,
+) -> str:
+    total_started = perf_counter()
+    waveform = _generate_source_audio(
+        text, profile, speed, voice_style_id, timing=timing
+    )
     output = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
     output.close()
     write_started = perf_counter()
     try:
+        import soundfile as sf
+
         sf.write(output.name, waveform, MODEL_SAMPLE_RATE)
         if timing is not None:
             timing("write_ms", (perf_counter() - write_started) * 1000)
@@ -219,6 +250,29 @@ def synthesize_fast(
             pass
         raise
     return output.name
+
+
+def synthesize_fast_bytes(
+    text: str,
+    profile: str = "ru",
+    speed: float = DEFAULT_VOICE_SPEED,
+    *,
+    voice_style_id: VoiceStyleId = ORIGINAL_STYLE_ID,
+    timing: Callable[[str, float], None] | None = None,
+) -> bytes:
+    total_started = perf_counter()
+    waveform = _generate_source_audio(
+        text, profile, speed, voice_style_id, timing=timing
+    )
+    write_started = perf_counter()
+    try:
+        wav_bytes = _waveform_to_wav(waveform, MODEL_SAMPLE_RATE)
+        if timing is not None:
+            timing("write_ms", (perf_counter() - write_started) * 1000)
+            timing("total_ms", (perf_counter() - total_started) * 1000)
+        return wav_bytes
+    except Exception:
+        raise
 
 
 def _voice_style_from_request(data: dict[str, object]) -> VoiceStyle:
@@ -273,19 +327,18 @@ def create_app(
         audio_path: str | None = None
         try:
             started = perf_counter()
-            audio_path = (
-                synthesize(text, profile, speed, style.id)
-                if synthesize is not None
-                else synthesize_fast(
+            if synthesize is not None:
+                audio_path = synthesize(text, profile, speed, style.id)
+                if not isinstance(audio_path, str) or not Path(audio_path).is_file():
+                    raise RuntimeError("OmniVoice did not create a playable audio file.")
+                audio_bytes = Path(audio_path).read_bytes()
+            else:
+                audio_bytes = synthesize_fast_bytes(
                     text,
                     profile,
                     speed,
                     voice_style_id=style.id,
                 )
-            )
-            if not isinstance(audio_path, str) or not Path(audio_path).is_file():
-                raise RuntimeError("OmniVoice did not create a playable audio file.")
-            audio_bytes = Path(audio_path).read_bytes()
             elapsed_ms = round((perf_counter() - started) * 1000)
             return Response(
                 audio_bytes,
@@ -330,20 +383,14 @@ def create_app(
                 output.setsampwidth(2)
                 output.setframerate(MODEL_SAMPLE_RATE)
                 for chunk in split_tts_chunks(text):
-                    chunk_path = synthesize_fast(
+                    chunk_bytes = synthesize_fast_bytes(
                         chunk,
                         profile,
                         speed,
                         voice_style_id=style.id,
                     )
-                    try:
-                        with wave.open(chunk_path, "rb") as source:
-                            output.writeframes(source.readframes(source.getnframes()))
-                    finally:
-                        try:
-                            Path(chunk_path).unlink(missing_ok=True)
-                        except OSError:
-                            pass
+                    with wave.open(io.BytesIO(chunk_bytes), "rb") as source:
+                        output.writeframes(source.readframes(source.getnframes()))
             return Response(buffer.getvalue(), mimetype="audio/wav")
         except Exception:
             logger.exception("OmniVoice /tts_stream failed")

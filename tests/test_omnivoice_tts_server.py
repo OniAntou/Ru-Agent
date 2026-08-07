@@ -234,6 +234,84 @@ def test_synthesis_uses_native_speed_without_local_waveform_effects(tmp_path, mo
     ]
 
 
+def test_synthesize_fast_bytes_returns_wav_bytes_without_temp_file(monkeypatch) -> None:
+    import numpy as np
+
+    def fake_generate(*args, **kwargs):
+        return np.zeros((1, 2400), dtype=np.float32)
+
+    monkeypatch.setattr(server, "_generate_source_audio", fake_generate)
+    server._voice_clone_prompts.clear()
+    server._voice_clone_prompts.update({"ru": "ru-prompt"})
+
+    def fail_tempfile(**kwargs):
+        raise AssertionError("byte-based synthesis must not create a temp file")
+
+    monkeypatch.setattr(server.tempfile, "NamedTemporaryFile", fail_tempfile)
+    monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
+
+    import wave as wave_module
+    import io
+
+    buffer = server.synthesize_fast_bytes("Chào anh.", "ru", speed=1.08)
+    with wave_module.open(io.BytesIO(buffer), "rb") as output:
+        assert output.getnchannels() == 1
+        assert output.getframerate() == server.MODEL_SAMPLE_RATE
+        assert output.getnframes() == 2400
+
+
+def test_tts_route_returns_bytes_without_temp_file(tmp_path, monkeypatch) -> None:
+    import numpy as np
+
+    server.release_model()
+
+    def fake_generate(*args, **kwargs):
+        return np.zeros((1, 2400), dtype=np.float32)
+
+    monkeypatch.setattr(server, "_generate_source_audio", fake_generate)
+    server._voice_clone_prompts.clear()
+    server._voice_clone_prompts.update({"ru": "ru-prompt"})
+
+    def boom(*args, **kwargs):
+        raise AssertionError("tts route must not temp-file the audio")
+
+    monkeypatch.setattr(server.tempfile, "NamedTemporaryFile", boom)
+
+    client = server.create_app().test_client()
+    response = client.post("/tts", json={"text": "xin chào", "voice_profile": "ru"})
+
+    assert response.status_code == 200
+    assert response.content_type == "audio/wav"
+    assert response.data.startswith(b"RIFF")
+
+
+def test_tts_stream_route_uses_bytes_without_temp_files(tmp_path, monkeypatch) -> None:
+    import numpy as np
+    import wave as wave_module
+    import io
+
+    def fake_generate(*args, **kwargs):
+        return np.zeros((1, 2400), dtype=np.float32)
+
+    monkeypatch.setattr(server, "_generate_source_audio", fake_generate)
+    server._voice_clone_prompts.clear()
+    server._voice_clone_prompts.update({"ru": "ru-prompt"})
+
+    def boom(*args, **kwargs):
+        raise AssertionError("tts_stream must not temp-file the audio")
+
+    monkeypatch.setattr(server.tempfile, "NamedTemporaryFile", boom)
+    monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
+
+    client = server.create_app().test_client()
+    response = client.post("/tts_stream", json={"text": "xin chào", "voice_profile": "ru"})
+
+    assert response.status_code == 200
+    with wave_module.open(io.BytesIO(response.data), "rb") as output:
+        assert output.getnchannels() == 1
+        assert output.getframerate() == server.MODEL_SAMPLE_RATE
+
+
 def test_completed_omnivoice_audio_is_written_as_a_mono_waveform() -> None:
     import numpy as np
 

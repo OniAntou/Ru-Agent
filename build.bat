@@ -35,10 +35,10 @@ for %%f in ("%OBJ_DIR%\Views\*.xbf") do (
 
 echo [4/5] Skipping manual resources.pri generation (relying on MSBuild)
 
-if exist "%PUBLISH_DIR%\resources.pri" (
-    echo    resources.pri created successfully!
+if exist "%PUBLISH_DIR%\RuApp.pri" (
+    echo    RuApp.pri created successfully!
 ) else (
-    echo    WARNING: resources.pri was NOT created. App may not start.
+    echo    WARNING: RuApp.pri was NOT created. App may not start.
     pause
     exit /b 1
 )

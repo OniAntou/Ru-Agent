@@ -26,7 +26,7 @@
 **Interfaces:**
 - `public readonly record struct RectPx(int X, int Y, int Width, int Height)` (namespace `RuApp.Models`, cùng nơi `SettingsDto`; dùng chung cho cả app)
 - `public static class SubtitleLayout`:
-  - `ComputeRect(RectPx vtsWindow, SizePx vtsWindowSize, ...)` — đơn giản: `ComputeSubtitleRect(RectPx vts, int screenWidth, int screenHeight, int marginBottom = 12, int marginOverlap = 8, double fontRatio = 0.045)` returns `(RectPx rect, int fontSize)`.
+  - `public static (RectPx Rect, int FontSize, bool Overlap) ComputeSubtitleRect(RectPx vts, int screenWidth, int screenHeight)`
   - Font size: `clamp(14, (int)(vts.Height * 0.045), 34)`.
   - Rect: width = `Math.Clamp(vts.Width, 260, screenWidth * 0.32)`, x = `vts.X + (vts.Width - w)/2`; default y = `vts.Bottom + marginBottom`; nếu `y + overlayH > screenBottom - 4` → `y = vts.Bottom - overlayH - marginOverlap` (đè). Clamp x ≥ screenLeft + 4, ≤ screenRight - w - 4.
 
@@ -62,9 +62,9 @@ public sealed class SubtitleLayoutTests
     [Fact]
     public void Rect_OverlapsWhenBottomExceedsScreen()
     {
-        var r = SubtitleLayout.ComputeSubtitleRect(new RectPx(0, 900, 400, 400), 1920, 1000);
+        var r = SubtitleLayout.ComputeSubtitleRect(new RectPx(0, 600, 400, 400), 1920, 1000);
         Assert.True(r.Rect.Bottom <= 1000 - 4);
-        Assert.True(r.Rect.Bottom < 900); // đè lên trên model
+        Assert.True(r.Rect.Bottom < 600 + 400); // đè lên trên model (dưới vts.Bottom = 1000)
     }
 }
 ```
@@ -116,6 +116,8 @@ public static class SubtitleLayout
 
 - [ ] **Step 4: Run to pass** — tất cả tests xanh.
 - [ ] **Step 5: Commit** (`feat(subtitle): overlay position layout`)
+
+> **Fix note (controller, 2026-08-09):** test 3 ban đầu dùng `RectPx(0, 900, 400, 400)` — không thể pass với snippet được (model vượt khỏi màn hình 1000px: vts.Bottom = 1300 → overlap luôn cho Bottom = 1292 > 996). Đã sửa thành `RectPx(0, 600, 400, 400)` (vts.Bottom trùng screenHeight 1000) để giữ nguyên ý test overlap. Implementer thời điểm đó đã sửa test tương đương và ghi chú trong report — giữ nguyên kết quả đã chốt (implementation + test hiện tại pass).
 
 ---
 

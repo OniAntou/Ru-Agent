@@ -6,6 +6,12 @@ using System.Text.Json.Serialization;
 
 namespace RuApp.Models
 {
+    public readonly record struct RectPx(int X, int Y, int Width, int Height)
+    {
+        public int Right => X + Width;
+        public int Bottom => Y + Height;
+    }
+
     public class ChatMessageItem : INotifyPropertyChanged
     {
         private string _id = Guid.NewGuid().ToString();

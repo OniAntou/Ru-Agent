@@ -501,7 +501,7 @@ public sealed class SubtitlePresenter : IDisposable
 
 **Files:**
 - Create: `gui-winui3/Views/SubtitleOverlayWindow.xaml` (khung: Grid trong suốt + `TextBlock` karaoke: Runs theo token, Brush đổi theo trạng thái)
-- Create: `gui-winui3/Views/SubtitleOverlayWindow.xaml.cs` — `Show()`, `Hide()`, `MoveTo(RectPx)`, `ApplySnapshot(SubtitleSnapshot)` (highlight token), dùng `Window.AppWindow` + `SetWindowLongPtr` external flags.
+- Create: `gui-winui3/Views/SubtitleOverlayWindow.xaml.cs` — `ShowOverlay()`, `HideOverlay()`, `MoveAndResize(RectPx, int fontSize)`, `ApplySnapshot(SubtitleSnapshot)` (highlight token), dùng `this.AppWindow` (property) + `SetWindowLongPtr` external flags.
 - Create: `gui-winui3/Services/SubtitleOverlayService.cs` — quản lý vòng đời: DispatcherTimer 200ms polls `VtsWindowTracker` → di chuyển/resize/hide; DispatcherTimer 50ms ticks presenter → snapshot → update window.
 
 **Behaviors:**
@@ -510,7 +510,7 @@ public sealed class SubtitlePresenter : IDisposable
 - `Stop()` khi app tắt: dispose timers + close window.
 
 - [ ] **Step 1:** Xây window XAML (body `Grid` transparent `Background="Transparent"`, `TextBlock x:Name="SubtitleText"` ở giữa, font từ layout, `VerticalAlignment=Center`, `TextWrapping=Wrap`, bóng: `TextBlock.DropShadow`/`OpacityMask` — dùng `Run` list + `TextBlock` để highlight bằng `Runs`).
-- [ ] **Step 2:** Implement window code-behind: constructor tạo AppWindow (`AppWindow.Create(WindowId)`), set `IsShownInTaskbar=false`, `IsTopmost=true`, `Presenter` không owned Window; `SetWindowLongPtr(hwnd, GWL_EXSTYLE, WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE)`; `MoveAndResize`.
+- [ ] **Step 2:** Implement window code-behind: ctor gọi `InitializeComponent()` rồi `WindowNative.GetWindowHandle(this)`; dùng `this.AppWindow` (property của XAML Window) để set `IsShownInSwitchers=false` (WinAppSDK 2.3 thay `IsShownInTaskbar`), `IsTopmost=true`; `SetWindowLongPtr(hwnd, GWL_EXSTYLE, WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW)`; `MoveAndResize`.
 - [ ] **Step 3: Service** — `SubtitleOverlayService.Start(visualParent...)`, `SetText(SubtitleSnapshot s)` đổi Brush runs (đang đọc: `#FFD54F`, đã qua: `#66FFFFFF`, chưa: `#99FFFFFF`), `Stop()`.
 - [ ] **Step 4:** Smoke test tay bằng app: tạo đối tượng service tạm, gọi `Show`, kéo VTS, thử text.
 - [ ] **Step 5: Commit** (`feat: subtitle overlay window and service`)

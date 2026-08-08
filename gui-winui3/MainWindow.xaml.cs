@@ -174,6 +174,7 @@ namespace RuApp
             _sessionsTimer?.Stop();
             _settingsView?.Dispose();
             _logView?.Dispose();
+            _subtitleOverlay?.Dispose();
             if (_observerService != null)
             {
                 try

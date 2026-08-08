@@ -99,7 +99,7 @@ namespace RuApp.Views
             }
             else
             {
-                _overlayService.Stop();
+                _overlayService.Pause();
             }
         }
 

@@ -5,9 +5,9 @@ using System.Linq;
 namespace RuApp.Services;
 
 public readonly record struct SubtitleSnapshot(
-    string VisibleText, string HighlightToken, int HighlightStartMs, int HighlightEndMs)
+    string VisibleText, string HighlightToken, int HighlightIndex, int HighlightStartMs, int HighlightEndMs)
 {
-    public static readonly SubtitleSnapshot Empty = new("", "", 0, 0);
+    public static readonly SubtitleSnapshot Empty = new("", "", -1, 0, 0);
 }
 
 public sealed class SubtitlePresenter : IDisposable
@@ -55,7 +55,7 @@ public sealed class SubtitlePresenter : IDisposable
         var token = _tokens[_index];
         Current = new SubtitleSnapshot(
             string.Join(" ", _tokens.Select(t => t.Text)),
-            token.Text, token.StartMs, token.EndMs);
+            token.Text, _index, token.StartMs, token.EndMs);
         SnapshotChanged?.Invoke(Current);
     }
 

@@ -188,6 +188,7 @@ namespace RuApp.Services
             double voiceSpeed,
             bool autoPace,
             bool autoRead,
+            bool showSubtitles,
             string voiceStyleId)
         {
             try
@@ -198,6 +199,7 @@ namespace RuApp.Services
                     VoiceSpeed = voiceSpeed,
                     AutoPaceEnabled = autoPace,
                     AutoReadReplies = autoRead,
+                    ShowSubtitles = showSubtitles,
                     VoiceStyleId = voiceStyleId,
                 };
                 var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);

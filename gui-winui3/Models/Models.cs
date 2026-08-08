@@ -172,6 +172,9 @@ namespace RuApp.Models
         [JsonPropertyName("auto_read_replies")]
         public bool AutoReadReplies { get; set; } = true;
 
+        [JsonPropertyName("show_subtitles")]
+        public bool ShowSubtitles { get; set; } = false;
+
         [JsonPropertyName("temperature")]
         public double Temperature { get; set; } = 0.7;
 
@@ -210,6 +213,9 @@ namespace RuApp.Models
 
         [JsonPropertyName("server_running")]
         public bool ServerRunning { get; set; } = false;
+
+        [JsonPropertyName("show_subtitles")]
+        public bool ShowSubtitles { get; set; } = false;
     }
 
     public sealed class VoiceSettingsUpdateDto
@@ -228,6 +234,9 @@ namespace RuApp.Models
 
         [JsonPropertyName("auto_read_replies")]
         public bool AutoReadReplies { get; set; } = true;
+
+        [JsonPropertyName("show_subtitles")]
+        public bool ShowSubtitles { get; set; } = false;
     }
 
     public class VtsStatusDto

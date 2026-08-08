@@ -39,6 +39,7 @@ namespace RuApp.Services
         public string VoiceLabel { get; set; } = "Ru (OmniVoice)";
         public double VoiceSpeed { get; set; } = 1.0;
         public bool AutoReadReplies { get; set; } = true;
+        public SubtitlePresenter? SubtitlePresenter { get; set; }
 
         public bool IsPlaying => _player?.PlaybackSession.PlaybackState == MediaPlaybackState.Playing;
 
@@ -242,6 +243,7 @@ namespace RuApp.Services
             previousAudioQueue?.Cancel();
             previousAudioQueue?.Dispose();
             previousStreamClient?.Dispose();
+            SubtitlePresenter?.CancelAll();
             if (previousCts is not null && previousWorker is not null)
             {
                 _ = ObserveReplyWorkerAsync(previousWorker, previousCts);
@@ -431,6 +433,7 @@ namespace RuApp.Services
 
             cts?.Cancel();
             playbackQueue?.Dispose();
+            SubtitlePresenter?.CancelAll();
             if (_vtsSpeaking)
             {
                 _vtsSpeaking = false;
@@ -549,6 +552,8 @@ namespace RuApp.Services
         {
             string requestId = Guid.NewGuid().ToString("N");
             var streamClient = _apiService.CreateVoiceStreamClient();
+            long totalBytes = 0;
+            int? firstSampleRate = null;
             lock (_replyGate)
             {
                 _replyStreamClient = streamClient;
@@ -563,6 +568,11 @@ namespace RuApp.Services
                     VoiceSpeed,
                     async chunk =>
                     {
+                        if (firstSampleRate is null && chunk.SampleRate > 0)
+                        {
+                            firstSampleRate = chunk.SampleRate;
+                        }
+                        totalBytes += chunk.Audio.Length;
                         await audioQueue.EnqueueAsync(chunk, cancellationToken);
                         latencyTracker.MarkFirstAudioReceived();
                         receivedAudio = true;
@@ -578,6 +588,12 @@ namespace RuApp.Services
                         audioQueue,
                         latencyTracker,
                         cancellationToken);
+                }
+
+                if (firstSampleRate is not null && firstSampleRate.Value > 0 && totalBytes > 0)
+                {
+                    int durationMs = (int)(totalBytes / (double)(firstSampleRate.Value * 2) * 1000);
+                    SubtitlePresenter?.BeginSegment(sentence, durationMs);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

@@ -40,6 +40,11 @@
                         <ToggleSwitch x:Name="AutoReadToggle" Grid.Column="1" IsOn="True" Toggled="OnAutoReadToggled"/>
                     </Grid>
 
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                        <TextBlock Grid.Column="0" Text="Hiện subtitle trên model" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                        <ToggleSwitch x:Name="SubtitleToggle" Grid.Column="1" IsOn="False" Toggled="OnSubtitleToggled"/>
+                    </Grid>
+
                     <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,16,0,0">
                         <Button x:Name="WarmupButton" Click="OnWarmupClick" Padding="16,10" CornerRadius="8" Background="#20FFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1">
                             <StackPanel Orientation="Horizontal" Spacing="8">

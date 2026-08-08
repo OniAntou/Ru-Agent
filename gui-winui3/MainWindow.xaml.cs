@@ -19,6 +19,7 @@ namespace RuApp
         private ChatWebSocketClient? _wsClient;
         private ScreenObserverService? _observerService;
         private VoicePlaybackService? _voicePlayback;
+        private SubtitleOverlayService? _subtitleOverlay;
 
         private ChatView? _chatView;
         private VoiceView? _voiceView;
@@ -104,12 +105,18 @@ namespace RuApp
                 _voicePlayback = new VoicePlaybackService(_apiService);
                 await _voicePlayback.RefreshSettingsAsync();
 
+                var subtitleWindow = new Views.SubtitleOverlayWindow();
+                var subtitleTracker = new Services.VtsWindowTracker(new Services.VtsWindowLocator());
+                var subtitlePresenter = new Services.SubtitlePresenter();
+                _subtitleOverlay = new Services.SubtitleOverlayService(subtitleWindow, subtitleTracker, subtitlePresenter);
+                _voicePlayback.SubtitlePresenter = subtitlePresenter;
+
                 _chatView = new ChatView();
                 _chatView.Initialize(_apiService, _wsClient, _voicePlayback);
                 _chatView.SessionOpened += (_, e) => SyncSidebarSelection(e.SessionId);
 
                 _voiceView = new VoiceView();
-                _voiceView.Initialize(_apiService, _voicePlayback);
+                _voiceView.Initialize(_apiService, _voicePlayback, _subtitleOverlay);
 
                 _settingsView = new SettingsView();
                 _settingsView.Initialize(_apiService, _observerService);

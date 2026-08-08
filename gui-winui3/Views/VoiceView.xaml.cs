@@ -11,16 +11,18 @@ namespace RuApp.Views
         private ApiService? _apiService;
         private bool _isUpdatingUi = false;
         private VoicePlaybackService? _voicePlayback;
+        private SubtitleOverlayService? _overlayService;
 
         public VoiceView()
         {
             this.InitializeComponent();
         }
 
-        public void Initialize(ApiService apiService, VoicePlaybackService voicePlayback)
+        public void Initialize(ApiService apiService, VoicePlaybackService voicePlayback, SubtitleOverlayService? overlayService = null)
         {
             _apiService = apiService;
             _voicePlayback = voicePlayback;
+            _overlayService = overlayService;
             _ = LoadVoiceSettingsAsync();
         }
 
@@ -45,6 +47,8 @@ namespace RuApp.Views
                 SpeedText.Text = $"{settings.VoiceSpeed:F2}x";
                 AutoPaceToggle.IsOn = settings.AutoPaceEnabled;
                 AutoReadToggle.IsOn = settings.AutoReadReplies;
+                SubtitleToggle.IsOn = settings.ShowSubtitles;
+                ApplySubtitleToggle(settings.ShowSubtitles);
             }
 
             _isUpdatingUi = false;
@@ -78,6 +82,27 @@ namespace RuApp.Views
             await SaveVoiceSettingsAsync();
         }
 
+        private async void OnSubtitleToggled(object sender, RoutedEventArgs e)
+        {
+            if (_isUpdatingUi || _apiService == null) return;
+            bool isOn = SubtitleToggle.IsOn;
+            ApplySubtitleToggle(isOn);
+            await SaveVoiceSettingsAsync();
+        }
+
+        private void ApplySubtitleToggle(bool isOn)
+        {
+            if (_overlayService == null) return;
+            if (isOn)
+            {
+                _overlayService.Start();
+            }
+            else
+            {
+                _overlayService.Stop();
+            }
+        }
+
         private async Task SaveVoiceSettingsAsync()
         {
             if (_apiService == null) return;
@@ -87,6 +112,7 @@ namespace RuApp.Views
                 SpeedSlider.Value,
                 AutoPaceToggle.IsOn,
                 AutoReadToggle.IsOn,
+                SubtitleToggle.IsOn,
                 "original");
             if (_voicePlayback != null)
             {

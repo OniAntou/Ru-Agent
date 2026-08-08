@@ -76,6 +76,8 @@ public sealed class SubtitleOverlayService : IDisposable
         _window.CancelFadeOut();
         _fading = false;
         _window.Close();
+
+        _presenter.SnapshotChanged -= OnPresenterSnapshotChanged;
     }
 
     public void Dispose() => Stop();

@@ -14,10 +14,10 @@ namespace RuApp.Views;
 public sealed partial class SubtitleOverlayWindow : Window
 {
     private const int GWL_EXSTYLE = -20;
-    private const long WS_EX_LAYERED = 0x00080000;
-    private const long WS_EX_TRANSPARENT = 0x00000020;
-    private const long WS_EX_NOACTIVATE = 0x08000000;
-    private const long WS_EX_TOOLWINDOW = 0x00000080;
+    private static readonly IntPtr WS_EX_LAYERED = new IntPtr(0x00080000);
+    private static readonly IntPtr WS_EX_TRANSPARENT = new IntPtr(0x00000020);
+    private static readonly IntPtr WS_EX_NOACTIVATE = new IntPtr(0x08000000);
+    private static readonly IntPtr WS_EX_TOOLWINDOW = new IntPtr(0x00000080);
 
     private static readonly SolidColorBrush SpokenBrush = Argb(0x66, 0xFF, 0xFF, 0xFF);
     private static readonly SolidColorBrush CurrentBrush = Argb(0xFF, 0xFF, 0xD5, 0x4F);
@@ -128,9 +128,9 @@ public sealed partial class SubtitleOverlayWindow : Window
 
     private static void ApplyClickThroughStyle(IntPtr hwnd)
     {
-        long style = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+        IntPtr style = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
         style |= WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
-        SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(style));
+        SetWindowLongPtr(hwnd, GWL_EXSTYLE, style);
     }
 
     private static SolidColorBrush Argb(byte a, byte r, byte g, byte b)

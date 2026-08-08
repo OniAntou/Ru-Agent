@@ -10,7 +10,7 @@ public sealed class VtsWindowTrackerTests
     {
         public RectPx? Rect { get; set; }
         public VtsWindowInfo? GetCurrent() =>
-            Rect is null ? null : new VtsWindowInfo(Rect.Value, 96);
+            Rect is null ? null : new VtsWindowInfo(Rect.Value, Rect.Value, 96);
     }
 
     [Fact]

@@ -2,7 +2,6 @@ using System;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using RuApp.Models;
@@ -18,10 +17,6 @@ public sealed partial class SubtitleOverlayWindow : Window
     private static readonly IntPtr WS_EX_TRANSPARENT = new IntPtr(0x00000020);
     private static readonly IntPtr WS_EX_NOACTIVATE = new IntPtr(0x08000000);
     private static readonly IntPtr WS_EX_TOOLWINDOW = new IntPtr(0x00000080);
-
-    private static readonly SolidColorBrush SpokenBrush = Argb(0x66, 0xFF, 0xFF, 0xFF);
-    private static readonly SolidColorBrush CurrentBrush = Argb(0xFF, 0xFF, 0xD5, 0x4F);
-    private static readonly SolidColorBrush UpcomingBrush = Argb(0x99, 0xFF, 0xFF, 0xFF);
 
     private readonly AppWindow _appWindow;
     private Storyboard? _fadeStoryboard;
@@ -69,23 +64,7 @@ public sealed partial class SubtitleOverlayWindow : Window
 
     public void ApplySnapshot(SubtitleSnapshot snapshot)
     {
-        SubtitleText.Inlines.Clear();
-        if (string.IsNullOrEmpty(snapshot.VisibleText) || snapshot.HighlightIndex < 0)
-        {
-            return;
-        }
-
-        string[] tokens = snapshot.VisibleText.Split(' ');
-        int highlightIndex = snapshot.HighlightIndex;
-        for (int i = 0; i < tokens.Length; i++)
-        {
-            SolidColorBrush brush = i < highlightIndex ? SpokenBrush : i == highlightIndex ? CurrentBrush : UpcomingBrush;
-            SubtitleText.Inlines.Add(new Run { Text = tokens[i], Foreground = brush });
-            if (i < tokens.Length - 1)
-            {
-                SubtitleText.Inlines.Add(new Run { Text = " " });
-            }
-        }
+        SubtitleText.Text = snapshot.Text;
     }
 
     public void BeginFadeOut(Action onCompleted)

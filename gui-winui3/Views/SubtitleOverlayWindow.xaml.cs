@@ -70,13 +70,13 @@ public sealed partial class SubtitleOverlayWindow : Window
     public void ApplySnapshot(SubtitleSnapshot snapshot)
     {
         SubtitleText.Inlines.Clear();
-        if (string.IsNullOrEmpty(snapshot.VisibleText) || string.IsNullOrEmpty(snapshot.HighlightToken))
+        if (string.IsNullOrEmpty(snapshot.VisibleText) || snapshot.HighlightIndex < 0)
         {
             return;
         }
 
         string[] tokens = snapshot.VisibleText.Split(' ');
-        int highlightIndex = Array.IndexOf(tokens, snapshot.HighlightToken);
+        int highlightIndex = snapshot.HighlightIndex;
         for (int i = 0; i < tokens.Length; i++)
         {
             SolidColorBrush brush = i < highlightIndex ? SpokenBrush : i == highlightIndex ? CurrentBrush : UpcomingBrush;

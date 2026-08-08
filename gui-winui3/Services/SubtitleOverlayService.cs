@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using RuApp.Models;
 using RuApp.Views;
@@ -9,9 +8,6 @@ namespace RuApp.Services;
 
 public sealed class SubtitleOverlayService : IDisposable
 {
-    private const int SM_CXSCREEN = 0;
-    private const int SM_CYSCREEN = 1;
-
     private readonly SubtitleOverlayWindow _window;
     private readonly VtsWindowTracker _tracker;
     private readonly SubtitlePresenter _presenter;
@@ -64,6 +60,22 @@ public sealed class SubtitleOverlayService : IDisposable
         PollTracker();
     }
 
+    public void Pause()
+    {
+        if (!_started) return;
+        _started = false;
+
+        _trackerTimer.Stop();
+        _presenterTimer.Stop();
+        _fadeTimer.Stop();
+        _elapsed.Stop();
+        _window.CancelFadeOut();
+        _fading = false;
+        _window.HideOverlay();
+
+        _windowVisible = false;
+    }
+
     public void Stop()
     {
         if (!_started) return;
@@ -95,7 +107,7 @@ public sealed class SubtitleOverlayService : IDisposable
 
         _vtsHidden = false;
         (RectPx rect, int fontSize, bool _) = SubtitleLayout.ComputeSubtitleRect(
-            snapshot.Rect, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+            snapshot.Rect, snapshot.WorkArea.Width, snapshot.WorkArea.Height);
         _window.MoveAndResize(rect, fontSize);
     }
 
@@ -135,7 +147,4 @@ public sealed class SubtitleOverlayService : IDisposable
         _windowVisible = true;
         _window.ApplySnapshot(snapshot);
     }
-
-    [DllImport("user32.dll")]
-    private static extern int GetSystemMetrics(int nIndex);
 }

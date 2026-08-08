@@ -42,5 +42,7 @@ public sealed class SubtitlePresenterTests
         presenter.BeginSegment("a b c", 900);
         presenter.CancelAll();
         Assert.Equal(SubtitleSnapshot.Empty, presenter.Current);
+        Assert.Single(sink.Snapshots);
+        Assert.Equal(SubtitleSnapshot.Empty, sink.Snapshots[^1]);
     }
 }

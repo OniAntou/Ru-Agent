@@ -589,12 +589,6 @@ namespace RuApp.Services
                         latencyTracker,
                         cancellationToken);
                 }
-
-                if (firstSampleRate is not null && firstSampleRate.Value > 0 && totalBytes > 0)
-                {
-                    int durationMs = (int)(totalBytes / (double)(firstSampleRate.Value * 2) * 1000);
-                    SubtitlePresenter?.BeginSegment(sentence, durationMs);
-                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -618,6 +612,15 @@ namespace RuApp.Services
                 {
                     latencyTracker.MarkSynthesisFailure();
                 }
+
+                if (receivedAudio && firstSampleRate is not null && firstSampleRate.Value > 0)
+                {
+                    int durationMs = totalBytes > 0
+                        ? (int)(totalBytes / (double)(firstSampleRate.Value * 2) * 1000)
+                        : 0;
+                    SubtitlePresenter?.BeginSegment(sentence, durationMs);
+                }
+
                 lock (_replyGate)
                 {
                     if (ReferenceEquals(_replyStreamClient, streamClient))

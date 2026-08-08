@@ -1,0 +1,14 @@
+<Window
+    x:Class="RuApp.Views.SubtitleOverlayWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid x:Name="OverlayRoot" Background="Transparent">
+        <TextBlock x:Name="SubtitleText"
+                   HorizontalAlignment="Stretch"
+                   VerticalAlignment="Center"
+                   TextAlignment="Center"
+                   TextWrapping="Wrap"
+                   Padding="16,0"/>
+    </Grid>
+</Window>

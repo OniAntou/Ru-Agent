@@ -12,6 +12,8 @@ node_modules/
 gui-winui3.bak/
 gui-winui3.Tests/bin/
 gui-winui3.Tests/obj/
+backend-dotnet/*/bin/
+backend-dotnet/*/obj/
 
 # Python
 __pycache__/

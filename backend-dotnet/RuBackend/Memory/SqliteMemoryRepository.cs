@@ -1,12 +1,19 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 
 namespace RuBackend.Memory;
 
 public sealed class SqliteMemoryRepository : IMemoryRepository
 {
+    private static readonly Regex TokenPattern = new(@"\w+", RegexOptions.CultureInvariant);
+    private static readonly Regex WindowsPathPattern = new(@"\b[A-Za-z]:\\[^\s,.;!?]+", RegexOptions.CultureInvariant);
     private static readonly string[] ValidStatuses = ["active", "superseded", "deleted"];
     private readonly SqliteConnection _connection;
+    private readonly string _legacyTextsPath;
+    private readonly int _retrieveScanLimit;
+    private readonly double _retrieveMinScore;
+    private readonly int _retrieveLookbackDays;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
@@ -17,6 +24,11 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         {
             throw new ArgumentException("DatabasePath is required.", nameof(options));
         }
+
+        _legacyTextsPath = Path.GetFullPath(options.LegacyTextsPath);
+        _retrieveScanLimit = options.RetrieveScanLimit;
+        _retrieveMinScore = options.RetrieveMinScore;
+        _retrieveLookbackDays = options.RetrieveLookbackDays;
 
         var fullPath = Path.GetFullPath(options.DatabasePath);
         var parent = Path.GetDirectoryName(fullPath);
@@ -66,10 +78,12 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
             EnsureOpen();
             await using var command = CreateCommand("""
                 SELECT * FROM memories
-                WHERE status = 'active' AND (expires_at IS NULL OR expires_at > $now OR pinned = 1)
+                WHERE status = $active_status AND (expires_at IS NULL OR expires_at > $now OR pinned = $pinned)
                 ORDER BY pinned DESC, updated_at DESC
                 """);
+            command.Parameters.AddWithValue("$active_status", "active");
             command.Parameters.AddWithValue("$now", SerializeTimestamp(DateTimeOffset.UtcNow));
+            command.Parameters.AddWithValue("$pinned", 1);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             var records = new List<MemoryRecord>();
             while (await reader.ReadAsync(cancellationToken))
@@ -117,14 +131,292 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         }
     }
 
-    public Task<IReadOnlyList<MemoryRecord>> RetrieveAsync(string query, int limit, int maxChars, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("Retrieval is implemented by Task 3.");
+    public async Task<IReadOnlyList<MemoryRecord>> RetrieveAsync(string query, int limit, int maxChars, CancellationToken cancellationToken)
+    {
+        var queryTokens = Tokens(query);
+        if (queryTokens.Count == 0 || limit <= 0 || maxChars <= 0)
+        {
+            return [];
+        }
 
-    public Task<MemoryRecord> UpsertAsync(MemoryCandidate candidate, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("Upsert is implemented by Task 3.");
+        var queryScopes = WindowsPathPattern.Matches(query)
+            .Select(match => match.Value)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var now = DateTimeOffset.UtcNow;
+        var lookback = now.AddDays(-_retrieveLookbackDays);
 
-    public Task ClearAsync(CancellationToken cancellationToken) =>
-        throw new NotSupportedException("Clear is implemented by Task 3.");
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            EnsureOpen();
+            await using var command = CreateCommand("""
+                SELECT * FROM memories
+                WHERE status = $active_status
+                  AND (expires_at IS NULL OR expires_at > $now OR pinned = $pinned)
+                  AND (pinned = $pinned OR updated_at >= $lookback)
+                ORDER BY pinned DESC, updated_at DESC
+                LIMIT $scan_limit
+                """);
+            command.Parameters.AddWithValue("$active_status", "active");
+            command.Parameters.AddWithValue("$now", SerializeTimestamp(now));
+            command.Parameters.AddWithValue("$pinned", 1);
+            command.Parameters.AddWithValue("$lookback", SerializeTimestamp(lookback));
+            command.Parameters.AddWithValue("$scan_limit", _retrieveScanLimit);
+
+            var ranked = new List<(double Score, int Position, MemoryRecord Record)>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            var position = 0;
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var record = ReadRecord(reader);
+                var scopeMatch = record.Scope is not null && queryScopes.Contains(record.Scope);
+                if (queryScopes.Count > 0 && record.Scope is not null && !scopeMatch)
+                {
+                    position++;
+                    continue;
+                }
+
+                var overlap = queryTokens.Intersect(Tokens($"{record.Content} {record.Scope ?? string.Empty}")).Count();
+                var lexicalScore = (double)overlap / queryTokens.Count;
+                var score =
+                    0.55 * lexicalScore
+                    + 0.15 * (scopeMatch ? 1 : 0)
+                    + 0.05 * record.Importance
+                    + 0.03 * record.Confidence
+                    + 0.02 * (record.Pinned ? 1 : 0);
+                if (score >= _retrieveMinScore)
+                {
+                    ranked.Add((score, position, record));
+                }
+
+                position++;
+            }
+
+            return FitRecords(
+                ranked
+                    .OrderByDescending(item => item.Score)
+                    .ThenByDescending(item => item.Record.UpdatedAt)
+                    .ThenBy(item => item.Position)
+                    .Select(item => item.Record),
+                Math.Min(limit, 5),
+                maxChars);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<MemoryRecord> UpsertAsync(MemoryCandidate candidate, CancellationToken cancellationToken)
+    {
+        var content = candidate.Content.Trim();
+        var evidence = candidate.Evidence.Trim();
+        var scope = string.IsNullOrWhiteSpace(candidate.Scope) ? null : candidate.Scope.Trim();
+        if (content.Length == 0 || evidence.Length == 0)
+        {
+            throw new ArgumentException("Memory content and evidence cannot be blank.", nameof(candidate));
+        }
+
+        if (content.Length > 100000 || evidence.Length > 100000)
+        {
+            throw new ArgumentException("Memory content and evidence cannot exceed 100,000 characters.", nameof(candidate));
+        }
+
+        if (candidate.Confidence is < 0 or > 1 || candidate.Importance is < 0 or > 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(candidate), "Memory confidence and importance must be between 0 and 1.");
+        }
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            EnsureOpen();
+            var now = DateTimeOffset.UtcNow;
+            await using var transaction = (SqliteTransaction)await _connection.BeginTransactionAsync(cancellationToken);
+            var duplicateId = await FindActiveDuplicateAsync(candidate.Kind, content, scope, now, transaction, cancellationToken);
+            if (duplicateId is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return await ReadByIdAsync(duplicateId, cancellationToken)
+                    ?? throw new InvalidOperationException("Duplicate memory disappeared before readback.");
+            }
+
+            if (candidate.SupersedesId is not null)
+            {
+                await MarkSupersededAsync(candidate.SupersedesId, now, transaction, cancellationToken);
+            }
+
+            var newId = Guid.NewGuid().ToString("D");
+            await InsertAsync(new MemoryCandidate(candidate.Kind, content, scope, evidence, candidate.Confidence, candidate.Importance, candidate.ExpiresAt, candidate.SupersedesId), newId, now, transaction, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return await ReadByIdAsync(newId, cancellationToken)
+                ?? throw new InvalidOperationException("Inserted memory disappeared before readback.");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task ClearAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            EnsureOpen();
+            await using var transaction = (SqliteTransaction)await _connection.BeginTransactionAsync(cancellationToken);
+            await ExecuteTransactionalAsync("DELETE FROM memories", transaction, cancellationToken);
+            await ExecuteTransactionalAsync("DELETE FROM legacy_memory_migrations", transaction, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            if (!string.IsNullOrWhiteSpace(_legacyTextsPath) && File.Exists(_legacyTextsPath))
+            {
+                File.Delete(_legacyTextsPath);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task<string?> FindActiveDuplicateAsync(
+        MemoryKind kind,
+        string content,
+        string? scope,
+        DateTimeOffset now,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = CreateCommand("""
+            SELECT id FROM memories
+            WHERE status = $active_status
+              AND kind = $kind
+              AND content = $content COLLATE NOCASE
+              AND (expires_at IS NULL OR expires_at > $now)
+              AND (scope IS $scope OR scope = $scope)
+            LIMIT 1
+            """);
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("$active_status", "active");
+        command.Parameters.AddWithValue("$kind", SerializeKind(kind));
+        command.Parameters.AddWithValue("$content", content);
+        command.Parameters.AddWithValue("$now", SerializeTimestamp(now));
+        command.Parameters.AddWithValue("$scope", scope ?? (object)DBNull.Value);
+        return await command.ExecuteScalarAsync(cancellationToken) as string;
+    }
+
+    private async Task MarkSupersededAsync(
+        string id,
+        DateTimeOffset now,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = CreateCommand("""
+            UPDATE memories
+            SET status = $superseded_status, updated_at = $updated_at
+            WHERE id = $id AND status = $active_status
+            """);
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("$superseded_status", "superseded");
+        command.Parameters.AddWithValue("$updated_at", SerializeTimestamp(now));
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$active_status", "active");
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+        {
+            throw new InvalidOperationException("Superseded memory does not exist or is not active.");
+        }
+    }
+
+    private async Task InsertAsync(
+        MemoryCandidate candidate,
+        string id,
+        DateTimeOffset now,
+        SqliteTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = CreateCommand("""
+            INSERT INTO memories (
+                id, kind, content, scope, evidence, confidence, importance,
+                created_at, updated_at, accessed_at, expires_at, status, pinned
+            ) VALUES (
+                $id, $kind, $content, $scope, $evidence, $confidence, $importance,
+                $created_at, $updated_at, $accessed_at, $expires_at, $status, $pinned)
+            """);
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$kind", SerializeKind(candidate.Kind));
+        command.Parameters.AddWithValue("$content", candidate.Content);
+        command.Parameters.AddWithValue("$scope", candidate.Scope ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("$evidence", candidate.Evidence);
+        command.Parameters.AddWithValue("$confidence", candidate.Confidence);
+        command.Parameters.AddWithValue("$importance", candidate.Importance);
+        command.Parameters.AddWithValue("$created_at", SerializeTimestamp(now));
+        command.Parameters.AddWithValue("$updated_at", SerializeTimestamp(now));
+        command.Parameters.AddWithValue("$accessed_at", DBNull.Value);
+        command.Parameters.AddWithValue("$expires_at", candidate.ExpiresAt is null ? DBNull.Value : SerializeTimestamp(candidate.ExpiresAt.Value));
+        command.Parameters.AddWithValue("$status", "active");
+        command.Parameters.AddWithValue("$pinned", 0);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task<MemoryRecord?> ReadByIdAsync(string id, CancellationToken cancellationToken)
+    {
+        await using var command = CreateCommand("SELECT * FROM memories WHERE id = $id");
+        command.Parameters.AddWithValue("$id", id);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadRecord(reader) : null;
+    }
+
+    private async Task ExecuteTransactionalAsync(string sql, SqliteTransaction transaction, CancellationToken cancellationToken)
+    {
+        await using var command = CreateCommand(sql);
+        command.Transaction = transaction;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static IReadOnlySet<string> Tokens(string text) =>
+        TokenPattern.Matches(text.ToLowerInvariant())
+            .Select(match => match.Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static IReadOnlyList<MemoryRecord> FitRecords(IEnumerable<MemoryRecord> records, int limit, int maxChars)
+    {
+        var fitted = new List<MemoryRecord>();
+        var usedChars = 0;
+        foreach (var record in records)
+        {
+            if (fitted.Count >= limit)
+            {
+                break;
+            }
+
+            var line = RenderRecord(record);
+            var separator = fitted.Count == 0 ? 0 : 1;
+            if (usedChars + separator + line.Length > maxChars)
+            {
+                break;
+            }
+
+            fitted.Add(record);
+            usedChars += separator + line.Length;
+        }
+
+        return fitted;
+    }
+
+    private static string RenderRecord(MemoryRecord record) =>
+        $"- [{SerializeKind(record.Kind)} | {record.Scope ?? "global"}] {record.Content}";
+
+    private static string SerializeKind(MemoryKind kind) => kind switch
+    {
+        MemoryKind.Profile => "profile",
+        MemoryKind.Preference => "preference",
+        MemoryKind.Project => "project",
+        MemoryKind.Decision => "decision",
+        MemoryKind.SessionSummary => "session_summary",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown memory kind."),
+    };
 
     public async ValueTask DisposeAsync()
     {
@@ -204,7 +496,9 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
 
     private void PurgeExpired()
     {
-        using var command = CreateCommand("DELETE FROM memories WHERE status = 'active' AND pinned = 0 AND expires_at IS NOT NULL AND expires_at < $now");
+        using var command = CreateCommand("DELETE FROM memories WHERE status = $active_status AND pinned = $unpinned AND expires_at IS NOT NULL AND expires_at < $now");
+        command.Parameters.AddWithValue("$active_status", "active");
+        command.Parameters.AddWithValue("$unpinned", 0);
         command.Parameters.AddWithValue("$now", SerializeTimestamp(DateTimeOffset.UtcNow));
         command.ExecuteNonQuery();
     }

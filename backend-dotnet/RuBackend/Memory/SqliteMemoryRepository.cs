@@ -233,7 +233,9 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
             EnsureOpen();
             var now = DateTimeOffset.UtcNow;
             await using var transaction = (SqliteTransaction)await _connection.BeginTransactionAsync(cancellationToken);
-            var duplicateId = await FindActiveDuplicateAsync(candidate.Kind, content, scope, now, transaction, cancellationToken);
+            var duplicateId = candidate.SupersedesId is null
+                ? await FindActiveDuplicateAsync(candidate.Kind, content, scope, now, transaction, cancellationToken)
+                : null;
             if (duplicateId is not null)
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -375,10 +377,30 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    // Python parity: this is the explicit case-fold subset needed by the
+    // repository's Unicode fixture. Regex \w+ remains the token boundary.
     private static IReadOnlySet<string> Tokens(string text) =>
-        TokenPattern.Matches(text.ToLowerInvariant())
+        TokenPattern.Matches(CaseFold(text))
             .Select(match => match.Value)
             .ToHashSet(StringComparer.Ordinal);
+
+    private static string CaseFold(string text) =>
+        string.Concat(text.ToLowerInvariant().SelectMany(character => character switch
+        {
+            '\u00DF' => "ss", // LATIN SMALL LETTER SHARP S
+            '\u03C2' => "\u03C3", // GREEK SMALL LETTER FINAL SIGMA
+            '\u0149' => "\u02BCn", // LATIN SMALL LETTER N PRECEDED BY APOSTROPHE
+            '\u017F' => "s", // LATIN SMALL LETTER LONG S
+            '\u212A' => "k", // KELVIN SIGN
+            '\u2126' => "\u03C9", // OHM SIGN
+            '\uFB00' => "ff",
+            '\uFB01' => "fi",
+            '\uFB02' => "fl",
+            '\uFB03' => "ffi",
+            '\uFB04' => "ffl",
+            '\uFB05' or '\uFB06' => "st",
+            _ => character.ToString(),
+        }));
 
     private static IReadOnlyList<MemoryRecord> FitRecords(IEnumerable<MemoryRecord> records, int limit, int maxChars)
     {

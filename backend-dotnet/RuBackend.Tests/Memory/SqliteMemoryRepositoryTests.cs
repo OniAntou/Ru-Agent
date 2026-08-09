@@ -146,6 +146,28 @@ public sealed class SqliteMemoryRepositoryTests
     }
 
     [Fact]
+    public async Task Upsert_supersession_wins_over_duplicate_detection()
+    {
+        var (repository, options) = CreateRepository();
+        await using (repository)
+        {
+            var old = new MemoryRecord(
+                "old-duplicate", MemoryKind.Preference, "same memory", "D:\\LLM", "old", 0.8, 0.7,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, null, "active", false);
+            await InsertRawAsync(repository, options, old);
+
+            var replacement = await repository.UpsertAsync(
+                new MemoryCandidate(old.Kind, old.Content, old.Scope, "replacement", old.Confidence, old.Importance, SupersedesId: old.Id),
+                CancellationToken.None);
+
+            Assert.NotEqual(old.Id, replacement.Id);
+            Assert.Equal("superseded", (await repository.GetAsync(old.Id, CancellationToken.None))!.Status);
+            Assert.Equal("active", replacement.Status);
+            Assert.Single(await repository.ListActiveAsync(CancellationToken.None));
+        }
+    }
+
+    [Fact]
     public async Task Retrieve_applies_scope_filter_weighted_score_threshold_and_context_limits()
     {
         var (repository, options) = CreateRepository();
@@ -259,6 +281,93 @@ public sealed class SqliteMemoryRepositoryTests
     }
 
     [Fact]
+    public async Task Retrieve_matches_python_casefold_vector_while_preserving_word_boundaries()
+    {
+        var (repository, options) = CreateRepository();
+        await using (repository)
+        {
+            // Python-derived vector: re.findall(r"\w+", text.casefold()).
+            await InsertRawAsync(repository, options, new MemoryRecord(
+                "sharp-s", MemoryKind.Preference, "Straße", null, "test", 0, 0,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, null, "active", false));
+            await InsertRawAsync(repository, options, new MemoryRecord(
+                "final-sigma", MemoryKind.Preference, "ΟΣ", null, "test", 0, 0,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, null, "active", false));
+            await InsertRawAsync(repository, options, new MemoryRecord(
+                "ligature", MemoryKind.Preference, "ﬃ", null, "test", 0, 0,
+                DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null, null, "active", false));
+
+            Assert.Contains(await repository.RetrieveAsync("STRASSE", 5, 1200, CancellationToken.None), record => record.Id == "sharp-s");
+            Assert.Contains(await repository.RetrieveAsync("οσ", 5, 1200, CancellationToken.None), record => record.Id == "final-sigma");
+            Assert.Contains(await repository.RetrieveAsync("FFI", 5, 1200, CancellationToken.None), record => record.Id == "ligature");
+        }
+    }
+
+    [Fact]
+    public async Task Retrieve_orders_exact_weight_contributions_and_includes_only_minimum_boundary()
+    {
+        var (repository, options) = CreateRepository();
+        await using (repository)
+        {
+            var now = DateTimeOffset.UtcNow;
+            await InsertRawAsync(repository, options, new MemoryRecord(
+                "importance", MemoryKind.Preference, "alpha", null, "test", 0, 1, now, now, null, null, "active", false));
+            await InsertRawAsync(repository, options, new MemoryRecord(
+                "confidence", MemoryKind.Preference, "alpha", null, "test", 1, 0, now, now, null, null, "active", false));
+            await InsertRawAsync(repository, options, new MemoryRecord(
+                "pinned", MemoryKind.Preference, "alpha", null, "test", 0, 0, now, now, null, null, "active", true));
+            await InsertRawAsync(repository, options, new MemoryRecord(
+                "base", MemoryKind.Preference, "alpha", null, "test", 0, 0, now, now, null, null, "active", false));
+            await InsertRawAsync(repository, options, new MemoryRecord(
+                "minimum", MemoryKind.Preference, "delta", null, "test", 0, 0.85, now, now, null, null, "active", false));
+            await InsertRawAsync(repository, options, new MemoryRecord(
+                "below-minimum", MemoryKind.Preference, "delta", null, "test", 0, 0.84, now, now, null, null, "active", false));
+
+            var records = await repository.RetrieveAsync("alpha", 10, 1200, CancellationToken.None);
+
+            Assert.Equal(new[] { "importance", "confidence", "pinned", "base" }, records.Select(record => record.Id));
+            Assert.DoesNotContain(records, record => record.Id is "minimum" or "below-minimum");
+
+            var boundary = await repository.RetrieveAsync("alpha bravo charlie delta", 10, 1200, CancellationToken.None);
+            Assert.Contains(boundary, record => record.Id == "minimum");
+            Assert.DoesNotContain(boundary, record => record.Id == "below-minimum");
+        }
+    }
+
+    [Fact]
+    public async Task Upsert_rolls_back_supersession_when_insertion_fails()
+    {
+        var (repository, options) = CreateRepository();
+        await using (repository)
+        {
+            var old = MemoryFixture.Load().ActiveRecords[0] with { Id = "rollback-old" };
+            await InsertRawAsync(repository, options, old);
+            await ExecuteRawAsync(options, "CREATE TRIGGER fail_memory_insert BEFORE INSERT ON memories BEGIN SELECT RAISE(ABORT, 'forced insert failure'); END;");
+
+            await Assert.ThrowsAsync<SqliteException>(() => repository.UpsertAsync(
+                new MemoryCandidate(old.Kind, "replacement after failure", old.Scope, "test", 1, 1, SupersedesId: old.Id),
+                CancellationToken.None));
+
+            Assert.Equal("active", (await repository.GetAsync(old.Id, CancellationToken.None))!.Status);
+            Assert.Empty(await repository.RetrieveAsync("replacement after failure", 5, 1200, CancellationToken.None));
+        }
+    }
+
+    [Fact]
+    public async Task Concurrent_upserts_on_one_repository_are_serialized_and_deduplicated()
+    {
+        var (repository, _) = CreateRepository();
+        await using (repository)
+        {
+            var candidate = new MemoryCandidate(MemoryKind.Preference, "one writer", null, "test", 1, 1);
+            var results = await Task.WhenAll(Enumerable.Range(0, 24).Select(_ => repository.UpsertAsync(candidate, CancellationToken.None)));
+
+            Assert.All(results, result => Assert.Equal(results[0].Id, result.Id));
+            Assert.Single(await repository.ListActiveAsync(CancellationToken.None));
+        }
+    }
+
+    [Fact]
     public async Task Clear_removes_database_rows_migration_markers_and_registered_legacy_artifact()
     {
         var options = new MemorySqliteOptions
@@ -339,5 +448,21 @@ public sealed class SqliteMemoryRepositoryTests
         {
             parameter.Value = timestamp.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
         }
+    }
+
+    private static async Task ExecuteRawAsync(MemorySqliteOptions options, string sql)
+    {
+        await using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = options.DatabasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Cache = SqliteCacheMode.Shared,
+            DefaultTimeout = 30,
+            ForeignKeys = true,
+        }.ToString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
     }
 }

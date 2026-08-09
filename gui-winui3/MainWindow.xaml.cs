@@ -80,7 +80,7 @@ namespace RuApp
         private async Task InitializeAppAsync()
         {
             SidebarSessionList.ItemsSource = Sessions;
-            StatusText.Text = "Đang khởi động Backend FastAPI...";
+            StatusText.Text = $"Đang khởi động {_processManager.DisplayName} Backend...";
             StatusDot.Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
 
             string? projectRoot = ResolveProjectRoot();
@@ -94,7 +94,7 @@ namespace RuApp
             bool ok = await _processManager.StartBackendAsync(projectRoot);
             if (ok)
             {
-                StatusText.Text = "FastAPI Backend đã sẵn sàng (127.0.0.1:8000)";
+                StatusText.Text = $"{_processManager.DisplayName} Backend đã sẵn sàng (127.0.0.1:8000)";
                 StatusDot.Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Green);
 
                 _apiService = new ApiService(_processManager.AuthSecret, _processManager.Port);
@@ -135,7 +135,11 @@ namespace RuApp
             }
             else
             {
-                StatusText.Text = "Không thể kết nối FastAPI Backend!";
+                StatusText.Text = $"Không thể kết nối {_processManager.DisplayName} Backend!";
+                if (!string.IsNullOrWhiteSpace(_processManager.LastError))
+                {
+                    StatusText.Text += $" {_processManager.LastError}";
+                }
                 StatusDot.Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red);
             }
         }

@@ -6,12 +6,12 @@ pass cannot be mistaken for a live WinUI cutover.
 
 ## Current decision
 
-- Default WinUI host mode: FastApi.
-- Opt-in mode: RU_BACKEND_HOST_MODE=aspnetcore.
+- Default WinUI host mode: AspNetCore.
+- Rollback mode: RU_BACKEND_HOST_MODE=fastapi.
 - Public contract: 127.0.0.1:8000.
-- Private worker in opt-in mode: 127.0.0.1:8001.
-- Default change: pending live process, benchmark, shutdown, and confirmed
-  OmniVoice-audio evidence.
+- Private worker in default mode: 127.0.0.1:8001.
+- Default change: activated after the live process, benchmark, shutdown, and
+  confirmed OmniVoice-audio gates below passed.
 
 ## Completed static/unit evidence
 
@@ -24,19 +24,25 @@ pass cannot be mistaken for a live WinUI cutover.
 | Compatibility tool tests | 4 passed |
 | Backend launch/process-manager tests | 12 passed |
 
-## Pending live evidence
+## Live evidence
 
-- Isolated FastAPI worker plus ASP.NET edge readiness through public /settings.
-- Safe route probe results and WebSocket control/error ordering.
-- Direct FastAPI versus edge p50/p95/failure counts and measured overhead.
-- Both cutover children assigned to one Job Object and terminated on WinUI close.
-- Real WinUI voice playback with an audio control frame immediately followed
-  by its non-empty binary frame.
+- Compatibility harness: edge readiness 200; 14 safe HTTP probes passed, 24
+  mutating routes skipped without changing state, and 0 probe failures.
+- WebSockets: chat malformed-frame response was error; voice invalid-control
+  response was failed; both connections and ordering checks passed.
+- OmniVoice: voice_audio_confirmed=true; an audio control frame was followed
+  by a non-empty binary frame.
+- Benchmark: 20 samples, 0 failures. Direct FastAPI /settings p50/p95 was
+  1.462/1.697 ms; edge was 1.898/2.409 ms; measured edge overhead was
+  +0.436/+0.712 ms. WebSocket handshake p95 was direct 2.212/1.782 ms
+  (/chat /voice/stream) and edge 3.126/2.335 ms.
+- WinUI smoke: published RuApp.exe observed listeners on both 8000 and 8001;
+  after app shutdown, remaining listeners were 0.
 
-Run the live checks only with temporary ports/data and keep their numeric JSON
-artifacts under the ignored artifacts/aspnetcore/ directory. Never record
+Run future live checks only with temporary ports/data and keep their numeric
+JSON artifacts under the ignored artifacts/aspnetcore/ directory. Never record
 tokens, request bodies, chat text, audio bytes, or private VTS metadata here.
 
-Rollback is clearing RU_BACKEND_HOST_MODE and restarting the app; it does not
-delete persisted memory or user data.
+Rollback is setting RU_BACKEND_HOST_MODE=fastapi and restarting the app; it does
+not delete persisted memory or user data.
 

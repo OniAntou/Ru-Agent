@@ -70,7 +70,7 @@ public sealed class BackendLaunchPlanTests
     [Theory]
     [InlineData("fastapi", BackendHostMode.FastApi)]
     [InlineData("aspnetcore", BackendHostMode.AspNetCore)]
-    [InlineData("", BackendHostMode.FastApi)]
+    [InlineData("", BackendHostMode.AspNetCore)]
     public void HostModeParsingIsStrict(string raw, BackendHostMode expected)
     {
         Assert.Equal(expected, BackendHostModeParser.Parse(raw));

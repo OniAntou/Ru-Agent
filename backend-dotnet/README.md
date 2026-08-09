@@ -12,8 +12,9 @@ parallel:  client -> RuBackend:8010 -> FastAPI:8000
 cutover:   WinUI -> RuBackend:8000 -> FastAPI worker:8001
 ~~~
 
-The WinUI default remains the existing FastAPI owner until the live process,
-latency, shutdown, and confirmed OmniVoice-audio gates pass. No public client
+The WinUI default is now the ASP.NET Core edge after the live process, latency,
+shutdown, and confirmed OmniVoice-audio gates passed. Explicitly selecting
+RU_BACKEND_HOST_MODE=fastapi rolls back to the prior owner. No public client
 needs to know about worker port 8001.
 
 ## Parallel local run
@@ -35,13 +36,12 @@ ws://127.0.0.1:8010/chat?token=local-test-secret
 ws://127.0.0.1:8010/voice/stream?token=local-test-secret
 ~~~
 
-## WinUI cutover mode
+## WinUI startup modes
 
-build.bat publishes both RuBackend.exe and RuApp.exe. To opt into the
-dual-child topology for a local smoke test:
+build.bat publishes both RuBackend.exe and RuApp.exe. The default RuApp startup
+uses the dual-child topology:
 
 ~~~powershell
-$env:RU_BACKEND_HOST_MODE = "aspnetcore"
 & D:\LLM\build.bat
 & D:\LLM\start_dev.bat
 ~~~
@@ -49,8 +49,8 @@ $env:RU_BACKEND_HOST_MODE = "aspnetcore"
 The process manager starts FastAPI on 127.0.0.1:8001, starts the published
 edge on 127.0.0.1:8000, gives both children the same per-run token, assigns
 both to one kill-on-close Job Object, and probes /settings through public
-8000. Clearing RU_BACKEND_HOST_MODE rolls back to the existing FastAPI owner
-on 8000; there is no automatic same-port fallback.
+8000. Set RU_BACKEND_HOST_MODE=fastapi and restart RuApp to roll back to the
+single FastAPI owner on 8000; there is no automatic same-port fallback.
 
 The published edge is expected at:
 
@@ -66,7 +66,7 @@ backend-dotnet\RuBackend\bin\Release\net10.0\win-x64\publish\RuBackend.exe
 | RuBackend__BindUrl | http://127.0.0.1:8010 | ASP.NET Core bind URL. |
 | RuBackend__UpstreamUrl | http://127.0.0.1:8000 | FastAPI worker base URL. |
 | RuBackend__MaxRequestBodyBytes | 8388608 | Maximum POST/PUT/PATCH body size. |
-| RU_BACKEND_HOST_MODE | fastapi | WinUI owner mode; aspnetcore enables the edge. |
+| RU_BACKEND_HOST_MODE | aspnetcore | WinUI owner mode; fastapi is the explicit rollback. |
 | RU_BACKEND_WORKER_PORT | 8001 | Private FastAPI port in ASP.NET Core mode. |
 | RU_RUBACKEND_EXE | published path above | Optional explicit edge executable path. |
 

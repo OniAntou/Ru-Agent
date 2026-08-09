@@ -12,7 +12,8 @@ public static class BackendHostModeParser
     {
         return raw?.Trim().ToLowerInvariant() switch
         {
-            null or "" or "fastapi" => BackendHostMode.FastApi,
+            null or "" => BackendHostMode.AspNetCore,
+            "fastapi" => BackendHostMode.FastApi,
             "aspnetcore" => BackendHostMode.AspNetCore,
             _ => throw new ArgumentException(
                 "RU_BACKEND_HOST_MODE must be 'fastapi' or 'aspnetcore'.",

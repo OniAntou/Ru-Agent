@@ -118,8 +118,9 @@ The live gate must prove:
 
 ### 4. Process-manager cutover
 
-`BackendProcessManager` will gain an explicit host mode, defaulting to the
-current FastAPI mode until cutover acceptance is complete. In ASP.NET Core mode
+`BackendProcessManager` has an explicit host mode and now defaults to ASP.NET
+Core after cutover acceptance. Explicit `RU_BACKEND_HOST_MODE=fastapi` remains
+the rollback mode. In ASP.NET Core mode
 it will:
 
 1. create one Job Object with kill-on-close;

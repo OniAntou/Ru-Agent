@@ -16,9 +16,16 @@
 - Do not rewrite Python model, memory, OmniVoice, STT, VTS, screen-awareness, or WebSocket business logic in C#.
 - Keep WebSocket paths as relay paths. The edge must not parse, reorder, buffer, or duplicate chat/voice state.
 - Fail closed when the worker, published edge executable, Job Object, or readiness probe fails. Do not automatically fall back to another host on the same port.
-- Keep the default WinUI host mode as FastAPI until the live edge, process ownership, benchmark, and real OmniVoice-audio gates all pass. The ASP.NET mode must be explicit and testable before activation.
+- Keep the default WinUI host mode as FastAPI during implementation. After the live edge, process ownership, benchmark, and real OmniVoice-audio gates pass, activate ASP.NET Core and retain explicit FastAPI rollback.
 - Run heavy backend, GUI, and Python suites sequentially to avoid known Windows GPU/pagefile pressure.
 - After each implementation slice, inspect README.md, backend-dotnet/README.md, relevant docs/, and migration documents; update current claims and leave historical design records intact.
+
+## Execution status
+
+The plan has been executed on `main`. Route parity, generic forwarding, Python
+memory parity, isolated live probing, direct-versus-edge timing, WinUI dual-child
+startup/shutdown, and confirmed OmniVoice audio all passed. The default host is
+now ASP.NET Core; `RU_BACKEND_HOST_MODE=fastapi` is the documented rollback.
 
 ## File map
 
@@ -505,7 +512,7 @@ $env:RU_BACKEND_HOST_MODE = "aspnetcore"
 & D:\LLM\start_dev.bat
 ~~~
 
-Explain that FastAPI remains the worker on 8001, the public contract remains 8000, and clearing RU_BACKEND_HOST_MODE rolls back to the existing FastAPI owner. State that a passing unit suite alone does not activate the default.
+Explain that FastAPI remains the worker on 8001, the public contract remains 8000, and setting RU_BACKEND_HOST_MODE=fastapi rolls back to the existing FastAPI owner. State that a passing unit suite alone does not activate the default until the live gates pass.
 
 - [ ] Step 4: Create the validation record with measured facts only.
 

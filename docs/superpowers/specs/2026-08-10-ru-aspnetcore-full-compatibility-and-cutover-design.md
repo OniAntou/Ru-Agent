@@ -2,10 +2,16 @@
 
 ## Status
 
-Proposed follow-up to the accepted parallel compatibility slice. The first
-slice remains intact: `RuBackend` runs beside FastAPI on `8010`, while WinUI
-still owns FastAPI on `8000`. This design covers the complete migration path;
-implementation will proceed in separately verified slices.
+Historical baseline. The compatibility and process-ownership design described
+here was implemented and accepted on 2026-08-10. The current public default is
+ASP.NET Core on `8000`, with FastAPI running as the private Python worker on
+`8001`; explicit `RU_BACKEND_HOST_MODE=fastapi` remains the rollback mode.
+
+The facts below describe the pre-implementation baseline that motivated this
+design. The current validation record is
+`docs/aspnetcore-cutover-validation.md`. Memory and deterministic business
+logic migration is specified separately in
+`2026-08-10-ru-aspnetcore-memory-business-migration-design.md`.
 
 ## Goal
 

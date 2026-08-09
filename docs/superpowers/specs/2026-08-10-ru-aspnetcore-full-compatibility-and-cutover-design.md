@@ -28,7 +28,7 @@ silently starting two public backends on the same port.
   Windows Job Object.
 - `ApiService`, `ChatWebSocketClient`, and `VoiceStreamClient` already target
   port `8000`; they should not learn a new port during cutover.
-- FastAPI exposes 37 HTTP route/method pairs plus the two WebSocket routes
+- FastAPI exposes 38 HTTP route/method pairs plus the two WebSocket routes
   under the status, settings, sessions, observation, voice, and VTS routers.
 - WinUI calls `GET /memory`; the pre-existing FastAPI drift is now repaired by a
   Python-owned read-only DTO route. The ASP.NET proxy still only forwards it and
@@ -80,14 +80,14 @@ catch-all compatibility route. The route must preserve:
 - the existing `OPTIONS` 204 response, `401` JSON shape, `413` body limit, and
   deterministic `503` when the FastAPI worker is unavailable.
 
-The existing explicit `/status` and `/settings` routes can be replaced by the
-generic seam only after tests prove route precedence still keeps WebSocket
-requests on the relay. The proxy will not reimplement Python business logic.
+The generic seam now replaces the former explicit `/status` and `/settings`
+maps; contract tests prove route precedence still keeps WebSocket requests on
+the relay. The proxy will not reimplement Python business logic.
 
 ### 2. Contract inventory and the `/memory` drift
 
-The implementation plan will generate a route matrix from the FastAPI routers
-and WinUI callers. Every method/path pair will be classified as one of:
+The route matrix records the FastAPI routers and WinUI callers. Every
+method/path pair is classified as one of:
 
 1. forwarded unchanged;
 2. WebSocket-relayed unchanged;

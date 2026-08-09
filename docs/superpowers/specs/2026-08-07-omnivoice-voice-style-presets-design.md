@@ -1,10 +1,12 @@
-# OmniVoice voice-style presets design
+# Historical: Rejected OmniVoice voice-style presets design
 
 Date: 2026-08-07
-Status: superseded by `2026-08-07-omnivoice-measurable-pitch-design.md`; retained as a rejected historical record
-Scope: controlled OmniVoice `instruct` adjustments for the WinUI 3 Voice view
+Status: superseded by `2026-08-07-omnivoice-native-speed-recovery-design.md`; retained as a rejected historical record
+Scope: historical controlled OmniVoice `instruct` adjustments for the WinUI 3 Voice view
 
-## Decision
+> Historical document only. Every decision, goal, non-goal, preset, and interface below records a rejected design and must not be implemented. The active contract is `original` only; refer to `2026-08-07-omnivoice-native-speed-recovery-design.md` instead.
+
+## Historical decision
 
 Expose a small set of validated voice-style presets for the existing Ru and Ái
 Vy OmniVoice clone profiles. The default is **Giữ giọng gốc** and sends no

@@ -15,7 +15,7 @@ class MiniGPTCore:
         self.memory_texts_path = PROJECT_ROOT / "data" / "conversations" / "memory_texts.json"
         self.memory_db_path = PROJECT_ROOT / "data" / "conversations" / "memory.db"
         self.memory_store = None
-        self._memory_store_lock = threading.Lock()
+        self._memory_store_lock = threading.RLock()
 
         self.opencode_cred = CredentialStore("mini_gpt", "api_key")
         self.kilo_cred = CredentialStore("mini_gpt", "kilo_gateway_api_key")
@@ -39,13 +39,13 @@ class MiniGPTCore:
             if self.memory_store is not None:
                 self.memory_store.close()
                 self.memory_store = None
-        MemoryStore.clear_artifacts(self.memory_index_path, self.memory_texts_path)
-        for path in (
-            self.memory_db_path,
-            Path(f"{self.memory_db_path}-wal"),
-            Path(f"{self.memory_db_path}-shm"),
-        ):
-            path.unlink(missing_ok=True)
+            MemoryStore.clear_artifacts(self.memory_index_path, self.memory_texts_path)
+            for path in (
+                self.memory_db_path,
+                Path(f"{self.memory_db_path}-wal"),
+                Path(f"{self.memory_db_path}-shm"),
+            ):
+                path.unlink(missing_ok=True)
 
     def close(self) -> None:
         with self._memory_store_lock:
@@ -55,8 +55,23 @@ class MiniGPTCore:
         self.runner.release_gpu()
 
     def remember(self, prompt: str, reply: str):
-        store = self.get_memory_store()
-        store.remember_turn(prompt, reply)
+        with self._memory_store_lock:
+            try:
+                store = self.get_memory_store()
+                store.remember_turn(prompt, reply)
+            except Exception as error:
+                # Rebuild once after a transient store failure. Holding the
+                # core lock prevents clear_memory or another writer from
+                # closing a newly-created store during this retry.
+                logger.warning("Memory write failed (%s); retrying with a fresh store", error)
+                if self.memory_store is not None:
+                    try:
+                        self.memory_store.close()
+                    except Exception:
+                        pass
+                    self.memory_store = None
+                store = self.get_memory_store()
+                store.remember_turn(prompt, reply)
 
     def generate_reply_with_memory(
         self,
@@ -74,9 +89,10 @@ class MiniGPTCore:
         hosted = self.runner.backend in (BACKEND_OPENCODE, BACKEND_KILO)
         context = None
         if not hosted or share_memory_with_cloud:
-            store = self.get_memory_store()
-            records = store.retrieve(prompt)
-            context = store.render_context(records)
+            with self._memory_store_lock:
+                store = self.get_memory_store()
+                records = store.retrieve(prompt)
+                context = store.render_context(records)
 
         return self.runner.generate_reply(
             prompt=prompt,

@@ -354,15 +354,14 @@ to the equivalent OmniVoice choice. OmniVoice is the default. Ru uses
 `data\voices\omnivoice\ai_vy.wav` and its matching transcript. Do not change a
 reference audio without its matching transcript.
 
-The WinUI3 Voice view exposes both voice profiles, fixed voice-style presets,
-base speed, warmup, release, test playback, microphone input, and VTube Studio
-controls.
+The WinUI3 Voice view exposes both voice profiles, base speed, warmup, release,
+test playback, microphone input, and VTube Studio controls.
 
 ### Voice-style presets
 
 The local DSP pitch experiment is **rejected for user-facing use** and its
 controls are removed. The voice style contract now supports only **Giữ giọng
-gốc** (`original`), which is the accepted quality baseline and sends no
+gốc** (`original`), which is the unchanged clone-only quality reference and sends no
 OmniVoice `instruct` value. Historical `low_pitch`, `high_pitch`, and
 `whisper` values safely resolve to **Giữ giọng gốc** when loaded; fresh API
 and loopback requests for any retired value are rejected.
@@ -386,8 +385,9 @@ passed a 24 kHz sine-wave frequency check, but failed the actual Vietnamese
 listening check on 2026-08-07: both shifted presets sound metallic. A
 same-waveform round-trip probe measured 17.67–30.34 dB log-spectral difference
 for the pitch processor, so a mathematically correct frequency shift is not a
-quality acceptance result. The experimental controls must be removed or
-replaced before a release claim.
+quality acceptance result. Those experimental controls are removed and replaced
+by the native-speed recovery path; human listening remains required before a
+non-1.00x quality or release claim.
 
 The recovery script writes `data\voices\omnivoice\ai_vy.wav`; this is the
 same repository-level path that the OmniVoice service resolves at runtime.

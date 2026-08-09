@@ -1,14 +1,16 @@
-# OmniVoice Voice-Style Presets Implementation Plan
+# Historical: Rejected OmniVoice Voice-Style Presets Implementation Plan
 
-> Status: superseded by `2026-08-07-omnivoice-measurable-pitch.md`; retained as a historical record of the rejected prompt-based approach.
+> Status: superseded by `2026-08-07-omnivoice-native-speed-recovery.md`; retained as a historical record of the rejected prompt-based approach.
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
+> Historical document only. Every requirement, interface, task, and checkbox below describes a rejected design and must not be implemented. The current voice contract is `original` only; use `2026-08-07-omnivoice-native-speed-recovery.md` for the active implementation record.
 
-**Goal:** Add persisted, quality-safe OmniVoice voice-style presets to Ru without changing the default clone voice or leaking voice metadata into conversation content.
+> Historical automation note: the former worker instruction has been intentionally removed because this plan is inactive.
 
-**Architecture:** A shared Python voice-style contract validates one stable ID and maps it to an optional OmniVoice instruct string. FastAPI resolves the saved ID once per TTS request, carries it through the existing HTTP/WebSocket coordinator, and the loopback service injects it only at model.generate. WinUI exposes the same IDs in a ComboBox and saves them through the existing settings endpoint.
+**Historical goal:** Add persisted, quality-safe OmniVoice voice-style presets to Ru without changing the default clone voice or leaking voice metadata into conversation content.
 
-**Tech Stack:** Python 3.13, FastAPI, Pydantic v2, Flask, OmniVoice, pytest, C#/.NET 10, WinUI 3, xUnit.
+**Historical architecture:** A shared Python voice-style contract validates one stable ID and maps it to an optional OmniVoice instruct string. FastAPI resolves the saved ID once per TTS request, carries it through the existing HTTP/WebSocket coordinator, and the loopback service injects it only at model.generate. WinUI exposes the same IDs in a ComboBox and saves them through the existing settings endpoint.
+
+**Historical tech stack:** Python 3.13, FastAPI, Pydantic v2, Flask, OmniVoice, pytest, C#/.NET 10, WinUI 3, xUnit.
 
 ## Global Constraints
 

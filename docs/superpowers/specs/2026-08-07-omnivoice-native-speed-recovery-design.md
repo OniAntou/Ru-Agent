@@ -1,7 +1,7 @@
 # OmniVoice artifact-free voice controls
 
 Date: 2026-08-07
-Status: approved for implementation
+Status: implemented in code; automated and loopback verification recorded; human listening acceptance for native non-1.00x speed remains pending
 Scope: remove the rejected local DSP voice transformations, make automatic
 pacing respect its saved setting, and use OmniVoice's native speed control for
 the remaining explicit speed feature.

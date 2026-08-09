@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
@@ -7,16 +9,17 @@ from .._server_shared import (
     BACKEND_GGUF,
     BACKEND_KILO,
     BACKEND_OPENCODE,
+    _merge_settings,
     _resolve_backend,
     _schedule_cloud_voice_warmup,
     core,
     effective_settings,
     logger,
-    _merge_settings,
 )
 from ..voice_style import VoiceStyleId
 
 router = APIRouter()
+_BACKEND_TRANSITION_LOCK = threading.RLock()
 
 
 class SettingsPayload(BaseModel):
@@ -97,7 +100,37 @@ def save_settings(payload: SettingsPayload):
     if backend_val is not None and backend_val not in (BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO):
         return {"status": "error", "message": f"unsupported backend: {backend_val}"}
 
-    def _apply(settings: dict) -> None:
+    if backend_val is None:
+        return _save_settings_unlocked(payload, backend_val)
+    # ModelRunner stores the selected backend as mutable instance state. Keep
+    # the complete select/load/persist/rollback transition atomic so a second
+    # settings request cannot load or persist against the first one's backend.
+    with _BACKEND_TRANSITION_LOCK:
+        return _save_settings_unlocked(payload, backend_val)
+
+
+def _save_settings_unlocked(payload: SettingsPayload, backend_val: str | None):
+
+    resolved_max_tokens = (
+        payload.max_tokens if payload.max_tokens is not None else payload.max_new_tokens
+    )
+    resolved_web_search = (
+        payload.allow_web_search
+        if payload.allow_web_search is not None
+        else payload.allow_online_search
+    )
+    resolved_self_learning = (
+        payload.enable_self_learning
+        if payload.enable_self_learning is not None
+        else payload.self_learning_enabled
+    )
+    resolved_cloud_memory = (
+        payload.share_memory_with_cloud
+        if payload.share_memory_with_cloud is not None
+        else payload.cloud_memory_consent
+    )
+
+    def _apply_backend_configuration(settings: dict) -> None:
         if backend_val is not None:
             settings["backend"] = backend_val
         if payload.model is not None:
@@ -110,24 +143,22 @@ def save_settings(payload: SettingsPayload):
             settings["api_variant"] = payload.api_variant
         if payload.kilo_reasoning_enabled is not None:
             settings["kilo_reasoning_enabled"] = payload.kilo_reasoning_enabled
-        resolved_max_tokens = payload.max_tokens if payload.max_tokens is not None else payload.max_new_tokens
+        if payload.checkpoint_path.strip():
+            settings["checkpoint_path"] = payload.checkpoint_path.strip()
+
+    def _apply_independent_preferences(settings: dict) -> None:
         if resolved_max_tokens is not None:
             settings["max_tokens"] = resolved_max_tokens
         if payload.temperature is not None:
             settings["temperature"] = payload.temperature
         if payload.top_k is not None:
             settings["top_k"] = payload.top_k
-        resolved_web_search = payload.allow_web_search if payload.allow_web_search is not None else payload.allow_online_search
         if resolved_web_search is not None:
             settings["allow_web_search"] = resolved_web_search
-        resolved_self_learning = payload.enable_self_learning if payload.enable_self_learning is not None else payload.self_learning_enabled
         if resolved_self_learning is not None:
             settings["enable_self_learning"] = resolved_self_learning
-        resolved_cloud_memory = payload.share_memory_with_cloud if payload.share_memory_with_cloud is not None else payload.cloud_memory_consent
         if resolved_cloud_memory is not None:
             settings["share_memory_with_cloud"] = resolved_cloud_memory
-        if payload.checkpoint_path.strip():
-            settings["checkpoint_path"] = payload.checkpoint_path.strip()
         if payload.voice_label is not None:
             settings["voice_label"] = payload.voice_label
         if payload.voice_style_id is not None:
@@ -141,7 +172,39 @@ def save_settings(payload: SettingsPayload):
         if payload.show_subtitles is not None:
             settings["show_subtitles"] = payload.show_subtitles
 
-    _merge_settings(_apply)
+    def _apply(settings: dict) -> None:
+        _apply_backend_configuration(settings)
+        _apply_independent_preferences(settings)
+
+    # Keep a candidate in memory while a backend is loading. Persisting before
+    # that load completes made a failed backend/model switch survive restart.
+    candidate_settings = effective_settings()
+    _apply(candidate_settings)
+
+    independent_preference_change = any(
+        value is not None
+        for value in (
+            resolved_max_tokens,
+            payload.temperature,
+            payload.top_k,
+            resolved_web_search,
+            resolved_self_learning,
+            resolved_cloud_memory,
+            payload.voice_label,
+            payload.voice_style_id,
+            payload.voice_speed,
+            payload.auto_pace_enabled,
+            payload.auto_read_replies,
+            payload.show_subtitles,
+        )
+    )
+
+    if backend_val is None:
+        _merge_settings(_apply)
+    elif independent_preference_change:
+        # A failed backend/model switch must not become the saved runtime
+        # configuration, but independent user preferences remain valid.
+        _merge_settings(_apply_independent_preferences)
 
     voice_only_save = backend_val is None and any(
         value is not None
@@ -166,20 +229,25 @@ def save_settings(payload: SettingsPayload):
             _schedule_cloud_voice_warmup()
         return {"status": "success", "message": "Settings saved."}
 
-    if payload.opencode_api_key and payload.opencode_api_key.strip():
-        core.opencode_cred.set_key(payload.opencode_api_key)
-    elif payload.api_key.strip() and backend_val == BACKEND_OPENCODE:
-        core.opencode_cred.set_key(payload.api_key)
+    legacy_api_key = payload.api_key.strip()
+    opencode_api_key = payload.opencode_api_key.strip()
+    kilo_api_key = payload.kilo_api_key.strip()
+    if not opencode_api_key and backend_val == BACKEND_OPENCODE:
+        opencode_api_key = legacy_api_key
+    if not kilo_api_key and backend_val == BACKEND_KILO:
+        kilo_api_key = legacy_api_key
+    credential_updates: list[tuple[object, str]] = []
+    if opencode_api_key:
+        credential_updates.append((core.opencode_cred, opencode_api_key))
+    if kilo_api_key:
+        credential_updates.append((core.kilo_cred, kilo_api_key))
 
-    if payload.kilo_api_key and payload.kilo_api_key.strip():
-        core.kilo_cred.set_key(payload.kilo_api_key)
-    elif payload.api_key.strip() and backend_val == BACKEND_KILO:
-        core.kilo_cred.set_key(payload.api_key)
-
-    core.runner.select_backend(backend_val)
-    
-    api_key = payload.api_key
-    if backend_val in (BACKEND_OPENCODE, BACKEND_KILO) and not api_key.strip():
+    api_key = ""
+    if backend_val == BACKEND_OPENCODE:
+        api_key = opencode_api_key
+    elif backend_val == BACKEND_KILO:
+        api_key = kilo_api_key
+    if backend_val in (BACKEND_OPENCODE, BACKEND_KILO) and not api_key:
         store = core.opencode_cred if backend_val == BACKEND_OPENCODE else core.kilo_cred
         try:
             api_key = store.get_key() or ""
@@ -192,17 +260,66 @@ def save_settings(payload: SettingsPayload):
     elif backend_val == BACKEND_KILO and payload.kilo_model:
         model_name = payload.kilo_model
 
+    def restore_credentials(snapshots: list[tuple[object, str | None]]) -> None:
+        for store, previous_key in reversed(snapshots):
+            try:
+                if previous_key is None:
+                    store.delete_key()
+                else:
+                    store.set_key(previous_key)
+            except Exception as rollback_error:
+                logger.error("Could not restore a backend credential: %s", rollback_error)
+
+    def persist_credentials() -> list[tuple[object, str | None]]:
+        snapshots = [(store, store.get_key()) for store, _ in credential_updates]
+        try:
+            for store, key in credential_updates:
+                store.set_key(key)
+        except Exception:
+            restore_credentials(snapshots)
+            raise
+        return snapshots
+
+    previous_runner_state = {
+        "backend": core.runner.backend,
+        "checkpoint_path": core.runner.checkpoint_path,
+        "openai_runtime": core.runner.openai_runtime,
+        "kilo_reasoning_enabled": core.runner.kilo_reasoning_enabled,
+    }
+    credential_snapshots: list[tuple[object, str | None]] = []
     try:
+        core.runner.select_backend(backend_val)
         result = core.runner.load(
             checkpoint_path=payload.checkpoint_path or "",
             api_key=api_key,
             model_name=model_name,
             api_variant=payload.api_variant or "",
-            kilo_reasoning_enabled=effective_settings()["kilo_reasoning_enabled"],
+            kilo_reasoning_enabled=candidate_settings["kilo_reasoning_enabled"],
         )
+        credential_snapshots = persist_credentials()
+        _merge_settings(_apply_backend_configuration)
         if backend_val in (BACKEND_OPENCODE, BACKEND_KILO):
             _schedule_cloud_voice_warmup()
         return {"status": "success", "message": result}
     except Exception as error:
         logger.error("Failed to load backend %s: %s", payload.backend, error)
+        if credential_snapshots:
+            restore_credentials(credential_snapshots)
+        try:
+            core.runner.select_backend(previous_runner_state["backend"])
+            core.runner.checkpoint_path = previous_runner_state["checkpoint_path"]
+            core.runner.openai_runtime = previous_runner_state["openai_runtime"]
+            core.runner.kilo_reasoning_enabled = previous_runner_state[
+                "kilo_reasoning_enabled"
+            ]
+            logger.warning(
+                "Rolled back backend to %r after a failed load",
+                previous_runner_state["backend"],
+            )
+        except Exception as rollback_error:
+            logger.error(
+                "Rollback to backend %r failed: %s",
+                previous_runner_state["backend"],
+                rollback_error,
+            )
         return {"status": "error", "message": str(error)}

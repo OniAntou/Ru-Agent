@@ -191,7 +191,8 @@ def _get_or_load_model(
                 _IN_USE_COUNTS[cache_key] = _IN_USE_COUNTS.get(cache_key, 0) + 1
                 return entry
             _evict_cache_if_needed(base_path)
-            loaded = _load_llama_for_generation(base_path, adapter_dir)
+        loaded = _load_llama_for_generation(base_path, adapter_dir)
+        with _CACHE_LOCK:
             _GENERATION_CACHE[cache_key] = loaded
             _MODEL_LOCKS[cache_key] = threading.Lock()
             _IN_USE_COUNTS[cache_key] = 1

@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import secrets
+import socket
 import subprocess
 import threading
 import time
@@ -32,6 +33,10 @@ _DEFAULT_REPEAT_PENALTY = 1.4
 _DEFAULT_REPEAT_LAST_N = 512
 _CHARS_PER_TOKEN_ESTIMATE = 4
 _CONTEXT_PROTOCOL_RESERVE_TOKENS = 64
+
+
+class _PortConflictError(RuntimeError):
+    """The configured loopback port belongs to an unowned process."""
 
 
 def fit_messages_to_context(
@@ -194,12 +199,16 @@ class LlamaCppRuntime:
             if self.is_running():
                 return
             self.stop()
+            if self._loopback_port_is_occupied():
+                raise self._port_conflict_error()
             self.validate_assets()
             last_error: Exception | None = None
             for gpu_layers in _GPU_LAYER_FALLBACKS:
                 try:
                     self._start_server(gpu_layers)
                     return
+                except _PortConflictError:
+                    raise
                 except RuntimeError as error:
                     last_error = error
                     logger.warning(
@@ -210,8 +219,9 @@ class LlamaCppRuntime:
             raise RuntimeError(f"llama.cpp server failed to start with any GPU layer configuration: {last_error}")
 
     def _start_server(self, gpu_layers: str) -> None:
+        if self._loopback_port_is_occupied():
+            raise self._port_conflict_error()
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        self._kill_stale_servers()
         log_handle = self.log_path.open("a", encoding="utf-8")
         try:
             creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -233,9 +243,24 @@ class LlamaCppRuntime:
                 last_error = f"server exited with code {self._process.returncode}"
                 break
             try:
-                self._request("/health", None, timeout=_HEALTH_CHECK_TIMEOUT_SECONDS)
+                # A ``/health`` response cannot prove that the listener is
+                # our child. The OpenAI endpoint must accept this instance's
+                # random bearer token before the runtime treats the server as
+                # owned.
+                self._request("/v1/models", None, timeout=_HEALTH_CHECK_TIMEOUT_SECONDS)
+                # A listener that ignores Authorization could still return
+                # 2xx for our token. It is not safe to mistake it for this
+                # process, so also require rejection of a fresh wrong token.
+                if not self._server_rejects_wrong_bearer():
+                    self.stop()
+                    raise self._port_conflict_error()
                 return
+            except _PortConflictError:
+                raise
             except RuntimeError as error:
+                if self._is_authentication_rejection(error):
+                    self.stop()
+                    raise self._port_conflict_error() from error
                 last_error = str(error)
                 time.sleep(_HEALTH_POLL_SLEEP_SECONDS)
         self.stop()
@@ -259,34 +284,63 @@ class LlamaCppRuntime:
         except (OSError, subprocess.TimeoutExpired):
             logger.warning("taskkill for PID %s failed; process may be orphaned", pid)
 
-    def _kill_stale_servers(self) -> None:
-        """Reap llama-server processes left behind by a crashed previous run,
-        otherwise they hold the port and VRAM forever."""
-        if os.name != "nt":
-            return
-        target = str(self.server_executable).lower()
-        try:
-            import psutil  # installed in the project venv
+    def _loopback_port_is_occupied(self) -> bool:
+        """Return whether another process has reserved our loopback port.
 
-            for process in psutil.process_iter(["pid", "exe"]):
-                try:
-                    if (process.info.get("exe") or "").lower() == target and process.info["pid"] != os.getpid():
-                        logger.warning("Reaping stale llama-server PID %s from a previous run", process.info["pid"])
-                        self._kill_process_tree(int(process.info["pid"]))
-                except (psutil.Error, OSError):
-                    continue
-        except ImportError:
-            logger.warning("psutil not available; stale llama-server processes are not reaped")
+        Only ``self._process`` is owned by this runtime. A process found through
+        the operating system cannot safely be attributed to this Ru instance,
+        so callers must fail rather than terminate it.
+        """
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                exclusive_address_use = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+                if exclusive_address_use is not None:
+                    probe.setsockopt(socket.SOL_SOCKET, exclusive_address_use, 1)
+                probe.bind(("127.0.0.1", self.port))
+                return False
+        except OSError:
+            return True
+
+    @staticmethod
+    def _is_authentication_rejection(error: RuntimeError) -> bool:
+        message = str(error).casefold()
+        return "http 401" in message or "http 403" in message
+
+    def _server_rejects_wrong_bearer(self) -> bool:
+        """Verify that the listener enforces this instance's secret key."""
+        try:
+            self._request_json(
+                "/v1/models",
+                None,
+                _HEALTH_CHECK_TIMEOUT_SECONDS,
+                api_key=secrets.token_hex(32),
+            )
+        except RuntimeError as error:
+            return self._is_authentication_rejection(error)
+        return False
+
+    def _port_conflict_error(self) -> _PortConflictError:
+        return _PortConflictError(
+            f"llama.cpp port {self.port} is already in use on 127.0.0.1; "
+            "refusing to stop an unowned process. Stop that process or "
+            "configure a different port."
+        )
 
     def stop(self) -> None:
         with self._lifecycle_lock:
             process = self._process
             if process is not None and process.poll() is None:
-                process.terminate()
+                try:
+                    process.terminate()
+                except OSError as error:
+                    logger.warning("llama.cpp terminate failed for PID %s: %s", process.pid, error)
                 try:
                     process.wait(timeout=_STOP_TIMEOUT_SECONDS)
                 except subprocess.TimeoutExpired:
-                    process.kill()
+                    try:
+                        process.kill()
+                    except OSError as error:
+                        logger.warning("llama.cpp kill failed for PID %s: %s", process.pid, error)
                     try:
                         process.wait(timeout=_STOP_TIMEOUT_SECONDS)
                     except subprocess.TimeoutExpired:
@@ -294,8 +348,11 @@ class LlamaCppRuntime:
                             "llama.cpp server did not exit after SIGKILL within %ss; abandoning its handle",
                             _STOP_TIMEOUT_SECONDS,
                         )
-                if process.poll() is None or self._has_children(process.pid):
-                    self._kill_process_tree(process.pid)
+                try:
+                    if process.poll() is None or self._has_children(process.pid):
+                        self._kill_process_tree(process.pid)
+                except OSError as error:
+                    logger.warning("llama.cpp process tree cleanup failed for PID %s: %s", process.pid, error)
             self._process = None
             if self._log_handle is not None:
                 try:
@@ -356,11 +413,16 @@ class LlamaCppRuntime:
             raise RuntimeError("llama.cpp returned an empty chat completion")
         return normalize_text(content)
 
-    def _request_headers(self, payload: dict[str, Any] | None) -> dict[str, str]:
+    def _request_headers(
+        self,
+        payload: dict[str, Any] | None,
+        *,
+        api_key: str | None = None,
+    ) -> dict[str, str]:
         headers: dict[str, str] = {}
         if payload is not None:
             headers["Content-Type"] = "application/json"
-        headers["Authorization"] = f"Bearer {self.api_key}"
+        headers["Authorization"] = f"Bearer {api_key or self.api_key}"
         return headers
 
     def _request_stream(
@@ -419,13 +481,20 @@ class LlamaCppRuntime:
     def _request(self, endpoint: str, payload: dict[str, Any] | None, *, timeout: float) -> dict[str, Any]:
         return self._request_impl(endpoint, payload, timeout)
 
-    def _request_json(self, endpoint: str, payload: dict[str, Any] | None, timeout: float) -> dict[str, Any]:
+    def _request_json(
+        self,
+        endpoint: str,
+        payload: dict[str, Any] | None,
+        timeout: float,
+        *,
+        api_key: str | None = None,
+    ) -> dict[str, Any]:
         url = f"{self.base_url}{endpoint}"
         data = json.dumps(payload).encode("utf-8") if payload is not None else None
         request = Request(
             url,
             data=data,
-            headers=self._request_headers(payload),
+            headers=self._request_headers(payload, api_key=api_key),
             method="POST" if data is not None else "GET",
         )
         try:

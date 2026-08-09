@@ -199,9 +199,19 @@ def test_legacy_out_of_range_settings_are_safely_normalized(isolated_state) -> N
 
 def test_settings_saves_kilo_api_key(monkeypatch, isolated_state) -> None:
     saved = []
+
     class FakeCred:
+        key: str | None = None
+
+        def get_key(self) -> str | None:
+            return self.key
+
         def set_key(self, key: str) -> None:
             saved.append(key)
+            self.key = key
+
+        def delete_key(self) -> None:
+            self.key = None
 
     monkeypatch.setattr(server.core, "kilo_cred", FakeCred())
     monkeypatch.setattr(server.core.runner, "load", lambda *a, **k: "Ready")
@@ -363,6 +373,189 @@ def test_settings_load_failure_returns_error_not_crash(monkeypatch, isolated_sta
     body = response.json()
     assert body["status"] == "error"
     assert "missing GGUF file" in body["message"]
+
+
+def test_settings_load_failure_preserves_backend_configuration_and_saves_independent_preferences(
+    monkeypatch, isolated_state
+) -> None:
+    previous_settings = {
+        "backend": BACKEND_GGUF,
+        "model": "old-model.gguf",
+        "max_tokens": 128,
+        "allow_web_search": True,
+        "share_memory_with_cloud": True,
+    }
+    server.save_settings_to_file(previous_settings)
+    selected_backends: list[str] = []
+
+    def select_backend(backend: str) -> None:
+        selected_backends.append(backend)
+        server.core.runner.backend = backend
+
+    monkeypatch.setattr(server.core.runner, "select_backend", select_backend)
+    monkeypatch.setattr(
+        server.core.runner,
+        "load",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("load failed")),
+    )
+
+    with TestClient(server.app) as client:
+        # TestClient startup applies saved settings. Isolate the transition
+        # initiated by this request from that startup behavior.
+        selected_backends.clear()
+        server.core.runner.backend = BACKEND_GGUF
+        response = client.post(
+            "/settings",
+            json={
+                "backend": BACKEND_KILO,
+                "model": "new-model",
+                "kilo_model": "new-kilo-model",
+                "kilo_reasoning_enabled": True,
+                "allow_web_search": False,
+            },
+        )
+
+    assert response.json()["status"] == "error"
+    assert selected_backends == [BACKEND_KILO, BACKEND_GGUF]
+    assert server.core.runner.backend == BACKEND_GGUF
+    persisted = server_shared.effective_settings()
+    assert persisted["backend"] == BACKEND_GGUF
+    assert persisted["model"] == "old-model.gguf"
+    assert persisted["kilo_model"] == ""
+    assert persisted["kilo_reasoning_enabled"] is False
+    assert persisted["allow_web_search"] is False
+    assert persisted["share_memory_with_cloud"] is True
+
+
+def test_settings_load_failure_restores_runner_state_and_defers_backend_credential_save(
+    monkeypatch, isolated_state
+) -> None:
+    saved_keys: list[str] = []
+    load_calls: list[dict] = []
+
+    class FakeCred:
+        current_key = "old-kilo-key"
+
+        def get_key(self) -> str | None:
+            return self.current_key
+
+        def set_key(self, key: str) -> None:
+            saved_keys.append(key)
+            self.current_key = key
+
+    def failed_load(**kwargs):
+        load_calls.append(kwargs)
+        server.core.runner.checkpoint_path = "candidate-checkpoint"
+        server.core.runner.openai_runtime = object()
+        server.core.runner.kilo_reasoning_enabled = kwargs["kilo_reasoning_enabled"]
+        raise RuntimeError("load failed")
+
+    previous_openai_runtime = object()
+    server.core.runner.backend = BACKEND_GGUF
+    server.core.runner.checkpoint_path = None
+    server.core.runner.openai_runtime = previous_openai_runtime
+    server.core.runner.kilo_reasoning_enabled = False
+    monkeypatch.setattr(server.core, "kilo_cred", FakeCred())
+    monkeypatch.setattr(server.core.runner, "load", failed_load)
+
+    with TestClient(server.app) as client:
+        response = client.post(
+            "/settings",
+            json={
+                "backend": BACKEND_KILO,
+                "kilo_api_key": "new-kilo-key",
+                "kilo_reasoning_enabled": True,
+            },
+        )
+
+    assert response.json()["status"] == "error"
+    assert load_calls[-1]["api_key"] == "new-kilo-key"
+    assert saved_keys == []
+    assert server.core.runner.backend == BACKEND_GGUF
+    assert server.core.runner.checkpoint_path is None
+    assert server.core.runner.openai_runtime is previous_openai_runtime
+    assert server.core.runner.kilo_reasoning_enabled is False
+
+
+def test_concurrent_backend_settings_transitions_do_not_interleave(
+    monkeypatch, isolated_state
+) -> None:
+    first_load_started = threading.Event()
+    release_first_load = threading.Event()
+    second_load_started = threading.Event()
+    results: list[dict[str, str]] = []
+
+    class FakeCredentialStore:
+        def __init__(self) -> None:
+            self.key: str | None = None
+
+        def get_key(self) -> str | None:
+            return self.key
+
+        def set_key(self, key: str) -> None:
+            self.key = key
+
+        def delete_key(self) -> None:
+            self.key = None
+
+    def select_backend(backend: str) -> None:
+        server.core.runner.backend = backend
+
+    def load(**kwargs) -> str:
+        model_name = kwargs["model_name"]
+        if model_name == "kilo-model":
+            first_load_started.set()
+            assert release_first_load.wait(timeout=5)
+        else:
+            second_load_started.set()
+        return "Ready"
+
+    monkeypatch.setattr(server.core, "kilo_cred", FakeCredentialStore())
+    monkeypatch.setattr(server.core, "opencode_cred", FakeCredentialStore())
+    monkeypatch.setattr(server.core.runner, "select_backend", select_backend)
+    monkeypatch.setattr(server.core.runner, "load", load)
+    monkeypatch.setattr(settings_router, "_schedule_cloud_voice_warmup", lambda: None)
+
+    def save_kilo() -> None:
+        results.append(
+            settings_router.save_settings(
+                settings_router.SettingsPayload(
+                    backend=BACKEND_KILO,
+                    kilo_model="kilo-model",
+                    kilo_api_key="kilo-key",
+                )
+            )
+        )
+
+    def save_opencode() -> None:
+        results.append(
+            settings_router.save_settings(
+                settings_router.SettingsPayload(
+                    backend=BACKEND_OPENCODE,
+                    opencode_model="opencode-model",
+                    opencode_api_key="opencode-key",
+                )
+            )
+        )
+
+    first = threading.Thread(target=save_kilo)
+    second = threading.Thread(target=save_opencode)
+    first.start()
+    assert first_load_started.wait(timeout=5)
+    second.start()
+    try:
+        assert not second_load_started.wait(timeout=0.2)
+    finally:
+        release_first_load.set()
+        first.join(timeout=5)
+        second.join(timeout=5)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert [result["status"] for result in results] == ["success", "success"]
+    assert server.core.runner.backend == BACKEND_OPENCODE
+    assert server_shared.effective_settings()["backend"] == BACKEND_OPENCODE
+
 
 def test_settings_checkpoint_path_round_trip(monkeypatch, isolated_state) -> None:
     monkeypatch.setattr(server.core.runner, "load", lambda *a, **k: "Ready")

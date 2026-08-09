@@ -1,3 +1,4 @@
+import socket
 from pathlib import Path
 
 import pytest
@@ -42,6 +43,122 @@ def test_server_command_includes_loopback_auth_key(runtime: LlamaCppRuntime) -> 
     assert key == runtime.api_key
 
 
+@pytest.mark.parametrize("listening", [False, True])
+def test_ensure_started_refuses_an_occupied_port_without_spawning(
+    runtime: LlamaCppRuntime, monkeypatch, listening: bool
+) -> None:
+    launches: list[tuple[str, ...]] = []
+
+    class FakeProcess:
+        pid = 1234
+        returncode = None
+
+        def poll(self):
+            return None
+
+        def terminate(self) -> None:
+            pass
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    def fake_popen(command, **kwargs):
+        launches.append(tuple(command))
+        return FakeProcess()
+
+    runtime._popen = fake_popen
+    runtime.start_timeout_seconds = 0
+    monkeypatch.setattr(runtime, "validate_assets", lambda: None)
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        if listening:
+            listener.listen()
+        runtime.port = listener.getsockname()[1]
+
+        with pytest.raises(RuntimeError, match="already in use"):
+            runtime.ensure_started()
+
+    assert launches == []
+
+
+def test_start_detects_a_foreign_server_after_spawn_without_waiting_for_timeout(
+    runtime: LlamaCppRuntime, monkeypatch
+) -> None:
+    requested_endpoints: list[str] = []
+
+    class FakeProcess:
+        pid = 1234
+        returncode: int | None = None
+        terminated = False
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = 0
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    process = FakeProcess()
+
+    def foreign_server(endpoint: str, _payload: dict | None, _timeout: float) -> dict:
+        requested_endpoints.append(endpoint)
+        if endpoint == "/v1/models":
+            raise RuntimeError("llama.cpp HTTP 401: unauthorized")
+        return {}
+
+    runtime._request_impl = foreign_server
+    runtime._popen = lambda *args, **kwargs: process
+    monkeypatch.setattr(runtime, "_loopback_port_is_occupied", lambda: False)
+
+    with pytest.raises(RuntimeError, match="already in use"):
+        runtime._start_server("all")
+
+    assert requested_endpoints == ["/v1/models"]
+    assert process.terminated is True
+
+
+def test_start_rejects_a_listener_that_accepts_the_wrong_bearer_token(
+    runtime: LlamaCppRuntime, monkeypatch
+) -> None:
+    requested_endpoints: list[str] = []
+
+    class FakeProcess:
+        pid = 1234
+        returncode: int | None = None
+        terminated = False
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = 0
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    process = FakeProcess()
+
+    def permissive_listener(endpoint: str, _payload: dict | None, _timeout: float) -> dict:
+        requested_endpoints.append(endpoint)
+        return {"data": []}
+
+    runtime._request_impl = permissive_listener
+    runtime._popen = lambda *args, **kwargs: process
+    monkeypatch.setattr(runtime, "_loopback_port_is_occupied", lambda: False)
+    monkeypatch.setattr(runtime, "_server_rejects_wrong_bearer", lambda: False, raising=False)
+
+    with pytest.raises(RuntimeError, match="already in use"):
+        runtime._start_server("all")
+
+    assert requested_endpoints == ["/v1/models"]
+    assert process.terminated is True
+
+
 def test_request_headers_carry_bearer_token(runtime: LlamaCppRuntime) -> None:
     headers = runtime._request_headers({"messages": []})
 
@@ -53,12 +170,37 @@ def test_request_headers_carry_bearer_token(runtime: LlamaCppRuntime) -> None:
     assert "Content-Type" not in headers
 
 
+def test_ownership_probe_requires_rejection_of_a_different_bearer_token(
+    runtime: LlamaCppRuntime, monkeypatch
+) -> None:
+    attempted_keys: list[str | None] = []
+
+    def reject_wrong_key(
+        endpoint: str,
+        payload: dict | None,
+        timeout: float,
+        *,
+        api_key: str | None = None,
+    ) -> dict:
+        assert endpoint == "/v1/models"
+        assert payload is None
+        assert timeout > 0
+        attempted_keys.append(api_key)
+        raise RuntimeError("llama.cpp HTTP 401: unauthorized")
+
+    monkeypatch.setattr(runtime, "_request_json", reject_wrong_key)
+
+    assert runtime._server_rejects_wrong_bearer() is True
+    assert attempted_keys[0] is not None
+    assert attempted_keys[0] != runtime.api_key
+
+
 def test_server_command_validates_assets_with_missing_lora(runtime: LlamaCppRuntime) -> None:
     with pytest.raises(FileNotFoundError, match="Ru LoRA GGUF"):
         runtime.validate_assets()
 
 
-def test_generate_sends_strong_repetition_guard() -> None:
+def test_generate_sends_strong_repetition_guard(monkeypatch) -> None:
     captured: dict = {}
 
     class FakeProcess:
@@ -80,6 +222,9 @@ def test_generate_sends_strong_repetition_guard() -> None:
         request=fake_request,
         popen=lambda *args, **kwargs: FakeProcess(),
     )
+    # This injected in-memory request function represents the already-owned
+    # fake server; real startup ownership is covered by dedicated tests.
+    monkeypatch.setattr(rt, "_server_rejects_wrong_bearer", lambda: True)
     out = rt.generate(
         [("system", "rules"), ("user", "Xin chao")],
         max_new_tokens=32,

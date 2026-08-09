@@ -116,7 +116,8 @@ class VTSManager:
 
         async def connect_until_available() -> None:
             while self._sway_running and not self.is_connected:
-                await self.connect()
+                async with self._reconnect_lock_provider():
+                    await self.connect()
                 if not self.is_connected:
                     await asyncio.sleep(reconnect_delay(self._reconnect_attempts))
 
@@ -126,6 +127,14 @@ class VTSManager:
         finally:
             self.is_connected = False
             loop.close()
+
+    def _reconnect_lock_provider(self) -> asyncio.Lock:
+        # run-loop reconnect and _auto_reconnect share one lock: a background
+        # reconnect task must never race the main connect loop on the same
+        # pyvts websocket (two sockets/auth exchanges would collide).
+        if self._reconnect_lock is None:
+            self._reconnect_lock = asyncio.Lock()
+        return self._reconnect_lock
 
     def _ensure_async_primitives(self) -> None:
         if self._request_lock is None:
@@ -159,9 +168,7 @@ class VTSManager:
         self._spawn_background_task(self._auto_reconnect())
 
     async def _auto_reconnect(self) -> None:
-        if self._reconnect_lock is None:
-            self._reconnect_lock = asyncio.Lock()
-        async with self._reconnect_lock:
+        async with self._reconnect_lock_provider():
             while self._sway_running and not self.is_connected:
                 await asyncio.sleep(reconnect_delay(self._reconnect_attempts))
                 if self.is_connected or not self._sway_running:

@@ -23,18 +23,18 @@ async def get_status():
 
 
 @router.get("/activity-log")
-async def get_activity_log(limit: int = Query(default=200, ge=1, le=500)):
+def get_activity_log(limit: int = Query(default=200, ge=1, le=500)):
     return {"status": "ok", "events": read(limit=limit)}
 
 
 @router.delete("/activity-log")
-async def clear_activity_log():
+def clear_activity_log():
     clear()
     return {"status": "ok"}
 
 
 @router.get("/models")
-async def get_models(backend: str = ""):
+def get_models(backend: str = ""):
     backend = _resolve_backend(backend) or backend
     if backend not in (BACKEND_OPENCODE, BACKEND_KILO):
         return {"status": "error", "message": f"unsupported backend: {backend!r}"}

@@ -403,7 +403,9 @@ def run_server() -> int:
     if not _acquire_single_instance():
         logger.error("Another OmniVoice instance already owns the Ru voice service")
         return 2
-    create_app().run(host="127.0.0.1", port=5052, threaded=False)
+    # threaded=True: a single stuck synthesis (GPU hang) must not brick
+    # /status, /warmup or /release for every other local caller.
+    create_app().run(host="127.0.0.1", port=5052, threaded=True)
     return 0
 
 

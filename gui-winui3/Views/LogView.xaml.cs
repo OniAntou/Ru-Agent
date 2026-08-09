@@ -26,6 +26,9 @@ namespace RuApp.Views
         public LogView()
         {
             this.InitializeComponent();
+            FilterChat.IsChecked = true;
+            FilterEmotion.IsChecked = true;
+            FilterVts.IsChecked = true;
         }
 
         public void Initialize(ApiService apiService)

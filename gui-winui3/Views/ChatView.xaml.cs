@@ -232,7 +232,7 @@ namespace RuApp.Views
                 var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
                 if (last != null)
                 {
-                    last.Content = $"**⚠️ LỖI GỬI:** {ex.Message}";
+                    last.Content = $"**LỖI GỬI:** {ex.Message}";
                     last.IsStreaming = false;
                     last.IsError = true;
                     int index = Messages.IndexOf(last);
@@ -251,7 +251,7 @@ namespace RuApp.Views
                     Messages.Add(new ChatMessageItem
                     {
                         Role = "assistant",
-                        Content = $"**⚠️ LỖI GỬI:** {ex.Message}",
+                        Content = $"**LỖI GỬI:** {ex.Message}",
                         IsStreaming = false,
                         IsError = true
                     });
@@ -483,7 +483,7 @@ namespace RuApp.Views
                         Messages.Add(new ChatMessageItem
                         {
                             Role = "assistant",
-                            Content = $"**⚠️ LỖI:** {error}\n\n{GetErrorDetails(error)}",
+                            Content = $"**LỖI:** {error}\n\n{GetErrorDetails(error)}",
                             IsStreaming = false,
                             IsError = true
                         });
@@ -492,7 +492,7 @@ namespace RuApp.Views
 
                     try
                     {
-                        string detailedError = $"**⚠️ LỖI: {error}**\n\n🔍 **Gợi ý sửa:** {GetErrorDetails(error)}";
+                        string detailedError = $"**LỖI: {error}**\n\n**Gợi ý sửa:** {GetErrorDetails(error)}";
                         last.Content = string.IsNullOrEmpty(last.Content)
                             ? detailedError
                             : $"{last.Content}\n\n{detailedError}";
@@ -610,7 +610,7 @@ namespace RuApp.Views
                 Messages.Add(new ChatMessageItem
                 {
                     Role = "assistant",
-                    Content = $"**⚠️ LỖI MỞ SESSION:** {ex.Message}",
+                    Content = $"**LỖI MỞ SESSION:** {ex.Message}",
                     IsError = true
                 });
             }

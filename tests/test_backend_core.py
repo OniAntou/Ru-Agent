@@ -1,3 +1,4 @@
+import threading
 from pathlib import Path
 
 from mini_gpt.backend_core import MiniGPTCore
@@ -16,6 +17,54 @@ def test_clear_memory_closes_sqlite_before_removing_database(tmp_path: Path) -> 
 
     assert core.memory_store is None
     assert not core.memory_db_path.exists()
+
+
+def test_clear_memory_waits_for_an_inflight_remember_write(tmp_path: Path) -> None:
+    core = MiniGPTCore()
+    core.memory_index_path = tmp_path / "memory.faiss"
+    core.memory_texts_path = tmp_path / "memory_texts.json"
+    core.memory_db_path = tmp_path / "memory.db"
+    remember_started = threading.Event()
+    release_remember = threading.Event()
+    clear_started = threading.Event()
+    clear_finished = threading.Event()
+
+    class BlockingStore:
+        closed = False
+
+        def remember_turn(self, prompt: str, reply: str) -> None:
+            remember_started.set()
+            assert release_remember.wait(timeout=2)
+
+        def close(self) -> None:
+            self.closed = True
+
+    store = BlockingStore()
+    core.memory_store = store
+    remember_thread = threading.Thread(
+        target=lambda: core.remember("prompt", "reply"),
+    )
+
+    def clear() -> None:
+        clear_started.set()
+        core.clear_memory()
+        clear_finished.set()
+
+    clear_thread = threading.Thread(target=clear)
+    remember_thread.start()
+    try:
+        assert remember_started.wait(timeout=1)
+        clear_thread.start()
+        assert clear_started.wait(timeout=1)
+        assert not clear_finished.wait(timeout=0.1)
+    finally:
+        release_remember.set()
+        remember_thread.join(timeout=1)
+        clear_thread.join(timeout=1)
+
+    assert clear_finished.is_set()
+    assert store.closed is True
+    assert core.memory_store is None
 
 
 def test_cloud_backend_does_not_receive_saved_memory_without_consent(monkeypatch) -> None:

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 
 import pytest
 
+import mini_gpt.voice_stream as voice_stream
 from mini_gpt.voice_observability import VoiceTiming
 from mini_gpt.voice_stream import VoiceStreamCoordinator, VoiceStreamEvent
 
@@ -108,6 +110,115 @@ def test_voice_stream_coordinator_forwards_original_style_to_every_chunk() -> No
         ("Một câu.", "original"),
         ("Câu thứ hai.", "original"),
     ]
+
+
+def test_voice_timeout_keeps_model_lock_until_background_worker_exits() -> None:
+    worker_started = threading.Event()
+    allow_worker_exit = threading.Event()
+    memory_lock = threading.Lock()
+
+    def slow_request_audio(text, voice_label, speed, style_id) -> bytes:
+        worker_started.set()
+        assert allow_worker_exit.wait(timeout=2)
+        return b"audio"
+
+    coordinator = VoiceStreamCoordinator(
+        prepare_speech=lambda selection: None,
+        request_audio=slow_request_audio,
+        memory_lock=memory_lock,
+        request_timeout=0.01,
+    )
+
+    async def collect() -> list[VoiceStreamEvent]:
+        return [
+            event
+            async for event in coordinator.start(
+                request_id="timeout-lock",
+                text="Mot cau.",
+                voice_label="Ru (OmniVoice)",
+                speed=1.0,
+            )
+        ]
+
+    loop = asyncio.new_event_loop()
+    try:
+        events = loop.run_until_complete(collect())
+        assert worker_started.is_set()
+        assert [event.event_type for event in events] == ["started", "failed"]
+        assert events[-1].error_code == "synthesis_timeout"
+        assert memory_lock.locked()
+
+        allow_worker_exit.set()
+        deadline = time.monotonic() + 1
+        while memory_lock.locked() and time.monotonic() < deadline:
+            loop.run_until_complete(asyncio.sleep(0.01))
+        assert not memory_lock.locked()
+    finally:
+        allow_worker_exit.set()
+        loop.run_until_complete(loop.shutdown_default_executor())
+        loop.close()
+
+
+def test_cancelled_worker_wrapper_keeps_model_lock_until_thread_exits(monkeypatch) -> None:
+    worker_started = threading.Event()
+    allow_worker_exit = threading.Event()
+    memory_lock = threading.Lock()
+    real_create_task = asyncio.create_task
+    worker_tasks: list[asyncio.Task[object]] = []
+
+    def capture_worker_task(coroutine) -> asyncio.Task[object]:
+        task = real_create_task(coroutine)
+        worker_tasks.append(task)
+        return task
+
+    def slow_request_audio(text, voice_label, speed, style_id) -> bytes:
+        worker_started.set()
+        assert allow_worker_exit.wait(timeout=2)
+        return b"audio"
+
+    monkeypatch.setattr(voice_stream.asyncio, "create_task", capture_worker_task)
+    coordinator = VoiceStreamCoordinator(
+        prepare_speech=lambda selection: None,
+        request_audio=slow_request_audio,
+        memory_lock=memory_lock,
+        request_timeout=1,
+    )
+
+    async def collect() -> list[VoiceStreamEvent]:
+        return [
+            event
+            async for event in coordinator.start(
+                request_id="cancelled-worker",
+                text="Mot cau.",
+                voice_label="Ru (OmniVoice)",
+                speed=1.0,
+            )
+        ]
+
+    async def cancel_worker_after_start() -> None:
+        collector = real_create_task(collect())
+        deadline = time.monotonic() + 1
+        while not worker_started.is_set() and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        assert worker_started.is_set()
+        worker_tasks[-1].cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await collector
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(cancel_worker_after_start())
+        assert memory_lock.locked()
+
+        allow_worker_exit.set()
+        deadline = time.monotonic() + 1
+        while memory_lock.locked() and time.monotonic() < deadline:
+            loop.run_until_complete(asyncio.sleep(0.01))
+        assert not memory_lock.locked()
+    finally:
+        allow_worker_exit.set()
+        loop.run_until_complete(loop.shutdown_default_executor())
+        loop.close()
 
 
 def test_voice_timing_serialization_has_no_text_or_negative_values() -> None:

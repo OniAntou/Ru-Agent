@@ -1,4 +1,4 @@
-# OmniVoice Measurable Pitch Controls Implementation Plan
+# Historical: Rejected OmniVoice Measurable Pitch Controls Implementation Plan
 
 > **Status:** Rejected after the 2026-08-07 user listening check. The
 > post-generation pitch transform made both presets metallic, and the related
@@ -6,19 +6,25 @@
 > as a historical implementation record; do not execute or ship its runtime
 > design unchanged.
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Historical document only. Every goal, architecture statement, task, command,
+> and checkbox below records a rejected design and must not be implemented. The
+> current `original`-only native-speed contract is recorded in
+> `2026-08-07-omnivoice-native-speed-recovery.md`.
 
-**Goal:** Replace ineffective clone prompt instructions with measurable +/-3
+> Historical automation note: the former worker instruction has been removed
+> because this plan is inactive.
+
+**Historical goal:** Replace ineffective clone prompt instructions with measurable +/-3
 semitone post-generation pitch controls and remove the unsupported whisper
 preset.
 
-**Architecture:** `voice_style.py` becomes the single validated mapping from a
+**Historical architecture:** `voice_style.py` becomes the single validated mapping from a
 stable setting ID to a numeric pitch offset. `omnivoice_tts_server.py` keeps
 clone generation prompt-free and shifts only completed non-default audio using
 librosa. Existing FastAPI and WebSocket transports continue to carry only a
 style ID. WinUI removes the unsupported option.
 
-**Tech Stack:** Python 3.13, numpy, librosa 0.11, Flask loopback OmniVoice,
+**Historical tech stack:** Python 3.13, numpy, librosa 0.11, Flask loopback OmniVoice,
 FastAPI/Pydantic, WinUI 3/.NET 10, pytest, xUnit.
 
 ## Global Constraints

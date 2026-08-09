@@ -1,11 +1,15 @@
 ﻿# OmniVoice Native Speed Recovery Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Status: implementation completed; retain this plan as a verification record. Human listening acceptance for native non-1.00x speed remains pending.
 
-**Goal:** Remove metallic local DSP effects while preserving bounded, opt-in
+> Completed implementation record. The worker instruction formerly here is
+> inactive; do not re-run the historical tasks. Use the active runtime and its
+> current tests when making a new voice change.
+
+**Implemented outcome:** Remove metallic local DSP effects while preserving bounded, opt-in
 voice pacing through OmniVoice's native generation speed.
 
-**Architecture:** Keep the existing local FastAPI and Flask loopback boundary.
+**Implemented architecture:** Keep the existing local FastAPI and Flask loopback boundary.
 Retire all non-original voice styles at validation time, resolve historical
 saved values to `original`, and let routes calculate an effective speed only
 when automatic pacing is enabled. The loopback passes a non-default effective

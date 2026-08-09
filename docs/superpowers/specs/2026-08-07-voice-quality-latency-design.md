@@ -48,8 +48,9 @@ until the current path has a reproducible baseline.
   OmniVoice cannot be assumed to coexist within the available VRAM.
 - The current GUI trial is Vietnamese-normalized OmniVoice with 16 steps. The
   baseline and 20/24-step candidates remain available for comparison.
-- Speed changes use `librosa.effects.time_stretch` away from 1.00x, which can
-  introduce metallic artifacts.
+- Non-1.00x speed is passed to OmniVoice native `model.generate(..., speed=...)`
+  with no local pitch or time-stretch processor. Human listening remains the
+  quality gate for that non-default path.
 
 ## Proposed architecture
 
@@ -105,8 +106,9 @@ report warm-up, first-chunk, and per-chunk synthesis timings without logging
 the spoken text or raw audio.
 
 Use native 1.00x speed as the quality reference. For non-default speed,
-compare native generation settings against time-stretch output; retain the
-current bounded speed limits until listening tests prove a better method.
+compare OmniVoice native generation settings against that reference; do not
+reintroduce local time-stretch. Retain the current bounded speed limits until
+listening tests prove a better native method.
 
 ### WinUI playback queue
 

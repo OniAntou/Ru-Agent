@@ -18,16 +18,16 @@
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="0,0,0,12" VerticalAlignment="Center">
                 <TextBlock Grid.Column="0" Text="Nhật ký hoạt động" FontSize="16" FontWeight="SemiBold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
 
-                <ToggleButton Grid.Column="1" x:Name="FilterChat" Content="💬 Chat" FontSize="12" Padding="10,4" Margin="8,0,4,0"
+<ToggleButton Grid.Column="1" x:Name="FilterChat" Content="Chat" FontSize="12" Padding="10,4" Margin="8,0,4,0"
                               Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#3C87FF"
-                              Background="#00000000" BorderBrush="#3C87FF" BorderThickness="1" CornerRadius="14" IsChecked="True"/>
-                <ToggleButton Grid.Column="2" x:Name="FilterEmotion" Content="🎭 Cảm xúc" FontSize="12" Padding="10,4" Margin="4,0"
+                              Background="#00000000" BorderBrush="#3C87FF" BorderThickness="1" CornerRadius="14"/>
+                <ToggleButton Grid.Column="2" x:Name="FilterEmotion" Content="Cảm xúc" FontSize="12" Padding="10,4" Margin="4,0"
                               Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#B06EF0"
-                              Background="#00000000" BorderBrush="#B06EF0" BorderThickness="1" CornerRadius="14" IsChecked="True"/>
-                <ToggleButton Grid.Column="3" x:Name="FilterVts" Content="🤖 VTS" FontSize="12" Padding="10,4" Margin="4,0"
+                              Background="#00000000" BorderBrush="#B06EF0" BorderThickness="1" CornerRadius="14"/>
+                <ToggleButton Grid.Column="3" x:Name="FilterVts" Content="VTS" FontSize="12" Padding="10,4" Margin="4,0"
                               Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#FF5C92"
-                              Background="#00000000" BorderBrush="#FF5C92" BorderThickness="1" CornerRadius="14" IsChecked="True"/>
-                <Button Grid.Column="4" x:Name="ClearButton" Content="🗑 Xoá" FontSize="13" Padding="10,4" Margin="8,2,0,0"
+                              Background="#00000000" BorderBrush="#FF5C92" BorderThickness="1" CornerRadius="14"/>
+                <Button Grid.Column="4" x:Name="ClearButton" Content="Xoá" FontSize="13" Padding="10,4" Margin="8,2,0,0"
                         Click="OnClearClicked" Foreground="#FF7A7A" Background="#00000000"
                         BorderBrush="#FF7A7A" BorderThickness="1" CornerRadius="14" HorizontalAlignment="Right"/>
             </Grid>

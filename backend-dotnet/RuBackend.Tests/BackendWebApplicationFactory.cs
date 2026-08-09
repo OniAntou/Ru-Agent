@@ -14,13 +14,11 @@ namespace RuBackend.Tests;
 public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly IUpstreamHttpTransport _httpTransport;
+    private readonly IUpstreamWebSocketConnector? _webSocketConnector;
 
-    public BackendWebApplicationFactory()
-        : this(null)
-    {
-    }
-
-    public BackendWebApplicationFactory(IUpstreamHttpTransport? httpTransport)
+    public BackendWebApplicationFactory(
+        IUpstreamHttpTransport? httpTransport = null,
+        IUpstreamWebSocketConnector? webSocketConnector = null)
     {
         _httpTransport = httpTransport ?? new StubUpstreamHttpTransport(
             new UpstreamResponse(
@@ -28,16 +26,22 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
                 "application/json",
                 Encoding.UTF8.GetBytes(
                     "{\"status\":\"ok\",\"message\":\"Backend is running and ready for the WinUI3 UI.\"}")));
+        _webSocketConnector = webSocketConnector;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseSetting("RuBackend:DesktopToken", "test-secret");
+        builder.UseSetting("RU_DESKTOP_TOKEN", "test-secret");
         builder.UseSetting("RuBackend:UpstreamUrl", "http://127.0.0.1:65531");
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IUpstreamHttpTransport>();
             services.AddSingleton(_httpTransport);
+            if (_webSocketConnector is not null)
+            {
+                services.RemoveAll<IUpstreamWebSocketConnector>();
+                services.AddSingleton(_webSocketConnector);
+            }
         });
     }
 

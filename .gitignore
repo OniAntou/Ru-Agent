@@ -60,6 +60,7 @@ rustup-init.exe
 *.wav
 
 # Scratch/verification artifacts
+artifacts/aspnetcore/
 tmp_verify_fresh*/
 resources.pri.xml
 *.lnk

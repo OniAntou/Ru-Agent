@@ -27,8 +27,10 @@ Verify the environment:
 
 The active desktop GUI is the **native WinUI 3** app in `gui-winui3/`
 (C#, .NET 10 + Windows App SDK 1.6+, Fluent Design with Mica backdrop),
-producing `RuApp.exe`, backed by the local FastAPI server
-`mini_gpt.server` on `127.0.0.1:8000`. The retired Tauri 2 React GUI
+producing `RuApp.exe`. Its public loopback contract stays on `127.0.0.1:8000`;
+FastAPI remains the default owner, while an explicit `RU_BACKEND_HOST_MODE=aspnetcore`
+selection runs the ASP.NET Core edge in front of a FastAPI worker on `8001`.
+The retired Tauri 2 React GUI
 (`gui-tauri/`), the legacy CustomTkinter GUI, and the old Flask web GUI
 have been removed from the repository.
 
@@ -45,19 +47,19 @@ Run:
 ```
 
 `start_dev.bat` starts only RuApp. The C# host generates a per-run 64-hex
-secret, starts exactly one owned FastAPI child on loopback
-(`--secret-token`), waits for readiness, and places it in a Windows
-kill-on-close Job Object. Closing or crashing the desktop app therefore
-stops the backend and every runtime it started, including OmniVoice and
-`llama-server`. REST requests use a bearer token; the chat WebSocket uses
-the same secret.
+secret, starts either the default FastAPI child or the explicit ASP.NET Core
+edge plus FastAPI worker, waits for readiness through public `8000`, and places
+all owned children in one Windows kill-on-close Job Object. Closing or
+crashing the desktop app therefore stops the backend and every runtime it
+started, including OmniVoice and `llama-server`. REST requests use a bearer
+token; the chat WebSocket uses the same secret.
 
 The app has five views: **Chat** (WebSocket streaming to `/chat` with
 auto-reconnect and typing indicator; persistent session history — each chat
 session is stored under `~/.minigpt/sessions/` with an auto title from the
 first message, a "New Session" button, and a history panel to reopen/delete
-old sessions; legacy `history.json` is auto-migrated once), **Memory** (clear
-saved memory via `DELETE /memory`), **Settings** (backend, model, API key, max
+old sessions; legacy `history.json` is auto-migrated once), **Memory** (read
+and clear saved memory via `GET`/`DELETE /memory`), **Settings** (backend, model, API key, max
 tokens, temperature, top-k, web search toggle, checkpoint path — loads the
 current state from `GET /settings`), **Voice** (TTS via the OmniVoice
 service: voice pick, speed, test, warm up, release GPU; toggle "read replies

@@ -1,63 +1,92 @@
-# RuBackend ASP.NET Core parallel slice
+# RuBackend ASP.NET Core compatibility edge
 
-`RuBackend` is the first compatibility slice for moving the loopback host from
-FastAPI to ASP.NET Core. It currently listens on `127.0.0.1:8010`, validates the
-same desktop bearer token, and forwards the REST/WebSocket contracts to the
-existing FastAPI process on `127.0.0.1:8000`.
+RuBackend is the ASP.NET Core compatibility edge for the existing Python
+runtime. It authenticates the desktop bearer token, forwards every non-
+WebSocket HTTP method/path, and relays /chat and /voice/stream frames
+without reimplementing model, memory, TTS, STT, VTS, or screen logic.
 
-This is a parallel migration slice. It does not replace FastAPI, does not move
-the production backend to port `8000`, and does not change WinUI startup. The
-existing `start_dev.bat` and `gui-winui3/Services/BackendProcessManager.cs`
-still start and own FastAPI on port `8000`.
+The implementation supports two explicit topologies:
 
-## Local run
+~~~text
+parallel:  client -> RuBackend:8010 -> FastAPI:8000
+cutover:   WinUI -> RuBackend:8000 -> FastAPI worker:8001
+~~~
 
-Start the existing FastAPI backend on port `8000`, then run the ASP.NET Core
-compatibility host from the repository root:
+The WinUI default remains the existing FastAPI owner until the live process,
+latency, shutdown, and confirmed OmniVoice-audio gates pass. No public client
+needs to know about worker port 8001.
 
-```powershell
+## Parallel local run
+
+Start FastAPI on 8000, then run the compatibility edge on 8010:
+
+~~~powershell
 $env:RU_DESKTOP_TOKEN = "local-test-secret"
+$env:RuBackend__BindUrl = "http://127.0.0.1:8010"
 $env:RuBackend__UpstreamUrl = "http://127.0.0.1:8000"
 dotnet run --project backend-dotnet/RuBackend/RuBackend.csproj -- --urls http://127.0.0.1:8010
-```
+~~~
 
-Requests to the ASP.NET Core host need:
+HTTP requests use Authorization: Bearer local-test-secret. WebSocket clients
+retain the existing query-token contract:
 
-```text
-Authorization: Bearer local-test-secret
-```
-
-WebSocket clients use the existing query contract, for example:
-
-```text
+~~~text
 ws://127.0.0.1:8010/chat?token=local-test-secret
 ws://127.0.0.1:8010/voice/stream?token=local-test-secret
-```
+~~~
+
+## WinUI cutover mode
+
+build.bat publishes both RuBackend.exe and RuApp.exe. To opt into the
+dual-child topology for a local smoke test:
+
+~~~powershell
+$env:RU_BACKEND_HOST_MODE = "aspnetcore"
+& D:\LLM\build.bat
+& D:\LLM\start_dev.bat
+~~~
+
+The process manager starts FastAPI on 127.0.0.1:8001, starts the published
+edge on 127.0.0.1:8000, gives both children the same per-run token, assigns
+both to one kill-on-close Job Object, and probes /settings through public
+8000. Clearing RU_BACKEND_HOST_MODE rolls back to the existing FastAPI owner
+on 8000; there is no automatic same-port fallback.
+
+The published edge is expected at:
+
+~~~text
+backend-dotnet\RuBackend\bin\Release\net10.0\win-x64\publish\RuBackend.exe
+~~~
 
 ## Configuration
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `RU_DESKTOP_TOKEN` | empty | Required desktop token; an empty value fails closed. |
-| `RuBackend__BindUrl` | `http://127.0.0.1:8010` | ASP.NET Core bind URL. |
-| `RuBackend__UpstreamUrl` | `http://127.0.0.1:8000` | FastAPI upstream base URL. |
-| `RuBackend__MaxRequestBodyBytes` | `8388608` | Maximum POST/PUT/PATCH body size. |
+| RU_DESKTOP_TOKEN | empty | Required token; empty fails closed. |
+| RuBackend__BindUrl | http://127.0.0.1:8010 | ASP.NET Core bind URL. |
+| RuBackend__UpstreamUrl | http://127.0.0.1:8000 | FastAPI worker base URL. |
+| RuBackend__MaxRequestBodyBytes | 8388608 | Maximum POST/PUT/PATCH body size. |
+| RU_BACKEND_HOST_MODE | fastapi | WinUI owner mode; aspnetcore enables the edge. |
+| RU_BACKEND_WORKER_PORT | 8001 | Private FastAPI port in ASP.NET Core mode. |
+| RU_RUBACKEND_EXE | published path above | Optional explicit edge executable path. |
 
-The `/status` and `/settings` HTTP endpoints are forwarded so a stopped
-upstream is reported as unavailable. `/chat` and `/voice/stream` relay text and
-binary WebSocket frames without parsing or reordering them. Model execution,
-memory, TTS, STT, VTS, and audio playback remain in Python for this slice.
+The complete route inventory is in docs/aspnetcore-route-matrix.md. GET
+/memory is implemented by Python and returns the existing WinUI DTO; .NET
+does not duplicate the memory store.
 
 ## Verification
 
-Run the checks sequentially from `D:\LLM`:
+Run heavy checks sequentially from D:\LLM:
 
-```powershell
+~~~powershell
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore
 dotnet test gui-winui3.Tests/gui-winui3.Tests.csproj --no-restore
 & D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_server_api.py tests/test_voice_stream.py tests/test_vts_api.py -q
-```
+& D:\LLM\.venv\Scripts\python.exe scripts/check_aspnetcore_route_matrix.py
+~~~
 
-These checks validate compatibility; they do not authorize the port `8000`
-cutover. A later cutover must verify WinUI process ownership, readiness,
-cancellation, shutdown, and live OmniVoice playback separately.
+The isolated live probe and direct-versus-edge benchmark are described in
+docs/superpowers/plans/2026-08-10-ru-aspnetcore-full-compatibility-and-cutover.md.
+Their output must not contain bearer tokens, request bodies, chat text, audio,
+or private VTS metadata. A passing unit suite alone does not authorize changing
+the default host mode.

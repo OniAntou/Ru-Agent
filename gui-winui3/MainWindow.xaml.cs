@@ -109,7 +109,7 @@ namespace RuApp
                 var subtitleTracker = new Services.VtsWindowTracker(new Services.VtsWindowLocator());
                 var subtitlePresenter = new Services.SubtitlePresenter();
                 _subtitleOverlay = new Services.SubtitleOverlayService(subtitleWindow, subtitleTracker, subtitlePresenter);
-                _voicePlayback.SubtitlePresenter = subtitlePresenter;
+                _voicePlayback.ConfigureSubtitles(subtitlePresenter);
 
                 _chatView = new ChatView();
                 _chatView.Initialize(_apiService, _wsClient, _voicePlayback);

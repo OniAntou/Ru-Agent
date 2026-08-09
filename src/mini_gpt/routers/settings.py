@@ -46,6 +46,7 @@ class SettingsPayload(BaseModel):
     voice_speed: float | None = Field(default=None, ge=0.5, le=2.0)
     auto_pace_enabled: bool | None = None
     auto_read_replies: bool | None = None
+    show_subtitles: bool | None = None
     gemini_vision_api_key: str = Field(default="", max_length=4096)
 
 
@@ -137,6 +138,8 @@ def save_settings(payload: SettingsPayload):
             settings["auto_pace_enabled"] = payload.auto_pace_enabled
         if payload.auto_read_replies is not None:
             settings["auto_read_replies"] = payload.auto_read_replies
+        if payload.show_subtitles is not None:
+            settings["show_subtitles"] = payload.show_subtitles
 
     _merge_settings(_apply)
 

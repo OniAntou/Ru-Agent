@@ -28,6 +28,7 @@ namespace RuApp.Services
         private VoiceStreamClient? _replyStreamClient;
         private Task? _replyStreamWorker;
         private VoiceReplyLatencyTracker? _replyLatencyTracker;
+        private VoiceSubtitleEventPump? _subtitleEvents;
         private bool _replyHasInput;
         private bool _vtsSpeaking;
         private bool _disposed;
@@ -39,13 +40,24 @@ namespace RuApp.Services
         public string VoiceLabel { get; set; } = "Ru (OmniVoice)";
         public double VoiceSpeed { get; set; } = 1.0;
         public bool AutoReadReplies { get; set; } = true;
-        public SubtitlePresenter? SubtitlePresenter { get; set; }
+        public bool SubtitlesEnabled
+        {
+            get => _subtitleEvents?.IsEnabled == true;
+            set => _subtitleEvents?.SetEnabled(value);
+        }
 
         public bool IsPlaying => _player?.PlaybackSession.PlaybackState == MediaPlaybackState.Playing;
 
         public VoicePlaybackService(ApiService apiService)
         {
             _apiService = apiService;
+        }
+
+        public void ConfigureSubtitles(SubtitlePresenter presenter)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _subtitleEvents?.Dispose();
+            _subtitleEvents = new VoiceSubtitleEventPump(presenter);
         }
 
         public async Task RefreshSettingsAsync()
@@ -243,7 +255,7 @@ namespace RuApp.Services
             previousAudioQueue?.Cancel();
             previousAudioQueue?.Dispose();
             previousStreamClient?.Dispose();
-            SubtitlePresenter?.CancelAll();
+            _subtitleEvents?.TryClear();
             if (previousCts is not null && previousWorker is not null)
             {
                 _ = ObserveReplyWorkerAsync(previousWorker, previousCts);
@@ -260,8 +272,13 @@ namespace RuApp.Services
             var channel = Channel.CreateUnbounded<string>(
                 new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
             var audioQueue = new VoiceReplyAudioQueue(
-                (chunk, cancellationToken) =>
-                    PlayReplyChunkAsync(chunk, cancellationToken, latencyTracker));
+                (chunk, onPlaybackStarted, cancellationToken) =>
+                    PlayReplyChunkAsync(
+                        chunk,
+                        onPlaybackStarted,
+                        cancellationToken,
+                        latencyTracker),
+                subtitleEvents: _subtitleEvents);
             Task worker = ConsumeReplyStreamAsync(channel.Reader, audioQueue, cts, latencyTracker);
             _replyStreamCts = cts;
             _replyTextChannel = channel;
@@ -433,7 +450,7 @@ namespace RuApp.Services
 
             cts?.Cancel();
             playbackQueue?.Dispose();
-            SubtitlePresenter?.CancelAll();
+            _subtitleEvents?.TryClear();
             if (_vtsSpeaking)
             {
                 _vtsSpeaking = false;
@@ -552,8 +569,6 @@ namespace RuApp.Services
         {
             string requestId = Guid.NewGuid().ToString("N");
             var streamClient = _apiService.CreateVoiceStreamClient();
-            long totalBytes = 0;
-            int? firstSampleRate = null;
             lock (_replyGate)
             {
                 _replyStreamClient = streamClient;
@@ -568,12 +583,10 @@ namespace RuApp.Services
                     VoiceSpeed,
                     async chunk =>
                     {
-                        if (firstSampleRate is null && chunk.SampleRate > 0)
-                        {
-                            firstSampleRate = chunk.SampleRate;
-                        }
-                        totalBytes += chunk.Audio.Length;
-                        await audioQueue.EnqueueAsync(chunk, cancellationToken);
+                        VoiceSubtitleCue? cue = !receivedAudio && SubtitlesEnabled
+                            ? new VoiceSubtitleCue(requestId, sentence)
+                            : null;
+                        await audioQueue.EnqueueAsync(chunk, cue, cancellationToken);
                         latencyTracker.MarkFirstAudioReceived();
                         receivedAudio = true;
                     },
@@ -613,14 +626,6 @@ namespace RuApp.Services
                     latencyTracker.MarkSynthesisFailure();
                 }
 
-                if (receivedAudio && firstSampleRate is not null && firstSampleRate.Value > 0)
-                {
-                    int durationMs = totalBytes > 0
-                        ? (int)(totalBytes / (double)(firstSampleRate.Value * 2) * 1000)
-                        : 0;
-                    SubtitlePresenter?.BeginSegment(sentence, durationMs);
-                }
-
                 lock (_replyGate)
                 {
                     if (ReferenceEquals(_replyStreamClient, streamClient))
@@ -645,8 +650,12 @@ namespace RuApp.Services
                 return false;
             }
 
+            VoiceSubtitleCue? cue = SubtitlesEnabled
+                ? new VoiceSubtitleCue(requestId, sentence)
+                : null;
             await audioQueue.EnqueueAsync(
                 new VoiceAudioChunk(requestId, 0, audio, 24_000, "wav"),
+                cue,
                 cancellationToken);
             latencyTracker.MarkFirstAudioReceived();
             return true;
@@ -654,11 +663,15 @@ namespace RuApp.Services
 
         private Task PlayReplyChunkAsync(
             VoiceAudioChunk chunk,
+            Action onPlaybackStarted,
             CancellationToken cancellationToken,
             VoiceReplyLatencyTracker latencyTracker)
         {
             latencyTracker.MarkPlaybackRequested();
-            return PlayWavAsync(chunk.Audio, cancellationToken);
+            return PlayWavAsync(
+                chunk.Audio,
+                cancellationToken,
+                onPlaybackStarted: onPlaybackStarted);
         }
 
         private static bool TryQueueReplySentence(ChannelWriter<string> writer, string sentence)
@@ -783,7 +796,8 @@ namespace RuApp.Services
         private async Task PlayWavAsync(
             byte[] audio,
             CancellationToken cancellationToken,
-            string? requestId = null)
+            string? requestId = null,
+            Action? onPlaybackStarted = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var player = new MediaPlayer { AutoPlay = false };
@@ -827,6 +841,14 @@ namespace RuApp.Services
 
                 cancellationToken.ThrowIfCancellationRequested();
                 player.Play();
+                try
+                {
+                    onPlaybackStarted?.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[VoicePlayback] Playback-start observer failed: {ex.Message}");
+                }
                 await ended.Task.WaitAsync(cancellationToken);
             }
             catch (OperationCanceledException)
@@ -938,6 +960,8 @@ namespace RuApp.Services
             if (_disposed) return;
             _disposed = true;
             StopVoice();
+            _subtitleEvents?.Dispose();
+            _subtitleEvents = null;
         }
 
         public async ValueTask DisposeAsync()
@@ -945,6 +969,8 @@ namespace RuApp.Services
             if (_disposed) return;
             _disposed = true;
             StopVoice();
+            _subtitleEvents?.Dispose();
+            _subtitleEvents = null;
             if (_vtsSpeaking)
             {
                 _vtsSpeaking = false;

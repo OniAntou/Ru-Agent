@@ -18,7 +18,7 @@ public sealed class SubtitlePresenterTests
         var sink = new Sink();
         using var presenter = new SubtitlePresenter();
         presenter.SnapshotChanged += sink.OnSnapshot;
-        presenter.BeginSegment("em là Ru", 900);
+        presenter.BeginSegment("r1", "em là Ru");
 
         Assert.Single(sink.Snapshots);
         Assert.Equal("em là Ru", sink.Snapshots[0].Text);
@@ -31,11 +31,27 @@ public sealed class SubtitlePresenterTests
         var sink = new Sink();
         using var presenter = new SubtitlePresenter();
         presenter.SnapshotChanged += sink.OnSnapshot;
-        presenter.BeginSegment("a b c", 900);
+        presenter.BeginSegment("r1", "a b c");
         presenter.CancelAll();
 
         Assert.Equal(SubtitleSnapshot.Empty, presenter.Current);
         Assert.Equal(2, sink.Snapshots.Count);
         Assert.Equal(SubtitleSnapshot.Empty, sink.Snapshots[^1]);
+    }
+
+    [Fact]
+    public void EndingStaleSegmentDoesNotClearNewerSubtitle()
+    {
+        using var presenter = new SubtitlePresenter();
+        presenter.BeginSegment("r1", "First sentence");
+        presenter.BeginSegment("r2", "Second sentence");
+
+        presenter.EndSegment("r1");
+
+        Assert.Equal("Second sentence", presenter.Current.Text);
+
+        presenter.EndSegment("r2");
+
+        Assert.Equal(SubtitleSnapshot.Empty, presenter.Current);
     }
 }

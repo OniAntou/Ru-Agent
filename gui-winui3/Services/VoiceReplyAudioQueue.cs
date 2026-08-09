@@ -5,29 +5,39 @@ using System.Threading.Tasks;
 
 namespace RuApp.Services;
 
+public readonly record struct VoiceSubtitleCue(string Id, string Text);
+
+public delegate Task VoiceReplyChunkPlayer(
+    VoiceAudioChunk chunk,
+    Action onPlaybackStarted,
+    CancellationToken cancellationToken);
+
 /// <summary>
 /// Buffers generated reply audio independently from the single playback device.
 /// </summary>
 public sealed class VoiceReplyAudioQueue : IDisposable
 {
-    private readonly Func<VoiceAudioChunk, CancellationToken, Task> _playChunkAsync;
-    private readonly Channel<VoiceAudioChunk> _channel;
+    private readonly VoiceReplyChunkPlayer _playChunkAsync;
+    private readonly VoiceSubtitleEventPump? _subtitleEvents;
+    private readonly Channel<QueuedAudio> _channel;
     private readonly CancellationTokenSource _cancellation = new();
     private readonly Task _consumer;
     private int _disposed;
     private int _completionFinished;
 
     public VoiceReplyAudioQueue(
-        Func<VoiceAudioChunk, CancellationToken, Task> playChunkAsync,
-        int capacity = 4)
+        VoiceReplyChunkPlayer playChunkAsync,
+        int capacity = 4,
+        VoiceSubtitleEventPump? subtitleEvents = null)
     {
         _playChunkAsync = playChunkAsync ?? throw new ArgumentNullException(nameof(playChunkAsync));
+        _subtitleEvents = subtitleEvents;
         if (capacity < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(capacity));
         }
 
-        _channel = Channel.CreateBounded<VoiceAudioChunk>(
+        _channel = Channel.CreateBounded<QueuedAudio>(
             new BoundedChannelOptions(capacity)
             {
                 FullMode = BoundedChannelFullMode.Wait,
@@ -41,8 +51,16 @@ public sealed class VoiceReplyAudioQueue : IDisposable
         VoiceAudioChunk chunk,
         CancellationToken cancellationToken = default)
     {
+        await EnqueueAsync(chunk, null, cancellationToken);
+    }
+
+    public async Task EnqueueAsync(
+        VoiceAudioChunk chunk,
+        VoiceSubtitleCue? subtitleCue,
+        CancellationToken cancellationToken = default)
+    {
         ObjectDisposedException.ThrowIf(_disposed != 0, this);
-        await _channel.Writer.WriteAsync(chunk, cancellationToken);
+        await _channel.Writer.WriteAsync(new QueuedAudio(chunk, subtitleCue), cancellationToken);
     }
 
     public async Task CompleteAsync()
@@ -95,16 +113,46 @@ public sealed class VoiceReplyAudioQueue : IDisposable
 
     private async Task ConsumeAsync(CancellationToken cancellationToken)
     {
+        string? activeSubtitleId = null;
         try
         {
-            await foreach (VoiceAudioChunk chunk in _channel.Reader.ReadAllAsync(cancellationToken))
+            await foreach (QueuedAudio queued in
+                _channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
-                await _playChunkAsync(chunk, cancellationToken);
+                VoiceSubtitleCue? cue = queued.SubtitleCue;
+                int notified = 0;
+                await _playChunkAsync(
+                    queued.Chunk,
+                    () =>
+                    {
+                        if (Interlocked.Exchange(ref notified, 1) != 0 ||
+                            cue is not VoiceSubtitleCue subtitle)
+                        {
+                            return;
+                        }
+
+                        if (_subtitleEvents?.TryShow(subtitle) == true)
+                        {
+                            activeSubtitleId = subtitle.Id;
+                        }
+                    },
+                    cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Cancellation is the normal path when a newer reply interrupts playback.
         }
+        finally
+        {
+            if (activeSubtitleId is not null)
+            {
+                _subtitleEvents?.TryHide(activeSubtitleId);
+            }
+        }
     }
+
+    private readonly record struct QueuedAudio(
+        VoiceAudioChunk Chunk,
+        VoiceSubtitleCue? SubtitleCue);
 }

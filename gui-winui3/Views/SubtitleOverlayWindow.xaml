@@ -9,6 +9,9 @@
                    VerticalAlignment="Center"
                    TextAlignment="Center"
                    TextWrapping="Wrap"
+                   Foreground="White"
+                   FontWeight="SemiBold"
+                   IsHitTestVisible="False"
                    Padding="16,0"/>
     </Grid>
 </Window>

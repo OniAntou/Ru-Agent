@@ -2,7 +2,6 @@ using System;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using RuApp.Models;
 using RuApp.Services;
@@ -44,6 +43,8 @@ public sealed partial class SubtitleOverlayWindow : Window
 
     public void ShowOverlay()
     {
+        CancelFadeOut();
+        OverlayRoot.Opacity = 1;
         if (_shown) return;
         _shown = true;
         _appWindow.Show();
@@ -76,7 +77,7 @@ public sealed partial class SubtitleOverlayWindow : Window
         {
             From = OverlayRoot.Opacity,
             To = 0,
-            Duration = TimeSpan.FromSeconds(2),
+            Duration = TimeSpan.FromMilliseconds(400),
             EnableDependentAnimation = true,
         };
         Storyboard.SetTarget(animation, OverlayRoot);
@@ -89,8 +90,11 @@ public sealed partial class SubtitleOverlayWindow : Window
 
     public void CancelFadeOut()
     {
-        if (_fadeStoryboard == null) return;
-        _fadeStoryboard.Stop();
+        if (_fadeStoryboard is not null)
+        {
+            _fadeStoryboard.Completed -= OnFadeCompleted;
+            _fadeStoryboard.Stop();
+        }
         _fadeStoryboard = null;
         _fadeCompleted = null;
         OverlayRoot.Opacity = 1;
@@ -98,6 +102,10 @@ public sealed partial class SubtitleOverlayWindow : Window
 
     private void OnFadeCompleted(object? sender, object e)
     {
+        if (_fadeStoryboard is not null)
+        {
+            _fadeStoryboard.Completed -= OnFadeCompleted;
+        }
         _fadeStoryboard = null;
         HideOverlay();
         Action? completed = _fadeCompleted;
@@ -110,11 +118,6 @@ public sealed partial class SubtitleOverlayWindow : Window
         IntPtr style = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
         style |= WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW;
         SetWindowLongPtr(hwnd, GWL_EXSTYLE, style);
-    }
-
-    private static SolidColorBrush Argb(byte a, byte r, byte g, byte b)
-    {
-        return new SolidColorBrush { Color = Windows.UI.Color.FromArgb(a, r, g, b) };
     }
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]

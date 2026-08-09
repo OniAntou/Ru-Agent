@@ -39,8 +39,9 @@ public sealed class VoicePlaybackQueueTests
         var played = new List<int>();
 
         using var queue = new VoiceReplyAudioQueue(
-            async (chunk, cancellationToken) =>
+            async (chunk, onPlaybackStarted, cancellationToken) =>
             {
+                onPlaybackStarted();
                 if (chunk.Sequence == 0)
                 {
                     firstChunkStarted.TrySetResult(true);
@@ -62,6 +63,95 @@ public sealed class VoicePlaybackQueueTests
         await queue.CompleteAsync();
 
         Assert.Equal(new[] { 0, 1 }, played);
+    }
+
+    [Fact]
+    public async Task ReplySubtitleChangesOnlyAfterPlaybackReportsStarted()
+    {
+        using var presenter = new SubtitlePresenter();
+        using var pump = new VoiceSubtitleEventPump(presenter);
+        pump.SetEnabled(true);
+        var allowPlaybackStart = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var shown = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        presenter.SnapshotChanged += snapshot =>
+        {
+            if (snapshot.Text == "Cau mot")
+            {
+                shown.TrySetResult(true);
+            }
+        };
+
+        using var queue = new VoiceReplyAudioQueue(
+            async (_, onPlaybackStarted, cancellationToken) =>
+            {
+                await allowPlaybackStart.Task.WaitAsync(cancellationToken);
+                onPlaybackStarted();
+            },
+            subtitleEvents: pump);
+
+        await queue.EnqueueAsync(
+            Chunk("r1", 0),
+            new VoiceSubtitleCue("r1", "Cau mot"));
+        Assert.Equal(SubtitleSnapshot.Empty, presenter.Current);
+
+        allowPlaybackStart.TrySetResult(true);
+        await shown.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        await queue.CompleteAsync();
+    }
+
+    [Fact]
+    public async Task BlockedSubtitleRendererCannotBlockPlaybackContinuation()
+    {
+        using var presenter = new SubtitlePresenter();
+        using var pump = new VoiceSubtitleEventPump(presenter);
+        pump.SetEnabled(true);
+        var rendererEntered = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRenderer = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var rendererExited = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var playbackContinued = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        presenter.SnapshotChanged += snapshot =>
+        {
+            if (snapshot == SubtitleSnapshot.Empty)
+            {
+                return;
+            }
+
+            rendererEntered.TrySetResult(true);
+            releaseRenderer.Task.GetAwaiter().GetResult();
+            rendererExited.TrySetResult(true);
+        };
+        using var queue = new VoiceReplyAudioQueue(
+            (_, onPlaybackStarted, _) =>
+            {
+                onPlaybackStarted();
+                playbackContinued.TrySetResult(true);
+                return Task.CompletedTask;
+            },
+            subtitleEvents: pump);
+
+        try
+        {
+            await queue.EnqueueAsync(
+                Chunk("r1", 0),
+                new VoiceSubtitleCue("r1", "Cau mot"));
+            await rendererEntered.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+            await playbackContinued.Task.WaitAsync(TimeSpan.FromSeconds(1));
+            Assert.True(playbackContinued.Task.IsCompletedSuccessfully);
+        }
+        finally
+        {
+            releaseRenderer.TrySetResult(true);
+            await rendererExited.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        }
+
+        await queue.CompleteAsync();
     }
 
     [Fact]

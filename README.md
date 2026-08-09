@@ -61,7 +61,11 @@ current state from `GET /settings`), **Voice** (TTS via the OmniVoice
 service: voice pick, speed, test, warm up, release GPU; toggle "read replies
 aloud" persists in the app and auto-plays each chat reply; microphone
 input → speech recognition fills the chat box; VTube Studio avatar connection
-and expression controls), **Subtitle VTS** (karaoke overlay trong-same-app hiện dưới model VTube Studio: transparent/topmost/click-through, tự bám cửa sổ VTS qua polling Win32, hiện từng chữ theo tỷ lệ thời lượng audio thật, fade-out 2s khi hết, tự ẩn khi đóng VTS; bật/tắt từ tab Voice, lưu persist trong app; yêu cầu VTS đang mở, không gửi/nhận transcript, không ảnh hưởng Discord bridge), and **Observation** (a manual, off-by-default
+and expression controls), **VTS Subtitle** (an in-process plain-text overlay
+below the VTube Studio model: topmost/click-through, monitor-aware positioning,
+whole-sentence display at audio start, 2-second hold plus fade, automatic hiding
+when VTS closes, and a persisted toggle in the Voice tab; it does not exchange
+transcripts with VTS or affect the Discord bridge), and **Observation** (a manual, off-by-default
 primary-monitor observe toggle with RAM-only pipeline counters and latency
 metrics).
 
@@ -81,9 +85,13 @@ the opening has no sentence punctuation, the buffer may emit exactly one
 word-safe opening phrase (first valid boundary from characters 48--60, then
 61--72); later output returns to sentence-first delivery. A bounded generation
 queue prefetches later sentence audio while the current sentence is playing,
-without overlapping playback. The subtitle overlay (when enabled) mirrors the
-same sentence text and audio-duration estimate; it does not intercept or modify
-the voice stream.
+without overlapping playback. The subtitle overlay (when enabled) changes text
+only when the matching queued audio starts, including complete-WAV fallback;
+stale or cancelled queues cannot clear a newer subtitle. It does not intercept
+or modify the voice stream. Subtitle delivery is fail-open: `MediaPlayer.Play()`
+runs before a bounded, non-blocking latest-state notification. A stalled or
+failed subtitle renderer may drop text but cannot delay or fail voice playback;
+disabling subtitles also disables cue creation and VTS window polling.
 
 Reply-latency telemetry is numeric-only and sent only to an authenticated local
 loopback endpoint after a reply completes, fails, or is cancelled. It contains

@@ -133,6 +133,7 @@ _DEFAULT_SETTINGS = {
     "voice_speed": 1.0,
     "auto_pace_enabled": False,
     "auto_read_replies": True,
+    "show_subtitles": False,
 }
 
 _VALID_BACKENDS = (BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO)
@@ -295,6 +296,7 @@ def effective_settings() -> dict:
         "kilo_reasoning_enabled",
         "auto_pace_enabled",
         "auto_read_replies",
+        "show_subtitles",
     ):
         if not isinstance(merged.get(key), bool):
             merged[key] = _DEFAULT_SETTINGS[key]
@@ -353,6 +355,7 @@ def _effective_settings_unlocked() -> dict:
         "kilo_reasoning_enabled",
         "auto_pace_enabled",
         "auto_read_replies",
+        "show_subtitles",
     ):
         if not isinstance(merged.get(key), bool):
             merged[key] = _DEFAULT_SETTINGS[key]

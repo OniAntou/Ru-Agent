@@ -1,7 +1,7 @@
 # Subtitle cho model VTube (VTS) của Ru — Design Spec
 
 - **Ngày:** 2026-08-09
-- **Trạng thái:** Đã duyệt bổ sung thiết kế cô lập voice 2026-08-09; chờ triển khai và live smoke với VTS
+- **Trạng thái:** Đã triển khai và qua automated regression 2026-08-09; còn chờ live A/B với OmniVoice + VTS
 
 ## Mục tiêu
 
@@ -104,13 +104,24 @@ chat sentence sạch (từ backend)
 
 ## Acceptance còn lại
 
-- Regression test giữ renderer subtitle bị block vô hạn nhưng playback vẫn bắt đầu và hoàn tất độc lập.
-- Không có `await`, synchronous presenter callback hoặc UI operation trước `MediaPlayer.Play()`.
 - Mở VTS + RuApp từ build mới, bật subtitle và phát ít nhất 3 câu liên tiếp.
 - Xác nhận câu đầu và các câu sau đều nhìn thấy; câu thứ hai không xuất hiện trước audio.
 - Kéo VTS qua monitor trái/phải, minimize/restore, đóng/mở lại khi đang phát.
 - Xác nhận nền overlay thực tế trong suốt trên máy đích; đây là gate live vì WinUI 3
   không bảo đảm desktop transparency chỉ từ XAML `Background="Transparent"`.
+
+## Bằng chứng triển khai tự động
+
+- WinUI: `77/77` test pass ở Release; tăng từ baseline `70/70` bằng 7 regression
+  test cho pump, playback-start ordering, blocked renderer, exception, overload,
+  toggle và cancellation.
+- Bốn test cạnh tranh quan trọng (blocked pump, drop-oldest, blocked playback
+  renderer, non-blocking `StopVoice`) pass `20/20` vòng liên tiếp.
+- Backend settings: `127/127` test pass; 2 warning là deprecation từ dependency.
+- Source audit xác nhận `VoicePlaybackService` không gọi presenter/UI trực tiếp;
+  `MediaPlayer.Play()` đứng trước notifier, notifier chỉ gọi `TryShow` vào mailbox.
+- Automated evidence chưa thay thế live audio: latency A/B và hành vi overlay thật
+  vẫn cần người dùng xác nhận trên OmniVoice + VTube Studio.
 
 ## Bằng chứng latency trước thiết kế cô lập
 
@@ -118,10 +129,9 @@ Telemetry của lượt chậm ngày 2026-08-09 ghi `phrase_to_first_audio_ms = 
 và `submit_to_playback_requested_ms = 33096.065`, trong khi phrase được queue ở
 `2224.010ms`. Khoảng first-audio → playback-request chỉ khoảng `9.716ms`; do đó
 delay khoảng 30.8s quan sát được nằm trước khi subtitle có thể render, trong khâu
-chuẩn bị/xếp hàng/synthesis voice trước khi có audio. Dù vậy, implementation hiện
-tại vẫn gọi callback subtitle đồng bộ
-trước playback, nên thiết kế cô lập này là bắt buộc để loại bỏ nguy cơ subtitle gây
-delay trong các lượt sau.
+chuẩn bị/xếp hàng/synthesis voice trước khi có audio. Dù vậy, implementation trước
+bản sửa từng gọi callback subtitle đồng bộ trước playback; event pump hiện tại đã
+loại bỏ coupling đó khỏi critical path.
 
 ## Nguồn tham khảo
 

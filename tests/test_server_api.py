@@ -418,6 +418,20 @@ def test_settings_voice_fields_round_trip(monkeypatch, isolated_state) -> None:
     assert body["voice_label"] == "Ái Vy (OmniVoice)"
     assert body["voice_speed"] == 1.05
 
+
+def test_subtitle_setting_defaults_off_and_round_trips(isolated_state) -> None:
+    with TestClient(server.app) as client:
+        defaults = client.get("/settings").json()
+        saved = client.post("/settings", json={"show_subtitles": True})
+        loaded = client.get("/settings").json()
+        voice_status = client.get("/voice/status").json()
+
+    assert defaults["show_subtitles"] is False
+    assert saved.status_code == 200
+    assert saved.json()["status"] == "success"
+    assert loaded["show_subtitles"] is True
+    assert voice_status["show_subtitles"] is True
+
 def test_legacy_pitch_style_is_normalized_to_original_in_settings_and_status(monkeypatch, isolated_state) -> None:
     monkeypatch.setattr(server_shared, "voice_available", lambda: True)
     monkeypatch.setattr(voice_router, "voice_available", lambda: True, raising=False)
@@ -513,6 +527,7 @@ def test_voice_status_returns_effective_disabled_auto_read_setting(monkeypatch) 
         "voice_speed": 1.05,
         "auto_pace_enabled": False,
         "auto_read_replies": False,
+        "show_subtitles": False,
     }
 
 

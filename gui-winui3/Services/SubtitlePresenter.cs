@@ -9,20 +9,71 @@ public readonly record struct SubtitleSnapshot(string Text)
 
 public sealed class SubtitlePresenter : IDisposable
 {
-    public event Action<SubtitleSnapshot>? SnapshotChanged;
-    public SubtitleSnapshot Current { get; private set; } = SubtitleSnapshot.Empty;
+    private readonly object _gate = new();
+    private string? _activeSegmentId;
+    private SubtitleSnapshot _current = SubtitleSnapshot.Empty;
 
-    public void BeginSegment(string text, int durationMs)
+    public event Action<SubtitleSnapshot>? SnapshotChanged;
+    public SubtitleSnapshot Current
     {
-        Current = new SubtitleSnapshot(text);
-        SnapshotChanged?.Invoke(Current);
+        get
+        {
+            lock (_gate)
+            {
+                return _current;
+            }
+        }
+    }
+
+    public void BeginSegment(string segmentId, string text)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(segmentId);
+        var snapshot = new SubtitleSnapshot(text);
+        Action<SubtitleSnapshot>? changed;
+        lock (_gate)
+        {
+            _activeSegmentId = segmentId;
+            _current = snapshot;
+            changed = SnapshotChanged;
+        }
+        changed?.Invoke(snapshot);
+    }
+
+    public void EndSegment(string segmentId)
+    {
+        Action<SubtitleSnapshot>? changed;
+        lock (_gate)
+        {
+            if (!string.Equals(_activeSegmentId, segmentId, StringComparison.Ordinal))
+            {
+                return;
+            }
+            _activeSegmentId = null;
+            _current = SubtitleSnapshot.Empty;
+            changed = SnapshotChanged;
+        }
+        changed?.Invoke(SubtitleSnapshot.Empty);
     }
 
     public void CancelAll()
     {
-        Current = SubtitleSnapshot.Empty;
-        SnapshotChanged?.Invoke(Current);
+        Action<SubtitleSnapshot>? changed;
+        lock (_gate)
+        {
+            _activeSegmentId = null;
+            _current = SubtitleSnapshot.Empty;
+            changed = SnapshotChanged;
+        }
+        changed?.Invoke(SubtitleSnapshot.Empty);
     }
 
-    public void Dispose() => SnapshotChanged = null;
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            _activeSegmentId = null;
+            _current = SubtitleSnapshot.Empty;
+            SnapshotChanged = null;
+        }
+    }
 }

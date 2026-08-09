@@ -262,6 +262,9 @@ def voice_status():
         "auto_read_replies": settings.get(
             "auto_read_replies", _DEFAULT_SETTINGS["auto_read_replies"]
         ),
+        "show_subtitles": settings.get(
+            "show_subtitles", _DEFAULT_SETTINGS["show_subtitles"]
+        ),
     }
 
 

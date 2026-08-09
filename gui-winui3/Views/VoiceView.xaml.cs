@@ -92,6 +92,10 @@ namespace RuApp.Views
 
         private void ApplySubtitleToggle(bool isOn)
         {
+            if (_voicePlayback is not null)
+            {
+                _voicePlayback.SubtitlesEnabled = isOn;
+            }
             if (_overlayService == null) return;
             if (isOn)
             {

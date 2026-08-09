@@ -256,7 +256,37 @@ def test_observation_vision_config_local_without_key(monkeypatch, isolated_state
     )
     with TestClient(server.app) as client:
         config = client.get("/observation/vision-config").json()
-    assert config == {"status": "ok", "engine": "local"}
+    assert config == {
+        "status": "disabled",
+        "engine": "local",
+        "message": "Local screen observation is temporarily disabled while waiting for a replacement vision model.",
+    }
+
+
+def test_observation_lifecycle_is_disabled_without_local_vision(isolated_state) -> None:
+    with TestClient(server.app) as client:
+        started = client.post("/observation/start")
+        stopped = client.post("/observation/stop")
+        status = client.get("/observation/status")
+
+    assert started.status_code == 200
+    assert stopped.status_code == 200
+    assert status.status_code == 200
+    assert started.json() == {"status": "disabled", "active": False}
+    assert stopped.json() == {"status": "disabled", "active": False}
+    assert status.json() == {
+        "status": "disabled",
+        "active": False,
+        "frame_count": 0,
+        "vision_count": 0,
+        "emitted_count": 0,
+        "stale_drops": 0,
+        "ms_before": 0,
+        "ms_cloud": 0,
+        "ms_after": 0,
+        "last_motion_delta": 0.0,
+        "engine": "disabled",
+    }
 
 def test_settings_empty_gemini_key_keeps_existing_key(monkeypatch, isolated_state) -> None:
     deleted = []

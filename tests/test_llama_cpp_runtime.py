@@ -11,27 +11,37 @@ def runtime(tmp_path: Path) -> LlamaCppRuntime:
     return LlamaCppRuntime(project_root=tmp_path)
 
 
-def test_server_command_keeps_model_after_lora(runtime: LlamaCppRuntime, tmp_path: Path) -> None:
-    lora = tmp_path / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6.2-lora.gguf"
-    lora.parent.mkdir(parents=True)
-    lora.write_bytes(b"x" * 1024)
-    base = tmp_path / "models" / "gguf" / "llama3.1-8b-instruct-q4_k_m.gguf"
+def test_server_command_uses_lfm25_without_a_legacy_lora(runtime: LlamaCppRuntime, tmp_path: Path) -> None:
+    base = tmp_path / "models" / "gguf" / "LFM2.5-2.6B-Q4_K_M.gguf"
+    base.parent.mkdir(parents=True)
     base.write_bytes(b"x" * 1024)
 
     command = runtime.server_command("all")
 
     assert "--model" in command
     model_index = command.index("--model")
-    lora_index = command.index("--lora")
     assert command[model_index + 1] == str(base)
-    assert command[lora_index + 1] == str(lora)
-    assert command.index("--host") > lora_index
+    assert "--lora" not in command
+    assert command.index("--host") > model_index
 
 
 def test_server_command_without_lora_has_no_flag(runtime: LlamaCppRuntime) -> None:
     command = runtime.server_command("0")
     assert "--lora" not in command
+    assert "--skip-chat-parsing" not in command
+    assert "--jinja" in command
+    assert command[command.index("--reasoning") + 1] == "off"
+    assert command[command.index("--reasoning-budget") + 1] == "0"
     assert command[command.index("--model") + 1] == str(runtime.base_model)
+
+
+def test_validate_assets_accepts_lfm25_base_without_a_lora(runtime: LlamaCppRuntime, tmp_path: Path) -> None:
+    runtime.server_executable.parent.mkdir(parents=True)
+    runtime.server_executable.write_bytes(b"x")
+    runtime.base_model.parent.mkdir(parents=True)
+    runtime.base_model.write_bytes(b"x")
+
+    runtime.validate_assets()
 
 
 def test_server_command_includes_loopback_auth_key(runtime: LlamaCppRuntime) -> None:
@@ -106,7 +116,7 @@ def test_start_detects_a_foreign_server_after_spawn_without_waiting_for_timeout(
 
     def foreign_server(endpoint: str, _payload: dict | None, _timeout: float) -> dict:
         requested_endpoints.append(endpoint)
-        if endpoint == "/v1/models":
+        if endpoint == "/v1/chat/completions":
             raise RuntimeError("llama.cpp HTTP 401: unauthorized")
         return {}
 
@@ -117,8 +127,41 @@ def test_start_detects_a_foreign_server_after_spawn_without_waiting_for_timeout(
     with pytest.raises(RuntimeError, match="already in use"):
         runtime._start_server("all")
 
-    assert requested_endpoints == ["/v1/models"]
+    assert requested_endpoints == ["/v1/chat/completions"]
     assert process.terminated is True
+
+
+def test_start_requires_the_protected_endpoint_for_ownership(
+    runtime: LlamaCppRuntime, monkeypatch
+) -> None:
+    requested_endpoints: list[str] = []
+
+    class FakeProcess:
+        pid = 1234
+        returncode: int | None = None
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.returncode = 0
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    def owned_server(endpoint: str, _payload: dict | None, _timeout: float) -> dict:
+        requested_endpoints.append(endpoint)
+        return {}
+
+    runtime._request_impl = owned_server
+    runtime._popen = lambda *args, **kwargs: FakeProcess()
+    monkeypatch.setattr(runtime, "_loopback_port_is_occupied", lambda: False)
+    monkeypatch.setattr(runtime, "_server_rejects_wrong_bearer", lambda: True)
+
+    runtime._start_server("all")
+
+    assert requested_endpoints == ["/v1/chat/completions"]
+    runtime.stop()
 
 
 def test_start_rejects_a_listener_that_accepts_the_wrong_bearer_token(
@@ -155,7 +198,7 @@ def test_start_rejects_a_listener_that_accepts_the_wrong_bearer_token(
     with pytest.raises(RuntimeError, match="already in use"):
         runtime._start_server("all")
 
-    assert requested_endpoints == ["/v1/models"]
+    assert requested_endpoints == ["/v1/chat/completions"]
     assert process.terminated is True
 
 
@@ -182,8 +225,8 @@ def test_ownership_probe_requires_rejection_of_a_different_bearer_token(
         *,
         api_key: str | None = None,
     ) -> dict:
-        assert endpoint == "/v1/models"
-        assert payload is None
+        assert endpoint == "/v1/chat/completions"
+        assert payload == {"messages": [], "max_tokens": 0, "stream": False}
         assert timeout > 0
         attempted_keys.append(api_key)
         raise RuntimeError("llama.cpp HTTP 401: unauthorized")
@@ -195,8 +238,20 @@ def test_ownership_probe_requires_rejection_of_a_different_bearer_token(
     assert attempted_keys[0] != runtime.api_key
 
 
-def test_server_command_validates_assets_with_missing_lora(runtime: LlamaCppRuntime) -> None:
-    with pytest.raises(FileNotFoundError, match="Ru LoRA GGUF"):
+def test_ownership_probe_retries_while_llama_server_is_loading(
+    runtime: LlamaCppRuntime, monkeypatch
+) -> None:
+    def loading_server(*args, **kwargs):
+        raise RuntimeError('llama.cpp HTTP 503: {"error":{"message":"Loading model"}}')
+
+    monkeypatch.setattr(runtime, "_request_json", loading_server)
+
+    with pytest.raises(RuntimeError, match="HTTP 503"):
+        runtime._server_rejects_wrong_bearer()
+
+
+def test_server_command_validates_assets_with_missing_llama_server(runtime: LlamaCppRuntime) -> None:
+    with pytest.raises(FileNotFoundError, match="llama-server"):
         runtime.validate_assets()
 
 
@@ -224,6 +279,7 @@ def test_generate_sends_strong_repetition_guard(monkeypatch) -> None:
     )
     # This injected in-memory request function represents the already-owned
     # fake server; real startup ownership is covered by dedicated tests.
+    monkeypatch.setattr(rt, "validate_assets", lambda: None)
     monkeypatch.setattr(rt, "_server_rejects_wrong_bearer", lambda: True)
     out = rt.generate(
         [("system", "rules"), ("user", "Xin chao")],

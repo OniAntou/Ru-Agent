@@ -1,8 +1,23 @@
 # Ru Roadmap
 
-## Active Llama path
+## Active LFM2.5 path
 
-- [x] Retain the Llama 3.1 8B v6 QLoRA HF fallback.
+- [x] Download the native `LiquidAI/LFM2.5-2.6B` checkpoint to
+  `models\lfm2.5-2.6b-hf` for future fine-tuning.
+- [x] Download `LiquidAI/LFM2.5-2.6B-GGUF` Q4_K_M to
+  `models\gguf\LFM2.5-2.6B-Q4_K_M.gguf` and make it the direct llama.cpp GUI
+  default.
+- [x] Remove the active Llama 3.1 HF, EXL2, base GGUF, and LoRA GGUF assets.
+- [x] Remove the legacy v5, v6, and v6.1 conversation datasets; retain only
+  v6.2, v6.2_fresh, and v6.3 dataset directories.
+- [ ] Adapt the historical Llama QLoRA trainer and target modules for the LFM2
+  hybrid architecture before starting a new fine-tune.
+- [ ] Run the LFM2.5 bilingual quality gate and physical-VRAM smoke benchmark.
+
+## Historical Llama 3.1 path
+
+- [x] Preserve the historical Llama 3.1 QLoRA checkpoints and evaluations;
+  obsolete HF fallback/base model assets were removed during the LFM2.5 switch.
 - [x] Bound GUI conversation context; persistent memory and search can be
   disabled in Settings.
 - [x] Remove discontinued Qwen LLM, Gemma, MiniGPT, and V5 corpus code/data
@@ -64,22 +79,15 @@
   native gates after runtime hardening.
 - [ ] Run the manual GUI/voice/VTS smoke test with real devices/services before
   the next adapter evaluation.
-- [ ] Finish the live acceptance gates for the implemented primary-monitor
-  observer: representative game/YouTube quality, actual Ru OmniVoice playback,
-  p50/p95/worst event-to-first-audio latency, three-to-six useful comments per
-  active minute, VTS actions, 20 observation cycles, 10 full app exits, forced
-  parent termination, and live RAM/VRAM/handle stability. The local Qwen gate,
-  DXGI/RAM-only pipeline, hosted reaction API, sidebar control, and process
-  ownership are implemented. First audible acceptance on 2026-08-02: user
-  confirmed Ru's OmniVoice, `đã phát` reached 6, and post-cloud age stayed
-  3.2–4.1 s with 480×270/96-token frames and the ack-semantics fix (skips fell
-  from 70% to 12–22%). 20 observation cycles, 10 forced app kills, cloud-loss
-  pause, and single-instance checks all passed with no resource growth or
-  leftover processes. Remaining manual listening items: a representative
-  game/YouTube/subtitle/static/scene-transition quality trial and a dedicated
-  ten-minute cadence/repetition review with a known screen; cloud (Kilo) empty
-  streams remain an external provider instability to revisit only with user
-  approval to change providers or spend credits.
+- [x] Temporarily disable the local screen-observation path because the pinned
+  Qwen3-VL model was too slow. The WinUI capture/metrics client and local
+  provider tooling were removed; the downloaded vision weights remain on disk
+  but are not loaded by the active runtime.
+- [ ] Find and evaluate a replacement local vision model before restoring the
+  observer. The replacement must pass latency, resource, structured-output,
+  cancellation, and actual OmniVoice playback gates.
+- [ ] Keep the structured `/observation/*` cloud-reaction boundary available so
+  a future model can be connected without changing the reaction coordinator.
 
 ## Deferred capabilities
 

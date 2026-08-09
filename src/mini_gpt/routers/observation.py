@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-import threading
 from typing import Annotated
 
 from fastapi import APIRouter
@@ -128,7 +127,11 @@ def observation_vision_config():
         key = ""
     if key.strip():
         return {"status": "ok", "engine": "gemini"}
-    return {"status": "ok", "engine": "local"}
+    return {
+        "status": "disabled",
+        "engine": "local",
+        "message": "Local screen observation is temporarily disabled while waiting for a replacement vision model.",
+    }
 
 
 @router.post("/react")
@@ -258,33 +261,21 @@ def observation_ack(payload: ObservationAckPayload):
     return {"status": "ok"}
 
 
-_OBSERVATION_ACTIVE = False
-_OBSERVATION_LOCK = threading.Lock()
-
-
 @router.post("/start")
 def observation_start():
-    global _OBSERVATION_ACTIVE
-    with _OBSERVATION_LOCK:
-        _OBSERVATION_ACTIVE = True
-    return {"status": "ok", "active": True}
+    return {"status": "disabled", "active": False}
 
 
 @router.post("/stop")
 def observation_stop():
-    global _OBSERVATION_ACTIVE
-    with _OBSERVATION_LOCK:
-        _OBSERVATION_ACTIVE = False
-    return {"status": "ok", "active": False}
+    return {"status": "disabled", "active": False}
 
 
 @router.get("/status")
 def observation_status():
-    with _OBSERVATION_LOCK:
-        active = _OBSERVATION_ACTIVE
     return {
-        "status": "ok",
-        "active": active,
+        "status": "disabled",
+        "active": False,
         "frame_count": 0,
         "vision_count": 0,
         "emitted_count": 0,
@@ -293,5 +284,5 @@ def observation_status():
         "ms_cloud": 0,
         "ms_after": 0,
         "last_motion_delta": 0.0,
-        "engine": "UltraFast-WinUI3",
+        "engine": "disabled",
     }

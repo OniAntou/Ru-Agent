@@ -62,20 +62,26 @@ class ModelRunner:
         if self.backend == BACKEND_GGUF:
             logger.info("Loading GGUF runtime with checkpoint: %s", checkpoint_path)
             self.gguf_runtime.validate_assets()
-            if not str(checkpoint_path).strip():
-                raise ValueError("checkpoint_path is required for the llama.cpp GGUF backend")
-            resolved = Path(checkpoint_path).resolve()
-            allowed = (PROJECT_ROOT / "checkpoints", PROJECT_ROOT / "models")
-            if not any(
-                resolved.is_relative_to(allowed_dir.resolve())
-                for allowed_dir in allowed
-            ):
-                raise ValueError(
-                    f"checkpoint_path must be inside project checkpoints/ or models/, got: {checkpoint_path}"
-                )
-            self.checkpoint_path = resolved
+            base_model_path = self.gguf_runtime.base_model.resolve()
+            if str(checkpoint_path).strip():
+                resolved = Path(checkpoint_path).resolve()
+                allowed = (PROJECT_ROOT / "checkpoints", PROJECT_ROOT / "models")
+                if not any(
+                    resolved.is_relative_to(allowed_dir.resolve())
+                    for allowed_dir in allowed
+                ):
+                    raise ValueError(
+                        f"checkpoint_path must be inside project checkpoints/ or models/, got: {checkpoint_path}"
+                    )
+                if resolved != base_model_path:
+                    logger.info(
+                        "Ignoring legacy GGUF checkpoint selector %s; using the fixed LFM2.5 asset %s",
+                        resolved,
+                        base_model_path,
+                    )
+            self.checkpoint_path = base_model_path
             logger.info("GGUF runtime ready with checkpoint: %s", self.checkpoint_path)
-            return f"Ready (llama.cpp GGUF experiment) | Ru {self.checkpoint_path.name.split('-')[-1]} LoRA"
+            return "Ready (llama.cpp GGUF) | LFM2.5-2.6B Q4_K_M"
         raise ValueError(f"unsupported backend: {self.backend}")
 
     def is_cached(self, checkpoint_path: str | Path) -> bool:

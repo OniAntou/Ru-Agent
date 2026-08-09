@@ -1,9 +1,11 @@
-# Ru — Local Llama Conversational Runtime
+# Ru — Local LFM2.5 Conversational Runtime
 
 Ru is a local Vietnamese-English conversational assistant built only on
-Llama 3.1 8B Instruct with the retained v6 QLoRA adapter. The project keeps
-the active Llama runtime, its training/corpus path, and local GUI; Qwen, Gemma,
-MiniGPT, and other base-model experiments have been removed.
+LiquidAI LFM2.5-2.6B. The active GUI uses a direct Q4_K_M GGUF, while the
+native Hugging Face checkpoint stays on disk for a future LFM2.5 fine-tune.
+The former Llama 3.1 runtime and its LoRA GGUF files are removed from the
+active model inventory; historical adapter checkpoints and evaluation reports
+remain for reference.
 
 ## Setup
 
@@ -109,11 +111,10 @@ run:
   --report eval_results\omnivoice\voice-quality-latency.jsonl
 ```
 
-The backend defaults to the v6.2 LoRA GGUF at
-`models\gguf\ru-llama3.1-8b-instruct-v6.2-lora.gguf`, with v6.1 and v6 GGUF
-fallbacks if the preferred file is unavailable. The Transformers fallback
-selector prefers `checkpoints\ru-llama3.1-8b-instruct-v6.2-fresh`, then v6.1
-and v6. The backend keeps a bounded recent conversation context and validates
+The backend defaults to the direct LFM2.5 GGUF at
+`models\gguf\LFM2.5-2.6B-Q4_K_M.gguf`. The native checkpoint for future
+fine-tuning is `models\lfm2.5-2.6b-hf`; it is not loaded by the GUI GGUF
+backend. The backend keeps a bounded recent conversation context and validates
 runtime dependencies before loading the model.
 
 Persistent structured memory and online search remain runtime capabilities.
@@ -144,105 +145,64 @@ API duration is their total. A protocol-valid but empty stream is retried
 once before the backend reports a failure; a retry after a partial network
 failure emits a canonical stream reset before the replacement text.
 
-## Local screen observation
+## Local screen observation (temporarily paused)
 
-The WinUI3 app exposes a manual, off-by-default observer for the Windows
-primary monitor. The app samples the desktop (GDI/DXGI), keeps only a bounded
-representative-frame ring in RAM, and sends in-memory JPEG data only to the
-owned Qwen3-VL `llama-server` on loopback. No screenshot, frame, observation,
-prompt, or reaction is written to disk or added to chat history or memory.
+Local screen observation is temporarily disabled because the local Qwen3-VL
+model was too slow for the current machine. The active WinUI app no longer
+captures the desktop, starts a local vision server, or reports local vision
+metrics. The downloaded vision model weights were not deleted in this change;
+they are not part of the active runtime.
 
-The cloud backend receives only Qwen's structured text observation and writes
-a short social Ru reaction. Every accepted reaction is played through the
-saved OmniVoice selection (Ru or Ái Vy); no substitute voice or text-only
-fallback is used. VTube Studio action metadata is parsed privately when the
-connected catalog provides a matching action. System audio is not captured or
-analyzed.
+The FastAPI structured observation boundary and cloud reaction implementation
+remain available for a future replacement model. `/observation/react` accepts
+bounded structured text, while `/observation/cancel`, `/observation/ack`, and
+voice preflight continue to provide the future lifecycle seams. With no
+replacement provider configured, the vision configuration and lifecycle
+endpoints explicitly report `disabled` instead of pretending that a local
+observer is active.
 
-With Kilo `kilo-auto/free` selected for chat, the latency-sensitive observation
-path currently uses `inclusionai/ling-3.0-flash:free` directly with a 256-token
-budget and `reasoning.effort=none`. Auto Free can route to a reasoning model
-that consumes a small output budget without emitting speech, while the first
-tested Poolside route later stalled until the ten-second bridge timeout.
-Explicit Kilo models and OpenCode selections are not overridden. Free-provider
-availability and rate limits remain external failure modes; after repeated
-cloud failures the observer pauses and releases vision resources instead of
-speaking a stale reaction. Immediate Ling HTTP 429/502/503/504 responses retry
-once through `openrouter/free`; slow or timed-out responses never chain into a
-second model.
+The local Qwen3-VL setup and benchmark commands were removed from the active
+repository surface. Do not treat the historical observation acceptance notes
+below or in older design documents as current live capability; re-enable the
+feature only after a replacement model passes a new latency and audio gate.
 
-Prepare the pinned local vision assets once, then use **Bắt đầu quan sát**:
+## LFM2.5 model assets
 
-```powershell
-& D:\LLM\scripts\setup_local_vision.ps1
-& D:\LLM\.venv\Scripts\python.exe scripts\benchmark_local_vision.py --runs 5
-```
+Ru uses the direct LFM2.5-2.6B Q4_K_M GGUF through local CUDA llama.cpp:
+`models\gguf\LFM2.5-2.6B-Q4_K_M.gguf`. The native Transformers checkpoint is
+stored separately at `models\lfm2.5-2.6b-hf` for future fine-tuning and native
+Transformers evaluation. The GGUF is not trainable directly.
 
-The live control reports RAM-only pipeline counters and latency metrics. First
-audible acceptance was reached on 2026-08-02: reactions speak through Ru's
-OmniVoice, post-cloud age stays within the 4,500 ms stale gate with 480×270 /
-96-image-token frames, and cloud skips dropped from 70% to 12–22% after the
-coordinator ack fix. Observation cycles, forced-exit cleanup, cloud-loss pause,
-and single-instance checks all pass. Remaining manual listening items are a
-representative game/video trial and a ten-minute cadence review; see `TODO.md`
-and the approved design for the exact gates.
+The requested public repositories are:
 
-## GGUF runtime
+- Native checkpoint: `LiquidAI/LFM2.5-2.6B`
+- GGUF repository: `LiquidAI/LFM2.5-2.6B-GGUF`
 
-Ru v6.2 runs by default through local CUDA llama.cpp. It uses a separate
-Q4_K_M base GGUF and a separate v6.2 LoRA GGUF; the adapter is loaded by
-llama.cpp and is not merged into the HF base. Select **Transformers (fallback)** in
-**Settings** only when diagnosing or evaluating the HF runtime. Keep the HF
-base on disk: it is required for v6.1 training, evaluation, and future GGUF
-conversions.
+The active quantization is Q4_K_M, selected to leave headroom on the 6,141 MiB
+RTX 4050 while retaining the existing single-GPU ownership boundary. A direct
+GGUF smoke request is still required after llama.cpp or model changes; a
+download and unit-test pass alone is not a quality approval.
 
-The one-time conversion needs at least 24 GiB free on D:, a local llama.cpp
-source checkout at `tools\llama.cpp`, and the matching CUDA 12.4 Windows
-release files at `tools\llama.cpp-bin`. The directory must contain
-`llama-server.exe`, `llama-quantize.exe`, and the CUDA DLLs from the official
-release. Install the converter extra, then validate before starting:
+The old Llama 3.1 GGUF/base/EXL2 files and active LoRA GGUF files are no longer
+present. The old Llama adapter checkpoints under `checkpoints\` are historical
+artifacts and cannot be applied to LFM2.5. Adapt the fine-tuning target modules
+before starting a new LFM2.5 LoRA run.
 
-```powershell
-& D:\LLM\.venv\Scripts\python.exe -m pip install -e "D:\LLM[runtime,gguf,dev]"
-& D:\LLM\.venv\Scripts\python.exe scripts\build_ru_v6_gguf.py --dry-run
-& D:\LLM\.venv\Scripts\python.exe scripts\build_ru_v6_gguf.py
-```
+## Dataset inventory
 
-The guarded script refuses to run below 24 GiB free, never overwrites an
-existing candidate, prevents concurrent conversion, preserves the HF base and
-adapter, and always removes its temporary F16 GGUF (also on failure or
-Ctrl+C). It creates:
+The workspace retains only `data\conversations\ru_v6_2`,
+`data\conversations\ru_v6_2_fresh`, and `data\conversations\ru_v6_3`.
+The legacy v5, v6, and v6.1 dataset directories have been removed; historical
+builders and configs are kept as source references only.
 
-- `models\gguf\llama3.1-8b-instruct-q4_k_m.gguf`
-- `models\gguf\ru-llama3.1-8b-instruct-v6-lora.gguf`
-- `models\gguf\ru-llama3.1-8b-instruct-v6.2-lora.gguf` (preferred)
+## Fine-tuning path
 
-The v6.2 LoRA GGUF was converted from
-`checkpoints\ru-llama3.1-8b-instruct-v6.2-fresh` on 2026-07-29. Its SHA-256 is
-`F991F730EF5D89A5C0C187FD36A6FEC5CA958B99710244F48AADC36572F80DB6`.
+The native LFM2.5 checkpoint is ready for a future fine-tune, but the existing
+`scripts\train_ru_llama3_1.py` and v6.x configs describe the historical Llama
+3.1 pipeline. They must be adapted for the LFM2 hybrid module names before a
+new LoRA run; the old Llama adapters are not compatible with this checkpoint.
 
-Run the live benchmark after conversion:
-
-```powershell
-& D:\LLM\.venv\Scripts\python.exe scripts\benchmark_ru_v6_gguf.py
-```
-
-On 2026-07-27, this RTX 4050 Laptop GPU measured 3.36 s cold and 0.75 s warm
-for the two bounded 128-token dialogue probes. llama.cpp reported about 35
-generated tokens/s; a resident 2,048-context probe used 5,417 MiB of the
-6,141 MiB GPU. These are machine-specific measurements, not a quality
-approval. OmniVoice speech stops the owned GGUF server before synthesis so the two
-models never compete for the 6 GiB GPU.
-
-The original v6 GGUF path was promoted to the default after manual testing of natural
-Vietnamese-English turn-taking, coherent context, and the friendly `anh`/`em`
-voice. Quantization and timing alone never replace that quality gate.
-
-The v6.2 GGUF is the current operational GUI default by explicit user choice.
-The hard quality gate is still recorded as failed, so this default selection
-does not mean v6.2 has passed promotion review.
-
-## v6.3 targeted dataset
+## Historical v6.3 targeted dataset
 
 The new dataset is `data\conversations\ru_v6_3`, with 180 authored rows split
 108/36/36 into train/validation/held-out. It contains repair, bilingual bridge,
@@ -274,22 +234,12 @@ fallback.
 - **Mark last response useful** writes a reviewed example to
   `data\conversations\approved.jsonl`; it never changes model weights.
 
-## v6.1 dataset
+## Historical v6.1 dataset (removed)
 
-`data\conversations\ru_v6_1` contains an audited authored base of 2,400
-rows plus three train-only reviewed local examples, for 1,683 train rows and
-360 rows each in validation and held-out. The audit report is
-`naturalness_audit.json`; it rejects AI-meta wording, case-insensitive prompt
-collisions, repeated full replies, and an overused response opening.
-
-Recreate the authored base and then explicitly reapply the reviewed rows:
-
-```powershell
-& D:\LLM\.venv\Scripts\python.exe scripts\build_corpus.py --version v6_1 --output-dir data\conversations\ru_v6_1 --seed 42
-& D:\LLM\.venv\Scripts\python.exe scripts\merge_approved_into_ru_v6_1.py --dataset-dir data\conversations\ru_v6_1 --approved-file data\conversations\approved.jsonl
-```
-
-Dataset preparation does not start training or promote a v6.1 adapter.
+The audited `data\conversations\ru_v6_1` dataset was removed to keep only the
+v6.2 and v6.3 datasets in the workspace. Its builder, audit code, and
+configuration remain as historical source references; they do not indicate
+that the deleted dataset is currently available.
 
 ## v6.2 fresh roleplay dataset
 
@@ -318,8 +268,8 @@ The bounded config was `configs\ru_llama3_1_v6_2_fresh.json` with a 9,600-second
 wall-clock guard and 6,144 MiB physical cap. The CUDA allocator reported 8,445 MiB
 while the driver-side physical sample
 was unavailable, so the physical-VRAM gate is recorded as unverified; the v6.2
-GGUF remains an operational default only until that hardware check and the
-bilingual runtime gate pass.
+GGUF entry is historical and is no longer the operational default. The LFM2.5
+runtime has its own bilingual and hardware gates.
 
 The same deterministic 12-case QLoRA evaluation was rerun for all three
 adapters (`comparison_v6.json`, `comparison_v6_1.json`, and
@@ -439,13 +389,13 @@ remains the final quality gate for non-1.00x native speed.
 Pacing metadata is private: it never appears in the chat, TTS text,
 conversation history, or memory.
 
-Before warming OmniVoice, Ru releases the local Llama runtime. Before local
+Before warming OmniVoice, Ru releases the local GGUF runtime. Before local
 generation, it releases OmniVoice. A voice failure is reported as unavailable
 and never silently changes the saved selection.
 
 For manual verification, select Ru and Ái Vy, test a manual speed plus each
 automatic pace, restart the app to confirm settings persist, and verify that
-normal local Llama generation and VTube lip-sync still work.
+normal local GGUF generation and VTube lip-sync still work.
 
 ## Experimental voice input
 
@@ -568,8 +518,8 @@ published output.
 
 ## Project boundaries
 
-All model weights, checkpoints, data, and caches stay on `D:\LLM`. The v6.2
-GGUF is the operational GUI default and v6 remains the HF fallback. Training or
-calling a later Llama adapter quality-gate promoted requires the existing
+All model weights, checkpoints, data, and caches stay on `D:\LLM`. The LFM2.5
+Q4_K_M GGUF is the operational GUI default and the native checkpoint is the
+fine-tuning source. Any later LFM2.5 adapter promotion requires the existing
 bilingual conversation and physical-VRAM gates; validation loss alone is not an
 adoption decision.

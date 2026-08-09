@@ -35,9 +35,11 @@ working-tree changes without discarding unrelated edits:
 - Treat an occupied llama.cpp loopback port as an unowned process. Fail with a
   clear error instead of scanning for and killing another process. Probe with
   a bind check before validation and immediately before each spawn. After a
-  spawn, require `/v1/models` to accept the child's random bearer key and reject
-  a second random bearer; any missing 401/403 rejection is an immediate
-  unowned-port conflict rather than a full startup timeout.
+  spawn, require the protected `/v1/chat/completions` endpoint to accept the
+  child's random bearer key and reject a second random bearer; `/v1/models` is
+  public in this llama-server build and cannot prove process ownership. Any
+  missing 401/403 rejection is an immediate unowned-port conflict rather than
+  a full startup timeout.
 - Shield `asyncio.to_thread` tasks from timeout cancellation and track an
   actual-thread completion future. A timeout is reported promptly, but request
   cleanup and the optional model lock are deferred until that worker ends.

@@ -17,7 +17,6 @@ namespace RuApp
         private readonly BackendProcessManager _processManager;
         private ApiService? _apiService;
         private ChatWebSocketClient? _wsClient;
-        private ScreenObserverService? _observerService;
         private VoicePlaybackService? _voicePlayback;
         private SubtitleOverlayService? _subtitleOverlay;
 
@@ -35,7 +34,7 @@ namespace RuApp
             try
             {
                 this.InitializeComponent();
-                this.Title = "Ru — Local Llama Conversational Runtime";
+            this.Title = "Ru — Local LFM2.5 Conversational Runtime";
 
                 _processManager = new BackendProcessManager();
                 this.Closed += OnWindowClosed;
@@ -101,7 +100,6 @@ namespace RuApp
                 _apiService = new ApiService(_processManager.AuthSecret, _processManager.Port);
                 _wsClient = new ChatWebSocketClient(_processManager.AuthSecret, _processManager.Port);
                 _wsClient.Start();
-                _observerService = new ScreenObserverService(_apiService);
                 _voicePlayback = new VoicePlaybackService(_apiService);
                 await _voicePlayback.RefreshSettingsAsync();
 
@@ -119,7 +117,7 @@ namespace RuApp
                 _voiceView.Initialize(_apiService, _voicePlayback, _subtitleOverlay);
 
                 _settingsView = new SettingsView();
-                _settingsView.Initialize(_apiService, _observerService);
+                _settingsView.Initialize(_apiService);
 
                 _logView = new LogView();
                 _logView.Initialize(_apiService);
@@ -175,17 +173,6 @@ namespace RuApp
             _settingsView?.Dispose();
             _logView?.Dispose();
             _subtitleOverlay?.Dispose();
-            if (_observerService != null)
-            {
-                try
-                {
-                    await _observerService.DisposeAsync();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[MainWindow] Observer shutdown failed: {ex.Message}");
-                }
-            }
             if (_voicePlayback != null)
             {
                 try

@@ -4,6 +4,12 @@ Date: 2026-08-07
 Status: Phase 1 implemented in code; live audio/latency acceptance pending
 Scope: local OmniVoice output used by the WinUI 3 GUI
 
+Superseded note (2026-08-09): the model-replacement deferral below was a
+historical constraint for this design. The active local chat model is now
+LiquidAI LFM2.5-2.6B Q4_K_M GGUF; this document remains the historical
+OmniVoice quality/latency design and its live-audio acceptance gate is still
+pending.
+
 Follow-up: the approved cloud first-audio iteration is specified in
 `2026-08-07-cloud-voice-first-audio-design.md`. It keeps this document's
 quality, privacy, and single-GPU constraints while addressing latency before
@@ -12,9 +18,9 @@ the first completed chat sentence.
 ## Decision
 
 Keep OmniVoice as the active TTS engine and improve the pipeline around it. The
-first implementation will optimize spoken quality and time-to-first-audio
-without introducing a second model. Model replacement is explicitly deferred
-until the current path has a reproducible baseline.
+first implementation optimized spoken quality and time-to-first-audio without
+introducing a second model. Model replacement was explicitly deferred at the
+time of this design and is now superseded by the LFM2.5 replacement work.
 
 ## Goals
 

@@ -25,9 +25,10 @@ and stale-documentation defects in the current Ru checkout.
 4. Add a failing runtime test showing that an occupied local port aborts launch
    without spawning or killing a process.
 5. Replace stale-server termination with loopback-port collision detection and
-   use an authenticated `/v1/models` startup probe that also verifies rejection
-   of a wrong bearer, failing fast if a foreign listener wins the post-check
-   spawn race or accepts arbitrary local requests.
+   use an authenticated `/v1/chat/completions` startup probe that also verifies
+   rejection of a wrong bearer. `/v1/models` is public in this llama-server
+   build, so it cannot prove ownership; fail fast if a foreign listener wins the
+   post-check spawn race or accepts arbitrary protected requests.
 6. Run the focused Python tests for both modules.
 
 ## Task 2: Bounded background work after timeout

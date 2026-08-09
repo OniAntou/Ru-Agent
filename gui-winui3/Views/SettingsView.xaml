@@ -20,7 +20,7 @@
                             <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
                                 <TextBlock Grid.Column="0" Text="Loại Backend" VerticalAlignment="Center" Foreground="#DDDDDD"/>
                                 <ComboBox x:Name="BackendComboBox" Grid.Column="1" Width="280" SelectionChanged="OnBackendSelectionChanged">
-                                    <ComboBoxItem Content="Local GGUF (Llama 3.1 8B v6.2)" Tag="gguf"/>
+                                    <ComboBoxItem Content="Local GGUF (LFM2.5 2.6B Q4_K_M)" Tag="gguf"/>
                                     <ComboBoxItem Content="OpenCode Zen (Cloud API)" Tag="opencode"/>
                                     <ComboBoxItem Content="Kilo Gateway (Cloud API)" Tag="kilo"/>
                                 </ComboBox>
@@ -127,19 +127,12 @@
                         <StackPanel Spacing="16">
                             <TextBlock Text="Nhận thức Màn hình (Screen Observer)" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
 
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                <StackPanel Grid.Column="0" Spacing="8">
-                                    <TextBlock Text="Quan sát màn hình chính (DXGI -&gt; Local Qwen3-VL -&gt; OmniVoice)" FontSize="14" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
-                                    <TextBlock Text="Màn hình được quan sát cục bộ qua vòng lặp RAM. Không ghi đĩa hay lưu trữ bất kỳ hình ảnh nào." Foreground="#AAAAAA" FontSize="13"/>
+                            <Border Background="#251F12" BorderBrush="#66501A" BorderThickness="1" CornerRadius="8" Padding="16">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Local screen observation đang tạm dừng" FontSize="14" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#F3D27A"/>
+                                    <TextBlock Text="Local vision model đã được gỡ khỏi active runtime vì độ trễ cao. Structured observation/cloud reaction được giữ lại để nối lại khi có model thay thế." Foreground="#C8B98A" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
-
-                                <Button x:Name="ToggleObservationButton" Grid.Column="1" Click="OnToggleObservationClick" VerticalAlignment="Center" Padding="24,12" CornerRadius="8" Background="#20FFFFFF" BorderThickness="1" BorderBrush="#10FFFFFF">
-                                    <StackPanel Orientation="Horizontal" Spacing="12">
-                                        <FontIcon x:Name="ToggleIcon" Glyph="&#xE714;" FontSize="16"/>
-                                        <TextBlock x:Name="ToggleText" Text="Bắt đầu quan sát" FontWeight="Medium"/>
-                                    </StackPanel>
-                                </Button>
-                            </Grid>
+                            </Border>
 
                             <Grid x:Name="GeminiVisionRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
@@ -151,48 +144,6 @@
                         </StackPanel>
                     </Border>
 
-                    <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
-                        <StackPanel Spacing="20">
-                            <TextBlock Text="Chỉ số vận hành Realtime (RAM-only)" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
-
-                            <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto" RowSpacing="16" ColumnSpacing="16">
-                                <Border Grid.Row="0" Grid.Column="0" Background="#20FFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="20" CornerRadius="8">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="Tổng frame đã chụp" FontSize="13" Foreground="#999999"/>
-                                        <TextBlock x:Name="FrameCountText" Text="0" FontSize="28" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="White"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Row="0" Grid.Column="1" Background="#20FFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="20" CornerRadius="8">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="Phân tích VLM" FontSize="13" Foreground="#999999"/>
-                                        <TextBlock x:Name="VisionCountText" Text="0" FontSize="28" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="White"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Row="0" Grid.Column="2" Background="#152515" BorderBrush="#2040FF40" BorderThickness="1" Padding="20" CornerRadius="8">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="Phản hồi đã phát giọng" FontSize="13" Foreground="#88CC88"/>
-                                        <TextBlock x:Name="EmittedCountText" Text="0" FontSize="28" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="#4CAF50"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Row="1" Grid.Column="0" Background="#251515" BorderBrush="#40FF4040" BorderThickness="1" Padding="20" CornerRadius="8">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="Bỏ qua do màn hình tĩnh (Stale)" FontSize="13" Foreground="#CC8888"/>
-                                        <TextBlock x:Name="StaleDropsText" Text="0" FontSize="28" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="#FF5252"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Background="#20FFFFFF" BorderBrush="#10FFFFFF" BorderThickness="1" Padding="20" CornerRadius="8">
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Text="Thay đổi màn hình (MAD Delta) / Engine" FontSize="13" Foreground="#999999"/>
-                                        <TextBlock x:Name="LatencyText" Text="0.0% | UltraFast-GDI-Native" FontSize="20" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA" VerticalAlignment="Center" Margin="0,4,0,0"/>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
                 </StackPanel>
             </ScrollViewer>
         </PivotItem>

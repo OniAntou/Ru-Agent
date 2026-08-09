@@ -3,6 +3,11 @@
 Status: Tasks 1-5 implemented and verified; Task 6 live audio/latency acceptance
 and measured rollout documentation remain pending.
 
+Superseded model note (2026-08-09): this dated plan's local chat-model
+references now mean the active LiquidAI LFM2.5-2.6B Q4_K_M GGUF. The model
+replacement was completed separately; this plan still governs the pending
+OmniVoice live-audio acceptance work.
+
 > For agentic workers: REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 Goal: Improve OmniVoice pronunciation/prosody quality and reduce time-to-first-audio by measuring the current path, selecting a quality-safe generation configuration, and replacing whole-WAV GUI playback with ordered incremental playback.
@@ -16,7 +21,7 @@ Tech Stack: Python 3.13, FastAPI WebSocket, Flask OmniVoice loopback service, Py
 - Keep OmniVoice as the active TTS engine; do not introduce a second model in this implementation.
 - Use native 1.00x speed as the quality reference; do not make librosa.time_stretch the default speed mechanism.
 - Prefer sentence-sized chunks; never split inside a word and do not expose voice-control markers to the GUI as user text.
-- Keep the single-GPU ownership rule: no concurrent Llama and OmniVoice loading on the 6 GB GPU.
+- Keep the single-GPU ownership rule: no concurrent LFM2.5 and OmniVoice loading on the 6 GB GPU.
 - Use a dedicated authenticated /voice/stream WebSocket; do not reuse /chat.
 - Do not persist request IDs, pace markers, timing metadata, raw audio, or transport errors in chat, history, memory, or training data.
 - Preserve the saved voice selection and report synthesis failure as unavailable; never silently switch voices.
@@ -324,4 +329,4 @@ After confirming the existing local model/cache are present, run:
 - Interface consistency: Python uses VoiceStreamEvent and VoiceStreamCoordinator.start/cancel; C# uses VoiceStreamClient.StartAsync/CancelAsync and VoicePlaybackQueue.EnqueueAsync/Cancel; the protocol uses the same request_id, sequence, and terminal event names throughout.
 - Privacy: reports contain timings and identifiers only; WebSocket control metadata is never sent to chat/history/memory; raw audio remains transient.
 - Rollout safety: the complete-WAV endpoint remains available and the GUI stream path has a fallback until the real-audio acceptance gate passes.
-- No model replacement, concurrent GPU loading, or unmeasured quality claim is introduced.
+- No concurrent GPU loading or unmeasured quality claim is introduced.

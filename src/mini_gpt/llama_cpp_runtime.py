@@ -82,7 +82,7 @@ def fit_messages_to_context(
 
 
 class LlamaCppRuntime:
-    """Own one local llama.cpp server for the optional Ru GGUF experiment."""
+    """Own the active local llama.cpp server for Ru's LFM2.5 GGUF runtime."""
 
     def __init__(
         self,
@@ -112,22 +112,7 @@ class LlamaCppRuntime:
 
     @property
     def base_model(self) -> Path:
-        return self.project_root / "models" / "gguf" / "llama3.1-8b-instruct-q4_k_m.gguf"
-
-    @property
-    def lora_adapter(self) -> Path | None:
-        candidates = (
-            self.project_root / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6.2-lora.gguf",
-            self.project_root / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6.1-lora.gguf",
-            self.project_root / "models" / "gguf" / "ru-llama3.1-8b-instruct-v6-lora.gguf",
-        )
-        for path in candidates:
-            try:
-                if path.is_file() and path.stat().st_size:
-                    return path
-            except OSError:
-                continue
-        return None
+        return self.project_root / "models" / "gguf" / "LFM2.5-2.6B-Q4_K_M.gguf"
 
     @property
     def log_path(self) -> Path:
@@ -155,28 +140,20 @@ class LlamaCppRuntime:
             "1",
             "--threads",
             threads,
-            # llama-server b10142 auto-builds a PEG grammar from the chat
-            # template and hard-fails (HTTP 500 "does not match the expected
-            # peg-native format") whenever a plain-text reply does not parse.
-            # Ru does not use server-side tools, so force the pure content
-            # parser instead.
-            "--skip-chat-parsing",
+            "--jinja",
+            "--reasoning",
+            "off",
+            "--reasoning-budget",
+            "0",
             "--api-key",
             self.api_key,
         ]
-        lora_adapter = self.lora_adapter
-        if lora_adapter is not None:
-            command[1:1] = ["--lora", str(lora_adapter)]
         return tuple(command)
 
     def validate_assets(self) -> None:
-        lora_adapter = self.lora_adapter
-        if lora_adapter is None:
-            raise FileNotFoundError("Ru LoRA GGUF (v6.2, v6.1, or v6) not found")
         for path, label in (
             (self.server_executable, "llama-server"),
-            (self.base_model, "base GGUF"),
-            (lora_adapter, "Ru LoRA GGUF (v6.2, v6.1, or v6)"),
+            (self.base_model, "LFM2.5-2.6B Q4_K_M GGUF"),
         ):
             try:
                 st = path.stat()
@@ -243,14 +220,14 @@ class LlamaCppRuntime:
                 last_error = f"server exited with code {self._process.returncode}"
                 break
             try:
-                # A ``/health`` response cannot prove that the listener is
-                # our child. The OpenAI endpoint must accept this instance's
-                # random bearer token before the runtime treats the server as
-                # owned.
-                self._request("/v1/models", None, timeout=_HEALTH_CHECK_TIMEOUT_SECONDS)
-                # A listener that ignores Authorization could still return
-                # 2xx for our token. It is not safe to mistake it for this
-                # process, so also require rejection of a fresh wrong token.
+                # The protected OpenAI endpoint must accept this instance's
+                # bearer token before the runtime treats the server as owned.
+                if not self._server_accepts_own_bearer():
+                    self.stop()
+                    raise self._port_conflict_error()
+                # A listener that accepts every Authorization value is not
+                # safe to mistake for this process, so also require rejection
+                # of a fresh wrong token.
                 if not self._server_rejects_wrong_bearer():
                     self.stop()
                     raise self._port_conflict_error()
@@ -306,16 +283,43 @@ class LlamaCppRuntime:
         message = str(error).casefold()
         return "http 401" in message or "http 403" in message
 
+    def _server_accepts_own_bearer(self) -> bool:
+        """Verify that the protected listener accepts this instance's key."""
+        # An empty, zero-token request reaches authentication while keeping
+        # any fallback work bounded. llama-server may return a validation error
+        # or a minimal response after accepting the key; either is acceptance.
+        probe = {"messages": [], "max_tokens": 0, "stream": False}
+        try:
+            self._request(
+                "/v1/chat/completions",
+                probe,
+                timeout=_HEALTH_CHECK_TIMEOUT_SECONDS,
+            )
+        except RuntimeError as error:
+            if self._is_authentication_rejection(error):
+                return False
+            message = str(error).casefold()
+            if "is not reachable" in message or "http 503" in message:
+                raise
+            return True
+        return True
+
     def _server_rejects_wrong_bearer(self) -> bool:
         """Verify that the listener enforces this instance's secret key."""
         try:
+            # llama-server keeps /v1/models public even when --api-key is set;
+            # the protected chat endpoint checks auth before validating this
+            # zero-token request, so a wrong key cannot reach generation.
             self._request_json(
-                "/v1/models",
-                None,
+                "/v1/chat/completions",
+                {"messages": [], "max_tokens": 0, "stream": False},
                 _HEALTH_CHECK_TIMEOUT_SECONDS,
                 api_key=secrets.token_hex(32),
             )
         except RuntimeError as error:
+            message = str(error).casefold()
+            if "is not reachable" in message or "http 503" in message:
+                raise
             return self._is_authentication_rejection(error)
         return False
 
@@ -505,6 +509,8 @@ class LlamaCppRuntime:
             raise RuntimeError(f"llama.cpp HTTP {error.code}: {detail}") from error
         except URLError as error:
             raise RuntimeError(f"llama.cpp is not reachable at {url}: {error.reason}") from error
+        except OSError as error:
+            raise RuntimeError(f"llama.cpp is not reachable at {url}: {error}") from error
         try:
             decoded = json.loads(body)
         except json.JSONDecodeError as error:

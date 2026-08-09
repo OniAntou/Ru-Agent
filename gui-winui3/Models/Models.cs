@@ -346,39 +346,6 @@ namespace RuApp.Models
         public VtsConfigDto? Config { get; set; }
     }
 
-    public class ObservationMetricsDto
-    {
-        [JsonPropertyName("active")]
-        public bool Active { get; set; } = false;
-
-        [JsonPropertyName("frame_count")]
-        public long FrameCount { get; set; } = 0;
-
-        [JsonPropertyName("vision_count")]
-        public long VisionCount { get; set; } = 0;
-
-        [JsonPropertyName("emitted_count")]
-        public long EmittedCount { get; set; } = 0;
-
-        [JsonPropertyName("stale_drops")]
-        public long StaleDrops { get; set; } = 0;
-
-        [JsonPropertyName("ms_before")]
-        public long MsBefore { get; set; } = 0;
-
-        [JsonPropertyName("ms_cloud")]
-        public long MsCloud { get; set; } = 0;
-
-        [JsonPropertyName("ms_after")]
-        public long MsAfter { get; set; } = 0;
-
-        [JsonPropertyName("last_motion_delta")]
-        public double LastMotionDelta { get; set; } = 0.0;
-
-        [JsonPropertyName("engine")]
-        public string Engine { get; set; } = "UltraFast-WinUI3";
-    }
-
     public class MemoryItemDto
     {
         [JsonPropertyName("id")]

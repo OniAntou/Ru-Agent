@@ -11,7 +11,6 @@ namespace RuApp.Views
     public sealed partial class SettingsView : UserControl, IDisposable
     {
         private ApiService? _apiService;
-        private ScreenObserverService? _observerService;
         private bool _loading = false;
         private List<string> _allModels = new();
         private DispatcherTimer? _autoSaveTimer;
@@ -37,22 +36,13 @@ namespace RuApp.Views
             this.InitializeComponent();
         }
 
-        public void Initialize(ApiService apiService, ScreenObserverService observerService)
+        public void Initialize(ApiService apiService)
         {
             _apiService = apiService;
-            _observerService = observerService;
             MemoryControl.Initialize(apiService);
             _ = LoadSettingsAsync();
             SetupAutoSave();
-            SetupObservation();
             SetupVts();
-        }
-
-        private void SetupObservation()
-        {
-            if (_observerService == null) return;
-            _observerService.OnMetricsUpdated += OnObservationMetricsUpdated;
-            UpdateObservationUiState();
         }
 
         private void SetupVts()
@@ -113,58 +103,6 @@ namespace RuApp.Views
             _autoSaveTimer?.Stop();
             _autoSaveTimer?.Start();
             AutoSaveStatusText.Text = "Đang lưu...";
-        }
-
-        private void OnObservationMetricsUpdated(ObservationMetricsDto metrics)
-        {
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                FrameCountText.Text = metrics.FrameCount.ToString();
-                VisionCountText.Text = metrics.VisionCount.ToString();
-                EmittedCountText.Text = metrics.EmittedCount.ToString();
-                StaleDropsText.Text = metrics.StaleDrops.ToString();
-                LatencyText.Text = $"{metrics.LastMotionDelta:F2}% | {metrics.Engine} ({metrics.MsBefore} ms)";
-                UpdateObservationUiState();
-            });
-        }
-
-        private async void OnToggleObservationClick(object sender, RoutedEventArgs e)
-        {
-            if (_observerService == null) return;
-            ToggleObservationButton.IsEnabled = false;
-
-            try
-            {
-                if (_observerService.IsActive)
-                {
-                    await _observerService.StopAsync();
-                }
-                else
-                {
-                    await _observerService.StartAsync();
-                }
-            }
-            finally
-            {
-                ToggleObservationButton.IsEnabled = true;
-            }
-
-            UpdateObservationUiState();
-        }
-
-        private void UpdateObservationUiState()
-        {
-            bool active = _observerService?.IsActive ?? false;
-            if (active)
-            {
-                ToggleText.Text = "Dừng quan sát";
-                ToggleIcon.Glyph = "\uE71A";
-            }
-            else
-            {
-                ToggleText.Text = "Bắt đầu quan sát";
-                ToggleIcon.Glyph = "\uE714";
-            }
         }
 
         private async Task LoadSettingsAsync()
@@ -409,11 +347,6 @@ namespace RuApp.Views
             _autoSaveTimer?.Stop();
             _vtsConfigDebounce?.Stop();
             _vtsControlDebounce?.Stop();
-            if (_observerService != null)
-            {
-                _observerService.OnMetricsUpdated -= OnObservationMetricsUpdated;
-            }
-            _observerService = null;
         }
 
         private async void OnConnectVtsClick(object sender, RoutedEventArgs e)

@@ -1,4 +1,4 @@
-"""Local Vietnamese-English Ru runtime built on Llama."""
+"""Local Vietnamese-English Ru runtime using the LFM2.5 GGUF backend."""
 
 import logging
 

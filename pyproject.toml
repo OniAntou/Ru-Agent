@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ru-local-llama"
 version = "0.1.0"
-description = "Local Vietnamese-English Ru conversational runtime using Llama 3.1 8B QLoRA."
+description = "Local Vietnamese-English Ru conversational runtime using LiquidAI LFM2.5-2.6B."
 requires-python = ">=3.11,<3.15"
 dependencies = [
     "numpy>=1.26",

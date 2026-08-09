@@ -5,7 +5,7 @@
 
 ## Mục tiêu
 
-Ru (assistant local, Llama 3.1 8B) có thể **nghe và nói trọn vẹn trong voice channel Discord**:
+Ru (assistant local, LiquidAI LFM2.5-2.6B Q4_K_M GGUF) có thể **nghe và nói trọn vẹn trong voice channel Discord**:
 nghe giọng người dùng (STT), suy luận bằng backend hiện có (persona + session),
 và trả lời bằng giọng OmniVoice của Ru. Ru đứng sẵn trong voice channel, nghe liên
 tục nhưng chỉ phản hồi khi có trigger "Ru". Không gửi text transcript ra kênh.

@@ -59,6 +59,25 @@ def test_gguf_checkpoint_path_rejects_sibling_prefix(monkeypatch, tmp_path) -> N
         runner.load(sibling)
 
 
+def test_gguf_load_defaults_to_lfm25_when_checkpoint_is_blank(monkeypatch) -> None:
+    runner = runtime.ModelRunner()
+    monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
+
+    status = runner.load("")
+
+    assert runner.checkpoint_path == runner.gguf_runtime.base_model.resolve()
+    assert "LFM2.5-2.6B Q4_K_M" in status
+
+
+def test_gguf_load_migrates_an_allowed_legacy_checkpoint_to_lfm25(monkeypatch) -> None:
+    runner = runtime.ModelRunner()
+    monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
+
+    runner.load("checkpoints/ru-llama3.1-8b-instruct-v6.2-fresh")
+
+    assert runner.checkpoint_path == runner.gguf_runtime.base_model.resolve()
+
+
 def test_screen_reaction_uses_hosted_runtime_without_search_memory_or_history() -> None:
     runner = runtime.ModelRunner()
     runner.backend = runtime.BACKEND_OPENCODE

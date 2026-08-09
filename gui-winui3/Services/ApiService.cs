@@ -562,47 +562,6 @@ namespace RuApp.Services
             }
         }
 
-        public async Task<ObservationMetricsDto?> GetObservationMetricsAsync()
-        {
-            try
-            {
-                return await _httpClient.GetFromJsonAsync<ObservationMetricsDto>($"{_baseUrl}/observation/status");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[ApiService] GetObservationMetricsAsync failed: {ex.Message}");
-                return null;
-            }
-        }
-
-        public async Task<bool> StartObservationAsync()
-        {
-            try
-            {
-                var response = await _httpClient.PostAsync($"{_baseUrl}/observation/start", null);
-                return response.IsSuccessStatusCode;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[ApiService] StartObservationAsync failed: {ex.Message}");
-                return false;
-            }
-        }
-
-        public async Task<bool> StopObservationAsync()
-        {
-            try
-            {
-                var response = await _httpClient.PostAsync($"{_baseUrl}/observation/stop", null);
-                return response.IsSuccessStatusCode;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[ApiService] StopObservationAsync failed: {ex.Message}");
-                return false;
-            }
-        }
-
         public void Dispose()
         {
             _httpClient.Dispose();

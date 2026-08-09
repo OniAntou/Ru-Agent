@@ -64,6 +64,20 @@ async def get_history():
     return load_history()
 
 
+@router.get("/memory")
+def get_memory():
+    records = core.get_memory_store().list_active()
+    return [
+        {
+            "id": record.id,
+            "text": record.content,
+            "category": record.kind.value,
+            "created_at": record.created_at.isoformat(),
+        }
+        for record in records
+    ]
+
+
 @router.delete("/memory")
 async def clear_memory():
     if not _MEMORY_TURN_LOCK.acquire(blocking=False):

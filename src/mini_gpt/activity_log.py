@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from datetime import datetime, timezone
@@ -17,7 +18,13 @@ from pathlib import Path
 
 logger = logging.getLogger("mini_gpt.activity_log")
 
-LOG_FILE = Path("D:") / ".minigpt" / "activity_log.jsonl"
+_configured_data_root = os.environ.get("RU_DATA_ROOT", "").strip()
+LOG_ROOT = (
+    Path(_configured_data_root)
+    if _configured_data_root
+    else Path("D:") / ".minigpt"
+)
+LOG_FILE = LOG_ROOT / "activity_log.jsonl"
 MAX_ENTRIES = 5000
 _log_lock = threading.Lock()
 

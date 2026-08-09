@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import queue
+import subprocess
+import sys
 import threading
 import time
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,6 +25,7 @@ import mini_gpt.routers.vts as vts_router
 import mini_gpt.routers.voice as voice_router
 import mini_gpt.server as server
 from mini_gpt.headless_runner import BACKEND_GGUF, BACKEND_KILO, BACKEND_OPENCODE
+from mini_gpt.memory import MemoryKind
 from mini_gpt.screen_reaction import ReactionCoordinator, ReactionRequest, VisionObservation
 from mini_gpt.voice_runtime import VoiceSelection
 
@@ -103,6 +109,82 @@ def test_status_endpoint() -> None:
         response = client.get("/status")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_get_memory_returns_active_winui_records(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(server.core, "memory_db_path", tmp_path / "memory.db")
+    monkeypatch.setattr(server.core, "memory_index_path", tmp_path / "memory.faiss")
+    monkeypatch.setattr(server.core, "memory_texts_path", tmp_path / "memory.json")
+    server.core.memory_store = None
+    store = server.core.get_memory_store()
+    active = store.upsert(
+        MemoryKind.PREFERENCE,
+        "anh thích cà phê",
+        "global",
+        "test evidence",
+        0.9,
+        0.8,
+    )
+    store.upsert(
+        MemoryKind.PROFILE,
+        "expired record",
+        "global",
+        "test evidence",
+        0.9,
+        0.8,
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+
+    try:
+        with TestClient(server.app) as client:
+            response = client.get("/memory")
+    finally:
+        store.close()
+        server.core.memory_store = None
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": active.id,
+            "text": active.content,
+            "category": active.kind.value,
+            "created_at": active.created_at.isoformat(),
+        }
+    ]
+
+
+def test_ru_data_root_isolates_runtime_paths(tmp_path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    isolated_root = tmp_path / "ru-data"
+    script = """
+import json
+from mini_gpt import _server_shared, activity_log, backend_core
+
+print(json.dumps({
+    "settings": str(_server_shared.SETTINGS_FILE),
+    "history": str(_server_shared.HISTORY_FILE),
+    "sessions": str(_server_shared.SESSION_DIR),
+    "activity": str(activity_log.LOG_FILE),
+    "memory": str(backend_core.MiniGPTCore().memory_db_path),
+}))
+"""
+    environment = os.environ.copy()
+    environment["RU_DATA_ROOT"] = str(isolated_root)
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(repo_root / "src"), str(repo_root / "scripts")]
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=repo_root,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    paths = json.loads(completed.stdout.strip().splitlines()[-1])
+
+    assert all(Path(path).resolve().is_relative_to(isolated_root.resolve()) for path in paths.values())
 
 def test_foreign_browser_origin_is_not_allowed() -> None:
     with TestClient(server.app) as client:

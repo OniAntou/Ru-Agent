@@ -87,9 +87,15 @@ def _valid_desktop_token(candidate: str) -> bool:
 
 # ── paths / files ─────────────────────────────────────────────────────
 
-SETTINGS_FILE = Path.home() / ".minigpt" / "settings.json"
-HISTORY_FILE = Path.home() / ".minigpt" / "history.json"
-SESSION_DIR = Path.home() / ".minigpt" / "sessions"
+_configured_data_root = os.environ.get("RU_DATA_ROOT", "").strip()
+DATA_ROOT = (
+    Path(_configured_data_root)
+    if _configured_data_root
+    else Path.home() / ".minigpt"
+)
+SETTINGS_FILE = DATA_ROOT / "settings.json"
+HISTORY_FILE = DATA_ROOT / "history.json"
+SESSION_DIR = DATA_ROOT / "sessions"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # ── constants ─────────────────────────────────────────────────────────

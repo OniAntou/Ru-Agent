@@ -20,7 +20,7 @@ parallel:  client -> RuBackend:8010 -> FastAPI:8000
 cutover:   WinUI -> RuBackend:8000 -> FastAPI worker:8001
 ```
 
-The public WinUI contract remains on port `8000` in both modes. `GET /memory` is the one known pre-existing contract drift: WinUI already calls it, so FastAPI adds a read-only DTO route before cutover. Memory storage remains Python-owned.
+The public WinUI contract remains on port `8000` in both modes. `GET /memory` was a pre-existing WinUI/FastAPI drift; FastAPI now provides the read-only DTO route, while memory storage remains Python-owned.
 
 ## Route groups
 

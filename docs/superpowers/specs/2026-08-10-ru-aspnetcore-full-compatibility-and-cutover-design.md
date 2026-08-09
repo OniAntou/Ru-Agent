@@ -20,8 +20,8 @@ silently starting two public backends on the same port.
 
 ## Current facts
 
-- `backend-dotnet/RuBackend` currently owns authentication, readiness forwarding
-  for `/status` and `/settings`, and frame-preserving `/chat` and
+- `backend-dotnet/RuBackend` currently owns authentication, generic HTTP
+  forwarding, readiness forwarding, and frame-preserving `/chat` and
   `/voice/stream` relay.
 - `gui-winui3/Services/BackendProcessManager.cs` currently starts
   `python -m mini_gpt.server` on `127.0.0.1:8000` and assigns that process to a
@@ -30,9 +30,9 @@ silently starting two public backends on the same port.
   port `8000`; they should not learn a new port during cutover.
 - FastAPI exposes 37 HTTP route/method pairs plus the two WebSocket routes
   under the status, settings, sessions, observation, voice, and VTS routers.
-- WinUI calls `GET /memory`, but the current FastAPI surface exposes only
-  `DELETE /memory`. This is an existing contract drift, not something the
-  ASP.NET proxy can repair by forwarding.
+- WinUI calls `GET /memory`; the pre-existing FastAPI drift is now repaired by a
+  Python-owned read-only DTO route. The ASP.NET proxy still only forwards it and
+  does not own the memory store.
 
 ## Target topology
 
@@ -94,11 +94,11 @@ and WinUI callers. Every method/path pair will be classified as one of:
 3. intentionally unused by WinUI but still forwarded for compatibility; or
 4. a pre-existing drift that must be resolved before cutover.
 
-For `GET /memory`, preserve memory ownership in Python and add the missing
-read-only FastAPI route before cutover. It will return the WinUI DTO shape
-(`id`, `text`, `category`, `created_at`) from active structured-memory records;
-`DELETE /memory` remains the existing clear operation. This avoids duplicating
-the SQLite/vector store in .NET and makes the existing Memory view functional.
+For `GET /memory`, preserve memory ownership in Python through the read-only
+FastAPI route. It returns the WinUI DTO shape (`id`, `text`, `category`,
+`created_at`) from active structured-memory records; `DELETE /memory` remains
+the existing clear operation. This avoids duplicating the SQLite/vector store
+in .NET and makes the existing Memory view functional.
 
 ### 3. WebSocket policy
 

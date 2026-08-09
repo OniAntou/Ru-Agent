@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 from pathlib import Path
 from mini_gpt.headless_runner import BACKEND_KILO, BACKEND_OPENCODE, ModelRunner
@@ -7,13 +8,19 @@ from mini_gpt.credential_store import CredentialStore
 
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
+_configured_data_root = os.environ.get("RU_DATA_ROOT", "").strip()
+MEMORY_DATA_ROOT = (
+    Path(_configured_data_root)
+    if _configured_data_root
+    else PROJECT_ROOT / "data" / "conversations"
+)
 
 class MiniGPTCore:
     def __init__(self):
         self.runner = ModelRunner()
-        self.memory_index_path = PROJECT_ROOT / "data" / "conversations" / "memory_index.faiss"
-        self.memory_texts_path = PROJECT_ROOT / "data" / "conversations" / "memory_texts.json"
-        self.memory_db_path = PROJECT_ROOT / "data" / "conversations" / "memory.db"
+        self.memory_index_path = MEMORY_DATA_ROOT / "memory_index.faiss"
+        self.memory_texts_path = MEMORY_DATA_ROOT / "memory_texts.json"
+        self.memory_db_path = MEMORY_DATA_ROOT / "memory.db"
         self.memory_store = None
         self._memory_store_lock = threading.RLock()
 

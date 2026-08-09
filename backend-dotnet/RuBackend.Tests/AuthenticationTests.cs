@@ -4,19 +4,13 @@ using Xunit;
 
 namespace RuBackend.Tests;
 
-public sealed class AuthenticationTests : IClassFixture<BackendWebApplicationFactory>
+public sealed class AuthenticationTests
 {
-    private readonly BackendWebApplicationFactory _factory;
-
-    public AuthenticationTests(BackendWebApplicationFactory factory)
-    {
-        _factory = factory;
-    }
-
     [Fact]
     public async Task MissingBearerTokenIsRejected()
     {
-        using var client = _factory.CreateClient();
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/status");
 
@@ -26,7 +20,8 @@ public sealed class AuthenticationTests : IClassFixture<BackendWebApplicationFac
     [Fact]
     public async Task InvalidBearerTokenIsRejected()
     {
-        using var client = _factory.CreateClient();
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "wrong-token");
 
         using var response = await client.GetAsync("/status");
@@ -37,7 +32,8 @@ public sealed class AuthenticationTests : IClassFixture<BackendWebApplicationFac
     [Fact]
     public async Task ValidBearerTokenReachesStatusEndpoint()
     {
-        using var client = _factory.CreateAuthenticatedClient();
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.GetAsync("/status");
         var body = await response.Content.ReadAsStringAsync();

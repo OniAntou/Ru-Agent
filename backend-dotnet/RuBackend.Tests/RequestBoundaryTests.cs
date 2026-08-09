@@ -4,19 +4,13 @@ using Xunit;
 
 namespace RuBackend.Tests;
 
-public sealed class RequestBoundaryTests : IClassFixture<BackendWebApplicationFactory>
+public sealed class RequestBoundaryTests
 {
-    private readonly BackendWebApplicationFactory _factory;
-
-    public RequestBoundaryTests(BackendWebApplicationFactory factory)
-    {
-        _factory = factory;
-    }
-
     [Fact]
     public async Task OptionsRequestRemainsUnauthenticatedAndReturnsNoContent()
     {
-        using var client = _factory.CreateClient();
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateClient();
         using var response = await client.SendAsync(new HttpRequestMessage(HttpMethod.Options, "/status"));
 
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -25,7 +19,8 @@ public sealed class RequestBoundaryTests : IClassFixture<BackendWebApplicationFa
     [Fact]
     public async Task DeclaredOversizedBodyIsRejected()
     {
-        using var client = _factory.CreateClient();
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, "/settings")
         {
             Content = new ByteArrayContent(Array.Empty<byte>()),

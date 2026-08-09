@@ -154,7 +154,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseSetting("RuBackend:DesktopToken", "test-secret");
+        builder.UseSetting("RU_DESKTOP_TOKEN", "test-secret");
         builder.UseSetting("RuBackend:UpstreamUrl", "http://127.0.0.1:65531");
     }
 
@@ -390,7 +390,7 @@ public BackendWebApplicationFactory(IUpstreamHttpTransport? httpTransport = null
 
 protected override void ConfigureWebHost(IWebHostBuilder builder)
 {
-    builder.UseSetting("RuBackend:DesktopToken", "test-secret");
+    builder.UseSetting("RU_DESKTOP_TOKEN", "test-secret");
     builder.UseSetting("RuBackend:UpstreamUrl", "http://127.0.0.1:65531");
     builder.ConfigureTestServices(services =>
     {
@@ -402,6 +402,10 @@ protected override void ConfigureWebHost(IWebHostBuilder builder)
     });
 }
 ```
+
+The implemented in-process factory installs a deterministic default HTTP stub
+so authentication/status tests never depend on a live port; forwarding tests
+replace it with the explicitly supplied stub.
 
 - [ ] **Step 2: Run the forwarding tests and verify RED.**
 

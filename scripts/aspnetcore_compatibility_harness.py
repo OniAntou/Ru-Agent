@@ -15,7 +15,11 @@ from typing import Any
 import httpx
 from websockets.asyncio.client import connect
 
-from benchmark_aspnetcore_compat import _websocket_url
+from benchmark_aspnetcore_compat import (
+    _websocket_url,
+    benchmark_target,
+    compare_targets,
+)
 
 
 def classify_route_for_safe_probe(entry: dict[str, Any]) -> str:
@@ -219,7 +223,10 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
         edge_base_url,
     ]
     children: list[subprocess.Popen[bytes]] = []
-    with tempfile.TemporaryDirectory(prefix="ru-aspnetcore-compat-") as temporary_root:
+    with tempfile.TemporaryDirectory(
+        prefix="ru-aspnetcore-compat-",
+        ignore_cleanup_errors=True,
+    ) as temporary_root:
         temp_path = Path(temporary_root)
         environment = os.environ.copy()
         environment.update(
@@ -264,6 +271,16 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
                 result["websockets"]["voice_control"] = asyncio.run(_probe_voice_control(edge_base_url, token))
                 if args.require_voice_audio:
                     result["voice_audio_confirmed"] = asyncio.run(_probe_real_voice_audio(edge_base_url, token))
+                if args.benchmark_samples:
+                    direct_url = f"http://127.0.0.1:{args.worker_port}"
+                    direct = benchmark_target(direct_url, token, args.benchmark_samples)
+                    edge = benchmark_target(edge_base_url, token, args.benchmark_samples)
+                    result["benchmark"] = {
+                        "samples": args.benchmark_samples,
+                        "direct": direct,
+                        "edge": edge,
+                        "comparison": compare_targets(direct, edge),
+                    }
             return result
         finally:
             terminated = [_stop_child(child) for child in reversed(children)]
@@ -280,7 +297,10 @@ def main() -> int:
     parser.add_argument("--edge-port", type=int, default=8010)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--require-voice-audio", action="store_true")
+    parser.add_argument("--benchmark-samples", type=int, default=0)
     args = parser.parse_args()
+    if args.benchmark_samples < 0:
+        parser.error("--benchmark-samples cannot be negative")
     try:
         result = run_harness(args)
     except Exception as error:

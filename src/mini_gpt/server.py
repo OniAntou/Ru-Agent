@@ -125,4 +125,4 @@ if __name__ == "__main__":
             "every request (auth fails closed). Start the backend through the WinUI3 "
             "host or pass --secret-token to enable access."
         )
-    uvicorn.run("mini_gpt.server:app", host=args.host, port=args.port)
+    uvicorn.run("mini_gpt.server:app", host=args.host, port=args.port, access_log=False)

@@ -4,6 +4,9 @@ using RuBackend.Configuration;
 using RuBackend.Security;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
+builder.Logging.AddFilter("Microsoft.AspNetCore.Routing.EndpointMiddleware", LogLevel.Warning);
+builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
 builder.Services.Configure<BackendOptions>(options =>
 {
     builder.Configuration.GetSection(BackendOptions.SectionName).Bind(options);

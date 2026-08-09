@@ -26,22 +26,16 @@ app.UseMiddleware<DesktopTokenMiddleware>();
 app.UseMiddleware<RequestSizeMiddleware>();
 
 app.MapMethods("/{**path}", new[] { HttpMethods.Options }, () => Results.NoContent());
-app.MapMethods(
-    "/status",
-    new[] { HttpMethods.Get },
-    (HttpContext context, HttpForwarder forwarder, CancellationToken cancellationToken) =>
-        forwarder.ForwardAsync(context, cancellationToken));
-app.MapMethods(
-    "/settings",
-    new[] { HttpMethods.Get, HttpMethods.Post },
-    (HttpContext context, HttpForwarder forwarder, CancellationToken cancellationToken) =>
-        forwarder.ForwardAsync(context, cancellationToken));
 app.MapGet(
     "/chat",
     HandleWebSocketAsync);
 app.MapGet(
     "/voice/stream",
     HandleWebSocketAsync);
+app.Map(
+    "/{**path}",
+    (HttpContext context, HttpForwarder forwarder, CancellationToken cancellationToken) =>
+        forwarder.ForwardAsync(context, cancellationToken));
 
 app.Run();
 

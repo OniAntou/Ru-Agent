@@ -64,9 +64,13 @@ public sealed class HttpForwarder
             headers["Content-Type"] = contentType;
         }
 
+        var pathAndQuery = context.Request.PathBase.ToUriComponent()
+            + context.Request.Path.ToUriComponent()
+            + context.Request.QueryString.Value;
+
         return new UpstreamRequest(
             new HttpMethod(context.Request.Method),
-            context.Request.PathBase + context.Request.Path + context.Request.QueryString,
+            pathAndQuery,
             headers,
             body.ToArray());
     }

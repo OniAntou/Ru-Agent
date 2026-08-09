@@ -95,8 +95,9 @@
     }
   ],
   "policyCases": [
-    { "name": "vietnamese preference", "prompt": "Anh thích pizza", "response": "Em biết rồi.", "kind": "Preference" },
-    { "name": "english decision", "prompt": "D:\\LLM will use SQLite.", "response": "Okay.", "kind": "Decision" },
-    { "name": "private voice metadata", "prompt": "Anh thích pizza [[VOICE_PACE:1.10]]", "response": "Okay.", "kind": null }
+    { "name": "vietnamese preference", "prompt": "Anh thích pizza", "response": "Em biết rồi.", "kind": "Preference", "content": "Anh thích pizza.", "scope": null },
+    { "name": "english preference content", "prompt": "Anh thích concise replies", "response": "Okay.", "kind": "Preference", "content": "Anh thích concise replies.", "scope": null },
+    { "name": "english decision", "prompt": "D:\\LLM will use SQLite.", "response": "Okay.", "kind": "Decision", "content": "D:\\LLM will use SQLite", "scope": "D:\\LLM" },
+    { "name": "private voice metadata", "prompt": "Anh thích pizza [[VOICE_PACE:1.10]]", "response": "Okay.", "kind": null, "content": null, "scope": null }
   ]
 }

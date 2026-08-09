@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -40,8 +39,7 @@ public sealed class MemoryPolicy : IMemoryPolicy
 
         var evidence = Limit(normalizedPrompt, MaxEvidenceChars);
         var candidates = new List<MemoryCandidate>();
-        var preference = PreferencePattern("anh").Match(normalizedPrompt);
-        if (preference.Success)
+        foreach (Match preference in PreferencePattern("anh").Matches(normalizedPrompt))
         {
             var content = preference.Groups[1].Value.Trim();
             if (content.Length > 0)
@@ -59,7 +57,7 @@ public sealed class MemoryPolicy : IMemoryPolicy
         var scopeMatch = PathPattern.Match(normalizedPrompt);
         if (scopeMatch.Success && UsePattern.IsMatch(normalizedPrompt))
         {
-            var scope = scopeMatch.Value;
+            var scope = CanonicalizeWindowsPath(scopeMatch.Value);
             var index = normalizedPrompt.IndexOf(scope, StringComparison.OrdinalIgnoreCase);
             if (index >= 0)
             {
@@ -91,6 +89,20 @@ public sealed class MemoryPolicy : IMemoryPolicy
 
     private static string NormalizeText(string text) =>
         text.Normalize(NormalizationForm.FormC).Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Trim();
+
+    private static string CanonicalizeWindowsPath(string path)
+    {
+        // Match pathlib.PureWindowsPath's lexical handling for the forms the
+        // extractor accepts: slash direction, duplicate/trailing separators,
+        // and current-directory components are normalized without resolving ..
+        // or changing the drive-letter case.
+        var normalized = path.Replace('/', '\\');
+        var drive = normalized[..2];
+        var parts = normalized[2..].Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        var canonicalParts = parts.Where(part => part != ".");
+        var suffix = string.Join('\\', canonicalParts);
+        return suffix.Length == 0 ? $"{drive}\\" : $"{drive}\\{suffix}";
+    }
 
     private static string Limit(string value, int maxChars) =>
         value.Length <= maxChars ? value : value[..maxChars];

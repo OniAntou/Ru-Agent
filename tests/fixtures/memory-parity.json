@@ -93,5 +93,10 @@
       "scope": "D:\\LLM",
       "expectedIds": [ "project-scoped", "pinned-preference" ]
     }
+  ],
+  "policyCases": [
+    { "name": "vietnamese preference", "prompt": "Anh thích pizza", "response": "Em biết rồi.", "kind": "Preference" },
+    { "name": "english decision", "prompt": "D:\\LLM will use SQLite.", "response": "Okay.", "kind": "Decision" },
+    { "name": "private voice metadata", "prompt": "Anh thích pizza [[VOICE_PACE:1.10]]", "response": "Okay.", "kind": null }
   ]
 }

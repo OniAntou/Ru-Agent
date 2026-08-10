@@ -10,7 +10,8 @@ Current inventory: 38 HTTP method/path pairs and two WebSocket paths.
 | --- | --- |
 | `forwarded` | Forward method, escaped path, query, body, authentication, and content type to the Python worker. |
 | `unused-but-forwarded` | Preserve the Python endpoint even when the current WinUI build does not call it. |
-| `python-parity` | A WinUI caller already expects the route; Python owns the implementation and data. |
+| `python-parity` | A WinUI caller already expects the route; Python remains the default implementation and writer. |
+| `feature-selected` | The edge selects Python forwarding, shadow-read, or direct ASP.NET handling from an ownership setting. |
 | `websocket-relay` | Relay frames only; do not add a second chat, voice, or playback state machine. |
 
 ## Parallel and cutover topology
@@ -20,7 +21,18 @@ parallel:  client -> RuBackend:8010 -> FastAPI:8000
 cutover:   WinUI -> RuBackend:8000 -> FastAPI worker:8001
 ```
 
-The public WinUI contract remains on port `8000` in both modes. `GET /memory` was a pre-existing WinUI/FastAPI drift; FastAPI now provides the read-only DTO route, while memory storage remains Python-owned.
+The public WinUI contract remains on port `8000` in both modes. Memory ownership is
+selected independently with `RuBackend:Ownership:Memory`:
+
+- `python` (default): both memory methods remain catch-all forwards to FastAPI.
+- `shadow`: `GET /memory` returns the Python response, then reads ASP.NET memory
+  and compares count, canonical ID/category/timestamp hashes, and ordering hash.
+  `DELETE /memory` remains Python-owned so shadow mode never dual-writes.
+- `aspnet`: `GET /memory` returns only the WinUI fields `id`, `text`, `category`,
+  and `created_at`; `DELETE /memory` uses the ASP.NET memory service.
+
+Shadow diagnostics contain only counts, hashes, status, byte counts, and exception
+types. They never log memory text, evidence, credentials, or request bodies.
 
 ## Route groups
 
@@ -32,6 +44,10 @@ The JSON matrix is the source of truth for the complete list. The groups below m
 - voice HTTP: `/voice/status`, `/voice/latency`, `/voice/tts`, `/voice/warmup`, `/voice/release`, `/voice/transcribe`
 - VTS HTTP: `/vts/*`
 - WebSocket relay: `/chat`, `/voice/stream`
+
+The JSON matrix marks `/memory` ownership as `feature-selected` while retaining
+the FastAPI route as the compatibility source. These ownership fields are
+descriptive and do not change the default Python owner.
 
 Validate after route changes:
 

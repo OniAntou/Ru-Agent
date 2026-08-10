@@ -11,6 +11,12 @@ public delegate Task<IReadOnlyList<MemoryCandidate>> MemoryCandidateExtractor(
 
 public interface IMemoryService
 {
+    // Kept as a default for compatibility with temporary adapters created
+    // before the list endpoint was introduced. MemoryService overrides it to
+    // use the repository's active-record ordering and expiry semantics.
+    Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(CancellationToken cancellationToken) =>
+        RetrieveAsync(string.Empty, cancellationToken);
+
     Task<IReadOnlyList<MemoryRecord>> RetrieveAsync(string query, CancellationToken cancellationToken);
     Task<IReadOnlyList<MemoryRecord>> RememberTurnAsync(string prompt, string response, CancellationToken cancellationToken);
     Task ClearAsync(CancellationToken cancellationToken);
@@ -54,6 +60,13 @@ public sealed class MemoryService : IMemoryService, IAsyncDisposable
 
     public Task<MemoryLegacyImportResult> InitializeAsync(CancellationToken cancellationToken) =>
         EnsureInitializedAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<MemoryRecord>> ListActiveAsync(CancellationToken cancellationToken)
+    {
+        EnsureNotDisposed();
+        await EnsureInitializedAsync(cancellationToken).ConfigureAwait(false);
+        return await _repository.ListActiveAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<IReadOnlyList<MemoryRecord>> RetrieveAsync(
         string query,

@@ -11,4 +11,11 @@ public sealed class BackendOptions
     public string DesktopToken { get; set; } = string.Empty;
 
     public long MaxRequestBodyBytes { get; set; } = 8 * 1024 * 1024;
+
+    public BackendOwnershipOptions Ownership { get; set; } = new();
+}
+
+public sealed class BackendOwnershipOptions
+{
+    public string Memory { get; set; } = "python";
 }

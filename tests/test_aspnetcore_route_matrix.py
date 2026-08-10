@@ -65,12 +65,13 @@ def test_route_matrix_matches_fastapi_source() -> None:
             "forwarded",
             "websocket-relay",
             "python-parity",
+            "feature-selected",
             "unused-but-forwarded",
         }
         assert isinstance(entry["winui_callers"], list)
 
 
-def test_matrix_contains_the_preexisting_memory_drift() -> None:
+def test_matrix_marks_memory_as_feature_selected() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     matrix = load_route_matrix(repo_root)
 
@@ -82,5 +83,14 @@ def test_matrix_contains_the_preexisting_memory_drift() -> None:
         and entry["path"] == "/memory"
     )
 
-    assert memory_entry["classification"] == "python-parity"
+    assert memory_entry["classification"] == "feature-selected"
+    assert memory_entry["ownership"] == "feature-selected"
+    assert memory_entry["ownership_config"] == "RuBackend:Ownership:Memory"
+    assert memory_entry["shadow_compare"] == [
+        "count",
+        "id_hash",
+        "category_hash",
+        "timestamp_hash",
+        "ordering_hash",
+    ]
     assert memory_entry["winui_callers"] == ["ApiService.GetMemoryAsync"]

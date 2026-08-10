@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using RuBackend.Compatibility;
 using RuBackend.Configuration;
+using RuBackend.Memory;
 using RuBackend.Security;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +20,10 @@ builder.Services.AddHttpClient<IUpstreamHttpTransport, HttpUpstreamTransport>();
 builder.Services.AddSingleton<IUpstreamWebSocketConnector, ClientWebSocketConnector>();
 builder.Services.AddSingleton<HttpForwarder>();
 builder.Services.AddSingleton<WebSocketRelay>();
+builder.Services.AddSingleton(BuildMemorySqliteOptions(builder.Configuration));
+builder.Services.AddSingleton<IMemoryRepository, SqliteMemoryRepository>();
+builder.Services.AddSingleton<IMemoryPolicy, MemoryPolicy>();
+builder.Services.AddSingleton<IMemoryService, MemoryService>();
 builder.WebHost.UseUrls(
     builder.Configuration["RuBackend:BindUrl"] ?? "http://127.0.0.1:8010");
 
@@ -35,6 +40,7 @@ app.MapGet(
 app.MapGet(
     "/voice/stream",
     HandleWebSocketAsync);
+MemoryEndpoints.Map(app);
 app.Map(
     "/{**path}",
     (HttpContext context, HttpForwarder forwarder, CancellationToken cancellationToken) =>
@@ -69,6 +75,23 @@ static async Task HandleWebSocketAsync(
     {
         upstream?.Dispose();
     }
+}
+
+static MemorySqliteOptions BuildMemorySqliteOptions(IConfiguration configuration)
+{
+    var dataRoot = configuration["RU_DATA_ROOT"]
+        ?? Environment.GetEnvironmentVariable("RU_DATA_ROOT");
+    var root = string.IsNullOrWhiteSpace(dataRoot)
+        ? Path.Combine(Directory.GetCurrentDirectory(), "data", "conversations")
+        : dataRoot.Trim();
+
+    return new MemorySqliteOptions
+    {
+        DatabasePath = configuration["RuBackend:Memory:DatabasePath"]
+            ?? Path.Combine(root, "memory.db"),
+        LegacyTextsPath = configuration["RuBackend:Memory:LegacyTextsPath"]
+            ?? Path.Combine(root, "memory_texts.json"),
+    };
 }
 
 public partial class Program { }

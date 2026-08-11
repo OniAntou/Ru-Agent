@@ -34,6 +34,22 @@ selected independently with `RuBackend:Ownership:Memory`:
 Shadow diagnostics contain only counts, hashes, status, byte counts, and exception
 types. They never log memory text, evidence, credentials, or request bodies.
 
+STT and VTS ownership are selected independently with
+`RuBackend:Ownership:Stt` and `RuBackend:Ownership:Vts`:
+
+- `python` (default): the compatibility catch-all forwards the public route to
+  FastAPI exactly as before.
+- `aspnet`: ASP.NET explicitly owns `/voice/transcribe` or the eleven `/vts/*`
+  method/path pairs. STT performs bounded JSON, sample-rate, and base64
+  validation before dispatch. VTS preserves the request/response bytes while
+  the Python runtime remains the single owner of authentication, reconnect,
+  catalog, action cooldown, motion, and overlay process state.
+
+Both ASP.NET modes call `IRuntimeWorkerClient`; the current implementation is a
+FastAPI adapter and can be replaced by the planned versioned loopback worker.
+An ownership switch requires restart. No STT audio, transcript, VTS payload, or
+private marker is written to diagnostics.
+
 ## Route groups
 
 The JSON matrix is the source of truth for the complete list. The groups below make the ownership boundary easy to review:
@@ -45,9 +61,10 @@ The JSON matrix is the source of truth for the complete list. The groups below m
 - VTS HTTP: `/vts/*`
 - WebSocket relay: `/chat`, `/voice/stream`
 
-The JSON matrix marks `/memory` ownership as `feature-selected` while retaining
-the FastAPI route as the compatibility source. These ownership fields are
-descriptive and do not change the default Python owner.
+The JSON matrix marks `/memory`, `/voice/transcribe`, and every `/vts/*` route
+as `feature-selected` while retaining FastAPI as the current compatibility
+worker. These ownership fields are descriptive and do not change the default
+Python owner.
 
 Validate after route changes:
 

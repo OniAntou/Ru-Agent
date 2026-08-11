@@ -7,6 +7,11 @@ ASP.NET Core compatibility edge became the default public host on 2026-08-10.
 It is a design record only; implementation is intentionally split into
 independently verified plans.
 
+Implementation status on 2026-08-11: the memory seam and the initial STT/VTS
+runtime-worker ownership seams are implemented. STT/VTS still default to
+Python, and their `aspnet` modes call the FastAPI compatibility worker; direct
+hardware/provider migration and FastAPI decommission remain pending.
+
 The completed transport cutover remains documented in
 `docs/aspnetcore-cutover-validation.md`. The earlier
 `2026-08-10-ru-aspnetcore-full-compatibility-and-cutover-design.md` document is
@@ -93,8 +98,9 @@ The current FastAPI process owns both transport and most business behavior:
   memory calls, marker stripping, VTS dispatch, and activity logging.
 - `src/mini_gpt/routers/status.py`, `settings.py`, and `sessions.py` expose
   the memory, settings, activity, history, and session contracts.
-- `backend-dotnet/RuBackend` currently owns authentication, request limits,
-  HTTP forwarding, and WebSocket frame relay only.
+- `backend-dotnet/RuBackend` owns authentication, request limits, HTTP
+  forwarding, WebSocket frame relay, feature-selected memory handling, bounded
+  STT validation, and explicit VTS runtime-worker routing.
 
 The current storage contracts are intentionally different and must be made
 explicit in one ASP.NET `DataPaths` module:
@@ -312,6 +318,12 @@ GPU, and external-process behavior has different acceptance gates.
 | 6. Chat | ASP.NET owns `ConversationCoordinator` and `/chat` | Event order, history, memory, metadata, cancellation, and error gates pass | Restart with FastAPI chat |
 | 7. Runtime slices | ASP.NET routes voice/VTS/observation through worker adapters | Real audio, binary ordering, hardware lifecycle, and route matrix gates pass | Keep FastAPI host mode |
 | 8. FastAPI removal | No public FastAPI dependency | All routes have direct ASP.NET implementation or worker adapter; process and data smoke pass | Restore the last tagged host mode |
+
+Phase 7 is partially implemented: STT and VTS public route ownership seams and
+their FastAPI worker adapter pass deterministic and isolated topology gates.
+Real microphone transcription, a user-observed VTS action, the final versioned
+worker transport, voice streaming ownership, and observation ownership remain
+open acceptance work.
 
 No phase enables two writers. A feature flag selects `python`, `shadow`, or
 `aspnet` ownership for the current seam, and the process manager restarts at an

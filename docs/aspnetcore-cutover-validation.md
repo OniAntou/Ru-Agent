@@ -18,7 +18,7 @@ pass cannot be mistaken for a live WinUI cutover.
 | Gate | Result |
 | --- | --- |
 | ASP.NET route checker | 38 HTTP routes, 2 WebSocket routes |
-| ASP.NET backend tests | 70 passed (final Task 7 run) |
+| ASP.NET backend tests | 95 passed (STT/VTS ownership run) |
 | GUI tests | 99 passed |
 | Selected Python API tests | 152 passed, 2 dependency deprecation warnings |
 | Compatibility tool tests | 4 passed |
@@ -53,6 +53,36 @@ DELETE ownership cutover. To roll back the memory seam, restart with
 `RuBackend__Ownership__Memory=python`. To roll back the whole public host,
 restart with `RU_BACKEND_HOST_MODE=fastapi`. This gate does not mean FastAPI
 has been removed.
+
+## STT and VTS runtime ownership gate (2026-08-11)
+
+ASP.NET now has restart-selected public ownership seams for
+`POST /voice/transcribe` and all eleven `/vts/*` method/path pairs. Defaults
+remain `python`; `aspnet` dispatches provider/hardware work through
+`IRuntimeWorkerClient`.
+
+| Check | Result |
+| --- | --- |
+| Focused ASP.NET STT/VTS/worker tests | 25 passed |
+| Full ASP.NET backend tests | 95 passed |
+| Python STT/VTS/API/matrix compatibility tests | 159 passed, 2 dependency deprecation warnings |
+| ASP.NET route checker | 38 HTTP routes, 2 WebSocket routes |
+| Isolated edge readiness | HTTP 200 |
+| Isolated safe HTTP probes | 14 passed, 0 failed, 24 mutating routes skipped |
+| VTS safe GET probes | `/mouse-look`, `/overlay`, `/status`, and `/config` returned HTTP 200 |
+| WebSocket compatibility | Chat and voice connected with ordered terminal events |
+| Worker/edge cleanup | Both child processes terminated; no listeners remained |
+
+The topology gate used temporary ports 18741/18742 and wrote non-sensitive
+evidence to `artifacts/aspnetcore/stt-vts-ownership-gate.json`. It did not send
+microphone audio, did not record a transcript, and did not trigger a live VTS
+action. Therefore this gate accepts route ownership and compatibility only; a
+real microphone transcription and user-observed VTube Studio action remain
+hardware acceptance gates before either setting becomes the default.
+
+Rollback is a restart with `RuBackend__Ownership__Stt=python` and/or
+`RuBackend__Ownership__Vts=python`. The current runtime-worker implementation
+still calls FastAPI, so this slice does not authorize deleting FastAPI.
 
 ## Live evidence
 

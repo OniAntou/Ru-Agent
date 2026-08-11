@@ -79,6 +79,14 @@ an isolated GET/DELETE gate against a temporary SQLite root; `aspnet` is
 available as an explicit feature-selected owner for those routes. Roll back
 the memory seam with `python`; this does not mean FastAPI has been removed.
 
+STT and VTS public ownership are also feature-selected and remain `python` by
+default. `RuBackend__Ownership__Stt=aspnet` moves bounded
+`/voice/transcribe` validation and dispatch into ASP.NET;
+`RuBackend__Ownership__Vts=aspnet` explicitly maps all `/vts/*` routes through
+the ASP.NET runtime-worker seam. The current worker still runs the Google STT
+provider and VTube Studio connection/motion engine, so these settings are not a
+FastAPI-removal claim. Restart with either setting at `python` to roll back.
+
 Auto-read replies use the authenticated `/voice/stream` WebSocket with ordered
 WAV chunks, cancellation, playback acknowledgements, and a complete-WAV
 fallback when streaming fails before the first chunk. Voice control markers and

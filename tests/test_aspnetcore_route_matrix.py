@@ -94,3 +94,34 @@ def test_matrix_marks_memory_as_feature_selected() -> None:
         "ordering_hash",
     ]
     assert memory_entry["winui_callers"] == ["ApiService.GetMemoryAsync"]
+
+
+def test_matrix_marks_stt_and_vts_as_feature_selected_runtime_routes() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    matrix = load_route_matrix(repo_root)
+
+    stt_entry = next(
+        entry
+        for entry in matrix
+        if entry["transport"] == "http"
+        and entry["method"] == "POST"
+        and entry["path"] == "/voice/transcribe"
+    )
+    assert stt_entry["classification"] == "feature-selected"
+    assert stt_entry["ownership"] == "feature-selected"
+    assert stt_entry["ownership_config"] == "RuBackend:Ownership:Stt"
+    assert stt_entry["default_owner"] == "python"
+    assert stt_entry["aspnet_execution"] == "runtime-worker"
+
+    vts_entries = [
+        entry
+        for entry in matrix
+        if entry["transport"] == "http" and entry["path"].startswith("/vts/")
+    ]
+    assert len(vts_entries) == 11
+    for entry in vts_entries:
+        assert entry["classification"] == "feature-selected"
+        assert entry["ownership"] == "feature-selected"
+        assert entry["ownership_config"] == "RuBackend:Ownership:Vts"
+        assert entry["default_owner"] == "python"
+        assert entry["aspnet_execution"] == "runtime-worker"

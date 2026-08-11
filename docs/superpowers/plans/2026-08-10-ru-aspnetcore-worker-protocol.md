@@ -192,7 +192,7 @@ Use System.Text.Json with camelCase properties and ignore no required field. Pyt
 
 Run the same commands. Expected: all C# and Python protocol tests pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ~~~powershell
 git add backend-dotnet/RuBackend/Worker backend-dotnet/RuBackend.Tests/Worker/WorkerEnvelopeTests.cs tests/test_worker_protocol.py
@@ -206,7 +206,7 @@ git commit -m "feat: define versioned Python worker protocol"
 - Modify: src/mini_gpt/worker_protocol.py
 - Create: tests/test_worker_server.py
 
-- [ ] **Step 1: Write failing fake-handler tests**
+- [x] **Step 1: Write failing fake-handler tests**
 
 Start the server on an ephemeral loopback port with handlers that emit a deterministic chat reset/chunk/done sequence and a memory.facts response. Test hello success, bad token close, unknown version error, cancel event, and clean shutdown.
 
@@ -218,7 +218,7 @@ Run:
 
 Expected: FAIL because the server and handler registry are absent.
 
-- [ ] **Step 2: Implement Python framing and server**
+- [x] **Step 2: Implement Python framing and server**
 
 Use asyncio and websockets. Authenticate the first message before accepting work. Keep a per-connection dictionary of request tasks keyed by request ID. Parse text control frames with worker_protocol.py. Send control envelopes as JSON text. Reply to worker.health with worker.health.ok. Send voice audio only after the matching voice.control JSON frame and validate non-empty bytes before sending. On chat.cancel, cancel the matching task and send a terminal error or cancelled event exactly once. Close all child request tasks on connection shutdown.
 
@@ -235,7 +235,7 @@ async def serve_worker(
 
 where WorkerHandlers has async callables for chat, memory extraction, voice, VTS, and observation.
 
-- [ ] **Step 3: Run Python tests**
+- [x] **Step 3: Run Python tests**
 
 Run the focused command. Expected: all server tests pass with no secret in captured logs.
 

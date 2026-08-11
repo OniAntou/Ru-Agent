@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import math
+import threading
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
@@ -16,6 +17,7 @@ from mini_gpt.worker_protocol import (
     CHAT_RESET,
     ERROR,
     MEMORY_FACTS,
+    RUNTIME_STATE,
     VOICE_CONTROL,
     VOICE_DONE,
     VTS_ACTION,
@@ -34,6 +36,8 @@ VoiceAudio = Callable[[str, str, float, str], bytes]
 VoiceControl = Callable[[str, str], Mapping[str, Any]]
 VtsManagerFactory = Callable[[], Any]
 GenerationScope = Callable[[], ContextManager[Any]]
+RuntimeLoader = Callable[[dict[str, Any]], Mapping[str, Any]]
+_RUNTIME_TRANSITION_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,12 +47,14 @@ class RuntimeDependencies:
     voice_audio: VoiceAudio | None = None
     voice_control: VoiceControl | None = None
     vts_manager: VtsManagerFactory | None = None
+    runtime_load: RuntimeLoader | None = None
 
 
 def build_runtime_handlers(dependencies: RuntimeDependencies) -> WorkerHandlers:
     return WorkerHandlers(
         chat=partial(_chat_handler, dependencies),
         memory_extract=partial(_memory_handler, dependencies),
+        runtime=partial(_runtime_handler, dependencies),
         voice=partial(_voice_handler, dependencies),
         vts=partial(_vts_handler, dependencies),
         observation=_unsupported_handler,
@@ -69,6 +75,55 @@ def create_runtime_handlers() -> WorkerHandlers:
             return shared._gpu_lifecycle().local_generation()
         return contextlib.nullcontext()
 
+    def runtime_load(payload: dict[str, Any]) -> Mapping[str, Any]:
+        runner = shared.core.runner
+        backend = payload.get("backend")
+        if backend not in ("llama.cpp", "OpenCode Zen", "Kilo Gateway"):
+            raise ValueError("unsupported runtime backend")
+        model_name = str(payload.get("model") or "")
+        if backend == "OpenCode Zen":
+            model_name = str(payload.get("opencode_model") or model_name)
+        elif backend == "Kilo Gateway":
+            model_name = str(payload.get("kilo_model") or model_name)
+        checkpoint_path = str(payload.get("checkpoint_path") or "")
+        api_variant = str(payload.get("api_variant") or "")
+        reasoning = payload.get("kilo_reasoning_enabled", False)
+        if not isinstance(reasoning, bool):
+            raise ValueError("invalid reasoning setting")
+
+        with _RUNTIME_TRANSITION_LOCK:
+            previous = {
+                "backend": runner.backend,
+                "checkpoint_path": runner.checkpoint_path,
+                "openai_runtime": runner.openai_runtime,
+                "kilo_reasoning_enabled": runner.kilo_reasoning_enabled,
+            }
+            try:
+                api_key = ""
+                if backend == "OpenCode Zen":
+                    api_key = shared.core.opencode_cred.get_key() or ""
+                elif backend == "Kilo Gateway":
+                    api_key = shared.core.kilo_cred.get_key() or ""
+                runner.select_backend(backend)
+                message = runner.load(
+                    checkpoint_path=checkpoint_path,
+                    api_key=api_key,
+                    model_name=model_name,
+                    api_variant=api_variant,
+                    kilo_reasoning_enabled=reasoning,
+                )
+                return {
+                    "status": "success",
+                    "message": str(message),
+                    "backend": backend,
+                }
+            except Exception:
+                runner.select_backend(previous["backend"])
+                runner.checkpoint_path = previous["checkpoint_path"]
+                runner.openai_runtime = previous["openai_runtime"]
+                runner.kilo_reasoning_enabled = previous["kilo_reasoning_enabled"]
+                raise RuntimeError("runtime_load_failed") from None
+
     return build_runtime_handlers(
         RuntimeDependencies(
             runner=shared.core.runner,
@@ -76,6 +131,7 @@ def create_runtime_handlers() -> WorkerHandlers:
             voice_audio=shared.request_voice_audio,
             voice_control=shared.request_voice_control,
             vts_manager=shared._vts_manager,
+            runtime_load=runtime_load,
         )
     )
 
@@ -202,6 +258,35 @@ async def _memory_handler(
             ]
         },
     )
+
+
+async def _runtime_handler(
+    dependencies: RuntimeDependencies,
+    payload: dict[str, Any],
+    _cancelled: asyncio.Event,
+) -> AsyncIterator[WorkerReply]:
+    if dependencies.runtime_load is None:
+        yield _error("runtime_unavailable", retryable=True)
+        return
+    sensitive_keys = {
+        "api_key",
+        "opencode_api_key",
+        "kilo_api_key",
+        "gemini_vision_api_key",
+        "token",
+        "secret",
+    }
+    if any(key.strip().lower() in sensitive_keys for key in payload):
+        yield _error("invalid_request", retryable=False)
+        return
+    try:
+        result = await asyncio.to_thread(dependencies.runtime_load, dict(payload))
+        if not isinstance(result, Mapping):
+            raise TypeError("runtime result must be an object")
+    except Exception:
+        yield _error("runtime_load_failed", retryable=False)
+        return
+    yield WorkerReply(RUNTIME_STATE, dict(result))
 
 
 async def _voice_handler(

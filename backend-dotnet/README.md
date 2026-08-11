@@ -67,12 +67,14 @@ backend-dotnet\RuBackend\bin\Release\net10.0\win-x64\publish\RuBackend.exe
 | RU_DESKTOP_TOKEN | empty | Required token; empty fails closed. |
 | RuBackend__BindUrl | http://127.0.0.1:8010 | ASP.NET Core bind URL. |
 | RuBackend__UpstreamUrl | http://127.0.0.1:8000 | FastAPI worker base URL. |
+| RuBackend__WorkerUrl | ws://127.0.0.1:5053/worker/v1 | Versioned private Python runtime worker URL. |
 | RuBackend__MaxRequestBodyBytes | 8388608 | Maximum POST/PUT/PATCH body size. |
 | RuBackend__Ownership__Memory | python | Memory route owner: `python`, `shadow`, or `aspnet`. |
 | RuBackend__Ownership__Stt | python | `/voice/transcribe` owner: `python` or `aspnet`. |
 | RuBackend__Ownership__Vts | python | All eleven `/vts/*` method/path owners: `python` or `aspnet`. |
 | RU_BACKEND_HOST_MODE | aspnetcore | WinUI owner mode; fastapi is the explicit rollback. |
 | RU_BACKEND_WORKER_PORT | 8001 | Private FastAPI port in ASP.NET Core mode. |
+| RU_WORKER_TOKEN | empty | Separate private-worker handshake token; empty fails closed when runtime loading is requested. |
 | RU_RUBACKEND_EXE | published path above | Optional explicit edge executable path. |
 
 The complete route inventory is in docs/aspnetcore-route-matrix.md. With the
@@ -85,6 +87,13 @@ shadow repository skips legacy-import writes and releases its read connection
 after each read so Python can still clear the database on Windows. Roll back
 the memory seam with `RuBackend__Ownership__Memory=python`; this does not remove
 FastAPI from the system.
+
+Runtime-changing `POST /settings` requests use the private protocol v1
+`runtime.load` operation. ASP.NET sends only backend, model, variant,
+checkpoint, and reasoning fields. Hosted API keys remain in Windows Credential
+Manager and are read by the Python worker locally; they are never copied into a
+worker envelope. Until the process manager owns this private worker and the
+restart/rollback gate passes, settings ownership remains `python` by default.
 
 With `RuBackend__Ownership__Stt=aspnet`, ASP.NET validates the bounded STT JSON,
 sample-rate, and base64 contract before dispatching recognition through

@@ -17,6 +17,8 @@ CHAT_DONE = "chat.done"
 CHAT_CANCEL = "chat.cancel"
 MEMORY_EXTRACT = "memory.extract"
 MEMORY_FACTS = "memory.facts"
+RUNTIME_LOAD = "runtime.load"
+RUNTIME_STATE = "runtime.state"
 VOICE_START = "voice.start"
 VOICE_CONTROL = "voice.control"
 VOICE_DONE = "voice.done"
@@ -37,6 +39,8 @@ KNOWN_TYPES = frozenset(
         CHAT_CANCEL,
         MEMORY_EXTRACT,
         MEMORY_FACTS,
+        RUNTIME_LOAD,
+        RUNTIME_STATE,
         VOICE_START,
         VOICE_CONTROL,
         VOICE_DONE,
@@ -55,6 +59,7 @@ ORDERED_RESPONSE_TYPES = frozenset(
         CHAT_CHUNK,
         CHAT_DONE,
         MEMORY_FACTS,
+        RUNTIME_STATE,
         VOICE_CONTROL,
         VOICE_DONE,
         WORKER_HEALTH_OK,

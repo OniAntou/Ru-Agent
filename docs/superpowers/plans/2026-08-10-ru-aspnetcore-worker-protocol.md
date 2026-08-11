@@ -23,6 +23,10 @@
   OmniVoice transport, and VTS manager seams. They do not need edits to the
   already-dirty `backend_core.py` or `_server_shared.py`, and they never open
   the Python memory store for an ASP.NET-owned chat turn.
+- Protocol v1 now includes `runtime.load`/`runtime.state`. ASP.NET sends only an
+  allowlisted model/runtime payload; the Python worker reads hosted API keys
+  from the shared Windows credential store and never receives or returns a
+  credential value in the envelope.
 - FastAPI compatibility exists only until the final decommission gate. After
   that gate its adapter, dependencies, process mode, and source are deleted.
 - Protected dirty Python/WinUI changes are behavior to preserve and port, not

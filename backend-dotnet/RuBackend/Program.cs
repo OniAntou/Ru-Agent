@@ -10,6 +10,7 @@ using RuBackend.Runtime;
 using RuBackend.Security;
 using RuBackend.Speech;
 using RuBackend.Vts;
+using RuBackend.Worker;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
@@ -29,9 +30,10 @@ builder.Services.AddSingleton<HttpForwarder>();
 builder.Services.AddSingleton<WebSocketRelay>();
 builder.Services.AddTransient<IRuntimeWorkerClient, FastApiRuntimeWorkerClient>();
 builder.Services.AddSingleton(BuildDataPaths(builder.Configuration));
+builder.Services.AddSingleton(BuildWorkerClientOptions(builder.Configuration));
 builder.Services.AddSingleton<ISettingsStore, SettingsStore>();
 builder.Services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
-builder.Services.AddSingleton<IRuntimeSettingsLoader, UnavailableRuntimeSettingsLoader>();
+builder.Services.AddSingleton<IRuntimeSettingsLoader, LoopbackRuntimeSettingsLoader>();
 builder.Services.AddSingleton<ISettingsTransitionService, SettingsTransitionService>();
 builder.Services.AddSingleton<ISessionStore, SessionStore>();
 builder.Services.AddSingleton<IHistoryStore, HistoryStore>();
@@ -131,6 +133,22 @@ static DataPaths BuildDataPaths(IConfiguration configuration)
         Directory.GetCurrentDirectory(),
         userProfile,
         dataRoot);
+}
+
+static WorkerClientOptions BuildWorkerClientOptions(IConfiguration configuration)
+{
+    var workerUrl = configuration["RuBackend:WorkerUrl"];
+    var workerToken = configuration["RU_WORKER_TOKEN"]
+        ?? Environment.GetEnvironmentVariable("RU_WORKER_TOKEN")
+        ?? string.Empty;
+
+    return new WorkerClientOptions
+    {
+        Uri = string.IsNullOrWhiteSpace(workerUrl)
+            ? new Uri("ws://127.0.0.1:5053/worker/v1")
+            : new Uri(workerUrl, UriKind.Absolute),
+        Token = workerToken,
+    };
 }
 
 public partial class Program { }

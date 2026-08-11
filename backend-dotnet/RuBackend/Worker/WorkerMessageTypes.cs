@@ -11,6 +11,8 @@ public static class WorkerMessageTypes
     public const string ChatCancel = "chat.cancel";
     public const string MemoryExtract = "memory.extract";
     public const string MemoryFacts = "memory.facts";
+    public const string RuntimeLoad = "runtime.load";
+    public const string RuntimeState = "runtime.state";
     public const string VoiceStart = "voice.start";
     public const string VoiceControl = "voice.control";
     public const string VoiceDone = "voice.done";
@@ -31,6 +33,8 @@ public static class WorkerMessageTypes
             ChatCancel,
             MemoryExtract,
             MemoryFacts,
+            RuntimeLoad,
+            RuntimeState,
             VoiceStart,
             VoiceControl,
             VoiceDone,
@@ -49,6 +53,7 @@ public static class WorkerMessageTypes
             ChatChunk,
             ChatDone,
             MemoryFacts,
+            RuntimeState,
             VoiceControl,
             VoiceDone,
             WorkerHealthOk,

@@ -49,9 +49,11 @@ Deterministic business ownership is selected independently with
 `POST /settings` is a transaction boundary. It snapshots credentials and
 settings, asks an injected private runtime loader to load the candidate, and
 persists settings only after success. Any failure restores credentials and
-keeps the previous settings file. The production loopback runtime loader is a
-remaining cutover prerequisite, so the default owner stays `python` in this
-slice.
+keeps the previous settings file. The production loopback loader uses protocol
+v1 `runtime.load` with an allowlisted payload; Python reads credentials from the
+shared Windows vault instead of receiving secrets over WebSocket. Private
+worker process ownership and restart/rollback evidence are still required, so
+the default owner stays `python` in this slice.
 
 STT and VTS ownership are selected independently with
 `RuBackend:Ownership:Stt` and `RuBackend:Ownership:Vts`:

@@ -12,6 +12,7 @@ from mini_gpt.worker_protocol import (
     CHAT_RESET,
     ERROR,
     MEMORY_FACTS,
+    RUNTIME_STATE,
     VOICE_CONTROL,
     VOICE_DONE,
     VTS_ACTION,
@@ -214,6 +215,69 @@ def test_runtime_failures_emit_only_stable_codes(caplog) -> None:
     }
     assert "secret token" not in caplog.text
     assert "private model path" not in caplog.text
+
+
+def test_runtime_load_delegates_without_persisting_settings_or_credentials() -> None:
+    observed = []
+
+    def runtime_load(payload: dict) -> dict:
+        observed.append(payload)
+        return {
+            "status": "success",
+            "message": "Runtime loaded.",
+            "backend": payload["backend"],
+        }
+
+    handlers = build_runtime_handlers(
+        RuntimeDependencies(
+            runner=FakeRunner("[]"),
+            runtime_load=runtime_load,
+        )
+    )
+    payload = {
+        "backend": "OpenCode Zen",
+        "model": "opencode/free",
+        "opencode_model": "opencode/free",
+        "kilo_model": "kilo-auto/free",
+        "api_variant": "Default",
+        "checkpoint_path": "",
+        "kilo_reasoning_enabled": False,
+    }
+
+    reply = single(
+        asyncio.run(collect(handlers.runtime(payload, asyncio.Event())))
+    )
+
+    assert observed == [payload]
+    assert reply.type == RUNTIME_STATE
+    assert reply.payload["status"] == "success"
+
+
+def test_runtime_load_failure_is_redacted(caplog) -> None:
+    def runtime_load(_payload: dict) -> dict:
+        raise RuntimeError("private credential and model path")
+
+    handlers = build_runtime_handlers(
+        RuntimeDependencies(
+            runner=FakeRunner("[]"),
+            runtime_load=runtime_load,
+        )
+    )
+
+    reply = single(
+        asyncio.run(
+            collect(
+                handlers.runtime(
+                    {"backend": "OpenCode Zen"},
+                    asyncio.Event(),
+                )
+            )
+        )
+    )
+
+    assert reply.type == ERROR
+    assert reply.payload == {"code": "runtime_load_failed", "retryable": False}
+    assert "private credential" not in caplog.text
 
 
 class FakeRunner:

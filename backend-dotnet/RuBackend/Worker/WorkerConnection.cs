@@ -14,6 +14,7 @@ public sealed class WorkerConnection : IAsyncDisposable
             WorkerMessageTypes.ChatChunk,
             WorkerMessageTypes.ChatDone,
             WorkerMessageTypes.MemoryFacts,
+            WorkerMessageTypes.RuntimeState,
             WorkerMessageTypes.VoiceControl,
             WorkerMessageTypes.VoiceDone,
             WorkerMessageTypes.VtsCatalog,
@@ -27,6 +28,7 @@ public sealed class WorkerConnection : IAsyncDisposable
         [
             WorkerMessageTypes.ChatDone,
             WorkerMessageTypes.MemoryFacts,
+            WorkerMessageTypes.RuntimeState,
             WorkerMessageTypes.VoiceDone,
             WorkerMessageTypes.VtsCatalog,
             WorkerMessageTypes.VtsAction,
@@ -73,6 +75,7 @@ public sealed class WorkerConnection : IAsyncDisposable
                     ["capabilities"] = new JsonArray(
                         "chat",
                         "memory.extract",
+                        "runtime",
                         "voice",
                         "vts",
                         "observation"),

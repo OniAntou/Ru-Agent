@@ -18,6 +18,7 @@ from mini_gpt.worker_protocol import (
     HELLO,
     HELLO_OK,
     MEMORY_EXTRACT,
+    RUNTIME_LOAD,
     PROTOCOL_VERSION,
     ProtocolError,
     VOICE_CONTROL,
@@ -50,6 +51,7 @@ WorkerHandler: TypeAlias = Callable[
 class WorkerHandlers:
     chat: WorkerHandler
     memory_extract: WorkerHandler
+    runtime: WorkerHandler
     voice: WorkerHandler
     vts: WorkerHandler
     observation: WorkerHandler
@@ -154,7 +156,14 @@ async def _handle_connection(
             await connection.close(code=4401, reason="unauthorized")
             return
 
-        capabilities = ["chat", "memory.extract", "voice", "vts", "observation"]
+        capabilities = [
+            "chat",
+            "memory.extract",
+            "runtime",
+            "voice",
+            "vts",
+            "observation",
+        ]
         await _send_control(
             connection,
             send_lock,
@@ -313,6 +322,8 @@ def _select_handler(message_type: str, handlers: WorkerHandlers) -> WorkerHandle
         return handlers.chat
     if message_type == MEMORY_EXTRACT:
         return handlers.memory_extract
+    if message_type == RUNTIME_LOAD:
+        return handlers.runtime
     if message_type == VOICE_START:
         return handlers.voice
     if message_type in (VTS_CATALOG, VTS_ACTION):

@@ -11,18 +11,20 @@
 ## Execution Status (2026-08-11)
 
 - Approved for inline execution on `main`; no sub-agents.
-- Store modules and feature-selected direct endpoints are implemented. The
-  production owner remains `python` until the loopback runtime loader and
-  isolated restart/rollback gate are complete.
+- Store modules, feature-selected direct endpoints, and the loopback
+  `runtime.load` settings adapter are implemented. The production owner remains
+  `python` until private-worker process ownership and the isolated
+  restart/rollback gate are complete.
 - The protected working-tree change in `src/mini_gpt/activity_log.py` makes the
   current default activity path `%USERPROFILE%/.minigpt/activity_log.jsonl`.
   `DataPaths` must preserve that current behavior, not the older `D:/.minigpt`
   default assumed by historical snapshots.
 - Stage only plan-owned paths. Do not overwrite or stage unrelated WinUI,
   model-runtime, speech-runtime, router, or activity-log edits.
-- Tasks 1-5 are implemented. `POST /settings` now uses an injected runtime-load
-  transaction and restores credentials/settings on failure; Task 6 waits for
-  the production loopback loader and isolated restart/rollback evidence.
+- Tasks 1-5 and the Task 6 runtime-loader prerequisite are implemented.
+  `POST /settings` uses an injected runtime-load transaction and restores
+  credentials/settings on failure; Task 6 still waits for isolated process,
+  restart, and rollback evidence before ownership changes from `python`.
 
 ## Global Constraints
 

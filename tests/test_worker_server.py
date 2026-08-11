@@ -322,6 +322,7 @@ def default_handlers(
     return WorkerHandlers(
         chat=chat,
         memory_extract=memory,
+        runtime=empty_handler,
         voice=voice,
         vts=empty_handler,
         observation=empty_handler,

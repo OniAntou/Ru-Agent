@@ -64,6 +64,7 @@ public sealed class WorkerEnvelopeTests
     [InlineData("chat.chunk")]
     [InlineData("chat.done")]
     [InlineData("memory.facts")]
+    [InlineData("runtime.state")]
     [InlineData("voice.control")]
     [InlineData("voice.done")]
     [InlineData("worker.health.ok")]

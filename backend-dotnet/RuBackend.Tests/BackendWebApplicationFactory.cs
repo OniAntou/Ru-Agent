@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using RuBackend.Business;
+using RuBackend.Business.Settings;
 using RuBackend.Compatibility;
 using RuBackend.Memory;
 using RuBackend.Runtime;
@@ -22,6 +24,13 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly IRuntimeWorkerClient? _runtimeWorkerClient;
     private readonly string _sttOwnership;
     private readonly string _vtsOwnership;
+    private readonly DataPaths? _dataPaths;
+    private readonly ICredentialStore? _credentialStore;
+    private readonly IRuntimeSettingsLoader? _runtimeSettingsLoader;
+    private readonly ISettingsStore? _settingsStore;
+    private readonly string _settingsOwnership;
+    private readonly string _sessionsOwnership;
+    private readonly string _activityOwnership;
 
     public BackendWebApplicationFactory(
         IUpstreamHttpTransport? httpTransport = null,
@@ -30,7 +39,14 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         string memoryOwnership = "python",
         IRuntimeWorkerClient? runtimeWorkerClient = null,
         string sttOwnership = "python",
-        string vtsOwnership = "python")
+        string vtsOwnership = "python",
+        DataPaths? dataPaths = null,
+        ICredentialStore? credentialStore = null,
+        IRuntimeSettingsLoader? runtimeSettingsLoader = null,
+        ISettingsStore? settingsStore = null,
+        string settingsOwnership = "python",
+        string sessionsOwnership = "python",
+        string activityOwnership = "python")
     {
         _httpTransport = httpTransport ?? new StubUpstreamHttpTransport(
             new UpstreamResponse(
@@ -44,6 +60,13 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _runtimeWorkerClient = runtimeWorkerClient;
         _sttOwnership = sttOwnership;
         _vtsOwnership = vtsOwnership;
+        _dataPaths = dataPaths;
+        _credentialStore = credentialStore;
+        _runtimeSettingsLoader = runtimeSettingsLoader;
+        _settingsStore = settingsStore;
+        _settingsOwnership = settingsOwnership;
+        _sessionsOwnership = sessionsOwnership;
+        _activityOwnership = activityOwnership;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -53,6 +76,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         builder.UseSetting("RuBackend:Ownership:Memory", _memoryOwnership);
         builder.UseSetting("RuBackend:Ownership:Stt", _sttOwnership);
         builder.UseSetting("RuBackend:Ownership:Vts", _vtsOwnership);
+        builder.UseSetting("RuBackend:Ownership:Settings", _settingsOwnership);
+        builder.UseSetting("RuBackend:Ownership:Sessions", _sessionsOwnership);
+        builder.UseSetting("RuBackend:Ownership:Activity", _activityOwnership);
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IUpstreamHttpTransport>();
@@ -73,6 +99,30 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             {
                 services.RemoveAll<IRuntimeWorkerClient>();
                 services.AddSingleton(_runtimeWorkerClient);
+            }
+
+            if (_dataPaths is not null)
+            {
+                services.RemoveAll<DataPaths>();
+                services.AddSingleton(_dataPaths);
+            }
+
+            if (_credentialStore is not null)
+            {
+                services.RemoveAll<ICredentialStore>();
+                services.AddSingleton(_credentialStore);
+            }
+
+            if (_runtimeSettingsLoader is not null)
+            {
+                services.RemoveAll<IRuntimeSettingsLoader>();
+                services.AddSingleton(_runtimeSettingsLoader);
+            }
+
+            if (_settingsStore is not null)
+            {
+                services.RemoveAll<ISettingsStore>();
+                services.AddSingleton(_settingsStore);
             }
         });
     }

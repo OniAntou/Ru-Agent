@@ -34,6 +34,25 @@ selected independently with `RuBackend:Ownership:Memory`:
 Shadow diagnostics contain only counts, hashes, status, byte counts, and exception
 types. They never log memory text, evidence, credentials, or request bodies.
 
+Deterministic business ownership is selected independently with
+`RuBackend:Ownership:Settings`, `RuBackend:Ownership:Sessions`, and
+`RuBackend:Ownership:Activity`:
+
+- `python` (default): the catch-all remains the sole writer.
+- `shadow`: GET requests return the Python response unchanged, read the local
+  ASP.NET store afterward, and compare canonical hashes. Mutations remain
+  Python-owned, so shadow mode never dual-writes.
+- `aspnet`: settings, credential-presence flags, sessions, legacy history, and
+  activity-log routes use their atomic ASP.NET stores directly. Settings
+  credentials stay in Windows Credential Manager and are never returned.
+
+`POST /settings` is a transaction boundary. It snapshots credentials and
+settings, asks an injected private runtime loader to load the candidate, and
+persists settings only after success. Any failure restores credentials and
+keeps the previous settings file. The production loopback runtime loader is a
+remaining cutover prerequisite, so the default owner stays `python` in this
+slice.
+
 STT and VTS ownership are selected independently with
 `RuBackend:Ownership:Stt` and `RuBackend:Ownership:Vts`:
 
@@ -45,8 +64,8 @@ STT and VTS ownership are selected independently with
   the Python runtime remains the single owner of authentication, reconnect,
   catalog, action cooldown, motion, and overlay process state.
 
-Both ASP.NET modes call `IRuntimeWorkerClient`; the current implementation is a
-FastAPI adapter and can be replaced by the planned versioned loopback worker.
+STT and VTS currently call `IRuntimeWorkerClient`; the current implementation is
+a FastAPI adapter and will be replaced by the versioned loopback worker.
 An ownership switch requires restart. No STT audio, transcript, VTS payload, or
 private marker is written to diagnostics.
 
@@ -61,10 +80,11 @@ The JSON matrix is the source of truth for the complete list. The groups below m
 - VTS HTTP: `/vts/*`
 - WebSocket relay: `/chat`, `/voice/stream`
 
-The JSON matrix marks `/memory`, `/voice/transcribe`, and every `/vts/*` route
-as `feature-selected` while retaining FastAPI as the current compatibility
-worker. These ownership fields are descriptive and do not change the default
-Python owner.
+The JSON matrix marks `/memory`, the nine deterministic settings/session/
+history/activity routes, `/voice/transcribe`, and every `/vts/*` route as
+`feature-selected` while retaining FastAPI as the current compatibility worker.
+These ownership fields are descriptive and do not change the default Python
+owner.
 
 Validate after route changes:
 

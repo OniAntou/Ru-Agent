@@ -125,3 +125,31 @@ def test_matrix_marks_stt_and_vts_as_feature_selected_runtime_routes() -> None:
         assert entry["ownership_config"] == "RuBackend:Ownership:Vts"
         assert entry["default_owner"] == "python"
         assert entry["aspnet_execution"] == "runtime-worker"
+
+
+def test_matrix_marks_deterministic_business_routes_as_feature_selected() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    matrix = load_route_matrix(repo_root)
+    expected = {
+        ("GET", "/settings"): ("RuBackend:Ownership:Settings", "deterministic-store"),
+        ("POST", "/settings"): ("RuBackend:Ownership:Settings", "runtime-transaction"),
+        ("GET", "/sessions"): ("RuBackend:Ownership:Sessions", "deterministic-store"),
+        ("POST", "/sessions/new"): ("RuBackend:Ownership:Sessions", "deterministic-store"),
+        ("POST", "/sessions/{session_id}/activate"): ("RuBackend:Ownership:Sessions", "deterministic-store"),
+        ("DELETE", "/sessions/{session_id}"): ("RuBackend:Ownership:Sessions", "deterministic-store"),
+        ("GET", "/history"): ("RuBackend:Ownership:Sessions", "deterministic-store"),
+        ("GET", "/activity-log"): ("RuBackend:Ownership:Activity", "deterministic-store"),
+        ("DELETE", "/activity-log"): ("RuBackend:Ownership:Activity", "deterministic-store"),
+    }
+
+    for route, (ownership_config, execution) in expected.items():
+        entry = next(
+            item
+            for item in matrix
+            if (item["method"], item["path"]) == route
+        )
+        assert entry["classification"] == "feature-selected"
+        assert entry["ownership"] == "feature-selected"
+        assert entry["ownership_config"] == ownership_config
+        assert entry["default_owner"] == "python"
+        assert entry["aspnet_execution"] == execution

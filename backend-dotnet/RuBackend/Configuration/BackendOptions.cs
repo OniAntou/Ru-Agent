@@ -17,6 +17,12 @@ public sealed class BackendOptions
 
 public sealed class BackendOwnershipOptions
 {
+    public string Settings { get; set; } = "python";
+
+    public string Sessions { get; set; } = "python";
+
+    public string Activity { get; set; } = "python";
+
     public string Memory { get; set; } = "python";
 
     public string Stt { get; set; } = "python";

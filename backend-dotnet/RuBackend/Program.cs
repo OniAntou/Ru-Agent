@@ -1,4 +1,8 @@
 using System.Net.WebSockets;
+using RuBackend.Business;
+using RuBackend.Business.Activity;
+using RuBackend.Business.Sessions;
+using RuBackend.Business.Settings;
 using RuBackend.Compatibility;
 using RuBackend.Configuration;
 using RuBackend.Memory;
@@ -24,6 +28,14 @@ builder.Services.AddSingleton<IUpstreamWebSocketConnector, ClientWebSocketConnec
 builder.Services.AddSingleton<HttpForwarder>();
 builder.Services.AddSingleton<WebSocketRelay>();
 builder.Services.AddTransient<IRuntimeWorkerClient, FastApiRuntimeWorkerClient>();
+builder.Services.AddSingleton(BuildDataPaths(builder.Configuration));
+builder.Services.AddSingleton<ISettingsStore, SettingsStore>();
+builder.Services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
+builder.Services.AddSingleton<IRuntimeSettingsLoader, UnavailableRuntimeSettingsLoader>();
+builder.Services.AddSingleton<ISettingsTransitionService, SettingsTransitionService>();
+builder.Services.AddSingleton<ISessionStore, SessionStore>();
+builder.Services.AddSingleton<IHistoryStore, HistoryStore>();
+builder.Services.AddSingleton<IActivityLogStore, ActivityLogStore>();
 builder.Services.AddSingleton(BuildMemorySqliteOptions(builder.Configuration));
 builder.Services.AddSingleton<IMemoryRepository, SqliteMemoryRepository>();
 builder.Services.AddSingleton<IMemoryPolicy, MemoryPolicy>();
@@ -44,6 +56,7 @@ app.MapGet(
 app.MapGet(
     "/voice/stream",
     HandleWebSocketAsync);
+BusinessEndpoints.Map(app);
 MemoryEndpoints.Map(app);
 SttEndpoints.Map(app);
 VtsEndpoints.Map(app);
@@ -102,6 +115,22 @@ static MemorySqliteOptions BuildMemorySqliteOptions(IConfiguration configuration
             "shadow",
             StringComparison.OrdinalIgnoreCase),
     };
+}
+
+static DataPaths BuildDataPaths(IConfiguration configuration)
+{
+    var dataRoot = configuration["RU_DATA_ROOT"]
+        ?? Environment.GetEnvironmentVariable("RU_DATA_ROOT");
+    var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    if (string.IsNullOrWhiteSpace(userProfile))
+    {
+        userProfile = Directory.GetCurrentDirectory();
+    }
+
+    return DataPaths.Resolve(
+        Directory.GetCurrentDirectory(),
+        userProfile,
+        dataRoot);
 }
 
 public partial class Program { }

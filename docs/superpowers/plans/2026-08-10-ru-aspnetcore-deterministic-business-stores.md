@@ -11,17 +11,18 @@
 ## Execution Status (2026-08-11)
 
 - Approved for inline execution on `main`; no sub-agents.
-- Not yet implemented. The completed memory and STT/VTS seams are prerequisites
-  and must remain green.
+- Store modules and feature-selected direct endpoints are implemented. The
+  production owner remains `python` until the loopback runtime loader and
+  isolated restart/rollback gate are complete.
 - The protected working-tree change in `src/mini_gpt/activity_log.py` makes the
   current default activity path `%USERPROFILE%/.minigpt/activity_log.jsonl`.
   `DataPaths` must preserve that current behavior, not the older `D:/.minigpt`
   default assumed by historical snapshots.
 - Stage only plan-owned paths. Do not overwrite or stage unrelated WinUI,
   model-runtime, speech-runtime, router, or activity-log edits.
-- Tasks 1-4 are implemented. Tasks 5-6 intentionally wait for the versioned
-  worker protocol because direct `POST /settings` must load/rollback runtime
-  state without delegating a second settings/credential write to FastAPI.
+- Tasks 1-5 are implemented. `POST /settings` now uses an injected runtime-load
+  transaction and restores credentials/settings on failure; Task 6 waits for
+  the production loopback loader and isolated restart/rollback evidence.
 
 ## Global Constraints
 
@@ -385,7 +386,7 @@ git commit -m "feat: add ASP.NET activity log store"
 - Consumes: ISettingsStore, ICredentialStore, ISessionStore, IHistoryStore, IActivityLogStore, and the ownership configuration.
 - Produces: direct ASP.NET routes for status/settings/activity/history/sessions only when their ownership is aspnet.
 
-- [ ] **Step 1: Write failing direct endpoint tests**
+- [x] **Step 1: Write failing direct endpoint tests**
 
 Test authenticated direct ASP.NET responses for:
 
@@ -404,15 +405,15 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: FAIL because direct endpoints are absent.
 
-- [ ] **Step 2: Implement direct endpoint module**
+- [x] **Step 2: Implement direct endpoint module**
 
 Add per-group configuration values python, shadow, and aspnet. Keep existing auth, 401, 413, OPTIONS, and 503 behavior. Use the exact WinUI JSON shapes already returned by Python. Never return credential values; return only has_* booleans. Keep WebSocket routes out of this module.
 
-- [ ] **Step 3: Update route ownership evidence**
+- [x] **Step 3: Update route ownership evidence**
 
 Change only the classification fields for routes that are actually direct in this slice. Run the AST route checker and verify it still reports 38 HTTP method/path pairs and two WebSocket paths.
 
-- [ ] **Step 4: Run focused integration checks**
+- [x] **Step 4: Run focused integration checks**
 
 ~~~powershell
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore --filter FullyQualifiedName~BusinessEndpointTests
@@ -422,7 +423,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: all focused tests pass and the route inventory remains complete.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ~~~powershell
 git add backend-dotnet/RuBackend/Business/BusinessEndpoints.cs backend-dotnet/RuBackend/Program.cs backend-dotnet/RuBackend.Tests backend-dotnet/compatibility-route-matrix.json docs/aspnetcore-route-matrix.md

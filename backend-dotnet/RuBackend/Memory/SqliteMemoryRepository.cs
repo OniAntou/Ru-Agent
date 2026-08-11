@@ -9,11 +9,13 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
     private static readonly Regex TokenPattern = new(@"\w+", RegexOptions.CultureInvariant);
     private static readonly Regex WindowsPathPattern = new(@"\b[A-Za-z]:\\[^\s,.;!?]+", RegexOptions.CultureInvariant);
     private static readonly string[] ValidStatuses = ["active", "superseded", "deleted"];
-    private readonly SqliteConnection _connection;
+    private SqliteConnection? _connection;
+    private readonly string _databasePath;
     private readonly string _legacyTextsPath;
     private readonly int _retrieveScanLimit;
     private readonly double _retrieveMinScore;
     private readonly int _retrieveLookbackDays;
+    private readonly bool _readOnly;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
@@ -29,24 +31,37 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         _retrieveScanLimit = options.RetrieveScanLimit;
         _retrieveMinScore = options.RetrieveMinScore;
         _retrieveLookbackDays = options.RetrieveLookbackDays;
+        _readOnly = options.ReadOnly;
 
         var fullPath = Path.GetFullPath(options.DatabasePath);
+        _databasePath = fullPath;
         var parent = Path.GetDirectoryName(fullPath);
-        if (!string.IsNullOrEmpty(parent))
+        if (!_readOnly && !string.IsNullOrEmpty(parent))
         {
             Directory.CreateDirectory(parent);
         }
 
+        if (_readOnly)
+        {
+            if (!File.Exists(fullPath))
+            {
+                _connection = OpenInMemory();
+                Initialize();
+            }
+
+            return;
+        }
+
         try
         {
-            _connection = Open(fullPath);
+            _connection = Open(fullPath, readOnly: false);
             Initialize();
         }
         catch (SqliteException)
         {
             _connection?.Dispose();
             Quarantine(fullPath);
-            _connection = Open(fullPath);
+            _connection = Open(fullPath, readOnly: false);
             Initialize();
         }
 
@@ -59,6 +74,7 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         try
         {
             EnsureOpen();
+            OpenReadOnlyConnectionIfNeeded();
             await using var command = CreateCommand("SELECT * FROM memories WHERE id = $id");
             command.Parameters.AddWithValue("$id", id);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -66,6 +82,7 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         }
         finally
         {
+            CloseReadOnlyConnection();
             _gate.Release();
         }
     }
@@ -76,6 +93,7 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         try
         {
             EnsureOpen();
+            OpenReadOnlyConnectionIfNeeded();
             await using var command = CreateCommand("""
                 SELECT * FROM memories
                 WHERE status = $active_status AND (expires_at IS NULL OR expires_at > $now OR pinned = $pinned)
@@ -95,6 +113,7 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         }
         finally
         {
+            CloseReadOnlyConnection();
             _gate.Release();
         }
     }
@@ -105,12 +124,14 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         try
         {
             EnsureOpen();
+            OpenReadOnlyConnectionIfNeeded();
             await using var command = CreateCommand("SELECT 1 FROM legacy_memory_migrations WHERE source_hash = $source_hash LIMIT 1");
             command.Parameters.AddWithValue("$source_hash", sourceHash);
             return await command.ExecuteScalarAsync(cancellationToken) is not null;
         }
         finally
         {
+            CloseReadOnlyConnection();
             _gate.Release();
         }
     }
@@ -121,6 +142,7 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         try
         {
             EnsureOpen();
+            EnsureWritable();
             await using var command = CreateCommand("INSERT OR IGNORE INTO legacy_memory_migrations (source_hash) VALUES ($source_hash)");
             command.Parameters.AddWithValue("$source_hash", sourceHash);
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -149,6 +171,7 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         try
         {
             EnsureOpen();
+            OpenReadOnlyConnectionIfNeeded();
             await using var command = CreateCommand("""
                 SELECT * FROM memories
                 WHERE status = $active_status
@@ -203,6 +226,7 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         }
         finally
         {
+            CloseReadOnlyConnection();
             _gate.Release();
         }
     }
@@ -231,8 +255,9 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         try
         {
             EnsureOpen();
+            EnsureWritable();
             var now = DateTimeOffset.UtcNow;
-            await using var transaction = (SqliteTransaction)await _connection.BeginTransactionAsync(cancellationToken);
+            await using var transaction = (SqliteTransaction)await _connection!.BeginTransactionAsync(cancellationToken);
             var duplicateId = candidate.SupersedesId is null
                 ? await FindActiveDuplicateAsync(candidate.Kind, content, scope, now, transaction, cancellationToken)
                 : null;
@@ -266,7 +291,8 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         try
         {
             EnsureOpen();
-            await using var transaction = (SqliteTransaction)await _connection.BeginTransactionAsync(cancellationToken);
+            EnsureWritable();
+            await using var transaction = (SqliteTransaction)await _connection!.BeginTransactionAsync(cancellationToken);
             await ExecuteTransactionalAsync("DELETE FROM memories", transaction, cancellationToken);
             await ExecuteTransactionalAsync("DELETE FROM legacy_memory_migrations", transaction, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -452,7 +478,8 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         {
             if (!_disposed)
             {
-                _connection.Dispose();
+                _connection?.Dispose();
+                _connection = null;
                 _disposed = true;
             }
         }
@@ -463,12 +490,12 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         }
     }
 
-    private static SqliteConnection Open(string path)
+    private static SqliteConnection Open(string path, bool readOnly)
     {
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = path,
-            Mode = SqliteOpenMode.ReadWriteCreate,
+            Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWriteCreate,
             Cache = SqliteCacheMode.Shared,
             DefaultTimeout = 30,
             ForeignKeys = true,
@@ -484,6 +511,57 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
             connection.Dispose();
             throw;
         }
+    }
+
+    private static SqliteConnection OpenInMemory()
+    {
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = ":memory:",
+            Mode = SqliteOpenMode.Memory,
+            Cache = SqliteCacheMode.Private,
+            DefaultTimeout = 30,
+            ForeignKeys = true,
+            Pooling = false,
+        }.ToString());
+        try
+        {
+            connection.Open();
+            return connection;
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
+    }
+
+    private void OpenReadOnlyConnectionIfNeeded()
+    {
+        if (!_readOnly || _connection is not null)
+        {
+            return;
+        }
+
+        if (File.Exists(_databasePath))
+        {
+            _connection = Open(_databasePath, readOnly: true);
+            return;
+        }
+
+        _connection = OpenInMemory();
+        Initialize();
+    }
+
+    private void CloseReadOnlyConnection()
+    {
+        if (!_readOnly || _connection is null)
+        {
+            return;
+        }
+
+        _connection.Dispose();
+        _connection = null;
     }
 
     private void Initialize()
@@ -528,7 +606,7 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
     private SqliteCommand CreateCommand(string sql)
     {
         EnsureOpen();
-        var command = _connection.CreateCommand();
+        var command = (_connection ?? throw new InvalidOperationException("Memory database is not open.")).CreateCommand();
         command.CommandText = sql;
         return command;
     }
@@ -536,6 +614,14 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
     private void EnsureOpen()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+
+    private void EnsureWritable()
+    {
+        if (_readOnly)
+        {
+            throw new InvalidOperationException("Memory repository is read-only.");
+        }
     }
 
     private static MemoryRecord ReadRecord(SqliteDataReader reader)

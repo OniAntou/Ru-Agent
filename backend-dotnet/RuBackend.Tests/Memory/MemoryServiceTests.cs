@@ -152,6 +152,36 @@ public sealed class MemoryServiceTests
     }
 
     [Fact]
+    public async Task Read_only_service_skips_legacy_import_and_write_side_effects()
+    {
+        var directory = CreateTempDirectory();
+        try
+        {
+            var legacyPath = Path.Combine(directory, "memory_texts.json");
+            await File.WriteAllTextAsync(
+                legacyPath,
+                JsonSerializer.Serialize(new[] { "User: Anh thích cà phê.\nAssistant: Đã nhớ." }));
+
+            var repository = new FakeMemoryRepository();
+            await using var service = CreateService(
+                repository,
+                new FakeMemoryPolicy { ExtractHandler = (prompt, _) => [Candidate(prompt)] },
+                new MemorySqliteOptions { LegacyTextsPath = legacyPath, ReadOnly = true });
+
+            var result = await service.InitializeAsync(CancellationToken.None);
+
+            Assert.Equal(new MemoryLegacyImportResult(0, 0), result);
+            Assert.Empty(repository.Upserted);
+            Assert.Empty(repository.MigrationHashes);
+            Assert.True(File.Exists(legacyPath));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Extraction_failure_does_not_kill_the_learning_loop()
     {
         var repository = new FakeMemoryRepository();

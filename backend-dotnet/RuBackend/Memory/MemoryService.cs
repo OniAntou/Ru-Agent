@@ -181,6 +181,11 @@ public sealed class MemoryService : IMemoryService, IAsyncDisposable
 
     private async Task<MemoryLegacyImportResult> InitializeCoreAsync()
     {
+        if (_options.ReadOnly)
+        {
+            return new MemoryLegacyImportResult(0, 0);
+        }
+
         await _writeGate.WaitAsync().ConfigureAwait(false);
         try
         {

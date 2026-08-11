@@ -91,6 +91,10 @@ static MemorySqliteOptions BuildMemorySqliteOptions(IConfiguration configuration
             ?? Path.Combine(root, "memory.db"),
         LegacyTextsPath = configuration["RuBackend:Memory:LegacyTextsPath"]
             ?? Path.Combine(root, "memory_texts.json"),
+        ReadOnly = string.Equals(
+            configuration["RuBackend:Ownership:Memory"],
+            "shadow",
+            StringComparison.OrdinalIgnoreCase),
     };
 }
 

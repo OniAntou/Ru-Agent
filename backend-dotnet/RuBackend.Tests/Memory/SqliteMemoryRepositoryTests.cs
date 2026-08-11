@@ -42,6 +42,37 @@ public sealed class SqliteMemoryRepositoryTests
     }
 
     [Fact]
+    public async Task ReadOnly_repository_reads_without_mutating_or_holding_the_database_for_python_clear()
+    {
+        var (writable, options) = CreateRepository();
+        await using (writable)
+        {
+            await InsertRawAsync(writable, options, MemoryFixture.Load().ActiveRecords[0]);
+        }
+
+        var before = File.ReadAllBytes(options.DatabasePath);
+        var readOnlyOptions = new MemorySqliteOptions
+        {
+            DatabasePath = options.DatabasePath,
+            LegacyTextsPath = options.LegacyTextsPath,
+            ReadOnly = true,
+        };
+        await using var readOnly = new SqliteMemoryRepository(readOnlyOptions);
+
+        var records = await readOnly.ListActiveAsync(CancellationToken.None);
+
+        Assert.Single(records);
+        Assert.Equal(before, File.ReadAllBytes(options.DatabasePath));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            readOnly.UpsertAsync(
+                new MemoryCandidate(MemoryKind.Profile, "must not write", null, "test", 1, 1),
+                CancellationToken.None));
+
+        File.Delete(options.DatabasePath);
+        Assert.False(File.Exists(options.DatabasePath));
+    }
+
+    [Fact]
     public async Task Open_purges_expired_unpinned_active_rows_but_keeps_pinned_rows()
     {
         var (repository, options) = CreateRepository();
@@ -407,6 +438,7 @@ public sealed class SqliteMemoryRepositoryTests
             Cache = SqliteCacheMode.Shared,
             DefaultTimeout = 30,
             ForeignKeys = true,
+            Pooling = false,
         }.ToString());
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();

@@ -328,7 +328,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: all focused tests pass and the Python session API remains green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ~~~powershell
 git add backend-dotnet/RuBackend/Business/Sessions backend-dotnet/RuBackend.Tests/Business/SessionStoreTests.cs backend-dotnet/RuBackend.Tests/Business/HistoryStoreTests.cs
@@ -342,17 +342,17 @@ git commit -m "feat: add ASP.NET session and history stores"
 - Create: backend-dotnet/RuBackend/Business/Activity/ActivityLogStore.cs
 - Create: backend-dotnet/RuBackend.Tests/Business/ActivityLogStoreTests.cs
 
-- [ ] **Step 1: Write failing activity tests**
+- [x] **Step 1: Write failing activity tests**
 
 Cover missing files, malformed lines, chronological ordering by ts, limit clamping to 1..500, append fields, trim to the newest 5,000 lines, clear, and concurrent append serialization. Include a test proving activity diagnostics reject token/audio/VTS metadata fields while preserving the user-facing event shape.
 
 Run the focused tests. Expected: FAIL because ActivityLogStore is absent.
 
-- [ ] **Step 2: Implement ActivityLogStore**
+- [x] **Step 2: Implement ActivityLogStore**
 
 Use one SemaphoreSlim. Append one UTF-8 JSON object per line with ts and ISO defaults. Read all valid objects under the semaphore, sort by ts ascending, and return the last clamped limit. When line count exceeds 5,000, atomically rewrite only the newest 5,000 lines. Clear removes the file and treats a missing file as success.
 
-- [ ] **Step 3: Run focused tests**
+- [x] **Step 3: Run focused tests**
 
 ~~~powershell
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore --filter FullyQualifiedName~ActivityLogStoreTests

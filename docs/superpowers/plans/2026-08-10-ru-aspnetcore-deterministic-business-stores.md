@@ -174,9 +174,13 @@ public interface IActivityLogStore
 - Create: backend-dotnet/RuBackend/Business/DataPaths.cs
 - Create: backend-dotnet/RuBackend.Tests/Business/DataPathsTests.cs
 
-- [ ] **Step 1: Write failing path/fixture tests**
+- [x] **Step 1: Write failing path/fixture tests**
 
-Test that default paths match the current Python contracts and explicit RU_DATA_ROOT maps to isolated memory/activity artifacts without changing settings/session defaults. Test the JSON fixture has settings aliases, one session with valid and invalid messages, legacy history, and more than 500 activity events.
+Test that default paths match the current Python contracts and explicit
+`RU_DATA_ROOT` maps memory, settings, history, sessions, and activity artifacts
+beneath the same isolated root. Test the JSON fixture has settings aliases, one
+session with valid and invalid messages, legacy history, and an activity event
+seed plus an overflow count greater than 500.
 
 Run:
 
@@ -186,19 +190,19 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: FAIL because DataPaths does not exist.
 
-- [ ] **Step 2: Implement DataPaths**
+- [x] **Step 2: Implement DataPaths**
 
 Resolve:
 
 1. memory database to project data/conversations/memory.db unless an explicit memory root is configured;
 2. legacy memory texts beside the database;
-3. settings/history/sessions below Environment.SpecialFolder.UserProfile plus .minigpt;
-4. activity to the same default path represented by activity_log.py, with RU_DATA_ROOT overriding it for isolated harnesses;
+3. settings/history/sessions below Environment.SpecialFolder.UserProfile plus .minigpt unless RU_DATA_ROOT is configured;
+4. activity to the same default path represented by activity_log.py, with RU_DATA_ROOT overriding every data category for isolated harnesses;
 5. all directories through Path.GetFullPath without normalizing away an explicitly supplied path.
 
 Expose a constructor accepting six explicit paths for tests. Do not create directories in the value object; stores create only their own parent directory.
 
-- [ ] **Step 3: Run the focused tests**
+- [x] **Step 3: Run the focused tests**
 
 Run the same command. Expected: PASS with path defaults and isolation assertions passing.
 

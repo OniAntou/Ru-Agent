@@ -1,0 +1,33 @@
+{
+  "settings": {
+    "backend": "gguf",
+    "model_path": "models/fixture.gguf",
+    "max_new_tokens": 128,
+    "temperature": 0.6,
+    "unknown_future_key": "preserve-me"
+  },
+  "session": {
+    "id": "fixture-session",
+    "title": "Synthetic session",
+    "created_at": "2026-08-11T00:00:00+00:00",
+    "updated_at": "2026-08-11T00:01:00+00:00",
+    "messages": [
+      {"role": "user", "content": "Synthetic prompt"},
+      {"role": "ai", "content": "Synthetic response"},
+      {"role": "invalid", "content": "must be filtered"},
+      {"role": "user", "content": ""}
+    ]
+  },
+  "legacy_history": [
+    {"role": "user", "content": "Legacy prompt"},
+    {"role": "ai", "content": "Legacy response"}
+  ],
+  "activity_event_seed": {
+    "ts": 1.0,
+    "iso": "1970-01-01T00:00:01+00:00",
+    "type": "synthetic",
+    "session_id": null,
+    "data": {"count": 1}
+  },
+  "activity_overflow_count": 501
+}

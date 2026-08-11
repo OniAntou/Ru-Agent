@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace RuBackend.Worker;
 
-public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
+public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient, IVoiceProtocolClient
 {
     private readonly WorkerClientOptions _options;
     private readonly ConcurrentDictionary<string, WorkerConnection> _activeRequests =
@@ -327,6 +327,103 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
         }
 
         throw new WorkerProtocolException("missing_response");
+    }
+
+    public async IAsyncEnumerable<WorkerEvent> StreamVoiceAsync(
+        WorkerVoiceStreamRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(request);
+        await using var connection = new WorkerConnection(_options);
+        var hello = await connection.ConnectAsync(cancellationToken);
+        EnsureCapability(hello.Capabilities, "voice");
+        if (!_activeRequests.TryAdd(request.RequestId, connection))
+        {
+            throw new WorkerProtocolException("duplicate_request");
+        }
+
+        using var receiveCancellation = new CancellationTokenSource();
+        try
+        {
+            var envelope = new WorkerEnvelope(
+                _options.ProtocolVersion,
+                request.RequestId,
+                WorkerMessageTypes.VoiceStart,
+                null,
+                new JsonObject
+                {
+                    ["operation"] = "stream",
+                    ["request_id"] = request.RequestId,
+                    ["text"] = request.Text,
+                    ["voice_label"] = request.VoiceLabel,
+                    ["speed"] = request.Speed,
+                    ["voice_style_id"] = request.VoiceStyleId,
+                });
+            await using var enumerator = connection
+                .SendRequestAsync(envelope, receiveCancellation.Token)
+                .GetAsyncEnumerator();
+            while (true)
+            {
+                var moveNext = enumerator.MoveNextAsync().AsTask();
+                bool hasNext;
+                try
+                {
+                    hasNext = await moveNext.WaitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    await TrySendCancellationAsync(connection, request.RequestId);
+                    receiveCancellation.Cancel();
+                    await IgnoreCancellationAsync(moveNext);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    throw;
+                }
+
+                if (!hasNext)
+                {
+                    yield break;
+                }
+
+                yield return enumerator.Current;
+            }
+        }
+        finally
+        {
+            receiveCancellation.Cancel();
+            RemoveActiveRequest(request.RequestId, connection);
+        }
+    }
+
+    public async Task SendVoiceSignalAsync(
+        WorkerVoiceSignal signal,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(signal);
+        var path = signal.Signal switch
+        {
+            "cancel" => "/_worker/voice/cancel",
+            "playback" => "/_worker/voice/playback",
+            _ => throw new WorkerProtocolException("invalid_voice_signal"),
+        };
+        var payload = new JsonObject
+        {
+            ["request_id"] = signal.RequestId,
+            ["state"] = signal.State,
+        };
+        var response = await InvokeRuntimeAsync(
+            new WorkerRuntimeRequest(
+                $"voice-signal-{Guid.NewGuid():N}",
+                "POST",
+                path,
+                "application/json",
+                System.Text.Encoding.UTF8.GetBytes(payload.ToJsonString())),
+            cancellationToken);
+        if (response.StatusCode is < 200 or >= 300)
+        {
+            throw new WorkerProtocolException("voice_signal_failed");
+        }
     }
 
     public async ValueTask DisposeAsync()

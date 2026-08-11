@@ -30,4 +30,10 @@ public sealed class BackendOwnershipOptions
     public string Stt { get; set; } = "python";
 
     public string Vts { get; set; } = "python";
+
+    public string Voice { get; set; } = "python";
+
+    public string Observation { get; set; } = "python";
+
+    public string Status { get; set; } = "python";
 }

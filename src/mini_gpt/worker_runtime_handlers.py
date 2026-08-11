@@ -11,12 +11,15 @@ from typing import Any, ContextManager, Protocol
 
 from mini_gpt.chat import ChatTurn
 from mini_gpt.memory_learning import extract_facts_with_llm
+from mini_gpt.runtime_http import RuntimeHttpResponse
+from mini_gpt.voice_stream import VoiceStreamEvent
 from mini_gpt.worker_protocol import (
     CHAT_CHUNK,
     CHAT_DONE,
     CHAT_RESET,
     ERROR,
     MEMORY_FACTS,
+    RUNTIME_RESPONSE,
     RUNTIME_STATE,
     VOICE_CONTROL,
     VOICE_DONE,
@@ -34,9 +37,13 @@ class RuntimeRunner(Protocol):
 
 VoiceAudio = Callable[[str, str, float, str], bytes]
 VoiceControl = Callable[[str, str], Mapping[str, Any]]
+VoiceStream = Callable[[dict[str, Any], asyncio.Event], AsyncIterator[VoiceStreamEvent]]
 VtsManagerFactory = Callable[[], Any]
 GenerationScope = Callable[[], ContextManager[Any]]
 RuntimeLoader = Callable[[dict[str, Any]], Mapping[str, Any]]
+
+
+RuntimeRequest = Callable[[str, str, str | None, str], RuntimeHttpResponse]
 _RUNTIME_TRANSITION_LOCK = threading.RLock()
 
 
@@ -46,8 +53,10 @@ class RuntimeDependencies:
     generation_scope: GenerationScope = contextlib.nullcontext
     voice_audio: VoiceAudio | None = None
     voice_control: VoiceControl | None = None
+    voice_stream: VoiceStream | None = None
     vts_manager: VtsManagerFactory | None = None
     runtime_load: RuntimeLoader | None = None
+    runtime_request: RuntimeRequest | None = None
 
 
 def build_runtime_handlers(dependencies: RuntimeDependencies) -> WorkerHandlers:
@@ -69,6 +78,21 @@ def create_runtime_handlers() -> WorkerHandlers:
     """
     from mini_gpt import _server_shared as shared
     from mini_gpt.headless_runner import BACKEND_GGUF
+    from mini_gpt.runtime_http import dispatch_runtime_request
+    from mini_gpt.worker_voice_bridge import RuntimeVoiceBridge
+
+    voice_bridge = RuntimeVoiceBridge(shared)
+
+    def runtime_request(
+        method: str,
+        path_and_query: str,
+        content_type: str | None,
+        body: str,
+    ) -> RuntimeHttpResponse:
+        control = voice_bridge.handle_private_control(method, path_and_query, body)
+        if control is not None:
+            return control
+        return dispatch_runtime_request(method, path_and_query, content_type, body)
 
     def generation_scope() -> ContextManager[Any]:
         if shared.core.runner.backend == BACKEND_GGUF:
@@ -130,8 +154,10 @@ def create_runtime_handlers() -> WorkerHandlers:
             generation_scope=generation_scope,
             voice_audio=shared.request_voice_audio,
             voice_control=shared.request_voice_control,
+            voice_stream=voice_bridge.stream,
             vts_manager=shared._vts_manager,
             runtime_load=runtime_load,
+            runtime_request=runtime_request,
         )
     )
 
@@ -265,6 +291,11 @@ async def _runtime_handler(
     payload: dict[str, Any],
     _cancelled: asyncio.Event,
 ) -> AsyncIterator[WorkerReply]:
+    if "method" in payload or "path_and_query" in payload:
+        async for reply in _runtime_request_handler(dependencies, payload):
+            yield reply
+        return
+
     if dependencies.runtime_load is None:
         yield _error("runtime_unavailable", retryable=True)
         return
@@ -289,12 +320,124 @@ async def _runtime_handler(
     yield WorkerReply(RUNTIME_STATE, dict(result))
 
 
+async def _runtime_request_handler(
+    dependencies: RuntimeDependencies,
+    payload: dict[str, Any],
+) -> AsyncIterator[WorkerReply]:
+    if dependencies.runtime_request is None:
+        yield _error("runtime_unavailable", retryable=True)
+        return
+    try:
+        method = _required_text(payload, "method", maximum=16).upper()
+        path_and_query = _required_text(payload, "path_and_query", maximum=2_048)
+        if method not in {"GET", "POST", "DELETE"} or not path_and_query.startswith("/"):
+            raise ValueError("invalid runtime route")
+        content_type = payload.get("content_type")
+        if content_type is not None and (
+            not isinstance(content_type, str) or len(content_type) > 256
+        ):
+            raise ValueError("invalid content type")
+        body = payload.get("body", "")
+        if not isinstance(body, str) or len(body.encode("utf-8")) > 8 * 1024 * 1024:
+            raise ValueError("invalid body")
+    except (TypeError, ValueError):
+        yield _error("invalid_request", retryable=False)
+        return
+
+    try:
+        response = await asyncio.to_thread(
+            dependencies.runtime_request,
+            method,
+            path_and_query,
+            content_type,
+            body,
+        )
+        if (
+            not isinstance(response, RuntimeHttpResponse)
+            or isinstance(response.status_code, bool)
+            or response.status_code < 100
+            or response.status_code > 599
+            or not isinstance(response.content_type, str)
+            or not isinstance(response.body, bytes)
+        ):
+            raise TypeError("invalid runtime response")
+        headers = dict(response.headers or {})
+        if any(
+            not isinstance(key, str)
+            or not isinstance(value, str)
+            or len(key) > 128
+            or len(value) > 1_024
+            for key, value in headers.items()
+        ):
+            raise TypeError("invalid runtime response headers")
+    except Exception:
+        yield _error("runtime_request_failed", retryable=True)
+        return
+
+    response_payload: dict[str, Any] = {
+        "status_code": response.status_code,
+        "content_type": response.content_type,
+        "headers": headers,
+    }
+    content_type_lower = response.content_type.casefold()
+    is_text = content_type_lower.startswith("text/") or (
+        "json" in content_type_lower
+    )
+    if is_text:
+        try:
+            response_payload["body"] = response.body.decode("utf-8")
+        except UnicodeDecodeError:
+            yield _error("runtime_request_failed", retryable=True)
+            return
+        yield WorkerReply(RUNTIME_RESPONSE, response_payload)
+        return
+
+    if not response.body:
+        response_payload["body"] = ""
+        yield WorkerReply(RUNTIME_RESPONSE, response_payload)
+        return
+
+    response_payload["binary"] = True
+    yield WorkerReply(RUNTIME_RESPONSE, response_payload, binary=response.body)
+
+
 async def _voice_handler(
     dependencies: RuntimeDependencies,
     payload: dict[str, Any],
     _cancelled: asyncio.Event,
 ) -> AsyncIterator[WorkerReply]:
     operation = payload.get("operation")
+    if operation == "stream":
+        if dependencies.voice_stream is None:
+            yield _error("voice_unavailable", retryable=True)
+            return
+        terminal_sent = False
+        try:
+            async for event in dependencies.voice_stream(dict(payload), _cancelled):
+                control = event.control_payload()
+                if event.event_type == "audio":
+                    if not isinstance(event.audio, bytes) or not event.audio:
+                        yield _error("voice_empty_audio", retryable=True)
+                        return
+                    control["state"] = "audio_ready"
+                    yield WorkerReply(VOICE_CONTROL, control, binary=event.audio)
+                    continue
+                if event.event_type in {"ended", "cancelled", "failed"}:
+                    control["state"] = "done"
+                    yield WorkerReply(VOICE_DONE, control)
+                    terminal_sent = True
+                    return
+                control["state"] = "control"
+                yield WorkerReply(VOICE_CONTROL, control)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            yield _error("voice_failed", retryable=True)
+            return
+        if not terminal_sent:
+            yield _error("voice_incomplete", retryable=True)
+        return
+
     if operation == "tts":
         if dependencies.voice_audio is None:
             yield _error("voice_unavailable", retryable=True)

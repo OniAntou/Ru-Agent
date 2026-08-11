@@ -12,6 +12,7 @@ using RuBackend.Compatibility;
 using RuBackend.Conversation;
 using RuBackend.Memory;
 using RuBackend.Runtime;
+using RuBackend.Worker;
 using RuBackend.Tests.Fakes;
 
 namespace RuBackend.Tests;
@@ -34,6 +35,10 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly string _activityOwnership;
     private readonly IConversationCoordinator? _conversationCoordinator;
     private readonly string _chatOwnership;
+    private readonly string _voiceOwnership;
+    private readonly string _observationOwnership;
+    private readonly string _statusOwnership;
+    private readonly IVoiceProtocolClient? _voiceProtocolClient;
 
     public BackendWebApplicationFactory(
         IUpstreamHttpTransport? httpTransport = null,
@@ -51,7 +56,11 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         string sessionsOwnership = "python",
         string activityOwnership = "python",
         IConversationCoordinator? conversationCoordinator = null,
-        string chatOwnership = "python")
+        string chatOwnership = "python",
+        string voiceOwnership = "python",
+        string observationOwnership = "python",
+        string statusOwnership = "python",
+        IVoiceProtocolClient? voiceProtocolClient = null)
     {
         _httpTransport = httpTransport ?? new StubUpstreamHttpTransport(
             new UpstreamResponse(
@@ -74,6 +83,10 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _activityOwnership = activityOwnership;
         _conversationCoordinator = conversationCoordinator;
         _chatOwnership = chatOwnership;
+        _voiceOwnership = voiceOwnership;
+        _observationOwnership = observationOwnership;
+        _statusOwnership = statusOwnership;
+        _voiceProtocolClient = voiceProtocolClient;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -87,6 +100,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         builder.UseSetting("RuBackend:Ownership:Sessions", _sessionsOwnership);
         builder.UseSetting("RuBackend:Ownership:Activity", _activityOwnership);
         builder.UseSetting("RuBackend:Ownership:Chat", _chatOwnership);
+        builder.UseSetting("RuBackend:Ownership:Voice", _voiceOwnership);
+        builder.UseSetting("RuBackend:Ownership:Observation", _observationOwnership);
+        builder.UseSetting("RuBackend:Ownership:Status", _statusOwnership);
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IUpstreamHttpTransport>();
@@ -137,6 +153,12 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             {
                 services.RemoveAll<IConversationCoordinator>();
                 services.AddSingleton(_conversationCoordinator);
+            }
+
+            if (_voiceProtocolClient is not null)
+            {
+                services.RemoveAll<IVoiceProtocolClient>();
+                services.AddSingleton(_voiceProtocolClient);
             }
         });
     }

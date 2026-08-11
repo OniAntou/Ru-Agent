@@ -36,6 +36,8 @@ builder.Services.AddSingleton<IWorkerClient>(services =>
     services.GetRequiredService<LoopbackWorkerClient>());
 builder.Services.AddSingleton<IRuntimeProtocolClient>(services =>
     services.GetRequiredService<LoopbackWorkerClient>());
+builder.Services.AddSingleton<IVoiceProtocolClient>(services =>
+    services.GetRequiredService<LoopbackWorkerClient>());
 builder.Services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
 builder.Services.AddSingleton<ConversationTurnGate>();
 builder.Services.AddSingleton<IMetadataPolicy, MetadataPolicy>();
@@ -68,11 +70,17 @@ if (!ChatWebSocketEndpoint.Map(app))
         "/chat",
         HandleWebSocketAsync);
 }
-app.MapGet(
-    "/voice/stream",
-    HandleWebSocketAsync);
+if (!VoiceStreamEndpoint.Map(app))
+{
+    app.MapGet(
+        "/voice/stream",
+        HandleWebSocketAsync);
+}
 BusinessEndpoints.Map(app);
 MemoryEndpoints.Map(app);
+StatusEndpoints.Map(app);
+VoiceEndpoints.Map(app);
+ObservationEndpoints.Map(app);
 SttEndpoints.Map(app);
 VtsEndpoints.Map(app);
 app.Map(

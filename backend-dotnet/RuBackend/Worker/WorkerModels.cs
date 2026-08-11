@@ -52,3 +52,15 @@ public sealed record WorkerRuntimeResponse(
     string? ContentType,
     byte[] Body,
     IReadOnlyDictionary<string, string>? Headers = null);
+
+public sealed record WorkerVoiceStreamRequest(
+    string RequestId,
+    string Text,
+    string VoiceLabel,
+    double Speed,
+    string VoiceStyleId);
+
+public sealed record WorkerVoiceSignal(
+    string RequestId,
+    string Signal,
+    string? State = null);

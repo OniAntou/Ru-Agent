@@ -6,19 +6,25 @@ from collections.abc import AsyncIterator
 
 import mini_gpt.memory
 from mini_gpt.vts_catalog import VtsCatalog, VtsCatalogEntry
+from mini_gpt.voice_stream import VoiceStreamEvent
 from mini_gpt.worker_protocol import (
     CHAT_CHUNK,
     CHAT_DONE,
     CHAT_RESET,
     ERROR,
     MEMORY_FACTS,
+    RUNTIME_RESPONSE,
     RUNTIME_STATE,
     VOICE_CONTROL,
     VOICE_DONE,
     VTS_ACTION,
     VTS_CATALOG,
 )
-from mini_gpt.worker_runtime_handlers import RuntimeDependencies, build_runtime_handlers
+from mini_gpt.worker_runtime_handlers import (
+    RuntimeDependencies,
+    RuntimeHttpResponse,
+    build_runtime_handlers,
+)
 from mini_gpt.worker_server import WorkerReply
 
 
@@ -156,6 +162,66 @@ def test_voice_tts_pairs_control_with_non_empty_binary() -> None:
     assert replies[1].payload == {"state": "done"}
 
 
+def test_voice_stream_maps_public_controls_and_binary_in_order() -> None:
+    async def voice_stream(payload: dict, _cancelled: asyncio.Event):
+        assert payload["request_id"] == "voice-stream-1"
+        yield VoiceStreamEvent("started", "voice-stream-1", 0)
+        yield VoiceStreamEvent(
+            "audio",
+            "voice-stream-1",
+            0,
+            audio=b"RIFF-wave",
+            sample_rate=24_000,
+            audio_format="wav",
+        )
+        yield VoiceStreamEvent("ended", "voice-stream-1", 1)
+
+    handlers = build_runtime_handlers(
+        RuntimeDependencies(
+            runner=FakeRunner("[]"),
+            voice_stream=voice_stream,
+        )
+    )
+
+    replies = asyncio.run(
+        collect(
+            handlers.voice(
+                {
+                    "operation": "stream",
+                    "request_id": "voice-stream-1",
+                    "text": "synthetic",
+                    "voice_label": "Ru (OmniVoice)",
+                    "speed": 1.0,
+                    "voice_style_id": "original",
+                },
+                asyncio.Event(),
+            )
+        )
+    )
+
+    assert [reply.type for reply in replies] == [
+        VOICE_CONTROL,
+        VOICE_CONTROL,
+        VOICE_DONE,
+    ]
+    assert replies[0].payload == {
+        "state": "control",
+        "type": "started",
+        "request_id": "voice-stream-1",
+        "sequence": 0,
+    }
+    assert replies[1].payload == {
+        "state": "audio_ready",
+        "type": "audio",
+        "request_id": "voice-stream-1",
+        "sequence": 0,
+        "sample_rate": 24_000,
+        "format": "wav",
+    }
+    assert replies[1].binary == b"RIFF-wave"
+    assert replies[2].payload["type"] == "ended"
+
+
 def test_vts_catalog_and_actions_stay_on_the_private_handler() -> None:
     manager = FakeVtsManager()
     handlers = build_runtime_handlers(
@@ -278,6 +344,89 @@ def test_runtime_load_failure_is_redacted(caplog) -> None:
     assert reply.type == ERROR
     assert reply.payload == {"code": "runtime_load_failed", "retryable": False}
     assert "private credential" not in caplog.text
+
+
+def test_runtime_request_delegates_exact_route_and_returns_json() -> None:
+    observed = []
+
+    def runtime_request(method: str, path: str, content_type: str | None, body: str):
+        observed.append((method, path, content_type, body))
+        return RuntimeHttpResponse(
+            200,
+            "application/json",
+            b'{"status":"ok"}',
+            {"x-runtime": "worker"},
+        )
+
+    handlers = build_runtime_handlers(
+        RuntimeDependencies(
+            runner=FakeRunner("[]"),
+            runtime_request=runtime_request,
+        )
+    )
+    payload = {
+        "method": "POST",
+        "path_and_query": "/observation/cancel",
+        "content_type": "application/json",
+        "body": '{"observation_id":"obs-1"}',
+    }
+
+    reply = single(asyncio.run(collect(handlers.runtime(payload, asyncio.Event()))))
+
+    assert observed == [
+        (
+            "POST",
+            "/observation/cancel",
+            "application/json",
+            '{"observation_id":"obs-1"}',
+        )
+    ]
+    assert reply.type == RUNTIME_RESPONSE
+    assert reply.payload == {
+        "status_code": 200,
+        "content_type": "application/json",
+        "headers": {"x-runtime": "worker"},
+        "body": '{"status":"ok"}',
+    }
+    assert reply.binary is None
+
+
+def test_runtime_request_returns_binary_without_base64_expansion() -> None:
+    handlers = build_runtime_handlers(
+        RuntimeDependencies(
+            runner=FakeRunner("[]"),
+            runtime_request=lambda *_args: RuntimeHttpResponse(
+                200,
+                "audio/wav",
+                b"RIFF-wave",
+            ),
+        )
+    )
+
+    reply = single(
+        asyncio.run(
+            collect(
+                handlers.runtime(
+                    {
+                        "method": "POST",
+                        "path_and_query": "/voice/tts",
+                        "content_type": "application/json",
+                        "body": "{}",
+                    },
+                    asyncio.Event(),
+                )
+            )
+        )
+    )
+
+    assert reply.type == RUNTIME_RESPONSE
+    assert reply.payload == {
+        "status_code": 200,
+        "content_type": "audio/wav",
+        "headers": {},
+        "binary": True,
+    }
+    assert reply.binary == b"RIFF-wave"
 
 
 class FakeRunner:

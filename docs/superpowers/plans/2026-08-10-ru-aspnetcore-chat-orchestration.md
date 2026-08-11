@@ -19,6 +19,10 @@
   the existing client tests with that behavior intact.
 - The FastAPI relay is an intermediate comparison path only. It is removed by
   the final decommission plan after direct chat acceptance.
+- Loopback chat now has typed private VTS catalog/action calls. The FastAPI
+  adapter returns no catalog because the legacy host has no public catalog
+  route; rollback chat continues to execute VTS internally and its action
+  adapter remains available for typed codes.
 
 ## Global Constraints
 
@@ -212,13 +216,13 @@ git commit -m "feat: preserve private chat metadata policy"
 - Modify: backend-dotnet/RuBackend.Tests/Worker/LoopbackWorkerClientTests.cs
 - Modify: backend-dotnet/RuBackend.Tests/Worker/FastApiWorkerClientTests.cs
 
-- [ ] **Step 1: Write failing worker tests**
+- [x] **Step 1: Write failing worker tests**
 
 Test VTS catalog request/response, action request with validated codes, unavailable VTS, and malformed private responses. Assert that no catalog code or action payload is returned by public chat events.
 
 Run the worker-focused tests. Expected: FAIL because the methods and message types are absent.
 
-- [ ] **Step 2: Add the exact worker methods**
+- [x] **Step 2: Add the exact worker methods**
 
 Add:
 
@@ -229,7 +233,7 @@ Task TriggerVtsActionsAsync(string requestId, IReadOnlyList<string> codes, Cance
 
 Add worker message types vts.catalog and vts.action. The FastAPI adapter maps the existing private VTS calls; the loopback adapter maps the worker protocol. Both return only typed private values.
 
-- [ ] **Step 3: Run worker tests**
+- [x] **Step 3: Run worker tests**
 
 ~~~powershell
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore --filter FullyQualifiedName~Worker

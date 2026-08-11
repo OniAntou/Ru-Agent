@@ -14,6 +14,15 @@ public interface IWorkerClient : IAsyncDisposable
         string response,
         CancellationToken cancellationToken);
 
+    Task<VtsCatalog?> GetVtsCatalogAsync(
+        string requestId,
+        CancellationToken cancellationToken);
+
+    Task TriggerVtsActionsAsync(
+        string requestId,
+        IReadOnlyList<string> codes,
+        CancellationToken cancellationToken);
+
     Task CancelAsync(string requestId, CancellationToken cancellationToken);
 
     Task<WorkerHealth> GetHealthAsync(CancellationToken cancellationToken);

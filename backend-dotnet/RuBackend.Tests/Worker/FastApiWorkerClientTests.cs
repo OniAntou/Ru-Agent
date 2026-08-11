@@ -91,6 +91,44 @@ public sealed class FastApiWorkerClientTests
     }
 
     [Fact]
+    public async Task GetVtsCatalog_is_unavailable_without_calling_a_public_endpoint()
+    {
+        var transport = HealthyTransport();
+        await using var client = CreateClient(new NeverUsedWebSocketConnector(), transport);
+
+        var catalog = await client.GetVtsCatalogAsync(
+            "legacy-vts-catalog",
+            CancellationToken.None);
+
+        Assert.Null(catalog);
+        Assert.Null(transport.LastRequest);
+    }
+
+    [Fact]
+    public async Task TriggerVtsActions_maps_codes_to_the_legacy_private_action_call()
+    {
+        var transport = new StubUpstreamHttpTransport(new UpstreamResponse(
+            StatusCodes.Status200OK,
+            "application/json",
+            "{\"status\":\"ok\"}"u8.ToArray()));
+        await using var client = CreateClient(
+            new NeverUsedWebSocketConnector(),
+            transport,
+            "desktop-secret");
+
+        await client.TriggerVtsActionsAsync(
+            "legacy-vts-action",
+            ["vts_01", "expr_01"],
+            CancellationToken.None);
+
+        Assert.Equal(HttpMethod.Post, transport.LastRequest!.Method);
+        Assert.Equal("/vts/action", transport.LastRequest.PathAndQuery);
+        Assert.Equal("Bearer desktop-secret", transport.LastRequest.Headers["Authorization"]);
+        var body = JsonNode.Parse(transport.LastRequest.Body)!.AsObject();
+        Assert.Equal("vts_01 expr_01", body["codes"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task Health_503_maps_to_redacted_worker_unavailable()
     {
         var transport = new StubUpstreamHttpTransport(new UpstreamResponse(

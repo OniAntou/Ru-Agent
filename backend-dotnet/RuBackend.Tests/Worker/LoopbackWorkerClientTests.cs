@@ -136,6 +136,119 @@ public sealed class LoopbackWorkerClientTests
     }
 
     [Fact]
+    public async Task GetVtsCatalog_maps_private_hotkey_and_expression_codes()
+    {
+        WorkerEnvelope? observed = null;
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            var hello = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "vts"));
+            observed = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, Event(
+                observed.Id,
+                WorkerMessageTypes.VtsCatalog,
+                0,
+                new JsonObject
+                {
+                    ["model_id"] = "model-private",
+                    ["model_name"] = "Ru",
+                    ["hotkey_codes"] = new JsonArray("vts_01", "vts_02"),
+                    ["expression_codes"] = new JsonArray("expr_01"),
+                }));
+        });
+        await using var client = CreateClient(server.Uri);
+
+        var catalog = await client.GetVtsCatalogAsync("vts-catalog-1", CancellationToken.None);
+
+        Assert.NotNull(catalog);
+        Assert.Equal(new HashSet<string> { "vts_01", "vts_02" }, catalog.HotkeyCodes);
+        Assert.Equal(new HashSet<string> { "expr_01" }, catalog.ExpressionCodes);
+        Assert.Equal(WorkerMessageTypes.VtsCatalog, observed!.Type);
+        Assert.Equal("catalog", observed.Payload["operation"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task GetVtsCatalog_returns_null_when_vts_is_unavailable()
+    {
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            var hello = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "vts"));
+            var request = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, Event(
+                request.Id,
+                WorkerMessageTypes.Error,
+                0,
+                new JsonObject
+                {
+                    ["code"] = "vts_unavailable",
+                    ["retryable"] = true,
+                }));
+        });
+        await using var client = CreateClient(server.Uri);
+
+        var catalog = await client.GetVtsCatalogAsync("vts-catalog-none", CancellationToken.None);
+
+        Assert.Null(catalog);
+    }
+
+    [Fact]
+    public async Task TriggerVtsActions_sends_only_typed_private_codes()
+    {
+        WorkerEnvelope? observed = null;
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            var hello = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "vts"));
+            observed = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, Event(
+                observed.Id,
+                WorkerMessageTypes.VtsAction,
+                0,
+                new JsonObject { ["status"] = "ok" }));
+        });
+        await using var client = CreateClient(server.Uri);
+
+        await client.TriggerVtsActionsAsync(
+            "vts-action-1",
+            ["vts_01", "expr_01"],
+            CancellationToken.None);
+
+        Assert.Equal(WorkerMessageTypes.VtsAction, observed!.Type);
+        Assert.Equal("action", observed.Payload["operation"]!.GetValue<string>());
+        Assert.Equal(
+            ["vts_01", "expr_01"],
+            observed.Payload["codes"]!.AsArray().Select(item => item!.GetValue<string>()));
+    }
+
+    [Fact]
+    public async Task GetVtsCatalog_rejects_a_malformed_private_response()
+    {
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            var hello = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "vts"));
+            var request = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, Event(
+                request.Id,
+                WorkerMessageTypes.VtsCatalog,
+                0,
+                new JsonObject
+                {
+                    ["hotkey_codes"] = "private malformed value",
+                    ["expression_codes"] = new JsonArray(),
+                }));
+        });
+        await using var client = CreateClient(server.Uri);
+
+        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+            client.GetVtsCatalogAsync("vts-catalog-invalid", CancellationToken.None));
+
+        Assert.Equal("invalid_vts_catalog", error.Code);
+        Assert.DoesNotContain("private malformed value", error.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Cancelling_chat_sends_chat_cancel_for_the_same_request()
     {
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

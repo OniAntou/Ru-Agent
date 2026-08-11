@@ -165,6 +165,85 @@ public sealed class FastApiWorkerClient : IWorkerClient
             new WorkerProtocolException("unsupported_operation"));
     }
 
+    public Task<VtsCatalog?> GetVtsCatalogAsync(
+        string requestId,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        WorkerEnvelopeCodec.Validate(new WorkerEnvelope(
+            WorkerClientOptions.CurrentProtocolVersion,
+            requestId,
+            WorkerMessageTypes.VtsCatalog,
+            null,
+            new JsonObject { ["operation"] = "catalog" }));
+        return Task.FromResult<VtsCatalog?>(null);
+    }
+
+    public async Task TriggerVtsActionsAsync(
+        string requestId,
+        IReadOnlyList<string> codes,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(codes);
+        var normalized = codes
+            .Select(code => code?.Trim().ToLowerInvariant() ?? string.Empty)
+            .ToArray();
+        if (normalized.Length is < 1 or > 3
+            || normalized.Any(code => code.Length is < 1 or > 64)
+            || normalized.Distinct(StringComparer.Ordinal).Count() != normalized.Length)
+        {
+            throw new WorkerProtocolException("invalid_request");
+        }
+
+        WorkerEnvelopeCodec.Validate(new WorkerEnvelope(
+            WorkerClientOptions.CurrentProtocolVersion,
+            requestId,
+            WorkerMessageTypes.VtsAction,
+            null,
+            new JsonObject { ["operation"] = "action" }));
+        var headers = new Dictionary<string, string>(BuildAuthHeaders(), StringComparer.OrdinalIgnoreCase)
+        {
+            ["Content-Type"] = "application/json",
+        };
+        UpstreamResponse response;
+        try
+        {
+            response = await _httpTransport.SendAsync(
+                new UpstreamRequest(
+                    HttpMethod.Post,
+                    "/vts/action",
+                    headers,
+                    JsonSerializer.SerializeToUtf8Bytes(new JsonObject
+                    {
+                        ["codes"] = string.Join(' ', normalized),
+                    })),
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error) when (IsTransportFailure(error))
+        {
+            throw new WorkerUnavailableException(error);
+        }
+
+        if (response.StatusCode is < 200 or >= 300)
+        {
+            throw new WorkerUnavailableException();
+        }
+
+        var payload = ParseLegacyFrame(Encoding.UTF8.GetString(response.Body));
+        if (!string.Equals(
+                ReadString(payload["status"]),
+                "ok",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new WorkerProtocolException("vts_action_failed");
+        }
+    }
+
     public async Task CancelAsync(string requestId, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();

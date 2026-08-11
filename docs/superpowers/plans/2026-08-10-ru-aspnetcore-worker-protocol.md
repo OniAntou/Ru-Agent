@@ -239,7 +239,7 @@ where WorkerHandlers has async callables for chat, memory extraction, voice, VTS
 
 Run the focused command. Expected: all server tests pass with no secret in captured logs.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ~~~powershell
 git add src/mini_gpt/worker_protocol.py src/mini_gpt/worker_server.py tests/test_worker_protocol.py tests/test_worker_server.py
@@ -255,7 +255,7 @@ git commit -m "feat: add loopback Python worker server"
 - Create: backend-dotnet/RuBackend/Worker/LoopbackWorkerClient.cs
 - Create: backend-dotnet/RuBackend.Tests/Worker/LoopbackWorkerClientTests.cs
 
-- [ ] **Step 1: Write failing client tests**
+- [x] **Step 1: Write failing client tests**
 
 Use a local fake WebSocket server or the test server from Task 2 to test handshake, chat reset/chunk/done ordering, request cancellation, worker unavailable mapping, malformed envelope rejection, and voice.control plus binary pairing.
 
@@ -273,17 +273,17 @@ public async Task GenerateChat_rejects_audio_ready_without_matching_binary()
 
 Run focused tests. Expected: FAIL because the client classes do not exist.
 
-- [ ] **Step 2: Implement WorkerConnection**
+- [x] **Step 2: Implement WorkerConnection**
 
 WorkerConnection opens a ClientWebSocket to the configured loopback URI, sends the hello envelope with the opaque token, validates hello.ok version 1, and exposes a single serialized send path. It reads text and binary frames, associates binary bytes with the preceding audio control event, enforces monotonic sequence per request, and maps cancellation to chat.cancel/voice.cancel plus socket close when the request is gone.
 
 Do not log envelope payloads. Log only message type, request ID hash, sequence, and error code.
 
-- [ ] **Step 3: Implement LoopbackWorkerClient**
+- [x] **Step 3: Implement LoopbackWorkerClient**
 
 Implement the exact IWorkerClient methods. GenerateChatAsync sends chat.start and yields WorkerEvent values until done/error. ExtractFactsAsync sends memory.extract and accepts only memory.facts or error. GetHealthAsync performs hello plus a worker health request and returns protocol version/capabilities. CancelAsync sends the corresponding cancel envelope.
 
-- [ ] **Step 4: Run focused client tests**
+- [x] **Step 4: Run focused client tests**
 
 ~~~powershell
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore --filter FullyQualifiedName~LoopbackWorkerClientTests
@@ -291,7 +291,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: all handshake, order, cancellation, and binary-pairing tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ~~~powershell
 git add backend-dotnet/RuBackend/Worker backend-dotnet/RuBackend.Tests/Worker/LoopbackWorkerClientTests.cs

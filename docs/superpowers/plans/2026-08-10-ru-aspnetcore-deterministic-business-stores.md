@@ -8,6 +8,18 @@
 
 **Tech Stack:** ASP.NET Core net10.0, C#, System.Text.Json, System.Text.Json.Nodes, Windows Credential Manager P/Invoke, xUnit, WebApplicationFactory, and the existing WinUI API contract tests.
 
+## Execution Status (2026-08-11)
+
+- Approved for inline execution on `main`; no sub-agents.
+- Not yet implemented. The completed memory and STT/VTS seams are prerequisites
+  and must remain green.
+- The protected working-tree change in `src/mini_gpt/activity_log.py` makes the
+  current default activity path `%USERPROFILE%/.minigpt/activity_log.jsonl`.
+  `DataPaths` must preserve that current behavior, not the older `D:/.minigpt`
+  default assumed by historical snapshots.
+- Stage only plan-owned paths. Do not overwrite or stage unrelated WinUI,
+  model-runtime, speech-runtime, router, or activity-log edits.
+
 ## Global Constraints
 
 - Preserve the current settings keys, aliases, defaults, numeric bounds, boolean fields, and voice-style normalization.

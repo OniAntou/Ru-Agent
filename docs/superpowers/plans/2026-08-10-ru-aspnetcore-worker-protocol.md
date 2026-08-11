@@ -8,6 +8,22 @@
 
 **Tech Stack:** ASP.NET Core WebSockets, C# System.Net.WebSockets, Python asyncio, Python websockets, JSON, xUnit, pytest, and the existing process-manager/live-harness infrastructure.
 
+## Execution Status and Amendments (2026-08-11)
+
+- Approved for inline execution on `main`; no sub-agents.
+- `Runtime/IRuntimeWorkerClient`, `FastApiRuntimeWorkerClient`, the STT endpoint,
+  and the VTS endpoint seam already exist. The versioned `IWorkerClient` becomes
+  the replacement interface; adapters must be migrated without creating a
+  second competing runtime abstraction.
+- The per-run worker token is passed only through inherited environment
+  variables, never a command-line argument or log path.
+- Correct Vietnamese fixture text is UTF-8 (`Em nghe đây.`); mojibake fixtures
+  are invalid and must fail parity tests.
+- FastAPI compatibility exists only until the final decommission gate. After
+  that gate its adapter, dependencies, process mode, and source are deleted.
+- Protected dirty Python/WinUI changes are behavior to preserve and port, not
+  files to reset or stage wholesale.
+
 ## Global Constraints
 
 - The worker listens only on 127.0.0.1 and uses a per-run token handshake.
@@ -380,7 +396,7 @@ Expected: FAIL for the new worker mode.
 
 - [ ] **Step 2: Implement launch specs and readiness**
 
-Add a distinct worker role without changing the existing FastApi/AspNetCore parser contract. The worker command is python -m mini_gpt.worker_server --host 127.0.0.1 --port <worker-port> --secret-token <token>. RuBackend receives RuBackend:WorkerUrl and the same token. Fail closed if the worker executable, health handshake, Job Object assignment, or public readiness fails.
+Add a distinct worker role without changing the existing FastApi/AspNetCore parser contract during this intermediate slice. The worker command is `python -m mini_gpt.worker_server --host 127.0.0.1 --port <worker-port>`; the opaque token is supplied through `RU_WORKER_TOKEN` in the child environment. RuBackend receives `RuBackend:WorkerUrl` and the same token through its environment. Fail closed if the worker executable, health handshake, Job Object assignment, or public readiness fails.
 
 - [ ] **Step 3: Run GUI tests and Python harness tests**
 

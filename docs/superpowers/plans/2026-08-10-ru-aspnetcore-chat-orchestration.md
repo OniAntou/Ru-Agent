@@ -8,6 +8,16 @@
 
 **Tech Stack:** ASP.NET Core WebSockets, C#, System.Text.Json, Channels, xUnit, WebApplicationFactory, the worker protocol plan, and the existing WinUI ChatWebSocketClient contract.
 
+## Execution Status (2026-08-11)
+
+- Approved for inline execution on `main`; no sub-agents.
+- Pending the deterministic-store and versioned-worker plans.
+- Preserve the protected reconnect-backoff edit in
+  `gui-winui3/Services/ChatWebSocketClient.cs`; direct chat ownership must pass
+  the existing client tests with that behavior intact.
+- The FastAPI relay is an intermediate comparison path only. It is removed by
+  the final decommission plan after direct chat acceptance.
+
 ## Global Constraints
 
 - Preserve the public /chat query-token authentication and event types session, reset, chunk, done, and error.

@@ -8,6 +8,24 @@
 
 **Tech Stack:** ASP.NET Core WebSockets, C#, System.Text.Json, Python asyncio/websockets, xUnit, pytest, WinUI process manager, real OmniVoice loopback service, and the existing live compatibility harness.
 
+## Execution Status and Amendments (2026-08-11)
+
+- Approved for inline execution on `main`; no sub-agents.
+- Initial bounded STT validation and all eleven public VTS route mappings are
+  already implemented in `Speech/SttEndpoints.cs` and `Vts/VtsEndpoints.cs`.
+  Extend those modules to the loopback worker; do not create duplicate
+  `Runtime/VtsEndpoints.cs` or a second STT route.
+- Final ASP.NET mode has no FastAPI rollback process. Once every acceptance
+  gate passes, remove `src/mini_gpt/server.py`, `src/mini_gpt/routers/`, the
+  `fastapi` and `uvicorn` dependencies, FastAPI-specific tests, HTTP forwarding
+  and relay adapters, and the `fastapi` WinUI host-mode branch. Retain pure
+  Python runtime modules and the new worker server/handlers.
+- Before deleting a dirty FastAPI router, port and test its protected behavior.
+  In particular, memory failures remain non-fatal to chat and active memory
+  listing remains serialized through `MiniGPTCore.list_memory_records`.
+- Git commits immediately before removal are the recoverable rollback point;
+  do not keep dead FastAPI code in the shipped tree.
+
 ## Global Constraints
 
 - Preserve all 38 HTTP method/path pairs and both WebSocket paths from the route matrix.

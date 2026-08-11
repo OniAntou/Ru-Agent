@@ -12,6 +12,37 @@ runtime-worker ownership seams are implemented. STT/VTS still default to
 Python, and their `aspnet` modes call the FastAPI compatibility worker; direct
 hardware/provider migration and FastAPI decommission remain pending.
 
+Execution authorization on 2026-08-11: the user delegated the remaining
+architecture and cutover decisions and requested automatic FastAPI removal
+after acceptance. The selected final architecture is ASP.NET Core as the only
+public/control-plane host plus one private Python runtime worker over the
+versioned loopback WebSocket protocol. Python remains only where the current
+model, OmniVoice/STT, VTube Studio, or observation libraries are materially
+safer and more capable than a rewrite in C#.
+
+Two alternatives are explicitly rejected. A full C# rewrite of model and
+hardware runtimes would add model-conversion, CUDA, audio, and VTS driver risk
+without being required to remove FastAPI. Keeping FastAPI as an internal HTTP
+worker would preserve the extra framework/process contract and would not meet
+the requested decommission outcome.
+
+FastAPI removal means all of the following, not merely changing the default:
+
+- no `fastapi` or `uvicorn` project dependency;
+- no `mini_gpt.server` process or FastAPI router modules in the active source;
+- no ASP.NET HTTP catch-all/upstream dependency or `fastapi` host mode;
+- every public route is a direct ASP.NET endpoint, with runtime-only calls sent
+  to the private Python worker;
+- FastAPI-specific tests are replaced by ASP.NET contract tests and Python
+  worker-handler tests before deletion.
+
+Deletion is allowed only after the route matrix has zero forwarded routes,
+full .NET/Python/WinUI tests pass, the publish build succeeds, real non-empty
+voice audio and live VTS behavior are accepted, worker/edge cleanup leaves no
+listeners, and an isolated data restart preserves settings, sessions, memory,
+and activity files. Git history is the rollback boundary after deletion; no
+FastAPI runtime rollback remains in the shipped topology.
+
 The completed transport cutover remains documented in
 `docs/aspnetcore-cutover-validation.md`. The earlier
 `2026-08-10-ru-aspnetcore-full-compatibility-and-cutover-design.md` document is

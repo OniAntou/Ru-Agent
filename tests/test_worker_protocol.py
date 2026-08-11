@@ -64,6 +64,7 @@ def test_request_id_is_bounded() -> None:
         "chat.done",
         "memory.facts",
         "runtime.state",
+        "runtime.response",
         "voice.control",
         "voice.done",
         "worker.health.ok",

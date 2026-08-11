@@ -15,6 +15,7 @@ public sealed class WorkerConnection : IAsyncDisposable
             WorkerMessageTypes.ChatDone,
             WorkerMessageTypes.MemoryFacts,
             WorkerMessageTypes.RuntimeState,
+            WorkerMessageTypes.RuntimeResponse,
             WorkerMessageTypes.VoiceControl,
             WorkerMessageTypes.VoiceDone,
             WorkerMessageTypes.VtsCatalog,
@@ -29,6 +30,7 @@ public sealed class WorkerConnection : IAsyncDisposable
             WorkerMessageTypes.ChatDone,
             WorkerMessageTypes.MemoryFacts,
             WorkerMessageTypes.RuntimeState,
+            WorkerMessageTypes.RuntimeResponse,
             WorkerMessageTypes.VoiceDone,
             WorkerMessageTypes.VtsCatalog,
             WorkerMessageTypes.VtsAction,
@@ -163,7 +165,7 @@ public sealed class WorkerConnection : IAsyncDisposable
             }
 
             ReadOnlyMemory<byte> binary = ReadOnlyMemory<byte>.Empty;
-            if (AnnouncesAudio(response))
+            if (AnnouncesBinary(response))
             {
                 InboundFrame audioFrame;
                 try
@@ -315,11 +317,21 @@ public sealed class WorkerConnection : IAsyncDisposable
         }
     }
 
-    private static bool AnnouncesAudio(WorkerEnvelope response) =>
-        response.Type == WorkerMessageTypes.VoiceControl
-        && response.Payload["state"] is JsonValue state
-        && state.TryGetValue<string>(out var value)
-        && string.Equals(value, "audio_ready", StringComparison.Ordinal);
+    private static bool AnnouncesBinary(WorkerEnvelope response)
+    {
+        if (response.Type == WorkerMessageTypes.VoiceControl
+            && response.Payload["state"] is JsonValue state
+            && state.TryGetValue<string>(out var value)
+            && string.Equals(value, "audio_ready", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return response.Type == WorkerMessageTypes.RuntimeResponse
+            && response.Payload["binary"] is JsonValue binary
+            && binary.TryGetValue<bool>(out var enabled)
+            && enabled;
+    }
 
     private static int ReadInt32(JsonNode? node, string errorCode)
     {

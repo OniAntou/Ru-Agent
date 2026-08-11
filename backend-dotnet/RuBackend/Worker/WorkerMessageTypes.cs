@@ -13,6 +13,8 @@ public static class WorkerMessageTypes
     public const string MemoryFacts = "memory.facts";
     public const string RuntimeLoad = "runtime.load";
     public const string RuntimeState = "runtime.state";
+    public const string RuntimeRequest = "runtime.request";
+    public const string RuntimeResponse = "runtime.response";
     public const string VoiceStart = "voice.start";
     public const string VoiceControl = "voice.control";
     public const string VoiceDone = "voice.done";
@@ -35,6 +37,8 @@ public static class WorkerMessageTypes
             MemoryFacts,
             RuntimeLoad,
             RuntimeState,
+            RuntimeRequest,
+            RuntimeResponse,
             VoiceStart,
             VoiceControl,
             VoiceDone,
@@ -54,6 +58,7 @@ public static class WorkerMessageTypes
             ChatDone,
             MemoryFacts,
             RuntimeState,
+            RuntimeResponse,
             VoiceControl,
             VoiceDone,
             WorkerHealthOk,

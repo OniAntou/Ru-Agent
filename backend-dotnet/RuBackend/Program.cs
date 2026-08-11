@@ -29,10 +29,14 @@ builder.Services.AddHttpClient<IUpstreamHttpTransport, HttpUpstreamTransport>();
 builder.Services.AddSingleton<IUpstreamWebSocketConnector, ClientWebSocketConnector>();
 builder.Services.AddSingleton<HttpForwarder>();
 builder.Services.AddSingleton<WebSocketRelay>();
-builder.Services.AddTransient<IRuntimeWorkerClient, FastApiRuntimeWorkerClient>();
 builder.Services.AddSingleton(BuildDataPaths(builder.Configuration));
 builder.Services.AddSingleton(BuildWorkerClientOptions(builder.Configuration));
-builder.Services.AddSingleton<IWorkerClient, LoopbackWorkerClient>();
+builder.Services.AddSingleton<LoopbackWorkerClient>();
+builder.Services.AddSingleton<IWorkerClient>(services =>
+    services.GetRequiredService<LoopbackWorkerClient>());
+builder.Services.AddSingleton<IRuntimeProtocolClient>(services =>
+    services.GetRequiredService<LoopbackWorkerClient>());
+builder.Services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
 builder.Services.AddSingleton<ConversationTurnGate>();
 builder.Services.AddSingleton<IMetadataPolicy, MetadataPolicy>();
 builder.Services.AddSingleton<IStreamSanitizer, StreamSanitizer>();

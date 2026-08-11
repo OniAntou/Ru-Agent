@@ -19,6 +19,8 @@ from mini_gpt.worker_protocol import (
     HELLO_OK,
     MEMORY_EXTRACT,
     RUNTIME_LOAD,
+    RUNTIME_REQUEST,
+    RUNTIME_RESPONSE,
     PROTOCOL_VERSION,
     ProtocolError,
     VOICE_CONTROL,
@@ -283,14 +285,17 @@ async def _run_request(
 
             response_payload = dict(reply.payload)
             binary = reply.binary
-            announces_audio = (
+            announces_binary = (
                 reply.type == VOICE_CONTROL
                 and response_payload.get("state") == "audio_ready"
+            ) or (
+                reply.type == RUNTIME_RESPONSE
+                and response_payload.get("binary") is True
             )
-            if announces_audio and not binary:
-                raise ValueError("audio_ready requires non-empty binary")
-            if binary is not None and (not binary or not announces_audio):
-                raise ValueError("binary frame must follow audio_ready control")
+            if announces_binary and not binary:
+                raise ValueError("announced binary requires non-empty payload")
+            if binary is not None and (not binary or not announces_binary):
+                raise ValueError("binary frame requires an announcing control")
             if binary is not None:
                 response_payload["byte_length"] = len(binary)
 
@@ -322,7 +327,7 @@ def _select_handler(message_type: str, handlers: WorkerHandlers) -> WorkerHandle
         return handlers.chat
     if message_type == MEMORY_EXTRACT:
         return handlers.memory_extract
-    if message_type == RUNTIME_LOAD:
+    if message_type in (RUNTIME_LOAD, RUNTIME_REQUEST):
         return handlers.runtime
     if message_type == VOICE_START:
         return handlers.voice

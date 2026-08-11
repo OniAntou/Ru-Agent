@@ -222,6 +222,48 @@ public sealed class LoopbackWorkerClientTests
     }
 
     [Fact]
+    public async Task InvokeRuntime_preserves_the_private_route_contract()
+    {
+        WorkerEnvelope? observed = null;
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            var hello = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "runtime"));
+            observed = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, Event(
+                observed.Id,
+                WorkerMessageTypes.RuntimeResponse,
+                0,
+                new JsonObject
+                {
+                    ["status_code"] = 200,
+                    ["content_type"] = "application/json",
+                    ["headers"] = new JsonObject { ["x-runtime"] = "worker" },
+                    ["body"] = "{\"status\":\"ok\"}",
+                }));
+        });
+        await using var client = CreateClient(server.Uri);
+
+        var response = await client.InvokeRuntimeAsync(
+            new WorkerRuntimeRequest(
+                "runtime-1",
+                "POST",
+                "/observation/cancel",
+                "application/json",
+                Encoding.UTF8.GetBytes("{\"observation_id\":\"obs-1\"}")),
+            CancellationToken.None);
+
+        Assert.Equal(WorkerMessageTypes.RuntimeRequest, observed!.Type);
+        Assert.Equal("POST", observed.Payload["method"]!.GetValue<string>());
+        Assert.Equal(
+            "{\"observation_id\":\"obs-1\"}",
+            observed.Payload["body"]!.GetValue<string>());
+        Assert.Equal(200, response.StatusCode);
+        Assert.Equal("{\"status\":\"ok\"}", Encoding.UTF8.GetString(response.Body));
+        Assert.Equal("worker", response.Headers!["x-runtime"]);
+    }
+
+    [Fact]
     public async Task GetVtsCatalog_rejects_a_malformed_private_response()
     {
         await using var server = await FakeWorkerServer.StartAsync(async socket =>

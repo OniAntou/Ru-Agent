@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace RuBackend.Worker;
 
-public sealed class LoopbackWorkerClient : IWorkerClient
+public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
 {
     private readonly WorkerClientOptions _options;
     private readonly ConcurrentDictionary<string, WorkerConnection> _activeRequests =
@@ -259,6 +259,76 @@ public sealed class LoopbackWorkerClient : IWorkerClient
         throw new WorkerProtocolException("missing_response");
     }
 
+    public async Task<WorkerRuntimeResponse> InvokeRuntimeAsync(
+        WorkerRuntimeRequest request,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.RequestId)
+            || string.IsNullOrWhiteSpace(request.Method)
+            || string.IsNullOrWhiteSpace(request.PathAndQuery))
+        {
+            throw new WorkerProtocolException("invalid_runtime_request");
+        }
+
+        await using var connection = new WorkerConnection(_options);
+        var hello = await connection.ConnectAsync(cancellationToken);
+        EnsureCapability(hello.Capabilities, "runtime");
+        var envelope = new WorkerEnvelope(
+            _options.ProtocolVersion,
+            request.RequestId,
+            WorkerMessageTypes.RuntimeRequest,
+            null,
+            new JsonObject
+            {
+                ["method"] = request.Method,
+                ["path_and_query"] = request.PathAndQuery,
+                ["content_type"] = request.ContentType,
+                ["body"] = System.Text.Encoding.UTF8.GetString(request.Body),
+            });
+
+        await foreach (var item in connection.SendRequestAsync(envelope, cancellationToken))
+        {
+            if (item.Type == WorkerMessageTypes.Error)
+            {
+                throw RemoteError(item.Payload);
+            }
+
+            if (item.Type != WorkerMessageTypes.RuntimeResponse)
+            {
+                throw new WorkerProtocolException("unexpected_type");
+            }
+
+            var statusCode = ReadInt32(item.Payload["status_code"], "invalid_runtime_response");
+            if (statusCode is < 100 or > 599)
+            {
+                throw new WorkerProtocolException("invalid_runtime_response");
+            }
+
+            var contentType = ReadOptionalString(
+                item.Payload["content_type"],
+                "invalid_runtime_response");
+            var headers = ReadHeaders(item.Payload["headers"]);
+            byte[] body;
+            if (!item.Binary.IsEmpty)
+            {
+                body = item.Binary.ToArray();
+            }
+            else
+            {
+                var text = ReadOptionalString(
+                    item.Payload["body"],
+                    "invalid_runtime_response") ?? string.Empty;
+                body = System.Text.Encoding.UTF8.GetBytes(text);
+            }
+
+            return new WorkerRuntimeResponse(statusCode, contentType, body, headers);
+        }
+
+        throw new WorkerProtocolException("missing_response");
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -406,6 +476,33 @@ public sealed class LoopbackWorkerClient : IWorkerClient
         }
 
         throw new WorkerProtocolException(errorCode);
+    }
+
+    private static IReadOnlyDictionary<string, string> ReadHeaders(JsonNode? node)
+    {
+        if (node is null)
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (node is not JsonObject values)
+        {
+            throw new WorkerProtocolException("invalid_runtime_response");
+        }
+
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in values)
+        {
+            if (pair.Value is not JsonValue value
+                || !value.TryGetValue<string>(out var text))
+            {
+                throw new WorkerProtocolException("invalid_runtime_response");
+            }
+
+            result[pair.Key] = text;
+        }
+
+        return result;
     }
 
     private static int ReadInt32(JsonNode? node, string errorCode)

@@ -39,3 +39,16 @@ public sealed record WorkerFact(
     string? Scope,
     double Confidence,
     double Importance);
+
+public sealed record WorkerRuntimeRequest(
+    string RequestId,
+    string Method,
+    string PathAndQuery,
+    string? ContentType,
+    byte[] Body);
+
+public sealed record WorkerRuntimeResponse(
+    int StatusCode,
+    string? ContentType,
+    byte[] Body,
+    IReadOnlyDictionary<string, string>? Headers = null);

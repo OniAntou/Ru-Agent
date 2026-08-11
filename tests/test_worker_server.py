@@ -16,6 +16,8 @@ from mini_gpt.worker_protocol import (
     ERROR,
     HELLO,
     MEMORY_FACTS,
+    RUNTIME_REQUEST,
+    RUNTIME_RESPONSE,
     VOICE_CONTROL,
     VOICE_DONE,
     WORKER_HEALTH,
@@ -112,6 +114,56 @@ def test_memory_handler_returns_one_facts_event() -> None:
                 assert event["type"] == MEMORY_FACTS
                 assert event["seq"] == 0
                 assert event["payload"] == {"facts": []}
+
+    asyncio.run(scenario())
+
+
+def test_runtime_request_dispatches_one_response_and_binary_body() -> None:
+    async def runtime(payload: dict, _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
+        assert payload == {
+            "method": "POST",
+            "path_and_query": "/voice/tts",
+            "content_type": "application/json",
+            "body": "{}",
+        }
+        yield WorkerReply(
+            RUNTIME_RESPONSE,
+            {
+                "status_code": 200,
+                "content_type": "audio/wav",
+                "headers": {},
+                "binary": True,
+            },
+            binary=b"RIFF",
+        )
+
+    async def scenario() -> None:
+        async with running_server(default_handlers(runtime=runtime)) as uri:
+            async with connect(uri) as websocket:
+                await send_hello(websocket, "worker-secret")
+                await websocket.recv()
+                await websocket.send(
+                    encode_envelope(
+                        {
+                            "v": 1,
+                            "id": "runtime-1",
+                            "type": RUNTIME_REQUEST,
+                            "payload": {
+                                "method": "POST",
+                                "path_and_query": "/voice/tts",
+                                "content_type": "application/json",
+                                "body": "{}",
+                            },
+                        }
+                    )
+                )
+                response = validate_envelope(json.loads(await websocket.recv()))
+                binary = await websocket.recv()
+
+                assert response["type"] == RUNTIME_RESPONSE
+                assert response["seq"] == 0
+                assert response["payload"]["byte_length"] == 4
+                assert binary == b"RIFF"
 
     asyncio.run(scenario())
 
@@ -317,12 +369,13 @@ def default_handlers(
     *,
     chat=empty_handler,
     memory=empty_handler,
+    runtime=empty_handler,
     voice=empty_handler,
 ) -> WorkerHandlers:
     return WorkerHandlers(
         chat=chat,
         memory_extract=memory,
-        runtime=empty_handler,
+        runtime=runtime,
         voice=voice,
         vts=empty_handler,
         observation=empty_handler,

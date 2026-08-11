@@ -19,6 +19,9 @@
   default assumed by historical snapshots.
 - Stage only plan-owned paths. Do not overwrite or stage unrelated WinUI,
   model-runtime, speech-runtime, router, or activity-log edits.
+- Tasks 1-4 are implemented. Tasks 5-6 intentionally wait for the versioned
+  worker protocol because direct `POST /settings` must load/rollback runtime
+  state without delegating a second settings/credential write to FastAPI.
 
 ## Global Constraints
 
@@ -361,7 +364,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: all tests pass and no sensitive fields appear in diagnostics.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ~~~powershell
 git add backend-dotnet/RuBackend/Business/Activity backend-dotnet/RuBackend.Tests/Business/ActivityLogStoreTests.cs

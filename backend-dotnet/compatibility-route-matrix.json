@@ -37,6 +37,6 @@
   {"method":"POST","path":"/vts/activity","transport":"http","source":"src/mini_gpt/routers/vts.py","classification":"feature-selected","ownership":"feature-selected","ownership_config":"RuBackend:Ownership:Vts","default_owner":"python","aspnet_execution":"runtime-worker","winui_callers":["ApiService.ReportVtsActivityAsync"]},
   {"method":"POST","path":"/vts/action","transport":"http","source":"src/mini_gpt/routers/vts.py","classification":"feature-selected","ownership":"feature-selected","ownership_config":"RuBackend:Ownership:Vts","default_owner":"python","aspnet_execution":"runtime-worker","winui_callers":["ApiService.TriggerVtsActionAsync"]},
   {"method":"POST","path":"/vts/speaking","transport":"http","source":"src/mini_gpt/routers/vts.py","classification":"feature-selected","ownership":"feature-selected","ownership_config":"RuBackend:Ownership:Vts","default_owner":"python","aspnet_execution":"runtime-worker","winui_callers":["ApiService.SetVtsSpeakingAsync"]},
-  {"method":"WS","path":"/chat","transport":"websocket","source":"src/mini_gpt/routers/chat.py","classification":"websocket-relay","winui_callers":["ChatWebSocketClient"]},
+  {"method":"WS","path":"/chat","transport":"websocket","source":"src/mini_gpt/routers/chat.py","classification":"feature-selected","winui_callers":["ChatWebSocketClient"]},
   {"method":"WS","path":"/voice/stream","transport":"websocket","source":"src/mini_gpt/routers/voice.py","classification":"websocket-relay","winui_callers":["VoiceStreamClient"]}
 ]

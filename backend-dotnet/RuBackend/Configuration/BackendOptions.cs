@@ -17,6 +17,8 @@ public sealed class BackendOptions
 
 public sealed class BackendOwnershipOptions
 {
+    public string Chat { get; set; } = "python";
+
     public string Settings { get; set; } = "python";
 
     public string Sessions { get; set; } = "python";

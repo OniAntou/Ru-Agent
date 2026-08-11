@@ -38,6 +38,16 @@ public sealed class DesktopTokenMiddleware
         var configuredToken = _options.Value.DesktopToken?.Trim() ?? string.Empty;
         if (!TokensMatch(candidate, configuredToken))
         {
+            if (context.WebSockets.IsWebSocketRequest)
+            {
+                using var socket = await context.WebSockets.AcceptWebSocketAsync();
+                await socket.CloseAsync(
+                    (System.Net.WebSockets.WebSocketCloseStatus)4401,
+                    "Unauthorized",
+                    CancellationToken.None);
+                return;
+            }
+
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new { detail = "Unauthorized" });
             return;

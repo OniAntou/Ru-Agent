@@ -34,6 +34,17 @@ selected independently with `RuBackend:Ownership:Memory`:
 Shadow diagnostics contain only counts, hashes, status, byte counts, and exception
 types. They never log memory text, evidence, credentials, or request bodies.
 
+Chat ownership is selected independently with `RuBackend:Ownership:Chat`:
+
+- `python` (default): `/chat` remains a transparent FastAPI WebSocket relay.
+- `shadow`: the public path remains the Python relay; no second real model
+  generation is allowed. Deterministic comparison is restricted to the
+  isolated synthetic harness.
+- `aspnet`: ASP.NET validates the 256 KiB frame and 16,000-character prompt,
+  owns session/memory/activity ordering, filters all private metadata, and
+  streams through the versioned Python worker. Invalid WebSocket credentials
+  close with application code 4401 before either implementation runs.
+
 Deterministic business ownership is selected independently with
 `RuBackend:Ownership:Settings`, `RuBackend:Ownership:Sessions`, and
 `RuBackend:Ownership:Activity`:
@@ -80,11 +91,13 @@ The JSON matrix is the source of truth for the complete list. The groups below m
 - observation: `/observation/*`
 - voice HTTP: `/voice/status`, `/voice/latency`, `/voice/tts`, `/voice/warmup`, `/voice/release`, `/voice/transcribe`
 - VTS HTTP: `/vts/*`
-- WebSocket relay: `/chat`, `/voice/stream`
+- Feature-selected WebSocket: `/chat`
+- WebSocket relay: `/voice/stream`
 
-The JSON matrix marks `/memory`, the nine deterministic settings/session/
-history/activity routes, `/voice/transcribe`, and every `/vts/*` route as
-`feature-selected` while retaining FastAPI as the current compatibility worker.
+The JSON matrix marks `/chat`, `/memory`, the nine deterministic
+settings/session/history/activity routes, `/voice/transcribe`, and every
+`/vts/*` route as `feature-selected` while retaining FastAPI as the current
+compatibility worker.
 These ownership fields are descriptive and do not change the default Python
 owner.
 

@@ -5,6 +5,7 @@ using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
 using RuBackend.Compatibility;
 using RuBackend.Configuration;
+using RuBackend.Conversation;
 using RuBackend.Memory;
 using RuBackend.Runtime;
 using RuBackend.Security;
@@ -31,6 +32,11 @@ builder.Services.AddSingleton<WebSocketRelay>();
 builder.Services.AddTransient<IRuntimeWorkerClient, FastApiRuntimeWorkerClient>();
 builder.Services.AddSingleton(BuildDataPaths(builder.Configuration));
 builder.Services.AddSingleton(BuildWorkerClientOptions(builder.Configuration));
+builder.Services.AddSingleton<IWorkerClient, LoopbackWorkerClient>();
+builder.Services.AddSingleton<ConversationTurnGate>();
+builder.Services.AddSingleton<IMetadataPolicy, MetadataPolicy>();
+builder.Services.AddSingleton<IStreamSanitizer, StreamSanitizer>();
+builder.Services.AddSingleton<IConversationCoordinator, ConversationCoordinator>();
 builder.Services.AddSingleton<ISettingsStore, SettingsStore>();
 builder.Services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
 builder.Services.AddSingleton<IRuntimeSettingsLoader, LoopbackRuntimeSettingsLoader>();
@@ -52,9 +58,12 @@ app.UseMiddleware<DesktopTokenMiddleware>();
 app.UseMiddleware<RequestSizeMiddleware>();
 
 app.MapMethods("/{**path}", new[] { HttpMethods.Options }, () => Results.NoContent());
-app.MapGet(
-    "/chat",
-    HandleWebSocketAsync);
+if (!ChatWebSocketEndpoint.Map(app))
+{
+    app.MapGet(
+        "/chat",
+        HandleWebSocketAsync);
+}
 app.MapGet(
     "/voice/stream",
     HandleWebSocketAsync);

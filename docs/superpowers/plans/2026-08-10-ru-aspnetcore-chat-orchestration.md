@@ -311,7 +311,7 @@ git commit -m "feat: add ASP.NET conversation coordinator"
 - Modify: backend-dotnet/RuBackend.Tests/BackendWebApplicationFactory.cs
 - Create: backend-dotnet/RuBackend.Tests/Conversation/ChatWebSocketEndpointTests.cs
 
-- [ ] **Step 1: Write failing endpoint tests**
+- [x] **Step 1: Write failing endpoint tests**
 
 Use an in-memory WebSocket client and fake coordinator to test:
 
@@ -326,15 +326,15 @@ Use an in-memory WebSocket client and fake coordinator to test:
 
 Run the focused endpoint tests. Expected: FAIL because the direct endpoint is absent.
 
-- [ ] **Step 2: Implement ChatWebSocketEndpoint**
+- [x] **Step 2: Implement ChatWebSocketEndpoint**
 
 Keep query-token authentication exactly as the current client uses it. Accept text frames only, enforce 256 KiB message bytes and 16,000-character prompt limits, parse session_id as optional string, and call IConversationCoordinator.HandleAsync. Serialize each ChatEvent with camelCase and send it as text. Stop sending after done/error. Cancel the linked token on disconnect and await coordinator cleanup.
 
-- [ ] **Step 3: Map ownership without breaking relay**
+- [x] **Step 3: Map ownership without breaking relay**
 
 Add RuBackend:Ownership:Chat with python, shadow, and aspnet. For python, retain the existing relay route. For aspnet, map /chat to ChatWebSocketEndpoint before the catch-all. For shadow, keep Python as public response and run a deterministic event/hash comparison only when the worker fixture is synthetic; never duplicate a real model generation.
 
-- [ ] **Step 4: Run endpoint, existing GUI client, and route tests**
+- [x] **Step 4: Run endpoint, existing GUI client, and route tests**
 
 ~~~powershell
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore --filter FullyQualifiedName~ChatWebSocketEndpointTests

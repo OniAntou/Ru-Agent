@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using RuBackend.Business;
 using RuBackend.Business.Settings;
 using RuBackend.Compatibility;
+using RuBackend.Conversation;
 using RuBackend.Memory;
 using RuBackend.Runtime;
 using RuBackend.Tests.Fakes;
@@ -31,6 +32,8 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly string _settingsOwnership;
     private readonly string _sessionsOwnership;
     private readonly string _activityOwnership;
+    private readonly IConversationCoordinator? _conversationCoordinator;
+    private readonly string _chatOwnership;
 
     public BackendWebApplicationFactory(
         IUpstreamHttpTransport? httpTransport = null,
@@ -46,7 +49,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         ISettingsStore? settingsStore = null,
         string settingsOwnership = "python",
         string sessionsOwnership = "python",
-        string activityOwnership = "python")
+        string activityOwnership = "python",
+        IConversationCoordinator? conversationCoordinator = null,
+        string chatOwnership = "python")
     {
         _httpTransport = httpTransport ?? new StubUpstreamHttpTransport(
             new UpstreamResponse(
@@ -67,6 +72,8 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _settingsOwnership = settingsOwnership;
         _sessionsOwnership = sessionsOwnership;
         _activityOwnership = activityOwnership;
+        _conversationCoordinator = conversationCoordinator;
+        _chatOwnership = chatOwnership;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -79,6 +86,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         builder.UseSetting("RuBackend:Ownership:Settings", _settingsOwnership);
         builder.UseSetting("RuBackend:Ownership:Sessions", _sessionsOwnership);
         builder.UseSetting("RuBackend:Ownership:Activity", _activityOwnership);
+        builder.UseSetting("RuBackend:Ownership:Chat", _chatOwnership);
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IUpstreamHttpTransport>();
@@ -123,6 +131,12 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             {
                 services.RemoveAll<ISettingsStore>();
                 services.AddSingleton(_settingsStore);
+            }
+
+            if (_conversationCoordinator is not null)
+            {
+                services.RemoveAll<IConversationCoordinator>();
+                services.AddSingleton(_conversationCoordinator);
             }
         });
     }

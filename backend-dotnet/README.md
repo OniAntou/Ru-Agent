@@ -69,6 +69,7 @@ backend-dotnet\RuBackend\bin\Release\net10.0\win-x64\publish\RuBackend.exe
 | RuBackend__UpstreamUrl | http://127.0.0.1:8000 | FastAPI worker base URL. |
 | RuBackend__WorkerUrl | ws://127.0.0.1:5053/worker/v1 | Versioned private Python runtime worker URL. |
 | RuBackend__MaxRequestBodyBytes | 8388608 | Maximum POST/PUT/PATCH body size. |
+| RuBackend__Ownership__Chat | python | `/chat` owner: `python`, `shadow`, or `aspnet`. |
 | RuBackend__Ownership__Memory | python | Memory route owner: `python`, `shadow`, or `aspnet`. |
 | RuBackend__Ownership__Stt | python | `/voice/transcribe` owner: `python` or `aspnet`. |
 | RuBackend__Ownership__Vts | python | All eleven `/vts/*` method/path owners: `python` or `aspnet`. |
@@ -94,6 +95,13 @@ checkpoint, and reasoning fields. Hosted API keys remain in Windows Credential
 Manager and are read by the Python worker locally; they are never copied into a
 worker envelope. Until the process manager owns this private worker and the
 restart/rollback gate passes, settings ownership remains `python` by default.
+
+With `RuBackend__Ownership__Chat=aspnet`, ASP.NET owns public frame validation,
+session/context ordering, memory retrieval and persistence, metadata filtering,
+activity history, and event streaming. Model generation and private VTS calls
+continue through the token-protected Python worker. `python` and `shadow` keep
+the FastAPI relay public; shadow comparison is allowed only in the isolated
+synthetic harness so a real prompt is never generated twice.
 
 With `RuBackend__Ownership__Stt=aspnet`, ASP.NET validates the bounded STT JSON,
 sample-rate, and base64 contract before dispatching recognition through

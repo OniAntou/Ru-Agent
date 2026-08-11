@@ -73,6 +73,12 @@ transcripts with VTS or affect the Discord bridge), and **Observation** (a manua
 primary-monitor observe toggle with RAM-only pipeline counters and latency
 metrics).
 
+Memory route ownership is currently Python by default
+(`RuBackend__Ownership__Memory=python`). The ASP.NET `shadow` mode has passed
+an isolated GET/DELETE gate against a temporary SQLite root; `aspnet` is
+available as an explicit feature-selected owner for those routes. Roll back
+the memory seam with `python`; this does not mean FastAPI has been removed.
+
 Auto-read replies use the authenticated `/voice/stream` WebSocket with ordered
 WAV chunks, cancellation, playback acknowledgements, and a complete-WAV
 fallback when streaming fails before the first chunk. Voice control markers and

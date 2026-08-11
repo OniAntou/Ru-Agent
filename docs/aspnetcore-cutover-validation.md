@@ -18,11 +18,41 @@ pass cannot be mistaken for a live WinUI cutover.
 | Gate | Result |
 | --- | --- |
 | ASP.NET route checker | 38 HTTP routes, 2 WebSocket routes |
-| ASP.NET backend tests | 15 passed |
+| ASP.NET backend tests | 70 passed (final Task 7 run) |
 | GUI tests | 99 passed |
 | Selected Python API tests | 152 passed, 2 dependency deprecation warnings |
 | Compatibility tool tests | 4 passed |
 | Backend launch/process-manager tests | 12 passed |
+
+## Memory ownership gate (2026-08-11)
+
+Task 7 validated the memory seam without touching the normal
+`data/conversations/memory.db`:
+
+| Check | Result |
+| --- | --- |
+| .NET memory-focused tests | 55 passed |
+| Python memory/API-focused tests | 165 passed, 2 dependency deprecation warnings |
+| Isolated shadow GET | HTTP 200, 3 synthetic records |
+| Isolated DELETE | HTTP 200, JSON status `success` |
+| Shadow comparison/read errors | 0 mismatch, 0 read error |
+| Temporary DB after DELETE | Removed |
+| Normal DB before/after SHA-256 | Unchanged |
+| Worker/edge cleanup | Both terminated |
+
+The gate ran with temporary ports 18731/18732 and a temporary `RU_DATA_ROOT`.
+The ASP.NET shadow repository opened SQLite read-only, skipped legacy-import
+writes, and released each read connection before the Python DELETE. The
+numeric/hash-only evidence is in
+`artifacts/aspnetcore/memory-ownership-gate.json`; it contains no token,
+request body, memory text, audio, or VTS metadata.
+
+The default remains `RuBackend__Ownership__Memory=python`. Set it to `shadow`
+only for bounded observation, or to `aspnet` for an explicitly approved GET /
+DELETE ownership cutover. To roll back the memory seam, restart with
+`RuBackend__Ownership__Memory=python`. To roll back the whole public host,
+restart with `RU_BACKEND_HOST_MODE=fastapi`. This gate does not mean FastAPI
+has been removed.
 
 ## Live evidence
 
@@ -45,4 +75,3 @@ tokens, request bodies, chat text, audio bytes, or private VTS metadata here.
 
 Rollback is setting RU_BACKEND_HOST_MODE=fastapi and restarting the app; it does
 not delete persisted memory or user data.
-

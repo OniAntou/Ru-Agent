@@ -3,7 +3,9 @@
 RuBackend is the ASP.NET Core compatibility edge for the existing Python
 runtime. It authenticates the desktop bearer token, forwards every non-
 WebSocket HTTP method/path, and relays /chat and /voice/stream frames
-without reimplementing model, memory, TTS, STT, VTS, or screen logic.
+without reimplementing model, TTS, STT, VTS, or screen logic. Memory remains
+Python-owned by default; the optional memory ownership modes are documented
+below.
 
 The implementation supports two explicit topologies:
 
@@ -66,13 +68,21 @@ backend-dotnet\RuBackend\bin\Release\net10.0\win-x64\publish\RuBackend.exe
 | RuBackend__BindUrl | http://127.0.0.1:8010 | ASP.NET Core bind URL. |
 | RuBackend__UpstreamUrl | http://127.0.0.1:8000 | FastAPI worker base URL. |
 | RuBackend__MaxRequestBodyBytes | 8388608 | Maximum POST/PUT/PATCH body size. |
+| RuBackend__Ownership__Memory | python | Memory route owner: `python`, `shadow`, or `aspnet`. |
 | RU_BACKEND_HOST_MODE | aspnetcore | WinUI owner mode; fastapi is the explicit rollback. |
 | RU_BACKEND_WORKER_PORT | 8001 | Private FastAPI port in ASP.NET Core mode. |
 | RU_RUBACKEND_EXE | published path above | Optional explicit edge executable path. |
 
-The complete route inventory is in docs/aspnetcore-route-matrix.md. GET
-/memory is implemented by Python and returns the existing WinUI DTO; .NET
-does not duplicate the memory store.
+The complete route inventory is in docs/aspnetcore-route-matrix.md. With the
+default `RuBackend__Ownership__Memory=python`, both memory operations remain
+on FastAPI and the edge does not duplicate the store. `shadow` makes the ASP.NET
+GET path read the same SQLite database read-only and compare bounded metadata
+with the Python response; DELETE remains Python-owned. `aspnet` makes ASP.NET
+the owner of GET/DELETE and maps the existing WinUI DTO/error contract. The
+shadow repository skips legacy-import writes and releases its read connection
+after each read so Python can still clear the database on Windows. Roll back
+the memory seam with `RuBackend__Ownership__Memory=python`; this does not remove
+FastAPI from the system.
 
 ## Verification
 
@@ -83,10 +93,15 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore
 dotnet test gui-winui3.Tests/gui-winui3.Tests.csproj --no-restore
 & D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_server_api.py tests/test_voice_stream.py tests/test_vts_api.py -q
 & D:\LLM\.venv\Scripts\python.exe scripts/check_aspnetcore_route_matrix.py
+dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore --filter FullyQualifiedName~Memory
+& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_memory.py tests/test_memory_closed.py tests/test_memory_extraction.py tests/test_memory_learning.py tests/test_server_api.py -q
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .superpowers\sdd\2026-08-10-ru-aspnetcore-memory-ownership-migration\run-task7-memory-gate.ps1
 ~~~
 
 The isolated live probe and direct-versus-edge benchmark are described in
 docs/superpowers/plans/2026-08-10-ru-aspnetcore-full-compatibility-and-cutover.md.
 Their output must not contain bearer tokens, request bodies, chat text, audio,
 or private VTS metadata. A passing unit suite alone does not authorize changing
-the default host mode.
+the default host mode. Task 7 memory evidence is stored at
+artifacts/aspnetcore/memory-ownership-gate.json and summarized in
+docs/aspnetcore-cutover-validation.md.

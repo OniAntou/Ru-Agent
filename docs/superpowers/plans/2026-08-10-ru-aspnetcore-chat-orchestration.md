@@ -255,7 +255,7 @@ git commit -m "feat: expose private VTS operations to chat coordinator"
 - Create: backend-dotnet/RuBackend/Conversation/ConversationCoordinator.cs
 - Create: backend-dotnet/RuBackend.Tests/Conversation/ConversationCoordinatorTests.cs
 
-- [ ] **Step 1: Write failing coordinator tests**
+- [x] **Step 1: Write failing coordinator tests**
 
 Use fake memory, session, activity, and worker modules. Assert the exact order:
 
@@ -278,17 +278,17 @@ Also test busy turn, memory timeout, worker error, cancellation, and cleanup aft
 
 Run focused tests. Expected: FAIL because the coordinator is absent.
 
-- [ ] **Step 2: Implement ConversationTurnGate**
+- [x] **Step 2: Implement ConversationTurnGate**
 
 Use one SemaphoreSlim for generation and one for memory/self-learning. A second generation emits the existing busy error event without touching the session. Cancellation releases both semaphores in finally blocks. The memory gate waits at most 120 seconds for the current self-learning operation, matching the Python contract.
 
-- [ ] **Step 3: Implement ConversationCoordinator**
+- [x] **Step 3: Implement ConversationCoordinator**
 
 On a missing/invalid session ID, call SessionStore.CreateAsync and emit one session event before generation. Append the user message once before model generation. Pass explicit prompt, session ID, turns, rendered memory context, VTS instruction, and normalized settings to WorkerChatRequest.
 
 Feed worker chat events through StreamSanitizer. After done, use MetadataPolicy, write memory, append the assistant, trigger VTS, emit done, enqueue learning, and append activity. On failure after the user append, append the same controlled assistant error text before emitting terminal error. Never include raw prompt/reply in diagnostics.
 
-- [ ] **Step 4: Run coordinator tests**
+- [x] **Step 4: Run coordinator tests**
 
 ~~~powershell
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore --filter FullyQualifiedName~ConversationCoordinatorTests

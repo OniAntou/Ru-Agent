@@ -11,7 +11,9 @@
 ## Execution Status (2026-08-11)
 
 - Approved for inline execution on `main`; no sub-agents.
-- Pending the deterministic-store and versioned-worker plans.
+- Deterministic stores and the versioned worker prerequisite are implemented.
+  Task 1 contract fixtures are complete; direct chat ownership is not enabled
+  until Tasks 2-6 pass.
 - Preserve the protected reconnect-backoff edit in
   `gui-winui3/Services/ChatWebSocketClient.cs`; direct chat ownership must pass
   the existing client tests with that behavior intact.
@@ -127,7 +129,7 @@ IWorkerClient.TriggerVtsActionsAsync(string requestId, IReadOnlyList<string> cod
 - Create: backend-dotnet/RuBackend/Conversation/ChatEvent.cs
 - Create: backend-dotnet/RuBackend.Tests/Conversation/ChatContractFixtureTests.cs
 
-- [ ] **Step 1: Write the failing fixture test**
+- [x] **Step 1: Write the failing fixture test**
 
 Use synthetic prompts and worker events to assert:
 
@@ -146,11 +148,11 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: FAIL because the chat contracts and fixture loader are absent.
 
-- [ ] **Step 2: Implement request/event records and fixture loader**
+- [x] **Step 2: Implement request/event records and fixture loader**
 
 ChatRequest stores raw input before validation. ChatEvent serializes camelCase fields and omits null properties so the existing WinUI client sees the same JSON shape. Use JsonStringEnumConverter only for internal types; public Type remains a string.
 
-- [ ] **Step 3: Run focused tests**
+- [x] **Step 3: Run focused tests**
 
 Run the same command. Expected: PASS with the fixture contract asserted.
 

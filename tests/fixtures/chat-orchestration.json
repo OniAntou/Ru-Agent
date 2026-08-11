@@ -1,0 +1,40 @@
+{
+  "maxPromptCharacters": 16000,
+  "maxMessageBytes": 262144,
+  "validationCases": [
+    {
+      "name": "blank prompt",
+      "prompt": "   ",
+      "accepted": false,
+      "errorContent": null
+    },
+    {
+      "name": "prompt over limit",
+      "promptLength": 16001,
+      "accepted": false,
+      "errorContent": "Prompt too long (max 16000 characters)."
+    }
+  ],
+  "eventCases": [
+    {
+      "name": "invalid session creates a replacement",
+      "inputSessionId": "missing-session",
+      "eventTypes": ["session", "reset", "chunk", "done"]
+    },
+    {
+      "name": "normal streamed reply",
+      "inputSessionId": "session-20260811-120000-abcd1234",
+      "eventTypes": ["reset", "chunk", "done"]
+    },
+    {
+      "name": "malformed worker result",
+      "inputSessionId": "session-20260811-120000-abcd1234",
+      "eventTypes": ["error"]
+    }
+  ],
+  "privacyCase": {
+    "rawReply": "Em nghe đây. [[VTS:vts_01]] [[VOICE_PACE:quick]]",
+    "visibleReply": "Em nghe đây.",
+    "forbiddenFragments": ["[[VTS:", "[[VOICE_PACE:"]
+  }
+}

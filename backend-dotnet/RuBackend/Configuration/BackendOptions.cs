@@ -18,4 +18,8 @@ public sealed class BackendOptions
 public sealed class BackendOwnershipOptions
 {
     public string Memory { get; set; } = "python";
+
+    public string Stt { get; set; } = "python";
+
+    public string Vts { get; set; } = "python";
 }

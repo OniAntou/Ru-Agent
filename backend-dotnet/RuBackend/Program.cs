@@ -2,7 +2,9 @@ using System.Net.WebSockets;
 using RuBackend.Compatibility;
 using RuBackend.Configuration;
 using RuBackend.Memory;
+using RuBackend.Runtime;
 using RuBackend.Security;
+using RuBackend.Speech;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
@@ -20,6 +22,7 @@ builder.Services.AddHttpClient<IUpstreamHttpTransport, HttpUpstreamTransport>();
 builder.Services.AddSingleton<IUpstreamWebSocketConnector, ClientWebSocketConnector>();
 builder.Services.AddSingleton<HttpForwarder>();
 builder.Services.AddSingleton<WebSocketRelay>();
+builder.Services.AddTransient<IRuntimeWorkerClient, FastApiRuntimeWorkerClient>();
 builder.Services.AddSingleton(BuildMemorySqliteOptions(builder.Configuration));
 builder.Services.AddSingleton<IMemoryRepository, SqliteMemoryRepository>();
 builder.Services.AddSingleton<IMemoryPolicy, MemoryPolicy>();
@@ -41,6 +44,7 @@ app.MapGet(
     "/voice/stream",
     HandleWebSocketAsync);
 MemoryEndpoints.Map(app);
+SttEndpoints.Map(app);
 app.Map(
     "/{**path}",
     (HttpContext context, HttpForwarder forwarder, CancellationToken cancellationToken) =>

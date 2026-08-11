@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using RuBackend.Compatibility;
 using RuBackend.Memory;
+using RuBackend.Runtime;
 using RuBackend.Tests.Fakes;
 
 namespace RuBackend.Tests;
@@ -18,12 +19,18 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly IUpstreamWebSocketConnector? _webSocketConnector;
     private readonly IMemoryService? _memoryService;
     private readonly string _memoryOwnership;
+    private readonly IRuntimeWorkerClient? _runtimeWorkerClient;
+    private readonly string _sttOwnership;
+    private readonly string _vtsOwnership;
 
     public BackendWebApplicationFactory(
         IUpstreamHttpTransport? httpTransport = null,
         IUpstreamWebSocketConnector? webSocketConnector = null,
         IMemoryService? memoryService = null,
-        string memoryOwnership = "python")
+        string memoryOwnership = "python",
+        IRuntimeWorkerClient? runtimeWorkerClient = null,
+        string sttOwnership = "python",
+        string vtsOwnership = "python")
     {
         _httpTransport = httpTransport ?? new StubUpstreamHttpTransport(
             new UpstreamResponse(
@@ -34,6 +41,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _webSocketConnector = webSocketConnector;
         _memoryService = memoryService;
         _memoryOwnership = memoryOwnership;
+        _runtimeWorkerClient = runtimeWorkerClient;
+        _sttOwnership = sttOwnership;
+        _vtsOwnership = vtsOwnership;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -41,6 +51,8 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         builder.UseSetting("RU_DESKTOP_TOKEN", "test-secret");
         builder.UseSetting("RuBackend:UpstreamUrl", "http://127.0.0.1:65531");
         builder.UseSetting("RuBackend:Ownership:Memory", _memoryOwnership);
+        builder.UseSetting("RuBackend:Ownership:Stt", _sttOwnership);
+        builder.UseSetting("RuBackend:Ownership:Vts", _vtsOwnership);
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IUpstreamHttpTransport>();
@@ -55,6 +67,12 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             {
                 services.RemoveAll<IMemoryService>();
                 services.AddSingleton(_memoryService);
+            }
+
+            if (_runtimeWorkerClient is not null)
+            {
+                services.RemoveAll<IRuntimeWorkerClient>();
+                services.AddSingleton(_runtimeWorkerClient);
             }
         });
     }

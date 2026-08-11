@@ -272,7 +272,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: all focused tests pass, including unknown-property preservation and no-secret assertions.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ~~~powershell
 git add backend-dotnet/RuBackend/Business/Settings backend-dotnet/RuBackend.Tests/Business/SettingsStoreTests.cs backend-dotnet/RuBackend.Tests/Business/CredentialStoreTests.cs
@@ -288,13 +288,13 @@ git commit -m "feat: add ASP.NET settings and credential stores"
 - Create: backend-dotnet/RuBackend.Tests/Business/SessionStoreTests.cs
 - Create: backend-dotnet/RuBackend.Tests/Business/HistoryStoreTests.cs
 
-- [ ] **Step 1: Write failing session tests**
+- [x] **Step 1: Write failing session tests**
 
 Cover session ID validation with the existing regex, creation fields, list ordering by updated_at descending, title generation from the first user message capped at 50 characters, valid role filtering, 200-message retention, atomic append, delete errors, and extraction of the last eight complete user/ai turns.
 
 Run the focused tests. Expected: FAIL because the stores are absent.
 
-- [ ] **Step 2: Implement SessionStore**
+- [x] **Step 2: Implement SessionStore**
 
 Use one SemaphoreSlim per SessionStore instance and atomic replacement. Keep the JSON shape:
 
@@ -310,15 +310,15 @@ Use one SemaphoreSlim per SessionStore instance and atomic replacement. Keep the
 
 Reject path traversal and IDs outside ^[a-zA-Z0-9_-]{1,64}$. On append, retain only the last 200 valid messages, set a title from the first nonblank user message when the current title is default/blank, and update updated_at in UTC.
 
-- [ ] **Step 3: Implement context extraction**
+- [x] **Step 3: Implement context extraction**
 
 GetContextTurnsAsync pairs each user message with the next ai message, ignores incomplete or blank pairs, and returns the last maxTurns complete pairs as ConversationTurn values.
 
-- [ ] **Step 4: Implement HistoryStore migration**
+- [x] **Step 4: Implement HistoryStore migration**
 
 Read only a JSON list of role/content objects from the legacy history file. If sessions already exist, return without migration. Otherwise create a session, append valid messages, write a SHA-256 sidecar record in the migration manifest, verify the session file exists and contains the messages, then move the legacy file to a timestamped backup. A failed verification leaves the original file untouched.
 
-- [ ] **Step 5: Run session/history tests**
+- [x] **Step 5: Run session/history tests**
 
 ~~~powershell
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore --filter FullyQualifiedName~SessionStoreTests

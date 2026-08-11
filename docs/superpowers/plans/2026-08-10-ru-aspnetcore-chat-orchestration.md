@@ -171,21 +171,21 @@ git commit -m "test: freeze ASP.NET chat orchestration contract"
 - Create: backend-dotnet/RuBackend.Tests/Conversation/MetadataPolicyTests.cs
 - Create: backend-dotnet/RuBackend.Tests/Conversation/StreamSanitizerTests.cs
 
-- [ ] **Step 1: Write failing policy tests**
+- [x] **Step 1: Write failing policy tests**
 
 Cover terminal VTS suffix parsing with one, multiple, unknown, and invalid codes; expression codes validated against VtsCatalog; emotion extraction; VOICE_PACE marker removal; VTS marker removal; markers split across streaming deltas; safe visible-prefix behavior; and an empty visible response becoming the controlled error text used by the current route.
 
 Run the focused tests. Expected: FAIL because policy and sanitizer are absent.
 
-- [ ] **Step 2: Implement MetadataPolicy**
+- [x] **Step 2: Implement MetadataPolicy**
 
 Port split_reply_metadata and _strip_voice_markers behavior from the Python runtime. Accept only codes present in the supplied catalog. Return visible text, validated codes, and private emotion. Never include raw marker contents in an exception or log.
 
-- [ ] **Step 3: Implement StreamSanitizer**
+- [x] **Step 3: Implement StreamSanitizer**
 
 Keep raw and visible strings separately. Append each raw delta, then expose only the longest safe visible prefix. Hold a suffix that could still be the beginning of [[VTS: or [[VOICE_PACE: until the worker sends enough text to decide. Use NFC normalization and do not emit control markers.
 
-- [ ] **Step 4: Run focused and Python parity tests**
+- [x] **Step 4: Run focused and Python parity tests**
 
 ~~~powershell
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore --filter FullyQualifiedName~MetadataPolicyTests

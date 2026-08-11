@@ -23,6 +23,11 @@
   adapter returns no catalog because the legacy host has no public catalog
   route; rollback chat continues to execute VTS internally and its action
   adapter remains available for typed codes.
+- Tasks 1-5 are committed in `19dca67`, `8a4c3f8`, `fd47e45`, `80bc489`, and
+  `1c1e3fd`. Task 6 passed both isolated live gates: direct ASP.NET chat wrote
+  one memory record, and the subsequent Python rollback remained usable. Both
+  paths emitted one ordered terminal sequence, retained one user/assistant
+  pair, leaked no private metadata into evidence, and closed all child ports.
 
 ## Global Constraints
 
@@ -160,7 +165,7 @@ ChatRequest stores raw input before validation. ChatEvent serializes camelCase f
 
 Run the same command. Expected: PASS with the fixture contract asserted.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ~~~powershell
 git add tests/fixtures/chat-orchestration.json backend-dotnet/RuBackend/Conversation/ChatRequest.cs backend-dotnet/RuBackend/Conversation/ChatEvent.cs backend-dotnet/RuBackend.Tests/Conversation/ChatContractFixtureTests.cs
@@ -199,7 +204,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: all focused tests pass and existing Python marker behavior stays green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ~~~powershell
 git add backend-dotnet/RuBackend/Conversation/MetadataPolicy.cs backend-dotnet/RuBackend/Conversation/StreamSanitizer.cs backend-dotnet/RuBackend.Tests/Conversation/MetadataPolicyTests.cs backend-dotnet/RuBackend.Tests/Conversation/StreamSanitizerTests.cs
@@ -241,7 +246,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: all worker tests pass with public event isolation assertions.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ~~~powershell
 git add backend-dotnet/RuBackend/Worker backend-dotnet/RuBackend.Tests/Worker
@@ -296,7 +301,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: all ordering, cancellation, lock, and duplicate-prevention tests pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ~~~powershell
 git add backend-dotnet/RuBackend/Conversation/ConversationTurnGate.cs backend-dotnet/RuBackend/Conversation/ConversationCoordinator.cs backend-dotnet/RuBackend.Tests/Conversation/ConversationCoordinatorTests.cs
@@ -345,7 +350,7 @@ dotnet test gui-winui3.Tests/gui-winui3.Tests.csproj --no-restore --filter Fully
 
 Expected: direct endpoint and existing client tests pass; route checker still reports two WebSocket routes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ~~~powershell
 git add backend-dotnet/RuBackend/Conversation/ChatWebSocketEndpoint.cs backend-dotnet/RuBackend/Program.cs backend-dotnet/RuBackend.Tests backend-dotnet/compatibility-route-matrix.json docs/aspnetcore-route-matrix.md
@@ -361,11 +366,11 @@ git commit -m "feat: add ASP.NET chat WebSocket ownership seam"
 - Modify: backend-dotnet/README.md
 - Modify: README.md
 
-- [ ] **Step 1: Add harness modes and deterministic assertions**
+- [x] **Step 1: Add harness modes and deterministic assertions**
 
 Add a direct-chat mode that starts the Python worker protocol with a deterministic fake model response, starts ASP.NET with Chat ownership aspnet, sends a real WebSocket session/prompt, and records only event types, counts, sequence numbers, error codes, child exit status, and port cleanup. Keep the existing FastAPI mode for rollback.
 
-- [ ] **Step 2: Run the isolated direct-chat gate**
+- [x] **Step 2: Run the isolated direct-chat gate**
 
 ~~~powershell
 & D:\\LLM\\.venv\\Scripts\\python.exe -m pytest tests/test_aspnetcore_compatibility_tools.py -q
@@ -374,15 +379,15 @@ Add a direct-chat mode that starts the Python worker protocol with a determinist
 
 Expected: zero failures, ordered session/reset/chunk/done events, one assistant history entry, one memory write, no metadata leakage, and all child processes terminated.
 
-- [ ] **Step 3: Run the rollback gate**
+- [x] **Step 3: Run the rollback gate**
 
 Start the same app with Chat ownership python, send the same synthetic request through the existing FastAPI relay, and compare only event-type/sequence/error-code summaries. The Python path must remain usable after the ASP.NET path is stopped.
 
-- [ ] **Step 4: Update docs and route ownership**
+- [x] **Step 4: Update docs and route ownership**
 
 Record direct-chat and rollback evidence. Mark only /chat as direct ASP.NET ownership when the live gate passes. Do not mark voice, VTS, observation, or FastAPI removal complete.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ~~~powershell
 git add scripts/aspnetcore_compatibility_harness.py tests/test_aspnetcore_compatibility_tools.py docs/aspnetcore-cutover-validation.md backend-dotnet/README.md README.md

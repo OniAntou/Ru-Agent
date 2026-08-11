@@ -5,6 +5,8 @@ import asyncio
 import json
 import os
 import secrets
+import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -36,6 +38,95 @@ def redact_secrets(text: str, secrets_to_redact: list[str]) -> str:
         if secret:
             redacted = redacted.replace(secret, "[REDACTED]")
     return redacted
+
+
+_PRIVATE_METADATA_FRAGMENTS = ("[[vts:", "[[voice_pace:", "[[emo:", "[search:")
+
+
+def _contains_private_metadata(value: object) -> bool:
+    if isinstance(value, str):
+        folded = value.casefold()
+        return any(fragment in folded for fragment in _PRIVATE_METADATA_FRAGMENTS)
+    if isinstance(value, dict):
+        return any(_contains_private_metadata(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_private_metadata(item) for item in value)
+    return False
+
+
+def summarize_chat_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+    event_types = [str(event.get("type") or "") for event in events]
+    expected_orders = (
+        ["session", "reset", "chunk", "done"],
+        ["reset", "chunk", "done"],
+    )
+    return {
+        "event_types": event_types,
+        "event_count": len(event_types),
+        "session_events": event_types.count("session"),
+        "terminal_events": sum(value in {"done", "error"} for value in event_types),
+        "ordered": event_types in expected_orders,
+        "private_metadata_absent": not _contains_private_metadata(events),
+    }
+
+
+def inspect_chat_state(data_root: Path) -> dict[str, Any]:
+    session_files = sorted((data_root / "sessions").glob("*.json"))
+    messages: list[dict[str, Any]] = []
+    for path in session_files:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        stored = payload.get("messages") if isinstance(payload, dict) else None
+        if isinstance(stored, list):
+            messages.extend(item for item in stored if isinstance(item, dict))
+
+    activity: list[dict[str, Any]] = []
+    activity_path = data_root / "activity_log.jsonl"
+    if activity_path.is_file():
+        try:
+            lines = activity_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            lines = []
+        for line in lines:
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict):
+                activity.append(item)
+
+    active_memories = 0
+    memory_path = data_root / "memory.db"
+    if memory_path.is_file():
+        try:
+            with sqlite3.connect(memory_path) as database:
+                tables = {
+                    str(row[0])
+                    for row in database.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    )
+                }
+                table = "memories" if "memories" in tables else "memory_records"
+                if table in tables:
+                    active_memories = int(
+                        database.execute(
+                            f"SELECT COUNT(*) FROM {table} WHERE status = 'active'"
+                        ).fetchone()[0]
+                    )
+        except (OSError, sqlite3.Error, TypeError, ValueError):
+            active_memories = 0
+
+    return {
+        "session_files": len(session_files),
+        "session_messages": len(messages),
+        "user_messages": sum(item.get("role") == "user" for item in messages),
+        "assistant_messages": sum(item.get("role") == "ai" for item in messages),
+        "activity_events": len(activity),
+        "memory_active_records": active_memories,
+        "private_metadata_absent": not _contains_private_metadata(messages + activity),
+    }
 
 
 def _load_matrix(repo_root: Path) -> list[dict[str, Any]]:
@@ -167,6 +258,33 @@ async def _probe_chat(base_url: str, token: str) -> dict[str, Any]:
     return {"connected": True, "event_type": payload.get("type"), "ordered": payload.get("type") == "error"}
 
 
+async def _probe_synthetic_chat(base_url: str, token: str) -> dict[str, Any]:
+    uri = _websocket_url(base_url, "/chat", token)
+    events: list[dict[str, Any]] = []
+    async with connect(uri, proxy=None, open_timeout=10, close_timeout=2) as socket:
+        await socket.send(
+            json.dumps(
+                {"prompt": "Anh thích trả lời ngắn."},
+                ensure_ascii=False,
+            )
+        )
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline and len(events) < 12:
+            message = await asyncio.wait_for(
+                socket.recv(),
+                timeout=max(0.1, deadline - time.monotonic()),
+            )
+            if not isinstance(message, str):
+                continue
+            payload = json.loads(message)
+            if not isinstance(payload, dict):
+                continue
+            events.append(payload)
+            if payload.get("type") in {"done", "error"}:
+                break
+    return summarize_chat_events(events)
+
+
 async def _probe_voice_control(base_url: str, token: str) -> dict[str, Any]:
     uri = _websocket_url(base_url, "/voice/stream", token)
     async with connect(uri, proxy=None, open_timeout=10, close_timeout=2) as socket:
@@ -196,6 +314,130 @@ async def _probe_real_voice_audio(base_url: str, token: str) -> bool:
     return False
 
 
+def _wait_for_ports_closed(ports: list[int], timeout_seconds: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    pending = set(ports)
+    while pending and time.monotonic() < deadline:
+        for port in tuple(pending):
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                    pass
+            except OSError:
+                pending.remove(port)
+        if pending:
+            time.sleep(0.1)
+    return not pending
+
+
+def _serve_deterministic_worker(port: int) -> int:
+    from mini_gpt.worker_protocol import (
+        CHAT_CHUNK,
+        CHAT_DONE,
+        CHAT_RESET,
+        ERROR,
+        MEMORY_FACTS,
+        RUNTIME_STATE,
+        VTS_ACTION,
+        VTS_CATALOG,
+    )
+    from mini_gpt.worker_server import WorkerHandlers, WorkerReply, serve_worker
+
+    async def chat(_payload, _cancelled):
+        yield WorkerReply(CHAT_RESET, {})
+        yield WorkerReply(CHAT_CHUNK, {"text": "Em nghe đây. [[VT"})
+        yield WorkerReply(
+            CHAT_DONE,
+            {
+                "raw_reply": (
+                    "Em nghe đây. [[EMO:joy]] [[VTS:vts_01]] "
+                    "[[VOICE_PACE:quick]]"
+                )
+            },
+        )
+
+    async def memory(_payload, _cancelled):
+        yield WorkerReply(MEMORY_FACTS, {"facts": []})
+
+    async def runtime(payload, _cancelled):
+        yield WorkerReply(
+            RUNTIME_STATE,
+            {"status": "success", "message": "Runtime loaded.", "backend": payload.get("backend")},
+        )
+
+    async def vts(payload, _cancelled):
+        if payload.get("operation") == "catalog":
+            yield WorkerReply(
+                VTS_CATALOG,
+                {
+                    "model_id": "synthetic-model",
+                    "model_name": "synthetic",
+                    "hotkey_codes": ["vts_01"],
+                    "expression_codes": [],
+                },
+            )
+            return
+        if payload.get("operation") == "action":
+            yield WorkerReply(VTS_ACTION, {"status": "ok"})
+            return
+        yield WorkerReply(ERROR, {"code": "unsupported_operation", "retryable": False})
+
+    async def unsupported(_payload, _cancelled):
+        yield WorkerReply(ERROR, {"code": "unsupported_operation", "retryable": False})
+
+    token = os.environ.get("RU_WORKER_TOKEN", "").strip()
+    asyncio.run(
+        serve_worker(
+            "127.0.0.1",
+            port,
+            token,
+            WorkerHandlers(
+                chat=chat,
+                memory_extract=memory,
+                runtime=runtime,
+                voice=unsupported,
+                vts=vts,
+                observation=unsupported,
+            ),
+        )
+    )
+    return 0
+
+
+def _serve_deterministic_fastapi(port: int) -> int:
+    from contextlib import asynccontextmanager
+
+    import uvicorn
+
+    import mini_gpt.server as server
+    from mini_gpt.headless_runner import BACKEND_OPENCODE
+
+    @asynccontextmanager
+    async def isolated_lifespan(_app):
+        yield
+
+    def generate_reply_with_memory(**kwargs):
+        reset = kwargs.get("on_stream_reset")
+        delta = kwargs.get("on_stream_delta")
+        if callable(reset):
+            reset()
+        if callable(delta):
+            delta("Em nghe đây. [[VT")
+        return "Em nghe đây. [[EMO:joy]] [[VTS:vts_01]] [[VOICE_PACE:quick]]"
+
+    server.app.router.lifespan_context = isolated_lifespan
+    server.core.runner.backend = BACKEND_OPENCODE
+    server.core.generate_reply_with_memory = generate_reply_with_memory
+    server.core.remember = lambda _prompt, _reply: None
+    uvicorn.run(
+        server.app,
+        host="127.0.0.1",
+        port=port,
+        access_log=False,
+        log_level="warning",
+    )
+    return 0
+
+
 def run_harness(args: argparse.Namespace) -> dict[str, Any]:
     repo_root = args.project_root.resolve()
     token = secrets.token_hex(16)
@@ -203,15 +445,33 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
     if not python_executable.is_file():
         python_executable = Path(sys.executable)
     edge_base_url = f"http://127.0.0.1:{args.edge_port}"
-    worker_command = [
-        str(python_executable),
-        "-m",
-        "mini_gpt.server",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        str(args.worker_port),
-    ]
+    harness_script = Path(__file__).resolve()
+    if args.chat_owner == "aspnet":
+        worker_command = [
+            str(python_executable),
+            str(harness_script),
+            "--serve-deterministic-worker",
+            "--worker-port",
+            str(args.worker_port),
+        ]
+    elif args.chat_owner == "python":
+        worker_command = [
+            str(python_executable),
+            str(harness_script),
+            "--serve-deterministic-fastapi",
+            "--worker-port",
+            str(args.worker_port),
+        ]
+    else:
+        worker_command = [
+            str(python_executable),
+            "-m",
+            "mini_gpt.server",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(args.worker_port),
+        ]
     edge_command = [
         "dotnet",
         "run",
@@ -239,6 +499,21 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
                 "no_proxy": "127.0.0.1,localhost",
             }
         )
+        if args.chat_owner:
+            environment["RuBackend__Ownership__Chat"] = args.chat_owner
+        if args.chat_owner == "aspnet":
+            environment.update(
+                {
+                    "RU_WORKER_TOKEN": token,
+                    "RuBackend__WorkerUrl": (
+                        f"ws://127.0.0.1:{args.worker_port}/worker/v1"
+                    ),
+                    "RuBackend__Ownership__Settings": "aspnet",
+                    "RuBackend__Ownership__Sessions": "aspnet",
+                    "RuBackend__Ownership__Activity": "aspnet",
+                    "RuBackend__Ownership__Memory": "aspnet",
+                }
+            )
         try:
             children.append(
                 _start_child(
@@ -261,17 +536,30 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
             result: dict[str, Any] = {
                 "worker_port": args.worker_port,
                 "edge_port": args.edge_port,
+                "chat_owner": args.chat_owner,
                 "edge_readiness_status": readiness_status,
-                "http": _probe_http_routes(edge_base_url, token, matrix) if readiness_status else {"failures": 1},
+                "http": (
+                    {"probed": 1, "skipped": 0, "failures": 0, "results": []}
+                    if readiness_status and args.chat_owner
+                    else _probe_http_routes(edge_base_url, token, matrix)
+                    if readiness_status
+                    else {"failures": 1}
+                ),
                 "websockets": {},
                 "voice_audio_confirmed": False,
             }
             if readiness_status:
-                result["websockets"]["chat"] = asyncio.run(_probe_chat(edge_base_url, token))
-                result["websockets"]["voice_control"] = asyncio.run(_probe_voice_control(edge_base_url, token))
-                if args.require_voice_audio:
+                if args.chat_owner:
+                    result["websockets"]["chat"] = asyncio.run(
+                        _probe_synthetic_chat(edge_base_url, token)
+                    )
+                    result["chat_state"] = inspect_chat_state(temp_path / "data")
+                else:
+                    result["websockets"]["chat"] = asyncio.run(_probe_chat(edge_base_url, token))
+                    result["websockets"]["voice_control"] = asyncio.run(_probe_voice_control(edge_base_url, token))
+                if args.require_voice_audio and not args.chat_owner:
                     result["voice_audio_confirmed"] = asyncio.run(_probe_real_voice_audio(edge_base_url, token))
-                if args.benchmark_samples:
+                if args.benchmark_samples and not args.chat_owner:
                     direct_url = f"http://127.0.0.1:{args.worker_port}"
                     direct = benchmark_target(direct_url, token, args.benchmark_samples)
                     edge = benchmark_target(edge_base_url, token, args.benchmark_samples)
@@ -288,6 +576,9 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
             if isinstance(result_to_update, dict):
                 result_to_update["children_terminated"] = all(terminated)
                 result_to_update["child_exit_codes"] = [child.poll() for child in children]
+                result_to_update["ports_closed"] = _wait_for_ports_closed(
+                    [args.worker_port, args.edge_port]
+                )
 
 
 def main() -> int:
@@ -295,21 +586,58 @@ def main() -> int:
     parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--worker-port", type=int, default=8001)
     parser.add_argument("--edge-port", type=int, default=8010)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--require-voice-audio", action="store_true")
     parser.add_argument("--benchmark-samples", type=int, default=0)
+    parser.add_argument("--chat-owner", choices=("python", "aspnet"))
+    parser.add_argument("--isolated", action="store_true")
+    parser.add_argument(
+        "--serve-deterministic-worker",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--serve-deterministic-fastapi",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args()
+    if args.serve_deterministic_worker and args.serve_deterministic_fastapi:
+        parser.error("only one deterministic worker mode may be selected")
+    if args.serve_deterministic_worker:
+        return _serve_deterministic_worker(args.worker_port)
+    if args.serve_deterministic_fastapi:
+        return _serve_deterministic_fastapi(args.worker_port)
     if args.benchmark_samples < 0:
         parser.error("--benchmark-samples cannot be negative")
+    output = args.output or (
+        args.project_root
+        / "artifacts"
+        / "aspnetcore"
+        / f"chat-{args.chat_owner or 'compatibility'}-gate.json"
+    )
     try:
         result = run_harness(args)
     except Exception as error:
         result = {"error_type": type(error).__name__, "error": redact_secrets(str(error), [])}
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     failed = bool(result.get("error_type")) or result.get("edge_readiness_status") is None
     failed = failed or result.get("http", {}).get("failures", 1) > 0
     failed = failed or not result.get("children_terminated", False)
+    failed = failed or not result.get("ports_closed", False)
+    if args.chat_owner:
+        chat = result.get("websockets", {}).get("chat", {})
+        state = result.get("chat_state", {})
+        failed = failed or not chat.get("ordered", False)
+        failed = failed or not chat.get("private_metadata_absent", False)
+        failed = failed or chat.get("terminal_events") != 1
+        failed = failed or state.get("assistant_messages") != 1
+        failed = failed or state.get("user_messages") != 1
+        failed = failed or not state.get("private_metadata_absent", False)
+        if args.chat_owner == "aspnet":
+            failed = failed or state.get("activity_events") != 2
+            failed = failed or state.get("memory_active_records") != 1
     if args.require_voice_audio and not result.get("voice_audio_confirmed", False):
         failed = True
     return 1 if failed else 0

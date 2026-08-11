@@ -45,6 +45,13 @@ Chat ownership is selected independently with `RuBackend:Ownership:Chat`:
   streams through the versioned Python worker. Invalid WebSocket credentials
   close with application code 4401 before either implementation runs.
 
+The isolated direct-chat and subsequent Python rollback gates passed with
+ordered public events, exactly one persisted user/assistant pair, no private
+metadata in count-only evidence, and complete process/port cleanup. The
+`aspnet` owner is accepted for explicit use. `python` remains the checked-in
+default only because the desktop process topology has not yet been switched to
+launch the required private protocol worker.
+
 Deterministic business ownership is selected independently with
 `RuBackend:Ownership:Settings`, `RuBackend:Ownership:Sessions`, and
 `RuBackend:Ownership:Activity`:

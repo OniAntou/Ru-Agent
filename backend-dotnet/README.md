@@ -103,6 +103,13 @@ continue through the token-protected Python worker. `python` and `shadow` keep
 the FastAPI relay public; shadow comparison is allowed only in the isolated
 synthetic harness so a real prompt is never generated twice.
 
+The isolated direct-chat and Python rollback gates both passed with ordered
+`session/reset/chunk/done` events, one user and one assistant history entry,
+private metadata absent from evidence, child cleanup, and closed ports. Direct
+ASP.NET chat is therefore accepted when explicitly selected. It does not become
+the repository default until the WinUI process manager starts the private
+protocol worker instead of only the FastAPI compatibility worker.
+
 With `RuBackend__Ownership__Stt=aspnet`, ASP.NET validates the bounded STT JSON,
 sample-rate, and base64 contract before dispatching recognition through
 `IRuntimeWorkerClient`. With `RuBackend__Ownership__Vts=aspnet`, ASP.NET
@@ -127,6 +134,8 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .superpowers\sdd\2026-08-10-ru-aspnetcore-memory-ownership-migration\run-task7-memory-gate.ps1
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore --filter "FullyQualifiedName~SttEndpointTests|FullyQualifiedName~VtsEndpointTests|FullyQualifiedName~FastApiRuntimeWorkerClientTests"
 & D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_server_api.py tests/test_speech_runtime.py tests/test_vts_api.py tests/test_aspnetcore_route_matrix.py tests/test_aspnetcore_compatibility_tools.py -q
+& D:\LLM\.venv\Scripts\python.exe scripts/aspnetcore_compatibility_harness.py --chat-owner aspnet --isolated --output artifacts/aspnetcore/chat-aspnet-gate.json
+& D:\LLM\.venv\Scripts\python.exe scripts/aspnetcore_compatibility_harness.py --chat-owner python --isolated --output artifacts/aspnetcore/chat-python-rollback-gate.json
 ~~~
 
 The isolated live probe and direct-versus-edge benchmark are described in
@@ -137,4 +146,7 @@ the default host mode. Task 7 memory evidence is stored at
 artifacts/aspnetcore/memory-ownership-gate.json and summarized in
 docs/aspnetcore-cutover-validation.md. The STT/VTS isolated topology result is
 stored at artifacts/aspnetcore/stt-vts-ownership-gate.json; it does not claim a
-real microphone transcription or a live VTS action acceptance.
+real microphone transcription or a live VTS action acceptance. The direct-chat
+and rollback summaries are stored at artifacts/aspnetcore/chat-aspnet-gate.json
+and artifacts/aspnetcore/chat-python-rollback-gate.json; both contain only
+counts, event types, and privacy/cleanup flags.

@@ -79,6 +79,14 @@ an isolated GET/DELETE gate against a temporary SQLite root; `aspnet` is
 available as an explicit feature-selected owner for those routes. Roll back
 the memory seam with `python`; this does not mean FastAPI has been removed.
 
+Direct ASP.NET `/chat` ownership has passed isolated protocol-worker and
+FastAPI rollback gates. With `RuBackend__Ownership__Chat=aspnet`, ASP.NET owns
+frame validation, session and memory ordering, activity persistence, private
+metadata filtering, and public event streaming; Python still performs model
+generation and private VTS runtime calls. The checked-in default remains
+`python` until the desktop process manager launches the private protocol worker
+in the final topology.
+
 STT and VTS public ownership are also feature-selected and remain `python` by
 default. `RuBackend__Ownership__Stt=aspnet` moves bounded
 `/voice/transcribe` validation and dispatch into ASP.NET;

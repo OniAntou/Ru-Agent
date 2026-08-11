@@ -24,6 +24,37 @@ pass cannot be mistaken for a live WinUI cutover.
 | Compatibility tool tests | 4 passed |
 | Backend launch/process-manager tests | 12 passed |
 
+## Direct chat ownership gate (2026-08-11)
+
+ASP.NET direct ownership of `/chat` passed an isolated protocol-worker gate,
+and the existing FastAPI relay passed a separate rollback gate after the direct
+topology had stopped.
+
+| Check | ASP.NET direct | Python rollback |
+| --- | --- | --- |
+| Edge readiness | HTTP 200 | HTTP 200 |
+| Event order | `session`, `reset`, `chunk`, `done` | `session`, `reset`, `chunk`, `done` |
+| Terminal events | 1 | 1 |
+| Persisted messages | 1 user, 1 assistant | 1 user, 1 assistant |
+| Activity events | 2 | 2 |
+| Active memory records | 1 | 0 (rollback fixture intentionally disables memory writes) |
+| Private metadata in events/state evidence | None | None |
+| Cleanup | Both children terminated; both ports closed | Both children terminated; both ports closed |
+
+The gates used synthetic model output and isolated data roots on temporary
+ports. Their count/type/privacy-only evidence is stored in
+`artifacts/aspnetcore/chat-aspnet-gate.json` and
+`artifacts/aspnetcore/chat-python-rollback-gate.json`. Neither artifact stores
+the prompt, reply, session identifier, bearer token, worker token, VTS code, or
+voice-pacing metadata.
+
+This accepts `RuBackend__Ownership__Chat=aspnet` as the direct chat owner. The
+repository default remains `python` until WinUI starts the private protocol
+worker in the final process topology; changing the default earlier would leave
+normal desktop startup without the worker required for model generation.
+Rollback remains a restart with `RuBackend__Ownership__Chat=python` while the
+decommission work is incomplete.
+
 ## Memory ownership gate (2026-08-11)
 
 Task 7 validated the memory seam without touching the normal

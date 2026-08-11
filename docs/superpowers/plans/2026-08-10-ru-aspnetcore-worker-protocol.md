@@ -169,7 +169,7 @@ VTS methods are added by the chat plan before direct chat ownership; voice and o
 - Create: backend-dotnet/RuBackend.Tests/Worker/WorkerEnvelopeTests.cs
 - Create: tests/test_worker_protocol.py
 
-- [ ] **Step 1: Write failing C# and Python schema tests**
+- [x] **Step 1: Write failing C# and Python schema tests**
 
 Test valid hello/chat/voice/error envelopes, required fields, unsupported versions, missing IDs, invalid sequence values, non-object payloads, and JSON round-trip. Test that tokens are not included in any string returned by redaction helpers.
 
@@ -182,13 +182,13 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: FAIL because the protocol modules do not exist.
 
-- [ ] **Step 2: Implement shared constants and models**
+- [x] **Step 2: Implement shared constants and models**
 
 Create message-type constants for hello, hello.ok, chat.start, chat.reset, chat.chunk, chat.done, chat.cancel, memory.extract, memory.facts, voice.start, voice.control, voice.done, vts.catalog, vts.action, and error. Reject any envelope whose V is not 1, Id is blank or longer than 128 characters, Type is unknown, Payload is not an object, or Seq is negative.
 
 Use System.Text.Json with camelCase properties and ignore no required field. Python validation must produce the same normalized dictionary keys and error codes.
 
-- [ ] **Step 3: Run focused tests**
+- [x] **Step 3: Run focused tests**
 
 Run the same commands. Expected: all C# and Python protocol tests pass.
 

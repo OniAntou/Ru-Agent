@@ -5,6 +5,7 @@ using RuBackend.Memory;
 using RuBackend.Runtime;
 using RuBackend.Security;
 using RuBackend.Speech;
+using RuBackend.Vts;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
@@ -45,6 +46,7 @@ app.MapGet(
     HandleWebSocketAsync);
 MemoryEndpoints.Map(app);
 SttEndpoints.Map(app);
+VtsEndpoints.Map(app);
 app.Map(
     "/{**path}",
     (HttpContext context, HttpForwarder forwarder, CancellationToken cancellationToken) =>

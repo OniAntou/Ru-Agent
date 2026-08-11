@@ -91,6 +91,27 @@ async def serve_worker(
         await shutdown.wait()
 
 
+async def serve_runtime_worker(
+    host: str,
+    port: int,
+    token: str,
+    *,
+    stop_event: asyncio.Event | None = None,
+    ready_event: asyncio.Event | None = None,
+) -> None:
+    """Start the protocol server with the existing private runtime adapters."""
+    from mini_gpt.worker_runtime_handlers import create_runtime_handlers
+
+    await serve_worker(
+        host,
+        port,
+        token,
+        create_runtime_handlers(),
+        stop_event=stop_event,
+        ready_event=ready_event,
+    )
+
+
 async def _handle_connection(
     connection: ServerConnection,
     token: str,

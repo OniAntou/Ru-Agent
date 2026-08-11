@@ -19,6 +19,10 @@
   variables, never a command-line argument or log path.
 - Correct Vietnamese fixture text is UTF-8 (`Em nghe đây.`); mojibake fixtures
   are invalid and must fail parity tests.
+- Runtime handlers bind directly to the existing `core.runner`, GPU lifecycle,
+  OmniVoice transport, and VTS manager seams. They do not need edits to the
+  already-dirty `backend_core.py` or `_server_shared.py`, and they never open
+  the Python memory store for an ASP.NET-owned chat turn.
 - FastAPI compatibility exists only until the final decommission gate. After
   that gate its adapter, dependencies, process mode, and source are deleted.
 - Protected dirty Python/WinUI changes are behavior to preserve and port, not
@@ -339,7 +343,7 @@ git commit -m "feat: keep FastAPI worker rollback adapter"
 - Modify: src/mini_gpt/backend_core.py
 - Modify: src/mini_gpt/_server_shared.py
 
-- [ ] **Step 1: Write failing handler contract tests**
+- [x] **Step 1: Write failing handler contract tests**
 
 Use fakes for ModelRunner, StructuredMemoryStore, voice transport, and VTS manager. Assert that chat receives explicit prompt/history/memory/settings, memory extraction returns at most five facts, VTS metadata is kept private, and worker errors contain only stable error codes.
 
@@ -351,11 +355,11 @@ Run:
 
 Expected: FAIL because the handler module is absent.
 
-- [ ] **Step 2: Implement handlers without moving ownership back into Python**
+- [x] **Step 2: Implement handlers without moving ownership back into Python**
 
 worker_runtime_handlers.py adapts the existing core/runtime functions to WorkerHandlers. It must not open or write memory.db after the ASP.NET memory ownership flag is enabled. It may read model/runtime configuration sent in the request. It must retain the existing GPU lifecycle and voice service boundaries.
 
-- [ ] **Step 3: Run Python runtime handler tests and selected server suite**
+- [x] **Step 3: Run Python runtime handler tests and selected server suite**
 
 ~~~powershell
 & D:\\LLM\\.venv\\Scripts\\python.exe -m pytest tests/test_worker_runtime_handlers.py tests/test_server_api.py tests/test_voice_stream.py tests/test_vts_api.py -q
@@ -363,7 +367,7 @@ worker_runtime_handlers.py adapts the existing core/runtime functions to WorkerH
 
 Expected: all tests pass sequentially; existing FastAPI behavior remains available for rollback.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ~~~powershell
 git add src/mini_gpt/worker_server.py src/mini_gpt/worker_runtime_handlers.py src/mini_gpt/backend_core.py src/mini_gpt/_server_shared.py tests/test_worker_runtime_handlers.py

@@ -22,7 +22,12 @@ from mini_gpt.worker_protocol import (
     encode_envelope,
     validate_envelope,
 )
-from mini_gpt.worker_server import WorkerHandlers, WorkerReply, serve_worker
+from mini_gpt.worker_server import (
+    WorkerHandlers,
+    WorkerReply,
+    serve_runtime_worker,
+    serve_worker,
+)
 
 
 def test_handshake_and_health_are_token_protected() -> None:
@@ -232,6 +237,43 @@ def test_server_shutdown_closes_connections_and_request_tasks() -> None:
         assert websocket.state.name == "CLOSED"
 
     asyncio.run(scenario())
+
+
+def test_runtime_server_binds_the_runtime_handler_factory(monkeypatch) -> None:
+    observed = []
+
+    def fake_factory() -> WorkerHandlers:
+        observed.append("created")
+        return default_handlers()
+
+    monkeypatch.setattr(
+        "mini_gpt.worker_runtime_handlers.create_runtime_handlers",
+        fake_factory,
+    )
+
+    async def scenario() -> None:
+        port = unused_port()
+        stop = asyncio.Event()
+        ready = asyncio.Event()
+        task = asyncio.create_task(
+            serve_runtime_worker(
+                "127.0.0.1",
+                port,
+                "worker-secret",
+                stop_event=stop,
+                ready_event=ready,
+            )
+        )
+        await asyncio.wait_for(ready.wait(), timeout=2)
+        async with connect(f"ws://127.0.0.1:{port}/worker/v1") as websocket:
+            await send_hello(websocket, "worker-secret")
+            hello = validate_envelope(json.loads(await websocket.recv()))
+            assert hello["type"] == "hello.ok"
+        stop.set()
+        await asyncio.wait_for(task, timeout=2)
+
+    asyncio.run(scenario())
+    assert observed == ["created"]
 
 
 class running_server:

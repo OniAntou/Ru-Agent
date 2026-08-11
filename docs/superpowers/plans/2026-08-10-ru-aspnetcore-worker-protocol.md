@@ -304,17 +304,17 @@ git commit -m "feat: add ASP.NET loopback worker client"
 - Create: backend-dotnet/RuBackend/Worker/FastApiWorkerClient.cs
 - Create: backend-dotnet/RuBackend.Tests/Worker/FastApiWorkerClientTests.cs
 
-- [ ] **Step 1: Write failing adapter contract tests**
+- [x] **Step 1: Write failing adapter contract tests**
 
 Use fake HTTP/WebSocket transports to assert that FastApiWorkerClient maps current /chat and health behavior into the same WorkerEvent types as LoopbackWorkerClient. In FastAPI ownership mode, memory extraction remains Python-owned; ExtractFactsAsync must return a deterministic unsupported error rather than enabling a second memory writer. Test upstream 503, malformed JSON, and cancellation.
 
 Run focused tests. Expected: FAIL because the adapter is absent.
 
-- [ ] **Step 2: Implement the adapter**
+- [x] **Step 2: Implement the adapter**
 
 Use the existing private FastAPI worker URL and token. Preserve public chat event ordering and the current query-token WebSocket auth contract. Do not duplicate business logic; the adapter only translates transport frames into the worker interface. Redact all diagnostic output.
 
-- [ ] **Step 3: Run adapter and existing relay tests**
+- [x] **Step 3: Run adapter and existing relay tests**
 
 ~~~powershell
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore --filter FullyQualifiedName~FastApiWorkerClientTests
@@ -323,7 +323,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore -
 
 Expected: all focused tests pass and the existing relay remains unchanged.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ~~~powershell
 git add backend-dotnet/RuBackend/Worker/FastApiWorkerClient.cs backend-dotnet/RuBackend.Tests/Worker/FastApiWorkerClientTests.cs

@@ -206,7 +206,7 @@ Expose a constructor accepting six explicit paths for tests. Do not create direc
 
 Run the same command. Expected: PASS with path defaults and isolation assertions passing.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ~~~powershell
 git add tests/fixtures/business-stores.json backend-dotnet/RuBackend/Business/DataPaths.cs backend-dotnet/RuBackend.Tests/Business/DataPathsTests.cs
@@ -227,7 +227,7 @@ git commit -m "test: freeze deterministic business data paths"
 - Consumes: DataPaths from Task 1 and the IWorkerClient/worker runtime seam from the worker-protocol plan for later backend transitions.
 - Produces: ISettingsStore and ICredentialStore with the exact signatures above.
 
-- [ ] **Step 1: Write failing settings tests**
+- [x] **Step 1: Write failing settings tests**
 
 Cover empty/missing settings, legacy aliases, default values, numeric bounds, bool rejection, voice-style fallback to original, preservation of unknown JSON properties, atomic replacement, malformed JSON fallback, and concurrent read-modify-write serialization.
 
@@ -251,19 +251,19 @@ public async Task Read_applies_the_existing_defaults_and_bounds()
 
 Run the settings tests. Expected: FAIL because SettingsStore is absent.
 
-- [ ] **Step 2: Implement SettingsSnapshot and normalized reads**
+- [x] **Step 2: Implement SettingsSnapshot and normalized reads**
 
 Keep all known keys from the current _DEFAULT_SETTINGS contract. Read a JSON object, merge defaults, resolve backend/model aliases, clamp max_tokens to 1..1024, temperature to 0.1..2.0, top_k to 1..200, voice_speed to 0.5..2.0, normalize booleans, and map retired voice styles to original. Preserve unknown properties in Raw for forward compatibility.
 
-- [ ] **Step 3: Implement atomic save**
+- [x] **Step 3: Implement atomic save**
 
 Use a per-file SemaphoreSlim. Write a UTF-8 temporary file in the same directory, flush it, then replace the target with File.Move(temp, target, overwrite: true). Never write credentials into Raw. Reject empty or overlong model/path values using the current API bounds before replacing the file.
 
-- [ ] **Step 4: Implement the Credential Manager adapter and fake**
+- [x] **Step 4: Implement the Credential Manager adapter and fake**
 
 WindowsCredentialStore uses CredReadW, CredWriteW, and CredDeleteW with the existing service/account pairs: mini_gpt/api_key, mini_gpt/kilo_gateway_api_key, and mini_gpt/gemini_vision_api_key. The adapter trims input, rejects empty secrets, maps not-found to null, and throws a redacted CredentialStoreException for other native failures. CredentialStoreTests use a fake ICredentialStore and never touch the real credential vault.
 
-- [ ] **Step 5: Run settings/credential tests**
+- [x] **Step 5: Run settings/credential tests**
 
 ~~~powershell
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --no-restore --filter FullyQualifiedName~SettingsStoreTests

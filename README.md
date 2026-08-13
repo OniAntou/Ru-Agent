@@ -7,6 +7,13 @@ The former Llama 3.1 runtime and its LoRA GGUF files are removed from the
 active model inventory; historical adapter checkpoints and evaluation reports
 remain for reference.
 
+Current system documentation:
+
+- [Architecture](docs/architecture.md)
+- [Domain language](CONTEXT.md)
+- [Operations and verification](docs/operations/verification.md)
+- [Architecture decisions](docs/adr/)
+
 ## Setup
 
 Use Python 3.13 and install the CUDA build of PyTorch first:

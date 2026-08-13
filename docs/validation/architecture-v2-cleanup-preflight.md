@@ -1,5 +1,9 @@
 # Architecture v2 cleanup preflight
 
+Status: completed snapshot taken before Plan 2. Final retirement and cleanup
+evidence is recorded in
+[`architecture-v2-plan2-retirement.md`](architecture-v2-plan2-retirement.md).
+
 Status: verified, non-destructive preflight on 2026-08-13.
 
 ## Scan identity and privacy

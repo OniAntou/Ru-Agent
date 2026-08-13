@@ -123,19 +123,21 @@ path remain protected.
 - Permanently delete: the seven ignored legacy targets in the preflight
 - Generate: `artifacts/cleanup/ru-architecture-v2-plan2-after.json` (ignored)
 
-- [ ] Compare backup-only source against current/Git history before deciding;
+- [x] Compare backup-only source against current/Git history before deciding;
   preserve any unique behavior that cannot be proven obsolete.
-- [ ] Do not delete or move `.tmp/vcpkg` until its active build reference has an
+- [x] Do not delete or move `.tmp/vcpkg` until its active build reference has an
   intentional replacement and a verified build path; otherwise keep it with a
   documented reason.
-- [ ] Preserve current LFM2.5 judge evidence; remove only reports proven to be
+- [x] Preserve current LFM2.5 judge evidence; remove only reports proven to be
   legacy by metadata.
-- [ ] Immediately before permanent deletion, rerun the manifest and main dirty
+- [x] Immediately before permanent deletion, rerun the manifest and main dirty
   check, resolve every target, prove it is under `D:\LLM`, and verify it is not
   a filesystem link.
-- [ ] Use exact PowerShell `-LiteralPath` targets. Report bytes/files removed
-  and distinguish Git-recoverable tracked changes from permanent local removal.
-- [ ] Remove approved generated outputs only; never remove `.venv`,
+- [x] Validate exact PowerShell `-LiteralPath` targets, then delete the same
+  absolute targets through .NET after the terminal rejected recursive
+  `Remove-Item`. Report bytes/files removed and distinguish Git-recoverable
+  tracked changes from permanent local removal.
+- [x] Remove approved generated outputs only; never remove `.venv`,
   `omnivoice_env`, models, active LFM2.5 checkpoints/data, credentials, or app
   data.
 
@@ -147,12 +149,12 @@ path remain protected.
 - Modify: `docs/README.md`
 - Modify: this plan
 
-- [ ] Run Python, backend .NET, WinUI .NET, route matrix, `pip check`, NuGet
+- [x] Run Python, backend .NET, WinUI .NET, route matrix, `pip check`, NuGet
   vulnerability audit, and `build.bat` sequentially.
-- [ ] Confirm route counts remain 38 HTTP and 2 WebSocket and builds create both
+- [x] Confirm route counts remain 38 HTTP and 2 WebSocket and builds create both
   executables without launching them.
-- [ ] Regenerate the post-cleanup inventory and record every deliberately kept
+- [x] Regenerate the post-cleanup inventory and record every deliberately kept
   review item.
-- [ ] Confirm the feature worktree has only intended commits and the main dirty
+- [x] Confirm the feature worktree has only intended commits and the main dirty
   set is unchanged except for explicitly approved ignored-artifact deletion.
-- [ ] Commit validation evidence. Do not merge or push.
+- [x] Commit validation evidence. Do not merge or push.

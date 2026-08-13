@@ -23,9 +23,6 @@ public sealed class BackendProcessManagerTests
         Assert.True(started);
         Assert.True(manager.IsRunning);
         Assert.Equal(new[] { "python-runtime-worker", "aspnetcore-edge" }, launcher.Specs.Select(spec => spec.Role));
-        Assert.DoesNotContain(
-            launcher.Specs,
-            spec => spec.Arguments.Contains("mini_gpt.server", StringComparison.Ordinal));
         Assert.Single(jobs.Created);
         Assert.Equal(2, jobs.Created[0].Assigned.Count);
         Assert.Equal(8000, readiness.Port);

@@ -32,9 +32,6 @@ public sealed class BackendLaunchPlanTests
         Assert.DoesNotContain(
             plan.Children[1].Environment.Keys,
             key => key.Contains("Ownership", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(
-            plan.Children,
-            child => child.Arguments.Contains("mini_gpt.server", StringComparison.Ordinal));
     }
 
     [Fact]

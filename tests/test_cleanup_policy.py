@@ -63,6 +63,20 @@ def test_candidate_root_is_protected_when_it_contains_a_dirty_path() -> None:
     (
         "configs/ru_llama3_1_v6_3.json",
         "src/mini_gpt/ru_v6_3_corpus.py",
+        "src/mini_gpt/_base_corpus.py",
+        "src/mini_gpt/_corpus_quality.py",
+        "src/mini_gpt/corpus_builder.py",
+        "src/mini_gpt/corpus_common.py",
+        "src/mini_gpt/corpus_validate.py",
+        "src/mini_gpt/ru_hard_evaluation.py",
+        "scripts/build_corpus.py",
+        "scripts/corpus_baseline_hashes.json",
+        "scripts/evaluation_support.py",
+        "scripts/verify_corpus_byte_identical.py",
+        "tests/test_build_corpus_cli.py",
+        "tests/test_corpus_byte_identical.py",
+        "tests/test_ru_hard_evaluation.py",
+        "tests/test_training_config.py",
         "checkpoints/ru-hard-evaluation-v1",
         "checkpoints/ru-llama3.1-8b-instruct-v6.2-fresh",
         "data/conversations/ru_v6_2_fresh",
@@ -72,7 +86,7 @@ def test_candidate_root_is_protected_when_it_contains_a_dirty_path() -> None:
 def test_llama_only_paths_are_classified_as_legacy(relative: str) -> None:
     decision = classify_path(
         relative,
-        tracked=relative.startswith(("configs/", "src/")),
+        tracked=relative.startswith(("configs/", "src/", "scripts/", "tests/")),
         dirty_paths=frozenset(),
     )
     assert decision.category is CleanupCategory.LEGACY_LLAMA
@@ -110,9 +124,20 @@ def test_backup_with_non_git_source_requires_review() -> None:
 
 
 def test_runtime_logs_require_review_before_permanent_cleanup() -> None:
-    decision = classify_path("logs", tracked=False, dirty_paths=frozenset())
+    for relative in ("logs", ".tmp/lfm25-smoke.err.log"):
+        decision = classify_path(relative, tracked=False, dirty_paths=frozenset())
+        assert decision.category is CleanupCategory.REVIEW_REQUIRED
+        assert decision.reason == "runtime_logs_may_contain_private_data"
+
+
+def test_shared_judge_dependency_requires_refactor_review() -> None:
+    decision = classify_path(
+        "src/mini_gpt/ru_llama_evaluation.py",
+        tracked=True,
+        dirty_paths=frozenset(),
+    )
     assert decision.category is CleanupCategory.REVIEW_REQUIRED
-    assert decision.reason == "runtime_logs_may_contain_private_data"
+    assert decision.reason == "shared_judge_dependency"
 
 
 def test_dated_implementation_record_requires_review() -> None:

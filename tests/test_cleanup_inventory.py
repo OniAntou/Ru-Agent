@@ -102,6 +102,8 @@ def test_discovery_is_bounded_and_collapses_candidate_ancestors(tmp_path: Path) 
     (tmp_path / "gui-winui3" / "pri_staging").mkdir(parents=True)
     (tmp_path / "tools" / "ru_desktop_overlay" / "out").mkdir(parents=True)
     (tmp_path / "logs").mkdir()
+    (tmp_path / ".tmp").mkdir()
+    (tmp_path / ".tmp" / "lfm-smoke.err.log").write_text("private", encoding="utf-8")
     (tmp_path / ".venv" / "Lib" / "__pycache__").mkdir(parents=True)
     (tmp_path / "checkpoints" / "ru-hard-evaluation-v1" / "nested").mkdir(
         parents=True
@@ -120,6 +122,7 @@ def test_discovery_is_bounded_and_collapses_candidate_ancestors(tmp_path: Path) 
     assert "gui-winui3/pri_staging" in candidates
     assert "tools/ru_desktop_overlay/out" in candidates
     assert "logs" in candidates
+    assert ".tmp/lfm-smoke.err.log" in candidates
     assert "checkpoints/ru-hard-evaluation-v1" in candidates
     assert "src/mini_gpt/ru_v6_3_corpus.py" in candidates
     assert "docs/superpowers/plans/2026-08-10-ru-aspnetcore-backend-migration.md" in candidates

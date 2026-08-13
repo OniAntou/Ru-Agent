@@ -787,11 +787,26 @@ _REBUILDABLE_ROOTS = (
 
 _LEGACY_ROOTS = (
     "checkpoints/ru-hard-evaluation-v1",
+    "src/mini_gpt/_base_corpus.py",
+    "src/mini_gpt/_corpus_quality.py",
+    "src/mini_gpt/corpus_builder.py",
+    "src/mini_gpt/corpus_common.py",
+    "src/mini_gpt/corpus_validate.py",
+    "src/mini_gpt/ru_hard_evaluation.py",
+    "scripts/build_corpus.py",
+    "scripts/corpus_baseline_hashes.json",
+    "scripts/evaluation_support.py",
+    "scripts/verify_corpus_byte_identical.py",
+    "tests/test_build_corpus_cli.py",
+    "tests/test_corpus_byte_identical.py",
+    "tests/test_ru_hard_evaluation.py",
+    "tests/test_training_config.py",
 )
 
 _REVIEW_REASONS = {
     "gui-winui3.bak": "contains_non_git_backup",
     "logs": "runtime_logs_may_contain_private_data",
+    "src/mini_gpt/ru_llama_evaluation.py": "shared_judge_dependency",
     "eval_results/judge": "mixed_evaluation_outputs",
     "scripts/test_inject.py": "one_off_runtime_probe",
     "scripts/test_keys.py": "one_off_runtime_probe",
@@ -863,6 +878,13 @@ def classify_path(
     for root, reason in _REVIEW_REASONS.items():
         if _at_or_below(relative, root):
             return CleanupDecision(CleanupCategory.REVIEW_REQUIRED, reason, "review")
+
+    if relative.startswith(".tmp/") and PurePosixPath(relative).suffix.casefold() == ".log":
+        return CleanupDecision(
+            CleanupCategory.REVIEW_REQUIRED,
+            "runtime_logs_may_contain_private_data",
+            "review",
+        )
 
     if relative.startswith(("docs/superpowers/plans/", "docs/superpowers/specs/")):
         return CleanupDecision(
@@ -1070,6 +1092,9 @@ Candidate discovery is the union of:
 - tracked paths that classify as `legacy_llama` when evaluated with an empty
   dirty set, so a dirty Llama file is still inventoried and later reclassified
   as protected;
+- tracked dependency-only corpus/verifier/hard-evaluation files enumerated in
+  `_LEGACY_ROOTS`; `src/mini_gpt/ru_llama_evaluation.py` remains
+  `review_required` because the current judge evaluator imports it;
 - exact existing local roots `.venv311`, `gwen_env`, `gui-winui3.bak`,
   `gui-winui3/pri_staging`, `tools/ru_desktop_overlay/out`, `logs`,
   `.pytest_cache`, `pytest_v.log`, `rustup-init.exe`, `resources.pri.xml`,
@@ -1083,7 +1108,9 @@ Candidate discovery is the union of:
 - all current `bin`, `obj`, `__pycache__`, `.pytest_cache`, and `*.egg-info`
   directories found by a bounded `os.scandir` traversal;
 - matching Llama/v6.x roots below `checkpoints`, `models`,
-  `data/conversations`, and `eval_results`.
+  `data/conversations`, and `eval_results`;
+- top-level `.tmp/*.log` files as review-required private-log candidates,
+  separately from `.tmp/vcpkg`.
 
 The bounded traversal prunes `.git`, `.worktrees`, `.venv`, `omnivoice_env`,
 `.venv311`, `gwen_env`, `gui-winui3.bak`, `gui-winui3/pri_staging`,
@@ -1184,7 +1211,7 @@ $protected = @($manifest.entries | Where-Object classification -eq 'protected')
 if ($protected.Count -eq 0) { throw 'No protected paths were recorded.' }
 $raw = Get-Content -LiteralPath $manifestPath -Raw
 foreach ($forbidden in @('Authorization: Bearer','api_key":"','chat text','audio_b64')) {
-    if ($raw.Contains($forbidden, [StringComparison]::OrdinalIgnoreCase)) { throw "Private manifest content: $forbidden" }
+    if ($raw.IndexOf($forbidden, [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "Private manifest content: $forbidden" }
 }
 $manifest.summary | ConvertTo-Json -Depth 5
 ```

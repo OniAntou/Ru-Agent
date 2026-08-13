@@ -190,6 +190,21 @@ def _discover_legacy_roots(workspace_root: Path) -> set[str]:
     return discovered
 
 
+def _discover_temporary_logs(workspace_root: Path) -> set[str]:
+    temporary_root = workspace_root / ".tmp"
+    if not temporary_root.is_dir() or _is_filesystem_link(temporary_root):
+        return set()
+    try:
+        entries = list(os.scandir(temporary_root))
+    except OSError:
+        return set()
+    return {
+        Path(entry.path).relative_to(workspace_root).as_posix()
+        for entry in entries
+        if Path(entry.name).suffix.casefold() == ".log"
+    }
+
+
 def _collapse_candidates(candidates: set[str]) -> tuple[str, ...]:
     ordered = sorted(
         candidates,
@@ -219,6 +234,7 @@ def discover_candidate_paths(
                 "dated_implementation_record",
                 "one_off_runtime_probe",
                 "duplicate_reference_text",
+                "shared_judge_dependency",
             }
         ):
             candidates.add(relative)
@@ -230,6 +246,7 @@ def discover_candidate_paths(
 
     candidates.update(_discover_generated_directories(root))
     candidates.update(_discover_legacy_roots(root))
+    candidates.update(_discover_temporary_logs(root))
     return _collapse_candidates(candidates)
 
 

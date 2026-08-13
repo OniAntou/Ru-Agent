@@ -17,49 +17,49 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request as UrlRequest, urlopen
 
-from mini_gpt._atomic_write import atomic_write_json
-from mini_gpt.backend_core import MiniGPTCore
-from mini_gpt.chat import ChatTurn
-from mini_gpt.gpu_lifecycle import GpuLifecycle, VoiceServiceController
-from mini_gpt.headless_runner import (
+from ru_runtime._atomic_write import atomic_write_json
+from ru_runtime.backend_core import MiniGPTCore
+from ru_runtime.chat import ChatTurn
+from ru_runtime.gpu_lifecycle import GpuLifecycle, VoiceServiceController
+from ru_runtime.headless_runner import (
     BACKEND_GGUF,
     BACKEND_KILO,
     BACKEND_OPENCODE,
 )
-from mini_gpt.memory import MemoryKind
-from mini_gpt.memory_extraction import is_sensitive_or_unsafe
-from mini_gpt.memory_learning import ExtractFact, extract_facts_with_llm
-from mini_gpt.openai_runtime import OpenAIGenerationCancelled
-from mini_gpt.screen_reaction import (
+from ru_runtime.memory import MemoryKind
+from ru_runtime.memory_extraction import is_sensitive_or_unsafe
+from ru_runtime.memory_learning import ExtractFact, extract_facts_with_llm
+from ru_runtime.openai_runtime import OpenAIGenerationCancelled
+from ru_runtime.screen_reaction import (
     ReactionCoordinator,
     ReactionRequest,
     VisionObservation,
     format_observation_prompt,
 )
-from mini_gpt.speech_runtime import (
+from ru_runtime.speech_runtime import (
     CapturedAudio,
     SpeechEngineConfig,
     SpeechRecognitionError,
     build_speech_recognizer,
 )
-from mini_gpt.overlay_control import start_overlay
-from mini_gpt.vts_actions import VtsActions
-from mini_gpt.vts_catalog import (
+from ru_runtime.overlay_control import start_overlay
+from ru_runtime.vts_actions import VtsActions
+from ru_runtime.vts_catalog import (
     VtsCatalog,
     catalog_instruction,
     split_reply_metadata,
 )
-from mini_gpt.vts_config import MotionConfig
-from mini_gpt.vts_manager import VTSManager
-from mini_gpt.voice_pacing import effective_voice_speed, voice_pace_for
-from mini_gpt.voice_runtime import (
+from ru_runtime.vts_config import MotionConfig
+from ru_runtime.vts_manager import VTSManager
+from ru_runtime.voice_pacing import effective_voice_speed, voice_pace_for
+from ru_runtime.voice_runtime import (
     VOICE_SELECTIONS,
     voice_selection_by_label,
     voice_selection_from_saved,
     voice_service_config,
     validate_voice_environment,
 )
-from mini_gpt.voice_style import (
+from ru_runtime.voice_style import (
     ORIGINAL_STYLE_ID,
     VoiceStyleId,
     voice_style_by_id,
@@ -528,6 +528,16 @@ def ensure_voice_service() -> None:
     with _VOICE_LOCK:
         if voice_available():
             return
+        global _VOICE_PROCESS
+        if _VOICE_PROCESS is not None and _VOICE_PROCESS.poll() is None:
+            deadline = time.monotonic() + VOICE_START_TIMEOUT_SECONDS
+            while time.monotonic() < deadline:
+                if voice_available():
+                    return
+                time.sleep(0.2)
+            raise RuntimeError(
+                "OmniVoice service did not open port 5052 in time from the existing process."
+            )
         config = _voice_config()
         validate_voice_environment(config)
         pythonw = config.python_path.with_name("pythonw.exe")
@@ -545,7 +555,6 @@ def ensure_voice_service() -> None:
             startup_info = subprocess.STARTUPINFO()
             startup_info.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
             startup_info.wShowWindow = subprocess.SW_HIDE
-        global _VOICE_PROCESS
         _VOICE_PROCESS = subprocess.Popen(
             [executable, str(config.server_script)],
             cwd=str(PROJECT_ROOT),
@@ -1065,6 +1074,6 @@ async def _application_lifespan(_app):
     try:
         yield
     finally:
-        from mini_gpt.search import shutdown_search_executor
+        from ru_runtime.search import shutdown_search_executor
         shutdown_search_executor()
         _shutdown_runtime()

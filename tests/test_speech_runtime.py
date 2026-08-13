@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import speech_recognition as sr
 
-from mini_gpt.speech_runtime import (
+from ru_runtime.speech_runtime import (
     CapturedAudio,
     SpeechConfigurationError,
     SpeechEngineConfig,
@@ -30,6 +30,14 @@ def test_google_adapter_normalizes_the_existing_vi_vn_path() -> None:
     )
 
     assert recognizer.recognize(CapturedAudio(b"pcm")) == "Chao anh"
+
+
+def test_google_adapter_sets_a_bounded_provider_timeout() -> None:
+    provider = FakeGoogleRecognizer()
+
+    build_speech_recognizer(SpeechEngineConfig(), google_recognizer=provider)
+
+    assert provider.timeout == 15.0
 
 
 def test_unsupported_engine_is_a_configuration_error(tmp_path: Path) -> None:

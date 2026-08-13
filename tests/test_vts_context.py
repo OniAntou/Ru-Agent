@@ -1,7 +1,7 @@
 import threading
 
-from mini_gpt.vts_context import MotionContextProvider
-from mini_gpt.vts_emotion import EmotionTag
+from ru_runtime.vts_context import MotionContextProvider
+from ru_runtime.vts_emotion import EmotionTag
 
 
 def test_snapshot_defaults_are_safe():

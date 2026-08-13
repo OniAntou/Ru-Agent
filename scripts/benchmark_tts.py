@@ -12,12 +12,12 @@ from pathlib import Path
 from time import perf_counter
 from typing import Callable
 
-from mini_gpt.omnivoice_tuning import (
+from ru_runtime.omnivoice_tuning import (
     BASELINE_SETTINGS,
     CANDIDATE_SETTINGS,
     OmniVoiceGenerationSettings,
 )
-from mini_gpt.tts_benchmark import (
+from ru_runtime.tts_benchmark import (
     BenchmarkUtterance,
     ResourceSampler,
     ResourceUsage,

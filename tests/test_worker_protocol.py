@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from mini_gpt.worker_protocol import (
+from ru_runtime.worker_protocol import (
     ProtocolError,
     encode_envelope,
     redacted_summary,

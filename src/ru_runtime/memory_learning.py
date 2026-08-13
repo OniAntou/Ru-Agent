@@ -6,8 +6,8 @@ import math
 import re
 from dataclasses import dataclass
 
-from mini_gpt.memory import MemoryKind
-from mini_gpt.memory_extraction import is_sensitive_or_unsafe
+from ru_runtime.memory import MemoryKind
+from ru_runtime.memory_extraction import is_sensitive_or_unsafe
 
 logger = logging.getLogger(__name__)
 

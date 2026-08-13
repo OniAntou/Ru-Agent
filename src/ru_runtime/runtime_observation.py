@@ -4,14 +4,14 @@ import re
 import time
 from typing import Any
 
-from mini_gpt.activity_log import append as append_activity_log
-from mini_gpt.runtime_http import RuntimeRequestError
-from mini_gpt.screen_reaction import (
+from ru_runtime.activity_log import append as append_activity_log
+from ru_runtime.runtime_http import RuntimeRequestError
+from ru_runtime.screen_reaction import (
     ReactionRequest,
     VisionObservation,
     format_observation_prompt,
 )
-from mini_gpt.vts_catalog import (
+from ru_runtime.vts_catalog import (
     catalog_instruction,
     split_reply_metadata,
 )
@@ -25,8 +25,8 @@ _MAX_OBSERVATION_VISIBLE_TEXT_CHARS = 150
 
 
 def observation_preflight() -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
-    from mini_gpt.headless_runner import BACKEND_KILO, BACKEND_OPENCODE
+    from ru_runtime import _server_shared as shared
+    from ru_runtime.headless_runner import BACKEND_KILO, BACKEND_OPENCODE
 
     if shared.core.runner.backend not in (BACKEND_OPENCODE, BACKEND_KILO):
         return {
@@ -64,7 +64,7 @@ def observation_preflight() -> dict[str, object]:
 
 
 def observation_vision_config() -> dict[str, str]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     try:
         key = shared.core.gemini_vision_cred.get_key() or ""
@@ -84,7 +84,7 @@ def observation_vision_config() -> dict[str, str]:
 
 
 def observation_react(payload: object) -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     observation_id, event_age_ms, observation = _parse_reaction(payload)
     request = ReactionRequest(
@@ -210,7 +210,7 @@ def observation_react(payload: object) -> dict[str, object]:
 
 
 def observation_cancel(payload: object) -> dict[str, str]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     observation_id = _parse_id_payload(payload)
     shared._SCREEN_REACTIONS.cancel(observation_id)
@@ -218,7 +218,7 @@ def observation_cancel(payload: object) -> dict[str, str]:
 
 
 def observation_ack(payload: object) -> dict[str, str]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     data = _require_object(payload)
     observation_id = _required_observation_id(data.get("observation_id"))

@@ -5,12 +5,12 @@ import binascii
 import math
 from typing import Any
 
-from mini_gpt.runtime_http import RuntimeHttpResponse, RuntimeRequestError
-from mini_gpt.voice_style import voice_style_from_saved
+from ru_runtime.runtime_http import RuntimeHttpResponse, RuntimeRequestError
+from ru_runtime.voice_style import voice_style_from_saved
 
 
 def voice_status() -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     settings = shared.effective_settings()
     defaults = shared._DEFAULT_SETTINGS
@@ -31,7 +31,7 @@ def voice_status() -> dict[str, object]:
 
 
 def voice_latency(payload: object) -> dict[str, str]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     data = _require_object(payload)
     allowed = {
@@ -67,7 +67,7 @@ def voice_latency(payload: object) -> dict[str, str]:
 
 
 def voice_tts(payload: object) -> dict[str, str] | RuntimeHttpResponse:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     data = _require_object(payload)
     text = _required_string(data, "text", maximum=12_000, allow_blank=True).strip()
@@ -133,7 +133,7 @@ def voice_tts(payload: object) -> dict[str, str] | RuntimeHttpResponse:
 
 
 def voice_warmup() -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     try:
         if shared._TURN_LOCK.locked():
@@ -163,7 +163,7 @@ def voice_warmup() -> dict[str, object]:
 
 
 def voice_release() -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     try:
         result = shared.request_voice_control("/release", shared._voice_selection().label)
@@ -174,7 +174,7 @@ def voice_release() -> dict[str, object]:
 
 
 def voice_transcribe(payload: object) -> dict[str, str]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     data = _require_object(payload)
     audio_b64 = _required_string(
@@ -213,7 +213,7 @@ def voice_transcribe(payload: object) -> dict[str, str]:
 
 
 def _hosted_chat_is_active(shared: Any) -> bool:
-    from mini_gpt.headless_runner import BACKEND_KILO, BACKEND_OPENCODE
+    from ru_runtime.headless_runner import BACKEND_KILO, BACKEND_OPENCODE
 
     return (
         shared.core.runner.backend in (BACKEND_OPENCODE, BACKEND_KILO)

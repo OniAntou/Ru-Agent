@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import mini_gpt.headless_runner as runtime
-from mini_gpt.ru_style import RU_SCREEN_REACTION_SYSTEM_PROMPT
+import ru_runtime.headless_runner as runtime
+from ru_runtime.ru_style import RU_SCREEN_REACTION_SYSTEM_PROMPT
 
 
 def test_select_backend_rejects_retired_transformers_backend() -> None:
@@ -67,6 +67,19 @@ def test_gguf_load_defaults_to_lfm25_when_checkpoint_is_blank(monkeypatch) -> No
 
     assert runner.checkpoint_path == runner.gguf_runtime.base_model.resolve()
     assert "LFM2.5-2.6B Q4_K_M" in status
+
+
+def test_runner_uses_v1_lora_when_the_default_adapter_exists(monkeypatch, tmp_path) -> None:
+    adapter = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1-lora.gguf"
+    adapter.parent.mkdir(parents=True)
+    adapter.write_bytes(b"adapter")
+    monkeypatch.setattr(runtime, "PROJECT_ROOT", tmp_path)
+
+    runner = runtime.ModelRunner()
+    monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
+
+    assert runner.gguf_runtime.adapter == adapter
+    assert "v1 LoRA" in runner.load("")
 
 
 def test_gguf_load_migrates_an_allowed_legacy_checkpoint_to_lfm25(monkeypatch) -> None:

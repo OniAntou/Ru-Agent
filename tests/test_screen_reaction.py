@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mini_gpt.screen_reaction import (
+from ru_runtime.screen_reaction import (
     ACK_TIMEOUT_SECONDS,
     ReactionCoordinator,
     ReactionRequest,

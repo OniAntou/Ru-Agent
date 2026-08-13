@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from mini_gpt.activity_log import LOG_FILE, append, clear, read
+from ru_runtime.activity_log import LOG_FILE, append, clear, read
 
 
 @pytest.fixture(autouse=True)
 def isolated_log(monkeypatch, tmp_path):
-    monkeypatch.setattr("mini_gpt.activity_log.LOG_FILE", tmp_path / "activity_log.jsonl")
+    monkeypatch.setattr("ru_runtime.activity_log.LOG_FILE", tmp_path / "activity_log.jsonl")
 
 
 def test_append_and_read_roundtrip():

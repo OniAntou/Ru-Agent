@@ -1,6 +1,6 @@
-from mini_gpt.vts_catalog import build_catalog, catalog_instruction, parse_catalog_reply
-from mini_gpt.vts_catalog import split_reply_metadata
-from mini_gpt.vts_emotion import EmotionTag
+from ru_runtime.vts_catalog import build_catalog, catalog_instruction, parse_catalog_reply
+from ru_runtime.vts_catalog import split_reply_metadata
+from ru_runtime.vts_emotion import EmotionTag
 
 
 def test_catalog_instruction_invites_multiple_compatible_expression_codes():

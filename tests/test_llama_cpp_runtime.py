@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from mini_gpt.llama_cpp_runtime import LlamaCppRuntime, fit_messages_to_context
+from ru_runtime.llama_cpp_runtime import LlamaCppRuntime, fit_messages_to_context
 
 
 @pytest.fixture
@@ -33,6 +33,31 @@ def test_server_command_without_lora_has_no_flag(runtime: LlamaCppRuntime) -> No
     assert command[command.index("--reasoning") + 1] == "off"
     assert command[command.index("--reasoning-budget") + 1] == "0"
     assert command[command.index("--model") + 1] == str(runtime.base_model)
+
+
+def test_server_command_applies_the_configured_lora_adapter(tmp_path: Path) -> None:
+    adapter = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1-lora.gguf"
+    adapter.parent.mkdir(parents=True)
+    adapter.write_bytes(b"x")
+
+    runtime = LlamaCppRuntime(project_root=tmp_path, adapter=adapter)
+    command = runtime.server_command("0")
+
+    assert command[command.index("--lora") + 1] == str(adapter)
+
+
+def test_validate_assets_requires_the_configured_lora_adapter(tmp_path: Path) -> None:
+    runtime = LlamaCppRuntime(project_root=tmp_path, adapter=tmp_path / "missing-lora.gguf")
+    runtime.server_executable.parent.mkdir(parents=True)
+    runtime.server_executable.write_bytes(b"x")
+    runtime.base_model.parent.mkdir(parents=True)
+    runtime.base_model.write_bytes(b"x")
+
+    with pytest.raises(FileNotFoundError, match="LoRA adapter"):
+        runtime.validate_assets()
+
+    runtime.adapter.write_bytes(b"x")
+    runtime.validate_assets()
 
 
 def test_validate_assets_accepts_lfm25_base_without_a_lora(runtime: LlamaCppRuntime, tmp_path: Path) -> None:

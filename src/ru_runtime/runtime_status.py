@@ -9,9 +9,9 @@ def get_status() -> dict[str, object]:
 
 
 def get_models(backend: str = "") -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
-    from mini_gpt.headless_runner import BACKEND_KILO, BACKEND_OPENCODE
-    from mini_gpt.openai_runtime import KILO_GATEWAY_BASE_URL, OPENCODE_BASE_URL
+    from ru_runtime import _server_shared as shared
+    from ru_runtime.headless_runner import BACKEND_KILO, BACKEND_OPENCODE
+    from ru_runtime.openai_runtime import KILO_GATEWAY_BASE_URL, OPENCODE_BASE_URL
 
     backend = shared._resolve_backend(backend) or backend
     if backend not in (BACKEND_OPENCODE, BACKEND_KILO):
@@ -35,7 +35,7 @@ def get_models(backend: str = "") -> dict[str, object]:
         OPENCODE_BASE_URL if backend == BACKEND_OPENCODE else KILO_GATEWAY_BASE_URL
     )
     try:
-        from mini_gpt.openai_runtime import OpenAIRuntime
+        from ru_runtime.openai_runtime import OpenAIRuntime
 
         models = OpenAIRuntime.fetch_models(api_key, base_url)
     except Exception as error:

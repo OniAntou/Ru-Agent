@@ -9,11 +9,11 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Any, ContextManager, Protocol
 
-from mini_gpt.chat import ChatTurn
-from mini_gpt.memory_learning import extract_facts_with_llm
-from mini_gpt.runtime_http import RuntimeHttpResponse
-from mini_gpt.voice_stream import VoiceStreamEvent
-from mini_gpt.worker_protocol import (
+from ru_runtime.chat import ChatTurn
+from ru_runtime.memory_learning import extract_facts_with_llm
+from ru_runtime.runtime_http import RuntimeHttpResponse
+from ru_runtime.voice_stream import VoiceStreamEvent
+from ru_runtime.worker_protocol import (
     CHAT_CHUNK,
     CHAT_DONE,
     CHAT_RESET,
@@ -26,7 +26,7 @@ from mini_gpt.worker_protocol import (
     VTS_ACTION,
     VTS_CATALOG,
 )
-from mini_gpt.worker_server import WorkerHandlers, WorkerReply
+from ru_runtime.worker_server import WorkerHandlers, WorkerReply
 
 
 class RuntimeRunner(Protocol):
@@ -76,10 +76,10 @@ def create_runtime_handlers() -> WorkerHandlers:
     Imports stay lazy so protocol-only tests never initialize model, memory,
     credential, voice, or VTube Studio state.
     """
-    from mini_gpt import _server_shared as shared
-    from mini_gpt.headless_runner import BACKEND_GGUF
-    from mini_gpt.runtime_http import dispatch_runtime_request
-    from mini_gpt.worker_voice_bridge import RuntimeVoiceBridge
+    from ru_runtime import _server_shared as shared
+    from ru_runtime.headless_runner import BACKEND_GGUF
+    from ru_runtime.runtime_http import dispatch_runtime_request
+    from ru_runtime.worker_voice_bridge import RuntimeVoiceBridge
 
     voice_bridge = RuntimeVoiceBridge(shared)
 

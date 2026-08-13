@@ -92,10 +92,12 @@ class LlamaCppRuntime:
         popen: Callable[..., Any] = subprocess.Popen,
         port: int = DEFAULT_PORT,
         start_timeout_seconds: float = DEFAULT_START_TIMEOUT_SECONDS,
+        adapter: str | Path | None = None,
     ) -> None:
         self.project_root = Path(project_root)
         self.port = port
         self.start_timeout_seconds = start_timeout_seconds
+        self.adapter = Path(adapter) if adapter is not None else None
         # Per-process bearer key for the owned llama-server; any local process
         # can reach 127.0.0.1:18088, so the server is not left unauthenticated.
         self.api_key = secrets.token_hex(32)
@@ -148,13 +150,18 @@ class LlamaCppRuntime:
             "--api-key",
             self.api_key,
         ]
+        if self.adapter is not None:
+            command += ["--lora", str(self.adapter)]
         return tuple(command)
 
     def validate_assets(self) -> None:
-        for path, label in (
+        assets: list[tuple[Path, str]] = [
             (self.server_executable, "llama-server"),
             (self.base_model, "LFM2.5-2.6B Q4_K_M GGUF"),
-        ):
+        ]
+        if self.adapter is not None:
+            assets.append((self.adapter, "Ru LoRA adapter GGUF"))
+        for path, label in assets:
             try:
                 st = path.stat()
                 if st.st_size == 0:

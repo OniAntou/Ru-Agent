@@ -1,8 +1,9 @@
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
-from mini_gpt.backend_core import MiniGPTCore
-from mini_gpt.headless_runner import BACKEND_KILO
+from ru_runtime.backend_core import MiniGPTCore
+from ru_runtime.headless_runner import BACKEND_KILO
 
 
 def test_clear_memory_closes_sqlite_before_removing_database(tmp_path: Path) -> None:
@@ -127,3 +128,11 @@ def test_generation_forwards_stream_reset_and_vts_instruction(monkeypatch) -> No
 
     assert captured["on_stream_reset"] is reset
     assert captured["vts_instruction"] == "private catalog"
+
+
+def test_list_memory_records_uses_the_locked_store(monkeypatch) -> None:
+    core = MiniGPTCore()
+    store = SimpleNamespace(list_active=lambda: ["record"])
+    monkeypatch.setattr(core, "get_memory_store", lambda: store)
+
+    assert core.list_memory_records() == ["record"]

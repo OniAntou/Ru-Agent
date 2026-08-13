@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from mini_gpt.memory import MemoryKind
-from mini_gpt.memory_learning import ExtractFact, extract_facts_with_llm
+from ru_runtime.memory import MemoryKind
+from ru_runtime.memory_learning import ExtractFact, extract_facts_with_llm
 
 
 def _json_generator(payload: str):

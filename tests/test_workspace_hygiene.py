@@ -14,7 +14,7 @@ OBSOLETE_TRACKED_PATHS = (
     "scripts/test_rest_key2.py",
     "scripts/test_settings.py",
     "scripts/test_tts.py",
-    "src/mini_gpt/reference_text.txt",
+    "src/ru_runtime/reference_text.txt",
 )
 
 

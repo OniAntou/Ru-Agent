@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mini_gpt.reply_orchestration import execute_reply
+from ru_runtime.reply_orchestration import execute_reply
 
 
 def test_execute_reply_resets_stream_before_a_grounded_follow_up() -> None:

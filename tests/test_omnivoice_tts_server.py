@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-from mini_gpt import omnivoice_tts_server as server
+from ru_runtime import omnivoice_tts_server as server
 
 
 def test_run_server_refuses_a_second_heavy_instance(monkeypatch) -> None:

@@ -53,7 +53,7 @@ def voice_selection_from_saved(value: object) -> VoiceSelection:
 
 # OmniVoice service defaults (overridable via environment)
 _OMNIVOICE_ENV_DIR = "omnivoice_env"
-_OMNIVOICE_SERVER_SCRIPT = "src/mini_gpt/omnivoice_tts_server.py"
+_OMNIVOICE_SERVER_SCRIPT = "src/ru_runtime/omnivoice_tts_server.py"
 
 
 def voice_service_config(selection: VoiceSelection, project_root: Path) -> VoiceServiceConfig:

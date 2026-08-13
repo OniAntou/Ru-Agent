@@ -37,6 +37,7 @@ def test_normalize_relative_path_rejects_broad_or_external_paths(value: str) -> 
         "docs/superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md",
         "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
         "docs/superpowers/plans/2026-08-13-ru-legacy-removal-workspace-hygiene.md",
+        "docs/superpowers/plans/2026-08-13-ru-python-package-persistence-migration.md",
     ),
 )
 def test_active_runtime_user_data_and_current_design_are_protected(relative: str) -> None:
@@ -45,7 +46,7 @@ def test_active_runtime_user_data_and_current_design_are_protected(relative: str
 
 
 def test_dirty_path_is_protected_before_legacy_classification() -> None:
-    relative = "src/mini_gpt/llama3_1_training.py"
+    relative = "src/ru_runtime/llama3_1_training.py"
     decision = classify_path(relative, tracked=True, dirty_paths=frozenset({relative}))
     assert decision.category is CleanupCategory.PROTECTED
     assert decision.reason == "git_dirty_or_untracked"
@@ -63,13 +64,13 @@ def test_candidate_root_is_protected_when_it_contains_a_dirty_path() -> None:
     "relative",
     (
         "configs/ru_llama3_1_v6_3.json",
-        "src/mini_gpt/ru_v6_3_corpus.py",
-        "src/mini_gpt/_base_corpus.py",
-        "src/mini_gpt/_corpus_quality.py",
-        "src/mini_gpt/corpus_builder.py",
-        "src/mini_gpt/corpus_common.py",
-        "src/mini_gpt/corpus_validate.py",
-        "src/mini_gpt/ru_hard_evaluation.py",
+        "src/ru_runtime/ru_v6_3_corpus.py",
+        "src/ru_runtime/_base_corpus.py",
+        "src/ru_runtime/_corpus_quality.py",
+        "src/ru_runtime/corpus_builder.py",
+        "src/ru_runtime/corpus_common.py",
+        "src/ru_runtime/corpus_validate.py",
+        "src/ru_runtime/ru_hard_evaluation.py",
         "scripts/build_corpus.py",
         "scripts/corpus_baseline_hashes.json",
         "scripts/evaluation_support.py",

@@ -109,7 +109,7 @@ def test_discovery_is_bounded_and_collapses_candidate_ancestors(tmp_path: Path) 
         parents=True
     )
     tracked = (
-        "src/mini_gpt/ru_v6_3_corpus.py",
+        "src/ru_runtime/ru_v6_3_corpus.py",
         "docs/superpowers/plans/2026-08-10-ru-aspnetcore-backend-migration.md",
         "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
         "docs/superpowers/plans/2026-08-13-ru-legacy-removal-workspace-hygiene.md",
@@ -125,7 +125,7 @@ def test_discovery_is_bounded_and_collapses_candidate_ancestors(tmp_path: Path) 
     assert "logs" in candidates
     assert ".tmp/lfm-smoke.err.log" in candidates
     assert "checkpoints/ru-hard-evaluation-v1" in candidates
-    assert "src/mini_gpt/ru_v6_3_corpus.py" in candidates
+    assert "src/ru_runtime/ru_v6_3_corpus.py" in candidates
     assert "docs/superpowers/plans/2026-08-10-ru-aspnetcore-backend-migration.md" in candidates
     assert not any(value.startswith(".venv/") for value in candidates)
     assert (
@@ -139,19 +139,19 @@ def test_discovery_is_bounded_and_collapses_candidate_ancestors(tmp_path: Path) 
 
 
 def test_manifest_keeps_dirty_legacy_path_protected(tmp_path: Path, monkeypatch) -> None:
-    path = tmp_path / "src" / "mini_gpt" / "llama3_1_training.py"
+    path = tmp_path / "src" / "ru_runtime" / "llama3_1_training.py"
     path.parent.mkdir(parents=True)
     path.write_text("changed", encoding="utf-8")
 
     def fake_git_paths(_root: Path, *arguments: str) -> tuple[str, ...]:
         if arguments == ("rev-parse", "HEAD"):
             return ("fixture-commit",)
-        return ("src/mini_gpt/llama3_1_training.py",)
+        return ("src/ru_runtime/llama3_1_training.py",)
 
     monkeypatch.setattr("tools.maintenance.cleanup_inventory.git_paths", fake_git_paths)
     monkeypatch.setattr(
         "tools.maintenance.cleanup_inventory.git_dirty_paths",
-        lambda _root: frozenset({"src/mini_gpt/llama3_1_training.py"}),
+        lambda _root: frozenset({"src/ru_runtime/llama3_1_training.py"}),
     )
 
     manifest = build_manifest(tmp_path)

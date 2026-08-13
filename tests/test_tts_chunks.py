@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mini_gpt.tts_chunks import split_tts_chunks
+from ru_runtime.tts_chunks import split_tts_chunks
 
 
 def test_split_tts_chunks_handles_unicode_ellipsis_in_sentence_order() -> None:

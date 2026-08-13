@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from mini_gpt.runtime_http import (
+from ru_runtime.runtime_http import (
     RUNTIME_ROUTE_KEYS,
     RuntimeHttpResponse,
     dispatch_runtime_request,
@@ -27,11 +27,11 @@ def test_runtime_route_table_matches_the_frozen_contract() -> None:
 
 
 def test_private_runtime_dispatch_has_no_fastapi_or_router_dependency() -> None:
-    source = (ROOT / "src" / "mini_gpt" / "runtime_http.py").read_text(
+    source = (ROOT / "src" / "ru_runtime" / "runtime_http.py").read_text(
         encoding="utf-8"
     ).casefold()
 
-    assert "mini_gpt.routers" not in source
+    assert "ru_runtime.routers" not in source
     assert "fastapi" not in source
     assert "starlette" not in source
     assert "pydantic" not in source
@@ -49,7 +49,7 @@ def test_status_dispatch_preserves_the_public_json_shape() -> None:
 
 
 def test_tts_dispatch_preserves_binary_without_embedding_it_in_json(monkeypatch) -> None:
-    from mini_gpt import runtime_voice as voice
+    from ru_runtime import runtime_voice as voice
 
     monkeypatch.setattr(
         voice,

@@ -5,12 +5,24 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from mini_gpt import _server_shared as shared
-from mini_gpt import runtime_vts
-from mini_gpt.runtime_http import dispatch_runtime_request
+import pytest
+
+from ru_runtime import _server_shared as shared
+from ru_runtime import runtime_vts
+from ru_runtime.runtime_http import dispatch_runtime_request
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_voice_start_waits_for_an_existing_owned_process(monkeypatch) -> None:
+    process = SimpleNamespace(poll=lambda: None)
+    monkeypatch.setattr(shared, "_VOICE_PROCESS", process)
+    monkeypatch.setattr(shared, "voice_available", lambda: False)
+    monkeypatch.setattr(shared, "VOICE_START_TIMEOUT_SECONDS", 0.0)
+
+    with pytest.raises(RuntimeError, match="existing process"):
+        shared.ensure_voice_service()
 
 
 def test_runtime_service_modules_have_no_web_framework_imports() -> None:
@@ -21,8 +33,8 @@ def test_runtime_service_modules_have_no_web_framework_imports() -> None:
         "runtime_vts.py",
         "runtime_observation.py",
     ):
-        source = (ROOT / "src" / "mini_gpt" / name).read_text(encoding="utf-8").casefold()
-        assert "mini_gpt.routers" not in source
+        source = (ROOT / "src" / "ru_runtime" / name).read_text(encoding="utf-8").casefold()
+        assert "ru_runtime.routers" not in source
         assert "fastapi" not in source
         assert "starlette" not in source
         assert "pydantic" not in source

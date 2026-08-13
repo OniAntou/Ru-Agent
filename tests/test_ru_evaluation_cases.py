@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mini_gpt.ru_evaluation_cases import (
+from ru_runtime.ru_evaluation_cases import (
     PROMPT_ROUTING_SMOKE_SUITE,
     PROACTIVE_FLIRT_SUITE,
     V4_CONVERSATION_SUITE,

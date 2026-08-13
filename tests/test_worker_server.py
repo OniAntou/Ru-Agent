@@ -9,7 +9,7 @@ import pytest
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
-from mini_gpt.worker_protocol import (
+from ru_runtime.worker_protocol import (
     CHAT_CHUNK,
     CHAT_DONE,
     CHAT_RESET,
@@ -24,7 +24,7 @@ from mini_gpt.worker_protocol import (
     encode_envelope,
     validate_envelope,
 )
-from mini_gpt.worker_server import (
+from ru_runtime.worker_server import (
     WorkerHandlers,
     WorkerReply,
     serve_runtime_worker,
@@ -299,7 +299,7 @@ def test_runtime_server_binds_the_runtime_handler_factory(monkeypatch) -> None:
         return default_handlers()
 
     monkeypatch.setattr(
-        "mini_gpt.worker_runtime_handlers.create_runtime_handlers",
+        "ru_runtime.worker_runtime_handlers.create_runtime_handlers",
         fake_factory,
     )
 

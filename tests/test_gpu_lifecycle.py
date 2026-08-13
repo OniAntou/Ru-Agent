@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import threading
 
-from mini_gpt.gpu_lifecycle import GpuLifecycle, VoiceServiceController
-from mini_gpt.voice_runtime import VoiceSelection
+from ru_runtime.gpu_lifecycle import GpuLifecycle, VoiceServiceController
+from ru_runtime.voice_runtime import VoiceSelection
 
 
 def service(events: list[object], name: str, *, available: bool = True) -> VoiceServiceController:

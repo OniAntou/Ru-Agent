@@ -1,6 +1,6 @@
 import pytest
 
-from mini_gpt.vts_config import FLOAT_FIELDS, MotionConfig
+from ru_runtime.vts_config import FLOAT_FIELDS, MotionConfig
 
 
 def test_defaults_match_policy_ranges():

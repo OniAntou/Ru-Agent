@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mini_gpt.memory import StructuredMemoryStore
+from ru_runtime.memory import StructuredMemoryStore
 
 
 def test_operations_after_close_raise_descriptive_error(tmp_path) -> None:

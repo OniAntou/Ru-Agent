@@ -7,10 +7,10 @@ import threading
 from collections.abc import AsyncIterator
 from typing import Any
 
-from mini_gpt.headless_runner import BACKEND_KILO, BACKEND_OPENCODE
-from mini_gpt.runtime_http import RuntimeHttpResponse
-from mini_gpt.voice_stream import VoiceStreamCoordinator, VoiceStreamEvent
-from mini_gpt.voice_style import voice_style_from_saved
+from ru_runtime.headless_runner import BACKEND_KILO, BACKEND_OPENCODE
+from ru_runtime.runtime_http import RuntimeHttpResponse
+from ru_runtime.voice_stream import VoiceStreamCoordinator, VoiceStreamEvent
+from ru_runtime.voice_style import voice_style_from_saved
 
 
 class RuntimeVoiceBridge:

@@ -198,12 +198,21 @@ def encode_llama_response(
     elif hasattr(prompt_ids, "ids"):
         prompt_ids = prompt_ids.ids
     
-    # Llama 3 specific: response ends with <|eot_id|>
-    eot_token_id = tokenizer.convert_tokens_to_ids("<|eot_id|>")
-    if eot_token_id is None or eot_token_id == tokenizer.unk_token_id:
-        eot_token_id = tokenizer.eos_token_id
+    # LFM2 (Qwen-style) chat templates end turns with <|im_end|>; older
+    # templates may expose <|eot_id|>. Prefer the first known terminator.
+    terminator_token_id = None
+    for candidate in ("<|im_end|>", "<|eot_id|>"):
+        candidate_id = tokenizer.convert_tokens_to_ids(candidate)
+        if candidate_id is not None and candidate_id != tokenizer.unk_token_id:
+            terminator_token_id = candidate_id
+            break
+    if terminator_token_id is None:
+        terminator_token_id = tokenizer.eos_token_id
         
-    response_ids = [*tokenizer(response, add_special_tokens=False)["input_ids"], eot_token_id]
+    response_ids = [
+        *tokenizer(response, add_special_tokens=False)["input_ids"],
+        terminator_token_id,
+    ]
     if len(response_ids) >= max_length:
         raise ValueError("assistant response does not fit within max_length")
     prompt_ids = prompt_ids[-(max_length - len(response_ids)) :]

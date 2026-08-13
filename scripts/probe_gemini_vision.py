@@ -153,7 +153,7 @@ async def probe_gemini_vision() -> int:
         return 1
 
     print(f"Probing Gemini Live Vision API...")
-    print(f"API key: {api_key[:8]}...{api_key[-4:]}")
+    print("API key loaded from GEMINI_KEY environment variable")
 
     # First check available models via REST API
     import requests
@@ -174,7 +174,6 @@ async def probe_gemini_vision() -> int:
                 print("\n[RESULT] No models support bidiGenerateContent (Live API)")
                 print("        This API key (AI Studio) does not have Live API access.")
                 print("        Live API requires Vertex AI project or special preview access.")
-                print("        Rust runtime will use default model and fallback to local on failure.")
                 return 2  # Special exit code: key valid but no Live API access
     except Exception as e:
         print(f"  Could not list models: {e}")

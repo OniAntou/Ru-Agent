@@ -12,6 +12,7 @@ SPEECH_ENGINE_GOOGLE = "google"
 SPEECH_ENGINE_LABELS = {
     "Google (online)": SPEECH_ENGINE_GOOGLE,
 }
+_RECOGNITION_TIMEOUT_SECONDS = 15.0
 
 
 class SpeechRecognitionError(RuntimeError):
@@ -69,6 +70,8 @@ class GoogleSpeechRecognizer:
     def __init__(self, recognizer: sr.Recognizer, language: str) -> None:
         self._recognizer = recognizer
         self._language = language
+        if getattr(recognizer, "timeout", None) is None:
+            recognizer.timeout = _RECOGNITION_TIMEOUT_SECONDS
 
     def recognize(self, audio: CapturedAudio) -> str:
         source_audio = sr.AudioData(

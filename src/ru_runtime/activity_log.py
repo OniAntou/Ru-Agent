@@ -16,13 +16,13 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-logger = logging.getLogger("mini_gpt.activity_log")
+logger = logging.getLogger("ru_runtime.activity_log")
 
 _configured_data_root = os.environ.get("RU_DATA_ROOT", "").strip()
 LOG_ROOT = (
     Path(_configured_data_root)
     if _configured_data_root
-    else Path("D:") / ".minigpt"
+    else Path.home() / ".minigpt"
 )
 LOG_FILE = LOG_ROOT / "activity_log.jsonl"
 MAX_ENTRIES = 5000

@@ -6,9 +6,9 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-import mini_gpt.openai_runtime as runtime_module
-from mini_gpt._text_utils import append_stream_text
-from mini_gpt.openai_runtime import OpenAIGenerationCancelled, OpenAIRuntime
+import ru_runtime.openai_runtime as runtime_module
+from ru_runtime._text_utils import append_stream_text
+from ru_runtime.openai_runtime import OpenAIGenerationCancelled, OpenAIRuntime
 
 
 class FakeStreamResponse:

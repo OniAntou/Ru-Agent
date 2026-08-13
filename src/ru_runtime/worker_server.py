@@ -13,7 +13,7 @@ from typing import Any, TypeAlias
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
-from mini_gpt.worker_protocol import (
+from ru_runtime.worker_protocol import (
     CHAT_CANCEL,
     CHAT_START,
     ERROR,
@@ -106,7 +106,7 @@ async def serve_runtime_worker(
     ready_event: asyncio.Event | None = None,
 ) -> None:
     """Start the protocol server with the existing private runtime adapters."""
-    from mini_gpt.worker_runtime_handlers import create_runtime_handlers
+    from ru_runtime.worker_runtime_handlers import create_runtime_handlers
 
     await serve_worker(
         host,

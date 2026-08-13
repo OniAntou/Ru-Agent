@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mini_gpt.voice_pacing import (
+from ru_runtime.voice_pacing import (
     DEFAULT_VOICE_SPEED,
     effective_voice_speed,
     parse_voice_pace,

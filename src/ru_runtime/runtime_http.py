@@ -66,10 +66,10 @@ def dispatch_runtime_request(
     ASP.NET remains the only public HTTP owner when this function is reached
     through worker protocol v1.
     """
-    from mini_gpt import runtime_observation as observation
-    from mini_gpt import runtime_status as status
-    from mini_gpt import runtime_voice as voice
-    from mini_gpt import runtime_vts as vts
+    from ru_runtime import runtime_observation as observation
+    from ru_runtime import runtime_status as status
+    from ru_runtime import runtime_voice as voice
+    from ru_runtime import runtime_vts as vts
 
     normalized_method = method.upper()
     parsed = urlsplit(path_and_query)

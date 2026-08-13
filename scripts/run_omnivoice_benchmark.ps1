@@ -32,7 +32,7 @@ function Get-RuComputeBlocker {
     if (-not $gpuPids) {
         return $null
     }
-    $pattern = 'llama-server|llama-cli|mini_gpt\.transformers|transformers.*mini_gpt'
+    $pattern = 'llama-server|llama-cli|ru_runtime\.transformers|transformers.*ru_runtime'
     return Get-CimInstance Win32_Process | Where-Object {
         $_.ProcessId -in $gpuPids -and $_.CommandLine -match $pattern
     } | Select-Object -First 1

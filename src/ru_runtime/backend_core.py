@@ -2,9 +2,9 @@ import logging
 import os
 import threading
 from pathlib import Path
-from mini_gpt.headless_runner import BACKEND_KILO, BACKEND_OPENCODE, ModelRunner
-from mini_gpt.memory import StructuredMemoryStore, MemoryStore
-from mini_gpt.credential_store import CredentialStore
+from ru_runtime.headless_runner import BACKEND_KILO, BACKEND_OPENCODE, ModelRunner
+from ru_runtime.memory import StructuredMemoryStore, MemoryStore
+from ru_runtime.credential_store import CredentialStore
 
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -53,6 +53,10 @@ class MiniGPTCore:
                 Path(f"{self.memory_db_path}-shm"),
             ):
                 path.unlink(missing_ok=True)
+
+    def list_memory_records(self):
+        with self._memory_store_lock:
+            return self.get_memory_store().list_active()
 
     def close(self) -> None:
         with self._memory_store_lock:

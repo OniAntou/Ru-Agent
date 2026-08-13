@@ -5,7 +5,7 @@ import types
 
 import pytest
 
-import mini_gpt.search as search
+import ru_runtime.search as search
 
 
 @pytest.fixture(autouse=True)

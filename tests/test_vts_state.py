@@ -1,5 +1,5 @@
-from mini_gpt.vts_context import MotionContextSnapshot
-from mini_gpt.vts_state import (
+from ru_runtime.vts_context import MotionContextSnapshot
+from ru_runtime.vts_state import (
     LISTENING_ENTER_IDLE_SECONDS,
     MIN_STATE_DWELL_SECONDS,
     POST_REPLY_DWELL_SECONDS,

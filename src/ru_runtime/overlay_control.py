@@ -13,7 +13,7 @@ import subprocess
 import time
 from pathlib import Path
 
-logger = logging.getLogger("mini_gpt.overlay_control")
+logger = logging.getLogger("ru_runtime.overlay_control")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 OVERLAY_EXE_PATH = (

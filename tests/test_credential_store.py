@@ -1,6 +1,6 @@
 import pytest
 
-from mini_gpt.credential_store import CredentialStore, CredentialStoreError
+from ru_runtime.credential_store import CredentialStore, CredentialStoreError
 
 
 class FakeBackend:

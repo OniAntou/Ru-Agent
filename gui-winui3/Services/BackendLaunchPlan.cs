@@ -96,7 +96,7 @@ public sealed class BackendLaunchPlan
             new(
                 "python-runtime-worker",
                 pythonExecutable,
-                $"-m mini_gpt.worker_server --host 127.0.0.1 --port {workerPort}",
+                $"-m ru_runtime.worker_server --host 127.0.0.1 --port {workerPort}",
                 root,
                 workerEnvironment,
                 Path.Combine(logRoot, "backend_worker_out.log"),

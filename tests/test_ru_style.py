@@ -1,4 +1,4 @@
-from mini_gpt.ru_style import (
+from ru_runtime.ru_style import (
     RU_CLOUD_SYSTEM_PROMPT,
     RU_PROMPTS,
     RU_SCREEN_REACTION_SYSTEM_PROMPT,

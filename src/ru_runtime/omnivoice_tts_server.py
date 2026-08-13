@@ -12,10 +12,10 @@ from time import perf_counter
 from typing import Callable
 
 from flask import Flask, Response, jsonify, request
-from mini_gpt.omnivoice_tuning import settings_for_profile
-from mini_gpt.tts_chunks import split_tts_chunks
-from mini_gpt.voice_pacing import DEFAULT_VOICE_SPEED, clamp_voice_speed
-from mini_gpt.voice_style import (
+from ru_runtime.omnivoice_tuning import settings_for_profile
+from ru_runtime.tts_chunks import split_tts_chunks
+from ru_runtime.voice_pacing import DEFAULT_VOICE_SPEED, clamp_voice_speed
+from ru_runtime.voice_style import (
     ORIGINAL_STYLE_ID,
     VoiceStyle,
     VoiceStyleId,

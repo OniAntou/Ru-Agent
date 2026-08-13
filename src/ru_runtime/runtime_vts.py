@@ -4,19 +4,19 @@ import math
 import time
 from typing import Any
 
-from mini_gpt.activity_log import append as append_activity_log
-from mini_gpt.overlay_control import (
+from ru_runtime.activity_log import append as append_activity_log
+from ru_runtime.overlay_control import (
     overlay_error,
     overlay_process_ids,
     start_overlay,
     stop_overlay,
 )
-from mini_gpt.runtime_http import RuntimeRequestError
-from mini_gpt.vts_config import MotionConfig
+from ru_runtime.runtime_http import RuntimeRequestError
+from ru_runtime.vts_config import MotionConfig
 
 
 def vts_mouse_look_get() -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     state = shared._load_vts_gui_state()
     return {
@@ -29,7 +29,7 @@ def vts_mouse_look_get() -> dict[str, object]:
 
 
 def vts_mouse_look_save(payload: object) -> dict[str, str]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     data = _require_object(payload)
     enabled = _required_bool(data, "enabled")
@@ -48,7 +48,7 @@ def vts_mouse_look_save(payload: object) -> dict[str, str]:
 
 
 def vts_overlay_get() -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     state = shared._load_vts_gui_state()
     return {
@@ -62,7 +62,7 @@ def vts_overlay_get() -> dict[str, object]:
 
 
 def vts_overlay_save(payload: object) -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     enabled = _required_bool(_require_object(payload), "enabled")
     if enabled:
@@ -85,7 +85,7 @@ def vts_overlay_save(payload: object) -> dict[str, object]:
 
 
 def vts_status() -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     manager = shared._vts_manager()
     connected = bool(manager is not None and manager.is_connected)
@@ -114,7 +114,7 @@ def vts_status() -> dict[str, object]:
 
 
 def vts_connect() -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     manager = shared._vts_manager()
     if manager.is_connected:
@@ -134,13 +134,13 @@ def vts_connect() -> dict[str, object]:
 
 
 def vts_config_get() -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     return {"status": "ok", "config": shared._load_vts_motion_config().to_dict()}
 
 
 def vts_config_save(payload: object) -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     data = _require_object(payload)
     defaults = {
@@ -179,7 +179,7 @@ def vts_config_save(payload: object) -> dict[str, object]:
 
 
 def vts_activity(payload: object) -> dict[str, str]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     typing = _required_bool(_require_object(payload), "typing")
     manager = shared._VTS_MANAGER
@@ -189,7 +189,7 @@ def vts_activity(payload: object) -> dict[str, str]:
 
 
 def vts_action(payload: object) -> dict[str, str]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     data = _require_object(payload)
     facial = _optional_string(data, "facial", 64)
@@ -249,7 +249,7 @@ def vts_action(payload: object) -> dict[str, str]:
 
 
 def vts_speaking(payload: object) -> dict[str, object]:
-    from mini_gpt import _server_shared as shared
+    from ru_runtime import _server_shared as shared
 
     speaking = _required_bool(_require_object(payload), "speaking")
     manager = shared._vts_manager()

@@ -12,23 +12,27 @@ _IMMEDIATE_KILO_FALLBACK_STATUSES = ("HTTP 429", "HTTP 502", "HTTP 503", "HTTP 5
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
-from mini_gpt.chat import ChatTurn
-from mini_gpt.llama_cpp_runtime import LlamaCppRuntime
-from mini_gpt.openai_runtime import OpenAIRuntime, OPENCODE_BASE_URL, KILO_GATEWAY_BASE_URL
-from mini_gpt.ru_style import (
+from ru_runtime.chat import ChatTurn
+from ru_runtime.llama_cpp_runtime import LlamaCppRuntime
+from ru_runtime.openai_runtime import OpenAIRuntime, OPENCODE_BASE_URL, KILO_GATEWAY_BASE_URL
+from ru_runtime.ru_style import (
     RU_CLOUD_SYSTEM_PROMPT,
     RU_SCREEN_REACTION_SYSTEM_PROMPT,
     RU_SYSTEM_PROMPT,
 )
-from mini_gpt.reply_orchestration import execute_reply
-from mini_gpt.search import perform_web_search
-from mini_gpt.vts_actions import VTS_ACTION_INSTRUCTION
-from mini_gpt.voice_pacing import VOICE_PACE_INSTRUCTION
+from ru_runtime.reply_orchestration import execute_reply
+from ru_runtime.search import perform_web_search
+from ru_runtime.vts_actions import VTS_ACTION_INSTRUCTION
+from ru_runtime.voice_pacing import VOICE_PACE_INSTRUCTION
 class ModelRunner:
     def __init__(self) -> None:
         self.checkpoint_path: Path | None = None
         self.backend = BACKEND_GGUF
-        self.gguf_runtime = LlamaCppRuntime(project_root=PROJECT_ROOT)
+        default_adapter = PROJECT_ROOT / "models" / "gguf" / "ru-lfm2.5-2.6b-v1-lora.gguf"
+        self.gguf_runtime = LlamaCppRuntime(
+            project_root=PROJECT_ROOT,
+            adapter=default_adapter if default_adapter.is_file() else None,
+        )
         self.openai_runtime: OpenAIRuntime | None = None
         self.kilo_reasoning_enabled = False
 
@@ -81,7 +85,10 @@ class ModelRunner:
                     )
             self.checkpoint_path = base_model_path
             logger.info("GGUF runtime ready with checkpoint: %s", self.checkpoint_path)
-            return "Ready (llama.cpp GGUF) | LFM2.5-2.6B Q4_K_M"
+            label = "LFM2.5-2.6B Q4_K_M"
+            if self.gguf_runtime.adapter is not None:
+                label += " + v1 LoRA"
+            return f"Ready (llama.cpp GGUF) | {label}"
         raise ValueError(f"unsupported backend: {self.backend}")
 
     def is_cached(self, checkpoint_path: str | Path) -> bool:

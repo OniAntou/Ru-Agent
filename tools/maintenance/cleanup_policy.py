@@ -51,6 +51,7 @@ _PROTECTED_ROOTS = (
     "docs/superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md",
     "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
     "docs/superpowers/plans/2026-08-13-ru-legacy-removal-workspace-hygiene.md",
+    "docs/superpowers/plans/2026-08-13-ru-python-package-persistence-migration.md",
 )
 
 _REBUILDABLE_ROOTS = (
@@ -71,6 +72,12 @@ _LEGACY_ROOTS = (
     "src/mini_gpt/corpus_common.py",
     "src/mini_gpt/corpus_validate.py",
     "src/mini_gpt/ru_hard_evaluation.py",
+    "src/ru_runtime/_base_corpus.py",
+    "src/ru_runtime/_corpus_quality.py",
+    "src/ru_runtime/corpus_builder.py",
+    "src/ru_runtime/corpus_common.py",
+    "src/ru_runtime/corpus_validate.py",
+    "src/ru_runtime/ru_hard_evaluation.py",
     "scripts/build_corpus.py",
     "scripts/corpus_baseline_hashes.json",
     "scripts/evaluation_support.py",

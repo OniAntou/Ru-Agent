@@ -22,12 +22,12 @@ moved. `RU_DATA_ROOT` remains the complete test/isolation override.
 - Verify: dirty main Python/GUI files and untracked LFM2.5 config/scripts
 - Modify: this plan
 
-- [ ] Record the exact main dirty set and the behavior in every overlapping
+- [x] Record the exact main dirty set and the behavior in every overlapping
   Python diff without modifying main.
-- [ ] Add a failing package contract requiring distribution `ru-runtime`,
+- [x] Add a failing package contract requiring distribution `ru-runtime`,
   import root `src/ru_runtime`, new worker launch module, and no active
   `mini_gpt` imports/path.
-- [ ] Explicitly distinguish package identity from the legacy Credential
+- [x] Explicitly distinguish package identity from the legacy Credential
   Manager service name, which is migrated only after a read/write/compare gate.
 
 ## Task 2: Cut over the package identity and preserve active LFM2.5 work
@@ -41,16 +41,17 @@ moved. `RU_DATA_ROOT` remains the complete test/isolation override.
 - Modify: renamed runtime modules overlapping dirty main
 - Modify: `scripts/probe_gemini_vision.py`
 
-- [ ] Mechanically rename package imports and worker entrypoint in one atomic
+- [x] Mechanically rename package imports and worker entrypoint in one atomic
   green slice; do not add a long-lived `mini_gpt` shim.
-- [ ] Rename the distribution to `ru-runtime` and reinstall editable metadata.
-- [ ] Port the intended dirty-main behaviors with clean formatting and tests:
+- [x] Rename the distribution to `ru-runtime`, build its wheel, and prove an
+  isolated install/import without repointing main's shared editable environment.
+- [x] Port the intended dirty-main behaviors with clean formatting and tests:
   optional LFM2.5 LoRA GGUF, default v1 adapter when present, memory listing,
   OmniVoice existing-process wait, bounded Google STT, tokenizer-aware turn
   terminator, and API-key redaction.
-- [ ] Keep main's original dirty/untracked files untouched and record the branch
+- [x] Keep main's original dirty/untracked files untouched and record the branch
   destinations for final reconciliation.
-- [ ] Run focused tests, full Python, both affected .NET test projects, and
+- [x] Run focused tests, full Python, both affected .NET test projects, and
   commit the identity cutover.
 
 ## Task 3: Move the flat package into owned domains

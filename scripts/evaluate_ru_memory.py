@@ -4,7 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from mini_gpt.memory import StructuredMemoryStore
+from ru_runtime.memory import StructuredMemoryStore
 
 
 def evaluate_cases(cases: list[dict[str, object]], database_path: Path) -> dict[str, int]:

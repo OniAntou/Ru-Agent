@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mini_gpt.runtime_observation import (
+from ru_runtime.runtime_observation import (
     _MAX_OBSERVATION_EVENT_CHARS,
     _MAX_OBSERVATION_SCENE_CHARS,
     _MAX_OBSERVATION_VISIBLE_TEXT_CHARS,
@@ -34,7 +34,7 @@ def test_maximum_valid_payload_never_exceeds_prompt_budget() -> None:
 
 
 def test_format_observation_prompt_does_not_raise_on_maximum_payload() -> None:
-    from mini_gpt.screen_reaction import format_observation_prompt
+    from ru_runtime.screen_reaction import format_observation_prompt
 
     _, _, bounded = _parse_reaction(_maximum_payload())
 

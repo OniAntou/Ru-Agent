@@ -37,6 +37,9 @@ _PROTECTED_ROOTS = (
     "data/conversations/memory.db-wal",
     "data/conversations/memory.db-shm",
     "data/conversations/memory_texts.json",
+    "data/memory.db",
+    "data/memory.db-wal",
+    "data/memory.db-shm",
     "data/gui_settings.json",
     "data/voices",
     "eval_results/lfm2_5_v1.json",
@@ -55,10 +58,17 @@ _REBUILDABLE_ROOTS = (
     "pytest_v.log",
     "resources.pri.xml",
     "rustup-init.exe",
+    "gui-winui3/pri_staging",
+    "tools/ru_desktop_overlay/out",
+)
+
+_LEGACY_ROOTS = (
+    "checkpoints/ru-hard-evaluation-v1",
 )
 
 _REVIEW_REASONS = {
     "gui-winui3.bak": "contains_non_git_backup",
+    "logs": "runtime_logs_may_contain_private_data",
     "eval_results/judge": "mixed_evaluation_outputs",
     "scripts/test_inject.py": "one_off_runtime_probe",
     "scripts/test_keys.py": "one_off_runtime_probe",
@@ -147,7 +157,9 @@ def classify_path(
     ):
         return CleanupDecision(CleanupCategory.REBUILDABLE, "generated_output", "rebuild")
 
-    if _LEGACY_NAME.search(relative):
+    if any(_at_or_below(relative, root) for root in _LEGACY_ROOTS) or _LEGACY_NAME.search(
+        relative
+    ):
         recoverability = "git" if tracked else "permanent"
         return CleanupDecision(
             CleanupCategory.LEGACY_LLAMA,

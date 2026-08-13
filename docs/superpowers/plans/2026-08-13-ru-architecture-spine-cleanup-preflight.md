@@ -620,6 +620,7 @@ def test_normalize_relative_path_rejects_broad_or_external_paths(value: str) -> 
         "data/conversations/ru_v1/train.jsonl",
         "data/conversations/approved.jsonl",
         "data/conversations/memory.db",
+        "data/memory.db",
         ".minigpt/settings.json",
         "docs/superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md",
         "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
@@ -650,6 +651,7 @@ def test_candidate_root_is_protected_when_it_contains_a_dirty_path() -> None:
     (
         "configs/ru_llama3_1_v6_3.json",
         "src/mini_gpt/ru_v6_3_corpus.py",
+        "checkpoints/ru-hard-evaluation-v1",
         "checkpoints/ru-llama3.1-8b-instruct-v6.2-fresh",
         "data/conversations/ru_v6_2_fresh",
         "eval_results/ru_llama3_1_v6_style.json",
@@ -668,6 +670,8 @@ def test_llama_only_paths_are_classified_as_legacy(relative: str) -> None:
         "tmp_verify_fresh2",
         "gui-winui3/bin",
         "backend-dotnet/RuBackend/obj",
+        "gui-winui3/pri_staging",
+        "tools/ru_desktop_overlay/out",
         "tests/__pycache__",
         "rustup-init.exe",
         "resources.pri.xml",
@@ -687,6 +691,12 @@ def test_backup_with_non_git_source_requires_review() -> None:
     decision = classify_path("gui-winui3.bak", tracked=False, dirty_paths=frozenset())
     assert decision.category is CleanupCategory.REVIEW_REQUIRED
     assert decision.reason == "contains_non_git_backup"
+
+
+def test_runtime_logs_require_review_before_permanent_cleanup() -> None:
+    decision = classify_path("logs", tracked=False, dirty_paths=frozenset())
+    assert decision.category is CleanupCategory.REVIEW_REQUIRED
+    assert decision.reason == "runtime_logs_may_contain_private_data"
 
 
 def test_dated_implementation_record_requires_review() -> None:
@@ -750,6 +760,9 @@ _PROTECTED_ROOTS = (
     "data/conversations/memory.db-wal",
     "data/conversations/memory.db-shm",
     "data/conversations/memory_texts.json",
+    "data/memory.db",
+    "data/memory.db-wal",
+    "data/memory.db-shm",
     "data/gui_settings.json",
     "data/voices",
     "eval_results/lfm2_5_v1.json",
@@ -768,10 +781,17 @@ _REBUILDABLE_ROOTS = (
     "pytest_v.log",
     "resources.pri.xml",
     "rustup-init.exe",
+    "gui-winui3/pri_staging",
+    "tools/ru_desktop_overlay/out",
+)
+
+_LEGACY_ROOTS = (
+    "checkpoints/ru-hard-evaluation-v1",
 )
 
 _REVIEW_REASONS = {
     "gui-winui3.bak": "contains_non_git_backup",
+    "logs": "runtime_logs_may_contain_private_data",
     "eval_results/judge": "mixed_evaluation_outputs",
     "scripts/test_inject.py": "one_off_runtime_probe",
     "scripts/test_keys.py": "one_off_runtime_probe",
@@ -860,7 +880,9 @@ def classify_path(
     ):
         return CleanupDecision(CleanupCategory.REBUILDABLE, "generated_output", "rebuild")
 
-    if _LEGACY_NAME.search(relative):
+    if any(_at_or_below(relative, root) for root in _LEGACY_ROOTS) or _LEGACY_NAME.search(
+        relative
+    ):
         recoverability = "git" if tracked else "permanent"
         return CleanupDecision(
             CleanupCategory.LEGACY_LLAMA,
@@ -904,7 +926,7 @@ git commit -m "feat: define protected cleanup policy"
 - Consumes: `classify_path`, a workspace root, Git tracked/dirty metadata, and optional output path.
 - Produces: `build_manifest(workspace_root: Path) -> dict[str, object]`; CLI exit `0` after atomically writing count/metadata-only JSON.
 
-- [ ] **Step 1: Write failing inventory tests**
+- [x] **Step 1: Write failing inventory tests**
 
 Create `tests/test_cleanup_inventory.py`:
 
@@ -1003,7 +1025,7 @@ def test_cli_rejects_output_outside_its_checkout(tmp_path: Path) -> None:
     assert error.value.code == 2
 ```
 
-- [ ] **Step 2: Run tests and verify the RED state**
+- [x] **Step 2: Run tests and verify the RED state**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q tests\test_cleanup_inventory.py
@@ -1011,7 +1033,7 @@ def test_cli_rejects_output_outside_its_checkout(tmp_path: Path) -> None:
 
 Expected: collection FAIL because `cleanup_inventory.py` does not exist.
 
-- [ ] **Step 3: Implement the read-only inventory module**
+- [x] **Step 3: Implement the read-only inventory module**
 
 Create `tools/maintenance/cleanup_inventory.py` with the following exact
 contracts and algorithms:
@@ -1049,6 +1071,7 @@ Candidate discovery is the union of:
   dirty set, so a dirty Llama file is still inventoried and later reclassified
   as protected;
 - exact existing local roots `.venv311`, `gwen_env`, `gui-winui3.bak`,
+  `gui-winui3/pri_staging`, `tools/ru_desktop_overlay/out`, `logs`,
   `.pytest_cache`, `pytest_v.log`, `rustup-init.exe`, `resources.pri.xml`,
   `.tmp/vcpkg`, `tmp_verify_fresh`, `tmp_verify_fresh2`,
   `tmp_verify_fresh3`, `eval_results/judge`, `tyc_calm.wav`,
@@ -1063,7 +1086,8 @@ Candidate discovery is the union of:
   `data/conversations`, and `eval_results`.
 
 The bounded traversal prunes `.git`, `.worktrees`, `.venv`, `omnivoice_env`,
-`.venv311`, `gwen_env`, `gui-winui3.bak`, `.tmp`, `checkpoints`, `models`,
+`.venv311`, `gwen_env`, `gui-winui3.bak`, `gui-winui3/pri_staging`,
+`tools/ru_desktop_overlay/out`, `logs`, `.tmp`, `checkpoints`, `models`,
 `data/conversations`, and `eval_results`. The four legacy-search roots are
 scanned separately: stop descending when a path is protected, explicitly
 review-required, or legacy, and add review/legacy candidates only. Never follow
@@ -1087,7 +1111,7 @@ non-directories, non-JSON output, and output outside
 scanning dirty `D:\LLM` while writing only to the isolated checkout. The module
 must contain no deletion function or destructive operation.
 
-- [ ] **Step 4: Ignore generated cleanup artifacts**
+- [x] **Step 4: Ignore generated cleanup artifacts**
 
 Append to `.gitignore`:
 
@@ -1095,7 +1119,7 @@ Append to `.gitignore`:
 artifacts/cleanup/
 ```
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q tests\test_cleanup_policy.py tests\test_cleanup_inventory.py
@@ -1103,7 +1127,7 @@ artifacts/cleanup/
 
 Expected: all tests PASS.
 
-- [ ] **Step 6: Compile the maintenance modules**
+- [x] **Step 6: Compile the maintenance modules**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m py_compile tools\maintenance\cleanup_policy.py tools\maintenance\cleanup_inventory.py
@@ -1111,7 +1135,7 @@ Expected: all tests PASS.
 
 Expected: exit code `0` with no output.
 
-- [ ] **Step 7: Commit the inventory tool**
+- [x] **Step 7: Commit the inventory tool**
 
 ```powershell
 git add .gitignore tools/maintenance/__init__.py tools/maintenance/cleanup_policy.py tools/maintenance/cleanup_inventory.py tests/test_cleanup_policy.py tests/test_cleanup_inventory.py

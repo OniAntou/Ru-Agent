@@ -32,6 +32,7 @@ def test_normalize_relative_path_rejects_broad_or_external_paths(value: str) -> 
         "data/conversations/ru_v1/train.jsonl",
         "data/conversations/approved.jsonl",
         "data/conversations/memory.db",
+        "data/memory.db",
         ".minigpt/settings.json",
         "docs/superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md",
         "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
@@ -62,6 +63,7 @@ def test_candidate_root_is_protected_when_it_contains_a_dirty_path() -> None:
     (
         "configs/ru_llama3_1_v6_3.json",
         "src/mini_gpt/ru_v6_3_corpus.py",
+        "checkpoints/ru-hard-evaluation-v1",
         "checkpoints/ru-llama3.1-8b-instruct-v6.2-fresh",
         "data/conversations/ru_v6_2_fresh",
         "eval_results/ru_llama3_1_v6_style.json",
@@ -84,6 +86,8 @@ def test_llama_only_paths_are_classified_as_legacy(relative: str) -> None:
         "tmp_verify_fresh2",
         "gui-winui3/bin",
         "backend-dotnet/RuBackend/obj",
+        "gui-winui3/pri_staging",
+        "tools/ru_desktop_overlay/out",
         "tests/__pycache__",
         "rustup-init.exe",
         "resources.pri.xml",
@@ -103,6 +107,12 @@ def test_backup_with_non_git_source_requires_review() -> None:
     decision = classify_path("gui-winui3.bak", tracked=False, dirty_paths=frozenset())
     assert decision.category is CleanupCategory.REVIEW_REQUIRED
     assert decision.reason == "contains_non_git_backup"
+
+
+def test_runtime_logs_require_review_before_permanent_cleanup() -> None:
+    decision = classify_path("logs", tracked=False, dirty_paths=frozenset())
+    assert decision.category is CleanupCategory.REVIEW_REQUIRED
+    assert decision.reason == "runtime_logs_may_contain_private_data"
 
 
 def test_dated_implementation_record_requires_review() -> None:

@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
-using RuBackend.Compatibility;
+using RuBackend.Runtime;
 using RuBackend.Tests.Fakes;
 using Xunit;
 
@@ -35,11 +35,7 @@ public sealed class VtsEndpointTests
     {
         const string workerBody = "{\"status\":\"ok\",\"owner\":\"runtime-worker\"}";
         var worker = WorkerReturning(workerBody);
-        var catchAll = new StubUpstreamHttpTransport(new HttpRequestException("catch-all should not run"));
-        using var factory = new BackendWebApplicationFactory(
-            catchAll,
-            runtimeWorkerClient: worker,
-            vtsOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
         using var request = new HttpRequestMessage(method, path);
         if (body is not null)
@@ -56,39 +52,13 @@ public sealed class VtsEndpointTests
         Assert.Equal(path, forwarded.PathAndQuery);
         Assert.Equal(body ?? string.Empty, Encoding.UTF8.GetString(forwarded.Body));
         Assert.Equal(body is null ? null : "application/json; charset=utf-8", forwarded.ContentType);
-        Assert.Null(catchAll.LastRequest);
-    }
-
-    [Fact]
-    public async Task Python_mode_keeps_VTS_on_the_catch_all_owner()
-    {
-        const string body = "{\"status\":\"ok\",\"connected\":false}";
-        var transport = new StubUpstreamHttpTransport(new UpstreamResponse(
-            StatusCodes.Status200OK,
-            "application/json",
-            Encoding.UTF8.GetBytes(body)));
-        var worker = WorkerReturning("{\"status\":\"error\"}");
-        using var factory = new BackendWebApplicationFactory(
-            transport,
-            runtimeWorkerClient: worker,
-            vtsOwnership: "python");
-        using var client = factory.CreateAuthenticatedClient();
-
-        using var response = await client.GetAsync("/vts/status");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(body, await response.Content.ReadAsStringAsync());
-        Assert.Equal("/vts/status", transport.LastRequest?.PathAndQuery);
-        Assert.Empty(worker.Requests);
     }
 
     [Fact]
     public async Task AspNet_mode_returns_bounded_503_when_the_VTS_worker_is_unavailable()
     {
         var worker = new StubRuntimeWorkerClient(new HttpRequestException("private VTS detail"));
-        using var factory = new BackendWebApplicationFactory(
-            runtimeWorkerClient: worker,
-            vtsOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.GetAsync("/vts/status");
@@ -103,9 +73,7 @@ public sealed class VtsEndpointTests
     public async Task Authentication_runs_before_VTS_worker_dispatch()
     {
         var worker = WorkerReturning("{\"status\":\"ok\"}");
-        using var factory = new BackendWebApplicationFactory(
-            runtimeWorkerClient: worker,
-            vtsOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/vts/status");
@@ -115,30 +83,20 @@ public sealed class VtsEndpointTests
     }
 
     [Fact]
-    public async Task Unknown_VTS_path_remains_on_the_compatibility_catch_all()
+    public async Task Unknown_VTS_path_is_not_forwarded_or_dispatched()
     {
-        const string body = "{\"detail\":\"compatibility route\"}";
-        var transport = new StubUpstreamHttpTransport(new UpstreamResponse(
-            StatusCodes.Status404NotFound,
-            "application/json",
-            Encoding.UTF8.GetBytes(body)));
         var worker = WorkerReturning("{\"status\":\"unexpected\"}");
-        using var factory = new BackendWebApplicationFactory(
-            transport,
-            runtimeWorkerClient: worker,
-            vtsOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.GetAsync("/vts/not-a-real-route");
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Equal(body, await response.Content.ReadAsStringAsync());
-        Assert.Equal("/vts/not-a-real-route", transport.LastRequest?.PathAndQuery);
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
         Assert.Empty(worker.Requests);
     }
 
     private static StubRuntimeWorkerClient WorkerReturning(string body) =>
-        new(new UpstreamResponse(
+        new(new RuntimeWorkerResponse(
             StatusCodes.Status200OK,
             "application/json",
             Encoding.UTF8.GetBytes(body)));

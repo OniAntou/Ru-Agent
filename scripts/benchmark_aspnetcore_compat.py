@@ -93,51 +93,27 @@ def benchmark_target(base_url: str, token: str, samples: int) -> dict[str, objec
     }
 
 
-def compare_targets(direct: dict[str, object], edge: dict[str, object]) -> dict[str, float | None]:
-    direct_http = direct["http_settings"]
-    edge_http = edge["http_settings"]
-    direct_p50 = direct_http["p50_ms"]
-    edge_p50 = edge_http["p50_ms"]
-    direct_p95 = direct_http["p95_ms"]
-    edge_p95 = edge_http["p95_ms"]
-    return {
-        "http_settings_edge_minus_direct_p50_ms": round(edge_p50 - direct_p50, 3)
-        if direct_p50 is not None and edge_p50 is not None
-        else None,
-        "http_settings_edge_minus_direct_p95_ms": round(edge_p95 - direct_p95, 3)
-        if direct_p95 is not None and edge_p95 is not None
-        else None,
-    }
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Benchmark direct FastAPI versus the ASP.NET Core edge")
-    parser.add_argument("--direct-url", required=True)
-    parser.add_argument("--edge-url", required=True)
+    parser = argparse.ArgumentParser(description="Benchmark the ASP.NET Core public backend")
+    parser.add_argument("--base-url", required=True)
     parser.add_argument("--token", required=True)
     parser.add_argument("--samples", type=int, default=20)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--max-relative-p95-overhead", type=float, default=None)
+    parser.add_argument("--max-http-p95-ms", type=float, default=None)
     args = parser.parse_args()
     if args.samples < 1:
         parser.error("--samples must be at least 1")
 
-    direct = benchmark_target(args.direct_url, args.token, args.samples)
-    edge = benchmark_target(args.edge_url, args.token, args.samples)
-    comparison = compare_targets(direct, edge)
     payload = {
         "samples": args.samples,
-        "direct": direct,
-        "edge": edge,
-        "comparison": comparison,
+        "aspnetcore": benchmark_target(args.base_url, args.token, args.samples),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
-    if args.max_relative_p95_overhead is not None:
-        direct_p95 = direct["http_settings"]["p95_ms"]
-        edge_p95 = edge["http_settings"]["p95_ms"]
-        if direct_p95 and edge_p95 > direct_p95 * (1 + args.max_relative_p95_overhead):
+    if args.max_http_p95_ms is not None:
+        p95 = payload["aspnetcore"]["http_settings"]["p95_ms"]
+        if p95 is None or p95 > args.max_http_p95_ms:
             return 2
     return 0
 

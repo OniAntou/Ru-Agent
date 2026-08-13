@@ -1,6 +1,3 @@
-using Microsoft.Extensions.Options;
-using RuBackend.Configuration;
-
 namespace RuBackend.Runtime;
 
 public static class ObservationEndpoints
@@ -19,16 +16,6 @@ public static class ObservationEndpoints
 
     public static void Map(WebApplication app)
     {
-        var ownership = app.Services
-            .GetRequiredService<IOptions<BackendOptions>>()
-            .Value
-            .Ownership
-            .Observation;
-        if (!string.Equals(ownership?.Trim(), "aspnet", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
         foreach (var route in Routes)
         {
             app.MapMethods(route.Path, [route.Method], HandleAsync);

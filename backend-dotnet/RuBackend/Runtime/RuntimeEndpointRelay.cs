@@ -52,7 +52,7 @@ internal static class RuntimeEndpointRelay
 
     private static async Task WriteResponseAsync(
         HttpContext context,
-        Compatibility.UpstreamResponse response,
+        RuntimeWorkerResponse response,
         CancellationToken cancellationToken)
     {
         context.Response.StatusCode = response.StatusCode;

@@ -1,6 +1,3 @@
-using Microsoft.Extensions.Options;
-using RuBackend.Configuration;
-
 namespace RuBackend.Runtime;
 
 public static class VoiceEndpoints
@@ -16,16 +13,6 @@ public static class VoiceEndpoints
 
     public static void Map(WebApplication app)
     {
-        var ownership = app.Services
-            .GetRequiredService<IOptions<BackendOptions>>()
-            .Value
-            .Ownership
-            .Voice;
-        if (!string.Equals(ownership?.Trim(), "aspnet", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
         foreach (var route in Routes)
         {
             app.MapMethods(route.Path, [route.Method], HandleAsync);

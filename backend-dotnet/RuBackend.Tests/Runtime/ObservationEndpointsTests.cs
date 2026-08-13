@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
 using Microsoft.AspNetCore.Http;
-using RuBackend.Compatibility;
+using RuBackend.Runtime;
 using RuBackend.Tests.Fakes;
 using Xunit;
 
@@ -29,11 +29,7 @@ public sealed class ObservationEndpointsTests
         string? body)
     {
         var worker = WorkerReturning("{\"status\":\"disabled\",\"active\":false}");
-        var catchAll = new StubUpstreamHttpTransport(new HttpRequestException("catch-all"));
-        using var factory = new BackendWebApplicationFactory(
-            catchAll,
-            runtimeWorkerClient: worker,
-            observationOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
         using var request = new HttpRequestMessage(method, path);
         if (body is not null)
@@ -47,7 +43,6 @@ public sealed class ObservationEndpointsTests
         var forwarded = Assert.Single(worker.Requests);
         Assert.Equal(method, forwarded.Method);
         Assert.Equal(path, forwarded.PathAndQuery);
-        Assert.Null(catchAll.LastRequest);
     }
 
     [Fact]
@@ -55,8 +50,7 @@ public sealed class ObservationEndpointsTests
     {
         const string disabled = "{\"status\":\"disabled\",\"active\":false,\"engine\":\"disabled\"}";
         using var factory = new BackendWebApplicationFactory(
-            runtimeWorkerClient: WorkerReturning(disabled),
-            observationOwnership: "aspnet");
+            runtimeWorkerClient: WorkerReturning(disabled));
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.GetAsync("/observation/status");
@@ -64,7 +58,7 @@ public sealed class ObservationEndpointsTests
         Assert.Equal(disabled, await response.Content.ReadAsStringAsync());
     }
 
-    private static StubRuntimeWorkerClient WorkerReturning(string body) => new(new UpstreamResponse(
+    private static StubRuntimeWorkerClient WorkerReturning(string body) => new(new RuntimeWorkerResponse(
         StatusCodes.Status200OK,
         "application/json",
         Encoding.UTF8.GetBytes(body)));

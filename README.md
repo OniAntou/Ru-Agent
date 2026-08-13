@@ -13,7 +13,7 @@ Use Python 3.13 and install the CUDA build of PyTorch first:
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pip install --no-cache-dir torch==2.9.0 --index-url https://download.pytorch.org/whl/cu130
-& D:\LLM\.venv\Scripts\python.exe -m pip install -e "D:\LLM[runtime,server,gguf,dev]"
+& D:\LLM\.venv\Scripts\python.exe -m pip install -e "D:\LLM[runtime,gguf,dev]"
 ```
 
 Verify the environment:
@@ -27,9 +27,10 @@ Verify the environment:
 
 The active desktop GUI is the **native WinUI 3** app in `gui-winui3/`
 (C#, .NET 10 + Windows App SDK 1.6+, Fluent Design with Mica backdrop),
-producing `RuApp.exe`. Its public loopback contract stays on `127.0.0.1:8000`;
-the ASP.NET Core edge is now the default owner in front of a FastAPI worker on
-`8001`; `RU_BACKEND_HOST_MODE=fastapi` is the explicit rollback.
+producing `RuApp.exe`. ASP.NET Core is the only public backend and keeps the
+stable loopback contract on `127.0.0.1:8000`. A private Python protocol worker
+on `8001` retains only model, voice/STT, VTube Studio, and observation runtime
+implementations; it exposes no public HTTP API.
 The retired Tauri 2 React GUI
 (`gui-tauri/`), the legacy CustomTkinter GUI, and the old Flask web GUI
 have been removed from the repository.
@@ -46,10 +47,10 @@ Run:
 & D:\LLM\start_dev.bat
 ```
 
-`start_dev.bat` starts only RuApp. The C# host generates a per-run 64-hex
-secret, starts the ASP.NET Core edge plus FastAPI worker by default (or the
-explicit FastAPI rollback), waits for readiness through public `8000`, and
-places all owned children in one Windows kill-on-close Job Object. Closing or
+`start_dev.bat` starts only RuApp. The C# host generates separate per-run
+64-hex desktop and worker secrets, starts the private runtime worker followed
+by ASP.NET Core, waits for readiness through public `8000`, and places both
+children in one Windows kill-on-close Job Object. Closing or
 crashing the desktop app therefore stops the backend and every runtime it
 started, including OmniVoice and `llama-server`. REST requests use a bearer
 token; the chat WebSocket uses the same secret.
@@ -73,27 +74,14 @@ transcripts with VTS or affect the Discord bridge), and **Observation** (a manua
 primary-monitor observe toggle with RAM-only pipeline counters and latency
 metrics).
 
-Memory route ownership is currently Python by default
-(`RuBackend__Ownership__Memory=python`). The ASP.NET `shadow` mode has passed
-an isolated GET/DELETE gate against a temporary SQLite root; `aspnet` is
-available as an explicit feature-selected owner for those routes. Roll back
-the memory seam with `python`; this does not mean FastAPI has been removed.
-
-Direct ASP.NET `/chat` ownership has passed isolated protocol-worker and
-FastAPI rollback gates. With `RuBackend__Ownership__Chat=aspnet`, ASP.NET owns
-frame validation, session and memory ordering, activity persistence, private
-metadata filtering, and public event streaming; Python still performs model
-generation and private VTS runtime calls. The checked-in default remains
-`python` until the desktop process manager launches the private protocol worker
-in the final topology.
-
-STT and VTS public ownership are also feature-selected and remain `python` by
-default. `RuBackend__Ownership__Stt=aspnet` moves bounded
-`/voice/transcribe` validation and dispatch into ASP.NET;
-`RuBackend__Ownership__Vts=aspnet` explicitly maps all `/vts/*` routes through
-the ASP.NET runtime-worker seam. The current worker still runs the Google STT
-provider and VTube Studio connection/motion engine, so these settings are not a
-FastAPI-removal claim. Restart with either setting at `python` to roll back.
+ASP.NET Core directly owns authentication, settings and credential
+transactions, sessions/history, activity, structured memory, chat ordering,
+metadata filtering, STT request validation, and all public route mappings.
+Model generation, OmniVoice, Google STT execution, VTube Studio, and structured
+observation operations cross the authenticated versioned worker protocol only.
+There is no runtime ownership selector, forwarding catch-all, WebSocket relay,
+or alternate backend host mode. The frozen public route contract is
+`backend-dotnet/public-route-contract.json`.
 
 Auto-read replies use the authenticated `/voice/stream` WebSocket with ordered
 WAV chunks, cancellation, playback acknowledgements, and a complete-WAV
@@ -177,7 +165,7 @@ captures the desktop, starts a local vision server, or reports local vision
 metrics. The downloaded vision model weights were not deleted in this change;
 they are not part of the active runtime.
 
-The FastAPI structured observation boundary and cloud reaction implementation
+The ASP.NET public observation boundary and private cloud-reaction runtime
 remain available for a future replacement model. `/observation/react` accepts
 bounded structured text, while `/observation/cancel`, `/observation/ack`, and
 voice preflight continue to provide the future lifecycle seams. With no

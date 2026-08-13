@@ -1,118 +1,25 @@
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Options;
 using RuBackend.Business.Activity;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
-using RuBackend.Compatibility;
-using RuBackend.Configuration;
 
 namespace RuBackend.Business;
 
 public static class BusinessEndpoints
 {
-    private const string PythonOwnership = "python";
-    private const string ShadowOwnership = "shadow";
-    private const string AspNetOwnership = "aspnet";
     private const string DefaultSessionTitle = "Cuộc trò chuyện mới";
 
     public static void Map(WebApplication app)
     {
-        var ownership = app.Services
-            .GetRequiredService<IOptions<BackendOptions>>()
-            .Value
-            .Ownership;
-        MapSettings(app, NormalizeOwnership(ownership.Settings));
-        MapSessions(app, NormalizeOwnership(ownership.Sessions));
-        MapActivity(app, NormalizeOwnership(ownership.Activity));
-    }
-
-    private static void MapSettings(WebApplication app, string ownership)
-    {
-        if (ownership == AspNetOwnership)
-        {
-            app.MapGet("/settings", GetSettingsAsync);
-            app.MapPost("/settings", SaveSettingsAsync);
-        }
-        else if (ownership == ShadowOwnership)
-        {
-            app.MapGet("/settings", ShadowSettingsAsync);
-        }
-    }
-
-    private static void MapSessions(WebApplication app, string ownership)
-    {
-        if (ownership == AspNetOwnership)
-        {
-            app.MapGet("/sessions", ListSessionsAsync);
-            app.MapPost("/sessions/new", CreateSessionAsync);
-            app.MapPost("/sessions/{sessionId}/activate", ActivateSessionAsync);
-            app.MapDelete("/sessions/{sessionId}", DeleteSessionAsync);
-            app.MapGet("/history", GetHistoryAsync);
-        }
-        else if (ownership == ShadowOwnership)
-        {
-            app.MapGet(
-                "/sessions",
-                (HttpContext context,
-                    HttpForwarder forwarder,
-                    ISessionStore sessions,
-                    ILoggerFactory loggers,
-                    CancellationToken cancellationToken) =>
-                    ShadowReadAsync(
-                        context,
-                        forwarder,
-                        async token => ToSessionsNode(
-                            await sessions.ListAsync(token).ConfigureAwait(false)),
-                        loggers.CreateLogger("RuBackend.BusinessShadow.Sessions"),
-                        cancellationToken));
-            app.MapGet(
-                "/history",
-                (HttpContext context,
-                    HttpForwarder forwarder,
-                    IHistoryStore history,
-                    ILoggerFactory loggers,
-                    CancellationToken cancellationToken) =>
-                    ShadowReadAsync(
-                        context,
-                        forwarder,
-                        async token => JsonSerializer.SerializeToNode(
-                            await history.ReadLegacyAsync(token).ConfigureAwait(false)),
-                        loggers.CreateLogger("RuBackend.BusinessShadow.History"),
-                        cancellationToken));
-        }
-    }
-
-    private static void MapActivity(WebApplication app, string ownership)
-    {
-        if (ownership == AspNetOwnership)
-        {
-            app.MapGet("/activity-log", GetActivityAsync);
-            app.MapDelete("/activity-log", ClearActivityAsync);
-        }
-        else if (ownership == ShadowOwnership)
-        {
-            app.MapGet(
-                "/activity-log",
-                (HttpContext context,
-                    HttpForwarder forwarder,
-                    IActivityLogStore activity,
-                    ILoggerFactory loggers,
-                    CancellationToken cancellationToken) =>
-                    ShadowReadAsync(
-                        context,
-                        forwarder,
-                        async token => JsonSerializer.SerializeToNode(new
-                        {
-                            status = "ok",
-                            events = await activity.ReadAsync(ReadLimit(context), token)
-                                .ConfigureAwait(false),
-                        }),
-                        loggers.CreateLogger("RuBackend.BusinessShadow.Activity"),
-                        cancellationToken));
-        }
+        app.MapGet("/settings", GetSettingsAsync);
+        app.MapPost("/settings", SaveSettingsAsync);
+        app.MapGet("/sessions", ListSessionsAsync);
+        app.MapPost("/sessions/new", CreateSessionAsync);
+        app.MapPost("/sessions/{sessionId}/activate", ActivateSessionAsync);
+        app.MapDelete("/sessions/{sessionId}", DeleteSessionAsync);
+        app.MapGet("/history", GetHistoryAsync);
+        app.MapGet("/activity-log", GetActivityAsync);
+        app.MapDelete("/activity-log", ClearActivityAsync);
     }
 
     private static async Task<IResult> GetSettingsAsync(
@@ -377,91 +284,6 @@ public static class BusinessEndpoints
         }
     }
 
-    private static async Task ShadowSettingsAsync(
-        HttpContext context,
-        HttpForwarder forwarder,
-        ISettingsStore settings,
-        ICredentialStore credentials,
-        ILoggerFactory loggers,
-        CancellationToken cancellationToken)
-    {
-        await ShadowReadAsync(
-            context,
-            forwarder,
-            async token =>
-            {
-                var snapshot = await settings.ReadAsync(token).ConfigureAwait(false);
-                return ToSettingsResponse(
-                    snapshot,
-                    await HasCredentialAsync(credentials, "api_key", token)
-                        .ConfigureAwait(false),
-                    await HasCredentialAsync(credentials, "kilo_gateway_api_key", token)
-                        .ConfigureAwait(false),
-                    await HasCredentialAsync(credentials, "gemini_vision_api_key", token)
-                        .ConfigureAwait(false));
-            },
-            loggers.CreateLogger("RuBackend.BusinessShadow.Settings"),
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task ShadowReadAsync(
-        HttpContext context,
-        HttpForwarder forwarder,
-        Func<CancellationToken, Task<JsonNode?>> readLocal,
-        ILogger logger,
-        CancellationToken cancellationToken)
-    {
-        var responseBody = await ForwardIntoBufferAsync(context, forwarder, cancellationToken)
-            .ConfigureAwait(false);
-        await context.Response.Body.WriteAsync(responseBody, cancellationToken).ConfigureAwait(false);
-        if (context.Response.StatusCode != StatusCodes.Status200OK)
-        {
-            return;
-        }
-
-        try
-        {
-            var upstream = JsonNode.Parse(responseBody);
-            var local = await readLocal(cancellationToken).ConfigureAwait(false);
-            var upstreamHash = CanonicalHash(upstream);
-            var localHash = CanonicalHash(local);
-            if (!string.Equals(upstreamHash, localHash, StringComparison.Ordinal))
-            {
-                logger.LogWarning(
-                    "Business shadow mismatch: hash_match=false, upstream_bytes={UpstreamBytes}.",
-                    responseBody.Length);
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception error)
-        {
-            logger.LogWarning(
-                "Business shadow comparison failed; exception_type={ExceptionType}.",
-                error.GetType().Name);
-        }
-    }
-
-    private static async Task<byte[]> ForwardIntoBufferAsync(
-        HttpContext context,
-        HttpForwarder forwarder,
-        CancellationToken cancellationToken)
-    {
-        var original = context.Response.Body;
-        await using var buffer = new MemoryStream();
-        context.Response.Body = buffer;
-        try
-        {
-            await forwarder.ForwardAsync(context, cancellationToken).ConfigureAwait(false);
-            return buffer.ToArray();
-        }
-        finally
-        {
-            context.Response.Body = original;
-        }
-    }
-
     private static JsonObject ToSettingsResponse(
         SettingsSnapshot value,
         bool hasOpenCode,
@@ -514,20 +336,6 @@ public static class BusinessEndpoints
         return result;
     }
 
-    private static JsonNode? ToSessionsNode(IReadOnlyList<SessionSummary> values) =>
-        JsonSerializer.SerializeToNode(new
-        {
-            status = "ok",
-            sessions = values.Select(value => new
-            {
-                id = value.Id,
-                title = value.Title,
-                created_at = value.CreatedAt.ToUniversalTime().ToString("O"),
-                updated_at = value.UpdatedAt.ToUniversalTime().ToString("O"),
-                message_count = value.MessageCount,
-            }).ToArray(),
-        });
-
     private static async Task<bool> HasCredentialAsync(
         ICredentialStore credentials,
         string account,
@@ -561,34 +369,6 @@ public static class BusinessEndpoints
         int.TryParse(context.Request.Query["limit"], out var value)
             ? Math.Clamp(value, 1, 500)
             : 200;
-
-    private static string CanonicalHash(JsonNode? value)
-    {
-        var canonical = Canonicalize(value)?.ToJsonString() ?? "null";
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)))
-            .ToLowerInvariant();
-    }
-
-    private static JsonNode? Canonicalize(JsonNode? value) => value switch
-    {
-        JsonObject obj => new JsonObject(
-            obj.OrderBy(property => property.Key, StringComparer.Ordinal)
-                .Select(property => KeyValuePair.Create(
-                    property.Key,
-                    Canonicalize(property.Value)))
-                .ToArray()),
-        JsonArray array => new JsonArray(array.Select(Canonicalize).ToArray()),
-        null => null,
-        _ => value.DeepClone(),
-    };
-
-    private static string NormalizeOwnership(string? value) =>
-        value?.Trim().ToLowerInvariant() switch
-        {
-            AspNetOwnership => AspNetOwnership,
-            ShadowOwnership => ShadowOwnership,
-            _ => PythonOwnership,
-        };
 
     private static IResult Unavailable(string message) => Results.Json(
         new { status = "error", message },

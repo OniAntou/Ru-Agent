@@ -2,30 +2,16 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Options;
-using RuBackend.Configuration;
-
 namespace RuBackend.Conversation;
 
 public static class ChatWebSocketEndpoint
 {
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
-    public static bool Map(WebApplication app)
+    public static void Map(WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
-        var ownership = app.Services
-            .GetRequiredService<IOptions<BackendOptions>>()
-            .Value
-            .Ownership
-            .Chat;
-        if (!string.Equals(ownership?.Trim(), "aspnet", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
         app.MapGet("/chat", HandleAsync);
-        return true;
     }
 
     private static async Task HandleAsync(

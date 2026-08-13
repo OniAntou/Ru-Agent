@@ -1,4 +1,3 @@
-using RuBackend.Compatibility;
 using RuBackend.Worker;
 
 namespace RuBackend.Runtime;
@@ -12,7 +11,7 @@ public sealed class LoopbackRuntimeWorkerClient : IRuntimeWorkerClient
         _protocol = protocol;
     }
 
-    public async Task<UpstreamResponse> SendAsync(
+    public async Task<RuntimeWorkerResponse> SendAsync(
         RuntimeWorkerRequest request,
         CancellationToken cancellationToken)
     {
@@ -27,7 +26,7 @@ public sealed class LoopbackRuntimeWorkerClient : IRuntimeWorkerClient
                     request.ContentType,
                     request.Body),
                 cancellationToken).ConfigureAwait(false);
-            return new UpstreamResponse(
+            return new RuntimeWorkerResponse(
                 response.StatusCode,
                 response.ContentType ?? string.Empty,
                 response.Body,

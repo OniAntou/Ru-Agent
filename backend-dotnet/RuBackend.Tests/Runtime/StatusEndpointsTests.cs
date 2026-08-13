@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
 using Microsoft.AspNetCore.Http;
-using RuBackend.Compatibility;
+using RuBackend.Runtime;
 using RuBackend.Tests.Fakes;
 using Xunit;
 
@@ -15,18 +15,13 @@ public sealed class StatusEndpointsTests
     public async Task AspNet_mode_maps_status_and_models_to_the_private_worker(string path)
     {
         var worker = WorkerReturning("{\"status\":\"ok\"}");
-        var catchAll = new StubUpstreamHttpTransport(new HttpRequestException("catch-all"));
-        using var factory = new BackendWebApplicationFactory(
-            catchAll,
-            runtimeWorkerClient: worker,
-            statusOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.GetAsync(path);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(path, Assert.Single(worker.Requests).PathAndQuery);
-        Assert.Null(catchAll.LastRequest);
     }
 
     [Fact]
@@ -34,8 +29,7 @@ public sealed class StatusEndpointsTests
     {
         using var factory = new BackendWebApplicationFactory(
             runtimeWorkerClient: new StubRuntimeWorkerClient(
-                new HttpRequestException("private model path")),
-            statusOwnership: "aspnet");
+                new HttpRequestException("private model path")));
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.GetAsync("/status");
@@ -45,7 +39,7 @@ public sealed class StatusEndpointsTests
         Assert.DoesNotContain("private model path", text, StringComparison.Ordinal);
     }
 
-    private static StubRuntimeWorkerClient WorkerReturning(string body) => new(new UpstreamResponse(
+    private static StubRuntimeWorkerClient WorkerReturning(string body) => new(new RuntimeWorkerResponse(
         StatusCodes.Status200OK,
         "application/json",
         Encoding.UTF8.GetBytes(body)));

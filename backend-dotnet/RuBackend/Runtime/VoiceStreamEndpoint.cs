@@ -2,8 +2,6 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Options;
-using RuBackend.Configuration;
 using RuBackend.Worker;
 
 namespace RuBackend.Runtime;
@@ -13,20 +11,9 @@ public static class VoiceStreamEndpoint
     private const int MaxMessageBytes = 256 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
-    public static bool Map(WebApplication app)
+    public static void Map(WebApplication app)
     {
-        var ownership = app.Services
-            .GetRequiredService<IOptions<BackendOptions>>()
-            .Value
-            .Ownership
-            .Voice;
-        if (!string.Equals(ownership?.Trim(), "aspnet", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
         app.MapGet("/voice/stream", HandleAsync);
-        return true;
     }
 
     private static async Task HandleAsync(

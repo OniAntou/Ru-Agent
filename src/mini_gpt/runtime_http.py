@@ -61,7 +61,7 @@ def dispatch_runtime_request(
     _content_type: str | None,
     body: str,
 ) -> RuntimeHttpResponse:
-    """Dispatch a private runtime command through the compatibility services.
+    """Dispatch a private runtime command through transport-neutral services.
 
     ASP.NET remains the only public HTTP owner when this function is reached
     through worker protocol v1.

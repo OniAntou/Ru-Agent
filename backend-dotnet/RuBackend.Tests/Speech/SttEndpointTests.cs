@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
-using RuBackend.Compatibility;
+using RuBackend.Runtime;
 using RuBackend.Tests.Fakes;
 using Xunit;
 
@@ -12,37 +12,10 @@ namespace RuBackend.Tests.Speech;
 public sealed class SttEndpointTests
 {
     [Fact]
-    public async Task Python_mode_keeps_the_catch_all_owner()
-    {
-        const string body = "{\"status\":\"ok\",\"text\":\"python worker\"}";
-        var transport = new StubUpstreamHttpTransport(new UpstreamResponse(
-            StatusCodes.Status200OK,
-            "application/json",
-            Encoding.UTF8.GetBytes(body)));
-        var runtimeWorker = WorkerReturning("{\"status\":\"error\"}");
-        using var factory = new BackendWebApplicationFactory(
-            transport,
-            runtimeWorkerClient: runtimeWorker,
-            sttOwnership: "python");
-        using var client = factory.CreateAuthenticatedClient();
-
-        using var response = await client.PostAsJsonAsync(
-            "/voice/transcribe",
-            new { audio_b64 = "AA==", sample_rate = 16000 });
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(body, await response.Content.ReadAsStringAsync());
-        Assert.Equal("/voice/transcribe", transport.LastRequest?.PathAndQuery);
-        Assert.Empty(runtimeWorker.Requests);
-    }
-
-    [Fact]
     public async Task AspNet_mode_rejects_empty_audio_without_worker_call()
     {
         var worker = WorkerReturning("{\"status\":\"ok\",\"text\":\"unexpected\"}");
-        using var factory = new BackendWebApplicationFactory(
-            runtimeWorkerClient: worker,
-            sttOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync(
@@ -60,9 +33,7 @@ public sealed class SttEndpointTests
     public async Task AspNet_mode_rejects_invalid_base64_without_worker_call()
     {
         var worker = WorkerReturning("{\"status\":\"ok\",\"text\":\"unexpected\"}");
-        using var factory = new BackendWebApplicationFactory(
-            runtimeWorkerClient: worker,
-            sttOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync(
@@ -81,9 +52,7 @@ public sealed class SttEndpointTests
     public async Task AspNet_mode_rejects_out_of_range_sample_rate(int sampleRate)
     {
         var worker = WorkerReturning("{\"status\":\"ok\",\"text\":\"unexpected\"}");
-        using var factory = new BackendWebApplicationFactory(
-            runtimeWorkerClient: worker,
-            sttOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync(
@@ -99,9 +68,7 @@ public sealed class SttEndpointTests
     {
         const string workerBody = "{\"status\":\"ok\",\"text\":\"xin chao\"}";
         var worker = WorkerReturning(workerBody);
-        using var factory = new BackendWebApplicationFactory(
-            runtimeWorkerClient: worker,
-            sttOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync(
@@ -122,9 +89,7 @@ public sealed class SttEndpointTests
     public async Task AspNet_mode_returns_503_when_the_runtime_worker_is_unavailable()
     {
         var worker = new StubRuntimeWorkerClient(new HttpRequestException("private worker detail"));
-        using var factory = new BackendWebApplicationFactory(
-            runtimeWorkerClient: worker,
-            sttOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsJsonAsync(
@@ -141,9 +106,7 @@ public sealed class SttEndpointTests
     public async Task Authentication_runs_before_STT_validation()
     {
         var worker = WorkerReturning("{\"status\":\"ok\"}");
-        using var factory = new BackendWebApplicationFactory(
-            runtimeWorkerClient: worker,
-            sttOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateClient();
 
         using var response = await client.PostAsJsonAsync(
@@ -155,7 +118,7 @@ public sealed class SttEndpointTests
     }
 
     private static StubRuntimeWorkerClient WorkerReturning(string body) =>
-        new(new UpstreamResponse(
+        new(new RuntimeWorkerResponse(
             StatusCodes.Status200OK,
             "application/json",
             Encoding.UTF8.GetBytes(body)));

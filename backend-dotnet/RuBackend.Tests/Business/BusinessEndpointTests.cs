@@ -1,13 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Microsoft.AspNetCore.Http;
 using RuBackend.Business;
 using RuBackend.Business.Settings;
-using RuBackend.Compatibility;
-using RuBackend.Tests.Fakes;
 using Xunit;
 
 namespace RuBackend.Tests.Business;
@@ -176,52 +172,6 @@ public sealed class BusinessEndpointTests
         Assert.False(File.Exists(data.Paths.ActivityLogFile));
     }
 
-    [Fact]
-    public async Task Python_ownership_forwards_business_routes_unchanged()
-    {
-        const string body = "{\"status\":\"ok\",\"sessions\":[{\"id\":\"python\"}]}";
-        var transport = new StubUpstreamHttpTransport(new UpstreamResponse(
-            StatusCodes.Status200OK,
-            "application/json",
-            Encoding.UTF8.GetBytes(body)));
-        using var factory = new BackendWebApplicationFactory(
-            httpTransport: transport,
-            settingsOwnership: "python",
-            sessionsOwnership: "python",
-            activityOwnership: "python");
-        using var client = factory.CreateAuthenticatedClient();
-
-        using var response = await client.GetAsync("/sessions");
-
-        Assert.Equal(body, await response.Content.ReadAsStringAsync());
-        Assert.Equal("/sessions", transport.LastRequest!.PathAndQuery);
-    }
-
-    [Fact]
-    public async Task Shadow_read_returns_Python_body_and_reads_local_store_without_writing()
-    {
-        const string body = "{\"status\":\"ok\",\"backend_choice\":\"gguf\"}";
-        var transport = new StubUpstreamHttpTransport(new UpstreamResponse(
-            StatusCodes.Status200OK,
-            "application/json",
-            Encoding.UTF8.GetBytes(body)));
-        var settings = new CountingSettingsStore();
-        using var factory = new BackendWebApplicationFactory(
-            httpTransport: transport,
-            settingsStore: settings,
-            credentialStore: new FakeCredentialStore(),
-            settingsOwnership: "shadow",
-            sessionsOwnership: "python",
-            activityOwnership: "python");
-        using var client = factory.CreateAuthenticatedClient();
-
-        using var response = await client.GetAsync("/settings");
-
-        Assert.Equal(body, await response.Content.ReadAsStringAsync());
-        Assert.Equal(1, settings.ReadCount);
-        Assert.Equal(0, settings.SaveCount);
-    }
-
     private static BackendWebApplicationFactory CreateAspNetFactory(
         DataPaths paths,
         ICredentialStore? credentials = null,
@@ -229,10 +179,7 @@ public sealed class BusinessEndpointTests
         new(
             dataPaths: paths,
             credentialStore: credentials ?? new FakeCredentialStore(),
-            runtimeSettingsLoader: runtimeLoader ?? new FakeRuntimeSettingsLoader(),
-            settingsOwnership: "aspnet",
-            sessionsOwnership: "aspnet",
-            activityOwnership: "aspnet");
+            runtimeSettingsLoader: runtimeLoader ?? new FakeRuntimeSettingsLoader());
 
     private sealed class FakeRuntimeSettingsLoader : IRuntimeSettingsLoader
     {
@@ -280,44 +227,6 @@ public sealed class BusinessEndpointTests
             CancellationToken cancellationToken)
         {
             _values.Remove((serviceName, accountName));
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class CountingSettingsStore : ISettingsStore
-    {
-        public int ReadCount { get; private set; }
-        public int SaveCount { get; private set; }
-
-        public Task<SettingsSnapshot> ReadAsync(CancellationToken cancellationToken)
-        {
-            ReadCount++;
-            return Task.FromResult(new SettingsSnapshot(
-                [],
-                "llama.cpp",
-                string.Empty,
-                string.Empty,
-                string.Empty,
-                "Default",
-                256,
-                0.7,
-                50,
-                true,
-                true,
-                true,
-                false,
-                string.Empty,
-                "Ru (OmniVoice)",
-                "original",
-                1.0,
-                false,
-                true,
-                false));
-        }
-
-        public Task SaveAsync(SettingsSnapshot candidate, CancellationToken cancellationToken)
-        {
-            SaveCount++;
             return Task.CompletedTask;
         }
     }

@@ -1,5 +1,3 @@
-using RuBackend.Compatibility;
-
 namespace RuBackend.Runtime;
 
 public sealed record RuntimeWorkerRequest(
@@ -10,7 +8,7 @@ public sealed record RuntimeWorkerRequest(
 
 public interface IRuntimeWorkerClient
 {
-    Task<UpstreamResponse> SendAsync(
+    Task<RuntimeWorkerResponse> SendAsync(
         RuntimeWorkerRequest request,
         CancellationToken cancellationToken);
 }

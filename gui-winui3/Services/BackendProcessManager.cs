@@ -15,18 +15,13 @@ public class BackendProcessManager : IDisposable
     private bool _disposed;
 
     public BackendProcessManager(
-        BackendHostMode? mode = null,
         int? workerPort = null,
         IBackendProcessFactory? processFactory = null,
         IBackendJobFactory? jobFactory = null,
         IBackendReadinessProbe? readinessProbe = null)
     {
-        Mode = mode ?? BackendHostModeParser.Parse(
-            Environment.GetEnvironmentVariable("RU_BACKEND_HOST_MODE"));
         Port = 8000;
-        WorkerPort = Mode == BackendHostMode.AspNetCore
-            ? workerPort ?? ParseWorkerPort()
-            : null;
+        WorkerPort = workerPort ?? ParseWorkerPort();
         AuthSecret = GenerateSecret();
         WorkerSecret = GenerateSecret();
         _processFactory = processFactory ?? new WindowsBackendProcessFactory();
@@ -38,11 +33,8 @@ public class BackendProcessManager : IDisposable
     public string AuthSecret { get; }
     public string WorkerSecret { get; }
     public int Port { get; }
-    public int? WorkerPort { get; }
-    public BackendHostMode Mode { get; }
-    public string DisplayName => Mode == BackendHostMode.AspNetCore
-        ? "ASP.NET Core edge"
-        : "FastAPI";
+    public int WorkerPort { get; }
+    public string DisplayName => "ASP.NET Core";
     public string? LastError { get; private set; }
 
     public bool IsRunning
@@ -79,8 +71,7 @@ public class BackendProcessManager : IDisposable
                 projectRoot,
                 AuthSecret,
                 WorkerSecret,
-                Mode,
-                WorkerPort ?? Port,
+                WorkerPort,
                 Environment.GetEnvironmentVariable("RU_RUBACKEND_EXE"));
             job = _jobFactory.Create();
             foreach (var spec in plan.Children)

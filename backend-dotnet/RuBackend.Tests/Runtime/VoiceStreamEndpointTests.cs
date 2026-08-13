@@ -116,7 +116,7 @@ public sealed class VoiceStreamEndpointTests
     }
 
     private static BackendWebApplicationFactory Factory(IVoiceProtocolClient protocol) =>
-        new(voiceProtocolClient: protocol, voiceOwnership: "aspnet");
+        new(voiceProtocolClient: protocol);
 
     private static Task<WebSocket> ConnectAsync(BackendWebApplicationFactory factory, string query) =>
         factory.Server.CreateWebSocketClient().ConnectAsync(

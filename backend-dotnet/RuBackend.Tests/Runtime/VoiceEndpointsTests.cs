@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
 using Microsoft.AspNetCore.Http;
-using RuBackend.Compatibility;
+using RuBackend.Runtime;
 using RuBackend.Tests.Fakes;
 using Xunit;
 
@@ -26,11 +26,7 @@ public sealed class VoiceEndpointsTests
         string? body)
     {
         var worker = JsonWorker();
-        var catchAll = new StubUpstreamHttpTransport(new HttpRequestException("catch-all"));
-        using var factory = new BackendWebApplicationFactory(
-            catchAll,
-            runtimeWorkerClient: worker,
-            voiceOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
         using var request = new HttpRequestMessage(method, path);
         if (body is not null)
@@ -45,19 +41,16 @@ public sealed class VoiceEndpointsTests
         Assert.Equal(method, forwarded.Method);
         Assert.Equal(path, forwarded.PathAndQuery);
         Assert.Equal(body ?? string.Empty, Encoding.UTF8.GetString(forwarded.Body));
-        Assert.Null(catchAll.LastRequest);
     }
 
     [Fact]
     public async Task Tts_preserves_non_empty_binary_audio_and_content_type()
     {
-        var worker = new StubRuntimeWorkerClient(new UpstreamResponse(
+        var worker = new StubRuntimeWorkerClient(new RuntimeWorkerResponse(
             200,
             "audio/wav",
             Encoding.ASCII.GetBytes("RIFF-wave")));
-        using var factory = new BackendWebApplicationFactory(
-            runtimeWorkerClient: worker,
-            voiceOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.PostAsync(
@@ -69,33 +62,10 @@ public sealed class VoiceEndpointsTests
     }
 
     [Fact]
-    public async Task Python_mode_keeps_voice_HTTP_on_the_catch_all()
-    {
-        var transport = new StubUpstreamHttpTransport(new UpstreamResponse(
-            200,
-            "application/json",
-            "{\"status\":\"ok\"}"u8.ToArray()));
-        var worker = JsonWorker();
-        using var factory = new BackendWebApplicationFactory(
-            transport,
-            runtimeWorkerClient: worker,
-            voiceOwnership: "python");
-        using var client = factory.CreateAuthenticatedClient();
-
-        using var response = await client.GetAsync("/voice/status");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("/voice/status", transport.LastRequest?.PathAndQuery);
-        Assert.Empty(worker.Requests);
-    }
-
-    [Fact]
     public async Task Worker_failure_returns_a_bounded_503()
     {
         var worker = new StubRuntimeWorkerClient(new HttpRequestException("private voice detail"));
-        using var factory = new BackendWebApplicationFactory(
-            runtimeWorkerClient: worker,
-            voiceOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.GetAsync("/voice/status");
@@ -105,7 +75,7 @@ public sealed class VoiceEndpointsTests
         Assert.DoesNotContain("private voice detail", text, StringComparison.Ordinal);
     }
 
-    private static StubRuntimeWorkerClient JsonWorker() => new(new UpstreamResponse(
+    private static StubRuntimeWorkerClient JsonWorker() => new(new RuntimeWorkerResponse(
         StatusCodes.Status200OK,
         "application/json",
         "{\"status\":\"ok\"}"u8.ToArray()));

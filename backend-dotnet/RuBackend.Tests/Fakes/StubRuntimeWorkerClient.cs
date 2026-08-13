@@ -1,19 +1,19 @@
-using RuBackend.Compatibility;
+using Microsoft.AspNetCore.Http;
 using RuBackend.Runtime;
 
 namespace RuBackend.Tests.Fakes;
 
 public sealed class StubRuntimeWorkerClient : IRuntimeWorkerClient
 {
-    private readonly Func<RuntimeWorkerRequest, UpstreamResponse>? _responseFactory;
+    private readonly Func<RuntimeWorkerRequest, RuntimeWorkerResponse>? _responseFactory;
     private readonly Exception? _error;
 
-    public StubRuntimeWorkerClient(UpstreamResponse response)
+    public StubRuntimeWorkerClient(RuntimeWorkerResponse response)
         : this(_ => response)
     {
     }
 
-    public StubRuntimeWorkerClient(Func<RuntimeWorkerRequest, UpstreamResponse> responseFactory)
+    public StubRuntimeWorkerClient(Func<RuntimeWorkerRequest, RuntimeWorkerResponse> responseFactory)
     {
         _responseFactory = responseFactory;
     }
@@ -25,16 +25,21 @@ public sealed class StubRuntimeWorkerClient : IRuntimeWorkerClient
 
     public List<RuntimeWorkerRequest> Requests { get; } = [];
 
-    public Task<UpstreamResponse> SendAsync(
+    public Task<RuntimeWorkerResponse> SendAsync(
         RuntimeWorkerRequest request,
         CancellationToken cancellationToken)
     {
         Requests.Add(request);
         if (_error is not null)
         {
-            return Task.FromException<UpstreamResponse>(_error);
+            return Task.FromException<RuntimeWorkerResponse>(_error);
         }
 
         return Task.FromResult(_responseFactory!(request));
     }
+
+    public static StubRuntimeWorkerClient Healthy() => new(new RuntimeWorkerResponse(
+        StatusCodes.Status200OK,
+        "application/json",
+        "{\"status\":\"ok\",\"message\":\"Backend is running and ready for the WinUI3 UI.\"}"u8.ToArray()));
 }

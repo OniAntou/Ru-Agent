@@ -6,31 +6,7 @@ namespace RuApp.Tests;
 public sealed class BackendLaunchPlanTests
 {
     [Fact]
-    public void FastApiModeKeepsThePublicPortAtEightThousand()
-    {
-        using var project = TemporaryProject.Create(includePublishedEdge: false);
-
-        var plan = BackendLaunchPlan.Create(
-            project.Root,
-            "secret-token",
-            "worker-secret",
-            BackendHostMode.FastApi,
-            workerPort: 8001);
-        var child = Assert.Single(plan.Children);
-
-        Assert.Equal(BackendHostMode.FastApi, plan.Mode);
-        Assert.Equal(8000, plan.PublicPort);
-        Assert.Null(plan.WorkerPort);
-        Assert.Equal("fastapi-worker", child.Role);
-        Assert.Equal(project.PythonPath, child.FileName);
-        Assert.Equal(
-            "-m mini_gpt.server --host 127.0.0.1 --port 8000",
-            child.Arguments);
-        Assert.Equal("secret-token", child.Environment["RU_DESKTOP_TOKEN"]);
-    }
-
-    [Fact]
-    public void AspNetCoreModeStartsWorkerBeforePublicEdge()
+    public void StartsPrivateRuntimeWorkerBeforePublicAspNetCoreBackend()
     {
         using var project = TemporaryProject.Create(includePublishedEdge: true);
 
@@ -38,10 +14,8 @@ public sealed class BackendLaunchPlanTests
             project.Root,
             "secret-token",
             "worker-secret",
-            BackendHostMode.AspNetCore,
             workerPort: 8001);
 
-        Assert.Equal(BackendHostMode.AspNetCore, plan.Mode);
         Assert.Equal(8000, plan.PublicPort);
         Assert.Equal(8001, plan.WorkerPort);
         Assert.Equal(new[] { "python-runtime-worker", "aspnetcore-edge" }, plan.Children.Select(child => child.Role));
@@ -55,9 +29,9 @@ public sealed class BackendLaunchPlanTests
         Assert.False(plan.Children[0].Environment.ContainsKey("RU_DESKTOP_TOKEN"));
         Assert.Equal("secret-token", plan.Children[1].Environment["RU_DESKTOP_TOKEN"]);
         Assert.Equal("worker-secret", plan.Children[1].Environment["RU_WORKER_TOKEN"]);
-        Assert.All(
-            new[] { "Chat", "Settings", "Sessions", "Activity", "Memory", "Stt", "Vts", "Voice", "Observation", "Status" },
-            group => Assert.Equal("aspnet", plan.Children[1].Environment[$"RuBackend__Ownership__{group}"]));
+        Assert.DoesNotContain(
+            plan.Children[1].Environment.Keys,
+            key => key.Contains("Ownership", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(
             plan.Children,
             child => child.Arguments.Contains("mini_gpt.server", StringComparison.Ordinal));
@@ -72,19 +46,9 @@ public sealed class BackendLaunchPlanTests
             project.Root,
             "secret-token",
             "worker-secret",
-            BackendHostMode.AspNetCore,
             workerPort: 8001));
 
         Assert.Contains("RuBackend.exe", error.Message, StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [InlineData("fastapi", BackendHostMode.FastApi)]
-    [InlineData("aspnetcore", BackendHostMode.AspNetCore)]
-    [InlineData("", BackendHostMode.AspNetCore)]
-    public void HostModeParsingIsStrict(string raw, BackendHostMode expected)
-    {
-        Assert.Equal(expected, BackendHostModeParser.Parse(raw));
     }
 
     private sealed class TemporaryProject : IDisposable

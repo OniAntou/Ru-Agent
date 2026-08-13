@@ -1,6 +1,6 @@
-namespace RuBackend.Compatibility;
+namespace RuBackend.Runtime;
 
-public sealed record UpstreamResponse(
+public sealed record RuntimeWorkerResponse(
     int StatusCode,
     string ContentType,
     byte[] Body,

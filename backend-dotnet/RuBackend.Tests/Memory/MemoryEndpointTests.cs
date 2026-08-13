@@ -1,9 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Http;
-using RuBackend.Compatibility;
 using RuBackend.Memory;
 using RuBackend.Tests.Fakes;
 using Xunit;
@@ -17,9 +14,7 @@ public sealed class MemoryEndpointTests
     {
         var record = Record("memory-1", MemoryKind.Preference, "Anh thích cà phê.");
         var service = CreateTemporaryMemoryService([record], out _);
-        using var factory = new BackendWebApplicationFactory(
-            memoryService: service,
-            memoryOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(memoryService: service);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.GetAsync("/memory");
@@ -42,9 +37,7 @@ public sealed class MemoryEndpointTests
         var service = CreateTemporaryMemoryService(
             [Record("memory-1", MemoryKind.Preference, "private")],
             out var repository);
-        using var factory = new BackendWebApplicationFactory(
-            memoryService: service,
-            memoryOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(memoryService: service);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/memory");
@@ -54,38 +47,16 @@ public sealed class MemoryEndpointTests
     }
 
     [Fact]
-    public async Task Python_ownership_forwards_memory_to_the_worker()
+    public async Task Direct_endpoint_serves_memory_without_calling_the_runtime_worker()
     {
-        const string body = "[{\"id\":\"python-memory\",\"text\":\"worker\",\"category\":\"project\",\"created_at\":\"2026-08-10T00:00:00+00:00\"}]";
-        var transport = new StubUpstreamHttpTransport(new UpstreamResponse(
-            StatusCodes.Status200OK,
-            "application/json",
-            Encoding.UTF8.GetBytes(body)));
-        using var factory = new BackendWebApplicationFactory(transport, memoryOwnership: "python");
-        using var client = factory.CreateAuthenticatedClient();
-
-        using var response = await client.GetAsync("/memory");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(body, await response.Content.ReadAsStringAsync());
-        Assert.Equal(HttpMethod.Get, transport.LastRequest?.Method);
-        Assert.Equal("/memory", transport.LastRequest?.PathAndQuery);
-    }
-
-    [Fact]
-    public async Task AspNet_ownership_serves_memory_without_calling_the_worker()
-    {
-        var transport = new StubUpstreamHttpTransport(new UpstreamResponse(
-            StatusCodes.Status503ServiceUnavailable,
-            "application/json",
-            Encoding.UTF8.GetBytes("{\"detail\":\"worker unavailable\"}")));
         var service = CreateTemporaryMemoryService(
             [Record("memory-1", MemoryKind.Project, "local")],
             out _);
+        var runtimeWorker = new StubRuntimeWorkerClient(
+            new HttpRequestException("runtime worker must not be called"));
         using var factory = new BackendWebApplicationFactory(
-            transport,
             memoryService: service,
-            memoryOwnership: "aspnet");
+            runtimeWorkerClient: runtimeWorker);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.GetAsync("/memory");
@@ -93,57 +64,7 @@ public sealed class MemoryEndpointTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("memory-1", payload[0].GetProperty("id").GetString());
-        Assert.Null(transport.LastRequest);
-    }
-
-    [Fact]
-    public async Task Shadow_ownership_returns_the_worker_response_and_reads_ASPNET_afterward()
-    {
-        const string body = "[{\"id\":\"memory-1\",\"text\":\"worker\",\"category\":\"project\",\"created_at\":\"2026-08-10T00:00:00.000000+00:00\"}]";
-        var transport = new StubUpstreamHttpTransport(new UpstreamResponse(
-            StatusCodes.Status200OK,
-            "application/json",
-            Encoding.UTF8.GetBytes(body)));
-        var service = CreateTemporaryMemoryService(
-            [Record("memory-1", MemoryKind.Project, "local")],
-            out var repository);
-        using var factory = new BackendWebApplicationFactory(
-            transport,
-            memoryService: service,
-            memoryOwnership: "shadow");
-        using var client = factory.CreateAuthenticatedClient();
-
-        using var response = await client.GetAsync("/memory");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(body, await response.Content.ReadAsStringAsync());
-        Assert.Equal(1, repository.ListActiveCount);
-        Assert.Equal(HttpMethod.Get, transport.LastRequest?.Method);
-    }
-
-    [Fact]
-    public async Task Shadow_delete_keeps_the_Python_writer_and_preserves_busy_error()
-    {
-        const string body = "{\"status\":\"error\",\"message\":\"Memory is busy (self-learning in progress); try again in a moment.\"}";
-        var transport = new StubUpstreamHttpTransport(new UpstreamResponse(
-            StatusCodes.Status200OK,
-            "application/json",
-            Encoding.UTF8.GetBytes(body)));
-        var service = CreateTemporaryMemoryService(
-            [Record("memory-1", MemoryKind.Project, "local")],
-            out var repository);
-        using var factory = new BackendWebApplicationFactory(
-            transport,
-            memoryService: service,
-            memoryOwnership: "shadow");
-        using var client = factory.CreateAuthenticatedClient();
-
-        using var response = await client.DeleteAsync("/memory");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(body, await response.Content.ReadAsStringAsync());
-        Assert.Equal(HttpMethod.Delete, transport.LastRequest?.Method);
-        Assert.Equal(0, repository.ClearCount);
+        Assert.Empty(runtimeWorker.Requests);
     }
 
     [Fact]
@@ -152,9 +73,7 @@ public sealed class MemoryEndpointTests
         var service = CreateTemporaryMemoryService(
             [Record("memory-1", MemoryKind.Project, "local")],
             out var repository);
-        using var factory = new BackendWebApplicationFactory(
-            memoryService: service,
-            memoryOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(memoryService: service);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.DeleteAsync("/memory");
@@ -172,9 +91,7 @@ public sealed class MemoryEndpointTests
             [Record("memory-1", MemoryKind.Project, "local")],
             out var repository);
         repository.ClearError = new MemoryBusyException();
-        using var factory = new BackendWebApplicationFactory(
-            memoryService: service,
-            memoryOwnership: "aspnet");
+        using var factory = new BackendWebApplicationFactory(memoryService: service);
         using var client = factory.CreateAuthenticatedClient();
 
         using var response = await client.DeleteAsync("/memory");

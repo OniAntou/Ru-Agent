@@ -131,7 +131,7 @@ public sealed class ChatWebSocketEndpointTests
     }
 
     private static BackendWebApplicationFactory Factory(IConversationCoordinator coordinator) =>
-        new(conversationCoordinator: coordinator, chatOwnership: "aspnet");
+        new(conversationCoordinator: coordinator);
 
     private static Task<WebSocket> ConnectAsync(
         BackendWebApplicationFactory factory,

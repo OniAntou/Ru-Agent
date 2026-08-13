@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Options;
-using RuBackend.Configuration;
 using RuBackend.Runtime;
 
 namespace RuBackend.Vts;
@@ -23,17 +21,6 @@ public static class VtsEndpoints
 
     public static void Map(WebApplication app)
     {
-        var ownership = app.Services
-            .GetRequiredService<IOptions<BackendOptions>>()
-            .Value
-            .Ownership
-            .Vts;
-
-        if (!string.Equals(ownership?.Trim(), "aspnet", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
         foreach (var route in Routes)
         {
             app.MapMethods(route.Path, [route.Method], HandleAsync);
@@ -87,7 +74,7 @@ public static class VtsEndpoints
 
     private static async Task WriteWorkerResponseAsync(
         HttpContext context,
-        Compatibility.UpstreamResponse response,
+        RuntimeWorkerResponse response,
         CancellationToken cancellationToken)
     {
         context.Response.StatusCode = response.StatusCode;

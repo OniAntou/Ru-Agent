@@ -17,15 +17,11 @@ dependencies = [
     "pyvts>=0.3",
     "pygame>=2.6",
     "psutil>=5.9",
+    "websockets>=16,<17",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "flask>=3.1,<4"]
-server = [
-    "fastapi>=0.115,<1",
-    "uvicorn[standard]>=0.30,<1",
-    "pydantic>=2,<3",
-]
 runtime = [
     "accelerate>=1.0,<2",
     "bitsandbytes>=0.48,<1",

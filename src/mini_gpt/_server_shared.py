@@ -69,10 +69,9 @@ from mini_gpt.voice_style import (
 logger = logging.getLogger(__name__)
 
 def _valid_desktop_token(candidate: str) -> bool:
-    # Read the token from the environment on every call: the WinUI3 host sets
-    # RU_DESKTOP_TOKEN only after this module has been imported (it launches via
-    # `python -m mini_gpt.server --secret-token ...`), so a module-level capture
-    # would leave API auth permanently disabled.
+    # Read the token on every call because local harnesses may populate the
+    # environment after this module is imported. A module-level capture would
+    # leave authentication permanently disabled in that process.
     token = os.environ.get("RU_DESKTOP_TOKEN", "").strip()
     if not token:
         # Fail closed: an unconfigured backend must not answer local callers

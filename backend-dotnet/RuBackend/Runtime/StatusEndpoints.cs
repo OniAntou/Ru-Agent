@@ -1,22 +1,9 @@
-using Microsoft.Extensions.Options;
-using RuBackend.Configuration;
-
 namespace RuBackend.Runtime;
 
 public static class StatusEndpoints
 {
     public static void Map(WebApplication app)
     {
-        var ownership = app.Services
-            .GetRequiredService<IOptions<BackendOptions>>()
-            .Value
-            .Ownership
-            .Status;
-        if (!string.Equals(ownership?.Trim(), "aspnet", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
         app.MapGet("/status", HandleAsync);
         app.MapGet("/models", HandleAsync);
     }

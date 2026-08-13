@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from check_aspnetcore_route_matrix import discover_fastapi_routes, load_route_matrix
+from check_aspnetcore_route_matrix import load_route_contract, validate_route_contract
 
 
 EXPECTED_HTTP_ROUTES = {
@@ -17,8 +17,8 @@ EXPECTED_HTTP_ROUTES = {
     ("POST", "/settings"),
     ("GET", "/sessions"),
     ("POST", "/sessions/new"),
-    ("POST", "/sessions/{session_id}/activate"),
-    ("DELETE", "/sessions/{session_id}"),
+    ("POST", "/sessions/{sessionId}/activate"),
+    ("DELETE", "/sessions/{sessionId}"),
     ("POST", "/observation/preflight"),
     ("GET", "/observation/vision-config"),
     ("POST", "/observation/react"),
@@ -49,107 +49,45 @@ EXPECTED_HTTP_ROUTES = {
 EXPECTED_WEBSOCKET_ROUTES = {("WS", "/chat"), ("WS", "/voice/stream")}
 
 
-def test_route_matrix_matches_fastapi_source() -> None:
+def test_public_route_contract_matches_the_final_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    matrix = load_route_matrix(repo_root)
-    actual = discover_fastapi_routes(repo_root)
+    assert validate_route_contract(repo_root) == (38, 2)
+    contract = load_route_contract(repo_root)
 
-    assert {(entry["method"], entry["path"]) for entry in matrix if entry["transport"] == "http"} == EXPECTED_HTTP_ROUTES
-    assert {(entry["method"], entry["path"]) for entry in matrix if entry["transport"] == "websocket"} == EXPECTED_WEBSOCKET_ROUTES
-    assert {(entry.method, entry.path) for entry in actual} == EXPECTED_HTTP_ROUTES | EXPECTED_WEBSOCKET_ROUTES
-
-    for entry in matrix:
-        assert entry["source"]
-        assert entry["classification"] in {
-            "forwarded",
-            "websocket-relay",
-            "python-parity",
-            "feature-selected",
-            "unused-but-forwarded",
-        }
-        assert isinstance(entry["winui_callers"], list)
-
-
-def test_matrix_marks_memory_as_feature_selected() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    matrix = load_route_matrix(repo_root)
-
-    memory_entry = next(
-        entry
-        for entry in matrix
+    assert {
+        (entry["method"], entry["path"])
+        for entry in contract
         if entry["transport"] == "http"
-        and entry["method"] == "GET"
-        and entry["path"] == "/memory"
-    )
-
-    assert memory_entry["classification"] == "feature-selected"
-    assert memory_entry["ownership"] == "feature-selected"
-    assert memory_entry["ownership_config"] == "RuBackend:Ownership:Memory"
-    assert memory_entry["shadow_compare"] == [
-        "count",
-        "id_hash",
-        "category_hash",
-        "timestamp_hash",
-        "ordering_hash",
-    ]
-    assert memory_entry["winui_callers"] == ["ApiService.GetMemoryAsync"]
+    } == EXPECTED_HTTP_ROUTES
+    assert {
+        (entry["method"], entry["path"])
+        for entry in contract
+        if entry["transport"] == "websocket"
+    } == EXPECTED_WEBSOCKET_ROUTES
 
 
-def test_matrix_marks_stt_and_vts_as_feature_selected_runtime_routes() -> None:
+def test_every_public_route_has_one_final_aspnet_execution_class() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    matrix = load_route_matrix(repo_root)
+    contract = load_route_contract(repo_root)
 
-    stt_entry = next(
-        entry
-        for entry in matrix
-        if entry["transport"] == "http"
-        and entry["method"] == "POST"
-        and entry["path"] == "/voice/transcribe"
-    )
-    assert stt_entry["classification"] == "feature-selected"
-    assert stt_entry["ownership"] == "feature-selected"
-    assert stt_entry["ownership_config"] == "RuBackend:Ownership:Stt"
-    assert stt_entry["default_owner"] == "python"
-    assert stt_entry["aspnet_execution"] == "runtime-worker"
-
-    vts_entries = [
-        entry
-        for entry in matrix
-        if entry["transport"] == "http" and entry["path"].startswith("/vts/")
-    ]
-    assert len(vts_entries) == 11
-    for entry in vts_entries:
-        assert entry["classification"] == "feature-selected"
-        assert entry["ownership"] == "feature-selected"
-        assert entry["ownership_config"] == "RuBackend:Ownership:Vts"
-        assert entry["default_owner"] == "python"
-        assert entry["aspnet_execution"] == "runtime-worker"
-
-
-def test_matrix_marks_deterministic_business_routes_as_feature_selected() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    matrix = load_route_matrix(repo_root)
-    expected = {
-        ("GET", "/settings"): ("RuBackend:Ownership:Settings", "deterministic-store"),
-        ("POST", "/settings"): ("RuBackend:Ownership:Settings", "runtime-transaction"),
-        ("GET", "/sessions"): ("RuBackend:Ownership:Sessions", "deterministic-store"),
-        ("POST", "/sessions/new"): ("RuBackend:Ownership:Sessions", "deterministic-store"),
-        ("POST", "/sessions/{session_id}/activate"): ("RuBackend:Ownership:Sessions", "deterministic-store"),
-        ("DELETE", "/sessions/{session_id}"): ("RuBackend:Ownership:Sessions", "deterministic-store"),
-        ("GET", "/history"): ("RuBackend:Ownership:Sessions", "deterministic-store"),
-        ("GET", "/activity-log"): ("RuBackend:Ownership:Activity", "deterministic-store"),
-        ("DELETE", "/activity-log"): ("RuBackend:Ownership:Activity", "deterministic-store"),
+    direct_paths = {
+        "/activity-log",
+        "/history",
+        "/memory",
+        "/settings",
+        "/sessions",
+        "/sessions/new",
+        "/sessions/{sessionId}/activate",
+        "/sessions/{sessionId}",
+        "/chat",
     }
-
-    for route, (ownership_config, execution) in expected.items():
-        entry = next(
-            item
-            for item in matrix
-            if (item["method"], item["path"]) == route
+    for entry in contract:
+        expected = (
+            "aspnet-direct"
+            if entry["path"] in direct_paths
+            else "runtime-worker"
         )
-        assert entry["classification"] == "feature-selected"
-        assert entry["ownership"] == "feature-selected"
-        assert entry["ownership_config"] == ownership_config
-        assert entry["default_owner"] == "python"
-        assert entry["aspnet_execution"] == execution
+        assert entry["classification"] == expected
+        assert entry["source"].startswith("backend-dotnet/RuBackend/")
+        assert "Compatibility" not in entry["source"]

@@ -6,14 +6,13 @@ namespace RuApp.Tests;
 public sealed class BackendProcessManagerTests
 {
     [Fact]
-    public async Task AspNetCoreModeAssignsBothChildrenToOneJobAndProbesPublicPort()
+    public async Task AssignsRuntimeWorkerAndAspNetCoreBackendToOneJobAndProbesPublicPort()
     {
         using var project = TemporaryProject.Create(includePublishedEdge: true);
         var launcher = new FakeProcessFactory();
         var jobs = new FakeJobFactory();
         var readiness = new FakeReadinessProbe(ready: true);
         using var manager = new BackendProcessManager(
-            BackendHostMode.AspNetCore,
             workerPort: 8001,
             processFactory: launcher,
             jobFactory: jobs,
@@ -41,7 +40,6 @@ public sealed class BackendProcessManagerTests
         var jobs = new FakeJobFactory();
         var readiness = new FakeReadinessProbe(ready: false);
         using var manager = new BackendProcessManager(
-            BackendHostMode.AspNetCore,
             workerPort: 8001,
             processFactory: launcher,
             jobFactory: jobs,
@@ -64,7 +62,6 @@ public sealed class BackendProcessManagerTests
         var jobs = new FakeJobFactory();
         var readiness = new FakeReadinessProbe(ready: true);
         using var manager = new BackendProcessManager(
-            BackendHostMode.AspNetCore,
             workerPort: 8001,
             processFactory: launcher,
             jobFactory: jobs,
@@ -76,29 +73,6 @@ public sealed class BackendProcessManagerTests
         Assert.Empty(launcher.Specs);
         Assert.Contains("RuBackend.exe", manager.LastError ?? string.Empty, StringComparison.Ordinal);
         Assert.Empty(jobs.Created);
-    }
-
-    [Fact]
-    public async Task FastApiModeRetainsOneChildOnPublicPort()
-    {
-        using var project = TemporaryProject.Create(includePublishedEdge: false);
-        var launcher = new FakeProcessFactory();
-        var jobs = new FakeJobFactory();
-        var readiness = new FakeReadinessProbe(ready: true);
-        using var manager = new BackendProcessManager(
-            BackendHostMode.FastApi,
-            workerPort: 8001,
-            processFactory: launcher,
-            jobFactory: jobs,
-            readinessProbe: readiness);
-
-        var started = await manager.StartBackendAsync(project.Root);
-
-        Assert.True(started);
-        var spec = Assert.Single(launcher.Specs);
-        Assert.Equal("fastapi-worker", spec.Role);
-        Assert.EndsWith("--port 8000", spec.Arguments, StringComparison.Ordinal);
-        Assert.Null(manager.WorkerPort);
     }
 
     private sealed class FakeProcessFactory : IBackendProcessFactory

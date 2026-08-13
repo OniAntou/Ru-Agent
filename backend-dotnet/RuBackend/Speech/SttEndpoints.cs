@@ -1,6 +1,4 @@
 using System.Text.Json;
-using Microsoft.Extensions.Options;
-using RuBackend.Configuration;
 using RuBackend.Runtime;
 
 namespace RuBackend.Speech;
@@ -14,16 +12,7 @@ public static class SttEndpoints
 
     public static void Map(WebApplication app)
     {
-        var ownership = app.Services
-            .GetRequiredService<IOptions<BackendOptions>>()
-            .Value
-            .Ownership
-            .Stt;
-
-        if (string.Equals(ownership?.Trim(), "aspnet", StringComparison.OrdinalIgnoreCase))
-        {
-            app.MapPost("/voice/transcribe", HandleAsync);
-        }
+        app.MapPost("/voice/transcribe", HandleAsync);
     }
 
     private static async Task HandleAsync(
@@ -157,7 +146,7 @@ public static class SttEndpoints
 
     private static async Task WriteWorkerResponseAsync(
         HttpContext context,
-        Compatibility.UpstreamResponse response,
+        RuntimeWorkerResponse response,
         CancellationToken cancellationToken)
     {
         context.Response.StatusCode = response.StatusCode;

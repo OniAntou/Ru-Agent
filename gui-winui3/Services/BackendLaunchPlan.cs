@@ -12,27 +12,23 @@ public sealed record BackendProcessSpec(
 public sealed class BackendLaunchPlan
 {
     private BackendLaunchPlan(
-        BackendHostMode mode,
         int publicPort,
-        int? workerPort,
+        int workerPort,
         IReadOnlyList<BackendProcessSpec> children)
     {
-        Mode = mode;
         PublicPort = publicPort;
         WorkerPort = workerPort;
         Children = children;
     }
 
-    public BackendHostMode Mode { get; }
     public int PublicPort { get; }
-    public int? WorkerPort { get; }
+    public int WorkerPort { get; }
     public IReadOnlyList<BackendProcessSpec> Children { get; }
 
     public static BackendLaunchPlan Create(
         string projectRoot,
         string authSecret,
         string workerSecret,
-        BackendHostMode mode,
         int workerPort,
         string? edgeExecutable = null)
     {
@@ -54,22 +50,6 @@ public sealed class BackendLaunchPlan
         }
 
         var logRoot = Path.Combine(root, "logs");
-        if (mode == BackendHostMode.FastApi)
-        {
-            var compatibilityChild = new BackendProcessSpec(
-                "fastapi-worker",
-                pythonExecutable,
-                $"-m mini_gpt.server --host 127.0.0.1 --port {publicPort}",
-                root,
-                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["RU_DESKTOP_TOKEN"] = authSecret,
-                },
-                Path.Combine(logRoot, "backend_fastapi_out.log"),
-                Path.Combine(logRoot, "backend_fastapi_err.log"));
-            return new BackendLaunchPlan(mode, publicPort, null, [compatibilityChild]);
-        }
-
         if (workerPort == publicPort)
         {
             throw new ArgumentException(
@@ -111,22 +91,6 @@ public sealed class BackendLaunchPlan
             ["RuBackend__BindUrl"] = $"http://127.0.0.1:{publicPort}",
             ["RuBackend__WorkerUrl"] = $"ws://127.0.0.1:{workerPort}/worker/v1",
         };
-        foreach (var group in new[]
-        {
-            "Chat",
-            "Settings",
-            "Sessions",
-            "Activity",
-            "Memory",
-            "Stt",
-            "Vts",
-            "Voice",
-            "Observation",
-            "Status",
-        })
-        {
-            edgeEnvironment[$"RuBackend__Ownership__{group}"] = "aspnet";
-        }
         var children = new List<BackendProcessSpec>
         {
             new(
@@ -148,6 +112,6 @@ public sealed class BackendLaunchPlan
                 Path.Combine(logRoot, "backend_aspnetcore_out.log"),
                 Path.Combine(logRoot, "backend_aspnetcore_err.log")));
 
-        return new BackendLaunchPlan(mode, publicPort, workerPort, children);
+        return new BackendLaunchPlan(publicPort, workerPort, children);
     }
 }

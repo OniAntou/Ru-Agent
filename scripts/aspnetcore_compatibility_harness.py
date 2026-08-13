@@ -40,6 +40,27 @@ def redact_secrets(text: str, secrets_to_redact: list[str]) -> str:
     return redacted
 
 
+def build_worker_mode_environment(worker_token: str, worker_port: int) -> dict[str, str]:
+    environment = {
+        "RU_WORKER_TOKEN": worker_token,
+        "RuBackend__WorkerUrl": f"ws://127.0.0.1:{worker_port}/worker/v1",
+    }
+    for group in (
+        "Chat",
+        "Settings",
+        "Sessions",
+        "Activity",
+        "Memory",
+        "Stt",
+        "Vts",
+        "Voice",
+        "Observation",
+        "Status",
+    ):
+        environment[f"RuBackend__Ownership__{group}"] = "aspnet"
+    return environment
+
+
 _PRIVATE_METADATA_FRAGMENTS = ("[[vts:", "[[voice_pace:", "[[emo:", "[search:")
 
 
@@ -183,13 +204,18 @@ def _stop_child(process: subprocess.Popen[bytes]) -> bool:
     return process.poll() is not None
 
 
-def _wait_for_edge(base_url: str, token: str, timeout_seconds: float = 60.0) -> int | None:
+def _wait_for_edge(
+    base_url: str,
+    token: str,
+    timeout_seconds: float = 60.0,
+    path: str = "/settings",
+) -> int | None:
     deadline = time.monotonic() + timeout_seconds
     headers = {"Authorization": f"Bearer {token}"}
     with httpx.Client(timeout=2.0, headers=headers) as client:
         while time.monotonic() < deadline:
             try:
-                response = client.get(base_url.rstrip("/") + "/settings")
+                response = client.get(base_url.rstrip("/") + path)
                 status = response.status_code
                 response.close()
                 if 200 <= status < 300:
@@ -446,7 +472,17 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
         python_executable = Path(sys.executable)
     edge_base_url = f"http://127.0.0.1:{args.edge_port}"
     harness_script = Path(__file__).resolve()
-    if args.chat_owner == "aspnet":
+    if args.worker_mode:
+        worker_command = [
+            str(python_executable),
+            "-m",
+            "mini_gpt.worker_server",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(args.worker_port),
+        ]
+    elif args.chat_owner == "aspnet":
         worker_command = [
             str(python_executable),
             str(harness_script),
@@ -514,13 +550,15 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
                     "RuBackend__Ownership__Memory": "aspnet",
                 }
             )
+        if args.worker_mode:
+            environment.update(build_worker_mode_environment(token, args.worker_port))
         try:
             children.append(
                 _start_child(
                     worker_command,
                     repo_root=repo_root,
                     environment=environment,
-                    log_path=temp_path / "fastapi.log",
+                    log_path=temp_path / ("worker.log" if args.worker_mode else "fastapi.log"),
                 )
             )
             children.append(
@@ -531,16 +569,21 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
                     log_path=temp_path / "aspnetcore.log",
                 )
             )
-            readiness_status = _wait_for_edge(edge_base_url, token)
+            readiness_status = _wait_for_edge(
+                edge_base_url,
+                token,
+                path="/status" if args.worker_mode else "/settings",
+            )
             matrix = _load_matrix(repo_root)
             result: dict[str, Any] = {
                 "worker_port": args.worker_port,
                 "edge_port": args.edge_port,
                 "chat_owner": args.chat_owner,
+                "worker_mode": args.worker_mode,
                 "edge_readiness_status": readiness_status,
                 "http": (
                     {"probed": 1, "skipped": 0, "failures": 0, "results": []}
-                    if readiness_status and args.chat_owner
+                    if readiness_status and args.chat_owner and not args.worker_mode
                     else _probe_http_routes(edge_base_url, token, matrix)
                     if readiness_status
                     else {"failures": 1}
@@ -549,7 +592,7 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
                 "voice_audio_confirmed": False,
             }
             if readiness_status:
-                if args.chat_owner:
+                if args.chat_owner and not args.worker_mode:
                     result["websockets"]["chat"] = asyncio.run(
                         _probe_synthetic_chat(edge_base_url, token)
                     )
@@ -557,7 +600,7 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
                 else:
                     result["websockets"]["chat"] = asyncio.run(_probe_chat(edge_base_url, token))
                     result["websockets"]["voice_control"] = asyncio.run(_probe_voice_control(edge_base_url, token))
-                if args.require_voice_audio and not args.chat_owner:
+                if args.require_voice_audio and (args.worker_mode or not args.chat_owner):
                     result["voice_audio_confirmed"] = asyncio.run(_probe_real_voice_audio(edge_base_url, token))
                 if args.benchmark_samples and not args.chat_owner:
                     direct_url = f"http://127.0.0.1:{args.worker_port}"
@@ -590,6 +633,7 @@ def main() -> int:
     parser.add_argument("--require-voice-audio", action="store_true")
     parser.add_argument("--benchmark-samples", type=int, default=0)
     parser.add_argument("--chat-owner", choices=("python", "aspnet"))
+    parser.add_argument("--worker-mode", action="store_true")
     parser.add_argument("--isolated", action="store_true")
     parser.add_argument(
         "--serve-deterministic-worker",
@@ -602,6 +646,8 @@ def main() -> int:
         help=argparse.SUPPRESS,
     )
     args = parser.parse_args()
+    if args.worker_mode and args.chat_owner:
+        parser.error("--worker-mode cannot be combined with --chat-owner")
     if args.serve_deterministic_worker and args.serve_deterministic_fastapi:
         parser.error("only one deterministic worker mode may be selected")
     if args.serve_deterministic_worker:
@@ -614,7 +660,11 @@ def main() -> int:
         args.project_root
         / "artifacts"
         / "aspnetcore"
-        / f"chat-{args.chat_owner or 'compatibility'}-gate.json"
+        / (
+            "worker-mode-gate.json"
+            if args.worker_mode
+            else f"chat-{args.chat_owner or 'compatibility'}-gate.json"
+        )
     )
     try:
         result = run_harness(args)

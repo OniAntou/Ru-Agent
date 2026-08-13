@@ -31,12 +31,14 @@ public sealed class BackendLaunchPlan
     public static BackendLaunchPlan Create(
         string projectRoot,
         string authSecret,
+        string workerSecret,
         BackendHostMode mode,
         int workerPort,
         string? edgeExecutable = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(authSecret);
+        ArgumentException.ThrowIfNullOrWhiteSpace(workerSecret);
 
         const int publicPort = 8000;
         if (workerPort is < 1024 or > 65535)
@@ -52,26 +54,20 @@ public sealed class BackendLaunchPlan
         }
 
         var logRoot = Path.Combine(root, "logs");
-        var workerPortForPlan = mode == BackendHostMode.AspNetCore ? workerPort : publicPort;
-        var workerEnvironment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["RU_DESKTOP_TOKEN"] = authSecret,
-        };
-        var children = new List<BackendProcessSpec>
-        {
-            new(
-                "fastapi-worker",
-                pythonExecutable,
-                $"-m mini_gpt.server --host 127.0.0.1 --port {workerPortForPlan}",
-                root,
-                workerEnvironment,
-                Path.Combine(logRoot, "backend_fastapi_out.log"),
-                Path.Combine(logRoot, "backend_fastapi_err.log")),
-        };
-
         if (mode == BackendHostMode.FastApi)
         {
-            return new BackendLaunchPlan(mode, publicPort, null, children);
+            var compatibilityChild = new BackendProcessSpec(
+                "fastapi-worker",
+                pythonExecutable,
+                $"-m mini_gpt.server --host 127.0.0.1 --port {publicPort}",
+                root,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["RU_DESKTOP_TOKEN"] = authSecret,
+                },
+                Path.Combine(logRoot, "backend_fastapi_out.log"),
+                Path.Combine(logRoot, "backend_fastapi_err.log"));
+            return new BackendLaunchPlan(mode, publicPort, null, [compatibilityChild]);
         }
 
         if (workerPort == publicPort)
@@ -104,11 +100,43 @@ public sealed class BackendLaunchPlan
                 publishedEdge);
         }
 
+        var workerEnvironment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["RU_WORKER_TOKEN"] = workerSecret,
+        };
         var edgeEnvironment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["RU_DESKTOP_TOKEN"] = authSecret,
+            ["RU_WORKER_TOKEN"] = workerSecret,
             ["RuBackend__BindUrl"] = $"http://127.0.0.1:{publicPort}",
-            ["RuBackend__UpstreamUrl"] = $"http://127.0.0.1:{workerPort}",
+            ["RuBackend__WorkerUrl"] = $"ws://127.0.0.1:{workerPort}/worker/v1",
+        };
+        foreach (var group in new[]
+        {
+            "Chat",
+            "Settings",
+            "Sessions",
+            "Activity",
+            "Memory",
+            "Stt",
+            "Vts",
+            "Voice",
+            "Observation",
+            "Status",
+        })
+        {
+            edgeEnvironment[$"RuBackend__Ownership__{group}"] = "aspnet";
+        }
+        var children = new List<BackendProcessSpec>
+        {
+            new(
+                "python-runtime-worker",
+                pythonExecutable,
+                $"-m mini_gpt.worker_server --host 127.0.0.1 --port {workerPort}",
+                root,
+                workerEnvironment,
+                Path.Combine(logRoot, "backend_worker_out.log"),
+                Path.Combine(logRoot, "backend_worker_err.log")),
         };
         children.Add(
             new BackendProcessSpec(

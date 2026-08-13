@@ -4,6 +4,7 @@ import json
 import sqlite3
 
 from aspnetcore_compatibility_harness import (
+    build_worker_mode_environment,
     classify_route_for_safe_probe,
     inspect_chat_state,
     redact_secrets,
@@ -113,3 +114,29 @@ def test_chat_state_inspection_returns_only_counts_and_privacy_flags(tmp_path) -
     serialized = json.dumps(summary)
     assert "private prompt" not in serialized
     assert "clean reply" not in serialized
+
+
+def test_worker_mode_environment_selects_every_direct_owner() -> None:
+    environment = build_worker_mode_environment(
+        "worker-secret",
+        18001,
+    )
+
+    assert environment["RU_WORKER_TOKEN"] == "worker-secret"
+    assert environment["RuBackend__WorkerUrl"] == "ws://127.0.0.1:18001/worker/v1"
+    assert {
+        key.removeprefix("RuBackend__Ownership__")
+        for key, value in environment.items()
+        if key.startswith("RuBackend__Ownership__") and value == "aspnet"
+    } == {
+        "Chat",
+        "Settings",
+        "Sessions",
+        "Activity",
+        "Memory",
+        "Stt",
+        "Vts",
+        "Voice",
+        "Observation",
+        "Status",
+    }

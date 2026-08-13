@@ -13,6 +13,7 @@ public sealed class BackendLaunchPlanTests
         var plan = BackendLaunchPlan.Create(
             project.Root,
             "secret-token",
+            "worker-secret",
             BackendHostMode.FastApi,
             workerPort: 8001);
         var child = Assert.Single(plan.Children);
@@ -36,21 +37,30 @@ public sealed class BackendLaunchPlanTests
         var plan = BackendLaunchPlan.Create(
             project.Root,
             "secret-token",
+            "worker-secret",
             BackendHostMode.AspNetCore,
             workerPort: 8001);
 
         Assert.Equal(BackendHostMode.AspNetCore, plan.Mode);
         Assert.Equal(8000, plan.PublicPort);
         Assert.Equal(8001, plan.WorkerPort);
-        Assert.Equal(new[] { "fastapi-worker", "aspnetcore-edge" }, plan.Children.Select(child => child.Role));
+        Assert.Equal(new[] { "python-runtime-worker", "aspnetcore-edge" }, plan.Children.Select(child => child.Role));
         Assert.Equal(
-            "-m mini_gpt.server --host 127.0.0.1 --port 8001",
+            "-m mini_gpt.worker_server --host 127.0.0.1 --port 8001",
             plan.Children[0].Arguments);
         Assert.Equal(project.EdgePath, plan.Children[1].FileName);
         Assert.Equal("http://127.0.0.1:8000", plan.Children[1].Environment["RuBackend__BindUrl"]);
-        Assert.Equal("http://127.0.0.1:8001", plan.Children[1].Environment["RuBackend__UpstreamUrl"]);
-        Assert.Equal("secret-token", plan.Children[0].Environment["RU_DESKTOP_TOKEN"]);
+        Assert.Equal("ws://127.0.0.1:8001/worker/v1", plan.Children[1].Environment["RuBackend__WorkerUrl"]);
+        Assert.Equal("worker-secret", plan.Children[0].Environment["RU_WORKER_TOKEN"]);
+        Assert.False(plan.Children[0].Environment.ContainsKey("RU_DESKTOP_TOKEN"));
         Assert.Equal("secret-token", plan.Children[1].Environment["RU_DESKTOP_TOKEN"]);
+        Assert.Equal("worker-secret", plan.Children[1].Environment["RU_WORKER_TOKEN"]);
+        Assert.All(
+            new[] { "Chat", "Settings", "Sessions", "Activity", "Memory", "Stt", "Vts", "Voice", "Observation", "Status" },
+            group => Assert.Equal("aspnet", plan.Children[1].Environment[$"RuBackend__Ownership__{group}"]));
+        Assert.DoesNotContain(
+            plan.Children,
+            child => child.Arguments.Contains("mini_gpt.server", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -61,6 +71,7 @@ public sealed class BackendLaunchPlanTests
         var error = Assert.Throws<FileNotFoundException>(() => BackendLaunchPlan.Create(
             project.Root,
             "secret-token",
+            "worker-secret",
             BackendHostMode.AspNetCore,
             workerPort: 8001));
 

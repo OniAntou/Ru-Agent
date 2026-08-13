@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import argparse
 import contextlib
 import hmac
 import json
+import os
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeAlias
@@ -373,3 +375,22 @@ def _safe_request_id(raw: str) -> str:
         return "connection"
     request_id = value.get("id") if isinstance(value, dict) else None
     return request_id if isinstance(request_id, str) and 0 < len(request_id) <= 128 else "connection"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Ru private protocol worker")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8001)
+    args = parser.parse_args(argv)
+    token = os.environ.get("RU_WORKER_TOKEN", "").strip()
+    if not token:
+        parser.error("RU_WORKER_TOKEN is required")
+    try:
+        asyncio.run(serve_runtime_worker(args.host, args.port, token))
+    except KeyboardInterrupt:
+        return 130
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

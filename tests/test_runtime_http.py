@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import Response
-
-from mini_gpt.runtime_http import RUNTIME_ROUTE_KEYS, dispatch_runtime_request
+from mini_gpt.runtime_http import (
+    RUNTIME_ROUTE_KEYS,
+    RuntimeHttpResponse,
+    dispatch_runtime_request,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +26,17 @@ def test_runtime_route_table_matches_the_frozen_contract() -> None:
     assert len(expected) == 27
 
 
+def test_private_runtime_dispatch_has_no_fastapi_or_router_dependency() -> None:
+    source = (ROOT / "src" / "mini_gpt" / "runtime_http.py").read_text(
+        encoding="utf-8"
+    ).casefold()
+
+    assert "mini_gpt.routers" not in source
+    assert "fastapi" not in source
+    assert "starlette" not in source
+    assert "pydantic" not in source
+
+
 def test_status_dispatch_preserves_the_public_json_shape() -> None:
     response = dispatch_runtime_request("GET", "/status", None, "")
 
@@ -36,12 +49,12 @@ def test_status_dispatch_preserves_the_public_json_shape() -> None:
 
 
 def test_tts_dispatch_preserves_binary_without_embedding_it_in_json(monkeypatch) -> None:
-    from mini_gpt.routers import voice
+    from mini_gpt import runtime_voice as voice
 
     monkeypatch.setattr(
         voice,
         "voice_tts",
-        lambda _payload: Response(content=b"RIFF-wave", media_type="audio/wav"),
+        lambda _payload: RuntimeHttpResponse(200, "audio/wav", b"RIFF-wave", {}),
     )
 
     response = dispatch_runtime_request(

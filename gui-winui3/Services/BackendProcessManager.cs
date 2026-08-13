@@ -28,6 +28,7 @@ public class BackendProcessManager : IDisposable
             ? workerPort ?? ParseWorkerPort()
             : null;
         AuthSecret = GenerateSecret();
+        WorkerSecret = GenerateSecret();
         _processFactory = processFactory ?? new WindowsBackendProcessFactory();
         _jobFactory = jobFactory ?? new WindowsBackendJobFactory();
         _httpClient = new HttpClient();
@@ -35,6 +36,7 @@ public class BackendProcessManager : IDisposable
     }
 
     public string AuthSecret { get; }
+    public string WorkerSecret { get; }
     public int Port { get; }
     public int? WorkerPort { get; }
     public BackendHostMode Mode { get; }
@@ -76,6 +78,7 @@ public class BackendProcessManager : IDisposable
             var plan = BackendLaunchPlan.Create(
                 projectRoot,
                 AuthSecret,
+                WorkerSecret,
                 Mode,
                 WorkerPort ?? Port,
                 Environment.GetEnvironmentVariable("RU_RUBACKEND_EXE"));

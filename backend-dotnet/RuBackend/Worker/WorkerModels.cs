@@ -56,8 +56,8 @@ public sealed record WorkerRuntimeResponse(
 public sealed record WorkerVoiceStreamRequest(
     string RequestId,
     string Text,
-    string VoiceLabel,
-    double Speed,
+    string? VoiceLabel,
+    double? Speed,
     string VoiceStyleId);
 
 public sealed record WorkerVoiceSignal(

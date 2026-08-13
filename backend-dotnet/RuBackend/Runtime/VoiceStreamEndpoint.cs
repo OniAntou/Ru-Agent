@@ -263,9 +263,10 @@ public static class VoiceStreamEndpoint
         request = null;
         if (string.IsNullOrWhiteSpace(control.RequestId) || control.RequestId.Length > 128
             || string.IsNullOrWhiteSpace(control.Text) || control.Text.Length > 12_000
-            || string.IsNullOrWhiteSpace(control.VoiceLabel) || control.VoiceLabel.Length > 128
-            || control.Speed is null or < 0.5 or > 2.0
-            || !double.IsFinite(control.Speed.Value))
+            || control.VoiceLabel?.Length > 128
+            || (control.Speed is not null
+                && (control.Speed is < 0.5 or > 2.0
+                    || !double.IsFinite(control.Speed.Value))))
         {
             return false;
         }
@@ -273,7 +274,7 @@ public static class VoiceStreamEndpoint
             control.RequestId,
             control.Text,
             control.VoiceLabel,
-            control.Speed.Value,
+            control.Speed,
             "original");
         return true;
     }

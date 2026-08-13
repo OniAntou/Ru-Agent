@@ -25,12 +25,12 @@ path remain protected.
 - Generate: `artifacts/cleanup/ru-architecture-v2-plan2-before.json` (ignored)
 - Verify: `docs/validation/architecture-v2-cleanup-preflight.md`
 
-- [ ] Confirm the feature worktree is clean and the main checkout still has
+- [x] Confirm the feature worktree is clean and the main checkout still has
   exactly the recorded dirty/untracked paths.
-- [ ] Regenerate the read-only manifest against `D:\LLM`.
-- [ ] Fail closed if the protected dirty file, any LFM2.5 path, scan errors, or
+- [x] Regenerate the read-only manifest against `D:\LLM`.
+- [x] Fail closed if the protected dirty file, any LFM2.5 path, scan errors, or
   the seven permanent legacy targets differ from the approved preflight.
-- [ ] Record exact resolved paths; reject links, drive roots, broad globs, and
+- [x] Record exact resolved paths; reject links, drive roots, broad globs, and
   any target outside `D:\LLM`.
 
 ## Task 2: Move generic evaluation behavior out of the legacy namespace
@@ -44,13 +44,13 @@ path remain protected.
 - Modify: `tests/test_ru_style.py`
 - Test: `tests/test_ru_evaluation_cases.py`
 
-- [ ] Add a characterization import test for the neutral module and run it to
+- [x] Add a characterization import test for the neutral module and run it to
   observe the expected failure.
-- [ ] Move the implementation without changing suites, case IDs, routing, or
+- [x] Move the implementation without changing suites, case IDs, routing, or
   deterministic assessment behavior; update current judge imports.
-- [ ] Keep the active prompt/persona tests but remove the test that couples
+- [x] Keep the active prompt/persona tests but remove the test that couples
   `ru_style` to the retired v6.3 authored corpus.
-- [ ] Run focused evaluation/style tests, then commit the neutral seam.
+- [x] Run focused evaluation/style tests, then commit the neutral seam.
 
 ## Task 3: Add a fail-closed legacy retirement contract
 

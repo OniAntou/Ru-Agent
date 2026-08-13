@@ -9,7 +9,7 @@ from mini_gpt.ru_judge_evaluation import (
     V5_PROACTIVE_FLIRT_SUITE,
     V5_NEW_CASE_IDS,
 )
-from mini_gpt.ru_llama_evaluation import (
+from mini_gpt.ru_evaluation_cases import (
     V4_CONVERSATION_SUITE,
     PROMPT_ROUTING_SMOKE_SUITE,
     PROACTIVE_FLIRT_SUITE,

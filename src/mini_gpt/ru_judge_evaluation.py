@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from .ru_llama_evaluation import (
+from .ru_evaluation_cases import (
     ConversationCase,
     PROACTIVE_FLIRT_SUITE,
     PROMPT_ROUTING_SMOKE_SUITE,

@@ -1,3 +1,5 @@
+"""Model-neutral Ru conversation suites and deterministic response gates."""
+
 from __future__ import annotations
 
 import re

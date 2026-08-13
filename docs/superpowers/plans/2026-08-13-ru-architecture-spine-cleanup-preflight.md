@@ -581,7 +581,7 @@ git commit -m "ci: verify current ASP.NET Core architecture"
 - Consumes: repository-relative path strings and a set of Git dirty paths.
 - Produces: `CleanupDecision` through `classify_path(relative_path, *, tracked, dirty_paths)`; no filesystem writes.
 
-- [ ] **Step 1: Write failing cleanup-policy tests**
+- [x] **Step 1: Write failing cleanup-policy tests**
 
 Create `tests/test_cleanup_policy.py`:
 
@@ -597,7 +597,10 @@ from tools.maintenance.cleanup_policy import (
 )
 
 
-@pytest.mark.parametrize("value", ("", ".", "../outside", "D:/LLM/models"))
+@pytest.mark.parametrize(
+    "value",
+    ("", ".", "../outside", "/outside", r"\\server\share", "D:/LLM/models"),
+)
 def test_normalize_relative_path_rejects_broad_or_external_paths(value: str) -> None:
     with pytest.raises(ValueError):
         normalize_relative_path(value)
@@ -618,9 +621,11 @@ def test_normalize_relative_path_rejects_broad_or_external_paths(value: str) -> 
         "data/conversations/approved.jsonl",
         "data/conversations/memory.db",
         ".minigpt/settings.json",
+        "docs/superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md",
+        "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
     ),
 )
-def test_active_runtime_and_user_data_are_protected(relative: str) -> None:
+def test_active_runtime_user_data_and_current_design_are_protected(relative: str) -> None:
     decision = classify_path(relative, tracked=False, dirty_paths=frozenset())
     assert decision.category is CleanupCategory.PROTECTED
 
@@ -691,7 +696,7 @@ def test_dated_implementation_record_requires_review() -> None:
     assert decision.reason == "dated_implementation_record"
 ```
 
-- [ ] **Step 2: Run the tests and verify the RED state**
+- [x] **Step 2: Run the tests and verify the RED state**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q tests\test_cleanup_policy.py
@@ -699,7 +704,7 @@ def test_dated_implementation_record_requires_review() -> None:
 
 Expected: collection FAIL because `tools.maintenance.cleanup_policy` does not exist.
 
-- [ ] **Step 3: Implement exact types and path normalization**
+- [x] **Step 3: Implement exact types and path normalization**
 
 Create `tools/maintenance/__init__.py` as an empty package marker.
 
@@ -753,6 +758,8 @@ _PROTECTED_ROOTS = (
     "reference_text.txt",
     "tyc_talk.wav",
     "vts_token.txt",
+    "docs/superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md",
+    "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
 )
 
 _REBUILDABLE_ROOTS = (
@@ -785,12 +792,13 @@ _LEGACY_NAME = re.compile(
 
 
 def normalize_relative_path(value: str) -> str:
-    normalized = value.replace("\\", "/").strip("/")
+    raw = value.replace("\\", "/")
+    if raw.startswith("/") or re.match(r"^[A-Za-z]:", raw):
+        raise ValueError("cleanup path must not be absolute or include a drive")
+    normalized = raw.strip("/")
     path = PurePosixPath(normalized)
     if not normalized or normalized == "." or path.is_absolute() or ".." in path.parts:
         raise ValueError("cleanup path must be a narrow repository-relative path")
-    if re.match(r"^[A-Za-z]:", normalized):
-        raise ValueError("cleanup path must not include a drive")
     return path.as_posix()
 
 
@@ -867,7 +875,7 @@ The dirty-path overlap check deliberately protects both a dirty leaf and any
 candidate directory that contains it. Do not weaken this to one-way prefix
 matching during implementation.
 
-- [ ] **Step 4: Run policy tests**
+- [x] **Step 4: Run policy tests**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q tests\test_cleanup_policy.py
@@ -875,7 +883,7 @@ matching during implementation.
 
 Expected: all tests PASS.
 
-- [ ] **Step 5: Commit the pure cleanup policy**
+- [x] **Step 5: Commit the pure cleanup policy**
 
 ```powershell
 git add tools/maintenance/__init__.py tools/maintenance/cleanup_policy.py tests/test_cleanup_policy.py

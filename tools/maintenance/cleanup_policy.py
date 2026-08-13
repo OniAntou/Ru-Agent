@@ -50,6 +50,7 @@ _PROTECTED_ROOTS = (
     "vts_token.txt",
     "docs/superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md",
     "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
+    "docs/superpowers/plans/2026-08-13-ru-legacy-removal-workspace-hygiene.md",
 )
 
 _REBUILDABLE_ROOTS = (
@@ -83,7 +84,6 @@ _LEGACY_ROOTS = (
 _REVIEW_REASONS = {
     "gui-winui3.bak": "contains_non_git_backup",
     "logs": "runtime_logs_may_contain_private_data",
-    "src/mini_gpt/ru_llama_evaluation.py": "shared_judge_dependency",
     "eval_results/judge": "mixed_evaluation_outputs",
     "scripts/test_inject.py": "one_off_runtime_probe",
     "scripts/test_keys.py": "one_off_runtime_probe",

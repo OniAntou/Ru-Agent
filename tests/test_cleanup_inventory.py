@@ -112,6 +112,7 @@ def test_discovery_is_bounded_and_collapses_candidate_ancestors(tmp_path: Path) 
         "src/mini_gpt/ru_v6_3_corpus.py",
         "docs/superpowers/plans/2026-08-10-ru-aspnetcore-backend-migration.md",
         "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
+        "docs/superpowers/plans/2026-08-13-ru-legacy-removal-workspace-hygiene.md",
     )
 
     candidates = discover_candidate_paths(tmp_path, tracked)
@@ -129,6 +130,10 @@ def test_discovery_is_bounded_and_collapses_candidate_ancestors(tmp_path: Path) 
     assert not any(value.startswith(".venv/") for value in candidates)
     assert (
         "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md"
+        not in candidates
+    )
+    assert (
+        "docs/superpowers/plans/2026-08-13-ru-legacy-removal-workspace-hygiene.md"
         not in candidates
     )
 

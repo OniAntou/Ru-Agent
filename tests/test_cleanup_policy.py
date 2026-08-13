@@ -36,6 +36,7 @@ def test_normalize_relative_path_rejects_broad_or_external_paths(value: str) -> 
         ".minigpt/settings.json",
         "docs/superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md",
         "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
+        "docs/superpowers/plans/2026-08-13-ru-legacy-removal-workspace-hygiene.md",
     ),
 )
 def test_active_runtime_user_data_and_current_design_are_protected(relative: str) -> None:
@@ -128,16 +129,6 @@ def test_runtime_logs_require_review_before_permanent_cleanup() -> None:
         decision = classify_path(relative, tracked=False, dirty_paths=frozenset())
         assert decision.category is CleanupCategory.REVIEW_REQUIRED
         assert decision.reason == "runtime_logs_may_contain_private_data"
-
-
-def test_shared_judge_dependency_requires_refactor_review() -> None:
-    decision = classify_path(
-        "src/mini_gpt/ru_llama_evaluation.py",
-        tracked=True,
-        dirty_paths=frozenset(),
-    )
-    assert decision.category is CleanupCategory.REVIEW_REQUIRED
-    assert decision.reason == "shared_judge_dependency"
 
 
 def test_dated_implementation_record_requires_review() -> None:

@@ -234,7 +234,6 @@ def discover_candidate_paths(
                 "dated_implementation_record",
                 "one_off_runtime_probe",
                 "duplicate_reference_text",
-                "shared_judge_dependency",
             }
         ):
             candidates.add(relative)

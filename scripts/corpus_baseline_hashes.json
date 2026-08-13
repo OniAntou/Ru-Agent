@@ -15,12 +15,12 @@
     "train.jsonl": "a22aafc8cc4a9a267ef8e3f7c66ef46d5e52914c215a2048b88c1eb5f38c2e8d",
     "val.jsonl": "c93442f95ff3e48394031030e144bd614a5c6c54e4478edd168fa60f8bc87f84",
     "held_out.jsonl": "496906da72f5ae984a67e5e72fc562213d392cfe11146cd259b4a4a7120714bb",
-    "manifest.json": "1be1a87500a6d6ad6ec12048d6c9a828fa5370a4edff64b90d4aff5ddeddd52f"
+    "manifest.json": "e6ff2e144271c72e2c84837818b269f7dbf50147a8bb6be5379feb611d47b6c4"
   },
   "v6_3": {
     "train.jsonl": "003d98c5ab4c14fc607482db0f262ba0a1127c468d9cd81ceb37dc9a8f94df91",
     "val.jsonl": "ef9fb400455549230aeae6cd2da42d2fa7918b99c0936d6131adcd9aaba2d5ab",
     "held_out.jsonl": "d8bc9b7c0deab7a2c2e59631a2f6918e03a2d05fa79f434d202c676955f94bb7",
-    "manifest.json": "7014ad47000983640a77009279c6099dbfb6f5ecd6135efb56f56f78983c0439"
+    "manifest.json": "7212341f566560987cbe660eacd24e5d9c4bb4b59094ec41ccba54dedaac9944"
   }
 }

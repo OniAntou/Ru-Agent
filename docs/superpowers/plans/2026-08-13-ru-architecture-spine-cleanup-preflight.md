@@ -80,7 +80,7 @@ This plan changes no public route and deletes zero files.
 - Consumes: clean `HEAD` in the new worktree and the existing dirty-main status.
 - Produces: a baseline that distinguishes pre-existing failures from plan regressions.
 
-- [ ] **Step 1: Confirm worktree and branch isolation**
+- [x] **Step 1: Confirm worktree and branch isolation**
 
 Run from the isolated worktree:
 
@@ -94,19 +94,23 @@ Expected: the isolated worktree is clean on `codex/ru-architecture-v2`; the
 main-worktree output still contains the previously recorded user-owned dirty
 and untracked files.
 
-- [ ] **Step 2: Run the clean-HEAD baseline sequentially**
+- [x] **Step 2: Run the clean-HEAD baseline sequentially**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
+dotnet restore backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --nologo
 dotnet test backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --no-restore --nologo
+dotnet restore gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 dotnet test gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore --nologo
 & D:\LLM\.venv\Scripts\python.exe scripts\check_aspnetcore_route_matrix.py
 ```
 
-Expected reference: 401 Python tests, 219 backend tests, 94 WinUI tests, and
-`38 HTTP routes, 2 WebSocket routes`. If clean `HEAD` differs, record the exact
-failure and diagnose it before editing; do not silently treat a baseline failure
-as a regression introduced by this plan.
+Observed clean-HEAD baseline: 397 Python tests passed and two legacy corpus
+manifest hashes failed; 219 backend tests passed; 94 WinUI tests passed; route
+contract reported `38 HTTP routes, 2 WebSocket routes`. Investigation proved
+that only `base_adapter` absolute checkout paths differ and all corpus split
+hashes are identical. Task 2 adds the path-invariant regression gate; it does
+not change corpus rows.
 
 ---
 
@@ -129,7 +133,7 @@ as a regression introduced by this plan.
 - Consumes: approved umbrella spec `docs/superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md`; public contract `backend-dotnet/public-route-contract.json`.
 - Produces: stable document paths and project terms consumed by every later architecture-v2 plan.
 
-- [ ] **Step 1: Write the failing documentation contract**
+- [x] **Step 1: Write the failing documentation contract**
 
 Create `tests/test_current_documentation.py`:
 
@@ -199,7 +203,7 @@ def test_architecture_records_current_ownership_and_privacy() -> None:
     assert "private VTS" in architecture
 ```
 
-- [ ] **Step 2: Run the test and verify the RED state**
+- [x] **Step 2: Run the test and verify the RED state**
 
 Run:
 
@@ -209,7 +213,7 @@ Run:
 
 Expected: FAIL because `CONTEXT.md`, `docs/architecture.md`, ADRs, and the documentation index do not exist.
 
-- [ ] **Step 3: Create the project language document**
+- [x] **Step 3: Create the project language document**
 
 Create `CONTEXT.md` using the approved format:
 
@@ -253,7 +257,7 @@ Source, configs, scripts, datasets, checkpoints, evaluations, and documents whos
 _Avoid_: Active LFM2.5 assets
 ```
 
-- [ ] **Step 4: Create concise accepted ADRs**
+- [x] **Step 4: Create concise accepted ADRs**
 
 Create each ADR with YAML status and one decision paragraph. Use these exact decisions:
 
@@ -307,7 +311,7 @@ status: accepted
 Ru's supported local model is LFM2.5. Llama 3.1/v6.x-only source and local assets are removed after a path/reference/protection manifest because retaining an unsupported training line obscures the active runtime and produces misleading operations documentation.
 ```
 
-- [ ] **Step 5: Create current architecture, documentation index, and verification runbook**
+- [x] **Step 5: Create current architecture, documentation index, and verification runbook**
 
 `docs/architecture.md` must contain:
 
@@ -337,7 +341,7 @@ cmd /c D:\LLM\build.bat
 
 Document that heavyweight commands run sequentially and that automated audio frames do not replace listening/microphone/VTS acceptance.
 
-- [ ] **Step 6: Add current-document links to the root README**
+- [x] **Step 6: Add current-document links to the root README**
 
 Immediately after the opening description, add:
 
@@ -352,7 +356,7 @@ Current system documentation:
 
 Do not rewrite the remaining README in this task; legacy-section removal belongs to Plan 2.
 
-- [ ] **Step 7: Run the documentation contract**
+- [x] **Step 7: Run the documentation contract**
 
 Run:
 
@@ -362,7 +366,7 @@ Run:
 
 Expected: all tests PASS.
 
-- [ ] **Step 8: Commit the architecture spine**
+- [x] **Step 8: Commit the architecture spine**
 
 ```powershell
 git add CONTEXT.md README.md docs/README.md docs/architecture.md docs/adr docs/operations/verification.md tests/test_current_documentation.py
@@ -378,13 +382,16 @@ Expected staged scope: only the files listed above.
 
 **Files:**
 - Modify: `.github/workflows/ci.yml`
+- Modify: `scripts/verify_corpus_byte_identical.py`
+- Modify: `scripts/corpus_baseline_hashes.json`
+- Modify: `tests/test_corpus_byte_identical.py`
 - Test: `tests/test_ci_contract.py`
 
 **Interfaces:**
 - Consumes: current project paths and commands recorded in `docs/operations/verification.md`.
-- Produces: CI command contract used until later plans remove legacy corpus verification.
+- Produces: a checkout-portable corpus gate and CI command contract used until later plans remove legacy corpus verification.
 
-- [ ] **Step 1: Write the failing CI contract test**
+- [x] **Step 1: Write the failing CI contract test**
 
 Create `tests/test_ci_contract.py`:
 
@@ -413,7 +420,7 @@ def test_ci_runs_both_dotnet_test_projects() -> None:
     assert "dotnet build gui-winui3/RuApp.csproj -c Release -r win-x64" in workflow
 ```
 
-- [ ] **Step 2: Run the test and verify the RED state**
+- [x] **Step 2: Run the test and verify the RED state**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q tests\test_ci_contract.py
@@ -421,7 +428,96 @@ def test_ci_runs_both_dotnet_test_projects() -> None:
 
 Expected: FAIL because CI still references `server` and does not run the route or .NET test contracts.
 
-- [ ] **Step 3: Update the Python CI job**
+- [x] **Step 3: Write the failing checkout-portability regression test**
+
+In `tests/test_corpus_byte_identical.py`, import `json` and
+`_sha256_manifest` from `verify_corpus_byte_identical`, then add:
+
+```python
+def _write_manifest(path: Path, base_adapter: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "dataset_id": "fixture",
+                "base_adapter": base_adapter,
+                "total_examples": 1,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_manifest_hash_is_independent_of_checkout_root(tmp_path: Path) -> None:
+    first = tmp_path / "first" / "manifest.json"
+    second = tmp_path / "second" / "manifest.json"
+    _write_manifest(first, r"C:\first-checkout\checkpoints\same-adapter")
+    _write_manifest(second, r"D:\second-checkout\checkpoints\same-adapter")
+
+    assert _sha256_manifest(first) == _sha256_manifest(second)
+
+
+def test_manifest_hash_still_detects_a_different_adapter(tmp_path: Path) -> None:
+    first = tmp_path / "first" / "manifest.json"
+    second = tmp_path / "second" / "manifest.json"
+    _write_manifest(first, r"C:\checkout\checkpoints\adapter-a")
+    _write_manifest(second, r"C:\checkout\checkpoints\adapter-b")
+
+    assert _sha256_manifest(first) != _sha256_manifest(second)
+```
+
+The mutation caught by the first test is reintroducing the checkout prefix into
+the hash. The second prevents over-normalizing away the adapter identity.
+
+- [x] **Step 4: Run the new tests and verify the RED state**
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe -m pytest -q `
+  tests\test_corpus_byte_identical.py::test_manifest_hash_is_independent_of_checkout_root `
+  tests\test_corpus_byte_identical.py::test_manifest_hash_still_detects_a_different_adapter
+```
+
+Expected: collection FAIL because `_sha256_manifest` does not exist.
+
+- [x] **Step 5: Canonicalize manifest metadata before hashing**
+
+In `scripts/verify_corpus_byte_identical.py`, add `_sha256_manifest(path)`:
+
+1. Parse the manifest JSON.
+2. Require `base_adapter` to be a string when present.
+3. Replace both `\` and `/` separators, retain the final checkpoint directory
+   name, and canonicalize the field to `checkpoints/<name>`.
+4. Hash `json.dumps(report, ensure_ascii=False, sort_keys=True,
+   separators=(",", ":")).encode("utf-8")`.
+5. When no `base_adapter` is present, retain `_sha256_file(path)` so v6.1/v6.2
+   baselines do not change.
+
+Use `_sha256_manifest` only for `manifest.json` inside `_collect_hashes`.
+Update the two path-bearing baseline values to these independently calculated
+canonical hashes:
+
+```json
+"v6_2_fresh/manifest.json": "e6ff2e144271c72e2c84837818b269f7dbf50147a8bb6be5379feb611d47b6c4",
+"v6_3/manifest.json": "7212341f566560987cbe660eacd24e5d9c4bb4b59094ec41ccba54dedaac9944"
+```
+
+The slash-separated keys above identify the two nested values to replace; do
+not alter the JSON schema or the split-file hashes.
+
+- [x] **Step 6: Run the full legacy corpus gate**
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests\test_corpus_byte_identical.py
+& D:\LLM\.venv\Scripts\python.exe scripts\verify_corpus_byte_identical.py
+```
+
+Expected: six tests pass and all four versions report PASS from any checkout
+path. No corpus file or row changes.
+
+- [x] **Step 7: Update the Python CI job**
 
 Change the install line to:
 
@@ -437,7 +533,7 @@ After pytest, add:
 
 Keep `verify_corpus_byte_identical.py` for this plan; Plan 2 removes it in the same commit that removes the legacy corpus code.
 
-- [ ] **Step 4: Replace the WinUI-only CI job with current .NET verification**
+- [x] **Step 8: Replace the WinUI-only CI job with current .NET verification**
 
 Keep the job name `dotnet` and use these commands in order:
 
@@ -447,7 +543,7 @@ Keep the job name `dotnet` and use these commands in order:
 - run: dotnet build gui-winui3/RuApp.csproj -c Release -r win-x64
 ```
 
-- [ ] **Step 5: Run the CI contract test**
+- [x] **Step 9: Run the CI contract test**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q tests\test_ci_contract.py
@@ -455,7 +551,7 @@ Keep the job name `dotnet` and use these commands in order:
 
 Expected: all tests PASS.
 
-- [ ] **Step 6: Run current decommission and route guards**
+- [x] **Step 10: Run current decommission and route guards**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q tests\test_backend_decommission.py tests\test_aspnetcore_route_matrix.py
@@ -464,10 +560,10 @@ Expected: all tests PASS.
 
 Expected: tests pass and checker reports `38 HTTP routes, 2 WebSocket routes`.
 
-- [ ] **Step 7: Commit the CI repair**
+- [x] **Step 11: Commit the CI repair**
 
 ```powershell
-git add .github/workflows/ci.yml tests/test_ci_contract.py
+git add .github/workflows/ci.yml scripts/verify_corpus_byte_identical.py scripts/corpus_baseline_hashes.json tests/test_corpus_byte_identical.py tests/test_ci_contract.py docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md
 git diff --cached --check
 git commit -m "ci: verify current ASP.NET Core architecture"
 ```

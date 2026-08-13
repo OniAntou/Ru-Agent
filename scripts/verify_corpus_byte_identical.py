@@ -46,6 +46,27 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _sha256_manifest(path: Path) -> str:
+    report = json.loads(path.read_text(encoding="utf-8"))
+    if "base_adapter" not in report:
+        return _sha256_file(path)
+
+    base_adapter = report["base_adapter"]
+    if not isinstance(base_adapter, str):
+        raise ValueError("manifest base_adapter must be a string")
+    adapter_name = base_adapter.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    if not adapter_name:
+        raise ValueError("manifest base_adapter must identify a checkpoint")
+    report["base_adapter"] = f"checkpoints/{adapter_name}"
+    canonical = json.dumps(
+        report,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def _build_into(version: str, destination: Path, seed: int) -> None:
     if version == "v6_1":
         build_ru_v6_1_corpus(destination, seed=seed)
@@ -64,7 +85,14 @@ def _build_into(version: str, destination: Path, seed: int) -> None:
 def _collect_hashes(version: str, seed: int) -> dict[str, str]:
     with TemporaryDirectory(prefix=f"verify-{version}-") as temporary_dir:
         _build_into(version, Path(temporary_dir), seed)
-        return {name: _sha256_file(Path(temporary_dir) / name) for name in SPLIT_FILES}
+        return {
+            name: (
+                _sha256_manifest(Path(temporary_dir) / name)
+                if name == "manifest.json"
+                else _sha256_file(Path(temporary_dir) / name)
+            )
+            for name in SPLIT_FILES
+        }
 
 
 def main(argv: list[str] | None = None) -> int:

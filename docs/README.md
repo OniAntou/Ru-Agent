@@ -12,6 +12,7 @@ an operating contract.
 - [Operations and verification](operations/verification.md)
 - [ASP.NET Core public route contract](aspnetcore-route-matrix.md)
 - [FastAPI decommission validation](aspnetcore-cutover-validation.md)
+- [Architecture-v2 cleanup preflight](validation/architecture-v2-cleanup-preflight.md)
 - [Architecture decisions](adr/)
 - [Canonical route data](../backend-dotnet/public-route-contract.json)
 

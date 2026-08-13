@@ -1184,7 +1184,7 @@ If `tools/maintenance/__init__.py`, `cleanup_policy.py`, or its test was already
 - Consumes: `cleanup_inventory.py` and the actual `D:\LLM` workspace, including ignored assets and dirty paths.
 - Produces: exact machine-readable manifest plus a non-sensitive tracked summary that Plan 2 uses as its deletion input.
 
-- [ ] **Step 1: Generate the actual-workspace manifest**
+- [x] **Step 1: Generate the actual-workspace manifest**
 
 From the isolated worktree, run the tool with the main workspace as the scan root:
 
@@ -1199,7 +1199,7 @@ $manifestPath = Join-Path $refactorRoot 'artifacts\cleanup\ru-architecture-v2-pr
 Expected: exit code `0`; only the ignored worktree artifact is written and no
 file in `D:\LLM` is moved, deleted, or created.
 
-- [ ] **Step 2: Validate manifest privacy, schema, and protected paths**
+- [x] **Step 2: Validate manifest privacy, schema, and protected paths**
 
 Run this read-only validation:
 
@@ -1218,7 +1218,7 @@ $manifest.summary | ConvertTo-Json -Depth 5
 
 Expected: summary only, with protected paths present and no private content markers.
 
-- [ ] **Step 3: Record count-only preflight evidence**
+- [x] **Step 3: Record count-only preflight evidence**
 
 Create `docs/validation/architecture-v2-cleanup-preflight.md` containing:
 
@@ -1235,7 +1235,7 @@ Create `docs/validation/architecture-v2-cleanup-preflight.md` containing:
 
 Do not include prompts, dataset rows, credentials, tokens, audio, VTS metadata, or user file contents.
 
-- [ ] **Step 4: Run all new repository tests**
+- [x] **Step 4: Run all new repository tests**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q `
@@ -1249,7 +1249,7 @@ Do not include prompts, dataset rows, credentials, tokens, audio, VTS metadata, 
 
 Expected: all tests PASS.
 
-- [ ] **Step 5: Run the full Python suite**
+- [x] **Step 5: Run the full Python suite**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
@@ -1257,7 +1257,7 @@ Expected: all tests PASS.
 
 Expected: zero failures. The existing third-party `speech_recognition`/`aifc` deprecation warning may remain and is reported separately.
 
-- [ ] **Step 6: Run backend tests**
+- [x] **Step 6: Run backend tests**
 
 ```powershell
 dotnet test backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --no-restore --nologo
@@ -1265,7 +1265,7 @@ dotnet test backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --no-restore -
 
 Expected baseline: 219 tests pass, zero fail.
 
-- [ ] **Step 7: Run WinUI tests**
+- [x] **Step 7: Run WinUI tests**
 
 ```powershell
 dotnet test gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore --nologo
@@ -1273,7 +1273,7 @@ dotnet test gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore --nologo
 
 Expected baseline: 94 tests pass, zero fail.
 
-- [ ] **Step 8: Run route, dependency, and whitespace gates**
+- [x] **Step 8: Run route, dependency, and whitespace gates**
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe scripts\check_aspnetcore_route_matrix.py
@@ -1284,7 +1284,7 @@ git diff --check
 
 Expected: 38 HTTP + 2 WebSocket routes, no broken Python requirements, no vulnerable NuGet packages, and no whitespace errors.
 
-- [ ] **Step 9: Run the self-contained Release build**
+- [x] **Step 9: Run the self-contained Release build**
 
 ```powershell
 cmd /c build.bat
@@ -1292,7 +1292,7 @@ cmd /c build.bat
 
 Expected: exit code `0`; published `RuBackend.exe` and `RuApp.exe` exist. Do not launch them in this plan.
 
-- [ ] **Step 10: Commit preflight evidence**
+- [x] **Step 10: Commit preflight evidence**
 
 ```powershell
 git add docs/validation/architecture-v2-cleanup-preflight.md
@@ -1302,7 +1302,7 @@ git commit -m "docs: record architecture v2 cleanup preflight"
 
 Do not stage the ignored JSON manifest or any main-worktree file.
 
-- [ ] **Step 11: Verify final branch scope**
+- [x] **Step 11: Verify final branch scope**
 
 ```powershell
 git status --short --branch

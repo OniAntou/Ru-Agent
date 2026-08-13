@@ -1,544 +1,135 @@
-# Ru — Local LFM2.5 Conversational Runtime
+# Ru
 
-Ru is a local Vietnamese-English conversational assistant built only on
-LiquidAI LFM2.5-2.6B. The active GUI uses a direct Q4_K_M GGUF, while the
-native Hugging Face checkpoint stays on disk for a future LFM2.5 fine-tune.
-The former Llama 3.1 runtime and its LoRA GGUF files are removed from the
-active model inventory; historical adapter checkpoints and evaluation reports
-remain for reference.
+Ru is a local Vietnamese-English conversational companion built around a
+WinUI 3 desktop app, an ASP.NET Core public backend, and a private Python
+runtime worker. The local generation default is LiquidAI LFM2.5-2.6B through
+CUDA-enabled llama.cpp.
 
-Current system documentation:
+Current maintainer documentation:
 
 - [Architecture](docs/architecture.md)
 - [Domain language](CONTEXT.md)
-- [Operations and verification](docs/operations/verification.md)
+- [Runtime behavior](docs/operations/runtime-behavior.md)
+- [Verification](docs/operations/verification.md)
 - [Architecture decisions](docs/adr/)
+
+## Runtime topology
+
+`RuApp.exe` owns the process lifecycle. It creates per-run secrets, starts the
+private Runtime Worker on loopback port 8001, starts the ASP.NET Core Public
+Host on port 8000, waits for public readiness, and places all owned children in
+a Windows kill-on-close Job Object.
+
+ASP.NET Core is the only public backend. It owns authentication, validation,
+settings and credentials, sessions/history, activity, structured memory, chat
+ordering, public errors, and all 38 HTTP plus 2 WebSocket routes. Python is an
+authenticated private implementation boundary for model generation, provider
+adapters, STT execution, VTube Studio, observation, and the current voice
+engine coordination.
+
+The canonical route inventory is
+[`backend-dotnet/public-route-contract.json`](backend-dotnet/public-route-contract.json).
+There is no public Python HTTP fallback or alternate backend mode.
 
 ## Setup
 
-Use Python 3.13 and install the CUDA build of PyTorch first:
+Use the repository's Python 3.13 environment and install the project extras:
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe -m pip install --no-cache-dir torch==2.9.0 --index-url https://download.pytorch.org/whl/cu130
 & D:\LLM\.venv\Scripts\python.exe -m pip install -e "D:\LLM[runtime,gguf,dev]"
 ```
 
-Verify the environment:
+The active local assets stay outside Git:
 
-```powershell
-& D:\LLM\.venv\Scripts\python.exe -m pytest -q
-& D:\LLM\.venv\Scripts\python.exe -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
-```
+- `models\gguf\LFM2.5-2.6B-Q4_K_M.gguf` — desktop generation default.
+- `models\lfm2.5-2.6b-hf` — native checkpoint retained for LFM2.5 evaluation
+  and a future supported fine-tuning path.
+- `models\omnivoice` and `omnivoice_env` — isolated local voice runtime.
 
-## Active GUI
+The repository currently exposes no supported training CLI. The quarantined
+training compatibility seam is migrated in the next Architecture v2 plan
+before any LFM2.5 fine-tuning workflow is documented as active.
 
-The active desktop GUI is the **native WinUI 3** app in `gui-winui3/`
-(C#, .NET 10 + Windows App SDK 1.6+, Fluent Design with Mica backdrop),
-producing `RuApp.exe`. ASP.NET Core is the only public backend and keeps the
-stable loopback contract on `127.0.0.1:8000`. A private Python protocol worker
-on `8001` retains only model, voice/STT, VTube Studio, and observation runtime
-implementations; it exposes no public HTTP API.
-The retired Tauri 2 React GUI
-(`gui-tauri/`), the legacy CustomTkinter GUI, and the old Flask web GUI
-have been removed from the repository.
+## Build and run
 
-Build once (self-contained, win-x64):
+Build the self-contained Windows executables:
 
 ```powershell
 & D:\LLM\build.bat
 ```
 
-Run:
+Run the desktop-owned stack:
 
 ```powershell
 & D:\LLM\start_dev.bat
 ```
 
-`start_dev.bat` starts only RuApp. The C# host generates separate per-run
-64-hex desktop and worker secrets, starts the private runtime worker followed
-by ASP.NET Core, waits for readiness through public `8000`, and places both
-children in one Windows kill-on-close Job Object. Closing or
-crashing the desktop app therefore stops the backend and every runtime it
-started, including OmniVoice and `llama-server`. REST requests use a bearer
-token; the chat WebSocket uses the same secret.
+These commands produce and start `RuApp.exe` plus `RuBackend.exe`. Do not start
+the Runtime Worker or voice engine as independent public services.
 
-The app has five views: **Chat** (WebSocket streaming to `/chat` with
-auto-reconnect and typing indicator; persistent session history — each chat
-session is stored under `~/.minigpt/sessions/` with an auto title from the
-first message, a "New Session" button, and a history panel to reopen/delete
-old sessions; legacy `history.json` is auto-migrated once), **Memory** (read
-and clear saved memory via `GET`/`DELETE /memory`), **Settings** (backend, model, API key, max
-tokens, temperature, top-k, web search toggle, checkpoint path — loads the
-current state from `GET /settings`), **Voice** (TTS via the OmniVoice
-service: voice pick, speed, test, warm up, release GPU; toggle "read replies
-aloud" persists in the app and auto-plays each chat reply; microphone
-input → speech recognition fills the chat box; VTube Studio avatar connection
-and expression controls), **VTS Subtitle** (an in-process plain-text overlay
-below the VTube Studio model: topmost/click-through, monitor-aware positioning,
-whole-sentence display at audio start, 2-second hold plus fade, automatic hiding
-when VTS closes, and a persisted toggle in the Voice tab; it does not exchange
-transcripts with VTS or affect the Discord bridge), and **Observation** (a manual, off-by-default
-primary-monitor observe toggle with RAM-only pipeline counters and latency
-metrics).
+## Current behavior
 
-ASP.NET Core directly owns authentication, settings and credential
-transactions, sessions/history, activity, structured memory, chat ordering,
-metadata filtering, STT request validation, and all public route mappings.
-Model generation, OmniVoice, Google STT execution, VTube Studio, and structured
-observation operations cross the authenticated versioned worker protocol only.
-There is no runtime ownership selector, forwarding catch-all, WebSocket relay,
-or alternate backend host mode. The frozen public route contract is
-`backend-dotnet/public-route-contract.json`.
+- Chat preserves bounded context, bilingual routing, natural Vietnamese
+  `anh`/`em`, streamed visible text, and private control-metadata filtering.
+- Hosted OpenCode Zen and Kilo Gateway adapters are optional. Credentials are
+  stored through Windows Credential Manager.
+- Structured memory and reviewed examples reject credentials, URLs, sensitive
+  text, and VTube Studio metadata.
+- OmniVoice is the local TTS engine. The accepted quality baseline is the
+  original voice at native 1.00x speed; non-1.00x native speed still requires
+  listening acceptance.
+- Google `vi-VN` recognition is the current experimental microphone STT path.
+- VTube Studio actions and lip sync remain private runtime metadata.
+  `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
+- Local screen capture and the former local vision provider are disabled. The
+  bounded public observation contract remains for a future provider.
 
-Auto-read replies use the authenticated `/voice/stream` WebSocket with ordered
-WAV chunks, cancellation, playback acknowledgements, and a complete-WAV
-fallback when streaming fails before the first chunk. Voice control markers and
-timing metadata remain private to the transport; they are not shown in chat or
-persisted. The default OmniVoice quality reference remains native 1.00x with
-the selected Vietnamese-normalized 16-step configuration.
+See [runtime behavior](docs/operations/runtime-behavior.md) for invariants and
+manual acceptance boundaries.
 
-For an eligible hosted backend with **read replies aloud** and OmniVoice
-selected, the backend schedules a deduplicated background warm-up of the
-selected voice profile. It runs outside readiness and settings responses;
-local GGUF does not schedule it and retains the existing GPU lifecycle boundary.
-For hosted streams, a complete sentence still starts synthesis immediately. If
-the opening has no sentence punctuation, the buffer may emit exactly one
-word-safe opening phrase (first valid boundary from characters 48--60, then
-61--72); later output returns to sentence-first delivery. A bounded generation
-queue prefetches later sentence audio while the current sentence is playing,
-without overlapping playback. The subtitle overlay (when enabled) changes text
-only when the matching queued audio starts, including complete-WAV fallback;
-stale or cancelled queues cannot clear a newer subtitle. It does not intercept
-or modify the voice stream. Subtitle delivery is fail-open: `MediaPlayer.Play()`
-runs before a bounded, non-blocking latest-state notification. A stalled or
-failed subtitle renderer may drop text but cannot delay or fail voice playback;
-disabling subtitles also disables cue creation and VTS window polling.
+## Evaluation
 
-Reply-latency telemetry is numeric-only and sent only to an authenticated local
-loopback endpoint after a reply completes, fails, or is cancelled. It contains
-monotonic duration milestones and a fixed outcome, never reply text, raw audio,
-identifiers, or private voice/VTS markers. This implementation and its local
-loopback smoke do not establish a live cloud p50/p95 improvement; user-listened
-cloud acceptance and any provider A/B remain pending.
-
-For a repeatable local latency/quality report (without storing raw audio in Git),
-run:
+Run the current model-neutral deterministic and optional judge suite with:
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe scripts\benchmark_tts.py `
-  --manifest data\evaluations\ru_tts_quality_latency_v2.jsonl `
-  --report eval_results\omnivoice\voice-quality-latency.jsonl
+& D:\LLM\.venv\Scripts\python.exe scripts\evaluate_ru_model.py `
+  --config configs\ru_judge_eval.json --models v1 --suite v5
 ```
 
-The backend defaults to the direct LFM2.5 GGUF at
-`models\gguf\LFM2.5-2.6B-Q4_K_M.gguf`. The native checkpoint for future
-fine-tuning is `models\lfm2.5-2.6b-hf`; it is not loaded by the GUI GGUF
-backend. The backend keeps a bounded recent conversation context and validates
-runtime dependencies before loading the model.
+Judge output is local evidence, not an automatic model-adoption decision.
+Natural bilingual conversation, correct `anh`/`em`, coherent context, and
+human listening remain release gates.
 
-Persistent structured memory and online search remain runtime capabilities.
-The WinUI3 app exposes independent controls for self-learning, online search,
-and cloud-memory sharing. Cloud-memory sharing is enabled by default so hosted
-backends can use the same structured memory as the local backend; turn the
-setting off explicitly to keep saved memory out of OpenCode/Kilo prompts and
-to skip hosted self-learning extraction.
+## Verification
 
-## Cloud replies
-
-Ru supports **OpenCode Zen** and **Kilo Gateway** as optional hosted backends.
-In **Settings**, provide the matching API key and choose a model; each service
-URL is fixed by the backend and credentials are stored through the OS keyring.
-For normal Kilo chat, reasoning is disabled by default to reduce the time to
-the first streamed response. The **Reasoning cho tác vụ phức tạp** setting
-re-enables it when a task needs more deliberate reasoning. This setting does
-not change the selected Kilo model or cloud-memory policy; cloud-memory sharing
-remains enabled by default.
-
-Hosted responses stream into the in-progress Ru message. Model-directed
-`[SEARCH: ...]` commands stay hidden during the stream; a search command
-clears that provisional message before the grounded follow-up streams. The
-frontend receives only newly emitted text from the streaming runtime, so
-cumulative provider snapshots do not duplicate text. If an
-opted-in web-search reply performs two OpenCode completions, the recorded
-API duration is their total. A protocol-valid but empty stream is retried
-once before the backend reports a failure; a retry after a partial network
-failure emits a canonical stream reset before the replacement text.
-
-## Local screen observation (temporarily paused)
-
-Local screen observation is temporarily disabled because the local Qwen3-VL
-model was too slow for the current machine. The active WinUI app no longer
-captures the desktop, starts a local vision server, or reports local vision
-metrics. The downloaded vision model weights were not deleted in this change;
-they are not part of the active runtime.
-
-The ASP.NET public observation boundary and private cloud-reaction runtime
-remain available for a future replacement model. `/observation/react` accepts
-bounded structured text, while `/observation/cancel`, `/observation/ack`, and
-voice preflight continue to provide the future lifecycle seams. With no
-replacement provider configured, the vision configuration and lifecycle
-endpoints explicitly report `disabled` instead of pretending that a local
-observer is active.
-
-The local Qwen3-VL setup and benchmark commands were removed from the active
-repository surface. Do not treat the historical observation acceptance notes
-below or in older design documents as current live capability; re-enable the
-feature only after a replacement model passes a new latency and audio gate.
-
-## LFM2.5 model assets
-
-Ru uses the direct LFM2.5-2.6B Q4_K_M GGUF through local CUDA llama.cpp:
-`models\gguf\LFM2.5-2.6B-Q4_K_M.gguf`. The native Transformers checkpoint is
-stored separately at `models\lfm2.5-2.6b-hf` for future fine-tuning and native
-Transformers evaluation. The GGUF is not trainable directly.
-
-The requested public repositories are:
-
-- Native checkpoint: `LiquidAI/LFM2.5-2.6B`
-- GGUF repository: `LiquidAI/LFM2.5-2.6B-GGUF`
-
-The active quantization is Q4_K_M, selected to leave headroom on the 6,141 MiB
-RTX 4050 while retaining the existing single-GPU ownership boundary. A direct
-GGUF smoke request is still required after llama.cpp or model changes; a
-download and unit-test pass alone is not a quality approval.
-
-The old Llama 3.1 GGUF/base/EXL2 files and active LoRA GGUF files are no longer
-present. The old Llama adapter checkpoints under `checkpoints\` are historical
-artifacts and cannot be applied to LFM2.5. Adapt the fine-tuning target modules
-before starting a new LFM2.5 LoRA run.
-
-## Dataset inventory
-
-The workspace retains only `data\conversations\ru_v6_2`,
-`data\conversations\ru_v6_2_fresh`, and `data\conversations\ru_v6_3`.
-The legacy v5, v6, and v6.1 dataset directories have been removed; historical
-builders and configs are kept as source references only.
-
-## Fine-tuning path
-
-The native LFM2.5 checkpoint is ready for a future fine-tune, but the existing
-`scripts\train_ru_llama3_1.py` and v6.x configs describe the historical Llama
-3.1 pipeline. They must be adapted for the LFM2 hybrid module names before a
-new LoRA run; the old Llama adapters are not compatible with this checkpoint.
-
-## Historical v6.3 targeted dataset
-
-The new dataset is `data\conversations\ru_v6_3`, with 180 authored rows split
-108/36/36 into train/validation/held-out. It contains repair, bilingual bridge,
-and context-recall strata, with 90 Vietnamese, 60 mixed, and 30 English rows.
-Manifest authored SHA-256: `d757882ea70ad5b1951a0e94a0012ecfae5c95b5fbbc677f20061bc40f9b7d8b`.
-It is new project-owned data targeted from the hard-suite failures; no v6.2
-rows were copied. It includes bounded contextual profanity metadata: 155
-`none`, 16 `mild`, and 9 `medium` rows. Training has not started. The bounded config is
-`configs\ru_llama3_1_v6_3.json` with 360 steps and a 9,600-second wall-clock
-cap. Chat output must not contain Unicode emoji or ASCII emoticons; visible
-emotion is delegated to VTS metadata when available, with natural prose as the
-fallback.
-
-- Enable **Remember conversations** to let Ru automatically save safe, structured
-  local preferences and project decisions in `data\conversations\memory.db`.
-  Credentials, URLs, sensitive data, and VTube Studio metadata are rejected.
-- **Self-learning (Ru tự ghi nhớ điều học được từ hội thoại)** (bật mặc định trong Model Settings): sau mỗi lượt chat, khi
-  model rảnh, Ru dùng chính LLM để trích các fact lâu dài
-  (profile/preference/project/decision) từ lượt vừa rồi, dedup với memory hiện
-  có rồi upsert vào `data\conversations\memory.db`; các fact này được tự chèn
-  vào context ở các lượt sau. Thông tin nhạy cảm (API key, password, token,
-  URL) và VTS metadata bị bỏ qua.
-- **Allow online search** is enabled by default to permit a model-directed
-  DDGS lookup; disable it to keep replies fully offline.
-- **Clear saved memory** removes only the local SQLite/vector memory artifacts
-  after confirmation; it never changes approved examples or model weights.
-- Evaluate the deterministic memory gate with
-  `& D:\LLM\.venv\Scripts\python.exe scripts\evaluate_ru_memory.py`.
-- **Mark last response useful** writes a reviewed example to
-  `data\conversations\approved.jsonl`; it never changes model weights.
-
-## Historical v6.1 dataset (removed)
-
-The audited `data\conversations\ru_v6_1` dataset was removed to keep only the
-v6.2 and v6.3 datasets in the workspace. Its builder, audit code, and
-configuration remain as historical source references; they do not indicate
-that the deleted dataset is currently available.
-
-## v6.2 fresh roleplay dataset
-
-`data\conversations\ru_v6_2_fresh` is a new authored candidate, separate from
-the historical `ru_v6_2` data. It contains 1,200 authored rows plus 39 safe
-train-only calibration rows imported from `approved.jsonl` and
-`memory_texts.json`: 759 train, 240 validation, and 240 held-out. The import
-audit rejected 44 rows for duplicates, malformed/noisy content, AI-meta text,
-control markers, links/lists, or unsafe explicit material. Rejected source text
-is not written to the candidate. Authored and imported rows now use the
-language-specific `ru_style.py` personality prompts, preserve the `anh`/`em`
-or English-only voice, and keep VTS control markers out of the training text.
-The active contract no longer forces a `Nya~` suffix; it allows only contextual
-mild/medium profanity under the documented safety boundary.
-
-Rebuild it deterministically with:
+Run heavyweight gates sequentially:
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe scripts\build_corpus.py --version v6_2_fresh
+& D:\LLM\.venv\Scripts\python.exe -m pytest -q
+dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --nologo
+dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
+cmd /c D:\LLM\build.bat
 ```
 
-The candidate was trained from the v6 adapter with the bounded config. It ran
-480 steps in 2,630 seconds and reached final validation loss 0.2060. The
-adapter manifest is `checkpoints\ru-llama3.1-8b-instruct-v6.2-fresh\ru_manifest.json`.
-The bounded config was `configs\ru_llama3_1_v6_2_fresh.json` with a 9,600-second
-wall-clock guard and 6,144 MiB physical cap. The CUDA allocator reported 8,445 MiB
-while the driver-side physical sample
-was unavailable, so the physical-VRAM gate is recorded as unverified; the v6.2
-GGUF entry is historical and is no longer the operational default. The LFM2.5
-runtime has its own bilingual and hardware gates.
+Automated tests do not establish speaker quality, physical-microphone accuracy,
+or live VTube Studio behavior. Those remain user-run hardware checks.
 
-The same deterministic 12-case QLoRA evaluation was rerun for all three
-adapters (`comparison_v6.json`, `comparison_v6_1.json`, and
-`comparison_v6_2.json`). Automatic results were v6 `11/12`, v6.1 `12/12`, and
-v6.2 `12/12`; v6 alone failed the Vietnamese context-work case with an
-out-of-context refusal. v6.2 responses were shorter and consistently ended with
-`Nya~` under the historical v6.2 prompt contract; that suffix is no longer
-active, and mixed-language grammar still needs manual review. The evaluation
-allocator peak was 5,686.78 MiB for each run. This does not override v6.2's
-unverified physical-training VRAM gate or the required manual bilingual/held-out
-review.
+## Data and privacy
 
-### v6 hard evaluation
+Business persistence is currently split across the legacy application-data
+location and structured-memory data roots described in
+[architecture](docs/architecture.md). Architecture v2 will migrate it
+transactionally to `%LOCALAPPDATA%\Ru`; until that gate passes, existing data
+is protected and must not be manually moved or deleted.
 
-The harder suite is `data\\evaluations\\ru_hard_v1.json` (36 authored cases,
-SHA-256 `648d5522a4d8096e33a4f06a7346e96693e7241633cc6ac628ea1bd421c0e84c`).
-It was run with greedy decoding and 128 new tokens in isolated adapter
-processes. Results were v6 `158/360` with 13 hard fails, v6.1 `180/360` with
-11 hard fails, and v6.2 `205/360` with 7 hard fails. Automatic ranking by
-strict/pass-rate is v6.1, v6.2, v6; none passed the strict gate. v6.2 had the
-best repair-stratum score and no explicit-content hard fail, but still failed
-several repair cases and needs manual review. Reports are under
-`checkpoints\\ru-hard-evaluation-v1`.
-
-## Local voice output
-
-The runtime can automatically send each completed reply to the selected local
-voice service. Its **Voice** selection persists either `Ru (OmniVoice)` or
-`Ái Vy (OmniVoice)`. Every historical Gwen or OmniVoice trial label migrates
-to the equivalent OmniVoice choice. OmniVoice is the default. Ru uses
-`tyc_talk.wav` and its matching transcript; Ái Vy uses the independently kept
-`data\voices\omnivoice\ai_vy.wav` and its matching transcript. Do not change a
-reference audio without its matching transcript.
-
-The WinUI3 Voice view exposes both voice profiles, base speed, warmup, release,
-test playback, microphone input, and VTube Studio controls.
-
-### Voice-style presets
-
-The local DSP pitch experiment is **rejected for user-facing use** and its
-controls are removed. The voice style contract now supports only **Giữ giọng
-gốc** (`original`), which is the unchanged clone-only quality reference and sends no
-OmniVoice `instruct` value. Historical `low_pitch`, `high_pitch`, and
-`whisper` values safely resolve to **Giữ giọng gốc** when loaded; fresh API
-and loopback requests for any retired value are rejected.
-
-The application accepts no free-form voice prompt. The preset ID is resolved
-only inside the local TTS transport immediately before generation; it never
-becomes chat text, TTS input text, conversation history, memory,
-self-learning input, or VTube metadata. The WinUI Voice view no longer exposes
-a pitch/style selector and saves the stable `original` ID for compatibility.
-
-If the Ái Vy asset is absent on a fresh checkout, fetch only that reference
-file (not the removed Gwen model):
-
-```powershell
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\download_omnivoice_ai_vy_voice.py
-```
-
-The earlier clone-plus-`instruct` presets were rejected after deterministic and
-listening evidence showed no reliable directional difference. The replacement
-passed a 24 kHz sine-wave frequency check, but failed the actual Vietnamese
-listening check on 2026-08-07: both shifted presets sound metallic. A
-same-waveform round-trip probe measured 17.67–30.34 dB log-spectral difference
-for the pitch processor, so a mathematically correct frequency shift is not a
-quality acceptance result. Those experimental controls are removed and replaced
-by the native-speed recovery path; human listening remains required before a
-non-1.00x quality or release claim.
-
-The recovery script writes `data\voices\omnivoice\ai_vy.wav`; this is the
-same repository-level path that the OmniVoice service resolves at runtime.
-
-All choices retain the same VTube Studio `VoiceVolume` lip-sync behavior and
-sentence queue. VTube metadata is removed before synthesis.
-
-### OmniVoice runtime
-
-Both OmniVoice labels require the already-installed
-`D:\LLM\omnivoice_env` runtime and `models\omnivoice` cache on `D:`. The runtime
-does not install packages or download a model. It starts
-`omnivoice_tts_server.py` only when that selected engine is needed, on loopback
-port 5052. The D-only setup script installs OmniVoice and its Flask loopback
-service dependency in `omnivoice_env`.
-
-`scripts\run_omnivoice_benchmark.ps1` benchmarks the active OmniVoice path only.
-The removed Gwen service is historical and is not a supported setup or runtime
-dependency.
-
-The Task 4 offline loopback smoke warmed the `ru` profile and returned a
-representative warm `/tts` WAV in 1,768.04 ms (server synthesis header:
-1,682 ms). It is local runtime evidence only, not a live-cloud percentile or
-listening acceptance result.
-
-For the pending pronunciation listening trial, both OmniVoice labels use the
-measured `vi-normalized-16` settings (`language="Vietnamese"`, text
-normalization, 16 steps). This affects only explicitly selected OmniVoice test
-voices; **Ru (OmniVoice)** remains the runtime default.
-
-### Voice pace
-
-Settings exposes a persisted **Base speed** control from 0.75x to 1.20x,
-defaulting to 1.00x. **Let Ru adjust pace around this speed** is opt-in and
-defaults to off; saved choices persist. When enabled, Ru keeps the effective
-speed within the bounded slow/normal/quick range around the manual baseline
-and inside the global safety bounds. When disabled, the TTS, stream, and
-screen-observation routes send the saved manual speed unchanged.
-
-Non-1.00x speed is applied through OmniVoice's native
-`model.generate(..., speed=...)` argument; the loopback writes the generated
-mono waveform directly to WAV with no local pitch or time-stretch processor.
-At exactly 1.00x the argument is omitted, preserving the clone-only quality
-path. A sequential live Ru probe confirmed the native path returns 24 kHz
-mono WAV at every tested speed, with wall-clock audio duration scaling as
-`1/speed` (1.00x: 3.28 s, 0.92x: 3.56 s, 1.08x: 3.04 s). Human listening
-remains the final quality gate for non-1.00x native speed.
-
-Pacing metadata is private: it never appears in the chat, TTS text,
-conversation history, or memory.
-
-Before warming OmniVoice, Ru releases the local GGUF runtime. Before local
-generation, it releases OmniVoice. A voice failure is reported as unavailable
-and never silently changes the saved selection.
-
-For manual verification, select Ru and Ái Vy, test a manual speed plus each
-automatic pace, restart the app to confirm settings persist, and verify that
-normal local GGUF generation and VTube lip-sync still work.
-
-## Experimental voice input
-
-Voice input uses the Google recognizer (`vi-VN`) and is an experimental
-feature. Microphone audio is sent to Google's recognition endpoint; nothing is
-stored locally beyond the resulting transcript. The former Sherpa-ONNX offline
-engine was removed from the runtime; saved settings that still reference it
-fall back to Google with a clear error.
-
-The WinUI3 app wires it through the backend `POST /voice/transcribe` endpoint:
-the mic button in the chat view records via the built-in microphone service
-(16 kHz mono PCM WAV), caps capture at 60 seconds, and
-fills the chat input with the recognized Vietnamese text.
-
-## Ru identity and capabilities
-
-Ru is the user's AI assistant embodied by the connected Live2D avatar, not a
-standalone human or an all-powerful controller. Its mission is natural
-conversation, in-session context, explanations, search, planning, and voice
-responses when the related services are available. The active personality is
-friendly, witty, lightly grumpy, and affectionate; in Vietnamese Ru calls the
-user `anh` and refers to itself as `em`, while staying direct in serious or
-sensitive situations.
-
-Ru can use the current model's VTube Studio hotkeys and expressions, combine up
-to three compatible visible actions, and drive the mapped `LLM_Sway` body signal.
-`VoiceVolume` remains the lip-sync source; `LLM_MouthOpen` is not used. VTS
-action metadata is private and is removed from chat, TTS, history, and memory.
-Ru must report unavailable connections or controls honestly instead of claiming
-that an action happened.
-
-## VTube Studio actions
-
-The VTS runtime modules (`vts_manager`, `vts_catalog`, `vts_actions`,
-`vts_motion`) are wired through the backend (`/vts/status|connect|action`) and
-the WinUI3 Voice view (connect, facial joy/surprised/gentle, body
-raise_hand/tail_up). For every reply, the runtime reads the current VTube Studio
-model, its hotkeys,
-and its `.exp3.json` expressions. It supplies that model-scoped catalog to Ru
-as private `vts_XX` and `expr_XX` codes, so switching models changes the
-available actions without editing source code. Ru may use any listed hotkey,
-including appearance, hair, and clothing changes that belong to the current
-model.
-
-Ru emits chosen actions only as a terminal `[[VTS:...]]` suffix. The runtime
-removes that metadata before showing chat text, generating TTS, saving memory,
-or saving a reviewed example. It rechecks the current model before dispatch;
-codes from a previous model are discarded safely. An expression activated by
-Ru is deactivated after a short interval, while expressions that were already
-active from the user are never touched.
-
-While Ru is speaking, `LLM_Sway` keeps a reduced but visible layered motion
-(amplitude bound `14.0`, base speed `1.35`) instead of the former large sway.
-The layers and easing vary the timing slightly so the movement does not repeat
-as one obvious cycle. At most one ambient
-micro-action is considered every 12--25 seconds. The candidate pool is read
-from the current model catalog each time and is limited to reversible blink,
-eye, head, ear, or tail motions; pout, blush, clothing/body-reveal, and
-unknown entries are skipped. Ru's explicit catalog-selected actions remain
-independent, so a model can still expose additional hotkeys without changing
-this scheduler. Ru may combine up to three compatible facial, eye, ear, or
-tail catalog codes in one private suffix when they reinforce the same emotion;
-the codes are still removed before chat display, TTS, memory, and history.
-
-Direct Vietnamese avatar requests such as `giơ tay`, `vẫy tay`, `vui lên`,
-`nhắm mắt`, and `dựng đuôi` remain a compatibility fallback even if the
-language model answers as a text-only assistant.
-
-VTube Studio `VoiceVolume` remains the only mouth/lip-sync input. Do not map
-or recreate `LLM_MouthOpen`.
-
-## Desktop overlay (Spout2)
-
-`RuDesktopOverlay` is a separate transparent desktop window. It receives the
-existing `VTubeStudioSpout` output, so it does not change Ru, the active VTube
-Studio model, `VoiceVolume`, `LLM_Sway`, or any model hotkeys.
-
-The overlay can be started or stopped through the `scripts`
-(`build_ru_desktop_overlay.ps1` / `start_ru_desktop_overlay.ps1`); the legacy
-GUI button was removed with the CustomTkinter GUI. It starts or stops only the
-`RuDesktopOverlay` receiver. It does not close Ru or VTube Studio, and it uses
-the current `VTubeStudioSpout` sender.
-
-1. In VTube Studio, enable its Windows **Spout2** sender. Use **Color Picker
-   Background** and enable transparency in capture. Do not use the earlier
-   green desktop-window workaround.
-2. Build the receiver once:
-
-   ```powershell
-   .\scripts\build_ru_desktop_overlay.ps1
-   ```
-
-3. Start it without click-through first, then drag it into place:
-
-   ```powershell
-   .\scripts\start_ru_desktop_overlay.ps1
-   ```
-
-4. Only after confirming that the avatar has no green background, close it and
-   restart with mouse input passing to the desktop beneath the model:
-
-   ```powershell
-   .\scripts\start_ru_desktop_overlay.ps1 -ClickThrough
-   ```
-
-While the non-click-through overlay has focus, `C` toggles click-through, `T`
-keeps it topmost, and `Esc` closes it. Closing this overlay does not close Ru
-or VTube Studio. If it says it is waiting for `VTubeStudioSpout`, enable the
-Spout2 sender in VTube Studio and leave that app running.
-
-The voice sample is used under the Tsukuyomi-chan sample-voice terms. Any
-distributed synthesis using only these samples must include the required
-Tsukuyomi-chan attribution from the official source:
-https://tyc.rei-yumesaki.net/material/voice/sample-voice/
-
-The local stack has no API fee, but its model and sample-voice licenses still
-apply. Do not redistribute the Tsukuyomi-chan source WAV files; follow its
-character and sample-voice terms, including attribution when required for
-published output.
+Visible chat text may cross the private generation boundary. Credentials,
+audio bytes, VTS actions, voice timing/control metadata, and transcripts must
+not enter logs, cleanup manifests, memory, history, or reviewed examples.
 
 ## Project boundaries
 
-All model weights, checkpoints, data, and caches stay on `D:\LLM`. The LFM2.5
-Q4_K_M GGUF is the operational GUI default and the native checkpoint is the
-fine-tuning source. Any later LFM2.5 adapter promotion requires the existing
-bilingual conversation and physical-VRAM gates; validation loss alone is not an
-adoption decision.
+Model weights, voice assets, active datasets, credentials, runtime app data,
+and local caches are not source files. Do not commit them. Do not treat a model
+download, unit-test pass, benchmark score, or historical report as live quality
+acceptance.

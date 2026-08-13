@@ -15,6 +15,7 @@ def test_current_architecture_spine_exists_and_is_linked() -> None:
         "CONTEXT.md",
         "docs/README.md",
         "docs/architecture.md",
+        "docs/operations/runtime-behavior.md",
         "docs/operations/verification.md",
         "docs/adr/0001-aspnet-core-public-host.md",
         "docs/adr/0002-typed-worker-protocol-v2.md",
@@ -27,6 +28,7 @@ def test_current_architecture_spine_exists_and_is_linked() -> None:
     readme = _text("README.md")
     assert "docs/architecture.md" in readme
     assert "CONTEXT.md" in readme
+    assert "docs/operations/runtime-behavior.md" in readme
 
 
 def test_context_uses_approved_ru_domain_language() -> None:
@@ -61,3 +63,32 @@ def test_architecture_records_current_ownership_and_privacy() -> None:
     assert "typed worker protocol v2" in architecture
     assert "chat text" in architecture
     assert "private VTS" in architecture
+
+
+def test_current_docs_do_not_publish_retired_operating_instructions() -> None:
+    readme = _text("README.md")
+    for retired in (
+        "scripts\\build_corpus.py",
+        "train_ru_llama3_1.py",
+        "ru_v6_",
+        "Discord bridge",
+        "FastAPI",
+    ):
+        assert retired not in readme
+
+
+def test_superseded_dated_records_are_removed() -> None:
+    stale_prefixes = (
+        "2026-08-07-",
+        "2026-08-08-",
+        "2026-08-09-",
+        "2026-08-10-",
+        "2026-08-11-",
+    )
+    stale = [
+        path.relative_to(ROOT).as_posix()
+        for folder in (ROOT / "docs/superpowers/plans", ROOT / "docs/superpowers/specs")
+        for path in folder.glob("*.md")
+        if path.name.startswith(stale_prefixes)
+    ]
+    assert stale == []

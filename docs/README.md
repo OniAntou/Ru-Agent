@@ -9,6 +9,7 @@ an operating contract.
 
 - [Architecture](architecture.md)
 - [Domain language](../CONTEXT.md)
+- [Current runtime behavior](operations/runtime-behavior.md)
 - [Operations and verification](operations/verification.md)
 - [ASP.NET Core public route contract](aspnetcore-route-matrix.md)
 - [FastAPI decommission validation](aspnetcore-cutover-validation.md)
@@ -20,9 +21,11 @@ an operating contract.
 
 - [Umbrella design](superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md)
 - [Plan 1: architecture spine and cleanup preflight](superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md)
+- [Plan 2: legacy removal and workspace hygiene](superpowers/plans/2026-08-13-ru-legacy-removal-workspace-hygiene.md)
 
 ## Historical implementation records
 
-Documents under `docs/superpowers/` that are not listed above are dated design
-or implementation records. They are non-authoritative until the architecture-v2
-cleanup extracts any still-current decision and removes superseded records.
+Superseded pre-Architecture-v2 plans and specs were removed after current
+decisions were consolidated into the architecture, ADRs, runtime behavior, and
+verification documents. Git history remains the recovery source for those
+implementation records.

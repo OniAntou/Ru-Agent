@@ -64,13 +64,13 @@ path remain protected.
 - Modify: `tools/maintenance/cleanup_inventory.py`
 - Modify: `tests/test_cleanup_inventory.py`
 
-- [ ] Add an exact tracked legacy path set and prove the test fails while the
+- [x] Add an exact tracked legacy path set and prove the test fails while the
   files still exist.
-- [ ] Assert current Python and CI no longer import or execute v6 corpus and
+- [x] Assert current Python and CI no longer import or execute v6 corpus and
   Llama-specific evaluation code after retirement.
-- [ ] Explicitly allow the protected training file and active llama.cpp runtime
+- [x] Explicitly allow the protected training file and active llama.cpp runtime
   instead of relying on a broad name grep.
-- [ ] Retain cleanup inventory as a read-only maintenance tool, but remove the
+- [x] Retain cleanup inventory as a read-only maintenance tool, but remove the
   resolved shared-judge review exception and protect both Architecture v2 plans.
 
 ## Task 4: Delete the tracked Llama 3.1/v6 implementation
@@ -82,14 +82,14 @@ path remain protected.
 - Modify: `.github/workflows/ci.yml`
 - Modify: `README.md`
 
-- [ ] Delete only the approved tracked set with patch-based Git-recoverable
+- [x] Delete only the approved tracked set with patch-based Git-recoverable
   changes; keep `src/mini_gpt/llama3_1_training.py` untouched.
-- [ ] Remove corpus-byte verification from CI in the same change as the corpus
+- [x] Remove corpus-byte verification from CI in the same change as the corpus
   builder/verifier.
-- [ ] Replace README's historical v6 inventory/training claims with the current
+- [x] Replace README's historical v6 inventory/training claims with the current
   LFM2.5 runtime, active evaluation command, and explicit Plan 3 training seam.
-- [ ] Run the retirement, CI-contract, judge, style, and complete Python suites.
-- [ ] Commit tracked legacy retirement only after green tests.
+- [x] Run the retirement, CI-contract, judge, style, and complete Python suites.
+- [x] Commit tracked legacy retirement only after green tests.
 
 ## Task 5: Consolidate current documentation and retire dated records
 
@@ -102,16 +102,16 @@ path remain protected.
 - Modify: `tests/test_current_documentation.py`
 - Delete: the 34 dated records listed in the cleanup preflight
 
-- [ ] Capture still-current LFM2.5, observation-disabled, voice native-speed,
+- [x] Capture still-current LFM2.5, observation-disabled, voice native-speed,
   playback/subtitle isolation, VTS privacy, ownership, and human-acceptance
   rules in current documents.
-- [ ] Exclude rejected pitch/style experiments, unimplemented Discord plans,
+- [x] Exclude rejected pitch/style experiments, unimplemented Discord plans,
   FastAPI migration staging, old route relays, and historical Llama metrics.
-- [ ] Add a documentation contract that links every current document and
+- [x] Add a documentation contract that links every current document and
   rejects stale FastAPI/Llama/v6 operating instructions in README/current docs.
-- [ ] Delete the 34 non-authoritative implementation records only after their
+- [x] Delete the 34 non-authoritative implementation records only after their
   current decisions are represented in the current spine.
-- [ ] Keep the umbrella design, Plan 1, this plan, ADRs, and validation evidence.
+- [x] Keep the umbrella design, Plan 1, this plan, ADRs, and validation evidence.
 
 ## Task 6: Resolve reviewed local clutter and apply permanent cleanup
 

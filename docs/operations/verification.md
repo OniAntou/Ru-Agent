@@ -23,6 +23,17 @@ The route checker must report 38 HTTP routes and 2 WebSocket routes. The build
 must produce self-contained `RuBackend.exe` and `RuApp.exe`; verification does
 not launch them.
 
+The current model-neutral evaluation entrypoint is optional because its LLM
+judge can require external credentials. Its deterministic layer can be run
+without the judge:
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\evaluate_ru_model.py --config D:\LLM\configs\ru_judge_eval.json --models v1 --suite smoke --no-judge
+```
+
+Evaluation output must remain local and must not be treated as an adoption
+decision without bilingual conversation review.
+
 Automated voice tests prove protocol ordering, cancellation, cleanup, metadata
 privacy, and non-empty audio frames. They do not prove that speakers sound
 correct, a physical microphone transcribes correctly, or a live VTube Studio

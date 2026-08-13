@@ -2,6 +2,10 @@
 
 Status: current ownership plus accepted architecture-v2 targets, 2026-08-13.
 
+Operational invariants for generation, voice, STT, VTS, observation, and live
+acceptance are maintained in
+[`operations/runtime-behavior.md`](operations/runtime-behavior.md).
+
 ## Process topology
 
 RuApp owns the desktop lifecycle. It creates separate per-run desktop and

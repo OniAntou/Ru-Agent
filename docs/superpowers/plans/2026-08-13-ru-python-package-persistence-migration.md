@@ -144,15 +144,15 @@ src/ru_runtime/
 - Legacy credential service: OpenCode and Kilo entries present; Gemini absent.
 - New credential service: all three expected entries absent.
 
-- [ ] Recheck these counts/states immediately before execution and fail closed
+- [x] Recheck these counts/states immediately before execution and fail closed
   on drift, links, a non-empty canonical directory, or unexpected file names.
-- [ ] Build and run only the migration command; record counts/hashes/statuses,
+- [x] Build and run only the migration command; record counts/hashes/statuses,
   never file contents, credential values, or user text.
-- [ ] Prove canonical stores are readable and credential presence moved to
+- [x] Prove canonical stores are readable and credential presence moved to
   `Ru`; verify legacy data/service entries are absent only after success.
-- [ ] Remove the temporary command, migrator implementations, and every active
+- [x] Remove the temporary command, migrator implementations, and every active
   legacy storage/service identifier after the one-time gate passes.
-- [ ] Keep validation evidence sufficient to recover from canonical data or Git
+- [x] Keep validation evidence sufficient to recover from canonical data or Git
   without retaining compatibility code.
 
 ## Task 7: Verify and document Plan 3

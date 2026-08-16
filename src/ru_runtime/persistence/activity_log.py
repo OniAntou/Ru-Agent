@@ -16,13 +16,15 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ru_runtime.persistence.canonical import canonical_data_root
+
 logger = logging.getLogger("ru_runtime.persistence.activity_log")
 
 _configured_data_root = os.environ.get("RU_DATA_ROOT", "").strip()
 LOG_ROOT = (
     Path(_configured_data_root)
     if _configured_data_root
-    else Path.home() / ".minigpt"
+    else canonical_data_root()
 )
 LOG_FILE = LOG_ROOT / "activity_log.jsonl"
 MAX_ENTRIES = 5000

@@ -18,7 +18,7 @@ public sealed class BusinessEndpointTests
             data.Paths.SettingsFile,
             "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\",\"max_tokens\":128,\"allow_web_search\":false}");
         var credentials = new FakeCredentialStore();
-        credentials.Seed("mini_gpt", "api_key", "private-opencode-key");
+        credentials.Seed("Ru", "api_key", "private-opencode-key");
         using var factory = CreateAspNetFactory(data.Paths, credentials: credentials);
         using var client = factory.CreateAuthenticatedClient();
 
@@ -69,7 +69,7 @@ public sealed class BusinessEndpointTests
         Assert.Equal(192, loaded.MaxTokens);
         Assert.Equal(
             "new-private-key",
-            await credentials.GetAsync("mini_gpt", "api_key", CancellationToken.None));
+            await credentials.GetAsync("Ru", "api_key", CancellationToken.None));
         var persisted = await File.ReadAllTextAsync(data.Paths.SettingsFile);
         Assert.DoesNotContain("new-private-key", persisted, StringComparison.Ordinal);
         Assert.DoesNotContain("api_key", persisted, StringComparison.OrdinalIgnoreCase);
@@ -84,7 +84,7 @@ public sealed class BusinessEndpointTests
             "{\"backend\":\"llama.cpp\",\"model\":\"old.gguf\"}");
         var originalSettings = await File.ReadAllTextAsync(data.Paths.SettingsFile);
         var credentials = new FakeCredentialStore();
-        credentials.Seed("mini_gpt", "api_key", "old-key");
+        credentials.Seed("Ru", "api_key", "old-key");
         var runtime = new FakeRuntimeSettingsLoader
         {
             Error = new InvalidOperationException("private model path must not leak"),
@@ -111,7 +111,7 @@ public sealed class BusinessEndpointTests
         Assert.Equal(originalSettings, await File.ReadAllTextAsync(data.Paths.SettingsFile));
         Assert.Equal(
             "old-key",
-            await credentials.GetAsync("mini_gpt", "api_key", CancellationToken.None));
+            await credentials.GetAsync("Ru", "api_key", CancellationToken.None));
     }
 
     [Fact]

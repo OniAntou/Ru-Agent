@@ -344,7 +344,7 @@ public static class BusinessEndpoints
         try
         {
             return !string.IsNullOrWhiteSpace(await credentials.GetAsync(
-                "mini_gpt",
+                "Ru",
                 account,
                 cancellationToken).ConfigureAwait(false));
         }

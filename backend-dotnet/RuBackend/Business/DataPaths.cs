@@ -11,13 +11,15 @@ public sealed record DataPaths(
     public static DataPaths Resolve(
         string projectRoot,
         string userProfile,
+        string localAppData,
         string? configuredDataRoot)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(userProfile);
+        ArgumentException.ThrowIfNullOrWhiteSpace(localAppData);
 
         var resolvedProjectRoot = Path.GetFullPath(projectRoot);
-        var resolvedUserProfile = Path.GetFullPath(userProfile);
+        var resolvedLocalAppData = Path.GetFullPath(localAppData);
         var isolatedRoot = string.IsNullOrWhiteSpace(configuredDataRoot)
             ? null
             : Path.GetFullPath(configuredDataRoot.Trim());
@@ -25,7 +27,7 @@ public sealed record DataPaths(
         var memoryRoot = isolatedRoot
             ?? Path.Combine(resolvedProjectRoot, "data", "conversations");
         var businessRoot = isolatedRoot
-            ?? Path.Combine(resolvedUserProfile, ".minigpt");
+            ?? Path.Combine(resolvedLocalAppData, "Ru");
 
         return new DataPaths(
             Path.Combine(memoryRoot, "memory.db"),

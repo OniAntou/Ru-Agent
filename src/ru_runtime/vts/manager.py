@@ -13,6 +13,7 @@ from .catalog import VtsCatalog, build_catalog
 from .config import MotionConfig
 from .context import MotionContextProvider
 from .emotion import EmotionTag
+from ru_runtime.persistence.canonical import canonical_data_root
 from .motion import (
     body_pose_entries,
     BreathController,
@@ -41,7 +42,7 @@ RECONNECT_MIN_INTERVAL_SECONDS = 5.0
 RECONNECT_BACKOFF_CAP_SECONDS = 30.0
 MAX_CONCURRENT_REQUESTS = 4
 CATALOG_CACHE_TTL_SECONDS = 10.0
-VTS_TOKEN_PATH = Path.home() / ".minigpt" / "pyvts_token.txt"
+VTS_TOKEN_PATH = canonical_data_root() / "pyvts_token.txt"
 
 
 def reconnect_delay(attempts: int) -> float:

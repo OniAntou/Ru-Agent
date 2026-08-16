@@ -1,5 +1,6 @@
 using RuBackend.Business;
 using RuBackend.Business.Activity;
+using RuBackend.Business.Migration;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
 using RuBackend.Configuration;
@@ -10,6 +11,16 @@ using RuBackend.Security;
 using RuBackend.Speech;
 using RuBackend.Vts;
 using RuBackend.Worker;
+
+if (args.Contains("--migrate-local-state", StringComparer.Ordinal))
+{
+    return await MigrationCommand.RunAsync(args);
+}
+
+if (args.Contains("--restore-legacy-credentials", StringComparer.Ordinal))
+{
+    return await MigrationCommand.RestoreLegacyCredentialsAsync();
+}
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
@@ -69,6 +80,7 @@ SttEndpoints.Map(app);
 VtsEndpoints.Map(app);
 
 app.Run();
+return 0;
 
 static MemorySqliteOptions BuildMemorySqliteOptions(IConfiguration configuration)
 {
@@ -98,9 +110,16 @@ static DataPaths BuildDataPaths(IConfiguration configuration)
         userProfile = Directory.GetCurrentDirectory();
     }
 
+    var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    if (string.IsNullOrWhiteSpace(localAppData))
+    {
+        localAppData = userProfile;
+    }
+
     return DataPaths.Resolve(
         Directory.GetCurrentDirectory(),
         userProfile,
+        localAppData,
         dataRoot);
 }
 

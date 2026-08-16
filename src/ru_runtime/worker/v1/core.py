@@ -24,9 +24,9 @@ class RuRuntimeCore:
         self.memory_store = None
         self._memory_store_lock = threading.RLock()
 
-        self.opencode_cred = CredentialStore("mini_gpt", "api_key")
-        self.kilo_cred = CredentialStore("mini_gpt", "kilo_gateway_api_key")
-        self.gemini_vision_cred = CredentialStore("mini_gpt", "gemini_vision_api_key")
+        self.opencode_cred = CredentialStore("Ru", "api_key")
+        self.kilo_cred = CredentialStore("Ru", "kilo_gateway_api_key")
+        self.gemini_vision_cred = CredentialStore("Ru", "gemini_vision_api_key")
 
     def get_memory_store(self):
         with self._memory_store_lock:

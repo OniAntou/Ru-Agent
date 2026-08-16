@@ -6,12 +6,13 @@ namespace RuBackend.Tests.Business;
 public sealed class DataPathsTests
 {
     [Fact]
-    public void Resolve_uses_project_memory_and_profile_business_defaults()
+    public void Resolve_uses_project_memory_and_localappdata_ru_business_defaults()
     {
         var projectRoot = Path.Combine(Path.GetTempPath(), "ru-project", Guid.NewGuid().ToString("N"));
         var userProfile = Path.Combine(Path.GetTempPath(), "ru-profile", Guid.NewGuid().ToString("N"));
+        var localAppData = Path.Combine(Path.GetTempPath(), "ru-local", Guid.NewGuid().ToString("N"));
 
-        var paths = DataPaths.Resolve(projectRoot, userProfile, configuredDataRoot: null);
+        var paths = DataPaths.Resolve(projectRoot, userProfile, localAppData, configuredDataRoot: null);
 
         Assert.Equal(
             Path.GetFullPath(Path.Combine(projectRoot, "data", "conversations", "memory.db")),
@@ -20,16 +21,16 @@ public sealed class DataPathsTests
             Path.GetFullPath(Path.Combine(projectRoot, "data", "conversations", "memory_texts.json")),
             paths.LegacyMemoryTexts);
         Assert.Equal(
-            Path.GetFullPath(Path.Combine(userProfile, ".minigpt", "settings.json")),
+            Path.GetFullPath(Path.Combine(localAppData, "Ru", "settings.json")),
             paths.SettingsFile);
         Assert.Equal(
-            Path.GetFullPath(Path.Combine(userProfile, ".minigpt", "history.json")),
+            Path.GetFullPath(Path.Combine(localAppData, "Ru", "history.json")),
             paths.HistoryFile);
         Assert.Equal(
-            Path.GetFullPath(Path.Combine(userProfile, ".minigpt", "sessions")),
+            Path.GetFullPath(Path.Combine(localAppData, "Ru", "sessions")),
             paths.SessionDirectory);
         Assert.Equal(
-            Path.GetFullPath(Path.Combine(userProfile, ".minigpt", "activity_log.jsonl")),
+            Path.GetFullPath(Path.Combine(localAppData, "Ru", "activity_log.jsonl")),
             paths.ActivityLogFile);
     }
 
@@ -38,9 +39,10 @@ public sealed class DataPathsTests
     {
         var projectRoot = Path.Combine(Path.GetTempPath(), "ru-project", Guid.NewGuid().ToString("N"));
         var userProfile = Path.Combine(Path.GetTempPath(), "ru-profile", Guid.NewGuid().ToString("N"));
+        var localAppData = Path.Combine(Path.GetTempPath(), "ru-local", Guid.NewGuid().ToString("N"));
         var dataRoot = Path.Combine(Path.GetTempPath(), "ru-data", Guid.NewGuid().ToString("N"));
 
-        var paths = DataPaths.Resolve(projectRoot, userProfile, dataRoot);
+        var paths = DataPaths.Resolve(projectRoot, userProfile, localAppData, dataRoot);
 
         var expectedRoot = Path.GetFullPath(dataRoot);
         Assert.Equal(Path.Combine(expectedRoot, "memory.db"), paths.MemoryDatabase);
@@ -56,10 +58,11 @@ public sealed class DataPathsTests
     {
         var projectRoot = Path.Combine(Path.GetTempPath(), "ru-project", Guid.NewGuid().ToString("N"));
         var userProfile = Path.Combine(Path.GetTempPath(), "ru-profile", Guid.NewGuid().ToString("N"));
+        var localAppData = Path.Combine(Path.GetTempPath(), "ru-local", Guid.NewGuid().ToString("N"));
 
-        var paths = DataPaths.Resolve(projectRoot, userProfile, "   ");
+        var paths = DataPaths.Resolve(projectRoot, userProfile, localAppData, "   ");
 
         Assert.StartsWith(Path.GetFullPath(projectRoot), paths.MemoryDatabase, StringComparison.OrdinalIgnoreCase);
-        Assert.StartsWith(Path.GetFullPath(userProfile), paths.SettingsFile, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(Path.GetFullPath(Path.Combine(localAppData, "Ru")), paths.SettingsFile, StringComparison.OrdinalIgnoreCase);
     }
 }

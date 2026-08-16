@@ -95,16 +95,16 @@ src/ru_runtime/
 - Delete: renamed `llama3_1_training.py` compatibility file
 - Test: `tests/test_lfm25_training.py`
 
-- [ ] Add failing tests for the approved config, LFM2.5 symbol names, Qwen
+- [x] Add failing tests for the approved config, LFM2.5 symbol names, Qwen
   `<|im_end|>` preference with EOS fallback, dataset fingerprints, and LoRA
   target modules.
-- [ ] Move generic training safeguards, rename Llama symbols/messages, remove
+- [x] Move generic training safeguards, rename Llama symbols/messages, remove
   v6-only adapter validators, and add a supported bounded LFM2.5 CLI.
-- [ ] Preserve the existing `ru_v1` dataset; do not revive deleted v6 source
+- [x] Preserve the existing `ru_v1` dataset; do not revive deleted v6 source
   merge code. Keep the user's obsolete untracked merge script untouched on main.
-- [ ] Consolidate useful v1 smoke evaluation behavior with the current
+- [x] Consolidate useful v1 smoke evaluation behavior with the current
   model-neutral evaluator rather than creating competing adoption gates.
-- [ ] Run tests without starting training or loading model weights; commit the
+- [x] Run tests without starting training or loading model weights; commit the
   protected-seam retirement.
 
 ## Task 5: Implement transactional business-data and credential migration
@@ -118,21 +118,21 @@ src/ru_runtime/
 - Add tests under `backend-dotnet/RuBackend.Tests/Business/`
 - Modify Python persistence/VTS paths to the canonical root
 
-- [ ] Add failing tests for `%LOCALAPPDATA%\Ru` defaults and unchanged
+- [x] Add failing tests for `%LOCALAPPDATA%\Ru` defaults and unchanged
   `RU_DATA_ROOT` isolation.
-- [ ] Stage only `settings.json`, `history.json`, `activity_log.jsonl`,
+- [x] Stage only `settings.json`, `history.json`, `activity_log.jsonl`,
   `pyvts_token.txt`, and `sessions/*.json`; reject links and unexpected nesting.
-- [ ] Validate JSON/JSONL, file sizes, session count, and SHA-256 equality before
+- [x] Validate JSON/JSONL, file sizes, session count, and SHA-256 equality before
   atomically activating a unique staging directory. Treat an existing empty
   canonical directory as replaceable; never overwrite non-empty canonical data.
-- [ ] Read the activated files through current Settings/Session/History/Activity
+- [x] Read the activated files through current Settings/Session/History/Activity
   stores before deleting the legacy directory.
-- [ ] Migrate expected credentials from service `mini_gpt` to `Ru` by
+- [x] Migrate expected credentials from service `mini_gpt` to `Ru` by
   read/write/read/constant-time compare; never log values. Delete an old entry
   only after its new entry compares equal. On failure, preserve old state.
-- [ ] Add a temporary `--migrate-local-state` backend command that performs the
+- [x] Add a temporary `--migrate-local-state` backend command that performs the
   bounded one-time migration and exits without opening a listener.
-- [ ] Update Python runtime-state, activity, VTS token, and credential service
+- [x] Update Python runtime-state, activity, VTS token, and credential service
   paths to the canonical identity; structured memory stays project-owned.
 
 ## Task 6: Execute the local migration and remove temporary compatibility

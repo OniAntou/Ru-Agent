@@ -307,7 +307,7 @@ def _default_judge_generate_fn(
     from ru_runtime.persistence.credential_store import CredentialStore
     from ru_runtime.generation.openai import OpenAIRuntime
 
-    api_key = CredentialStore("mini_gpt", "kilo_gateway_api_key").get_key()
+    api_key = CredentialStore("Ru", "kilo_gateway_api_key").get_key()
     if not api_key:
         raise ValueError("kilo gateway API key is missing; set it in Settings first")
     runtime = OpenAIRuntime(api_key, base_url=base_url, model_name=model)

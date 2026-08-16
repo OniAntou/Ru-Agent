@@ -29,7 +29,7 @@ public interface ISettingsTransitionService
 
 public sealed class SettingsTransitionService : ISettingsTransitionService
 {
-    private const string ServiceName = "mini_gpt";
+    private const string ServiceName = "Ru";
     private const string OpenCodeAccount = "api_key";
     private const string KiloAccount = "kilo_gateway_api_key";
     private const string GeminiAccount = "gemini_vision_api_key";

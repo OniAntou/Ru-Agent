@@ -18,6 +18,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request as UrlRequest, urlopen
 
 from ru_runtime.persistence.atomic_write import atomic_write_json
+from ru_runtime.persistence.canonical import canonical_data_root
 from ru_runtime.worker.v1.core import RuRuntimeCore
 from ru_runtime.generation.chat import ChatTurn
 from ru_runtime.voice.gpu_lifecycle import GpuLifecycle, VoiceServiceController
@@ -90,7 +91,7 @@ _configured_data_root = os.environ.get("RU_DATA_ROOT", "").strip()
 DATA_ROOT = (
     Path(_configured_data_root)
     if _configured_data_root
-    else Path.home() / ".minigpt"
+    else canonical_data_root()
 )
 SETTINGS_FILE = DATA_ROOT / "settings.json"
 HISTORY_FILE = DATA_ROOT / "history.json"

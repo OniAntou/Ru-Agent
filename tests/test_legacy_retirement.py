@@ -72,10 +72,7 @@ def test_approved_tracked_legacy_paths_are_absent() -> None:
 
 def test_current_python_has_no_retired_legacy_imports() -> None:
     roots = (ROOT / "src" / "ru_runtime", ROOT / "scripts", ROOT / "tests")
-    protected = {
-        ROOT / "src" / "ru_runtime" / "llama3_1_training.py",
-        Path(__file__).resolve(),
-    }
+    protected = {Path(__file__).resolve()}
     offenders = []
     for root in roots:
         for path in root.glob("*.py"):
@@ -86,10 +83,14 @@ def test_current_python_has_no_retired_legacy_imports() -> None:
     assert offenders == []
 
 
-def test_active_llama_cpp_and_protected_training_seams_remain() -> None:
+def test_active_llama_cpp_and_lfm25_training_tooling_remain() -> None:
     assert (ROOT / "src/ru_runtime/models/llama_cpp.py").is_file()
     assert (ROOT / "tests/test_llama_cpp_runtime.py").is_file()
-    assert (ROOT / "src/ru_runtime/models/llama3_1_training.py").is_file()
+    assert (ROOT / "tools/training/lfm25/train.py").is_file()
+    assert (ROOT / "tools/training/lfm25/__main__.py").is_file()
+    assert (ROOT / "tools/evaluation/lfm25/smoke.py").is_file()
+    assert not (ROOT / "src/ru_runtime/models/llama3_1_training.py").exists()
+    assert not (ROOT / "tests/test_training_compatibility.py").exists()
 
 
 def test_ci_no_longer_executes_the_retired_corpus_verifier() -> None:

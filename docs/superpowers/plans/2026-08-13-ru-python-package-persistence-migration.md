@@ -73,16 +73,16 @@ src/ru_runtime/
   worker/v1/
 ```
 
-- [ ] Add a failing architecture test requiring these packages and rejecting
+- [x] Add a failing architecture test requiring these packages and rejecting
   production modules at the `ru_runtime` root other than `__init__.py`.
-- [ ] Move policy/text, persistence, memory, generation/models, and evaluation
+- [x] Move policy/text, persistence, memory, generation/models, and evaluation
   modules first; update imports and focused tests.
-- [ ] Move voice, speech, VTS, and observation modules; preserve process paths,
+- [x] Move voice, speech, VTS, and observation modules; preserve process paths,
   model assets, native-speed audio, VTS privacy, and test seams.
-- [ ] Move protocol-v1 server/dispatch/runtime-state modules under
+- [x] Move protocol-v1 server/dispatch/runtime-state modules under
   `worker/v1`; update the C# process launch and compatibility harness.
-- [ ] Use no `shared`, `common`, `helpers`, or `compatibility` dumping package.
-- [ ] Run all Python and .NET tests, route matrix, and commit each green domain
+- [x] Use no `shared`, `common`, `helpers`, or `compatibility` dumping package.
+- [x] Run all Python and .NET tests, route matrix, and commit each green domain
   slice.
 
 ## Task 4: Replace the protected training seam with LFM2.5 tooling

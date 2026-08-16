@@ -139,26 +139,26 @@ def test_discovery_is_bounded_and_collapses_candidate_ancestors(tmp_path: Path) 
 
 
 def test_manifest_keeps_dirty_legacy_path_protected(tmp_path: Path, monkeypatch) -> None:
-    path = tmp_path / "src" / "ru_runtime" / "llama3_1_training.py"
+    path = tmp_path / "configs" / "ru_llama3_1_v6_3.json"
     path.parent.mkdir(parents=True)
     path.write_text("changed", encoding="utf-8")
 
     def fake_git_paths(_root: Path, *arguments: str) -> tuple[str, ...]:
         if arguments == ("rev-parse", "HEAD"):
             return ("fixture-commit",)
-        return ("src/ru_runtime/models/llama3_1_training.py",)
+        return ("configs/ru_llama3_1_v6_3.json",)
 
     monkeypatch.setattr("tools.maintenance.cleanup_inventory.git_paths", fake_git_paths)
     monkeypatch.setattr(
         "tools.maintenance.cleanup_inventory.git_dirty_paths",
-        lambda _root: frozenset({"src/ru_runtime/models/llama3_1_training.py"}),
+        lambda _root: frozenset({"configs/ru_llama3_1_v6_3.json"}),
     )
 
     manifest = build_manifest(tmp_path)
     entry = next(
         value
         for value in manifest["entries"]
-        if value["relative_path"].endswith("llama3_1_training.py")
+        if value["relative_path"].endswith("ru_llama3_1_v6_3.json")
     )
     assert entry["classification"] == "protected"
     assert manifest["dirty_path_count"] == 1

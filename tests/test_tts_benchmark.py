@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ru_runtime.tts_benchmark import (
+from ru_runtime.voice.benchmark import (
     BenchmarkConfigurationError,
     BenchmarkUtterance,
     ResourceUsage,

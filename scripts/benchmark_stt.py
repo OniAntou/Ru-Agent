@@ -8,7 +8,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Callable, Iterable
 
-from ru_runtime.speech_runtime import (
+from ru_runtime.speech.runtime import (
     SPEECH_ENGINE_GOOGLE,
     CapturedAudio,
     SpeechConfigurationError,

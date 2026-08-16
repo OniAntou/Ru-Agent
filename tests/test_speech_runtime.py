@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import speech_recognition as sr
 
-from ru_runtime.speech_runtime import (
+from ru_runtime.speech.runtime import (
     CapturedAudio,
     SpeechConfigurationError,
     SpeechEngineConfig,

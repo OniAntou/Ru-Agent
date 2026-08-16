@@ -1,4 +1,4 @@
-from ru_runtime.vts_emotion import EmotionTag, extract_reply_emotion
+from ru_runtime.vts.emotion import EmotionTag, extract_reply_emotion
 
 
 def test_valid_tag_wins_and_is_stripped():

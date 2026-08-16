@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from ru_runtime.llama_cpp_runtime import LlamaCppRuntime, fit_messages_to_context
+from ru_runtime.models.llama_cpp import LlamaCppRuntime, fit_messages_to_context
 
 
 @pytest.fixture

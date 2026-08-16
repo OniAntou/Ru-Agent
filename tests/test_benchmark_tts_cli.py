@@ -7,8 +7,8 @@ import wave
 
 import pytest
 
-from ru_runtime.omnivoice_tuning import TEXT_AWARE_20_SETTINGS
-from ru_runtime.tts_benchmark import BenchmarkUtterance
+from ru_runtime.voice.omnivoice_tuning import TEXT_AWARE_20_SETTINGS
+from ru_runtime.voice.benchmark import BenchmarkUtterance
 from scripts.benchmark_tts import (
     GwenHttpBenchmarkEngine,
     OmniVoiceBenchmarkEngine,

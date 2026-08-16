@@ -341,7 +341,7 @@ def _wait_for_ports_closed(ports: list[int], timeout_seconds: float = 5.0) -> bo
 
 
 def _serve_deterministic_worker(port: int) -> int:
-    from ru_runtime.worker_protocol import (
+    from ru_runtime.worker.v1.protocol import (
         CHAT_CHUNK,
         CHAT_DONE,
         CHAT_RESET,
@@ -351,7 +351,7 @@ def _serve_deterministic_worker(port: int) -> int:
         VTS_ACTION,
         VTS_CATALOG,
     )
-    from ru_runtime.worker_server import WorkerHandlers, WorkerReply, serve_worker
+    from ru_runtime.worker.v1.server import WorkerHandlers, WorkerReply, serve_worker
 
     async def chat(_payload, _cancelled):
         yield WorkerReply(CHAT_RESET, {})
@@ -434,7 +434,7 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
         worker_command = [
             str(python_executable),
             "-m",
-            "ru_runtime.worker_server",
+            "ru_runtime.worker.v1.server",
             "--host",
             "127.0.0.1",
             "--port",

@@ -146,12 +146,12 @@ def test_manifest_keeps_dirty_legacy_path_protected(tmp_path: Path, monkeypatch)
     def fake_git_paths(_root: Path, *arguments: str) -> tuple[str, ...]:
         if arguments == ("rev-parse", "HEAD"):
             return ("fixture-commit",)
-        return ("src/ru_runtime/llama3_1_training.py",)
+        return ("src/ru_runtime/models/llama3_1_training.py",)
 
     monkeypatch.setattr("tools.maintenance.cleanup_inventory.git_paths", fake_git_paths)
     monkeypatch.setattr(
         "tools.maintenance.cleanup_inventory.git_dirty_paths",
-        lambda _root: frozenset({"src/ru_runtime/llama3_1_training.py"}),
+        lambda _root: frozenset({"src/ru_runtime/models/llama3_1_training.py"}),
     )
 
     manifest = build_manifest(tmp_path)

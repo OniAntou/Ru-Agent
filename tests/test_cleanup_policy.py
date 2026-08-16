@@ -46,7 +46,7 @@ def test_active_runtime_user_data_and_current_design_are_protected(relative: str
 
 
 def test_dirty_path_is_protected_before_legacy_classification() -> None:
-    relative = "src/ru_runtime/llama3_1_training.py"
+    relative = "src/ru_runtime/models/llama3_1_training.py"
     decision = classify_path(relative, tracked=True, dirty_paths=frozenset({relative}))
     assert decision.category is CleanupCategory.PROTECTED
     assert decision.reason == "git_dirty_or_untracked"

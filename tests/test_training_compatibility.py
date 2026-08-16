@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ru_runtime.llama3_1_training import LlamaMessage, encode_llama_response
+from ru_runtime.models.llama3_1_training import LlamaMessage, encode_llama_response
 
 
 class FakeTokenizer:

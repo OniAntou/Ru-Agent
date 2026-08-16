@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 
-from ru_runtime.overlay_control import (
+from ru_runtime.vts.overlay import (
     OVERLAY_SENDER,
     overlay_error,
     overlay_process_ids,
@@ -39,7 +39,7 @@ def test_overlay_process_ids_no_process():
 def test_start_overlay_spawns_with_sender(tmp_path, monkeypatch):
     exe = tmp_path / "RuDesktopOverlay.exe"
     exe.write_bytes(b"MZ")
-    monkeypatch.setattr("ru_runtime.overlay_control.OVERLAY_EXE_PATH", exe)
+    monkeypatch.setattr("ru_runtime.vts.overlay.OVERLAY_EXE_PATH", exe)
     calls = {}
 
     class FakePopen:
@@ -48,7 +48,7 @@ def test_start_overlay_spawns_with_sender(tmp_path, monkeypatch):
             calls["cwd"] = cwd
             calls["creationflags"] = creationflags
 
-    monkeypatch.setattr("ru_runtime.overlay_control.subprocess.Popen", FakePopen)
+    monkeypatch.setattr("ru_runtime.vts.overlay.subprocess.Popen", FakePopen)
     assert start_overlay() is True
     assert str(calls["args"][0]).endswith("RuDesktopOverlay.exe")
     assert calls["args"][1:] == ["--sender", OVERLAY_SENDER]
@@ -57,13 +57,13 @@ def test_start_overlay_spawns_with_sender(tmp_path, monkeypatch):
 
 
 def test_start_overlay_missing_exe_returns_false(tmp_path, monkeypatch):
-    monkeypatch.setattr("ru_runtime.overlay_control.OVERLAY_EXE_PATH", tmp_path / "missing.exe")
+    monkeypatch.setattr("ru_runtime.vts.overlay.OVERLAY_EXE_PATH", tmp_path / "missing.exe")
     assert start_overlay() is False
     assert overlay_error() is not None
 
 
 def test_stop_overlay_no_process_returns_false(monkeypatch):
-    monkeypatch.setattr("ru_runtime.overlay_control.overlay_process_ids", lambda: ())
+    monkeypatch.setattr("ru_runtime.vts.overlay.overlay_process_ids", lambda: ())
     assert stop_overlay() is False
 
 
@@ -76,14 +76,14 @@ def test_stop_overlay_kills_pids(monkeypatch):
             return (1234, 5678)
         return ()
 
-    monkeypatch.setattr("ru_runtime.overlay_control.overlay_process_ids", fake_overlay_process_ids)
+    monkeypatch.setattr("ru_runtime.vts.overlay.overlay_process_ids", fake_overlay_process_ids)
     killed = []
 
     def fake_run(args, capture_output=False, text=False):
         killed.append(" ".join(args))
         return _FakeResult()
 
-    monkeypatch.setattr("ru_runtime.overlay_control.subprocess.run", fake_run)
+    monkeypatch.setattr("ru_runtime.vts.overlay.subprocess.run", fake_run)
     assert stop_overlay() is True
     assert any("1234" in cmd for cmd in killed)
     assert any("5678" in cmd for cmd in killed)

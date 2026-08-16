@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from ru_runtime.ru_judge_evaluation import (
+from ru_runtime.evaluation.judge import (
     V5ConversationCase,
     V5_CONVERSATION_SUITE,
     V5_PROMPT_ROUTING_SMOKE_SUITE,
     V5_PROACTIVE_FLIRT_SUITE,
     V5_NEW_CASE_IDS,
 )
-from ru_runtime.ru_evaluation_cases import (
+from ru_runtime.evaluation.cases import (
     V4_CONVERSATION_SUITE,
     PROMPT_ROUTING_SMOKE_SUITE,
     PROACTIVE_FLIRT_SUITE,
@@ -56,7 +56,7 @@ def test_v5_reuses_existing_suites() -> None:
     assert V5_PROMPT_ROUTING_SMOKE_SUITE == PROMPT_ROUTING_SMOKE_SUITE
     assert V5_PROACTIVE_FLIRT_SUITE == PROACTIVE_FLIRT_SUITE
 
-from ru_runtime.ru_judge_evaluation import assess_deterministic, V5_CONVERSATION_SUITE
+from ru_runtime.evaluation.judge import assess_deterministic, V5_CONVERSATION_SUITE
 
 _VI = {case.case_id: case for case in V5_CONVERSATION_SUITE}["vi_greeting"]
 _EN = {case.case_id: case for case in V5_CONVERSATION_SUITE}["en_greeting"]
@@ -122,7 +122,7 @@ def test_hard_rules_score_deducts_emoji_and_lists() -> None:
 
 import json
 
-from ru_runtime.ru_judge_evaluation import (
+from ru_runtime.evaluation.judge import (
     JudgeScorer,
     JudgeResult,
     build_judge_messages,
@@ -204,7 +204,7 @@ def test_judge_scorer_returns_error_after_retry() -> None:
 
 import pytest as _pytest
 
-from ru_runtime.ru_judge_evaluation import (
+from ru_runtime.evaluation.judge import (
     CaseResult,
     ModelReport,
     V5_CONVERSATION_SUITE,
@@ -212,7 +212,7 @@ from ru_runtime.ru_judge_evaluation import (
     score_case,
     weighted_total,
 )
-from ru_runtime.ru_judge_evaluation import JudgeScorer
+from ru_runtime.evaluation.judge import JudgeScorer
 
 _WEIGHTS = {"language": 20, "voice": 20, "naturalness": 20, "relevance": 20, "hard_rules": 10, "emotion": 10}
 
@@ -312,7 +312,7 @@ def test_model_report_computed_fields() -> None:
 
 import pytest as _pytest
 
-from ru_runtime.ru_judge_evaluation import ModelReport, compare_models
+from ru_runtime.evaluation.judge import ModelReport, compare_models
 
 
 def _report(total: float, pass_rate: float, dims: dict[str, float]) -> ModelReport:
@@ -354,7 +354,7 @@ def test_compare_models_fails_on_delta() -> None:
 
 import json
 
-from ru_runtime.ru_judge_evaluation import (
+from ru_runtime.evaluation.judge import (
     V5_CONVERSATION_SUITE,
     V5_PROMPT_ROUTING_SMOKE_SUITE,
     V5_PROACTIVE_FLIRT_SUITE,
@@ -391,7 +391,7 @@ def test_resolve_suite_rejects_unknown() -> None:
     with _pytest.raises(ValueError):
         resolve_suite("nope")
 
-from ru_runtime.ru_judge_evaluation import build_judge_messages, V5_PROMPT_ROUTING_SMOKE_SUITE
+from ru_runtime.evaluation.judge import build_judge_messages, V5_PROMPT_ROUTING_SMOKE_SUITE
 
 
 def test_build_judge_messages_accepts_plain_conversation_cases() -> None:

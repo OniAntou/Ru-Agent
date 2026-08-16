@@ -1,5 +1,5 @@
-from ru_runtime.memory import MemoryKind
-from ru_runtime.memory_extraction import extract_candidates, is_sensitive_or_unsafe, strip_internal_metadata
+from ru_runtime.memory.store import MemoryKind
+from ru_runtime.memory.extraction import extract_candidates, is_sensitive_or_unsafe, strip_internal_metadata
 
 
 def test_extracts_explicit_preference_and_scoped_project_decision():

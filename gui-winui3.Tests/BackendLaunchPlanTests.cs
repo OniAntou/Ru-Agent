@@ -20,7 +20,7 @@ public sealed class BackendLaunchPlanTests
         Assert.Equal(8001, plan.WorkerPort);
         Assert.Equal(new[] { "python-runtime-worker", "aspnetcore-edge" }, plan.Children.Select(child => child.Role));
         Assert.Equal(
-            "-m ru_runtime.worker_server --host 127.0.0.1 --port 8001",
+            "-m ru_runtime.worker.v1.server --host 127.0.0.1 --port 8001",
             plan.Children[0].Arguments);
         Assert.Equal(project.EdgePath, plan.Children[1].FileName);
         Assert.Equal("http://127.0.0.1:8000", plan.Children[1].Environment["RuBackend__BindUrl"]);

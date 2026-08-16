@@ -5,7 +5,7 @@ import types
 
 import pytest
 
-import ru_runtime.search as search
+import ru_runtime.generation.search as search
 
 
 @pytest.fixture(autouse=True)

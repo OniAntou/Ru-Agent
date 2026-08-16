@@ -1,6 +1,6 @@
 import pytest
 
-from ru_runtime.credential_store import CredentialStore, CredentialStoreError
+from ru_runtime.persistence.credential_store import CredentialStore, CredentialStoreError
 
 
 class FakeBackend:

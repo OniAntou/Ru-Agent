@@ -4,7 +4,7 @@ import threading
 
 import pytest
 
-from ru_runtime.memory import MemoryKind, MemoryStore, StructuredMemoryStore
+from ru_runtime.memory.store import MemoryKind, MemoryStore, StructuredMemoryStore
 
 
 @pytest.fixture(scope="session")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from ru_runtime.omnivoice_tuning import (
+from ru_runtime.voice.omnivoice_tuning import (
     BASELINE_SETTINGS,
     CANDIDATE_SETTINGS,
     GUI_TRIAL_SETTINGS,

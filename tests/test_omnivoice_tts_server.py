@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-from ru_runtime import omnivoice_tts_server as server
+from ru_runtime.voice import omnivoice_server as server
 
 
 def test_run_server_refuses_a_second_heavy_instance(monkeypatch) -> None:
@@ -66,7 +66,7 @@ def test_profile_validation_and_release_clear_runtime() -> None:
 
 def test_ai_vy_profile_uses_the_repository_voice_asset(monkeypatch) -> None:
     expected = (
-        Path(server.__file__).resolve().parents[2]
+        Path(server.__file__).resolve().parents[3]
         / "data"
         / "voices"
         / "omnivoice"

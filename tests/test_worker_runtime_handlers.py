@@ -4,10 +4,10 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 
-import ru_runtime.memory
-from ru_runtime.vts_catalog import VtsCatalog, VtsCatalogEntry
-from ru_runtime.voice_stream import VoiceStreamEvent
-from ru_runtime.worker_protocol import (
+import ru_runtime.memory.store
+from ru_runtime.vts.catalog import VtsCatalog, VtsCatalogEntry
+from ru_runtime.voice.stream import VoiceStreamEvent
+from ru_runtime.worker.v1.protocol import (
     CHAT_CHUNK,
     CHAT_DONE,
     CHAT_RESET,
@@ -20,12 +20,12 @@ from ru_runtime.worker_protocol import (
     VTS_ACTION,
     VTS_CATALOG,
 )
-from ru_runtime.worker_runtime_handlers import (
+from ru_runtime.worker.v1.handlers import (
     RuntimeDependencies,
     RuntimeHttpResponse,
     build_runtime_handlers,
 )
-from ru_runtime.worker_server import WorkerReply
+from ru_runtime.worker.v1.server import WorkerReply
 
 
 def test_chat_uses_only_explicit_prompt_history_memory_and_settings() -> None:
@@ -71,7 +71,7 @@ def test_chat_never_opens_the_python_memory_store(monkeypatch) -> None:
         raise AssertionError("Python memory store must not be opened by the worker")
 
     monkeypatch.setattr(
-        ru_runtime.memory.StructuredMemoryStore,
+        ru_runtime.memory.store.StructuredMemoryStore,
         "__init__",
         fail_if_opened,
     )

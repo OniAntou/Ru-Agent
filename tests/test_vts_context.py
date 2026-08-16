@@ -1,7 +1,7 @@
 import threading
 
-from ru_runtime.vts_context import MotionContextProvider
-from ru_runtime.vts_emotion import EmotionTag
+from ru_runtime.vts.context import MotionContextProvider
+from ru_runtime.vts.emotion import EmotionTag
 
 
 def test_snapshot_defaults_are_safe():

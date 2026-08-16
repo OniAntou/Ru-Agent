@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import ru_runtime.headless_runner as runtime
-from ru_runtime.ru_style import RU_SCREEN_REACTION_SYSTEM_PROMPT
+import ru_runtime.generation.runner as runtime
+from ru_runtime.policy.style import RU_SCREEN_REACTION_SYSTEM_PROMPT
 
 
 def test_select_backend_rejects_retired_transformers_backend() -> None:

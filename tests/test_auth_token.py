@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import ru_runtime._server_shared as server_shared
+import ru_runtime.worker.v1.runtime_services as server_shared
 
 
 def test_desktop_token_reads_environment_lazily(monkeypatch) -> None:

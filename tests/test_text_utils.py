@@ -1,4 +1,4 @@
-from ru_runtime._text_utils import safe_streamed_text
+from ru_runtime.policy.text import safe_streamed_text
 
 
 def test_safe_stream_holds_complete_and_partial_private_markers() -> None:

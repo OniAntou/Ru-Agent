@@ -1,5 +1,5 @@
-from ru_runtime.vts_context import MotionContextSnapshot
-from ru_runtime.vts_state import (
+from ru_runtime.vts.context import MotionContextSnapshot
+from ru_runtime.vts.state import (
     LISTENING_ENTER_IDLE_SECONDS,
     MIN_STATE_DWELL_SECONDS,
     POST_REPLY_DWELL_SECONDS,

@@ -7,9 +7,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from ru_runtime import _server_shared as shared
-from ru_runtime import runtime_vts
-from ru_runtime.runtime_http import dispatch_runtime_request
+from ru_runtime.worker.v1 import runtime_services as shared
+from ru_runtime.worker.v1 import vts as runtime_vts
+from ru_runtime.worker.v1.http import dispatch_runtime_request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,13 +27,15 @@ def test_voice_start_waits_for_an_existing_owned_process(monkeypatch) -> None:
 
 def test_runtime_service_modules_have_no_web_framework_imports() -> None:
     for name in (
-        "runtime_http.py",
-        "runtime_status.py",
-        "runtime_voice.py",
-        "runtime_vts.py",
-        "runtime_observation.py",
+        "http.py",
+        "status.py",
+        "voice.py",
+        "vts.py",
+        "observation.py",
     ):
-        source = (ROOT / "src" / "ru_runtime" / name).read_text(encoding="utf-8").casefold()
+        source = (
+            ROOT / "src" / "ru_runtime" / "worker" / "v1" / name
+        ).read_text(encoding="utf-8").casefold()
         assert "ru_runtime.routers" not in source
         assert "fastapi" not in source
         assert "starlette" not in source

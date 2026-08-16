@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from ru_runtime.worker_protocol import (
+from ru_runtime.worker.v1.protocol import (
     ProtocolError,
     encode_envelope,
     redacted_summary,

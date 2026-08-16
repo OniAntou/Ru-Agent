@@ -5,7 +5,7 @@ import wave
 
 import pytest
 
-from ru_runtime.speech_runtime import CapturedAudio, SpeechConfigurationError
+from ru_runtime.speech.runtime import CapturedAudio, SpeechConfigurationError
 from scripts.benchmark_stt import BenchmarkItem, load_wav, run_benchmark
 
 

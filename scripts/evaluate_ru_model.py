@@ -11,7 +11,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from ru_runtime.ru_judge_evaluation import (  # noqa: E402
+from ru_runtime.evaluation.judge import (  # noqa: E402
     JudgeScorer,
     ModelReport,
     compare_models,
@@ -20,7 +20,7 @@ from ru_runtime.ru_judge_evaluation import (  # noqa: E402
     resolve_suite,
     run_suite,
 )
-from ru_runtime.headless_runner import ModelRunner  # noqa: E402
+from ru_runtime.generation.runner import ModelRunner  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:

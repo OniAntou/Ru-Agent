@@ -87,9 +87,9 @@ def test_current_python_has_no_retired_legacy_imports() -> None:
 
 
 def test_active_llama_cpp_and_protected_training_seams_remain() -> None:
-    assert (ROOT / "src/ru_runtime/llama_cpp_runtime.py").is_file()
+    assert (ROOT / "src/ru_runtime/models/llama_cpp.py").is_file()
     assert (ROOT / "tests/test_llama_cpp_runtime.py").is_file()
-    assert (ROOT / "src/ru_runtime/llama3_1_training.py").is_file()
+    assert (ROOT / "src/ru_runtime/models/llama3_1_training.py").is_file()
 
 
 def test_ci_no_longer_executes_the_retired_corpus_verifier() -> None:

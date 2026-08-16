@@ -6,9 +6,9 @@ import time
 
 import pytest
 
-import ru_runtime.voice_stream as voice_stream
-from ru_runtime.voice_observability import VoiceTiming
-from ru_runtime.voice_stream import VoiceStreamCoordinator, VoiceStreamEvent
+import ru_runtime.voice.stream as voice_stream
+from ru_runtime.voice.observability import VoiceTiming
+from ru_runtime.voice.stream import VoiceStreamCoordinator, VoiceStreamEvent
 
 
 def collect_events(coordinator: VoiceStreamCoordinator, **kwargs) -> list[VoiceStreamEvent]:

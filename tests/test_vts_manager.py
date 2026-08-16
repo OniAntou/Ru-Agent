@@ -1,5 +1,5 @@
-from ru_runtime.vts_config import MotionConfig
-from ru_runtime.vts_manager import VTSManager, reconnect_delay
+from ru_runtime.vts.config import MotionConfig
+from ru_runtime.vts.manager import VTSManager, reconnect_delay
 
 
 def test_reconnect_delay_grows_and_caps_at_30_seconds():
@@ -17,7 +17,7 @@ def test_apply_config_stores_config():
 
 
 def test_note_wrappers_update_context_snapshot():
-    from ru_runtime.vts_emotion import EmotionTag
+    from ru_runtime.vts.emotion import EmotionTag
 
     manager = VTSManager()
     manager.note_speaking(True)

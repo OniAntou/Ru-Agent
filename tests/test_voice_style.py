@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from ru_runtime.voice_style import (
+from ru_runtime.voice.style import (
     ORIGINAL_STYLE_ID,
     voice_style_by_id,
     voice_style_from_saved,

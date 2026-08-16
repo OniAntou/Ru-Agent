@@ -1,4 +1,4 @@
-from ru_runtime.vts_motion import (
+from ru_runtime.vts.motion import (
     IDLE_SWAY_AMPLITUDE,
     SPEAKING_SWAY_AMPLITUDE,
     OrganicSwayController,
@@ -25,8 +25,8 @@ def test_sway_amplitudes_match_the_active_policy():
 
 
 def test_scheduler_waits_for_a_randomized_interval_and_resets_on_new_session():
-    from ru_runtime.vts_config import MotionConfig
-    from ru_runtime.vts_state import VtsMotionState
+    from ru_runtime.vts.config import MotionConfig
+    from ru_runtime.vts.state import VtsMotionState
 
     scheduler = MicroActionScheduler(random_source=FakeRandom([20.0, 14.0, 20.0]))
     config = MotionConfig.defaults()
@@ -42,8 +42,8 @@ def test_scheduler_waits_for_a_randomized_interval_and_resets_on_new_session():
 
 
 def test_scheduler_suppresses_micro_actions_while_listening_or_thinking():
-    from ru_runtime.vts_config import MotionConfig
-    from ru_runtime.vts_state import VtsMotionState
+    from ru_runtime.vts.config import MotionConfig
+    from ru_runtime.vts.state import VtsMotionState
 
     scheduler = MicroActionScheduler(random_source=FakeRandom([1.0, 1.0]))
     config = MotionConfig.defaults()
@@ -58,8 +58,8 @@ def test_scheduler_suppresses_micro_actions_while_listening_or_thinking():
 
 
 def test_breath_stays_bounded_and_uses_config():
-    from ru_runtime.vts_config import MotionConfig
-    from ru_runtime.vts_motion import BreathController
+    from ru_runtime.vts.config import MotionConfig
+    from ru_runtime.vts.motion import BreathController
 
     controller = BreathController()
     config = MotionConfig.defaults()
@@ -68,8 +68,8 @@ def test_breath_stays_bounded_and_uses_config():
 
 
 def test_state_amplitude_scale_mapping():
-    from ru_runtime.vts_motion import state_amplitude_scale
-    from ru_runtime.vts_state import VtsMotionState
+    from ru_runtime.vts.motion import state_amplitude_scale
+    from ru_runtime.vts.state import VtsMotionState
 
     assert state_amplitude_scale(VtsMotionState.SPEAKING) == 1.0
     assert state_amplitude_scale(VtsMotionState.IDLE) == 0.6
@@ -78,9 +78,9 @@ def test_state_amplitude_scale_mapping():
 
 
 def test_pose_scheduler_fires_once_on_post_reply_entry_and_idle_intervals():
-    from ru_runtime.vts_config import MotionConfig
-    from ru_runtime.vts_motion import PoseCycleScheduler
-    from ru_runtime.vts_state import VtsMotionState
+    from ru_runtime.vts.config import MotionConfig
+    from ru_runtime.vts.motion import PoseCycleScheduler
+    from ru_runtime.vts.state import VtsMotionState
 
     scheduler = PoseCycleScheduler(random_source=FakeRandom([100.0, 100.0, 100.0]))
     config = MotionConfig.defaults()
@@ -149,7 +149,7 @@ def test_controller_adds_bounded_direction_drift_after_a_short_hold():
         for index, value in enumerate(values[20:], start=20)
     )
 
-from ru_runtime.vts_motion import MouseEyeTracker
+from ru_runtime.vts.motion import MouseEyeTracker
 
 
 def _converged(tracker, x, y, steps=400):

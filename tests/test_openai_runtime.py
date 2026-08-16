@@ -6,9 +6,9 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-import ru_runtime.openai_runtime as runtime_module
-from ru_runtime._text_utils import append_stream_text
-from ru_runtime.openai_runtime import OpenAIGenerationCancelled, OpenAIRuntime
+import ru_runtime.generation.openai as runtime_module
+from ru_runtime.policy.text import append_stream_text
+from ru_runtime.generation.openai import OpenAIGenerationCancelled, OpenAIRuntime
 
 
 class FakeStreamResponse:

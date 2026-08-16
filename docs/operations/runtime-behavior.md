@@ -75,9 +75,11 @@ data or a distributable artifact.
 ## Persistence and privacy
 
 ASP.NET Core owns settings, credentials, sessions/history, activity, structured
-memory, and reviewed-example policy. Existing records remain Protected User
-Data until the accepted transactional migration to `%LOCALAPPDATA%\Ru`
-completes. Windows Credential Manager remains the secret store.
+memory, and reviewed-example policy. Business records live in the canonical
+`%LOCALAPPDATA%\Ru` location; the transactional migration from the legacy
+location completed on 2026-08-17 (see
+`docs/validation/plan3-task6-migration-evidence.md`). Windows Credential
+Manager remains the secret store.
 
 Logs, telemetry, manifests, and automated evidence may contain fixed event
 types, counts, durations, hashes, and statuses only. They must not contain

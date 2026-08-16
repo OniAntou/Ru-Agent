@@ -38,7 +38,9 @@ _Avoid_: Runtime HTTP relay
 
 **Protected User Data**:
 Settings, sessions, history, activity, structured memory, credentials, and
-reviewed examples used by the active product.
+reviewed examples used by the active product. Business records live under
+`%LOCALAPPDATA%\Ru`; structured memory stays project-owned under
+`data/conversations`. `RU_DATA_ROOT` isolates both for tests.
 _Avoid_: Cleanup candidates, generated data
 
 **Legacy Llama Assets**:

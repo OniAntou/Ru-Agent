@@ -117,11 +117,13 @@ or live VTube Studio behavior. Those remain user-run hardware checks.
 
 ## Data and privacy
 
-Business persistence is currently split across the legacy application-data
-location and structured-memory data roots described in
-[architecture](docs/architecture.md). Architecture v2 will migrate it
-transactionally to `%LOCALAPPDATA%\Ru`; until that gate passes, existing data
-is protected and must not be manually moved or deleted.
+Business persistence lives in the canonical `%LOCALAPPDATA%\Ru` location
+(settings, sessions, history, activity, and the VTS token). Structured memory
+stays project-owned under `data/conversations`. `RU_DATA_ROOT` isolates both
+for tests and staging. The transactional migration from the legacy
+application-data location completed on 2026-08-17; see
+[docs/validation/plan3-task6-migration-evidence.md](docs/validation/plan3-task6-migration-evidence.md).
+Existing data is protected and must not be manually moved or deleted.
 
 Visible chat text may cross the private generation boundary. Credentials,
 audio bytes, VTS actions, voice timing/control metadata, and transcripts must

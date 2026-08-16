@@ -70,15 +70,16 @@ binary frames, keeps native-speed audio, and exposes no network listener.
 
 ## Data ownership
 
-ASP.NET Core owns business persistence. Today settings, history, sessions, and
-activity default to `~/.minigpt`; structured memory defaults to
-`data/conversations`, with `RU_DATA_ROOT` available for isolated runs. Secrets
-are stored through Windows Credential Manager rather than JSON files.
+ASP.NET Core owns business persistence. Settings, history, sessions, activity,
+and the VTS token default to the canonical `%LOCALAPPDATA%\Ru` location;
+structured memory defaults to `data/conversations`, with `RU_DATA_ROOT`
+available for isolated runs. Secrets are stored through Windows Credential
+Manager rather than JSON files.
 
-The accepted canonical location is `%LOCALAPPDATA%\Ru`. A later plan performs
-copy, validation, hashing, atomic activation, readability checks, and credential
-migration before any legacy record is removed. Until that gate passes, both
-existing business data and current LFM2.5 inputs are Protected User Data.
+The transactional migration from `~\.minigpt` completed on 2026-08-17 with
+copy, validation, hashing, atomic activation, readability checks, and
+credential migration performed before legacy records were retired; see
+[docs/validation/plan3-task6-migration-evidence.md](validation/plan3-task6-migration-evidence.md).
 
 ## Privacy boundary
 

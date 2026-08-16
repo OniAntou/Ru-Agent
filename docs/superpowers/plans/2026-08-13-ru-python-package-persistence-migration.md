@@ -163,12 +163,12 @@ src/ru_runtime/
 - Modify: `README.md`, `CONTEXT.md`, `docs/architecture.md`, operations docs,
   ADR 0004, docs index, and this plan
 
-- [ ] Run full Python, backend .NET, WinUI .NET, route matrix, `pip check`, both
+- [x] Run full Python, backend .NET, WinUI .NET, route matrix, `pip check`, both
   NuGet vulnerability audits, and `build.bat` sequentially.
-- [ ] Verify installed distribution/import identity, no `src/mini_gpt`, no
+- [x] Verify installed distribution/import identity, no `src/mini_gpt`, no
   active `mini_gpt` import/service/path, and no protected training seam.
-- [ ] Verify 38 HTTP plus 2 WebSocket routes and both self-contained executables
+- [x] Verify 38 HTTP plus 2 WebSocket routes and both self-contained executables
   without launching the application.
-- [ ] Confirm main's dirty source/untracked files remain untouched and map all
+- [x] Confirm main's dirty source/untracked files remain untouched and map all
   overlaps to their branch replacements for integration review.
-- [ ] Commit validation evidence. Do not merge or push.
+- [x] Commit validation evidence. Do not merge or push.

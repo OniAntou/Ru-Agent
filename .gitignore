@@ -43,6 +43,8 @@ data/memory.db-wal
 data/memory.db-shm
 checkpoints/
 models/
+!src/ru_runtime/models/
+!src/ru_runtime/models/__init__.py
 eval_results/
 vendor/gemma4-transformers/
 tools/llama.cpp/

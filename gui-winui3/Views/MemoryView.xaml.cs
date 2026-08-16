@@ -17,6 +17,13 @@ namespace RuApp.Views
         {
             this.InitializeComponent();
             MemoryListView.ItemsSource = Memories;
+            Memories.CollectionChanged += (s, e) =>
+            {
+                if (EmptyMemoryPanel != null)
+                {
+                    EmptyMemoryPanel.Visibility = Memories.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                }
+            };
         }
 
         public void Initialize(ApiService apiService)
@@ -36,6 +43,10 @@ namespace RuApp.Views
                 {
                     Memories.Add(item);
                 }
+            }
+            if (EmptyMemoryPanel != null)
+            {
+                EmptyMemoryPanel.Visibility = Memories.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             }
         }
 

@@ -4,22 +4,49 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:RuApp.Models">
 
-    <Grid Background="#202020">
+    <Window.SystemBackdrop>
+        <MicaBackdrop Kind="Base" />
+    </Window.SystemBackdrop>
+
+    <Grid Background="{StaticResource AppSurfaceBrush}">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Main Content Area -->
-        <Grid Grid.Row="0">
+        <!-- Custom App TitleBar -->
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="40" Background="Transparent" Padding="16,0,16,0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="SidebarColumn" Width="240" MinWidth="150" MaxWidth="400"/>
-                <ColumnDefinition Width="4"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- App Brand & Icon -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Border Width="22" Height="22" CornerRadius="6" Background="{StaticResource AppAccentBrush}">
+                    <TextBlock Text="R" FontSize="13" FontWeight="Bold" Foreground="White" 
+                               HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0"/>
+                </Border>
+                <TextBlock Text="Ru Assistant" FontSize="13" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" 
+                           Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
+                <Border Background="{StaticResource AppAccentSubtleBrush}" CornerRadius="10" Padding="8,2" Margin="4,0,0,0">
+                    <TextBlock Text="LFM 2.5" FontSize="11" FontWeight="Medium" Foreground="{StaticResource AppAccentHoverBrush}"/>
+                </Border>
+            </StackPanel>
+        </Grid>
+
+        <!-- Main Content Area -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="SidebarColumn" Width="250" MinWidth="180" MaxWidth="400"/>
+                <ColumnDefinition Width="1"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Navigation Sidebar (Frosted Glass / Translucent) -->
-            <Border Grid.Column="0" Background="#1C1C1C" BorderBrush="#2E2E2E" BorderThickness="0,0,1,0">
+            <!-- Navigation Sidebar -->
+            <Border Grid.Column="0" Background="{StaticResource AppSidebarBackgroundBrush}" BorderThickness="0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
@@ -33,72 +60,82 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <StackPanel Grid.Row="0" Padding="0,24,0,0">
-                            <!-- Header -->
-                            <StackPanel x:Name="HeaderPanel" Orientation="Horizontal" Spacing="8" Margin="20,0,12,24">
-                                <TextBlock Text="Ru Assistant" FontSize="14" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" 
-                                        Foreground="White" VerticalAlignment="Center"/>
-                            </StackPanel>
-
-                            <!-- Navigation Items -->
-                            <Button x:Name="NavNewChat" Click="OnNewChatClick" HorizontalAlignment="Stretch" Margin="8,2"
-                                    Background="Transparent" Foreground="White" Padding="8,6" CornerRadius="4" BorderThickness="0" HorizontalContentAlignment="Left">
-                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <FontIcon Glyph="&#xE710;" FontSize="14"/>
-                                    <TextBlock x:Name="LabelNewChat" Text="Đoạn chat mới" FontSize="13" FontWeight="Medium"/>
-                                </StackPanel>
+                        <!-- Primary Navigation Items -->
+                        <StackPanel Grid.Row="0" Padding="10,12,10,0" Spacing="4">
+                            <!-- New Chat Button (Sleek Satin Obsidian Button) -->
+                            <Button x:Name="NavNewChat" Click="OnNewChatClick" HorizontalAlignment="Stretch" Margin="0,0,0,8"
+                                    Background="{StaticResource AppCardBackgroundBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" 
+                                    BorderThickness="1" Foreground="{StaticResource AppTextPrimaryBrush}" Padding="12,9" 
+                                    CornerRadius="{StaticResource AppControlCornerRadius}" HorizontalContentAlignment="Left">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <FontIcon Grid.Column="0" Glyph="&#xE710;" FontSize="14" Foreground="{StaticResource AppAccentHoverBrush}" Margin="0,0,10,0"/>
+                                    <TextBlock Grid.Column="1" x:Name="LabelNewChat" Text="Đoạn chat mới" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                </Grid>
                             </Button>
 
-                            <Button x:Name="NavChat" Tag="chat" Click="OnNavClick" HorizontalAlignment="Stretch" Margin="8,2"
-                                    Background="Transparent" Foreground="White" Padding="8,6" CornerRadius="4" BorderThickness="0" HorizontalContentAlignment="Left">
-                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <FontIcon Glyph="&#xE8F2;" FontSize="14"/>
-                                    <TextBlock x:Name="LabelChat" Text="Trò chuyện" FontSize="13" FontWeight="Medium"/>
-                                </StackPanel>
+                            <!-- Navigation Tabs -->
+                            <Button x:Name="NavChat" Tag="chat" Click="OnNavClick" HorizontalAlignment="Stretch"
+                                    Background="{StaticResource AppCardBackgroundHoverBrush}" Foreground="{StaticResource AppTextPrimaryBrush}" 
+                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8F2;" FontSize="15" Foreground="{StaticResource AppAccentHoverBrush}" Margin="0,0,12,0"/>
+                                    <TextBlock Grid.Column="1" x:Name="LabelChat" Text="Trò chuyện" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                </Grid>
                             </Button>
 
-                            <Button x:Name="NavVoice" Tag="voice" Click="OnNavClick" HorizontalAlignment="Stretch" Margin="8,2"
-                                    Background="Transparent" Foreground="White" Padding="8,6" CornerRadius="4" BorderThickness="0" HorizontalContentAlignment="Left">
-                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <FontIcon Glyph="&#xE720;" FontSize="14"/>
-                                    <TextBlock x:Name="LabelVoice" Text="Giọng nói" FontSize="13" FontWeight="Medium"/>
-                                </StackPanel>
+                            <Button x:Name="NavVoice" Tag="voice" Click="OnNavClick" HorizontalAlignment="Stretch"
+                                    Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" 
+                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <FontIcon Grid.Column="0" Glyph="&#xE720;" FontSize="15" Margin="0,0,12,0"/>
+                                    <TextBlock Grid.Column="1" x:Name="LabelVoice" Text="Giọng nói &amp; VTS" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                </Grid>
                             </Button>
-                            <Button x:Name="NavLog" Tag="log" Click="OnNavClick" HorizontalAlignment="Stretch" Margin="8,2"
-                                    Background="Transparent" Foreground="White" Padding="8,6" CornerRadius="4" BorderThickness="0" HorizontalContentAlignment="Left">
-                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <FontIcon Glyph="&#xE8F2;" FontSize="14"/>
-                                    <TextBlock x:Name="LabelLog" Text="Nhật ký" FontSize="13" FontWeight="Medium"/>
-                                </StackPanel>
+
+                            <Button x:Name="NavLog" Tag="log" Click="OnNavClick" HorizontalAlignment="Stretch"
+                                    Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" 
+                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <FontIcon Grid.Column="0" Glyph="&#xE9D9;" FontSize="15" Margin="0,0,12,0"/>
+                                    <TextBlock Grid.Column="1" x:Name="LabelLog" Text="Nhật ký hoạt động" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                </Grid>
                             </Button>
                         </StackPanel>
 
-                        <TextBlock x:Name="LabelRecents" Grid.Row="1" Text="Recents" FontSize="11" FontWeight="SemiBold" Foreground="#666666" Margin="16,24,0,8" />
+                        <!-- Recent Chats Header -->
+                        <Grid Grid.Row="1" Margin="14,20,14,6" ColumnDefinitions="*,Auto">
+                            <TextBlock x:Name="LabelRecents" Grid.Column="0" Text="GẦN ĐÂY" FontSize="11" FontWeight="Bold" 
+                                       Foreground="{StaticResource AppTextTertiaryBrush}" VerticalAlignment="Center"/>
+                        </Grid>
                         
-                        <ListView x:Name="SidebarSessionList" Grid.Row="2" SelectionMode="Single" SelectionChanged="OnSessionSelectionChanged" Margin="8,0" Padding="0,0,0,16">
+                        <!-- Sessions List -->
+                        <ListView x:Name="SidebarSessionList" Grid.Row="2" SelectionMode="Single" 
+                                  SelectionChanged="OnSessionSelectionChanged" Margin="6,0" Padding="0,0,0,16">
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                    <Setter Property="MinHeight" Value="32" />
-                                    <Setter Property="Padding" Value="8,4" />
-                                    <Setter Property="CornerRadius" Value="8" />
-                                    <Setter Property="Margin" Value="0,1" />
+                                    <Setter Property="MinHeight" Value="34" />
+                                    <Setter Property="Padding" Value="10,4" />
+                                    <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
+                                    <Setter Property="Margin" Value="0,2" />
                                 </Style>
                             </ListView.ItemContainerStyle>
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:SessionInfo">
                                     <Grid PointerEntered="SessionItem_PointerEntered" PointerExited="SessionItem_PointerExited" Background="Transparent">
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{x:Bind Title}" FontSize="13" Foreground="#DDDDDD" 
+                                        <FontIcon Grid.Column="0" Glyph="&#xE8BD;" FontSize="12" Foreground="{StaticResource AppTextTertiaryBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{x:Bind Title}" FontSize="13" Foreground="{StaticResource AppTextPrimaryBrush}" 
                                                    TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Title}" 
-                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        <Button Grid.Column="1" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
-                                                Width="20" Height="20" CornerRadius="4" Click="OnDeleteSessionClick" 
-                                                Tag="{x:Bind Id}" ToolTipService.ToolTip="Xóa" Visibility="Collapsed">
-                                            <FontIcon Glyph="&#xE74D;" FontSize="10" Foreground="#888888"/>
+                                                   VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <Button Grid.Column="2" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
+                                                Width="24" Height="24" CornerRadius="4" Click="OnDeleteSessionClick" 
+                                                Tag="{x:Bind Id}" ToolTipService.ToolTip="Xóa đoạn chat" Opacity="0">
+                                            <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource AppDangerBrush}"/>
                                         </Button>
                                     </Grid>
                                 </DataTemplate>
@@ -106,41 +143,54 @@
                         </ListView>
                     </Grid>
 
-                    <StackPanel Grid.Row="1" Padding="0,0,0,16">
-                        <Button x:Name="NavSettings" Tag="settings" Click="OnNavClick" HorizontalAlignment="Stretch" Margin="8,2"
-                                Background="Transparent" Foreground="White" Padding="8,6" CornerRadius="4" BorderThickness="0" HorizontalContentAlignment="Left">
-                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                <FontIcon Glyph="&#xE713;" FontSize="14"/>
-                                <TextBlock x:Name="LabelSettings" Text="Cài đặt" FontSize="13" FontWeight="Medium"/>
-                            </StackPanel>
+                    <!-- Bottom Settings & Memory Nav -->
+                    <StackPanel Grid.Row="1" Padding="10,8,10,12" Spacing="4">
+                        <Border Height="1" Background="{StaticResource AppSidebarBorderBrush}" Margin="0,0,0,8"/>
+                        
+                        <Button x:Name="NavSettings" Tag="settings" Click="OnNavClick" HorizontalAlignment="Stretch"
+                                Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" 
+                                Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <FontIcon Grid.Column="0" Glyph="&#xE713;" FontSize="15" Margin="0,0,12,0"/>
+                                <TextBlock Grid.Column="1" x:Name="LabelSettings" Text="Cài đặt hệ thống" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                            </Grid>
                         </Button>
                     </StackPanel>
                 </Grid>
             </Border>
 
-            <!-- Resizer -->
-            <Border x:Name="SidebarResizer" Grid.Column="1" Background="Transparent"
+            <!-- Sidebar Divider / Resizer -->
+            <Border x:Name="SidebarResizer" Grid.Column="1" Background="{StaticResource AppSidebarBorderBrush}"
                     PointerPressed="Resizer_PointerPressed" PointerMoved="Resizer_PointerMoved" PointerReleased="Resizer_PointerReleased" />
 
-            <!-- Content Frame -->
+            <!-- Content Frame with Smooth Native Transition -->
             <ContentControl x:Name="ContentFrame" Grid.Column="2" Margin="0" 
-                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                            Background="Transparent">
+                <ContentControl.ContentTransitions>
+                    <TransitionCollection>
+                        <EntranceThemeTransition FromVerticalOffset="8" IsStaggeringEnabled="False"/>
+                    </TransitionCollection>
+                </ContentControl.ContentTransitions>
+            </ContentControl>
         </Grid>
 
-        <!-- Status Bar -->
-        <Border Grid.Row="1" Background="#1C1C1C" BorderBrush="#2E2E2E" BorderThickness="0,1,0,0">
-            <Grid Padding="24,8">
+        <!-- Sleek Status Bar -->
+        <Border Grid.Row="2" Background="{StaticResource AppSidebarBackgroundBrush}" BorderBrush="{StaticResource AppSidebarBorderBrush}" BorderThickness="0,1,0,0">
+            <Grid Padding="16,6">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
-                    <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="#4CAF50" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="{StaticResource AppSuccessBrush}" VerticalAlignment="Center"/>
                     <TextBlock x:Name="StatusText" Text="Hệ thống đã sẵn sàng" FontSize="12" FontFamily="Segoe UI"
-                               Foreground="#AAAAAA" VerticalAlignment="Center"/>
+                               Foreground="{StaticResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
                 </StackPanel>
-                <TextBlock Grid.Column="1" Text="Ru Assistant 2.0" FontSize="12" FontFamily="Segoe UI"
-                           Foreground="#666666" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="Ru Conversational Runtime" FontSize="11.5" FontFamily="Segoe UI"
+                               Foreground="{StaticResource AppTextTertiaryBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
             </Grid>
         </Border>
     </Grid>

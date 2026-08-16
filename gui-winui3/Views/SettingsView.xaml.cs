@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -112,8 +113,6 @@ namespace RuApp.Views
             var settings = await _apiService.GetSettingsAsync();
             if (settings != null)
             {
-                // The HF Transformers backend is retired (training only); a stale
-                // saved "transformers" choice falls back to the local GGUF backend.
                 string backendChoice = settings.BackendChoice == "transformers" ? "gguf" : settings.BackendChoice;
                 foreach (ComboBoxItem item in BackendComboBox.Items)
                 {
@@ -216,13 +215,8 @@ namespace RuApp.Views
 
         private bool MatchesSearch(string modelName, string searchText)
         {
-            // Split search text into keywords
             var keywords = searchText.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-
-            if (keywords.Length == 0)
-                return true;
-
-            // Model must contain ALL keywords (in any order)
+            if (keywords.Length == 0) return true;
             return keywords.All(keyword => modelName.Contains(keyword));
         }
 
@@ -242,11 +236,11 @@ namespace RuApp.Views
             KiloApiRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
             KiloReasoningRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
 
-            // These are only for cloud
             CloudMemoryRow.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
             ModelRow.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
             OnlineSearchRow.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
             SelfLearningRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
+            ExtendedFeaturesCard.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private async void OnBackendSelectionChanged(object sender, SelectionChangedEventArgs e)

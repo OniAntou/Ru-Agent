@@ -7,220 +7,340 @@
     xmlns:views="using:RuApp.Views"
     mc:Ignorable="d">
 
-    <Pivot>
-        <PivotItem Header="Cài đặt hệ thống" Margin="0,16,0,0">
-            <ScrollViewer Padding="32,0,32,32" Background="Transparent">
+    <Pivot Margin="0,8,0,0">
+        <!-- Tab 1: System Settings -->
+        <PivotItem Header="Hệ thống &amp; Mô hình" Margin="0,12,0,0">
+            <ScrollViewer Padding="36,12,36,36" Background="Transparent">
                 <StackPanel Spacing="24" HorizontalAlignment="Stretch">
-                    <TextBlock Text="Cài đặt hệ thống" FontSize="24" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="White" Margin="0,0,0,8"/>
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Cấu hình Hệ thống &amp; Mô hình" FontSize="22" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                        <TextBlock Text="Quản lý backend model (Local GGUF / Cloud APIs), tham số sinh và tính năng bộ nhớ" FontSize="13.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                    </StackPanel>
 
-                    <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
+                    <!-- Backend Model Card -->
+                    <Border Style="{StaticResource FluentCardStyle}">
                         <StackPanel Spacing="16">
-                            <TextBlock Text="Mô hình &amp; Runtime Backend" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,4">
+                                <FontIcon Glyph="&#xE950;" FontSize="18" Foreground="{StaticResource AppAccentHoverBrush}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Mô hình &amp; Runtime Backend" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
 
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                <TextBlock Grid.Column="0" Text="Loại Backend" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <ComboBox x:Name="BackendComboBox" Grid.Column="1" Width="280" SelectionChanged="OnBackendSelectionChanged">
+                            <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="Loại Backend" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                    <TextBlock Text="Chọn mô hình cục bộ hoặc dịch vụ đám mây" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                </StackPanel>
+                                <ComboBox x:Name="BackendComboBox" Grid.Column="1" Width="300" SelectionChanged="OnBackendSelectionChanged">
                                     <ComboBoxItem Content="Local GGUF (LFM2.5 2.6B Q4_K_M)" Tag="gguf"/>
                                     <ComboBoxItem Content="OpenCode Zen (Cloud API)" Tag="opencode"/>
                                     <ComboBoxItem Content="Kilo Gateway (Cloud API)" Tag="kilo"/>
                                 </ComboBox>
                             </Grid>
 
-                            <Grid x:Name="ModelRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Model Name" Foreground="#DDDDDD"/>
-                                    <TextBlock x:Name="ModelLoadingText" Text="Đang tải danh sách model từ API..." Foreground="#888888" FontSize="13" Visibility="Collapsed"/>
+                            <StackPanel x:Name="ModelRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0" Spacing="2">
+                                        <TextBlock Text="Model Name" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                        <TextBlock x:Name="ModelLoadingText" Text="Đang tải danh sách model từ API..." Foreground="{StaticResource AppAccentHoverBrush}" FontSize="12.5" Visibility="Collapsed"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="6" Width="300">
+                                        <TextBox x:Name="ModelSearchBox" PlaceholderText="Tìm kiếm model..." TextChanged="OnModelSearchBoxTextChanged"
+                                                 CornerRadius="{StaticResource AppControlCornerRadius}"/>
+                                        <ComboBox x:Name="ModelComboBox" Width="300" IsEditable="False"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+
+                            <StackPanel x:Name="OpenCodeApiRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="OpenCode API Key" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                        <TextBlock Text="Khóa API lưu an toàn trong Windows Credential Manager" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <PasswordBox x:Name="OpenCodeApiKeyBox" Grid.Column="1" PlaceholderText="sk-opencode-..." Width="300"
+                                                 CornerRadius="{StaticResource AppControlCornerRadius}"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <StackPanel x:Name="ApiVariantRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="Reasoning Effort" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                        <TextBlock Text="Mức độ suy luận cho mô hình hỗ trợ reasoning" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="ApiVariantComboBox" Grid.Column="1" Width="300">
+                                        <ComboBoxItem Content="Default" Tag="Default"/>
+                                        <ComboBoxItem Content="Low" Tag="low"/>
+                                        <ComboBoxItem Content="Medium" Tag="medium"/>
+                                        <ComboBoxItem Content="High" Tag="high"/>
+                                        <ComboBoxItem Content="Max" Tag="max"/>
+                                    </ComboBox>
+                                </Grid>
+                            </StackPanel>
+
+                            <StackPanel x:Name="KiloApiRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="Kilo API Key" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                        <TextBlock Text="Khóa kết nối đến Kilo Gateway" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <PasswordBox x:Name="KiloApiKeyBox" Grid.Column="1" PlaceholderText="sk-kilo-..." Width="300"
+                                                 CornerRadius="{StaticResource AppControlCornerRadius}"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <StackPanel x:Name="KiloReasoningRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="Reasoning cho tác vụ phức tạp" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                        <TextBlock Text="Tắt để giảm thời gian chờ câu phản hồi đầu tiên" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="KiloReasoningToggle" Grid.Column="1" IsOn="False"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="Hồ sơ Checkpoint LoRA" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                    <TextBlock Text="Đường dẫn file adapter checkpoint (nếu có)" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                                 </StackPanel>
-                                <StackPanel Grid.Column="1" Spacing="4" Width="280">
-                                    <TextBox x:Name="ModelSearchBox" PlaceholderText="Tìm kiếm model..." TextChanged="OnModelSearchBoxTextChanged"/>
-                                    <ComboBox x:Name="ModelComboBox" Width="280" IsEditable="False"/>
-                                </StackPanel>
-                            </Grid>
-
-                            <Grid x:Name="OpenCodeApiRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
-                                <TextBlock Grid.Column="0" Text="OpenCode API Key" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <PasswordBox x:Name="OpenCodeApiKeyBox" Grid.Column="1" PlaceholderText="sk-opencode-..." Width="280"/>
-                            </Grid>
-
-                            <Grid x:Name="ApiVariantRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
-                                <TextBlock Grid.Column="0" Text="Reasoning Effort" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <ComboBox x:Name="ApiVariantComboBox" Grid.Column="1" Width="280">
-                                    <ComboBoxItem Content="Default" Tag="Default"/>
-                                    <ComboBoxItem Content="Low" Tag="low"/>
-                                    <ComboBoxItem Content="Medium" Tag="medium"/>
-                                    <ComboBoxItem Content="High" Tag="high"/>
-                                    <ComboBoxItem Content="Max" Tag="max"/>
-                                </ComboBox>
-                            </Grid>
-
-                            <Grid x:Name="KiloApiRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
-                                <TextBlock Grid.Column="0" Text="Kilo API Key" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <PasswordBox x:Name="KiloApiKeyBox" Grid.Column="1" PlaceholderText="sk-kilo-..." Width="280"/>
-                            </Grid>
-
-                            <Grid x:Name="KiloReasoningRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
-                                <StackPanel Grid.Column="0" Spacing="2">
-                                    <TextBlock Text="Reasoning cho tác vụ phức tạp" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                    <TextBlock Text="Tắt để phản hồi nhanh hơn" FontSize="12" Foreground="#999999"/>
-                                </StackPanel>
-                                <ToggleSwitch x:Name="KiloReasoningToggle" Grid.Column="1" IsOn="False"/>
-                            </Grid>
-
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                <TextBlock Grid.Column="0" Text="Hồ sơ Checkpoint" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <TextBox x:Name="CheckpointPathBox" Grid.Column="1" PlaceholderText="checkpoints/ru-..." Width="280"/>
+                                <TextBox x:Name="CheckpointPathBox" Grid.Column="1" PlaceholderText="checkpoints/ru-..." Width="300"
+                                         CornerRadius="{StaticResource AppControlCornerRadius}"/>
                             </Grid>
                         </StackPanel>
                     </Border>
 
-                    <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
+                    <!-- Generation Parameters Card -->
+                    <Border Style="{StaticResource FluentCardStyle}">
                         <StackPanel Spacing="16">
-                            <TextBlock Text="Tham số sinh văn bản (Generation)" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,4">
+                                <FontIcon Glyph="&#xE7BE;" FontSize="18" Foreground="{StaticResource AppAccentHoverBrush}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Tham số sinh văn bản (Generation)" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
 
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                <TextBlock Grid.Column="0" Text="Temperature (Độ sáng tạo)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <TextBox x:Name="TemperatureNumberBox" Grid.Column="1" Text="0.7" Width="160" Background="Transparent" BorderThickness="0,0,0,1"/>
+                            <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="Temperature (Độ sáng tạo)" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                    <TextBlock Text="Giá trị cao cho phản hồi sinh động hơn, thấp cho câu trả lời chuẩn xác" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                </StackPanel>
+                                <TextBox x:Name="TemperatureNumberBox" Grid.Column="1" Text="0.7" Width="140" TextAlignment="Center"
+                                         CornerRadius="{StaticResource AppControlCornerRadius}"/>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                <TextBlock Grid.Column="0" Text="Top-K" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <TextBox x:Name="TopKNumberBox" Grid.Column="1" Text="40" Width="160" Background="Transparent" BorderThickness="0,0,0,1"/>
+                            <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="Top-K" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                    <TextBlock Text="Giới hạn số token khả dĩ nhất trong mỗi bước dự đoán" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                </StackPanel>
+                                <TextBox x:Name="TopKNumberBox" Grid.Column="1" Text="40" Width="140" TextAlignment="Center"
+                                         CornerRadius="{StaticResource AppControlCornerRadius}"/>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                <TextBlock Grid.Column="0" Text="Max New Tokens (Độ dài tối đa)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <TextBox x:Name="MaxTokensNumberBox" Grid.Column="1" Text="512" Width="160" Background="Transparent" BorderThickness="0,0,0,1"/>
+                            <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="Max New Tokens (Độ dài tối đa)" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                    <TextBlock Text="Số lượng token tối đa mà Ru sinh ra trong 1 lượt trả lời" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                </StackPanel>
+                                <TextBox x:Name="MaxTokensNumberBox" Grid.Column="1" Text="512" Width="140" TextAlignment="Center"
+                                         CornerRadius="{StaticResource AppControlCornerRadius}"/>
                             </Grid>
                         </StackPanel>
                     </Border>
 
-                    <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
+                    <!-- Extended Features Card (Visible for Cloud backends) -->
+                    <Border x:Name="ExtendedFeaturesCard" Style="{StaticResource FluentCardStyle}" Visibility="Collapsed">
                         <StackPanel Spacing="16">
-                            <TextBlock Text="Tính năng mở rộng" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,4">
+                                <FontIcon Glyph="&#xE734;" FontSize="18" Foreground="{StaticResource AppAccentHoverBrush}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Tính năng thông minh &amp; Bộ nhớ đám mây" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
 
-                            <Grid x:Name="OnlineSearchRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                <TextBlock Grid.Column="0" Text="Cho phép tìm kiếm Web online" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <ToggleSwitch x:Name="AllowOnlineSearchToggle" Grid.Column="1" IsOn="True"/>
-                            </Grid>
+                            <StackPanel x:Name="OnlineSearchRow" Spacing="16">
+                                <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="Tìm kiếm Web trực tuyến" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                        <TextBlock Text="Cho phép Ru tra cứu thông tin thời gian thực qua công cụ tìm kiếm" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="AllowOnlineSearchToggle" Grid.Column="1" IsOn="True"/>
+                                </Grid>
+                            </StackPanel>
 
-                            <Grid x:Name="SelfLearningRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                <TextBlock Grid.Column="0" Text="Tự động ghi nhớ fact từ cuộc trò chuyện (Self-Learning)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <ToggleSwitch x:Name="SelfLearningToggle" Grid.Column="1" IsOn="True"/>
-                            </Grid>
+                            <StackPanel x:Name="SelfLearningRow" Spacing="16">
+                                <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="Tự động học &amp; ghi nhớ (Self-Learning)" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                        <TextBlock Text="Tự động trích xuất sở thích và thông tin từ hội thoại vào bộ nhớ dài hạn" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="SelfLearningToggle" Grid.Column="1" IsOn="True"/>
+                                </Grid>
+                            </StackPanel>
 
-                            <Grid x:Name="CloudMemoryRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0" Visibility="Collapsed">
-                                <TextBlock Grid.Column="0" Text="Cho phép chia sẻ bộ nhớ cục bộ với Cloud Model" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <ToggleSwitch x:Name="CloudMemoryConsentToggle" Grid.Column="1" IsOn="True"/>
-                            </Grid>
+                            <StackPanel x:Name="CloudMemoryRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="Chia sẻ bộ nhớ với Cloud Models" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                        <TextBlock Text="Cho phép truyền thông tin ngữ cảnh đã nhớ khi chat với Cloud API" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="CloudMemoryConsentToggle" Grid.Column="1" IsOn="True"/>
+                                </Grid>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
-                    <TextBlock x:Name="AutoSaveStatusText" Text="" FontSize="13" Foreground="#888888" HorizontalAlignment="Right" Margin="0,8,0,0"/>
+                    <TextBlock x:Name="AutoSaveStatusText" Text="" FontSize="13" Foreground="{StaticResource AppSuccessBrush}" HorizontalAlignment="Right" Margin="0,4,0,0"/>
                 </StackPanel>
             </ScrollViewer>
         </PivotItem>
 
-        <PivotItem Header="Nhận thức Màn hình" Margin="0,16,0,0">
-            <ScrollViewer Padding="32,0,32,32" Background="Transparent">
+        <!-- Tab 2: Screen Observation -->
+        <PivotItem Header="Nhận thức Màn hình" Margin="0,12,0,0">
+            <ScrollViewer Padding="36,12,36,36" Background="Transparent">
                 <StackPanel Spacing="24" HorizontalAlignment="Stretch">
-                    <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
-                        <StackPanel Spacing="16">
-                            <TextBlock Text="Nhận thức Màn hình (Screen Observer)" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
+                    <Border Style="{StaticResource FluentCardStyle}">
+                        <StackPanel Spacing="20">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <FontIcon Glyph="&#xE7B3;" FontSize="18" Foreground="{StaticResource AppAccentHoverBrush}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Nhận thức Màn hình (Screen Observer)" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
 
-                            <Border Background="#251F12" BorderBrush="#66501A" BorderThickness="1" CornerRadius="8" Padding="16">
-                                <StackPanel Spacing="8">
-                                    <TextBlock Text="Local screen observation đang tạm dừng" FontSize="14" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#F3D27A"/>
-                                    <TextBlock Text="Local vision model đã được gỡ khỏi active runtime vì độ trễ cao. Structured observation/cloud reaction được giữ lại để nối lại khi có model thay thế." Foreground="#C8B98A" FontSize="13" TextWrapping="Wrap"/>
+                            <Border Background="{StaticResource AppWarningBrush}" Opacity="0.15" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="⚡ Tính năng đang tạm dừng" FontSize="14" FontWeight="Bold" Foreground="{StaticResource AppWarningBrush}"/>
+                                    <TextBlock Text="Mô hình vision cục bộ đã tạm gỡ khỏi active runtime do độ trễ cao. Structured observation/cloud reaction được giữ lại để nối lại khi có mô hình vision tối ưu mới." 
+                                               Foreground="{StaticResource AppTextPrimaryBrush}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
 
-                            <Grid x:Name="GeminiVisionRow" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
-                                    <TextBlock Text="Gemini Vision API Key (Screen Observation Cloud)" Foreground="#DDDDDD"/>
-                                    <TextBlock Text="Dùng cho Gemini Live. Lấy key tại aistudio.google.com/apikey" Foreground="#777777" FontSize="12" TextWrapping="Wrap"/>
+                            <Grid x:Name="GeminiVisionRow" ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0" Spacing="2">
+                                    <TextBlock Text="Gemini Vision API Key" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                    <TextBlock Text="Dùng cho Gemini Live Screen Observation. Lấy key tại aistudio.google.com" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="12.5"/>
                                 </StackPanel>
-                                <PasswordBox x:Name="GeminiVisionKeyBox" Grid.Column="1" PlaceholderText="AIza..." Width="280"/>
+                                <PasswordBox x:Name="GeminiVisionKeyBox" Grid.Column="1" PlaceholderText="AIza..." Width="300"
+                                             CornerRadius="{StaticResource AppControlCornerRadius}"/>
                             </Grid>
                         </StackPanel>
                     </Border>
-
                 </StackPanel>
             </ScrollViewer>
         </PivotItem>
 
-        <PivotItem Header="VTube Studio" Margin="0,16,0,0">
-            <ScrollViewer Padding="32,0,32,32" Background="Transparent">
+        <!-- Tab 3: VTube Studio -->
+        <PivotItem Header="VTube Studio" Margin="0,12,0,0">
+            <ScrollViewer Padding="36,12,36,36" Background="Transparent">
                 <StackPanel Spacing="24" HorizontalAlignment="Stretch">
-                    <Border Background="#1A1A1A" BorderBrush="#222222" BorderThickness="1" CornerRadius="4" Padding="24">
-                        <StackPanel Spacing="16">
+                    <Border Style="{StaticResource FluentCardStyle}">
+                        <StackPanel Spacing="20">
                             <Grid ColumnDefinitions="*,Auto">
                                 <StackPanel Grid.Column="0" Spacing="4">
-                                    <TextBlock Text="VTube Studio Avatar Live2D" FontSize="18" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" Foreground="#EAEAEA"/>
-                                    <TextBlock x:Name="VtsStatusText" Text="Trạng thái: Chưa kết nối" Foreground="#888888"/>
-                                    <TextBlock x:Name="VtsStateText" Text="" Foreground="#666666" FontSize="12"/>
+                                    <TextBlock Text="Avatar Live2D VTube Studio" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                    <TextBlock x:Name="VtsStatusText" Text="Trạng thái: Chưa kết nối" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="13"/>
+                                    <TextBlock x:Name="VtsStateText" Text="" Foreground="{StaticResource AppTextTertiaryBrush}" FontSize="12"/>
                                 </StackPanel>
-                                <Button x:Name="ConnectVtsButton" Grid.Column="1" Click="OnConnectVtsClick" Padding="16,10" CornerRadius="8" Background="#20FFFFFF" BorderThickness="1" BorderBrush="#10FFFFFF">
+                                <Button x:Name="ConnectVtsButton" Grid.Column="1" Click="OnConnectVtsClick" Padding="18,10" 
+                                        CornerRadius="{StaticResource AppControlCornerRadius}" 
+                                        Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="{StaticResource AppAccentBrush}" BorderThickness="1">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon Glyph="&#xE703;" FontSize="14"/>
-                                        <TextBlock Text="Kết nối VTS" FontWeight="Medium"/>
+                                        <FontIcon Glyph="&#xE703;" FontSize="14" Foreground="{StaticResource AppAccentHoverBrush}"/>
+                                        <TextBlock Text="Kết nối VTS" FontWeight="SemiBold" Foreground="{StaticResource AppAccentHoverBrush}"/>
                                     </StackPanel>
                                 </Button>
                             </Grid>
 
-                            <TextBlock Text="Kích hoạt thủ công biểu cảm &amp; cử động:" FontSize="13" Foreground="#AAAAAA" Margin="0,8,0,0"/>
-                            <StackPanel Orientation="Horizontal" Spacing="12">
-                                <Button Content="Vui vẻ" Click="OnVtsActionClick" Tag="joy" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
-                                <Button Content="Ngạc nhiên" Click="OnVtsActionClick" Tag="surprised" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
-                                <Button Content="Dịu dàng" Click="OnVtsActionClick" Tag="gentle" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
-                                <Button Content="Giơ tay" Click="OnVtsActionClick" Tag="raise_hand" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
-                                <Button Content="Dựng đuôi" Click="OnVtsActionClick" Tag="tail_up" CornerRadius="6" Background="#10FFFFFF" BorderThickness="1" BorderBrush="#20FFFFFF"/>
+                            <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+
+                            <TextBlock Text="Kích hoạt thủ công biểu cảm &amp; cử động:" FontSize="13.5" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Content="Vui vẻ" Click="OnVtsActionClick" Tag="joy" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16,8"
+                                        Background="{StaticResource AppCardBackgroundHoverBrush}" BorderThickness="0"/>
+                                <Button Content="Ngạc nhiên" Click="OnVtsActionClick" Tag="surprised" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16,8"
+                                        Background="{StaticResource AppCardBackgroundHoverBrush}" BorderThickness="0"/>
+                                <Button Content="Dịu dàng" Click="OnVtsActionClick" Tag="gentle" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16,8"
+                                        Background="{StaticResource AppCardBackgroundHoverBrush}" BorderThickness="0"/>
+                                <Button Content="Giơ tay" Click="OnVtsActionClick" Tag="raise_hand" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16,8"
+                                        Background="{StaticResource AppCardBackgroundHoverBrush}" BorderThickness="0"/>
+                                <Button Content="Dựng đuôi" Click="OnVtsActionClick" Tag="tail_up" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16,8"
+                                        Background="{StaticResource AppCardBackgroundHoverBrush}" BorderThickness="0"/>
                             </StackPanel>
 
-                            <TextBlock Text="Cường độ chuyển động (áp dụng ngay):" FontSize="13" Foreground="#AAAAAA" Margin="0,16,0,0"/>
+                            <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+
+                            <TextBlock Text="Cường độ chuyển động avatar (áp dụng ngay):" FontSize="13.5" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                            
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" Text="Sway (thân)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <Slider x:Name="SwaySlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
+                                <TextBlock Grid.Column="0" Text="Sway (Thân lắc lư)" VerticalAlignment="Center" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                <Slider x:Name="SwaySlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="260" ValueChanged="OnVtsConfigSliderChanged"/>
                             </Grid>
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" Text="Đầu" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <Slider x:Name="HeadSlider" Grid.Column="1" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
+                                <TextBlock Grid.Column="0" Text="Đầu (Head motion)" VerticalAlignment="Center" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                <Slider x:Name="HeadSlider" Grid.Column="1" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="260" ValueChanged="OnVtsConfigSliderChanged"/>
                             </Grid>
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" Text="Mắt" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <Slider x:Name="EyeSlider" Grid.Column="1" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
+                                <TextBlock Grid.Column="0" Text="Mắt (Eye movement)" VerticalAlignment="Center" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                <Slider x:Name="EyeSlider" Grid.Column="1" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="260" ValueChanged="OnVtsConfigSliderChanged"/>
                             </Grid>
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" Text="Tần suất micro-action" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <Slider x:Name="MicroSlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
+                                <TextBlock Grid.Column="0" Text="Tần suất micro-action" VerticalAlignment="Center" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                <Slider x:Name="MicroSlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="260" ValueChanged="OnVtsConfigSliderChanged"/>
                             </Grid>
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" Text="Tần suất pose" VerticalAlignment="Center" Foreground="#DDDDDD"/>
-                                <Slider x:Name="PoseSlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="240" ValueChanged="OnVtsConfigSliderChanged"/>
+                                <TextBlock Grid.Column="0" Text="Tần suất pose" VerticalAlignment="Center" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                <Slider x:Name="PoseSlider" Grid.Column="1" Minimum="0" Maximum="100" StepFrequency="1" Value="100" Width="260" ValueChanged="OnVtsConfigSliderChanged"/>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
-                                <TextBlock Grid.Column="0" Text="Overlay desktop (avatar nổi trên màn hình)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                            <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="Overlay desktop (Avatar nổi trong suốt)" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                    <TextBlock Text="Hiển thị avatar trên toàn màn hình desktop" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                </StackPanel>
                                 <ToggleSwitch x:Name="OverlayToggle" Grid.Column="1" IsOn="False" Toggled="OnOverlayToggleChanged"/>
                             </Grid>
+
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" Text="Nhìn theo chuột (Mouse Look)" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="Nhìn theo con trỏ chuột (Mouse Look)" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                    <TextBlock Text="Avatar tự quay đầu và mắt nhìn theo tọa độ chuột" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                </StackPanel>
                                 <ToggleSwitch x:Name="MouseLookToggle" Grid.Column="1" IsOn="False" Toggled="OnMouseLookToggleChanged"/>
                             </Grid>
+
                             <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0" Text="Độ nhạy nhìn theo chuột" VerticalAlignment="Center" Foreground="#DDDDDD"/>
+                                <TextBlock Grid.Column="0" Text="Độ nhạy nhìn theo chuột" VerticalAlignment="Center" Foreground="{StaticResource AppTextPrimaryBrush}"/>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12">
-                                    <Slider x:Name="MouseSensitivitySlider" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="180" IsEnabled="False" ValueChanged="OnMouseSensitivityChanged"/>
-                                    <TextBlock x:Name="MouseSensitivityText" Text="100%" Width="44" VerticalAlignment="Center" Foreground="#A0C0FF" TextAlignment="Right"/>
+                                    <Slider x:Name="MouseSensitivitySlider" Minimum="0" Maximum="200" StepFrequency="1" Value="100" Width="200" IsEnabled="False" ValueChanged="OnMouseSensitivityChanged"/>
+                                    <TextBlock x:Name="MouseSensitivityText" Text="100%" Width="44" VerticalAlignment="Center" Foreground="{StaticResource AppAccentHoverBrush}" TextAlignment="Right" FontWeight="Bold"/>
                                 </StackPanel>
                             </Grid>
-                            <TextBlock x:Name="VtsOverlayErrorText" Text="" Foreground="#FF6B6B" FontSize="12" Margin="0,4,0,0" Visibility="Collapsed"/>
+
+                            <TextBlock x:Name="VtsOverlayErrorText" Text="" Foreground="{StaticResource AppDangerBrush}" FontSize="12.5" Visibility="Collapsed"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>
             </ScrollViewer>
         </PivotItem>
 
-        <PivotItem Header="Bộ nhớ" Margin="0,16,0,0">
+        <!-- Tab 4: Memory -->
+        <PivotItem Header="Bộ nhớ ghi nhớ" Margin="0,12,0,0">
             <views:MemoryView x:Name="MemoryControl" />
         </PivotItem>
     </Pivot>

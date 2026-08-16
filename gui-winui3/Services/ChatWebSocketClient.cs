@@ -11,6 +11,7 @@ namespace RuApp.Services
     public class ChatWebSocketClient : IDisposable
     {
         private const int ReconnectDelayMs = 2000;
+        private const int ReconnectDelayMaxMs = 15000;
 
         private ClientWebSocket? _webSocket;
         private CancellationTokenSource? _cts;
@@ -44,11 +45,13 @@ namespace RuApp.Services
 
         private async Task BackgroundLoopAsync(CancellationToken ct)
         {
+            int reconnectDelayMs = ReconnectDelayMs;
             while (!ct.IsCancellationRequested)
             {
                 try
                 {
                     await ConnectAndListenAsync(ct);
+                    reconnectDelayMs = ReconnectDelayMs;
                 }
                 catch (OperationCanceledException)
                 {
@@ -60,7 +63,8 @@ namespace RuApp.Services
                 }
 
                 if (ct.IsCancellationRequested) break;
-                await Task.Delay(ReconnectDelayMs, ct).ConfigureAwait(false);
+                await Task.Delay(reconnectDelayMs, ct).ConfigureAwait(false);
+                reconnectDelayMs = Math.Min(reconnectDelayMs * 2, ReconnectDelayMaxMs);
                 if (!ct.IsCancellationRequested) OnDisconnected?.Invoke();
             }
         }

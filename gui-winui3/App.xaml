@@ -1,17 +1,66 @@
-<?xml version="1.0" encoding="utf-8"?>
 <Application
     x:Class="RuApp.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:RuApp"
     xmlns:converters="using:RuApp.Converters">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
-                <!-- Other merged dictionaries here -->
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- Converters -->
             <converters:ErrorColorConverter x:Key="ErrorColorConverter" />
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+            <!-- Rich Platinum Charcoal & Titanium Slate Palette (Elegance, Comfort & Clear Contrast) -->
+            <SolidColorBrush x:Key="AppSurfaceBrush" Color="#13151C" />
+            <SolidColorBrush x:Key="AppSidebarBackgroundBrush" Color="#181A23" />
+            <SolidColorBrush x:Key="AppSidebarBorderBrush" Color="#252836" />
+            <SolidColorBrush x:Key="AppCardBackgroundBrush" Color="#1E212C" />
+            <SolidColorBrush x:Key="AppCardBackgroundHoverBrush" Color="#272B39" />
+            <SolidColorBrush x:Key="AppCardBorderBrush" Color="#2E3446" />
+            <SolidColorBrush x:Key="AppCardBorderSubtleBrush" Color="#232735" />
+            
+            <!-- Titanium Cobalt & Platinum Accent -->
+            <SolidColorBrush x:Key="AppAccentBrush" Color="#4361EE" />
+            <SolidColorBrush x:Key="AppAccentHoverBrush" Color="#5C7CFA" />
+            <SolidColorBrush x:Key="AppAccentSubtleBrush" Color="#1A223E" />
+            
+            <!-- Crisp Platinum & Silver Typography -->
+            <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#A4ABC1" />
+            <SolidColorBrush x:Key="AppTextTertiaryBrush" Color="#6C748C" />
+            
+            <!-- Status Indicators (Emerald, Amber, Rose) -->
+            <SolidColorBrush x:Key="AppSuccessBrush" Color="#10B981" />
+            <SolidColorBrush x:Key="AppWarningBrush" Color="#F59E0B" />
+            <SolidColorBrush x:Key="AppDangerBrush" Color="#F43F5E" />
+            <SolidColorBrush x:Key="AppDangerSubtleBrush" Color="#2A1519" />
+
+            <!-- CornerRadius Design Tokens -->
+            <CornerRadius x:Key="AppCardCornerRadius">12</CornerRadius>
+            <CornerRadius x:Key="AppControlCornerRadius">8</CornerRadius>
+            <CornerRadius x:Key="AppPillCornerRadius">26</CornerRadius>
+
+            <!-- Card Border Style -->
+            <Style x:Key="FluentCardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{StaticResource AppCardBackgroundBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource AppCardBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="{StaticResource AppCardCornerRadius}" />
+                <Setter Property="Padding" Value="24,20" />
+            </Style>
+
+            <!-- Smooth Action Button Style -->
+            <Style x:Key="ActionCardButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="{StaticResource AppCardBackgroundBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource AppCardBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
+                <Setter Property="Padding" Value="16,12" />
+            </Style>
+
         </ResourceDictionary>
     </Application.Resources>
 </Application>

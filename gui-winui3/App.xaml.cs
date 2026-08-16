@@ -40,7 +40,7 @@ public partial class App : Application
     {
         try
         {
-            IntPtr hwnd = FindWindowW(null, "Ru Assistant");
+            IntPtr hwnd = FindWindowW(null, "Ru — Local LFM2.5 Conversational Runtime");
             if (hwnd != IntPtr.Zero)
             {
                 ShowWindow(hwnd, 9); // SW_RESTORE

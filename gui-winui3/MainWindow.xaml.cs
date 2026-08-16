@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using RuApp.Models;
 using RuApp.Services;
@@ -26,7 +27,6 @@ namespace RuApp
         private LogView? _logView;
         private DispatcherTimer? _sessionsTimer;
 
-
         public ObservableCollection<SessionInfo> Sessions { get; } = new();
 
         public MainWindow()
@@ -34,7 +34,30 @@ namespace RuApp
             try
             {
                 this.InitializeComponent();
-            this.Title = "Ru — Local LFM2.5 Conversational Runtime";
+                this.Title = "Ru — Local LFM2.5 Conversational Runtime";
+                
+                try
+                {
+                    this.ExtendsContentIntoTitleBar = true;
+                    this.SetTitleBar(AppTitleBar);
+
+                    var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+                    var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(windowHandle);
+                    var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
+
+                    if (appWindow != null && appWindow.TitleBar != null)
+                    {
+                        appWindow.TitleBar.ButtonForegroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 248, 250, 252);
+                        appWindow.TitleBar.ButtonHoverForegroundColor = Microsoft.UI.Colors.White;
+                        appWindow.TitleBar.ButtonHoverBackgroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 38, 43, 56);
+                        appWindow.TitleBar.ButtonPressedForegroundColor = Microsoft.UI.Colors.White;
+                        appWindow.TitleBar.ButtonPressedBackgroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 52, 59, 76);
+                        appWindow.TitleBar.ButtonInactiveForegroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 140, 145, 160);
+                        appWindow.TitleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+                        appWindow.TitleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
+                    }
+                }
+                catch { }
 
                 _processManager = new BackendProcessManager();
                 this.Closed += OnWindowClosed;
@@ -81,13 +104,13 @@ namespace RuApp
         {
             SidebarSessionList.ItemsSource = Sessions;
             StatusText.Text = $"Đang khởi động {_processManager.DisplayName} Backend...";
-            StatusDot.Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
+            StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppWarningBrush"];
 
             string? projectRoot = ResolveProjectRoot();
             if (projectRoot == null)
             {
                 StatusText.Text = "Không tìm thấy project root. Hãy đặt RuApp.exe trong hoặc dưới thư mục D:\\LLM.";
-                StatusDot.Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red);
+                StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
                 return;
             }
 
@@ -95,7 +118,7 @@ namespace RuApp
             if (ok)
             {
                 StatusText.Text = $"{_processManager.DisplayName} Backend đã sẵn sàng (127.0.0.1:8000)";
-                StatusDot.Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Green);
+                StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
 
                 _apiService = new ApiService(_processManager.AuthSecret, _processManager.Port);
                 _wsClient = new ChatWebSocketClient(_processManager.AuthSecret, _processManager.Port);
@@ -124,8 +147,7 @@ namespace RuApp
 
                 // Default: Chat
                 ContentFrame.Content = _chatView;
-                NavChat.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-                    Windows.UI.Color.FromArgb(40, 255, 255, 255));
+                SetActiveNav(NavChat);
                 
                 await LoadSessionsAsync();
 
@@ -140,25 +162,35 @@ namespace RuApp
                 {
                     StatusText.Text += $" {_processManager.LastError}";
                 }
-                StatusDot.Fill = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red);
+                StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
             }
+        }
+
+        private void SetActiveNav(Button activeBtn)
+        {
+            var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            var activeBg = (SolidColorBrush)Application.Current.Resources["AppCardBackgroundHoverBrush"];
+            var textPrimary = (SolidColorBrush)Application.Current.Resources["AppTextPrimaryBrush"];
+            var textSecondary = (SolidColorBrush)Application.Current.Resources["AppTextSecondaryBrush"];
+
+            NavChat.Background = transparent;
+            NavChat.Foreground = textSecondary;
+            NavVoice.Background = transparent;
+            NavVoice.Foreground = textSecondary;
+            NavSettings.Background = transparent;
+            NavSettings.Foreground = textSecondary;
+            NavLog.Background = transparent;
+            NavLog.Foreground = textSecondary;
+
+            activeBtn.Background = activeBg;
+            activeBtn.Foreground = textPrimary;
         }
 
         private void OnNavClick(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.Tag is string tag)
             {
-                // Reset all nav button backgrounds
-                var transparent = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
-                var active = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-                    Windows.UI.Color.FromArgb(40, 255, 255, 255));
-
-                NavChat.Background = transparent;
-                NavVoice.Background = transparent;
-                NavSettings.Background = transparent;
-                NavLog.Background = transparent;
-
-                btn.Background = active;
+                SetActiveNav(btn);
 
                 ContentFrame.Content = tag switch
                 {
@@ -193,8 +225,6 @@ namespace RuApp
             _processManager.Dispose();
         }
 
-        // Hamburger menu logic removed
-
         private async Task LoadSessionsAsync()
         {
             if (_apiService == null) return;
@@ -211,8 +241,6 @@ namespace RuApp
             int insertAt = 0;
             foreach (var incoming in result.Sessions)
             {
-                // Hide sessions that have never been chatted in; they only
-                // appear in the recent list once a message exists.
                 if (incoming.MessageCount <= 0) continue;
                 seen.Add(incoming.Id);
                 var existing = Sessions.FirstOrDefault(s => s.Id == incoming.Id);
@@ -312,17 +340,25 @@ namespace RuApp
 
         private void SessionItem_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
-            if (sender is Grid grid && grid.Children.Count > 1 && grid.Children[1] is Button deleteBtn)
+            if (sender is Grid grid)
             {
-                deleteBtn.Visibility = Visibility.Visible;
+                var deleteBtn = grid.Children.OfType<Button>().FirstOrDefault();
+                if (deleteBtn != null)
+                {
+                    deleteBtn.Opacity = 1.0;
+                }
             }
         }
 
         private void SessionItem_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
-            if (sender is Grid grid && grid.Children.Count > 1 && grid.Children[1] is Button deleteBtn)
+            if (sender is Grid grid)
             {
-                deleteBtn.Visibility = Visibility.Collapsed;
+                var deleteBtn = grid.Children.OfType<Button>().FirstOrDefault();
+                if (deleteBtn != null)
+                {
+                    deleteBtn.Opacity = 0.0;
+                }
             }
         }
 

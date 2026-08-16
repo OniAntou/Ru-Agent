@@ -8,7 +8,6 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Dispatching;
 using RuApp.Models;
 using RuApp.Services;
@@ -48,7 +47,7 @@ namespace RuApp.Views
     public sealed partial class ChatView : UserControl
     {
         private const string VtsMarkerPattern = @"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]";
-        private const double InputMaxWidth = 860;
+        private const double InputMaxWidth = 1200;
 
         private ApiService? _apiService;
         private ChatWebSocketClient? _wsClient;
@@ -56,9 +55,6 @@ namespace RuApp.Views
         private MicRecorderService _micRecorder = new();
         private string _activeSessionId = "default";
         public ObservableCollection<ChatMessageItem> Messages { get; } = new();
-        private bool _isFirstMessage = true;
-        private bool _inputCentered = true;
-        private double _centerDelta;
         private DispatcherTimer? _typingDebounce;
         private bool _typingPushed;
 
@@ -66,20 +62,27 @@ namespace RuApp.Views
         {
             this.InitializeComponent();
             ChatListView.ItemsSource = Messages;
+            Messages.CollectionChanged += (s, e) => UpdateViewMode();
             RootGrid.SizeChanged += OnRootGridSizeChanged;
-            CenterInput();
+            UpdateViewMode();
+        }
+
+        private void UpdateViewMode()
+        {
+            bool hasMessages = Messages.Count > 0;
+            if (WelcomeHeroPanel != null)
+            {
+                WelcomeHeroPanel.Visibility = hasMessages ? Visibility.Collapsed : Visibility.Visible;
+            }
+            if (ChatScrollHost != null)
+            {
+                ChatScrollHost.Visibility = hasMessages ? Visibility.Visible : Visibility.Collapsed;
+            }
         }
 
         private void OnRootGridSizeChanged(object sender, SizeChangedEventArgs e)
         {
-            // Luôn đồng bộ chiều rộng vùng chat và khung nhập khi cửa sổ đổi kích thước.
             ApplyInputWidth();
-
-            // Khi chưa có tin nhắn, tiếp tục giữ khung nhập ở giữa theo chiều dọc.
-            if (_inputCentered)
-            {
-                UpdateCenterDelta();
-            }
         }
 
         public event EventHandler<SessionOpenedEventArgs>? SessionOpened;
@@ -162,6 +165,20 @@ namespace RuApp.Views
             return Regex.Replace(content, VtsMarkerPattern, "").Trim();
         }
 
+        private async void OnSuggestionClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Content is StackPanel sp)
+            {
+                var promptText = sp.Children.OfType<TextBlock>().ElementAtOrDefault(1)?.Text 
+                    ?? sp.Children.OfType<TextBlock>().FirstOrDefault()?.Text;
+                if (!string.IsNullOrWhiteSpace(promptText))
+                {
+                    ChatInputTextBox.Text = promptText;
+                    await SendCurrentMessageAsync();
+                }
+            }
+        }
+
         private async void OnSendClick(object sender, RoutedEventArgs e)
         {
             try
@@ -180,8 +197,13 @@ namespace RuApp.Views
             {
                 if (e.Key == Windows.System.VirtualKey.Enter)
                 {
-                    e.Handled = true;
-                    await SendCurrentMessageAsync();
+                    var shiftDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift)
+                        .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+                    if (!shiftDown)
+                    {
+                        e.Handled = true;
+                        await SendCurrentMessageAsync();
+                    }
                 }
             }
             catch (Exception ex)
@@ -212,13 +234,6 @@ namespace RuApp.Views
                 if (_voicePlayback?.AutoReadReplies == true)
                 {
                     _voicePlayback.BeginReplyStream();
-                }
-
-                // Move input to bottom after first message
-                if (_isFirstMessage)
-                {
-                    _isFirstMessage = false;
-                    MoveInputToBottom(animated: true);
                 }
 
                 ScrollChatToBottom();
@@ -261,88 +276,7 @@ namespace RuApp.Views
 
         private void ApplyInputWidth()
         {
-            double contentWidth = Math.Max(
-                0,
-                Math.Min(InputMaxWidth, RootGrid.ActualWidth)
-            );
-
-            // Khung nhập.
-            InputBorder.HorizontalAlignment = HorizontalAlignment.Center;
-            InputBorder.Width = contentWidth;
-
-            // Ép toàn bộ chuỗi Grid -> ScrollViewer -> ListView có cùng chiều rộng.
-            // Nếu chỉ đặt Width cho ChatColumn, ListView vẫn có thể co theo nội dung.
-            ChatColumn.HorizontalAlignment = HorizontalAlignment.Center;
-            ChatColumn.Width = contentWidth;
-
-            ChatScrollHost.HorizontalAlignment = HorizontalAlignment.Stretch;
-            ChatScrollHost.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-            ChatScrollHost.Width = contentWidth;
-
-            ChatListView.HorizontalAlignment = HorizontalAlignment.Stretch;
-            ChatListView.HorizontalContentAlignment = HorizontalAlignment.Stretch;
-            ChatListView.Width = contentWidth;
-        }
-
-        private void UpdateCenterDelta()
-        {
-            if (RootGrid.ActualHeight <= 0 || InputContainer.ActualHeight <= 0) return;
-            _centerDelta = Math.Max(0, (RootGrid.ActualHeight - InputContainer.ActualHeight) / 2);
-            ApplyInputWidth();
-            SetInputShift(-_centerDelta);
-        }
-
-        private void SetInputShift(double y)
-        {
-            if (InputContainer.RenderTransform is TranslateTransform existing)
-            {
-                existing.Y = y;
-            }
-            else
-            {
-                InputContainer.RenderTransform = new TranslateTransform { Y = y };
-            }
-        }
-
-        private void CenterInput()
-        {
-            _inputCentered = true;
-            Grid.SetRow(InputContainer, 0);
-            InputContainer.VerticalAlignment = VerticalAlignment.Bottom;
-            InputContainer.Padding = new Thickness(0, 0, 0, 24);
-            UpdateCenterDelta();
-        }
-
-        private void MoveInputToBottom(bool animated = false)
-        {
-            _inputCentered = false;
-            Grid.SetRow(InputContainer, 1);
-            InputContainer.VerticalAlignment = VerticalAlignment.Stretch;
-            InputContainer.Padding = new Thickness(0, 0, 0, 24);
-            ApplyInputWidth();
-
-            if (animated && _centerDelta > 0)
-            {
-                // Start from the previous centered spot and glide down.
-                SetInputShift(-_centerDelta);
-                var target = (TranslateTransform)InputContainer.RenderTransform;
-                var storyboard = new Storyboard();
-                var animation = new DoubleAnimation
-                {
-                    From = -_centerDelta,
-                    To = 0,
-                    Duration = TimeSpan.FromMilliseconds(280),
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
-                };
-                Storyboard.SetTarget(animation, target);
-                Storyboard.SetTargetProperty(animation, "Y");
-                storyboard.Children.Add(animation);
-                storyboard.Begin();
-            }
-            else
-            {
-                SetInputShift(0);
-            }
+            // Co giãn tự nhiên theo XAML MaxWidth="900" và Margin đệm hai bên
         }
 
         private void ScrollChatToBottom()
@@ -353,8 +287,6 @@ namespace RuApp.Views
                 ChatScrollHost.ChangeView(null, ChatScrollHost.ScrollableHeight, null, disableAnimation: true);
                 return;
             }
-            // Right after items are added the ListView has not measured yet, so
-            // ScrollableHeight is still 0. Retry on the next layout passes.
             DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, RetryScrollAfterLayout);
         }
 
@@ -371,9 +303,6 @@ namespace RuApp.Views
         {
             try
             {
-                // Feed voice synthesis from the WebSocket callback directly. The
-                // visual message can wait for the UI dispatcher without delaying
-                // the first complete speech unit.
                 if (_voicePlayback?.AutoReadReplies == true)
                 {
                     _voicePlayback.AppendReplyDelta(delta);
@@ -476,7 +405,6 @@ namespace RuApp.Views
                 _voicePlayback?.FailReplyStream();
                 DispatcherQueue.TryEnqueue(() =>
                 {
-                    
                     var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
                     if (last == null)
                     {
@@ -530,7 +458,6 @@ namespace RuApp.Views
                     return "Error message is empty";
                 }
 
-                // Provide helpful context based on error type
                 if (error.Contains("timeout") || error.Contains("time out"))
                 {
                     return "Backend phản hồi quá chậm. Kiểm tra: Backend đang chạy? Model có quá nặng? GPU có đủ bộ nhớ?";
@@ -570,8 +497,6 @@ namespace RuApp.Views
                 if (_apiService == null) return;
                 _activeSessionId = sessionId;
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
-                await _apiService.ActivateSessionAsync(_activeSessionId);
-
                 Messages.Clear();
                 var history = await _apiService.GetSessionMessagesAsync(_activeSessionId);
                 if (history != null)
@@ -585,23 +510,10 @@ namespace RuApp.Views
                         });
                     }
                     
-                    // If session has messages, move input to bottom
                     if (history.Count > 0)
                     {
-                        _isFirstMessage = false;
-                        MoveInputToBottom();
                         ScrollChatToBottom();
                     }
-                    else
-                    {
-                        _isFirstMessage = true;
-                        CenterInput();
-                    }
-                }
-                else
-                {
-                    _isFirstMessage = true;
-                    CenterInput();
                 }
             }
             catch (Exception ex)
@@ -651,7 +563,7 @@ namespace RuApp.Views
                 return;
             }
             MicIcon.Glyph = "\uE7C7";
-            MicButton.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Red);
+            MicButton.Background = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
         }
     }
 }

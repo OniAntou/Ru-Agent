@@ -20,9 +20,10 @@ namespace RuApp.Services
         {
             await StopAsync();
 
+            MediaCapture? capture = null;
             try
             {
-                var capture = new MediaCapture();
+                capture = new MediaCapture();
                 var settings = new MediaCaptureInitializationSettings
                 {
                     StreamingCaptureMode = StreamingCaptureMode.Audio,
@@ -44,6 +45,14 @@ namespace RuApp.Services
             catch
             {
                 await StopAsync();
+                try
+                {
+                    capture?.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[MicRecorder] failed capture dispose: {ex.Message}");
+                }
                 return false;
             }
         }
@@ -91,6 +100,14 @@ namespace RuApp.Services
                 _stream = null;
                 _profile = null;
                 _isStopping = false;
+            }
+            try
+            {
+                capture.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MicRecorder] MediaCapture dispose failed: {ex.Message}");
             }
             return wavBytes;
         }

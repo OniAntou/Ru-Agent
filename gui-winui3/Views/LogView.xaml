@@ -11,83 +11,97 @@
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibility" />
     </UserControl.Resources>
 
-    <Border Background="#0C0C0C">
-        <Grid Padding="16" RowDefinitions="Auto,*">
+    <Grid Padding="36,24,36,36" RowDefinitions="Auto,*" Background="Transparent">
 
-            <!-- Header -->
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="0,0,0,12" VerticalAlignment="Center">
-                <TextBlock Grid.Column="0" Text="Nhật ký hoạt động" FontSize="16" FontWeight="SemiBold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+        <!-- Header & Filters Bar -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="0,0,0,20" VerticalAlignment="Center">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <TextBlock Text="Nhật ký hoạt động (Activity Timeline)" FontSize="22" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                <TextBlock Text="Theo dõi các sự kiện chat, phân tích cảm xúc và điều khiển VTube Studio theo thời gian thực" FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+            </StackPanel>
 
-<ToggleButton Grid.Column="1" x:Name="FilterChat" Content="Chat" FontSize="12" Padding="10,4" Margin="8,0,4,0"
-                              Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#3C87FF"
-                              Background="#00000000" BorderBrush="#3C87FF" BorderThickness="1" CornerRadius="14"/>
-                <ToggleButton Grid.Column="2" x:Name="FilterEmotion" Content="Cảm xúc" FontSize="12" Padding="10,4" Margin="4,0"
-                              Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#B06EF0"
-                              Background="#00000000" BorderBrush="#B06EF0" BorderThickness="1" CornerRadius="14"/>
-                <ToggleButton Grid.Column="3" x:Name="FilterVts" Content="VTS" FontSize="12" Padding="10,4" Margin="4,0"
-                              Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#FF5C92"
-                              Background="#00000000" BorderBrush="#FF5C92" BorderThickness="1" CornerRadius="14"/>
-                <Button Grid.Column="4" x:Name="ClearButton" Content="Xoá" FontSize="13" Padding="10,4" Margin="8,2,0,0"
-                        Click="OnClearClicked" Foreground="#FF7A7A" Background="#00000000"
-                        BorderBrush="#FF7A7A" BorderThickness="1" CornerRadius="14" HorizontalAlignment="Right"/>
-            </Grid>
+            <ToggleButton Grid.Column="1" x:Name="FilterChat" Content="Chat" FontSize="12.5" Padding="14,6" Margin="6,0"
+                          Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#60A5FA"
+                          Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="#60A5FA" BorderThickness="1" 
+                          CornerRadius="{StaticResource AppControlCornerRadius}"/>
+            
+            <ToggleButton Grid.Column="2" x:Name="FilterEmotion" Content="Cảm xúc" FontSize="12.5" Padding="14,6" Margin="6,0"
+                          Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#C084FC"
+                          Background="#20C084FC" BorderBrush="#C084FC" BorderThickness="1" 
+                          CornerRadius="{StaticResource AppControlCornerRadius}"/>
+            
+            <ToggleButton Grid.Column="3" x:Name="FilterVts" Content="VTS" FontSize="12.5" Padding="14,6" Margin="6,0"
+                          Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#F472B6"
+                          Background="#20F472B6" BorderBrush="#F472B6" BorderThickness="1" 
+                          CornerRadius="{StaticResource AppControlCornerRadius}"/>
+            
+            <Button Grid.Column="4" x:Name="ClearButton" Content="Xóa nhật ký" FontSize="12.5" Padding="14,6" Margin="10,0,0,0"
+                    Click="OnClearClicked" Foreground="{StaticResource AppDangerBrush}" Background="{StaticResource AppDangerSubtleBrush}"
+                    BorderBrush="{StaticResource AppDangerBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" 
+                    HorizontalAlignment="Right"/>
+        </Grid>
 
-            <!-- Timeline -->
-            <ListView x:Name="TimelineList" Grid.Row="1"
+        <!-- Timeline Card Container -->
+        <Border Grid.Row="1" Style="{StaticResource FluentCardStyle}" Padding="16">
+            <ListView x:Name="TimelineList"
                       ItemsSource="{x:Bind Rows}"
                       IsItemClickEnabled="True"
                       ItemClick="OnRowClicked"
                       SelectionMode="None"
                       Background="Transparent"
                       BorderThickness="0"
-                      Padding="0"
+                      Padding="4"
                       ScrollViewer.VerticalScrollBarVisibility="Auto">
                 <ListView.ItemContainerStyle>
                     <Style TargetType="ListViewItem">
                         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                         <Setter Property="Padding" Value="0"/>
-                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="Margin" Value="0,0,0,8"/>
                         <Setter Property="MinHeight" Value="0"/>
                         <Setter Property="Background" Value="Transparent"/>
                     </Style>
                 </ListView.ItemContainerStyle>
                 <ListView.ItemTemplate>
                     <DataTemplate>
-                        <Grid Padding="0,5" ColumnDefinitions="Auto,74,Auto,*">
-                            <!-- Dot -->
-                            <Ellipse Grid.Column="0" Width="8" Height="8"
-                                     Fill="{Binding DotBrush}" VerticalAlignment="Top" Margin="0,7,10,0"/>
+                        <Border Background="{StaticResource AppCardBackgroundHoverBrush}" BorderBrush="{StaticResource AppCardBorderSubtleBrush}" 
+                                BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="14,10">
+                            <Grid ColumnDefinitions="Auto,80,Auto,*">
+                                <!-- Dot -->
+                                <Ellipse Grid.Column="0" Width="9" Height="9"
+                                         Fill="{Binding DotBrush}" VerticalAlignment="Top" Margin="0,5,12,0"/>
 
-                            <!-- Time -->
-                            <TextBlock Grid.Column="1" Text="{Binding Time}" FontFamily="Consolas, Courier New"
-                                       FontSize="12" Foreground="#8A8A8A" VerticalAlignment="Top" Margin="0,5,8,0"/>
+                                <!-- Time -->
+                                <TextBlock Grid.Column="1" Text="{Binding Time}" FontFamily="Consolas, Cascadia Code, Courier New"
+                                           FontSize="12" Foreground="{StaticResource AppTextTertiaryBrush}" VerticalAlignment="Top" Margin="0,3,8,0"/>
 
-                            <!-- Type badge -->
-                            <Border Grid.Column="2" Background="{Binding LabelBrush}" CornerRadius="4"
-                                    Padding="7,2" Margin="0,3,8,0" VerticalAlignment="Top">
-                                <TextBlock Text="{Binding Badge}" FontSize="11" FontWeight="SemiBold"
-                                           Foreground="#FFFFFF"/>
-                            </Border>
-
-                            <!-- Content + detail -->
-                            <StackPanel Grid.Column="3">
-                                <TextBlock Text="{Binding Content}" TextWrapping="Wrap" Foreground="#E0E0E0"
-                                           FontSize="13.5" VerticalAlignment="Top" Margin="0,3,0,4"/>
-
-                                <Border Background="#1A1A1A" CornerRadius="6" Padding="10" Margin="0,2,0,6"
-                                        Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
-                                    <StackPanel>
-                                        <TextBlock Text="CHI TIẾT" FontSize="10" Foreground="#6E6E6E" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                                        <TextBlock Text="{Binding Detail}" FontFamily="Consolas, Courier New"
-                                                   FontSize="12" Foreground="#B0B0B0" TextWrapping="Wrap"/>
-                                    </StackPanel>
+                                <!-- Type badge -->
+                                <Border Grid.Column="2" Background="{Binding LabelBrush}" CornerRadius="6"
+                                        Padding="8,2" Margin="0,1,12,0" VerticalAlignment="Top">
+                                    <TextBlock Text="{Binding Badge}" FontSize="11" FontWeight="Bold"
+                                               Foreground="#FFFFFF"/>
                                 </Border>
-                            </StackPanel>
-                        </Grid>
+
+                                <!-- Content + Detail -->
+                                <StackPanel Grid.Column="3">
+                                    <TextBlock Text="{Binding Content}" TextWrapping="Wrap" Foreground="{StaticResource AppTextPrimaryBrush}"
+                                               FontSize="13.5" VerticalAlignment="Top" Margin="0,2,0,4"/>
+
+                                    <Border Background="#141418" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" 
+                                            CornerRadius="6" Padding="12,10" Margin="0,6,0,4"
+                                            Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="CHI TIẾT DỮ LIỆU" FontSize="10" Foreground="{StaticResource AppAccentHoverBrush}" FontWeight="Bold"/>
+                                            <TextBlock Text="{Binding Detail}" FontFamily="Consolas, Cascadia Code, Courier New"
+                                                       FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
+        </Border>
 
-        </Grid>
-    </Border>
+    </Grid>
 </UserControl>

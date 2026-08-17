@@ -51,6 +51,7 @@ _RUNTIME_TRANSITION_LOCK = threading.RLock()
 class RuntimeDependencies:
     runner: RuntimeRunner
     generation_scope: GenerationScope = contextlib.nullcontext
+    turn_locks: GenerationScope = contextlib.nullcontext
     voice_audio: VoiceAudio | None = None
     voice_control: VoiceControl | None = None
     voice_stream: VoiceStream | None = None
@@ -152,6 +153,7 @@ def create_runtime_handlers() -> WorkerHandlers:
         RuntimeDependencies(
             runner=shared.core.runner,
             generation_scope=generation_scope,
+            turn_locks=shared._chat_turn_locks,
             voice_audio=shared.request_voice_audio,
             voice_control=shared.request_voice_control,
             voice_stream=voice_bridge.stream,
@@ -191,8 +193,9 @@ async def _chat_handler(
 
     def generate() -> None:
         try:
-            with dependencies.generation_scope():
-                raw_reply = dependencies.runner.generate_reply(
+            with dependencies.turn_locks():
+                with dependencies.generation_scope():
+                    raw_reply = dependencies.runner.generate_reply(
                     prompt=request.prompt,
                     max_new_tokens=request.max_tokens,
                     temperature=request.temperature,
@@ -508,7 +511,7 @@ async def _vts_handler(
     operation = payload.get("operation")
     if operation == "catalog":
         try:
-            catalog = manager.current_catalog_sync()
+            catalog = await asyncio.to_thread(manager.current_catalog_sync)
         except Exception:
             yield _error("vts_catalog_failed", retryable=True)
             return
@@ -542,7 +545,7 @@ async def _vts_handler(
             yield _error("invalid_request", retryable=False)
             return
         try:
-            catalog = manager.current_catalog_sync()
+            catalog = await asyncio.to_thread(manager.current_catalog_sync)
             if catalog is None:
                 yield _error("vts_catalog_unavailable", retryable=True)
                 return
@@ -553,7 +556,7 @@ async def _vts_handler(
             ):
                 yield _error("unknown_vts_code", retryable=False)
                 return
-            manager.trigger_catalog_actions_sync(catalog, normalized)
+            await asyncio.to_thread(manager.trigger_catalog_actions_sync, catalog, normalized)
         except Exception:
             yield _error("vts_action_failed", retryable=True)
             return

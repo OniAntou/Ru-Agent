@@ -250,16 +250,6 @@ namespace RuApp.Views
                     last.Content = $"**LỖI GỬI:** {ex.Message}";
                     last.IsStreaming = false;
                     last.IsError = true;
-                    int index = Messages.IndexOf(last);
-                    Messages[index] = new ChatMessageItem
-                    {
-                        Id = last.Id,
-                        Role = last.Role,
-                        Content = last.Content,
-                        Timestamp = last.Timestamp,
-                        IsStreaming = false,
-                        IsError = true
-                    };
                 }
                 else
                 {
@@ -316,15 +306,6 @@ namespace RuApp.Views
                         if (last != null)
                         {
                             last.Content += delta;
-                            int index = Messages.IndexOf(last);
-                            Messages[index] = new ChatMessageItem
-                            {
-                                Id = last.Id,
-                                Role = last.Role,
-                                Content = last.Content,
-                                Timestamp = last.Timestamp,
-                                IsStreaming = true
-                            };
                             ScrollChatToBottom();
                         }
                     }
@@ -356,15 +337,8 @@ namespace RuApp.Views
                             string display = string.IsNullOrWhiteSpace(content)
                                 ? last.Content
                                 : StripDisplayMarkers(content);
-                            int index = Messages.IndexOf(last);
-                            Messages[index] = new ChatMessageItem
-                            {
-                                Id = last.Id,
-                                Role = last.Role,
-                                Content = display,
-                                Timestamp = last.Timestamp,
-                                IsStreaming = false
-                            };
+                            last.Content = display;
+                            last.IsStreaming = false;
                         }
                         else if (!string.IsNullOrWhiteSpace(content))
                         {
@@ -426,16 +400,6 @@ namespace RuApp.Views
                             : $"{last.Content}\n\n{detailedError}";
                         last.IsStreaming = false;
                         last.IsError = true;
-                        int index = Messages.IndexOf(last);
-                        Messages[index] = new ChatMessageItem
-                        {
-                            Id = last.Id,
-                            Role = last.Role,
-                            Content = last.Content,
-                            Timestamp = last.Timestamp,
-                            IsStreaming = false,
-                            IsError = true
-                        };
                     }
                     catch (Exception ex)
                     {

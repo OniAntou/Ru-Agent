@@ -14,10 +14,26 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
-        this.UnhandledException += (s, e) => 
+        this.UnhandledException += (s, e) =>
         {
-            try { System.IO.File.WriteAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app_crash.txt"), e.Exception.ToString()); } catch { }
-            e.Handled = true;
+            try
+            {
+                System.IO.File.WriteAllText(
+                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app_crash.txt"),
+                    e.Exception.ToString());
+            }
+            catch { }
+
+            // Only swallow exceptions that are recoverable; let truly fatal
+            // failures crash so bugs are not hidden behind an empty UI.
+            var ex = e.Exception;
+            e.Handled = ex is System.IO.IOException
+                or System.Net.WebSockets.WebSocketException
+                or System.Net.Http.HttpRequestException
+                or System.Threading.Tasks.TaskCanceledException
+                or System.ObjectDisposedException
+                or System.ArgumentException
+                or System.InvalidOperationException;
         };
     }
 

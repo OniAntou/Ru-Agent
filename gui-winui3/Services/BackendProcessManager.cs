@@ -14,6 +14,8 @@ public class BackendProcessManager : IDisposable
     private IBackendJob? _job;
     private bool _disposed;
 
+    public event EventHandler? BackendExited;
+
     public BackendProcessManager(
         int? workerPort = null,
         IBackendProcessFactory? processFactory = null,
@@ -93,10 +95,17 @@ public class BackendProcessManager : IDisposable
 
             lock (_gate)
             {
+                if (_disposed)
+                {
+                    Cleanup(startedChildren, job);
+                    return false;
+                }
+
                 _children = startedChildren;
                 _job = job;
                 job = null;
             }
+            _ = WatchForExitAsync(startedChildren);
             return true;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -114,6 +123,37 @@ public class BackendProcessManager : IDisposable
                 $"[BackendProcessManager] Startup failed: {error.GetType().Name}: {error.Message}");
             Cleanup(startedChildren, job);
             return false;
+        }
+    }
+
+    private async Task WatchForExitAsync(IReadOnlyList<IBackendProcessHandle> children)
+    {
+        try
+        {
+            foreach (var child in children)
+            {
+                if (child.HasExited)
+                {
+                    continue;
+                }
+
+                child.WaitForExit(Timeout.InfiniteTimeSpan);
+            }
+
+            lock (_gate)
+            {
+                if (_disposed || !ReferenceEquals(_children, children))
+                {
+                    return;
+                }
+            }
+
+            BackendExited?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception error)
+        {
+            Debug.WriteLine(
+                $"[BackendProcessManager] Exit watch failed: {error.GetType().Name}: {error.Message}");
         }
     }
 

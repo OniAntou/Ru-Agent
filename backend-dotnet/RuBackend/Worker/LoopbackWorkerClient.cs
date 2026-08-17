@@ -373,7 +373,7 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    await TrySendCancellationAsync(connection, request.RequestId);
+                    await TrySendVoiceCancelAsync(request.RequestId);
                     receiveCancellation.Cancel();
                     await IgnoreCancellationAsync(moveNext);
                     cancellationToken.ThrowIfCancellationRequested();
@@ -506,6 +506,23 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
         try
         {
             await connection.SendEnvelopeAsync(CancellationEnvelope(requestId), timeout.Token);
+        }
+        catch (Exception error) when (error is WorkerUnavailableException
+            or WorkerProtocolException
+            or OperationCanceledException)
+        {
+            // The caller's cancellation remains authoritative.
+        }
+    }
+
+    private async Task TrySendVoiceCancelAsync(string requestId)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        try
+        {
+            await SendVoiceSignalAsync(
+                new WorkerVoiceSignal(requestId, "cancel"),
+                timeout.Token);
         }
         catch (Exception error) when (error is WorkerUnavailableException
             or WorkerProtocolException

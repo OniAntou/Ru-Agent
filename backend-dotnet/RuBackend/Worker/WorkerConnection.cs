@@ -224,6 +224,7 @@ public sealed class WorkerConnection : IAsyncDisposable
 
         _disposed = true;
         _connected = false;
+        _socket.Abort();
         _socket.Dispose();
         _sendLock.Dispose();
         return ValueTask.CompletedTask;

@@ -32,8 +32,12 @@ runtime = [
     "transformers>=5,<6",
 ]
 gguf = ["sentencepiece>=0.2,<1"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+ru_runtime = ["reference_text.txt", "tyc_talk.wav"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "scripts"]

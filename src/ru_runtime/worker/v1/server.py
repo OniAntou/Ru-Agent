@@ -5,6 +5,7 @@ import argparse
 import contextlib
 import hmac
 import json
+import logging
 import os
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
@@ -36,6 +37,8 @@ from ru_runtime.worker.v1.protocol import (
 )
 
 WorkerPayload = dict[str, Any]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,15 +110,32 @@ async def serve_runtime_worker(
 ) -> None:
     """Start the protocol server with the existing private runtime adapters."""
     from ru_runtime.worker.v1.handlers import create_runtime_handlers
-
-    await serve_worker(
-        host,
-        port,
-        token,
-        create_runtime_handlers(),
-        stop_event=stop_event,
-        ready_event=ready_event,
+    from ru_runtime.worker.v1.runtime_services import (
+        _apply_settings_on_startup,
+        _shutdown_runtime,
     )
+
+    _apply_settings_on_startup()
+    try:
+        await serve_worker(
+            host,
+            port,
+            token,
+            create_runtime_handlers(),
+            stop_event=stop_event,
+            ready_event=ready_event,
+        )
+    finally:
+        from ru_runtime.generation.search import shutdown_search_executor
+
+        try:
+            shutdown_search_executor()
+        except Exception:
+            logger.exception("Failed to shut down search executor")
+        try:
+            _shutdown_runtime()
+        except Exception:
+            logger.exception("Failed to shut down runtime services")
 
 
 async def _handle_connection(

@@ -24,6 +24,7 @@ public sealed class VoiceReplyAudioQueue : IDisposable
     private readonly Task _consumer;
     private int _disposed;
     private int _completionFinished;
+    private int _writerClosed;
 
     public VoiceReplyAudioQueue(
         VoiceReplyChunkPlayer playChunkAsync,
@@ -60,11 +61,19 @@ public sealed class VoiceReplyAudioQueue : IDisposable
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed != 0, this);
-        await _channel.Writer.WriteAsync(new QueuedAudio(chunk, subtitleCue), cancellationToken);
+        try
+        {
+            await _channel.Writer.WriteAsync(new QueuedAudio(chunk, subtitleCue), cancellationToken);
+        }
+        catch (ChannelClosedException) when (Volatile.Read(ref _writerClosed) != 0)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
     }
 
     public async Task CompleteAsync()
     {
+        Interlocked.Exchange(ref _writerClosed, 1);
         _channel.Writer.TryComplete();
         try
         {
@@ -79,6 +88,11 @@ public sealed class VoiceReplyAudioQueue : IDisposable
 
     public void Cancel()
     {
+        if (Interlocked.Exchange(ref _writerClosed, 1) != 0)
+        {
+            return;
+        }
+
         _channel.Writer.TryComplete();
         try
         {
@@ -97,6 +111,7 @@ public sealed class VoiceReplyAudioQueue : IDisposable
             return;
         }
 
+        Interlocked.Exchange(ref _writerClosed, 1);
         _channel.Writer.TryComplete();
         if (Volatile.Read(ref _completionFinished) == 0)
         {

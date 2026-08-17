@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from contextlib import asynccontextmanager, nullcontext
 import hmac
 import json
@@ -184,6 +185,24 @@ _GPU_LIFECYCLE: GpuLifecycle | None = None
 core = RuRuntimeCore()
 
 # ── helpers ───────────────────────────────────────────────────────────
+
+@contextlib.contextmanager
+def _chat_turn_locks() -> contextlib.AbstractContextManager[None]:
+    """Hold both turn locks for the full duration of a chat generation.
+
+    Observations and voice streams check these locks to decide whether a
+    chat generation is active; without them a long chat would let a screen
+    reaction or voice warmup run concurrently with the model.
+    """
+    acquired: list[threading.Lock] = []
+    try:
+        for lock in (_TURN_LOCK, _MEMORY_TURN_LOCK):
+            lock.acquire()
+            acquired.append(lock)
+        yield
+    finally:
+        for lock in reversed(acquired):
+            lock.release()
 
 def _resolve_backend(value: str | None) -> str | None:
     if value is None:

@@ -119,6 +119,7 @@ namespace RuApp
             {
                 StatusText.Text = $"{_processManager.DisplayName} Backend đã sẵn sàng (127.0.0.1:8000)";
                 StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
+                _processManager.BackendExited += OnBackendExited;
 
                 _apiService = new ApiService(_processManager.AuthSecret, _processManager.Port);
                 _wsClient = new ChatWebSocketClient(_processManager.AuthSecret, _processManager.Port);
@@ -201,6 +202,21 @@ namespace RuApp
                     _ => _chatView
                 };
             }
+        }
+
+        private void OnBackendExited(object? sender, EventArgs e)
+        {
+            if (DispatcherQueue == null)
+            {
+                return;
+            }
+
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                StatusText.Text = $"{_processManager.DisplayName} Backend đã dừng.";
+                StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+                _wsClient?.NotifyBackendStopped();
+            });
         }
 
         private async void OnWindowClosed(object sender, WindowEventArgs args)

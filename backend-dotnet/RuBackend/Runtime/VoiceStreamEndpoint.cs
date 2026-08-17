@@ -97,6 +97,8 @@ public static class VoiceStreamEndpoint
                             "closed",
                             connectionCancellation.Token);
                     }
+                    receiveCancellation.Cancel();
+                    await IgnoreReceiveCancellationAsync(receiveTask);
                     return;
                 }
 
@@ -170,7 +172,9 @@ public static class VoiceStreamEndpoint
                 }
                 catch (Exception error) when (error is OperationCanceledException
                     or WorkerProtocolException
-                    or WorkerUnavailableException)
+                    or WorkerUnavailableException
+                    or WebSocketException
+                    or IOException)
                 {
                 }
             }

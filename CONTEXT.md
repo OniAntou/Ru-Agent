@@ -22,8 +22,9 @@ and generation across local and hosted model adapters.
 _Avoid_: ModelRunner globals, backend core
 
 **Voice Engine**:
-The isolated OmniVoice child process running inside `omnivoice_env` and
-returning native WAV audio over a private framed process interface.
+The isolated OmniVoice service running inside `omnivoice_env`, spawned by the
+Runtime Worker as a local HTTP loopback process and returning native WAV audio
+over a private lifecycle/TTS contract.
 _Avoid_: TTS web server, Flask voice server
 
 **Public Contract**:

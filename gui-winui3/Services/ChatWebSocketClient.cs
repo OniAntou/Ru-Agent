@@ -18,6 +18,7 @@ namespace RuApp.Services
         private readonly string _authSecret;
         private readonly int _port;
         private bool _disposed;
+        private bool _backendStopped;
 
         public event Action? OnConnected;
         public event Action? OnDisconnected;
@@ -35,6 +36,11 @@ namespace RuApp.Services
             _port = port;
         }
 
+        public void NotifyBackendStopped()
+        {
+            _backendStopped = true;
+        }
+
         public void Start()
         {
             if (_disposed) return;
@@ -46,7 +52,7 @@ namespace RuApp.Services
         private async Task BackgroundLoopAsync(CancellationToken ct)
         {
             int reconnectDelayMs = ReconnectDelayMs;
-            while (!ct.IsCancellationRequested)
+            while (!ct.IsCancellationRequested && !_backendStopped)
             {
                 try
                 {
@@ -62,10 +68,10 @@ namespace RuApp.Services
                     Debug.WriteLine($"[ChatWebSocket] BackgroundLoop error: {ex.Message}");
                 }
 
-                if (ct.IsCancellationRequested) break;
+                if (ct.IsCancellationRequested || _backendStopped) break;
                 await Task.Delay(reconnectDelayMs, ct).ConfigureAwait(false);
                 reconnectDelayMs = Math.Min(reconnectDelayMs * 2, ReconnectDelayMaxMs);
-                if (!ct.IsCancellationRequested) OnDisconnected?.Invoke();
+                if (!ct.IsCancellationRequested && !_backendStopped) OnDisconnected?.Invoke();
             }
         }
 

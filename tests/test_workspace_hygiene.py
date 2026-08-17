@@ -14,7 +14,6 @@ OBSOLETE_TRACKED_PATHS = (
     "scripts/test_rest_key2.py",
     "scripts/test_settings.py",
     "scripts/test_tts.py",
-    "src/ru_runtime/reference_text.txt",
 )
 
 
@@ -25,5 +24,11 @@ def test_reviewed_one_off_probes_and_duplicate_reference_are_absent() -> None:
 
 def test_canonical_voice_reference_remains_at_repository_root() -> None:
     reference = ROOT / "reference_text.txt"
+    assert reference.is_file()
+    assert reference.read_text(encoding="utf-8").strip()
+
+
+def test_runtime_voice_reference_exists_in_package() -> None:
+    reference = ROOT / "src" / "ru_runtime" / "reference_text.txt"
     assert reference.is_file()
     assert reference.read_text(encoding="utf-8").strip()

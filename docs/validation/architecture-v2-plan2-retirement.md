@@ -1,7 +1,7 @@
 # Architecture v2 Plan 2 retirement validation
 
-Status: completed locally on 2026-08-13 on
-`codex/ru-architecture-v2`; not merged or pushed.
+Status: completed on 2026-08-13 in the isolated `codex/ru-architecture-v2`
+worktree; integrated into `main` on 2026-08-17.
 
 ## Scope completed
 
@@ -63,11 +63,12 @@ targets were verified absent afterward.
   LFM2.5 checkpoint/data, root voice transcript, credentials, and application
   data remain present.
 
-The post-cleanup inventory against the dirty main checkout still lists 49
-tracked legacy files because this work is intentionally isolated on a feature
-branch. On this branch, `tests/test_legacy_retirement.py` proves that exact set
-is absent. Main's dirty/untracked path set remained unchanged; only approved
-ignored local artifacts were removed.
+The post-cleanup inventory against the dirty main checkout still listed 49
+tracked legacy files because the work was intentionally isolated on a feature
+branch. On that branch, `tests/test_legacy_retirement.py` proved that exact set
+was absent. Main's dirty/untracked path set remained unchanged; only approved
+ignored local artifacts were removed. After integration, the same retirement
+contract test runs on `main`.
 
 ## Verification evidence
 

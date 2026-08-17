@@ -35,9 +35,6 @@ def test_normalize_relative_path_rejects_broad_or_external_paths(value: str) -> 
         "data/memory.db",
         ".minigpt/settings.json",
         "docs/superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md",
-        "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
-        "docs/superpowers/plans/2026-08-13-ru-legacy-removal-workspace-hygiene.md",
-        "docs/superpowers/plans/2026-08-13-ru-python-package-persistence-migration.md",
     ),
 )
 def test_active_runtime_user_data_and_current_design_are_protected(relative: str) -> None:

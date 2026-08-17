@@ -3,6 +3,11 @@
 **Date:** 2026-08-13
 **Status:** Approved design; written-spec review pending
 **Scope:** Full repository refactor, legacy removal, and local workspace cleanup
+**Execution:** Plans 1-3 complete and integrated into `main` (2026-08-13..17).
+Plans 4-6 (typed worker protocol v2, OmniVoice framed process, WinUI voice
+deepening and final integration) remain pending. The "Current evidence" section
+below is the original 2026-08-13 audit snapshot; later measurements live in
+`docs/validation/`.
 
 ## Goal
 

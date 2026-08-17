@@ -111,8 +111,6 @@ def test_discovery_is_bounded_and_collapses_candidate_ancestors(tmp_path: Path) 
     tracked = (
         "src/ru_runtime/ru_v6_3_corpus.py",
         "docs/superpowers/plans/2026-08-10-ru-aspnetcore-backend-migration.md",
-        "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
-        "docs/superpowers/plans/2026-08-13-ru-legacy-removal-workspace-hygiene.md",
     )
 
     candidates = discover_candidate_paths(tmp_path, tracked)
@@ -128,14 +126,6 @@ def test_discovery_is_bounded_and_collapses_candidate_ancestors(tmp_path: Path) 
     assert "src/ru_runtime/ru_v6_3_corpus.py" in candidates
     assert "docs/superpowers/plans/2026-08-10-ru-aspnetcore-backend-migration.md" in candidates
     assert not any(value.startswith(".venv/") for value in candidates)
-    assert (
-        "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md"
-        not in candidates
-    )
-    assert (
-        "docs/superpowers/plans/2026-08-13-ru-legacy-removal-workspace-hygiene.md"
-        not in candidates
-    )
 
 
 def test_manifest_keeps_dirty_legacy_path_protected(tmp_path: Path, monkeypatch) -> None:

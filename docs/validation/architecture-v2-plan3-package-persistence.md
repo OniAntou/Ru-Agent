@@ -2,7 +2,8 @@
 
 Validated 2026-08-17 in the isolated `ru-architecture-v2` worktree
 (branch `codex/ru-architecture-v2`). No application was launched; main's
-dirty source and untracked files were not touched.
+dirty source and untracked files were not touched. The result was integrated
+into `main` after the overlap review below.
 
 ## Gates (all green)
 
@@ -72,4 +73,5 @@ under `mini_gpt`, Gemini absent; `Ru` service absent).
 
 - Legacy backup `.minigpt.migrated-2026-08-17` remains on the machine for
   recovery; delete manually once the canonical data is confirmed stable.
-- Push/merge intentionally not performed.
+- Integrated into `main` on 2026-08-17 after the overlap review; `src/ru_runtime`
+  and the canonical `%LOCALAPPDATA%\Ru` location are the live state.

@@ -4,6 +4,11 @@ This record contains the final measured evidence for removing the public
 FastAPI backend. It supersedes the earlier staged-cutover evidence and its
 runtime ownership flags.
 
+Note: the gate counts recorded below predate the architecture-v2 refactor;
+later measured gates are recorded in
+[docs/validation/](validation/). This record remains authoritative for the
+FastAPI decommission itself.
+
 ## Final architecture and rollback
 
 - ASP.NET Core is the only public HTTP and WebSocket host.

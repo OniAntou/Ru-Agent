@@ -46,9 +46,9 @@ The active local assets stay outside Git:
   and a future supported fine-tuning path.
 - `models\omnivoice` and `omnivoice_env` — isolated local voice runtime.
 
-The repository currently exposes no supported training CLI. The quarantined
-training compatibility seam is migrated in the next Architecture v2 plan
-before any LFM2.5 fine-tuning workflow is documented as active.
+The repository currently exposes no supported training CLI. A LFM2.5 training
+seam exists under `tools\training\lfm25\` with the `configs\ru_lfm2_5_v1.json`
+configuration; a fine-tuning workflow is not documented as active yet.
 
 ## Build and run
 

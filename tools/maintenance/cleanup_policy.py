@@ -49,9 +49,6 @@ _PROTECTED_ROOTS = (
     "tyc_talk.wav",
     "vts_token.txt",
     "docs/superpowers/specs/2026-08-13-ru-architecture-v2-refactor-design.md",
-    "docs/superpowers/plans/2026-08-13-ru-architecture-spine-cleanup-preflight.md",
-    "docs/superpowers/plans/2026-08-13-ru-legacy-removal-workspace-hygiene.md",
-    "docs/superpowers/plans/2026-08-13-ru-python-package-persistence-migration.md",
 )
 
 _REBUILDABLE_ROOTS = (

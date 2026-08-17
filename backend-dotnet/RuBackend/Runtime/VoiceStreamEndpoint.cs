@@ -85,14 +85,19 @@ public static class VoiceStreamEndpoint
                 var completed = await Task.WhenAny(activeStream, receiveTask);
                 if (completed == activeStream)
                 {
-                    receiveCancellation.Cancel();
-                    await IgnoreReceiveCancellationAsync(receiveTask);
                     await ObserveStreamAsync(activeStream, socket, sendLock, activeRequestId!, connectionCancellation.Token);
                     activeCancellation?.Dispose();
                     activeCancellation = null;
                     activeStream = null;
                     activeRequestId = null;
-                    continue;
+                    if (socket.State == WebSocketState.Open)
+                    {
+                        await socket.CloseOutputAsync(
+                            WebSocketCloseStatus.NormalClosure,
+                            "closed",
+                            connectionCancellation.Token);
+                    }
+                    return;
                 }
 
                 var inbound = await receiveTask;
@@ -135,6 +140,19 @@ public static class VoiceStreamEndpoint
         finally
         {
             connectionCancellation.Cancel();
+            if (socket.State == WebSocketState.Open)
+            {
+                try
+                {
+                    await socket.CloseOutputAsync(
+                        WebSocketCloseStatus.NormalClosure,
+                        "closed",
+                        CancellationToken.None);
+                }
+                catch (WebSocketException)
+                {
+                }
+            }
             if (activeRequestId is not null)
             {
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));

@@ -378,7 +378,6 @@ def default_handlers(
         runtime=runtime,
         voice=voice,
         vts=empty_handler,
-        observation=empty_handler,
     )
 
 

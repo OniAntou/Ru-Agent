@@ -10,30 +10,59 @@ def get_status() -> dict[str, object]:
 
 def get_models(backend: str = "") -> dict[str, object]:
     from ru_runtime.worker.v1 import runtime_services as shared
-    from ru_runtime.generation.runner import BACKEND_KILO, BACKEND_OPENCODE
-    from ru_runtime.generation.openai import KILO_GATEWAY_BASE_URL, OPENCODE_BASE_URL
+    from ru_runtime.generation.runner import (
+        BACKEND_CUSTOM,
+        BACKEND_KILO,
+        BACKEND_LMSTUDIO,
+        BACKEND_OLLAMA,
+        BACKEND_OPENCODE,
+        OPENAI_COMPATIBLE_BACKENDS,
+    )
+    from ru_runtime.generation.openai import (
+        KILO_GATEWAY_BASE_URL,
+        LMSTUDIO_BASE_URL,
+        OLLAMA_BASE_URL,
+        OPENCODE_BASE_URL,
+    )
 
     backend = shared._resolve_backend(backend) or backend
-    if backend not in (BACKEND_OPENCODE, BACKEND_KILO):
+    if backend not in OPENAI_COMPATIBLE_BACKENDS:
         return {"status": "error", "message": f"unsupported backend: {backend!r}"}
-    credential = (
-        shared.core.opencode_cred
-        if backend == BACKEND_OPENCODE
-        else shared.core.kilo_cred
-    )
-    try:
-        api_key = credential.get_key() or ""
-    except Exception as error:
-        shared.logger.warning("Could not read the saved API key: %s", error)
-        api_key = ""
-    if not api_key:
-        return {
-            "status": "error",
-            "message": "API key is not set. Save it in Model Settings first.",
-        }
-    base_url = (
-        OPENCODE_BASE_URL if backend == BACKEND_OPENCODE else KILO_GATEWAY_BASE_URL
-    )
+
+    settings = shared.load_settings()
+    api_key = ""
+    if backend == BACKEND_OPENCODE:
+        try:
+            api_key = shared.core.opencode_cred.get_key() or ""
+        except Exception as error:
+            shared.logger.warning("Could not read OpenCode key: %s", error)
+        if not api_key:
+            return {
+                "status": "error",
+                "message": "API key is not set. Save it in Model Settings first.",
+            }
+        base_url = OPENCODE_BASE_URL
+    elif backend == BACKEND_KILO:
+        try:
+            api_key = shared.core.kilo_cred.get_key() or ""
+        except Exception as error:
+            shared.logger.warning("Could not read Kilo key: %s", error)
+        if not api_key:
+            return {
+                "status": "error",
+                "message": "API key is not set. Save it in Model Settings first.",
+            }
+        base_url = KILO_GATEWAY_BASE_URL
+    elif backend == BACKEND_OLLAMA:
+        base_url = settings.get("ollama_url", OLLAMA_BASE_URL)
+        api_key = "ollama"
+    elif backend == BACKEND_LMSTUDIO:
+        base_url = settings.get("lmstudio_url", LMSTUDIO_BASE_URL)
+        api_key = "lm-studio"
+    else:
+        base_url = settings.get("custom_url", "http://localhost:8000/v1")
+        api_key = settings.get("custom_api_key", "custom")
+
     try:
         from ru_runtime.generation.openai import OpenAIRuntime
 

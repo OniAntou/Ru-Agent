@@ -65,7 +65,7 @@ class VTSManager:
 
     def __init__(self, random_source=None):
         plugin_info = {
-            "plugin_name": "Ru Local Llama",
+            "plugin_name": "Ru",
             "developer": "Antigravity",
             "authentication_token_path": str(VTS_TOKEN_PATH),
         }

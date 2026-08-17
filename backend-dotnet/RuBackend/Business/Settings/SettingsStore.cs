@@ -15,6 +15,9 @@ public sealed class SettingsStore : ISettingsStore
     private const string BackendGguf = "llama.cpp";
     private const string BackendOpenCode = "OpenCode Zen";
     private const string BackendKilo = "Kilo Gateway";
+    private const string BackendOllama = "Ollama";
+    private const string BackendLmStudio = "LM Studio";
+    private const string BackendCustom = "Custom OpenAI";
     private const string OriginalVoiceStyle = "original";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -126,7 +129,7 @@ public sealed class SettingsStore : ISettingsStore
             raw.Remove(field);
         }
 
-        var backend = NormalizeBackend(ReadString(raw, "backend", BackendGguf));
+        var backend = NormalizeBackend(ReadString(raw, "backend", BackendOpenCode));
         var model = ReadString(raw, "model", string.Empty);
         var openCodeModel = ReadString(raw, "opencode_model", string.Empty);
         var kiloModel = ReadString(raw, "kilo_model", string.Empty);
@@ -203,7 +206,10 @@ public sealed class SettingsStore : ISettingsStore
             "gguf" or "llama.cpp" => BackendGguf,
             "opencode" or "opencode zen" => BackendOpenCode,
             "kilo" or "kilo gateway" => BackendKilo,
-            _ => BackendGguf,
+            "ollama" => BackendOllama,
+            "lmstudio" or "lm studio" => BackendLmStudio,
+            "custom" or "custom openai" => BackendCustom,
+            _ => BackendOpenCode,
         };
     }
 

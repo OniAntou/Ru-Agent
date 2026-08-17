@@ -26,6 +26,9 @@
     },
     "v1": {
       "adapter": "models/gguf/ru-lfm2.5-2.6b-v1-lora.gguf"
+    },
+    "v1_1": {
+      "adapter": "models/gguf/ru-lfm2.5-2.6b-v1_1-lora.gguf"
     }
   }
 }

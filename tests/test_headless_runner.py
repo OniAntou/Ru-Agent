@@ -61,6 +61,7 @@ def test_gguf_checkpoint_path_rejects_sibling_prefix(monkeypatch, tmp_path) -> N
 
 def test_gguf_load_defaults_to_lfm25_when_checkpoint_is_blank(monkeypatch) -> None:
     runner = runtime.ModelRunner()
+    runner.backend = runtime.BACKEND_GGUF
     monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
 
     status = runner.load("")
@@ -69,21 +70,57 @@ def test_gguf_load_defaults_to_lfm25_when_checkpoint_is_blank(monkeypatch) -> No
     assert "LFM2.5-2.6B Q4_K_M" in status
 
 
-def test_runner_uses_v1_lora_when_the_default_adapter_exists(monkeypatch, tmp_path) -> None:
+def test_runner_uses_v1_lora_when_only_v1_adapter_exists(monkeypatch, tmp_path) -> None:
     adapter = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1-lora.gguf"
     adapter.parent.mkdir(parents=True)
     adapter.write_bytes(b"adapter")
     monkeypatch.setattr(runtime, "PROJECT_ROOT", tmp_path)
 
     runner = runtime.ModelRunner()
+    runner.backend = runtime.BACKEND_GGUF
     monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
 
     assert runner.gguf_runtime.adapter == adapter
     assert "v1 LoRA" in runner.load("")
 
 
+def test_runner_uses_v1_1_lora_by_default_when_v1_and_v1_1_exist(monkeypatch, tmp_path) -> None:
+    adapter_v1 = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1-lora.gguf"
+    adapter_v1_1 = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1_1-lora.gguf"
+    adapter_v1.parent.mkdir(parents=True)
+    adapter_v1.write_bytes(b"adapter1")
+    adapter_v1_1.write_bytes(b"adapter11")
+    monkeypatch.setattr(runtime, "PROJECT_ROOT", tmp_path)
+
+    runner = runtime.ModelRunner()
+    runner.backend = runtime.BACKEND_GGUF
+    monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
+
+    assert runner.gguf_runtime.adapter == adapter_v1_1
+    assert "v1.1 LoRA" in runner.load("")
+
+
+def test_runner_uses_v1_2_lora_by_default_when_it_exists(monkeypatch, tmp_path) -> None:
+    adapter_v1 = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1-lora.gguf"
+    adapter_v1_1 = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1_1-lora.gguf"
+    adapter_v1_2 = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1_2-lora.gguf"
+    adapter_v1.parent.mkdir(parents=True)
+    adapter_v1.write_bytes(b"adapter1")
+    adapter_v1_1.write_bytes(b"adapter11")
+    adapter_v1_2.write_bytes(b"adapter12")
+    monkeypatch.setattr(runtime, "PROJECT_ROOT", tmp_path)
+
+    runner = runtime.ModelRunner()
+    runner.backend = runtime.BACKEND_GGUF
+    monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
+
+    assert runner.gguf_runtime.adapter == adapter_v1_2
+    assert "v1.2 LoRA" in runner.load("")
+
+
 def test_gguf_load_migrates_an_allowed_legacy_checkpoint_to_lfm25(monkeypatch) -> None:
     runner = runtime.ModelRunner()
+    runner.backend = runtime.BACKEND_GGUF
     monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
 
     runner.load("checkpoints/ru-llama3.1-8b-instruct-v6.2-fresh")

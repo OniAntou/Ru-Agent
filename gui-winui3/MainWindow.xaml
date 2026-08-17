@@ -32,7 +32,7 @@
                 <TextBlock Text="Ru Assistant" FontSize="13" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" 
                            Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
                 <Border Background="{StaticResource AppAccentSubtleBrush}" CornerRadius="10" Padding="8,2" Margin="4,0,0,0">
-                    <TextBlock Text="LFM 2.5" FontSize="11" FontWeight="Medium" Foreground="{StaticResource AppAccentHoverBrush}"/>
+                    <TextBlock Text="LFM 2.5 v1.2" FontSize="11" FontWeight="Medium" Foreground="{StaticResource AppAccentHoverBrush}"/>
                 </Border>
             </StackPanel>
         </Grid>
@@ -175,21 +175,58 @@
             </ContentControl>
         </Grid>
 
-        <!-- Sleek Status Bar -->
+        <!-- Sleek Multi-Service Status Bar -->
         <Border Grid.Row="2" Background="{StaticResource AppSidebarBackgroundBrush}" BorderBrush="{StaticResource AppSidebarBorderBrush}" BorderThickness="0,1,0,0">
             <Grid Padding="16,6">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+
+                <!-- Left: Overall Status Summary -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="{StaticResource AppSuccessBrush}" VerticalAlignment="Center"/>
                     <TextBlock x:Name="StatusText" Text="Hệ thống đã sẵn sàng" FontSize="12" FontFamily="Segoe UI"
                                Foreground="{StaticResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <TextBlock Text="Ru Conversational Runtime" FontSize="11.5" FontFamily="Segoe UI"
-                               Foreground="{StaticResource AppTextTertiaryBrush}" VerticalAlignment="Center"/>
+
+                <!-- Right: Detailed Service Health Badges -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <!-- .NET Backend Status Badge -->
+                    <Border x:Name="StatusBackendBadge" Background="{StaticResource AppCardBackgroundBrush}" 
+                            BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1"
+                            CornerRadius="6" Padding="8,3"
+                            ToolTipService.ToolTip="ASP.NET Core Server (Cổng 8000)">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Ellipse x:Name="DotBackend" Width="6.5" Height="6.5" Fill="{StaticResource AppSuccessBrush}" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="TextBackend" Text=".NET Backend" FontSize="11.5" FontFamily="Segoe UI"
+                                       Foreground="{StaticResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Python AI Worker Status Badge -->
+                    <Border x:Name="StatusWorkerBadge" Background="{StaticResource AppCardBackgroundBrush}" 
+                            BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1"
+                            CornerRadius="6" Padding="8,3"
+                            ToolTipService.ToolTip="Python AI Worker (LLM &amp; Voice Runtime)">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Ellipse x:Name="DotWorker" Width="6.5" Height="6.5" Fill="{StaticResource AppSuccessBrush}" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="TextWorker" Text="AI Worker" FontSize="11.5" FontFamily="Segoe UI"
+                                       Foreground="{StaticResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- VTube Studio Status Badge -->
+                    <Border x:Name="StatusVtsBadge" Background="{StaticResource AppCardBackgroundBrush}" 
+                            BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1"
+                            CornerRadius="6" Padding="8,3"
+                            ToolTipService.ToolTip="VTube Studio Live2D API (Cổng 25565)">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Ellipse x:Name="DotVts" Width="6.5" Height="6.5" Fill="{StaticResource AppTextTertiaryBrush}" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="TextVts" Text="VTS Live2D" FontSize="11.5" FontFamily="Segoe UI"
+                                       Foreground="{StaticResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Grid>
         </Border>

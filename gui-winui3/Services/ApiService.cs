@@ -494,6 +494,20 @@ namespace RuApp.Services
             return null;
         }
 
+        public async Task<bool> CheckWorkerHealthAsync()
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"{_baseUrl}/status");
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] CheckWorkerHealthAsync failed: {ex.Message}");
+                return false;
+            }
+        }
+
         public async Task<VtsStatusDto?> GetVtsStatusAsync()
         {
             try

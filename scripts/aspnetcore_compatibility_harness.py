@@ -407,7 +407,6 @@ def _serve_deterministic_worker(port: int) -> int:
                 runtime=runtime,
                 voice=unsupported,
                 vts=vts,
-                observation=unsupported,
             ),
         )
     )

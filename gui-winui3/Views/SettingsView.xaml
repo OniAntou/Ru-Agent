@@ -33,9 +33,11 @@
                                     <TextBlock Text="Chọn mô hình cục bộ hoặc dịch vụ đám mây" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                                 </StackPanel>
                                 <ComboBox x:Name="BackendComboBox" Grid.Column="1" Width="300" SelectionChanged="OnBackendSelectionChanged">
-                                    <ComboBoxItem Content="Local GGUF (LFM2.5 2.6B Q4_K_M)" Tag="gguf"/>
                                     <ComboBoxItem Content="OpenCode Zen (Cloud API)" Tag="opencode"/>
                                     <ComboBoxItem Content="Kilo Gateway (Cloud API)" Tag="kilo"/>
+                                    <ComboBoxItem Content="Ollama (Local: localhost:11434)" Tag="ollama"/>
+                                    <ComboBoxItem Content="LM Studio (Local: localhost:1234)" Tag="lmstudio"/>
+                                    <ComboBoxItem Content="Custom OpenAI Server" Tag="custom"/>
                                 </ComboBox>
                             </Grid>
 
@@ -106,16 +108,17 @@
                                 </Grid>
                             </StackPanel>
 
-                            <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
-
-                            <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                                    <TextBlock Text="Hồ sơ Checkpoint LoRA" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                                    <TextBlock Text="Đường dẫn file adapter checkpoint (nếu có)" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                                </StackPanel>
-                                <TextBox x:Name="CheckpointPathBox" Grid.Column="1" PlaceholderText="checkpoints/ru-..." Width="300"
-                                         CornerRadius="{StaticResource AppControlCornerRadius}"/>
-                            </Grid>
+                            <StackPanel x:Name="CustomEndpointRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="Custom Server URL" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                        <TextBlock Text="Đường dẫn OpenAI-compatible endpoint" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <TextBox x:Name="CustomEndpointUrlBox" Grid.Column="1" PlaceholderText="http://localhost:8000/v1" Width="300"
+                                             CornerRadius="{StaticResource AppControlCornerRadius}"/>
+                                </Grid>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 

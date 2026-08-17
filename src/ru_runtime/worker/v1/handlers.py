@@ -67,7 +67,6 @@ def build_runtime_handlers(dependencies: RuntimeDependencies) -> WorkerHandlers:
         runtime=partial(_runtime_handler, dependencies),
         voice=partial(_voice_handler, dependencies),
         vts=partial(_vts_handler, dependencies),
-        observation=_unsupported_handler,
     )
 
 

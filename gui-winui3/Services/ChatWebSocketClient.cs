@@ -217,22 +217,24 @@ namespace RuApp.Services
             _cts?.Cancel();
             try
             {
-                if (_webSocket != null && _webSocket.State == WebSocketState.Open)
+                if (_webSocket != null)
                 {
-                    try
+                    if (_webSocket.State == WebSocketState.Open)
                     {
-                        _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by user", CancellationToken.None)
-                            .Wait(500);
+                        try
+                        {
+                            _webSocket.Abort();
+                        }
+                        catch
+                        {
+                        }
                     }
-                    catch (AggregateException)
-                    {
-                    }
+                    _webSocket.Dispose();
                 }
             }
             catch (ObjectDisposedException)
             {
             }
-            _webSocket?.Dispose();
             _webSocket = null;
             _cts?.Dispose();
             _cts = null;

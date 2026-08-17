@@ -314,8 +314,8 @@ def test_generate_sends_strong_repetition_guard(monkeypatch) -> None:
     )
 
     assert out == "Xin chao"
-    assert captured["body"]["repeat_penalty"] == 1.4
-    assert captured["body"]["repeat_last_n"] == 512
+    assert captured["body"]["repeat_penalty"] == 1.05
+    assert captured["body"]["repeat_last_n"] == 64
 
 
 def test_context_fitting_preserves_contract_and_current_prompt_while_dropping_oldest_history() -> None:

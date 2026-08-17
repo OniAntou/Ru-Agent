@@ -108,6 +108,32 @@ def test_stream_callback_receives_only_new_text_for_cumulative_provider_events(m
     assert visible == response
 
 
+def test_stream_callback_receives_incremental_provider_events(monkeypatch) -> None:
+    stream = FakeStreamResponse(
+        [
+            {"choices": [{"delta": {"content": "Ch"}}]},
+            {"choices": [{"delta": {"content": "ào"}}]},
+            {"choices": [{"delta": {"content": " anh"}}]},
+        ]
+    )
+    _mock_stream(monkeypatch, stream)
+    deltas: list[str] = []
+
+    response = OpenAIRuntime("key")._read_stream(
+        "https://example.test/stream",
+        {},
+        b"",
+        deltas.append,
+    )
+
+    assert response == "Chào anh"
+    assert deltas == ["Ch", "ào", " anh"]
+    visible = ""
+    for delta in deltas:
+        visible = append_stream_text(visible, delta)
+    assert visible == response
+
+
 def test_empty_stream_raises_runtime_error(monkeypatch) -> None:
     _mock_stream(monkeypatch, EmptyStreamResponse())
     rt = OpenAIRuntime("key")
@@ -283,3 +309,78 @@ def test_stream_enforces_total_deadline_even_when_chunks_keep_arriving(monkeypat
             None,
             timeout_seconds=4.0,
         )
+
+
+def test_fetch_models_allows_local_servers_without_api_key(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_get(self, url, *, headers=None, **kwargs):
+        captured["url"] = str(url)
+        captured["headers"] = headers
+        return httpx.Response(
+            200,
+            json={"data": [{"id": "qwen2.5:latest"}, {"id": "llama3.2:latest"}]},
+            request=httpx.Request("GET", str(url)),
+        )
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+
+    models = OpenAIRuntime.fetch_models("", "http://localhost:11434/v1")
+    assert [m["id"] for m in models] == ["llama3.2:latest", "qwen2.5:latest"]
+    assert captured["url"] == "http://localhost:11434/v1/models"
+
+
+def test_fetch_models_raises_for_cloud_when_key_is_blank() -> None:
+    with pytest.raises(ValueError, match="API Key is missing"):
+        OpenAIRuntime.fetch_models("", "https://opencode.ai/zen/v1")
+
+
+def test_model_runner_supports_ollama_and_lmstudio_backends() -> None:
+    from ru_runtime.generation.runner import (
+        ModelRunner,
+        BACKEND_OLLAMA,
+        BACKEND_LMSTUDIO,
+        BACKEND_CUSTOM,
+    )
+
+    runner = ModelRunner()
+
+    runner.select_backend(BACKEND_OLLAMA)
+    status = runner.load(model_name="qwen2.5:latest")
+    assert "Ollama API" in status
+    assert runner.openai_runtime.base_url == "http://localhost:11434/v1"
+    assert runner.openai_runtime.model_name == "qwen2.5:latest"
+
+    runner.select_backend(BACKEND_LMSTUDIO)
+    status = runner.load(model_name="mistral-7b")
+    assert "LM Studio API" in status
+    assert runner.openai_runtime.base_url == "http://localhost:1234/v1"
+    assert runner.openai_runtime.model_name == "mistral-7b"
+
+    runner.select_backend(BACKEND_CUSTOM)
+    status = runner.load(model_name="custom-v1", base_url="http://192.168.1.50:8000/v1")
+    assert "Custom OpenAI API" in status
+    assert runner.openai_runtime.base_url == "http://192.168.1.50:8000/v1"
+    assert runner.openai_runtime.model_name == "custom-v1"
+
+
+def test_status_get_models_handles_ollama_and_lmstudio(monkeypatch) -> None:
+    from ru_runtime.worker.v1.status import get_models
+
+    def fake_get(self, url, *, headers=None, **kwargs):
+        return httpx.Response(
+            200,
+            json={"data": [{"id": "local-model-1"}]},
+            request=httpx.Request("GET", str(url)),
+        )
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+
+    result_ollama = get_models("ollama")
+    assert result_ollama["status"] == "ok"
+    assert result_ollama["models"] == ["local-model-1"]
+
+    result_lmstudio = get_models("lmstudio")
+    assert result_lmstudio["status"] == "ok"
+    assert result_lmstudio["models"] == ["local-model-1"]
+

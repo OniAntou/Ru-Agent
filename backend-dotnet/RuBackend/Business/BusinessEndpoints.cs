@@ -362,7 +362,11 @@ public static class BusinessEndpoints
     {
         "OpenCode Zen" => "opencode",
         "Kilo Gateway" => "kilo",
-        _ => "gguf",
+        "Ollama" => "ollama",
+        "LM Studio" => "lmstudio",
+        "Custom OpenAI" => "custom",
+        "llama.cpp" => "gguf",
+        _ => "opencode",
     };
 
     private static int ReadLimit(HttpContext context) =>

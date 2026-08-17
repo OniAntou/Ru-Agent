@@ -6,12 +6,13 @@ using RuApp.Services;
 
 namespace RuApp.Views
 {
-    public sealed partial class VoiceView : UserControl
+    public sealed partial class VoiceView : UserControl, IDisposable
     {
         private ApiService? _apiService;
         private bool _isUpdatingUi = false;
         private VoicePlaybackService? _voicePlayback;
         private SubtitleOverlayService? _overlayService;
+        private DispatcherTimer? _speedDebounceTimer;
 
         public VoiceView()
         {
@@ -23,7 +24,21 @@ namespace RuApp.Views
             _apiService = apiService;
             _voicePlayback = voicePlayback;
             _overlayService = overlayService;
+
+            _speedDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            _speedDebounceTimer.Tick += async (_, __) =>
+            {
+                _speedDebounceTimer.Stop();
+                await SaveVoiceSettingsAsync();
+            };
+
             _ = LoadVoiceSettingsAsync();
+        }
+
+        public void Dispose()
+        {
+            _speedDebounceTimer?.Stop();
+            _speedDebounceTimer = null;
         }
 
         private async Task LoadVoiceSettingsAsync()
@@ -67,7 +82,8 @@ namespace RuApp.Views
                 SpeedText.Text = $"{e.NewValue:F2}x";
             }
             if (_isUpdatingUi || _apiService == null) return;
-            _ = SaveVoiceSettingsAsync();
+            _speedDebounceTimer?.Stop();
+            _speedDebounceTimer?.Start();
         }
 
         private async void OnAutoPaceToggled(object sender, RoutedEventArgs e)

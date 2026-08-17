@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 OPENCODE_BASE_URL = "https://opencode.ai/zen/v1"
 KILO_GATEWAY_BASE_URL = "https://api.kilo.ai/api/gateway"
+OLLAMA_BASE_URL = "http://localhost:11434/v1"
+LMSTUDIO_BASE_URL = "http://localhost:1234/v1"
 _STREAM_TIMEOUT_SECONDS = 120.0
 _MAX_ERROR_BODY_BYTES = 4096
 _RETRY_DELAY_SECONDS = 1.0
@@ -92,14 +94,16 @@ class OpenAIRuntime:
 
     @staticmethod
     def fetch_models(api_key: str, base_url: str) -> list[dict]:
-        if not api_key:
-            raise ValueError("API Key is missing")
         base_url = base_url.rstrip('/')
+        is_local = any(host in base_url for host in ("localhost", "127.0.0.1", "0.0.0.0", "11434", "1234"))
+        if not api_key and not is_local:
+            raise ValueError("API Key is missing")
         url = f"{base_url}/models"
         headers = {
-            "Authorization": f"Bearer {api_key}",
             "User-Agent": "Ru-LocalLLM/0.1",
         }
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         try:
             with httpx.Client() as client:
                 response = client.get(url, headers=headers, timeout=30)
@@ -217,15 +221,23 @@ class OpenAIRuntime:
                     if raw_delta is None:
                         continue
 
-                    if stream_mode is None:
-                        stream_mode = "cumulative" if raw_delta.startswith(accumulated) else "incremental"
-                    if stream_mode == "cumulative" and raw_delta.startswith(accumulated):
-                        new_text = raw_delta[len(accumulated):]
+                    if not accumulated:
                         accumulated = raw_delta
-                    else:
-                        stream_mode = "incremental"
                         new_text = raw_delta
-                        accumulated += raw_delta
+                    else:
+                        if stream_mode is None:
+                            stream_mode = (
+                                "cumulative"
+                                if raw_delta.startswith(accumulated)
+                                else "incremental"
+                            )
+                        if stream_mode == "cumulative" and raw_delta.startswith(accumulated):
+                            new_text = raw_delta[len(accumulated):]
+                            accumulated = raw_delta
+                        else:
+                            stream_mode = "incremental"
+                            new_text = raw_delta
+                            accumulated += raw_delta
 
                     if new_text and on_delta is not None:
                         on_delta(new_text)

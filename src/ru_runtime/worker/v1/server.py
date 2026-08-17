@@ -61,7 +61,6 @@ class WorkerHandlers:
     runtime: WorkerHandler
     voice: WorkerHandler
     vts: WorkerHandler
-    observation: WorkerHandler
 
 
 async def serve_worker(

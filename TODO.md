@@ -1,19 +1,11 @@
 # Ru Roadmap
 
-## Active LFM2.5 path
+## Active Architecture: Cloud-First & External Local Server (Ollama / LM Studio)
 
-- [x] Download the native `LiquidAI/LFM2.5-2.6B` checkpoint to
-  `models\lfm2.5-2.6b-hf` for future fine-tuning.
-- [x] Download `LiquidAI/LFM2.5-2.6B-GGUF` Q4_K_M to
-  `models\gguf\LFM2.5-2.6B-Q4_K_M.gguf` and make it the direct llama.cpp GUI
-  default.
-- [x] Remove the active Llama 3.1 HF, EXL2, base GGUF, and LoRA GGUF assets
-  (ADR 0005).
-- [ ] Adapt the LFM2 training seam (`tools\training\lfm25\`,
-  `configs\ru_lfm2_5_v1.json`) to the LFM2.5 hybrid architecture before
-  starting a new fine-tune.
-- [ ] Run the LFM2.5 bilingual quality gate and physical-VRAM smoke benchmark.
-- [ ] Collect reviewed useful conversation examples.
+- [x] Switched runtime defaults to Cloud (OpenCode Zen / Kilo Gateway).
+- [x] Added first-class OpenAI-compatible support for local servers: Ollama (`http://localhost:11434/v1`), LM Studio (`http://localhost:1234/v1`), and Custom OpenAI API endpoints.
+- [x] Purged in-process local model weights (`models/gguf/`, `models/lfm2.5-2.6b-hf/`, `models/vision/`) to reclaim disk space while preserving `models/omnivoice/` for TTS voice synthesis.
+- [x] Synced settings, dynamic model listing (`GET /models`), and WinUI 3 SettingsView across Python Worker, .NET Backend, and Desktop Client.
 
 ## Pending product work
 

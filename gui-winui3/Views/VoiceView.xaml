@@ -131,7 +131,7 @@
                     </StackPanel>
 
                     <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <TextBox x:Name="TestTextBox" Grid.Column="0" Text="Xin chào anh yêu, em là Ru! Hôm nay anh thế nào rồi?" 
+                        <TextBox x:Name="TestTextBox" Grid.Column="0" Text="Xin chào, em là Ru! Hôm nay bạn thế nào rồi?" 
                                  Margin="0,0,16,0" VerticalAlignment="Center" Padding="12,10"
                                  CornerRadius="{StaticResource AppControlCornerRadius}"/>
                         <Button x:Name="TestVoiceButton" Grid.Column="1" Click="OnTestVoiceClick" Padding="20,10" 

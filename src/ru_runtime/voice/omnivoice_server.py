@@ -57,7 +57,7 @@ def _acquire_single_instance() -> bool:
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = PROJECT_ROOT.parent.parent
-MODEL_CACHE = PROJECT_ROOT / "models" / "omnivoice"
+MODEL_CACHE = REPOSITORY_ROOT / "models" / "omnivoice"
 REFERENCE_AUDIO = PROJECT_ROOT / "tyc_talk.wav"
 REFERENCE_TEXT = PROJECT_ROOT / "reference_text.txt"
 AI_VY_AUDIO = REPOSITORY_ROOT / "data" / "voices" / "omnivoice" / "ai_vy.wav"

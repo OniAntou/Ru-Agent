@@ -290,6 +290,15 @@ def _has_repeated_sentence(text: str) -> bool:
     return len(sentences) != len(set(sentences))
 
 
+_EXPLICIT_ENGLISH_REQUEST = re.compile(
+    r"(?i)\b(?:in english|speak english|talk in english|talk to me in english|reply in english|answer in english|nói tiếng anh|bằng tiếng anh|dùng tiếng anh)\b"
+)
+
+
+def is_explicit_english_request(prompt: str) -> bool:
+    return bool(_EXPLICIT_ENGLISH_REQUEST.search(prompt))
+
+
 def assess_response(prompt: str, response: str, language: str) -> ResponseAssessment:
     normalized_prompt = normalize_text(prompt).casefold()
     normalized_response = normalize_text(response)
@@ -302,10 +311,12 @@ def assess_response(prompt: str, response: str, language: str) -> ResponseAssess
         failures.append("ai_disclaimer")
     if _has_repeated_sentence(normalized_response):
         failures.append("self_repetition")
-    if language == "en" and _EN_VI_MARKER.search(normalized_response):
-        failures.append("vietnamese_voice")
-    if language in {"vi", "mixed"} and (_VI_WRONG_SELF_REFERENCE.search(normalized_response) or _VI_WRONG_USER_ADDRESS.search(normalized_response)):
-        failures.append("vietnamese_voice")
+    if is_explicit_english_request(prompt):
+        if _EN_VI_MARKER.search(normalized_response):
+            failures.append("vietnamese_voice")
+    else:
+        if _VI_WRONG_SELF_REFERENCE.search(normalized_response) or _VI_WRONG_USER_ADDRESS.search(normalized_response):
+            failures.append("vietnamese_voice")
     return ResponseAssessment(passed=not failures, failures=tuple(failures))
 
 

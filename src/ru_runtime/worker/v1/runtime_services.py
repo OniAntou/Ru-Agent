@@ -24,9 +24,14 @@ from ru_runtime.worker.v1.core import RuRuntimeCore
 from ru_runtime.generation.chat import ChatTurn
 from ru_runtime.voice.gpu_lifecycle import GpuLifecycle, VoiceServiceController
 from ru_runtime.generation.runner import (
+    ALL_BACKENDS,
+    BACKEND_CUSTOM,
     BACKEND_GGUF,
     BACKEND_KILO,
+    BACKEND_LMSTUDIO,
+    BACKEND_OLLAMA,
     BACKEND_OPENCODE,
+    OPENAI_COMPATIBLE_BACKENDS,
 )
 from ru_runtime.memory.store import MemoryKind
 from ru_runtime.memory.extraction import is_sensitive_or_unsafe
@@ -122,10 +127,16 @@ MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024
 _DESKTOP_ORIGINS: tuple[str, ...] = ()
 
 _DEFAULT_SETTINGS = {
-    "backend": BACKEND_GGUF,
-    "model": "",
-    "opencode_model": "",
-    "kilo_model": "",
+    "backend": BACKEND_OPENCODE,
+    "model": "deepseek-v4-flash-free",
+    "opencode_model": "deepseek-v4-flash-free",
+    "kilo_model": "deepseek-ai/DeepSeek-V3",
+    "ollama_model": "qwen2.5:latest",
+    "lmstudio_model": "default",
+    "custom_model": "default",
+    "ollama_url": "http://localhost:11434/v1",
+    "lmstudio_url": "http://localhost:1234/v1",
+    "custom_url": "http://localhost:8000/v1",
     "api_variant": "Default",
     "max_tokens": 256,
     "temperature": 0.7,
@@ -143,12 +154,16 @@ _DEFAULT_SETTINGS = {
     "show_subtitles": False,
 }
 
-_VALID_BACKENDS = (BACKEND_GGUF, BACKEND_OPENCODE, BACKEND_KILO)
+_VALID_BACKENDS = ALL_BACKENDS
 
 _BACKEND_ALIASES: dict[str, str] = {
     "gguf": BACKEND_GGUF,
     "opencode": BACKEND_OPENCODE,
     "kilo": BACKEND_KILO,
+    "ollama": BACKEND_OLLAMA,
+    "lmstudio": BACKEND_LMSTUDIO,
+    "lm studio": BACKEND_LMSTUDIO,
+    "custom": BACKEND_CUSTOM,
 }
 
 # ── shared state ──────────────────────────────────────────────────────
@@ -759,11 +774,24 @@ def apply_saved_settings() -> str:
     core.runner.select_backend(backend)
 
     model_name = ""
+    base_url = None
     if backend == BACKEND_OPENCODE:
         model_name = settings.get("opencode_model") or settings.get("model", _DEFAULT_SETTINGS["opencode_model"])
     elif backend == BACKEND_KILO:
         model_name = settings.get("kilo_model") or settings.get("model", _DEFAULT_SETTINGS["kilo_model"])
         logger.info("Using Kilo model: %s", model_name)
+    elif backend == BACKEND_OLLAMA:
+        model_name = settings.get("ollama_model") or settings.get("model", _DEFAULT_SETTINGS["ollama_model"])
+        base_url = settings.get("ollama_url", _DEFAULT_SETTINGS["ollama_url"])
+        logger.info("Using Ollama model: %s (%s)", model_name, base_url)
+    elif backend == BACKEND_LMSTUDIO:
+        model_name = settings.get("lmstudio_model") or settings.get("model", _DEFAULT_SETTINGS["lmstudio_model"])
+        base_url = settings.get("lmstudio_url", _DEFAULT_SETTINGS["lmstudio_url"])
+        logger.info("Using LM Studio model: %s (%s)", model_name, base_url)
+    elif backend == BACKEND_CUSTOM:
+        model_name = settings.get("custom_model") or settings.get("model", _DEFAULT_SETTINGS["custom_model"])
+        base_url = settings.get("custom_url", _DEFAULT_SETTINGS["custom_url"])
+        logger.info("Using Custom OpenAI model: %s (%s)", model_name, base_url)
     else:
         model_name = settings.get("model", _DEFAULT_SETTINGS["model"])
         logger.info("Using local model field: %s", model_name)
@@ -777,6 +805,7 @@ def apply_saved_settings() -> str:
         model_name=model_name,
         api_variant=settings.get("api_variant", _DEFAULT_SETTINGS["api_variant"]),
         kilo_reasoning_enabled=effective_settings()["kilo_reasoning_enabled"],
+        base_url=base_url,
     )
 
 
@@ -1078,26 +1107,3 @@ def _start_memory_learner() -> None:
     _MEMORY_WORKER_STARTED.set()
     _MEMORY_THREAD = threading.Thread(target=_memory_learner_loop, name="memory-learner", daemon=True)
     _MEMORY_THREAD.start()
-
-
-# ── chat helpers ──────────────────────────────────────────────────────
-
-def _safe_put(loop: asyncio.AbstractEventLoop, queue: asyncio.Queue, message: dict) -> None:
-    try:
-        asyncio.run_coroutine_threadsafe(queue.put(message), loop)
-    except RuntimeError:
-        logger.debug("Event loop closed; dropping chat message %r", message["type"])
-
-
-# ── lifespan ──────────────────────────────────────────────────────────
-
-@asynccontextmanager
-async def _application_lifespan(_app):
-    _apply_settings_on_startup()
-    _schedule_cloud_voice_warmup()
-    try:
-        yield
-    finally:
-        from ru_runtime.generation.search import shutdown_search_executor
-        shutdown_search_executor()
-        _shutdown_runtime()

@@ -14,7 +14,7 @@ public sealed class SettingsStoreTests
 
         var snapshot = await store.ReadAsync(CancellationToken.None);
 
-        Assert.Equal("llama.cpp", snapshot.Backend);
+        Assert.Equal("OpenCode Zen", snapshot.Backend);
         Assert.Equal(string.Empty, snapshot.Model);
         Assert.Equal("Default", snapshot.ApiVariant);
         Assert.Equal(256, snapshot.MaxTokens);
@@ -73,7 +73,7 @@ public sealed class SettingsStoreTests
 
         var snapshot = await store.ReadAsync(CancellationToken.None);
 
-        Assert.Equal("llama.cpp", snapshot.Backend);
+        Assert.Equal("OpenCode Zen", snapshot.Backend);
         Assert.Equal(256, snapshot.MaxTokens);
         Assert.Empty(snapshot.Raw);
     }

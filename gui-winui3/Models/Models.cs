@@ -35,6 +35,8 @@ namespace RuApp.Models
                 if (SetProperty(ref _role, value))
                 {
                     OnPropertyChanged(nameof(RoleLabel));
+                    OnPropertyChanged(nameof(ShowTypingDots));
+                    OnPropertyChanged(nameof(ShowContent));
                 }
             }
         }
@@ -42,7 +44,14 @@ namespace RuApp.Models
         public string Content
         {
             get => _content;
-            set => SetProperty(ref _content, value);
+            set
+            {
+                if (SetProperty(ref _content, value))
+                {
+                    OnPropertyChanged(nameof(ShowTypingDots));
+                    OnPropertyChanged(nameof(ShowContent));
+                }
+            }
         }
 
         public DateTime Timestamp
@@ -60,7 +69,14 @@ namespace RuApp.Models
         public bool IsStreaming
         {
             get => _isStreaming;
-            set => SetProperty(ref _isStreaming, value);
+            set
+            {
+                if (SetProperty(ref _isStreaming, value))
+                {
+                    OnPropertyChanged(nameof(ShowTypingDots));
+                    OnPropertyChanged(nameof(ShowContent));
+                }
+            }
         }
 
         public bool IsError
@@ -68,6 +84,10 @@ namespace RuApp.Models
             get => _isError;
             set => SetProperty(ref _isError, value);
         }
+
+        public bool ShowTypingDots => Role == "assistant" && IsStreaming && string.IsNullOrEmpty(Content);
+
+        public bool ShowContent => !ShowTypingDots;
 
         public string RoleLabel => Role == "assistant" ? "Ru" : "Bạn";
 
@@ -122,7 +142,7 @@ namespace RuApp.Models
     public class AppSettingsDto
     {
         [JsonPropertyName("backend_choice")]
-        public string BackendChoice { get; set; } = "gguf";
+        public string BackendChoice { get; set; } = "opencode";
 
         [JsonPropertyName("opencode_api_key")]
         public string OpenCodeApiKey { get; set; } = string.Empty;
@@ -144,6 +164,24 @@ namespace RuApp.Models
 
         [JsonPropertyName("kilo_model")]
         public string KiloModel { get; set; } = "kilo-auto/free";
+
+        [JsonPropertyName("ollama_model")]
+        public string OllamaModel { get; set; } = "qwen2.5:latest";
+
+        [JsonPropertyName("lmstudio_model")]
+        public string LmStudioModel { get; set; } = "default";
+
+        [JsonPropertyName("custom_model")]
+        public string CustomModel { get; set; } = "default";
+
+        [JsonPropertyName("ollama_url")]
+        public string OllamaUrl { get; set; } = "http://localhost:11434/v1";
+
+        [JsonPropertyName("lmstudio_url")]
+        public string LmStudioUrl { get; set; } = "http://localhost:1234/v1";
+
+        [JsonPropertyName("custom_url")]
+        public string CustomUrl { get; set; } = "http://localhost:8000/v1";
 
         [JsonPropertyName("kilo_reasoning_enabled")]
         public bool KiloReasoningEnabled { get; set; } = false;

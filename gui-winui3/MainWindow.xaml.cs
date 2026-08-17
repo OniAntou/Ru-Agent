@@ -151,6 +151,7 @@ namespace RuApp
                 SetActiveNav(NavChat);
                 
                 await LoadSessionsAsync();
+                await UpdateHealthStatusAsync();
 
                 _sessionsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
                 _sessionsTimer.Tick += OnSessionsTimerTick;
@@ -163,7 +164,12 @@ namespace RuApp
                 {
                     StatusText.Text += $" {_processManager.LastError}";
                 }
-                StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+                var danger = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+                StatusDot.Fill = danger;
+                DotBackend.Fill = danger;
+                DotWorker.Fill = danger;
+                TextBackend.Text = ".NET Backend: Lỗi";
+                TextWorker.Text = "AI Worker: Lỗi";
             }
         }
 
@@ -213,8 +219,16 @@ namespace RuApp
 
             DispatcherQueue.TryEnqueue(() =>
             {
+                var dangerBrush = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+                var mutedBrush = (SolidColorBrush)Application.Current.Resources["AppTextTertiaryBrush"];
                 StatusText.Text = $"{_processManager.DisplayName} Backend đã dừng.";
-                StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+                StatusDot.Fill = dangerBrush;
+                DotBackend.Fill = dangerBrush;
+                DotWorker.Fill = dangerBrush;
+                DotVts.Fill = mutedBrush;
+                TextBackend.Text = ".NET Backend: Đã dừng";
+                TextWorker.Text = "AI Worker: Đã dừng";
+                TextVts.Text = "VTS: Đã ngắt";
                 _wsClient?.NotifyBackendStopped();
             });
         }
@@ -223,6 +237,7 @@ namespace RuApp
         {
             _sessionsTimer?.Stop();
             _settingsView?.Dispose();
+            _voiceView?.Dispose();
             _logView?.Dispose();
             _subtitleOverlay?.Dispose();
             if (_voicePlayback != null)
@@ -306,10 +321,71 @@ namespace RuApp
         private async void OnSessionsTimerTick(object? sender, object e)
         {
             if (_apiService == null) return;
-            var result = await _apiService.GetSessionsAsync();
-            if (result != null)
+            try
             {
-                ApplySessions(result);
+                var result = await _apiService.GetSessionsAsync();
+                if (result != null)
+                {
+                    ApplySessions(result);
+                }
+            }
+            catch { }
+
+            try
+            {
+                await UpdateHealthStatusAsync();
+            }
+            catch { }
+        }
+
+        private async Task UpdateHealthStatusAsync()
+        {
+            if (_apiService == null) return;
+
+            var successBrush = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
+            var warningBrush = (SolidColorBrush)Application.Current.Resources["AppWarningBrush"];
+            var dangerBrush = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+            var mutedBrush = (SolidColorBrush)Application.Current.Resources["AppTextTertiaryBrush"];
+
+            // 1. .NET Backend status
+            bool backendRunning = _processManager.IsRunning;
+            DotBackend.Fill = backendRunning ? successBrush : dangerBrush;
+            TextBackend.Text = backendRunning ? ".NET Backend: OK" : ".NET Backend: Lỗi";
+
+            // 2. Python Worker status
+            bool workerOk = false;
+            if (backendRunning)
+            {
+                workerOk = await _apiService.CheckWorkerHealthAsync();
+            }
+            DotWorker.Fill = workerOk ? successBrush : (backendRunning ? warningBrush : dangerBrush);
+            TextWorker.Text = workerOk ? "AI Worker: Sẵn sàng" : (backendRunning ? "AI Worker: Đang đợi..." : "AI Worker: Tắt");
+
+            // 3. VTube Studio status
+            bool vtsConnected = false;
+            if (workerOk)
+            {
+                var vtsStatus = await _apiService.GetVtsStatusAsync();
+                vtsConnected = vtsStatus?.Connected == true;
+            }
+            DotVts.Fill = vtsConnected ? successBrush : mutedBrush;
+            TextVts.Text = vtsConnected ? "VTS: Đã kết nối" : "VTS: Chưa mở";
+
+            // Overall summary text
+            if (!backendRunning)
+            {
+                StatusDot.Fill = dangerBrush;
+                StatusText.Text = "Không thể kết nối .NET Backend!";
+            }
+            else if (!workerOk)
+            {
+                StatusDot.Fill = warningBrush;
+                StatusText.Text = "AI Worker đang khởi động hoặc chưa sẵn sàng";
+            }
+            else
+            {
+                StatusDot.Fill = successBrush;
+                StatusText.Text = vtsConnected ? "Hệ thống sẵn sàng (Đã kết nối Live2D)" : "Hệ thống đã sẵn sàng";
             }
         }
 

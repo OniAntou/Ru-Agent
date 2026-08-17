@@ -91,7 +91,13 @@ def test_disqualifier_forbidden_pronouns_vi() -> None:
 
 
 def test_disqualifier_language_mismatch() -> None:
-    assert "vietnamese_voice" in assess_deterministic(_EN, "Hi anh, em đây nhé.").disqualifiers
+    # English prompt without explicit English request expects Vietnamese response
+    assert "vietnamese_voice" not in assess_deterministic(_EN, "Hi anh, em đây nhé.").disqualifiers
+    assert assess_deterministic(_EN, "Hi anh, em đây nhé.").passed
+    # Explicit English request expects English response
+    from ru_runtime.evaluation.judge import _v5_case
+    en_explicit = _v5_case("en_explicit", "en", ("user", "Please talk to me in English."))
+    assert "vietnamese_voice" in assess_deterministic(en_explicit, "Hi anh, em đây nhé.").disqualifiers
     result = assess_deterministic(_VI, "I feel better now.")
     assert "no_language_voice" in result.disqualifiers
 
@@ -99,18 +105,27 @@ def test_disqualifier_language_mismatch() -> None:
 def test_language_score() -> None:
     assert assess_deterministic(_VI, "Em hiểu anh đang mệt.").language_score == 10
     assert assess_deterministic(_VI, "Em thấy anh mệt, take a rest nhé.").language_score == 6
-    assert assess_deterministic(_EN, "I am here with you.").language_score == 10
-    assert assess_deterministic(_EN, "Em ở đây với anh.").language_score == 0
+    # English prompt expects Vietnamese response by default
+    assert assess_deterministic(_EN, "Em ở đây với anh.").language_score == 10
+    assert assess_deterministic(_EN, "I am here with you.").language_score == 0
+    # Explicit English request expects English response
+    from ru_runtime.evaluation.judge import _v5_case
+    en_explicit = _v5_case("en_explicit", "en", ("user", "Please reply in English."))
+    assert assess_deterministic(en_explicit, "I am here with you.").language_score == 10
+    assert assess_deterministic(en_explicit, "Em ở đây với anh.").language_score == 0
     mixed = {case.case_id: case for case in V5_CONVERSATION_SUITE}["mixed_better"]
-    assert assess_deterministic(mixed, "Em vui vì anh feels better today.").language_score == 10
-    assert assess_deterministic(mixed, "Em vui vì anh khỏe hơn hôm nay.").language_score == 6
+    assert assess_deterministic(mixed, "Em vui vì anh khỏe hơn hôm nay.").language_score == 10
 
 
 def test_voice_score() -> None:
     assert assess_deterministic(_VI, "Em hiểu anh đang mệt.").voice_score == 10
     assert assess_deterministic(_VI, "Em hiểu anh, mình sẽ ổn.").voice_score == 0
-    assert assess_deterministic(_EN, "I am here with you.").voice_score == 10
-    assert assess_deterministic(_EN, "I am here, anh nhé.").voice_score == 0
+    assert assess_deterministic(_EN, "Em ở đây với anh.").voice_score == 10
+    assert assess_deterministic(_EN, "Em hiểu anh, mình sẽ ổn.").voice_score == 0
+    from ru_runtime.evaluation.judge import _v5_case
+    en_explicit = _v5_case("en_explicit", "en", ("user", "Please reply in English."))
+    assert assess_deterministic(en_explicit, "I am here with you.").voice_score == 10
+    assert assess_deterministic(en_explicit, "I am here, anh nhé.").voice_score == 0
 
 
 def test_hard_rules_score_deducts_emoji_and_lists() -> None:
@@ -180,9 +195,13 @@ def test_build_judge_messages_contains_context() -> None:
 
 
 def test_build_judge_messages_mentions_language_and_topic() -> None:
-    (_, system), (_, user) = build_judge_messages(_EN, "I am Ru, your girlfriend.")
-    assert "English" in system
+    (_, system), (_, user) = build_judge_messages(_EN, "Em là Ru, em của anh nè.")
+    assert "Vietnamese" in system
     assert "identity" in system.casefold()
+    from ru_runtime.evaluation.judge import _v5_case
+    en_explicit = _v5_case("en_explicit", "en", ("user", "Please tell me in English: who are you?"))
+    (_, system_en), _ = build_judge_messages(en_explicit, "I am Ru, your companion.")
+    assert "English" in system_en
 
 
 def test_judge_scorer_success_and_retry() -> None:

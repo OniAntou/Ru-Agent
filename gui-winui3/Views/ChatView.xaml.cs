@@ -30,14 +30,12 @@ namespace RuApp.Views
     {
         public DataTemplate? UserTemplate { get; set; }
         public DataTemplate? AssistantTemplate { get; set; }
-        public DataTemplate? StreamingTemplate { get; set; }
 
         protected override DataTemplate? SelectTemplateCore(object item, DependencyObject container)
         {
             if (item is ChatMessageItem msg)
             {
                 if (msg.Role == "user") return UserTemplate;
-                if (msg.IsStreaming) return StreamingTemplate ?? AssistantTemplate;
                 return AssistantTemplate;
             }
             return base.SelectTemplateCore(item, container);
@@ -191,7 +189,7 @@ namespace RuApp.Views
             }
         }
 
-        private async void OnChatInputKeyDown(object sender, KeyRoutedEventArgs e)
+        private async void OnChatInputPreviewKeyDown(object sender, KeyRoutedEventArgs e)
         {
             try
             {
@@ -208,7 +206,7 @@ namespace RuApp.Views
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in OnChatInputKeyDown: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error in OnChatInputPreviewKeyDown: {ex.Message}");
             }
         }
 
@@ -321,14 +319,6 @@ namespace RuApp.Views
             }
         }
 
-        private void RefreshMessageTemplates()
-        {
-            var selector = ChatListView.ItemTemplateSelector;
-            if (selector == null) return;
-            ChatListView.ItemTemplateSelector = null;
-            ChatListView.ItemTemplateSelector = selector;
-        }
-
         private void OnWsDoneReceived(string content, string sessionId)
         {
             try
@@ -357,7 +347,6 @@ namespace RuApp.Views
                                 IsStreaming = false
                             });
                         }
-                        RefreshMessageTemplates();
 
                         if (!string.IsNullOrEmpty(sessionId))
                         {
@@ -409,7 +398,6 @@ namespace RuApp.Views
                             : $"{last.Content}\n\n{detailedError}";
                         last.IsStreaming = false;
                         last.IsError = true;
-                        RefreshMessageTemplates();
                     }
                     catch (Exception ex)
                     {

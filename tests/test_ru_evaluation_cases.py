@@ -25,6 +25,9 @@ def test_neutral_evaluation_module_preserves_public_case_suites() -> None:
 
 def test_neutral_evaluation_module_preserves_response_gate() -> None:
     assert assess_response("Xin chào em.", "Em chào anh.", "vi").passed
-    assert assess_response("Hi Ru.", "Hi anh, em đây nhé.", "en").failures == (
+    # English prompt without explicit English request expects Vietnamese response
+    assert assess_response("Hi Ru.", "Hi anh, em đây nhé.", "en").passed
+    # Explicit request for English expects English response, fails if Vietnamese is used
+    assert assess_response("Please talk to me in English.", "Hi anh, em đây nhé.", "en").failures == (
         "vietnamese_voice",
     )

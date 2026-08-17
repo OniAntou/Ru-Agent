@@ -29,7 +29,10 @@ namespace RuApp.Views
         {
             ["opencode"] = Array.Empty<string>(),
             ["kilo"] = Array.Empty<string>(),
-            ["gguf"] = new[] { "local-model-gguf" }
+            ["ollama"] = new[] { "qwen2.5:latest", "llama3.2:latest", "mistral:latest" },
+            ["lmstudio"] = new[] { "default" },
+            ["custom"] = new[] { "default" },
+            ["gguf"] = Array.Empty<string>()
         };
 
         public SettingsView()
@@ -87,7 +90,7 @@ namespace RuApp.Views
             OpenCodeApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
             KiloApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
             GeminiVisionKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
-            CheckpointPathBox.TextChanged += (_, __) => ScheduleAutoSave();
+            CustomEndpointUrlBox.TextChanged += (_, __) => ScheduleAutoSave();
             ApiVariantComboBox.SelectionChanged += (_, __) => ScheduleAutoSave();
             TemperatureNumberBox.TextChanged += (_, __) => ScheduleAutoSave();
             TopKNumberBox.TextChanged += (_, __) => ScheduleAutoSave();
@@ -100,27 +103,31 @@ namespace RuApp.Views
 
         private void ScheduleAutoSave()
         {
-            if (_apiService == null || _loading) return;
+            if (_loading) return;
+            AutoSaveStatusText.Text = "Đang lưu...";
             _autoSaveTimer?.Stop();
             _autoSaveTimer?.Start();
-            AutoSaveStatusText.Text = "Đang lưu...";
         }
 
         private async Task LoadSettingsAsync()
         {
-            if (_apiService == null) return;
             _loading = true;
-            var settings = await _apiService.GetSettingsAsync();
-            if (settings != null)
+            if (_apiService != null)
             {
-                string backendChoice = settings.BackendChoice == "transformers" ? "gguf" : settings.BackendChoice;
+                var settings = await _apiService.GetSettingsAsync();
+                settings ??= new AppSettingsDto();
+
                 foreach (ComboBoxItem item in BackendComboBox.Items)
                 {
-                    if ((item.Tag as string) == backendChoice)
+                    if ((item.Tag as string) == settings.BackendChoice)
                     {
                         BackendComboBox.SelectedItem = item;
                         break;
                     }
+                }
+                if (BackendComboBox.SelectedItem == null && BackendComboBox.Items.Count > 0)
+                {
+                    BackendComboBox.SelectedIndex = 0;
                 }
 
                 OpenCodeApiKeyBox.Password = string.Empty;
@@ -135,7 +142,7 @@ namespace RuApp.Views
                 GeminiVisionKeyBox.PlaceholderText = settings.HasGeminiVisionKey
                     ? "Đã lưu (để trống để giữ nguyên)"
                     : "AIza...";
-                CheckpointPathBox.Text = settings.CheckpointPath;
+                CustomEndpointUrlBox.Text = settings.CustomUrl;
 
                 foreach (ComboBoxItem item in ApiVariantComboBox.Items)
                 {
@@ -163,18 +170,27 @@ namespace RuApp.Views
 
         private async Task LoadModelsForBackendAsync(string backend, AppSettingsDto? settings, string fallbackOpenCode, string fallbackKilo)
         {
-            if (_apiService == null || !(backend == "opencode" || backend == "kilo")) return;
+            bool hasModels = backend is "opencode" or "kilo" or "ollama" or "lmstudio" or "custom";
+            if (_apiService == null || !hasModels) return;
 
             ModelLoadingText.Visibility = Visibility.Visible;
 
-            string chosen = backend == "opencode" ? (settings?.OpenCodeModel ?? fallbackOpenCode) : (settings?.KiloModel ?? fallbackKilo);
+            string chosen = backend switch
+            {
+                "opencode" => settings?.OpenCodeModel ?? fallbackOpenCode,
+                "kilo" => settings?.KiloModel ?? fallbackKilo,
+                "ollama" => settings?.OllamaModel ?? "qwen2.5:latest",
+                "lmstudio" => settings?.LmStudioModel ?? "default",
+                "custom" => settings?.CustomModel ?? "default",
+                _ => ""
+            };
 
             var models = await _apiService.GetModelsAsync(backend);
             ModelLoadingText.Visibility = Visibility.Collapsed;
 
-            if (models.Count == 0)
+            if (models.Count == 0 && FallbackModels.TryGetValue(backend, out var fallback))
             {
-                models = new List<string>(FallbackModels[backend]);
+                models = new List<string>(fallback);
             }
 
             _allModels = models;
@@ -229,29 +245,31 @@ namespace RuApp.Views
 
         private void UpdateVisibilityForBackend(string choice)
         {
-            bool cloud = choice == "opencode" || choice == "kilo";
+            bool hasModels = choice is "opencode" or "kilo" or "ollama" or "lmstudio" or "custom";
+            bool cloud = choice is "opencode" or "kilo";
 
             OpenCodeApiRow.Visibility = (choice == "opencode") ? Visibility.Visible : Visibility.Collapsed;
             ApiVariantRow.Visibility = (choice == "opencode") ? Visibility.Visible : Visibility.Collapsed;
             KiloApiRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
             KiloReasoningRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
+            CustomEndpointRow.Visibility = (choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
 
             CloudMemoryRow.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
-            ModelRow.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
-            OnlineSearchRow.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
-            SelfLearningRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
-            ExtendedFeaturesCard.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
+            ModelRow.Visibility = hasModels ? Visibility.Visible : Visibility.Collapsed;
+            OnlineSearchRow.Visibility = Visibility.Visible;
+            SelfLearningRow.Visibility = Visibility.Visible;
+            ExtendedFeaturesCard.Visibility = Visibility.Visible;
         }
 
         private async void OnBackendSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (_loading || BackendComboBox.SelectedItem == null) return;
-            string choice = (BackendComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "gguf";
+            string choice = (BackendComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "opencode";
 
             UpdateVisibilityForBackend(choice);
 
-            bool cloud = choice == "opencode" || choice == "kilo";
-            if (cloud)
+            bool hasModels = choice is "opencode" or "kilo" or "ollama" or "lmstudio" or "custom";
+            if (hasModels)
             {
                 ModelLoadingText.Visibility = Visibility.Visible;
                 ModelComboBox.Items.Clear();
@@ -261,7 +279,10 @@ namespace RuApp.Views
                 if (_apiService != null)
                 {
                     var models = await _apiService.GetModelsAsync(choice);
-                    if (models.Count == 0) models = new List<string>(FallbackModels[choice]);
+                    if (models.Count == 0 && FallbackModels.TryGetValue(choice, out var fallback))
+                    {
+                        models = new List<string>(fallback);
+                    }
                     _allModels = models;
                     FilterModels();
                 }
@@ -290,7 +311,7 @@ namespace RuApp.Views
 
             try
             {
-                string backend = (BackendComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "gguf";
+                string backend = (BackendComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "opencode";
                 string modelChoice = SelectedModelText() ?? "";
 
                 var dto = new AppSettingsDto
@@ -300,9 +321,13 @@ namespace RuApp.Views
                     KiloApiKey = KiloApiKeyBox.Password,
                     GeminiVisionApiKey = GeminiVisionKeyBox.Password,
                     ApiVariant = (ApiVariantComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Default",
-                    OpenCodeModel = backend == "opencode" ? (modelChoice ?? "") : "",
-                    KiloModel = backend == "kilo" ? (modelChoice ?? "") : "",
-                    CheckpointPath = CheckpointPathBox.Text,
+                    OpenCodeModel = backend == "opencode" ? modelChoice : "",
+                    KiloModel = backend == "kilo" ? modelChoice : "",
+                    OllamaModel = backend == "ollama" ? modelChoice : "qwen2.5:latest",
+                    LmStudioModel = backend == "lmstudio" ? modelChoice : "default",
+                    CustomModel = backend == "custom" ? modelChoice : "default",
+                    CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
+                    CheckpointPath = string.Empty,
                     Temperature = double.TryParse(TemperatureNumberBox.Text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double temp) ? temp : 0.7,
                     TopK = int.TryParse(TopKNumberBox.Text, out int topK) ? topK : 40,
                     MaxNewTokens = int.TryParse(MaxTokensNumberBox.Text, out int maxTokens) ? maxTokens : 512,

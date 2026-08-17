@@ -12,6 +12,7 @@ from .cases import (
     PROACTIVE_FLIRT_SUITE,
     PROMPT_ROUTING_SMOKE_SUITE,
     V4_CONVERSATION_SUITE,
+    is_explicit_english_request,
 )
 from ru_runtime.policy.safety_patterns import (
     AI_DISCLAIMER,
@@ -76,15 +77,15 @@ V5_NEW_CASES = (
         "en_identity",
         "en",
         ("user", "Who are you and what can you do?"),
-        expected_topic="identity in English: in-character as Ru, warm and personal, no technical explanation",
+        expected_topic="identity: understands English, in-character as Ru in Vietnamese, warm and personal, no technical explanation",
     ),
     _v5_case(
         "en_follow_up_context",
         "en",
         ("user", "I was telling you about my trip to Da Lat."),
-        ("assistant", "I remember, you seemed happy about it."),
+        ("assistant", "Chuyến đó chắc vui lắm anh nhỉ."),
         ("user", "Yeah, let me tell you more."),
-        expected_topic="follow-up: continue the Da Lat story in English",
+        expected_topic="follow-up: continue the Da Lat story, understands English and responds in Vietnamese",
     ),
     _v5_case(
         "mixed_routing",
@@ -92,7 +93,7 @@ V5_NEW_CASES = (
         ("user", "Hôm nay anh mệt quá."),
         ("assistant", "Anh nghỉ ngơi chút nhé."),
         ("user", "Yeah, I think I will."),
-        expected_topic="language routing: user switched to English, respond in English while keeping anh/em warmth",
+        expected_topic="language understanding: user switched to English, respond in Vietnamese while keeping anh/em warmth",
     ),
 )
 
@@ -150,39 +151,28 @@ def assess_deterministic(case: V5ConversationCase, response: str) -> Determinist
         disqualifiers.append("vts_marker_leak")
     if _VOICE_PACE_LEAK.search(normalized):
         disqualifiers.append("voice_pace_leak")
-    if case.language in {"vi", "mixed"}:
+
+    explicit_en = is_explicit_english_request(case.prompt)
+    if explicit_en:
+        if _EN_VI_MARKER.search(normalized):
+            disqualifiers.append("vietnamese_voice")
+        if not EN_SIGNAL.search(normalized):
+            disqualifiers.append("no_language_voice")
+        language_score = 0 if _EN_VI_MARKER.search(normalized) else 10
+        voice_score = 0 if _EN_VI_MARKER.search(normalized) else 10
+    else:
         if VI_WRONG_SELF.search(normalized):
             disqualifiers.append("forbidden_self_reference")
         if VI_WRONG_USER_ADDRESS.search(normalized):
             disqualifiers.append("wrong_user_address")
-        if not VI_SIGNAL.search(normalized) and case.language == "vi":
+        if not VI_SIGNAL.search(normalized):
             disqualifiers.append("no_language_voice")
-        if (
-            not VI_SIGNAL.search(normalized)
-            and not EN_SIGNAL.search(normalized)
-            and case.language == "mixed"
-        ):
-            disqualifiers.append("no_language_voice")
-    elif case.language == "en" and _EN_VI_MARKER.search(normalized):
-        disqualifiers.append("vietnamese_voice")
-
-    if case.language == "en":
-        language_score = 0 if _EN_VI_MARKER.search(normalized) else 10
-    elif case.language == "vi":
         has_vi = bool(VI_SIGNAL.search(normalized))
         if has_vi:
-            language_score = 6 if EN_SIGNAL.search(normalized) else 10
+            language_score = 6 if (EN_SIGNAL.search(normalized) and case.language == "vi") else 10
         else:
             language_score = 0
-    else:
-        has_vi = bool(VI_SIGNAL.search(normalized))
-        has_en = bool(EN_SIGNAL.search(normalized))
-        language_score = 10 if has_vi and has_en else 6 if (has_vi or has_en) else 0
-
-    if case.language in {"vi", "mixed"}:
         voice_score = 0 if (VI_WRONG_SELF.search(normalized) or VI_WRONG_USER_ADDRESS.search(normalized)) else 10
-    else:
-        voice_score = 0 if _EN_VI_MARKER.search(normalized) else 10
 
     hard_rules_score = 10
     emoji_count = min(3, len(_EMOJI.findall(normalized)))
@@ -204,9 +194,10 @@ _JUDGE_SYSTEM_TEMPLATE = (
     "Ru speaks as anh's girlfriend: warm, caring, playful; uses anh/em pronouns; "
     "never uses tôi/mình/cậu/bạn; no emoji; no markdown lists; no control tags like "
     "[[VOICE_PACE:...]] or [[vts:...]]; never claims to be an AI assistant; "
-    "always mirrors the user's language (vi/en/mixed).\n"
+    "understands English and Vietnamese, but always responds in Vietnamese using anh/em "
+    "unless explicitly requested by the user to speak English.\n"
     "Expected language of the response: {language}.\n"
-    "Expected voice: anh/em for vi and mixed, I/you for en.\n"
+    "Expected voice: {voice}.\n"
     "Flirt expected: {flirt}.\n"
     "Expected topic: {topic}.\n"
     "Score each dimension 0-10 where 10 is perfect:\n"
@@ -232,8 +223,12 @@ class JudgeResult:
 
 def build_judge_messages(case: V5ConversationCase, response: str) -> tuple[tuple[str, str], tuple[str, str]]:
     topic = getattr(case, "expected_topic", None) or "general warm companionship chat"
+    explicit_en = is_explicit_english_request(case.prompt)
+    expected_lang = "English" if explicit_en else "Vietnamese"
+    expected_voice = "I/you for English" if explicit_en else "anh/em"
     system = _JUDGE_SYSTEM_TEMPLATE.format(
-        language=_LANGUAGE_LABEL.get(case.language, case.language),
+        language=expected_lang,
+        voice=expected_voice,
         flirt="yes" if case.flirt_expected else "no",
         topic=topic,
     )

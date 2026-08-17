@@ -137,7 +137,7 @@ public class BackendProcessManager : IDisposable
                     continue;
                 }
 
-                child.WaitForExit(Timeout.InfiniteTimeSpan);
+                await Task.Run(() => child.WaitForExit(Timeout.InfiniteTimeSpan));
             }
 
             lock (_gate)

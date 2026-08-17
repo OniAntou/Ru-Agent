@@ -90,6 +90,13 @@ public sealed class VoiceReplyAudioQueue : IDisposable
     {
         if (Interlocked.Exchange(ref _writerClosed, 1) != 0)
         {
+            try
+            {
+                _cancellation.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
             return;
         }
 

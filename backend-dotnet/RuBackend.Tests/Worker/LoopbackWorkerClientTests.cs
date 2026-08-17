@@ -390,6 +390,56 @@ public sealed class LoopbackWorkerClientTests
             client.ConnectAsync(CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Cancelling_voice_stream_sends_voice_cancel_signal_not_chat_cancel()
+    {
+        var signalSeen = new TaskCompletionSource<(string PathAndQuery, JsonObject Payload)>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            await CompleteHandshakeAsync(socket);
+            var request = await ReceiveEnvelopeAsync(socket);
+            if (request.Type == WorkerMessageTypes.VoiceStart)
+            {
+                while (true)
+                {
+                    await ReceiveEnvelopeAsync(socket);
+                }
+            }
+
+            Assert.Equal(WorkerMessageTypes.RuntimeRequest, request.Type);
+            var path = request.Payload["path_and_query"]?.GetValue<string>();
+            var bodyText = request.Payload["body"]?.GetValue<string>() ?? "{}";
+            var body = (JsonObject)(JsonNode.Parse(bodyText) ?? new JsonObject());
+            signalSeen.TrySetResult((path ?? string.Empty, body));
+            await SendEnvelopeAsync(socket, Event(
+                request.Id,
+                WorkerMessageTypes.RuntimeResponse,
+                0,
+                new JsonObject
+                {
+                    ["status_code"] = 200,
+                    ["content_type"] = "application/json",
+                    ["body"] = "{}",
+                }));
+        });
+        await using var client = CreateClient(server.Uri);
+        using var cancellation = new CancellationTokenSource();
+        var stream = client.StreamVoiceAsync(
+            new WorkerVoiceStreamRequest("voice-cancel", "text", null, 1.0, "original"),
+            cancellation.Token);
+
+        var enumerator = stream.GetAsyncEnumerator();
+        var moving = enumerator.MoveNextAsync().AsTask();
+        await Task.Delay(100);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => moving);
+
+        var signal = await signalSeen.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal("/_worker/voice/cancel", signal.PathAndQuery);
+        Assert.Equal("voice-cancel", signal.Payload["request_id"]?.GetValue<string>());
+    }
+
     private static LoopbackWorkerClient CreateClient(Uri uri, string token = "worker-secret") =>
         new(new WorkerClientOptions { Uri = uri, Token = token });
 
@@ -417,7 +467,9 @@ public sealed class LoopbackWorkerClientTests
     {
         var hello = await ReceiveEnvelopeAsync(socket);
         Assert.Equal(WorkerMessageTypes.Hello, hello.Type);
-        await SendEnvelopeAsync(socket, HelloOk(hello.Id, "chat", "memory.extract", "voice"));
+        await SendEnvelopeAsync(
+            socket,
+            HelloOk(hello.Id, "chat", "memory.extract", "runtime", "voice"));
     }
 
     private static async Task<WorkerEnvelope> ReceiveEnvelopeAsync(WebSocket socket)

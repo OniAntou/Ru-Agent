@@ -794,6 +794,10 @@ def _apply_settings_on_startup() -> None:
         _start_memory_learner()
     except Exception as error:
         logger.error("Failed to start memory learner: %s", error)
+    try:
+        _schedule_cloud_voice_warmup()
+    except Exception as error:
+        logger.error("Failed to schedule cloud voice warm-up: %s", error)
 
 
 def _start_voice_service() -> None:

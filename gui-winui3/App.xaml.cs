@@ -33,7 +33,9 @@ public partial class App : Application
                 or System.Threading.Tasks.TaskCanceledException
                 or System.ObjectDisposedException
                 or System.ArgumentException
-                or System.InvalidOperationException;
+                or System.InvalidOperationException
+                or System.Runtime.InteropServices.COMException
+                or Microsoft.UI.Xaml.Markup.XamlParseException;
         };
     }
 

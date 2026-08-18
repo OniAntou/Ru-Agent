@@ -115,6 +115,94 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task PostSettings_with_gguf_payload_migrates_to_opencode()
+    {
+        using var data = TemporaryBusinessData.Create();
+        var runtime = new FakeRuntimeSettingsLoader();
+        using var factory = CreateAspNetFactory(
+            data.Paths,
+            runtimeLoader: runtime);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/settings",
+            new
+            {
+                backend_choice = "gguf",
+                model = "LFM2.5-2.6B-Q4_K_M.gguf",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("OpenCode Zen", Assert.Single(runtime.Candidates).Backend);
+    }
+
+    [Fact]
+    public async Task PostSettings_saves_ollama_backend_with_model_and_url()
+    {
+        using var data = TemporaryBusinessData.Create();
+        var credentials = new FakeCredentialStore();
+        var runtime = new FakeRuntimeSettingsLoader();
+        using var factory = CreateAspNetFactory(
+            data.Paths,
+            credentials: credentials,
+            runtimeLoader: runtime);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/settings",
+            new
+            {
+                backend_choice = "ollama",
+                ollama_model = "qwen3:8b",
+                ollama_url = "http://127.0.0.1:11434/v1",
+                max_new_tokens = 192,
+            });
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("success", payload.GetProperty("status").GetString());
+        var loaded = Assert.Single(runtime.Candidates);
+        Assert.Equal("Ollama", loaded.Backend);
+        Assert.Equal("qwen3:8b", loaded.OllamaModel);
+        Assert.Equal("http://127.0.0.1:11434/v1", loaded.OllamaUrl);
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        Assert.Equal("Ollama", persisted["backend"]!.GetValue<string>());
+        Assert.Equal("qwen3:8b", persisted["ollama_model"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task PostSettings_custom_backend_stores_key_as_credential_and_never_in_file()
+    {
+        using var data = TemporaryBusinessData.Create();
+        var credentials = new FakeCredentialStore();
+        var runtime = new FakeRuntimeSettingsLoader();
+        using var factory = CreateAspNetFactory(
+            data.Paths,
+            credentials: credentials,
+            runtimeLoader: runtime);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/settings",
+            new
+            {
+                backend_choice = "custom",
+                custom_model = "my-model",
+                custom_url = "http://localhost:9000/v1",
+                custom_api_key = "private-custom-key",
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(
+            "private-custom-key",
+            await credentials.GetAsync("Ru", "custom_api_key", CancellationToken.None));
+        var persisted = await File.ReadAllTextAsync(data.Paths.SettingsFile);
+        Assert.DoesNotContain("private-custom-key", persisted, StringComparison.Ordinal);
+        Assert.DoesNotContain("custom_api_key", persisted, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Custom OpenAI", Assert.Single(runtime.Candidates).Backend);
+    }
+
+    [Fact]
     public async Task Session_routes_create_list_activate_and_delete_the_same_document()
     {
         using var data = TemporaryBusinessData.Create();

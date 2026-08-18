@@ -33,7 +33,7 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
     private const string OpenCodeAccount = "api_key";
     private const string KiloAccount = "kilo_gateway_api_key";
     private const string GeminiAccount = "gemini_vision_api_key";
-    private const string BackendGguf = "llama.cpp";
+    private const string CustomAccount = "custom_api_key";
     private const string BackendOpenCode = "OpenCode Zen";
     private const string BackendKilo = "Kilo Gateway";
 
@@ -188,6 +188,18 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             ?? current.OpenCodeModel;
         var kiloModel = OptionalString(payload, "kilo_model", 256)
             ?? current.KiloModel;
+        var ollamaModel = OptionalString(payload, "ollama_model", 256)
+            ?? current.OllamaModel;
+        var lmStudioModel = OptionalString(payload, "lmstudio_model", 256)
+            ?? current.LmStudioModel;
+        var customModel = OptionalString(payload, "custom_model", 256)
+            ?? current.CustomModel;
+        var ollamaUrl = OptionalString(payload, "ollama_url", 1024)
+            ?? current.OllamaUrl;
+        var lmStudioUrl = OptionalString(payload, "lmstudio_url", 1024)
+            ?? current.LmStudioUrl;
+        var customUrl = OptionalString(payload, "custom_url", 1024)
+            ?? current.CustomUrl;
         var apiVariant = OptionalString(payload, "api_variant", 64) ?? current.ApiVariant;
         var checkpoint = OptionalString(payload, "checkpoint_path", 1024);
         if (string.IsNullOrWhiteSpace(checkpoint))
@@ -232,12 +244,12 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             OptionalBoolean(payload, "auto_pace_enabled") ?? current.AutoPaceEnabled,
             OptionalBoolean(payload, "auto_read_replies") ?? current.AutoReadReplies,
             OptionalBoolean(payload, "show_subtitles") ?? current.ShowSubtitles,
-            current.OllamaModel,
-            current.LmStudioModel,
-            current.CustomModel,
-            current.OllamaUrl,
-            current.LmStudioUrl,
-            current.CustomUrl);
+            ollamaModel,
+            lmStudioModel,
+            customModel,
+            ollamaUrl,
+            lmStudioUrl,
+            customUrl);
     }
 
     private static IReadOnlyList<CredentialUpdate> BuildCredentialUpdates(
@@ -248,6 +260,7 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         var openCode = OptionalSecret(payload, "opencode_api_key");
         var kilo = OptionalSecret(payload, "kilo_api_key");
         var gemini = OptionalSecret(payload, "gemini_vision_api_key");
+        var custom = OptionalSecret(payload, "custom_api_key");
         var legacy = OptionalSecret(payload, "api_key");
         if (openCode is not null)
         {
@@ -262,6 +275,11 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         if (gemini is not null)
         {
             updates[GeminiAccount] = gemini;
+        }
+
+        if (custom is not null)
+        {
+            updates[CustomAccount] = custom;
         }
 
         if (legacy is not null)
@@ -290,20 +308,31 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             "model",
             "opencode_model",
             "kilo_model",
+            "ollama_model",
+            "lmstudio_model",
+            "custom_model",
+            "ollama_url",
+            "lmstudio_url",
+            "custom_url",
+            "custom_api_key",
             "api_variant",
             "kilo_reasoning_enabled",
             "checkpoint_path",
         };
         return runtimeFields.Any(payload.ContainsKey)
-            || updates.Any(update => update.Account is OpenCodeAccount or KiloAccount);
+            || updates.Any(update =>
+                update.Account is OpenCodeAccount or KiloAccount or CustomAccount);
     }
 
     private static string NormalizeBackend(string value) =>
         value.Trim().ToLowerInvariant() switch
         {
-            "gguf" or "llama.cpp" => BackendGguf,
+            "gguf" or "llama.cpp" => BackendOpenCode,
             "opencode" or "opencode zen" => BackendOpenCode,
             "kilo" or "kilo gateway" => BackendKilo,
+            "ollama" => "Ollama",
+            "lmstudio" or "lm studio" => "LM Studio",
+            "custom" or "custom openai" => "Custom OpenAI",
             _ => throw new SettingsPayloadException(),
         };
 

@@ -43,11 +43,16 @@ public static class BusinessEndpoints
                 credentials,
                 "gemini_vision_api_key",
                 cancellationToken).ConfigureAwait(false);
+            var hasCustom = await HasCredentialAsync(
+                credentials,
+                "custom_api_key",
+                cancellationToken).ConfigureAwait(false);
             return Results.Json(ToSettingsResponse(
                 snapshot,
                 hasOpenCode,
                 hasKilo,
-                hasGemini));
+                hasGemini,
+                hasCustom));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -288,7 +293,8 @@ public static class BusinessEndpoints
         SettingsSnapshot value,
         bool hasOpenCode,
         bool hasKilo,
-        bool hasGemini)
+        bool hasGemini,
+        bool hasCustom)
     {
         var result = value.Raw.DeepClone().AsObject();
         foreach (var key in new[]
@@ -297,6 +303,7 @@ public static class BusinessEndpoints
                      "opencode_api_key",
                      "kilo_api_key",
                      "gemini_vision_api_key",
+                     "custom_api_key",
                  })
         {
             result.Remove(key);
@@ -308,6 +315,12 @@ public static class BusinessEndpoints
         result["model"] = value.Model;
         result["opencode_model"] = value.OpenCodeModel;
         result["kilo_model"] = value.KiloModel;
+        result["ollama_model"] = value.OllamaModel;
+        result["lmstudio_model"] = value.LmStudioModel;
+        result["custom_model"] = value.CustomModel;
+        result["ollama_url"] = value.OllamaUrl;
+        result["lmstudio_url"] = value.LmStudioUrl;
+        result["custom_url"] = value.CustomUrl;
         result["api_variant"] = value.ApiVariant;
         result["kilo_reasoning_enabled"] = value.KiloReasoningEnabled;
         result["max_tokens"] = value.MaxTokens;
@@ -330,9 +343,11 @@ public static class BusinessEndpoints
         result["opencode_api_key"] = string.Empty;
         result["kilo_api_key"] = string.Empty;
         result["gemini_vision_api_key"] = string.Empty;
+        result["custom_api_key"] = string.Empty;
         result["has_opencode_key"] = hasOpenCode;
         result["has_kilo_key"] = hasKilo;
         result["has_gemini_vision_key"] = hasGemini;
+        result["has_custom_api_key"] = hasCustom;
         return result;
     }
 

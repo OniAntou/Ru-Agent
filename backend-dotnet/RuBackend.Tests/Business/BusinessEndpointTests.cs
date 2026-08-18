@@ -203,6 +203,30 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task GetSettings_returns_the_new_backend_fields_and_custom_key_presence()
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(
+            data.Paths.SettingsFile,
+            "{\"backend\":\"ollama\",\"ollama_model\":\"qwen3:8b\",\"ollama_url\":\"http://127.0.0.1:11434/v1\",\"custom_url\":\"http://localhost:9000/v1\"}");
+        var credentials = new FakeCredentialStore();
+        credentials.Seed("Ru", "custom_api_key", "private-custom-key");
+        using var factory = CreateAspNetFactory(data.Paths, credentials: credentials);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.GetAsync("/settings");
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("ollama", payload.GetProperty("backend_choice").GetString());
+        Assert.Equal("qwen3:8b", payload.GetProperty("ollama_model").GetString());
+        Assert.Equal("http://127.0.0.1:11434/v1", payload.GetProperty("ollama_url").GetString());
+        Assert.Equal("http://localhost:9000/v1", payload.GetProperty("custom_url").GetString());
+        Assert.True(payload.GetProperty("has_custom_api_key").GetBoolean());
+        Assert.Equal(string.Empty, payload.GetProperty("custom_api_key").GetString());
+    }
+
+    [Fact]
     public async Task Session_routes_create_list_activate_and_delete_the_same_document()
     {
         using var data = TemporaryBusinessData.Create();

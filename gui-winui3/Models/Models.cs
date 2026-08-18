@@ -183,6 +183,12 @@ namespace RuApp.Models
         [JsonPropertyName("custom_url")]
         public string CustomUrl { get; set; } = "http://localhost:8000/v1";
 
+        [JsonPropertyName("custom_api_key")]
+        public string CustomApiKey { get; set; } = string.Empty;
+
+        [JsonPropertyName("has_custom_api_key")]
+        public bool HasCustomKey { get; set; } = false;
+
         [JsonPropertyName("kilo_reasoning_enabled")]
         public bool KiloReasoningEnabled { get; set; } = false;
 

@@ -7,6 +7,20 @@ namespace RuApp.Tests;
 public sealed class SettingsDtoTests
 {
     [Fact]
+    public void CustomApiKeyUsesTheBackendWireName()
+    {
+        string payload = JsonSerializer.Serialize(new AppSettingsDto
+        {
+            CustomApiKey = "sk-custom",
+        });
+
+        using JsonDocument document = JsonDocument.Parse(payload);
+
+        Assert.Equal("sk-custom", document.RootElement.GetProperty("custom_api_key").GetString());
+        Assert.False(document.RootElement.GetProperty("has_custom_api_key").GetBoolean());
+    }
+
+    [Fact]
     public void KiloReasoningEnabledUsesTheBackendWireName()
     {
         string payload = JsonSerializer.Serialize(new AppSettingsDto

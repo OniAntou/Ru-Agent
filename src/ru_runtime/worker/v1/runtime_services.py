@@ -761,6 +761,18 @@ def _schedule_cloud_voice_warmup() -> bool:
 def apply_saved_settings() -> str:
     settings = load_settings()
     backend = _resolve_backend(settings.get("backend"))
+    if backend in (BACKEND_GGUF, "gguf", "llama.cpp"):
+        logger.info(
+            "Retired llama.cpp backend in saved settings; migrating to %s",
+            BACKEND_OPENCODE,
+        )
+        settings = {
+            **settings,
+            "backend": BACKEND_OPENCODE,
+            "opencode_model": settings.get("opencode_model")
+            or _DEFAULT_SETTINGS["opencode_model"],
+        }
+        backend = BACKEND_OPENCODE
     logger.info("Loading settings: backend=%s, raw_backend=%s", backend, settings.get("backend"))
     if backend not in _VALID_BACKENDS:
         return f"No persisted settings to apply (backend={backend!r})"

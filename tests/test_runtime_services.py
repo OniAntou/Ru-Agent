@@ -138,6 +138,34 @@ def test_vts_status_uses_the_single_python_manager(monkeypatch) -> None:
     assert payload["overlay_running"] is False
 
 
+def test_apply_saved_settings_migrates_retired_gguf_to_opencode(monkeypatch, tmp_path) -> None:
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(
+        '{"backend": "llama.cpp", "model": "LFM2.5-2.6B-Q4_K_M.gguf"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(shared, "SETTINGS_FILE", settings_file)
+    loaded: dict = {}
+
+    def fake_load(**kwargs) -> str:
+        loaded.update(kwargs)
+        return "Ready"
+
+    monkeypatch.setattr(shared.core.runner, "load", fake_load)
+    selected: list[str] = []
+
+    def fake_select(backend: str) -> None:
+        selected.append(backend)
+
+    monkeypatch.setattr(shared.core.runner, "select_backend", fake_select)
+
+    result = shared.apply_saved_settings()
+
+    assert selected == ["OpenCode Zen"]
+    assert loaded["model_name"] == "deepseek-v4-flash-free"
+    assert result == "Ready"
+
+
 def test_malformed_runtime_json_returns_bounded_422() -> None:
     response = dispatch_runtime_request(
         "POST",

@@ -108,7 +108,13 @@ public sealed class RuntimeSettingsLoaderTests
         1.0,
         false,
         true,
-        false);
+        false,
+        "qwen2.5:latest",
+        "default",
+        "default",
+        "http://localhost:11434/v1",
+        "http://localhost:1234/v1",
+        "http://localhost:8000/v1");
 
     private static async Task CompleteHandshakeAsync(WebSocket socket)
     {

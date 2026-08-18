@@ -231,7 +231,13 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             OptionalDouble(payload, "voice_speed", 0.5, 2.0) ?? current.VoiceSpeed,
             OptionalBoolean(payload, "auto_pace_enabled") ?? current.AutoPaceEnabled,
             OptionalBoolean(payload, "auto_read_replies") ?? current.AutoReadReplies,
-            OptionalBoolean(payload, "show_subtitles") ?? current.ShowSubtitles);
+            OptionalBoolean(payload, "show_subtitles") ?? current.ShowSubtitles,
+            current.OllamaModel,
+            current.LmStudioModel,
+            current.CustomModel,
+            current.OllamaUrl,
+            current.LmStudioUrl,
+            current.CustomUrl);
     }
 
     private static IReadOnlyList<CredentialUpdate> BuildCredentialUpdates(

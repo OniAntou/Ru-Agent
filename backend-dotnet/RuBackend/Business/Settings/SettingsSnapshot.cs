@@ -22,4 +22,10 @@ public sealed record SettingsSnapshot(
     double VoiceSpeed,
     bool AutoPaceEnabled,
     bool AutoReadReplies,
-    bool ShowSubtitles);
+    bool ShowSubtitles,
+    string OllamaModel,
+    string LmStudioModel,
+    string CustomModel,
+    string OllamaUrl,
+    string LmStudioUrl,
+    string CustomUrl);

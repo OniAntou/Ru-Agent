@@ -12,7 +12,6 @@ public interface ISettingsStore
 
 public sealed class SettingsStore : ISettingsStore
 {
-    private const string BackendGguf = "llama.cpp";
     private const string BackendOpenCode = "OpenCode Zen";
     private const string BackendKilo = "Kilo Gateway";
     private const string BackendOllama = "Ollama";
@@ -31,6 +30,7 @@ public sealed class SettingsStore : ISettingsStore
         "opencode_api_key",
         "kilo_api_key",
         "gemini_vision_api_key",
+        "custom_api_key",
     ];
 
     private readonly string _settingsFile;
@@ -90,6 +90,12 @@ public sealed class SettingsStore : ISettingsStore
             persisted["auto_pace_enabled"] = candidate.AutoPaceEnabled;
             persisted["auto_read_replies"] = candidate.AutoReadReplies;
             persisted["show_subtitles"] = candidate.ShowSubtitles;
+            persisted["ollama_model"] = candidate.OllamaModel;
+            persisted["lmstudio_model"] = candidate.LmStudioModel;
+            persisted["custom_model"] = candidate.CustomModel;
+            persisted["ollama_url"] = candidate.OllamaUrl;
+            persisted["lmstudio_url"] = candidate.LmStudioUrl;
+            persisted["custom_url"] = candidate.CustomUrl;
 
             await WriteAtomicAsync(persisted, cancellationToken).ConfigureAwait(false);
         }
@@ -129,11 +135,13 @@ public sealed class SettingsStore : ISettingsStore
             raw.Remove(field);
         }
 
-        var backend = NormalizeBackend(ReadString(raw, "backend", BackendOpenCode));
+        var rawBackend = ReadString(raw, "backend", string.Empty);
+        var migratedFromGguf = rawBackend is "gguf" or "llama.cpp";
+        var backend = NormalizeBackend(rawBackend);
         var model = ReadString(raw, "model", string.Empty);
         var openCodeModel = ReadString(raw, "opencode_model", string.Empty);
         var kiloModel = ReadString(raw, "kilo_model", string.Empty);
-        if (backend == BackendOpenCode && string.IsNullOrWhiteSpace(openCodeModel))
+        if (backend == BackendOpenCode && string.IsNullOrWhiteSpace(openCodeModel) && !migratedFromGguf)
         {
             openCodeModel = model;
         }
@@ -162,7 +170,13 @@ public sealed class SettingsStore : ISettingsStore
             ReadBoundedNumber(raw, "voice_speed", 1.0, 0.5, 2.0),
             ReadBoolean(raw, "auto_pace_enabled", false),
             ReadBoolean(raw, "auto_read_replies", true),
-            ReadBoolean(raw, "show_subtitles", false));
+            ReadBoolean(raw, "show_subtitles", false),
+            ReadString(raw, "ollama_model", "qwen2.5:latest"),
+            ReadString(raw, "lmstudio_model", "default"),
+            ReadString(raw, "custom_model", "default"),
+            ReadString(raw, "ollama_url", "http://localhost:11434/v1"),
+            ReadString(raw, "lmstudio_url", "http://localhost:1234/v1"),
+            ReadString(raw, "custom_url", "http://localhost:8000/v1"));
     }
 
     private async Task WriteAtomicAsync(
@@ -203,7 +217,7 @@ public sealed class SettingsStore : ISettingsStore
     {
         return value.Trim().ToLowerInvariant() switch
         {
-            "gguf" or "llama.cpp" => BackendGguf,
+            "gguf" or "llama.cpp" => BackendOpenCode,
             "opencode" or "opencode zen" => BackendOpenCode,
             "kilo" or "kilo gateway" => BackendKilo,
             "ollama" => BackendOllama,
@@ -272,6 +286,12 @@ public sealed class SettingsStore : ISettingsStore
         ValidateLength(candidate.Model, 256, nameof(candidate.Model));
         ValidateLength(candidate.OpenCodeModel, 256, nameof(candidate.OpenCodeModel));
         ValidateLength(candidate.KiloModel, 256, nameof(candidate.KiloModel));
+        ValidateLength(candidate.OllamaModel, 256, nameof(candidate.OllamaModel));
+        ValidateLength(candidate.LmStudioModel, 256, nameof(candidate.LmStudioModel));
+        ValidateLength(candidate.CustomModel, 256, nameof(candidate.CustomModel));
+        ValidateLength(candidate.OllamaUrl, 1024, nameof(candidate.OllamaUrl));
+        ValidateLength(candidate.LmStudioUrl, 1024, nameof(candidate.LmStudioUrl));
+        ValidateLength(candidate.CustomUrl, 1024, nameof(candidate.CustomUrl));
         ValidateLength(candidate.ApiVariant, 64, nameof(candidate.ApiVariant));
         ValidateLength(candidate.CheckpointPath, 1024, nameof(candidate.CheckpointPath));
         ValidateLength(candidate.VoiceLabel, 128, nameof(candidate.VoiceLabel));

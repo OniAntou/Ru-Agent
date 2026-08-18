@@ -130,6 +130,81 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
+    public async Task Read_ollama_settings_populates_the_new_snapshot_fields()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        await File.WriteAllTextAsync(paths.SettingsFile, """
+            {
+              "backend": "ollama",
+              "ollama_model": "qwen3:8b",
+              "ollama_url": "http://127.0.0.1:11434/v1",
+              "lmstudio_model": "local-model",
+              "custom_url": "http://10.0.0.5:8000/v1"
+            }
+            """);
+
+        var snapshot = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("Ollama", snapshot.Backend);
+        Assert.Equal("qwen3:8b", snapshot.OllamaModel);
+        Assert.Equal("http://127.0.0.1:11434/v1", snapshot.OllamaUrl);
+        Assert.Equal("local-model", snapshot.LmStudioModel);
+        Assert.Equal("http://10.0.0.5:8000/v1", snapshot.CustomUrl);
+    }
+
+    [Fact]
+    public async Task Save_persists_the_new_backend_fields_and_strips_custom_api_key()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        await File.WriteAllTextAsync(paths.SettingsFile, """
+            {
+              "backend": "custom",
+              "custom_api_key": "must-not-survive"
+            }
+            """);
+        var current = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Null(current.Raw["custom_api_key"]);
+
+        await store.SaveAsync(
+            current with
+            {
+                Backend = "Custom OpenAI",
+                CustomModel = "my-model",
+                CustomUrl = "http://localhost:9000/v1",
+                OllamaUrl = "http://localhost:11434/v1",
+            },
+            CancellationToken.None);
+
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
+        Assert.Equal("Custom OpenAI", persisted["backend"]!.GetValue<string>());
+        Assert.Equal("my-model", persisted["custom_model"]!.GetValue<string>());
+        Assert.Equal("http://localhost:9000/v1", persisted["custom_url"]!.GetValue<string>());
+        Assert.Null(persisted["custom_api_key"]);
+    }
+
+    [Fact]
+    public async Task Read_retired_gguf_backend_migrates_to_opencode_without_legacy_model()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        await File.WriteAllTextAsync(paths.SettingsFile, """
+            {
+              "backend": "llama.cpp",
+              "model": "LFM2.5-2.6B-Q4_K_M.gguf"
+            }
+            """);
+
+        var snapshot = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("OpenCode Zen", snapshot.Backend);
+        Assert.Equal(string.Empty, snapshot.OpenCodeModel);
+        Assert.Equal("LFM2.5-2.6B-Q4_K_M.gguf", snapshot.Model);
+    }
+
+    [Fact]
     public async Task Save_rejects_overlong_model_without_replacing_the_existing_file()
     {
         var (store, paths) = CreateStore();

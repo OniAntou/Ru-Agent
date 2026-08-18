@@ -2,9 +2,15 @@ from __future__ import annotations
 
 
 def get_status() -> dict[str, object]:
+    from ru_runtime.worker.v1 import runtime_services as shared
+
+    runner = shared.core.runner
+    if runner.load_error:
+        return {"status": "error", "message": runner.load_error}
     return {
         "status": "ok",
         "message": "Backend is running and ready for the WinUI3 UI.",
+        "backend": runner.backend,
     }
 
 
@@ -61,7 +67,11 @@ def get_models(backend: str = "") -> dict[str, object]:
         api_key = "lm-studio"
     else:
         base_url = settings.get("custom_url", "http://localhost:8000/v1")
-        api_key = settings.get("custom_api_key", "custom")
+        try:
+            api_key = shared.core.custom_cred.get_key() or ""
+        except Exception as error:
+            shared.logger.warning("Could not read Custom key: %s", error)
+            api_key = ""
 
     try:
         from ru_runtime.generation.openai import OpenAIRuntime

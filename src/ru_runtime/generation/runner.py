@@ -61,6 +61,7 @@ class ModelRunner:
         )
         self.openai_runtime: OpenAIRuntime | None = None
         self.kilo_reasoning_enabled = False
+        self.load_error: str | None = None
 
     def select_backend(self, backend: str) -> None:
         if backend not in ALL_BACKENDS:
@@ -78,73 +79,78 @@ class ModelRunner:
         base_url: str | None = None,
     ) -> str:
         self.kilo_reasoning_enabled = bool(kilo_reasoning_enabled)
+        self.load_error = None
         logger.info("Loading backend=%s, checkpoint_path=%s, model_name=%s", self.backend, checkpoint_path, model_name)
-        if self.gguf_runtime is not None:
-            self.gguf_runtime.stop()
+        try:
+            if self.gguf_runtime is not None:
+                self.gguf_runtime.stop()
 
-        if self.backend in OPENAI_COMPATIBLE_BACKENDS:
-            if self.backend == BACKEND_OPENCODE:
-                target_url = base_url or OPENCODE_BASE_URL
-                default_model = "deepseek-v4-flash-free"
-            elif self.backend == BACKEND_KILO:
-                target_url = base_url or KILO_GATEWAY_BASE_URL
-                default_model = "deepseek-ai/DeepSeek-V3"
-            elif self.backend == BACKEND_OLLAMA:
-                target_url = base_url or OLLAMA_BASE_URL
-                default_model = "qwen2.5:latest"
-            elif self.backend == BACKEND_LMSTUDIO:
-                target_url = base_url or LMSTUDIO_BASE_URL
-                default_model = "default"
-            else:
-                target_url = base_url or "http://localhost:8000/v1"
-                default_model = "default"
-
-            effective_model = model_name or default_model
-            effective_key = api_key or ("local" if self.backend in (BACKEND_OLLAMA, BACKEND_LMSTUDIO) else "")
-            self.openai_runtime = OpenAIRuntime(
-                api_key=effective_key,
-                base_url=target_url,
-                model_name=effective_model,
-                api_variant=api_variant,
-            )
-            logger.info("Loaded %s runtime with model: %s (%s)", self.backend, effective_model, target_url)
-            return f"Ready ({self.backend} API)"
-
-        if self.backend == BACKEND_GGUF:
-            logger.info("Loading GGUF runtime with checkpoint: %s", checkpoint_path)
-            if self.gguf_runtime is None:
-                self.gguf_runtime = LlamaCppRuntime(project_root=PROJECT_ROOT)
-            self.gguf_runtime.validate_assets()
-            base_model_path = self.gguf_runtime.base_model.resolve()
-            if str(checkpoint_path).strip():
-                resolved = Path(checkpoint_path).resolve()
-                allowed = (PROJECT_ROOT / "checkpoints", PROJECT_ROOT / "models")
-                if not any(
-                    resolved.is_relative_to(allowed_dir.resolve())
-                    for allowed_dir in allowed
-                ):
-                    raise ValueError(
-                        f"checkpoint_path must be inside project checkpoints/ or models/, got: {checkpoint_path}"
-                    )
-                if resolved != base_model_path:
-                    logger.info(
-                        "Ignoring legacy GGUF checkpoint selector %s; using the fixed LFM2.5 asset %s",
-                        resolved,
-                        base_model_path,
-                    )
-            self.checkpoint_path = base_model_path
-            logger.info("GGUF runtime ready with checkpoint: %s", self.checkpoint_path)
-            label = "LFM2.5-2.6B Q4_K_M"
-            if self.gguf_runtime.adapter is not None:
-                adapter_name = self.gguf_runtime.adapter.name
-                if "v1_2" in adapter_name:
-                    label += " + v1.2 LoRA"
-                elif "v1_1" in adapter_name:
-                    label += " + v1.1 LoRA"
+            if self.backend in OPENAI_COMPATIBLE_BACKENDS:
+                if self.backend == BACKEND_OPENCODE:
+                    target_url = base_url or OPENCODE_BASE_URL
+                    default_model = "deepseek-v4-flash-free"
+                elif self.backend == BACKEND_KILO:
+                    target_url = base_url or KILO_GATEWAY_BASE_URL
+                    default_model = "deepseek-ai/DeepSeek-V3"
+                elif self.backend == BACKEND_OLLAMA:
+                    target_url = base_url or OLLAMA_BASE_URL
+                    default_model = "qwen2.5:latest"
+                elif self.backend == BACKEND_LMSTUDIO:
+                    target_url = base_url or LMSTUDIO_BASE_URL
+                    default_model = "default"
                 else:
-                    label += " + v1 LoRA"
-            return f"Ready (llama.cpp GGUF) | {label}"
-        raise ValueError(f"unsupported backend: {self.backend}")
+                    target_url = base_url or "http://localhost:8000/v1"
+                    default_model = "default"
+
+                effective_model = model_name or default_model
+                effective_key = api_key or ("local" if self.backend in (BACKEND_OLLAMA, BACKEND_LMSTUDIO) else "")
+                self.openai_runtime = OpenAIRuntime(
+                    api_key=effective_key,
+                    base_url=target_url,
+                    model_name=effective_model,
+                    api_variant=api_variant,
+                )
+                logger.info("Loaded %s runtime with model: %s (%s)", self.backend, effective_model, target_url)
+                return f"Ready ({self.backend} API)"
+
+            if self.backend == BACKEND_GGUF:
+                logger.info("Loading GGUF runtime with checkpoint: %s", checkpoint_path)
+                if self.gguf_runtime is None:
+                    self.gguf_runtime = LlamaCppRuntime(project_root=PROJECT_ROOT)
+                self.gguf_runtime.validate_assets()
+                base_model_path = self.gguf_runtime.base_model.resolve()
+                if str(checkpoint_path).strip():
+                    resolved = Path(checkpoint_path).resolve()
+                    allowed = (PROJECT_ROOT / "checkpoints", PROJECT_ROOT / "models")
+                    if not any(
+                        resolved.is_relative_to(allowed_dir.resolve())
+                        for allowed_dir in allowed
+                    ):
+                        raise ValueError(
+                            f"checkpoint_path must be inside project checkpoints/ or models/, got: {checkpoint_path}"
+                        )
+                    if resolved != base_model_path:
+                        logger.info(
+                            "Ignoring legacy GGUF checkpoint selector %s; using the fixed LFM2.5 asset %s",
+                            resolved,
+                            base_model_path,
+                        )
+                self.checkpoint_path = base_model_path
+                logger.info("GGUF runtime ready with checkpoint: %s", self.checkpoint_path)
+                label = "LFM2.5-2.6B Q4_K_M"
+                if self.gguf_runtime.adapter is not None:
+                    adapter_name = self.gguf_runtime.adapter.name
+                    if "v1_2" in adapter_name:
+                        label += " + v1.2 LoRA"
+                    elif "v1_1" in adapter_name:
+                        label += " + v1.1 LoRA"
+                    else:
+                        label += " + v1 LoRA"
+                return f"Ready (llama.cpp GGUF) | {label}"
+            raise ValueError(f"unsupported backend: {self.backend}")
+        except Exception as error:
+            self.load_error = str(error)
+            raise
 
     def is_cached(self, checkpoint_path: str | Path = "") -> bool:
         if self.backend in OPENAI_COMPATIBLE_BACKENDS:

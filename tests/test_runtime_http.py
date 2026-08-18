@@ -42,10 +42,10 @@ def test_status_dispatch_preserves_the_public_json_shape() -> None:
 
     assert response.status_code == 200
     assert response.content_type == "application/json"
-    assert json.loads(response.body) == {
-        "status": "ok",
-        "message": "Backend is running and ready for the WinUI3 UI.",
-    }
+    payload = json.loads(response.body)
+    assert payload["status"] == "ok"
+    assert payload["message"] == "Backend is running and ready for the WinUI3 UI."
+    assert payload["backend"] == "OpenCode Zen"
 
 
 def test_tts_dispatch_preserves_binary_without_embedding_it_in_json(monkeypatch) -> None:

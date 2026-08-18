@@ -88,6 +88,52 @@ public sealed class RuntimeSettingsLoaderTests
         Assert.DoesNotContain("worker-secret", error.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Load_forwards_the_new_backend_fields()
+    {
+        WorkerEnvelope? observed = null;
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            await CompleteHandshakeAsync(socket);
+            observed = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, new WorkerEnvelope(
+                1,
+                observed.Id,
+                WorkerMessageTypes.RuntimeState,
+                0,
+                new JsonObject
+                {
+                    ["status"] = "success",
+                    ["message"] = "Runtime loaded.",
+                    ["backend"] = "Ollama",
+                }));
+        });
+        var loader = new LoopbackRuntimeSettingsLoader(new WorkerClientOptions
+        {
+            Uri = server.Uri,
+            Token = "worker-secret",
+        });
+        var candidate = Snapshot(new JsonObject()) with
+        {
+            Backend = "Ollama",
+            OllamaModel = "qwen3:8b",
+            OllamaUrl = "http://127.0.0.1:11434/v1",
+            LmStudioModel = "local-model",
+            CustomModel = "my-model",
+            CustomUrl = "http://localhost:9000/v1",
+        };
+
+        var message = await loader.LoadAsync(candidate, CancellationToken.None);
+
+        Assert.Equal("Runtime loaded.", message);
+        Assert.Equal("Ollama", observed!.Payload["backend"]!.GetValue<string>());
+        Assert.Equal("qwen3:8b", observed.Payload["ollama_model"]!.GetValue<string>());
+        Assert.Equal("http://127.0.0.1:11434/v1", observed.Payload["ollama_url"]!.GetValue<string>());
+        Assert.Equal("local-model", observed.Payload["lmstudio_model"]!.GetValue<string>());
+        Assert.Equal("my-model", observed.Payload["custom_model"]!.GetValue<string>());
+        Assert.Equal("http://localhost:9000/v1", observed.Payload["custom_url"]!.GetValue<string>());
+    }
+
     private static SettingsSnapshot Snapshot(JsonObject raw) => new(
         raw,
         "OpenCode Zen",

@@ -88,9 +88,11 @@ through the green test suite).
     - `api_key`: OpenCode/Kilo from their credential stores (unchanged);
       Custom from `core.custom_cred`.
     - Pass `base_url` through `runner.load`.
-12. `src/ru_runtime/worker/v1/runtime_services.py` — `_BACKEND_ALIASES`:
-    `"gguf"` and `"llama.cpp"` map to `BACKEND_OPENCODE` (old settings never load
-    GGUF; `apply_saved_settings`'s GGUF branch becomes unreachable).
+12. `src/ru_runtime/worker/v1/runtime_services.py` — `apply_saved_settings()`:
+    treat raw `backend` values `gguf`/`llama.cpp` as `OpenCode Zen` with the
+    **default** opencode model (never the legacy GGUF path, which would otherwise
+    be picked up by the `settings.get("model")` fallback and break generation),
+    log a migration notice. `_BACKEND_ALIASES` stays unchanged.
 13. `src/ru_runtime/generation/runner.py` — add `self.load_error: str | None = None`;
     set it at the start of `load()` and in a try/except around the load body
     (record message, re-raise). Clear on success. No behavior change otherwise.

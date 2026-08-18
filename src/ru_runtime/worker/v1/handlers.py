@@ -46,6 +46,48 @@ RuntimeLoader = Callable[[dict[str, Any]], Mapping[str, Any]]
 RuntimeRequest = Callable[[str, str, str | None, str], RuntimeHttpResponse]
 _RUNTIME_TRANSITION_LOCK = threading.RLock()
 
+_RUNTIME_BACKENDS = (
+    "OpenCode Zen",
+    "Kilo Gateway",
+    "Ollama",
+    "LM Studio",
+    "Custom OpenAI",
+)
+
+
+def _runtime_load_params(payload: dict[str, Any]) -> dict[str, Any]:
+    backend = str(payload.get("backend") or "")
+    if backend not in _RUNTIME_BACKENDS:
+        raise ValueError("unsupported runtime backend")
+    model_name = str(payload.get("model") or "")
+    base_url: str | None = None
+    if backend == "OpenCode Zen":
+        model_name = str(payload.get("opencode_model") or model_name)
+    elif backend == "Kilo Gateway":
+        model_name = str(payload.get("kilo_model") or model_name)
+    elif backend == "Ollama":
+        model_name = str(payload.get("ollama_model") or model_name)
+        base_url = str(payload.get("ollama_url") or "") or None
+    elif backend == "LM Studio":
+        model_name = str(payload.get("lmstudio_model") or model_name)
+        base_url = str(payload.get("lmstudio_url") or "") or None
+    else:
+        model_name = str(payload.get("custom_model") or model_name)
+        base_url = str(payload.get("custom_url") or "") or None
+    checkpoint_path = str(payload.get("checkpoint_path") or "")
+    api_variant = str(payload.get("api_variant") or "")
+    reasoning = payload.get("kilo_reasoning_enabled", False)
+    if not isinstance(reasoning, bool):
+        raise ValueError("invalid reasoning setting")
+    return {
+        "backend": backend,
+        "model_name": model_name,
+        "base_url": base_url,
+        "checkpoint_path": checkpoint_path,
+        "api_variant": api_variant,
+        "kilo_reasoning_enabled": reasoning,
+    }
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeDependencies:
@@ -101,19 +143,8 @@ def create_runtime_handlers() -> WorkerHandlers:
 
     def runtime_load(payload: dict[str, Any]) -> Mapping[str, Any]:
         runner = shared.core.runner
-        backend = payload.get("backend")
-        if backend not in ("llama.cpp", "OpenCode Zen", "Kilo Gateway"):
-            raise ValueError("unsupported runtime backend")
-        model_name = str(payload.get("model") or "")
-        if backend == "OpenCode Zen":
-            model_name = str(payload.get("opencode_model") or model_name)
-        elif backend == "Kilo Gateway":
-            model_name = str(payload.get("kilo_model") or model_name)
-        checkpoint_path = str(payload.get("checkpoint_path") or "")
-        api_variant = str(payload.get("api_variant") or "")
-        reasoning = payload.get("kilo_reasoning_enabled", False)
-        if not isinstance(reasoning, bool):
-            raise ValueError("invalid reasoning setting")
+        params = _runtime_load_params(payload)
+        backend = params["backend"]
 
         with _RUNTIME_TRANSITION_LOCK:
             previous = {
@@ -128,13 +159,16 @@ def create_runtime_handlers() -> WorkerHandlers:
                     api_key = shared.core.opencode_cred.get_key() or ""
                 elif backend == "Kilo Gateway":
                     api_key = shared.core.kilo_cred.get_key() or ""
+                elif backend == "Custom OpenAI":
+                    api_key = shared.core.custom_cred.get_key() or ""
                 runner.select_backend(backend)
                 message = runner.load(
-                    checkpoint_path=checkpoint_path,
+                    checkpoint_path=params["checkpoint_path"],
                     api_key=api_key,
-                    model_name=model_name,
-                    api_variant=api_variant,
-                    kilo_reasoning_enabled=reasoning,
+                    model_name=params["model_name"],
+                    api_variant=params["api_variant"],
+                    kilo_reasoning_enabled=params["kilo_reasoning_enabled"],
+                    base_url=params["base_url"],
                 )
                 return {
                     "status": "success",

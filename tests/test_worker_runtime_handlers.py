@@ -4,6 +4,8 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 
+import pytest
+
 import ru_runtime.memory.store
 from ru_runtime.vts.catalog import VtsCatalog, VtsCatalogEntry
 from ru_runtime.voice.stream import VoiceStreamEvent
@@ -427,6 +429,64 @@ def test_runtime_request_returns_binary_without_base64_expansion() -> None:
         "binary": True,
     }
     assert reply.binary == b"RIFF-wave"
+
+
+def test_runtime_load_params_maps_ollama_lmstudio_and_custom() -> None:
+    from ru_runtime.worker.v1.handlers import _runtime_load_params
+
+    ollama = _runtime_load_params(
+        {
+            "backend": "Ollama",
+            "ollama_model": "qwen3:8b",
+            "ollama_url": "http://127.0.0.1:11434/v1",
+        }
+    )
+    assert ollama["backend"] == "Ollama"
+    assert ollama["model_name"] == "qwen3:8b"
+    assert ollama["base_url"] == "http://127.0.0.1:11434/v1"
+
+    lmstudio = _runtime_load_params(
+        {
+            "backend": "LM Studio",
+            "lmstudio_model": "local-model",
+            "lmstudio_url": "http://127.0.0.1:1234/v1",
+        }
+    )
+    assert lmstudio["model_name"] == "local-model"
+    assert lmstudio["base_url"] == "http://127.0.0.1:1234/v1"
+
+    custom = _runtime_load_params(
+        {
+            "backend": "Custom OpenAI",
+            "custom_model": "my-model",
+            "custom_url": "http://localhost:9000/v1",
+        }
+    )
+    assert custom["model_name"] == "my-model"
+    assert custom["base_url"] == "http://localhost:9000/v1"
+
+    kilo = _runtime_load_params(
+        {"backend": "Kilo Gateway", "kilo_model": "kilo-auto/free"}
+    )
+    assert kilo["model_name"] == "kilo-auto/free"
+    assert kilo["base_url"] is None
+
+
+def test_runtime_load_params_rejects_retired_and_unknown_backends() -> None:
+    from ru_runtime.worker.v1.handlers import _runtime_load_params
+
+    for backend in ("llama.cpp", "gguf", "unknown"):
+        with pytest.raises(ValueError, match="unsupported runtime backend"):
+            _runtime_load_params({"backend": backend})
+
+
+def test_runtime_load_params_rejects_non_boolean_reasoning() -> None:
+    from ru_runtime.worker.v1.handlers import _runtime_load_params
+
+    with pytest.raises(ValueError, match="invalid reasoning setting"):
+        _runtime_load_params(
+            {"backend": "Ollama", "kilo_reasoning_enabled": "yes"}
+        )
 
 
 class FakeRunner:

@@ -91,6 +91,7 @@ namespace RuApp.Views
             KiloApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
             GeminiVisionKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
             CustomEndpointUrlBox.TextChanged += (_, __) => ScheduleAutoSave();
+            CustomApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
             ApiVariantComboBox.SelectionChanged += (_, __) => ScheduleAutoSave();
             TemperatureNumberBox.TextChanged += (_, __) => ScheduleAutoSave();
             TopKNumberBox.TextChanged += (_, __) => ScheduleAutoSave();
@@ -143,6 +144,10 @@ namespace RuApp.Views
                     ? "Đã lưu (để trống để giữ nguyên)"
                     : "AIza...";
                 CustomEndpointUrlBox.Text = settings.CustomUrl;
+                CustomApiKeyBox.Password = string.Empty;
+                CustomApiKeyBox.PlaceholderText = settings.HasCustomKey
+                    ? "Đã lưu (để trống để giữ nguyên)"
+                    : "sk-...";
 
                 foreach (ComboBoxItem item in ApiVariantComboBox.Items)
                 {
@@ -253,6 +258,7 @@ namespace RuApp.Views
             KiloApiRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
             KiloReasoningRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
             CustomEndpointRow.Visibility = (choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
+            CustomApiKeyRow.Visibility = (choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
 
             CloudMemoryRow.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
             ModelRow.Visibility = hasModels ? Visibility.Visible : Visibility.Collapsed;
@@ -327,6 +333,7 @@ namespace RuApp.Views
                     LmStudioModel = backend == "lmstudio" ? modelChoice : "default",
                     CustomModel = backend == "custom" ? modelChoice : "default",
                     CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
+                    CustomApiKey = CustomApiKeyBox.Password,
                     CheckpointPath = string.Empty,
                     Temperature = double.TryParse(TemperatureNumberBox.Text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double temp) ? temp : 0.7,
                     TopK = int.TryParse(TopKNumberBox.Text, out int topK) ? topK : 40,

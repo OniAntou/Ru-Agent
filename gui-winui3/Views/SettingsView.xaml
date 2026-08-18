@@ -229,8 +229,19 @@
                                     <TextBlock Text="⚡ Tính năng đang tạm dừng" FontSize="14" FontWeight="Bold" Foreground="{StaticResource AppWarningBrush}"/>
                                     <TextBlock Text="Mô hình vision cục bộ đã tạm gỡ khỏi active runtime do độ trễ cao. Structured observation/cloud reaction được giữ lại để nối lại khi có mô hình vision tối ưu mới." 
                                                Foreground="{StaticResource AppTextPrimaryBrush}" FontSize="13" TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </Border>
+                            <StackPanel x:Name="CustomApiKeyRow" Spacing="16" Visibility="Collapsed">
+                                <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock Text="Custom API Key" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                        <TextBlock Text="Khóa API lưu an toàn trong Windows Credential Manager (tùy chọn)" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                    </StackPanel>
+                                    <PasswordBox x:Name="CustomApiKeyBox" Grid.Column="1" PlaceholderText="sk-..." Width="300"
+                                                 CornerRadius="{StaticResource AppControlCornerRadius}"/>
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
 
                             <Grid x:Name="GeminiVisionRow" ColumnDefinitions="*,Auto">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0" Spacing="2">

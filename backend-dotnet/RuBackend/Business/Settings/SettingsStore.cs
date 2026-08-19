@@ -73,6 +73,10 @@ public sealed class SettingsStore : ISettingsStore
 
             persisted["backend"] = candidate.Backend;
             persisted["model"] = candidate.Model;
+            if (candidate.Model.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase))
+            {
+                persisted.Remove("model");
+            }
             persisted["opencode_model"] = candidate.OpenCodeModel;
             persisted["kilo_model"] = candidate.KiloModel;
             persisted["api_variant"] = candidate.ApiVariant;

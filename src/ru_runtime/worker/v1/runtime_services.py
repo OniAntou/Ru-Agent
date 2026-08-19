@@ -311,10 +311,16 @@ def effective_settings() -> dict:
     }
 
     backend = saved.get("backend", _DEFAULT_SETTINGS["backend"])
+    legacy_model = saved.get("model", "")
+    legacy_is_gguf = str(legacy_model).lower().endswith(".gguf")
     if backend == BACKEND_KILO and not merged.get("kilo_model"):
-        merged["kilo_model"] = saved.get("model", "")
+        merged["kilo_model"] = (
+            legacy_model if not legacy_is_gguf else _DEFAULT_SETTINGS["kilo_model"]
+        )
     elif backend == BACKEND_OPENCODE and not merged.get("opencode_model"):
-        merged["opencode_model"] = saved.get("model", "")
+        merged["opencode_model"] = (
+            legacy_model if not legacy_is_gguf else _DEFAULT_SETTINGS["opencode_model"]
+        )
 
     def bounded_number(key: str, lower: float, upper: float) -> None:
         value = merged.get(key)
@@ -370,10 +376,16 @@ def _effective_settings_unlocked() -> dict:
     }
 
     backend = saved.get("backend", _DEFAULT_SETTINGS["backend"])
+    legacy_model = saved.get("model", "")
+    legacy_is_gguf = str(legacy_model).lower().endswith(".gguf")
     if backend == BACKEND_KILO and not merged.get("kilo_model"):
-        merged["kilo_model"] = saved.get("model", "")
+        merged["kilo_model"] = (
+            legacy_model if not legacy_is_gguf else _DEFAULT_SETTINGS["kilo_model"]
+        )
     elif backend == BACKEND_OPENCODE and not merged.get("opencode_model"):
-        merged["opencode_model"] = saved.get("model", "")
+        merged["opencode_model"] = (
+            legacy_model if not legacy_is_gguf else _DEFAULT_SETTINGS["opencode_model"]
+        )
 
     def bounded_number(key: str, lower: float, upper: float) -> None:
         value = merged.get(key)

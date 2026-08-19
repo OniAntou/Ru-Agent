@@ -201,6 +201,21 @@ def test_apply_saved_settings_loads_custom_key_for_custom_backend(
     assert result == "Ready"
 
 
+def test_effective_settings_never_inherits_a_retired_gguf_model(
+    monkeypatch, tmp_path
+) -> None:
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(
+        '{"backend": "OpenCode Zen", "model": "LFM2.5-2.6B-Q4_K_M.gguf", "opencode_model": ""}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(shared, "SETTINGS_FILE", settings_file)
+
+    merged = shared.effective_settings()
+
+    assert merged["opencode_model"] == "deepseek-v4-flash-free"
+
+
 def test_malformed_runtime_json_returns_bounded_422() -> None:
     response = dispatch_runtime_request(
         "POST",

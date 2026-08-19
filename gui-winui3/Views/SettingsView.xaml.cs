@@ -167,6 +167,15 @@ namespace RuApp.Views
                 CloudMemoryConsentToggle.IsOn = settings.CloudMemoryConsent;
                 KiloReasoningToggle.IsOn = settings.KiloReasoningEnabled;
 
+                var obsStatus = await _apiService.GetObservationStatusAsync();
+                if (obsStatus != null)
+                {
+                    ScreenObserverToggle.IsOn = obsStatus.Active;
+                    ScreenObserverStatusText.Text = obsStatus.Active
+                        ? "Trạng thái: Đang hoạt động (Mỗi 1s · Real-time)"
+                        : "Trạng thái: Đang tắt";
+                }
+
                 await LoadModelsForBackendAsync(settings.BackendChoice, settings, settings.OpenCodeModel, settings.KiloModel);
                 UpdateVisibilityForBackend(settings.BackendChoice);
             }
@@ -566,6 +575,32 @@ namespace RuApp.Views
                 case PendingVtsControl.Sensitivity:
                     await _apiService.SaveMouseLookAsync(MouseLookToggle.IsOn, MouseSensitivitySlider.Value / 100.0);
                     break;
+            }
+        }
+
+        private async void OnScreenObserverToggled(object sender, RoutedEventArgs e)
+        {
+            if (_loading || _apiService == null) return;
+            bool isOn = ScreenObserverToggle.IsOn;
+            ScreenObserverStatusText.Text = isOn
+                ? "Đang khởi động..."
+                : "Đang tạm dừng...";
+
+            if (isOn)
+            {
+                bool success = await _apiService.StartObservationAsync(1.0);
+                ScreenObserverStatusText.Text = success
+                    ? "Trạng thái: Đang hoạt động (Mỗi 1s · Real-time)"
+                    : "Trạng thái: Lỗi khởi động (Kiểm tra API Key)";
+                if (!success)
+                {
+                    ScreenObserverToggle.IsOn = false;
+                }
+            }
+            else
+            {
+                await _apiService.StopObservationAsync();
+                ScreenObserverStatusText.Text = "Trạng thái: Đang tắt";
             }
         }
     }

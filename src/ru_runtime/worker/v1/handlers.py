@@ -89,6 +89,8 @@ def _runtime_load_params(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+from ru_runtime.vts.emotion import extract_reply_emotion
+
 @dataclass(frozen=True, slots=True)
 class RuntimeDependencies:
     runner: RuntimeRunner
@@ -100,6 +102,7 @@ class RuntimeDependencies:
     vts_manager: VtsManagerFactory | None = None
     runtime_load: RuntimeLoader | None = None
     runtime_request: RuntimeRequest | None = None
+    mood_tracker: Any = None
 
 
 def build_runtime_handlers(dependencies: RuntimeDependencies) -> WorkerHandlers:
@@ -195,6 +198,7 @@ def create_runtime_handlers() -> WorkerHandlers:
             vts_manager=shared._vts_manager,
             runtime_load=runtime_load,
             runtime_request=runtime_request,
+            mood_tracker=getattr(shared.core, "mood_tracker", None),
         )
     )
 
@@ -230,6 +234,10 @@ async def _chat_handler(
         try:
             with dependencies.turn_locks():
                 with dependencies.generation_scope():
+                    mood_context = None
+                    if dependencies.mood_tracker is not None:
+                        dependencies.mood_tracker.observe_user_input(request.prompt)
+                        mood_context = dependencies.mood_tracker.state.describe_for_prompt()
                     raw_reply = dependencies.runner.generate_reply(
                         prompt=request.prompt,
                         max_new_tokens=request.max_tokens,
@@ -238,11 +246,15 @@ async def _chat_handler(
                         allow_web_search=request.allow_web_search,
                         turns_history=request.turns,
                         memory_context=request.memory_context,
+                        mood_context=mood_context,
                         on_stream_delta=on_stream_delta,
                         on_stream_reset=on_stream_reset,
                         vts_instruction=request.vts_instruction,
                         is_cancelled=cancelled.is_set,
                     )
+                    if dependencies.mood_tracker is not None:
+                        _, emotion = extract_reply_emotion(raw_reply)
+                        dependencies.mood_tracker.update_from_reply_emotion(emotion)
             if not isinstance(raw_reply, str):
                 raise TypeError("model reply must be text")
             publish(WorkerReply(CHAT_DONE, {"raw_reply": raw_reply}))

@@ -108,7 +108,10 @@ def voice_tts(payload: object) -> dict[str, str] | RuntimeHttpResponse:
         ),
         pace=shared.voice_pace_for(text),
     )
+    from ru_runtime.voice.vietnamese_tts_normalizer import normalize_vietnamese_tts_text
+
     text = shared._strip_voice_markers(text)
+    text = normalize_vietnamese_tts_text(text)
     try:
         if shared._TURN_LOCK.locked() and not _hosted_chat_is_active(shared):
             return {

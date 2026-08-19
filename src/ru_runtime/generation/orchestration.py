@@ -4,29 +4,57 @@ import re
 import logging
 from collections.abc import Callable, Sequence
 
+from ru_runtime.policy.text import strip_emojis_and_emoticons
 from .chat import ChatTurn
 from .context import build_conversation_messages
 from .search import perform_web_search
 
 logger = logging.getLogger(__name__)
 
-_SEARCH_MARKER = re.compile(r"\[SEARCH:\s*(.*?)\]")
+_SEARCH_MARKER = re.compile(r"\[SEARCH:\s*(.*?)\]", re.IGNORECASE)
+_APP_OPEN_MARKER = re.compile(r"\[APP_OPEN:\s*(.*?)\]", re.IGNORECASE)
+_VOLUME_MARKER = re.compile(r"\[VOLUME:\s*(.*?)\]", re.IGNORECASE)
 _MAX_SEARCH_RESULT_LENGTH = 2000
 _MAX_SEARCH_CONTENT_LENGTH = 8000
 
 
 def _strip_search_marker(text: str) -> str:
-    return _SEARCH_MARKER.sub("", text).strip()
+    cleaned = _SEARCH_MARKER.sub("", text)
+    cleaned = _APP_OPEN_MARKER.sub("", cleaned)
+    cleaned = _VOLUME_MARKER.sub("", cleaned)
+    return cleaned.strip()
+
+
+def _execute_pc_tool_markers(text: str) -> str:
+    try:
+        from ru_runtime.system.pc_tools import open_application_or_url, adjust_system_volume
+
+        app_matches = _APP_OPEN_MARKER.findall(text)
+        for target in app_matches:
+            target = target.strip()
+            if target:
+                open_application_or_url(target)
+
+        vol_matches = _VOLUME_MARKER.findall(text)
+        for action in vol_matches:
+            action = action.strip()
+            if action:
+                adjust_system_volume(action)
+    except Exception as exc:
+        logger.warning("Failed executing PC tool markers: %s", exc)
+
+    cleaned = _APP_OPEN_MARKER.sub("", text)
+    cleaned = _VOLUME_MARKER.sub("", cleaned)
+    return cleaned.strip()
 
 
 def _sanitize_search_results(results: str | None) -> str:
-    # Untrusted web content: drop HTML tags and nested search markers so the
-    # model cannot be steered by injected markup, then bound the context
-    # budget per result and in total.
     if results is None:
         results = "None"
     text = re.sub(r"<[^>]+>", " ", results)
-    text = re.sub(r"\[SEARCH:[^\]]*\]", "", text)
+    text = re.sub(r"\[SEARCH:[^\]]*\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\[APP_OPEN:[^\]]*\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\[VOLUME:[^\]]*\]", "", text, flags=re.IGNORECASE)
     limited = []
     for block in text.split("\n\n"):
         block = re.sub(r"\s+", " ", block).strip()
@@ -51,6 +79,7 @@ def execute_reply(
     top_k: int,
     turns_history: Sequence[ChatTurn] = (),
     memory_context: str | None = None,
+    mood_context: str | None = None,
     allow_web_search: bool = False,
     web_search: Callable[[str], str] = perform_web_search,
     on_stream_delta: Callable[[str], None] | None = None,
@@ -63,6 +92,7 @@ def execute_reply(
         prompt,
         turns_history,
         memory_context=memory_context,
+        mood_context=mood_context,
     )
     response = generate(
         messages,
@@ -74,23 +104,25 @@ def execute_reply(
         on_complete_timing=on_complete_timing,
         is_cancelled=is_cancelled,
     )
+    
+    # Execute any PC tools (App open, Volume)
+    response = _execute_pc_tool_markers(response)
+
     search_match = _SEARCH_MARKER.search(response)
     if not allow_web_search:
         if search_match is not None:
-            # Do not surface the raw marker to the user when search is off.
             logger.warning("Model requested a web search but web search is disabled; stripping the marker")
             cleaned = _strip_search_marker(response)
             if cleaned:
-                return cleaned
-        return response
+                return strip_emojis_and_emoticons(cleaned)
+        return strip_emojis_and_emoticons(response)
     if search_match is None:
-        return response
+        return strip_emojis_and_emoticons(response)
 
     query = search_match.group(1).strip()
     if not query:
-        # Never surface a dangling search marker when the model left it empty.
         cleaned = _strip_search_marker(response)
-        return cleaned if cleaned else response
+        return strip_emojis_and_emoticons(cleaned) if cleaned else strip_emojis_and_emoticons(response)
     try:
         search_results = web_search(query)
     except Exception as exc:
@@ -102,7 +134,7 @@ def execute_reply(
     if on_stream_reset is not None:
         on_stream_reset()
     try:
-        return generate(
+        grounded_response = generate(
             grounded_messages,
             max_new_tokens,
             temperature,
@@ -112,9 +144,9 @@ def execute_reply(
             on_complete_timing=on_complete_timing,
             is_cancelled=is_cancelled,
         )
+        grounded_response = _execute_pc_tool_markers(grounded_response)
+        return strip_emojis_and_emoticons(grounded_response)
     except Exception as error:
-        # The grounded follow-up already streamed nothing; fall back to the
-        # initial response instead of losing the whole turn.
-        logger.warning("Grounded follow-up generation failed; returning the initial response: %s", error)
+        logger.warning("Grounded follow-up failed: %s", error)
         fallback = _strip_search_marker(response)
-        return fallback if fallback else response
+        return strip_emojis_and_emoticons(fallback) if fallback else strip_emojis_and_emoticons(response)

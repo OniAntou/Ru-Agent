@@ -42,7 +42,7 @@ namespace RuApp.Views
         }
     }
 
-    public sealed partial class ChatView : UserControl
+    public sealed partial class ChatView : UserControl, IDisposable
     {
         private const string VtsMarkerPattern = @"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]";
         private const double InputMaxWidth = 1200;
@@ -62,6 +62,7 @@ namespace RuApp.Views
             ChatListView.ItemsSource = Messages;
             Messages.CollectionChanged += (s, e) => UpdateViewMode();
             RootGrid.SizeChanged += OnRootGridSizeChanged;
+            this.Loaded += (s, e) => ApplyInputWidth();
             UpdateViewMode();
         }
 
@@ -264,7 +265,24 @@ namespace RuApp.Views
 
         private void ApplyInputWidth()
         {
-            // Co giãn tự nhiên theo XAML MaxWidth="900" và Margin đệm hai bên
+            if (RootGrid == null || RootGrid.ActualWidth <= 0) return;
+
+            double targetWidth = Math.Max(280, Math.Min(900, RootGrid.ActualWidth - 64));
+
+            if (InputBorder != null)
+            {
+                InputBorder.Width = targetWidth;
+            }
+
+            if (ChatContentGrid != null)
+            {
+                ChatContentGrid.Width = targetWidth;
+            }
+
+            if (ChatListView != null)
+            {
+                ChatListView.Width = targetWidth;
+            }
         }
 
         private void ScrollChatToBottom()
@@ -526,6 +544,22 @@ namespace RuApp.Views
             }
             MicIcon.Glyph = "\uE7C7";
             MicButton.Background = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+        }
+
+        public void Dispose()
+        {
+            if (_wsClient != null)
+            {
+                _wsClient.OnDeltaReceived -= OnWsDeltaReceived;
+                _wsClient.OnDoneReceived -= OnWsDoneReceived;
+                _wsClient.OnErrorReceived -= OnWsErrorReceived;
+                _wsClient.OnSessionReceived -= OnWsSessionReceived;
+                _wsClient.OnResetReceived -= OnWsResetReceived;
+                _wsClient.OnConnected -= OnWsConnected;
+            }
+            _typingDebounce?.Stop();
+            _typingDebounce = null;
+            _micRecorder.Dispose();
         }
     }
 }

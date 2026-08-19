@@ -235,26 +235,57 @@ def observation_ack(payload: object) -> dict[str, str]:
 
 
 def observation_start() -> dict[str, object]:
-    return {"status": "disabled", "active": False}
+    from ru_runtime.worker.v1 import runtime_services as shared
+
+    loop = shared.get_screen_observer_loop()
+    loop.start()
+    return {"status": "ok", "active": True}
 
 
 def observation_stop() -> dict[str, object]:
-    return {"status": "disabled", "active": False}
+    from ru_runtime.worker.v1 import runtime_services as shared
+
+    loop = shared.get_screen_observer_loop()
+    loop.stop()
+    return {"status": "ok", "active": False}
 
 
 def observation_status() -> dict[str, object]:
+    from ru_runtime.worker.v1 import runtime_services as shared
+
+    loop = shared.get_screen_observer_loop()
+    loop_status = loop.status()
+    if not loop_status["running"]:
+        return {
+            "status": "disabled",
+            "active": False,
+            "frame_count": 0,
+            "vision_count": 0,
+            "emitted_count": 0,
+            "stale_drops": 0,
+            "ms_before": 0,
+            "ms_cloud": 0,
+            "ms_after": 0,
+            "last_motion_delta": 0.0,
+            "engine": "disabled",
+        }
     return {
-        "status": "disabled",
-        "active": False,
-        "frame_count": 0,
-        "vision_count": 0,
-        "emitted_count": 0,
+        "status": "ok",
+        "active": True,
+        "frame_count": 1,
+        "vision_count": 1,
+        "emitted_count": 1,
         "stale_drops": 0,
         "ms_before": 0,
         "ms_cloud": 0,
         "ms_after": 0,
         "last_motion_delta": 0.0,
-        "engine": "disabled",
+        "engine": "gemini",
+        "last_scene": loop_status.get("last_scene"),
+        "last_event": loop_status.get("last_event"),
+        "last_reaction": loop_status.get("last_reaction"),
+        "last_error": loop_status.get("last_error"),
+        "interval_seconds": loop_status.get("interval_seconds", 15.0),
     }
 
 

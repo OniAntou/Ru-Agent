@@ -178,6 +178,9 @@ def _generate_source_audio(
     *,
     timing: Callable[[str, float], None] | None = None,
 ):
+    from ru_runtime.voice.vietnamese_tts_normalizer import normalize_vietnamese_tts_text
+
+    text = normalize_vietnamese_tts_text(text)
     warmup_started = perf_counter()
     warm_model(profile)
     if timing is not None:

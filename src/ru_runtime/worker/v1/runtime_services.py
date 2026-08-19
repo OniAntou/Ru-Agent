@@ -197,6 +197,15 @@ _MEMORY_THREAD: threading.Thread | None = None
 
 _SCREEN_REACTIONS = ReactionCoordinator()
 _PENDING_REACTION_TEXT: dict[str, tuple[str, float]] = {}
+_SCREEN_OBSERVER_LOOP = None
+
+def get_screen_observer_loop():
+    global _SCREEN_OBSERVER_LOOP
+    if _SCREEN_OBSERVER_LOOP is None:
+        import sys
+        from ru_runtime.observation.observer_loop import ScreenObserverLoop
+        _SCREEN_OBSERVER_LOOP = ScreenObserverLoop(sys.modules[__name__])
+    return _SCREEN_OBSERVER_LOOP
 
 _VTS_MANAGER: VTSManager | None = None
 _VTS_THREAD: threading.Thread | None = None

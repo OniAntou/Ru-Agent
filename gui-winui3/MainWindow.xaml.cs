@@ -20,6 +20,9 @@ namespace RuApp
         private ChatWebSocketClient? _wsClient;
         private VoicePlaybackService? _voicePlayback;
         private SubtitleOverlayService? _subtitleOverlay;
+        private SubtitlePresenter? _subtitlePresenter;
+        private DispatcherTimer? _observationTimer;
+        private string? _lastSeenReactionText;
 
         private ChatView? _chatView;
         private VoiceView? _voiceView;
@@ -127,9 +130,9 @@ namespace RuApp
                 _voicePlayback = new VoicePlaybackService(_apiService);
                 var subtitleWindow = new Views.SubtitleOverlayWindow();
                 var subtitleTracker = new Services.VtsWindowTracker(new Services.VtsWindowLocator());
-                var subtitlePresenter = new Services.SubtitlePresenter();
-                _subtitleOverlay = new Services.SubtitleOverlayService(subtitleWindow, subtitleTracker, subtitlePresenter);
-                _voicePlayback.ConfigureSubtitles(subtitlePresenter);
+                _subtitlePresenter = new Services.SubtitlePresenter();
+                _subtitleOverlay = new Services.SubtitleOverlayService(subtitleWindow, subtitleTracker, _subtitlePresenter);
+                _voicePlayback.ConfigureSubtitles(_subtitlePresenter);
 
                 await _voicePlayback.RefreshSettingsAsync();
                 var voiceStatus = await _apiService.GetVoiceStatusAsync();
@@ -171,6 +174,10 @@ namespace RuApp
                 _sessionsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
                 _sessionsTimer.Tick += OnSessionsTimerTick;
                 _sessionsTimer.Start();
+
+                _observationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                _observationTimer.Tick += OnObservationTimerTick;
+                _observationTimer.Start();
             }
             else
             {
@@ -251,10 +258,13 @@ namespace RuApp
         private async void OnWindowClosed(object sender, WindowEventArgs args)
         {
             _sessionsTimer?.Stop();
+            _observationTimer?.Stop();
+            _chatView?.Dispose();
             _settingsView?.Dispose();
             _voiceView?.Dispose();
             _logView?.Dispose();
             _subtitleOverlay?.Dispose();
+            _subtitlePresenter?.Dispose();
             if (_voicePlayback != null)
             {
                 try
@@ -349,6 +359,32 @@ namespace RuApp
             try
             {
                 await UpdateHealthStatusAsync();
+            }
+            catch { }
+        }
+
+        private async void OnObservationTimerTick(object? sender, object e)
+        {
+            if (_apiService == null || _subtitlePresenter == null) return;
+            try
+            {
+                var status = await _apiService.GetObservationStatusAsync();
+                if (status != null && status.Active && !string.IsNullOrWhiteSpace(status.LastReaction))
+                {
+                    if (!string.Equals(_lastSeenReactionText, status.LastReaction, StringComparison.Ordinal))
+                    {
+                        _lastSeenReactionText = status.LastReaction;
+                        string segId = Guid.NewGuid().ToString("N");
+                        _subtitlePresenter.BeginSegment(segId, status.LastReaction);
+                        _ = Task.Delay(4500).ContinueWith(_ =>
+                        {
+                            DispatcherQueue?.TryEnqueue(() =>
+                            {
+                                _subtitlePresenter.EndSegment(segId);
+                            });
+                        });
+                    }
+                }
             }
             catch { }
         }

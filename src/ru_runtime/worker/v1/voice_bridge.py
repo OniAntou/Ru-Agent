@@ -82,10 +82,13 @@ class RuntimeVoiceBridge:
             coordinator.cancel(request_id)
 
         watcher = asyncio.create_task(watch_cancellation())
+        from ru_runtime.voice.vietnamese_tts_normalizer import normalize_vietnamese_tts_text
+
+        cleaned_text = normalize_vietnamese_tts_text(self._shared._strip_voice_markers(text))
         try:
             async for event in coordinator.start(
                 request_id=request_id,
-                text=self._shared._strip_voice_markers(text),
+                text=cleaned_text,
                 voice_label=voice_label,
                 speed=speed,
                 voice_style_id=style.id,

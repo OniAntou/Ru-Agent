@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unicodedata
 
 _PRIVATE_STREAM_MARKERS = ("[[vts:", "[[voice_pace:", "[search:")
@@ -42,3 +43,21 @@ def safe_streamed_text(text: str) -> str:
             if folded.endswith(marker[:length]):
                 hold = max(hold, length)
     return text[:-hold] if hold else text
+
+
+_EMOJI_PATTERN = re.compile(
+    r"[\U00010000-\U0010ffff]|[\u2600-\u27bf]|[\u2300-\u23ff]|[\u2b50-\u2b55]|[\u3030\u303d]|[\u2194-\u2199]|[\u21a9-\u21aa]|[\ufe0f]|[\u200d]",
+    re.UNICODE,
+)
+
+_ASCII_EMOTICON_PATTERN = re.compile(
+    r"(?<!\w)(?::\)|:\(|:D|:P|:p|:3|:o|:O|;\)|;D|<3|\^\^|\^_\^|>_<|><|T_T|T-T|;-;|;_;|uwu|owo|UwU|OwO)(?!\w)",
+    re.IGNORECASE,
+)
+
+
+def strip_emojis_and_emoticons(text: str) -> str:
+    """Strip all Unicode emojis and common ASCII emoticons for strict voice and chat cleanliness."""
+    without_emojis = _EMOJI_PATTERN.sub("", text)
+    without_emoticons = _ASCII_EMOTICON_PATTERN.sub("", without_emojis)
+    return re.sub(r"[ \t]+", " ", without_emoticons).strip()

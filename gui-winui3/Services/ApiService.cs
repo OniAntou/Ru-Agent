@@ -601,6 +601,47 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
         }
 
+        public async Task<ObservationStatusDto?> GetObservationStatusAsync()
+        {
+            try
+            {
+                return await _httpClient.GetFromJsonAsync<ObservationStatusDto>($"{_baseUrl}/observation/status");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] GetObservationStatusAsync failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task<bool> StartObservationAsync(double intervalSeconds = 15.0)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/observation/start", new { interval_seconds = intervalSeconds });
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] StartObservationAsync failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<bool> StopObservationAsync()
+        {
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/observation/stop", new { });
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] StopObservationAsync failed: {ex.Message}");
+                return false;
+            }
+        }
+
         public void Dispose()
         {
             _httpClient.Dispose();

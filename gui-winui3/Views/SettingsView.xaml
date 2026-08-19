@@ -233,21 +233,31 @@
                         <StackPanel Spacing="20">
                             <StackPanel Orientation="Horizontal" Spacing="10">
                                 <FontIcon Glyph="&#xE7B3;" FontSize="18" Foreground="{StaticResource AppAccentHoverBrush}" VerticalAlignment="Center"/>
-                                <TextBlock Text="Nhận thức Màn hình (Screen Observer)" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Nhận thức Màn hình (Gemini Flash Live Observer)" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
 
-                            <Border Background="{StaticResource AppWarningBrush}" Opacity="0.15" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16">
+                            <Border Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="{StaticResource AppAccentBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16">
                                 <StackPanel Spacing="6">
-                                    <TextBlock Text="⚡ Tính năng đang tạm dừng" FontSize="14" FontWeight="Bold" Foreground="{StaticResource AppWarningBrush}"/>
-                                    <TextBlock Text="Mô hình vision cục bộ đã tạm gỡ khỏi active runtime do độ trễ cao. Structured observation/cloud reaction được giữ lại để nối lại khi có mô hình vision tối ưu mới." 
+                                    <TextBlock Text="✨ Gemini Flash Vision Live Observer" FontSize="14" FontWeight="Bold" Foreground="{StaticResource AppAccentHoverBrush}"/>
+                                    <TextBlock Text="Ru sẽ tự động quan sát màn hình của anh qua Gemini Flash Vision, hiểu ngữ cảnh anh đang làm gì (lập trình, xem video, chơi game...) để tự nhiên bắt chuyện hoặc trêu anh." 
                                                Foreground="{StaticResource AppTextPrimaryBrush}" FontSize="13" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Border>
 
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0" Spacing="2">
+                                    <TextBlock Text="Bật Nhận thức Màn hình (Live Screen Observer)" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                    <TextBlock x:Name="ScreenObserverStatusText" Text="Trạng thái: Đang tắt" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="12.5"/>
+                                </StackPanel>
+                                <ToggleSwitch x:Name="ScreenObserverToggle" Grid.Column="1" Toggled="OnScreenObserverToggled"/>
+                            </Grid>
+
+                            <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+
                             <Grid x:Name="GeminiVisionRow" ColumnDefinitions="*,Auto">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0" Spacing="2">
                                     <TextBlock Text="Gemini Vision API Key" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                                    <TextBlock Text="Dùng cho Gemini Live Screen Observation. Lấy key tại aistudio.google.com" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="12.5"/>
+                                    <TextBlock Text="Dùng cho Gemini Flash Screen Observation. Lấy key miễn phí tại aistudio.google.com" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="12.5"/>
                                 </StackPanel>
                                 <PasswordBox x:Name="GeminiVisionKeyBox" Grid.Column="1" PlaceholderText="AIza..." Width="300"
                                              CornerRadius="{StaticResource AppControlCornerRadius}"/>

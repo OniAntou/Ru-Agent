@@ -13,35 +13,41 @@
             <converters:ErrorColorConverter x:Key="ErrorColorConverter" />
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
 
-            <!-- Rich Platinum Charcoal & Titanium Slate Palette (Elegance, Comfort & Clear Contrast) -->
-            <SolidColorBrush x:Key="AppSurfaceBrush" Color="#13151C" />
-            <SolidColorBrush x:Key="AppSidebarBackgroundBrush" Color="#181A23" />
-            <SolidColorBrush x:Key="AppSidebarBorderBrush" Color="#252836" />
-            <SolidColorBrush x:Key="AppCardBackgroundBrush" Color="#1E212C" />
-            <SolidColorBrush x:Key="AppCardBackgroundHoverBrush" Color="#272B39" />
-            <SolidColorBrush x:Key="AppCardBorderBrush" Color="#2E3446" />
-            <SolidColorBrush x:Key="AppCardBorderSubtleBrush" Color="#232735" />
+            <!-- Minimalist Matte Slate & Obsidian Palette (Clean, Elegant, Zero Neon) -->
+            <SolidColorBrush x:Key="AppSurfaceBrush" Color="#0D0E12" />
+            <SolidColorBrush x:Key="AppSidebarBackgroundBrush" Color="#12141B" />
+            <SolidColorBrush x:Key="AppSidebarBorderBrush" Color="#1D202A" />
+            <SolidColorBrush x:Key="AppCardBackgroundBrush" Color="#171923" />
+            <SolidColorBrush x:Key="AppCardBackgroundHoverBrush" Color="#1E222E" />
+            <SolidColorBrush x:Key="AppCardBorderBrush" Color="#242836" />
+            <SolidColorBrush x:Key="AppCardBorderSubtleBrush" Color="#1B1E28" />
+            <SolidColorBrush x:Key="AppCardBorderHighlightBrush" Color="#2E3446" />
             
-            <!-- Titanium Cobalt & Platinum Accent -->
-            <SolidColorBrush x:Key="AppAccentBrush" Color="#4361EE" />
-            <SolidColorBrush x:Key="AppAccentHoverBrush" Color="#5C7CFA" />
-            <SolidColorBrush x:Key="AppAccentSubtleBrush" Color="#1A223E" />
+            <!-- Refined Matte Accents (No Neon) -->
+            <SolidColorBrush x:Key="AppAccentBrush" Color="#4F6BFF" />
+            <SolidColorBrush x:Key="AppAccentHoverBrush" Color="#6881FF" />
+            <SolidColorBrush x:Key="AppAccentSubtleBrush" Color="#1A1D2D" />
+            <SolidColorBrush x:Key="AppAccentGlowBrush" Color="#8FA2FF" />
+            <SolidColorBrush x:Key="AppSecondaryAccentBrush" Color="#64748B" />
+            <SolidColorBrush x:Key="AppSecondaryAccentSubtleBrush" Color="#181B24" />
             
-            <!-- Crisp Platinum & Silver Typography -->
-            <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#FFFFFF" />
-            <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#A4ABC1" />
-            <SolidColorBrush x:Key="AppTextTertiaryBrush" Color="#6C748C" />
+            <!-- Crisp Platinum & Slate Typography -->
+            <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#F8FAFC" />
+            <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#94A3B8" />
+            <SolidColorBrush x:Key="AppTextTertiaryBrush" Color="#64748B" />
             
             <!-- Status Indicators (Emerald, Amber, Rose) -->
             <SolidColorBrush x:Key="AppSuccessBrush" Color="#10B981" />
+            <SolidColorBrush x:Key="AppSuccessSubtleBrush" Color="#132E24" />
             <SolidColorBrush x:Key="AppWarningBrush" Color="#F59E0B" />
-            <SolidColorBrush x:Key="AppDangerBrush" Color="#F43F5E" />
-            <SolidColorBrush x:Key="AppDangerSubtleBrush" Color="#2A1519" />
+            <SolidColorBrush x:Key="AppWarningSubtleBrush" Color="#302312" />
+            <SolidColorBrush x:Key="AppDangerBrush" Color="#EF4444" />
+            <SolidColorBrush x:Key="AppDangerSubtleBrush" Color="#2B1417" />
 
             <!-- CornerRadius Design Tokens -->
-            <CornerRadius x:Key="AppCardCornerRadius">12</CornerRadius>
-            <CornerRadius x:Key="AppControlCornerRadius">8</CornerRadius>
-            <CornerRadius x:Key="AppPillCornerRadius">26</CornerRadius>
+            <CornerRadius x:Key="AppCardCornerRadius">14</CornerRadius>
+            <CornerRadius x:Key="AppControlCornerRadius">9</CornerRadius>
+            <CornerRadius x:Key="AppPillCornerRadius">24</CornerRadius>
 
             <!-- Card Border Style -->
             <Style x:Key="FluentCardStyle" TargetType="Border">

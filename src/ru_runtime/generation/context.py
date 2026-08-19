@@ -22,12 +22,26 @@ def build_conversation_messages(
     turns: Sequence[ChatTurn],
     *,
     memory_context: str | None = None,
+    mood_context: str | None = None,
+    system_clock_context: str | None = None,
+    system_hardware_context: str | None = None,
     max_history_chars: int = 12_000,
 ) -> tuple[tuple[str, str], ...]:
     if max_history_chars < 0:
         raise ValueError("max history chars cannot be negative")
 
+    from ru_runtime.system.pc_tools import get_realtime_clock_context, describe_pc_hardware_for_prompt
+
+    clock_info = system_clock_context if system_clock_context is not None else get_realtime_clock_context()
+    hw_info = system_hardware_context if system_hardware_context is not None else describe_pc_hardware_for_prompt()
+
     messages: list[tuple[str, str]] = [("system", system_prompt)]
+    if clock_info or hw_info:
+        sys_info_block = "\n".join(filter(None, [clock_info, hw_info]))
+        if sys_info_block:
+            messages.append(("system", sys_info_block))
+    if mood_context:
+        messages.append(("system", f"Chỉ dẫn tâm trạng:\n{mood_context}"))
     if memory_context:
         messages.append(
             (

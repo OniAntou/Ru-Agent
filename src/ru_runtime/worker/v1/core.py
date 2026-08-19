@@ -5,6 +5,7 @@ from pathlib import Path
 from ru_runtime.generation.runner import BACKEND_KILO, BACKEND_OPENCODE, ModelRunner
 from ru_runtime.memory.store import StructuredMemoryStore, MemoryStore
 from ru_runtime.persistence.credential_store import CredentialStore
+from ru_runtime.vts.emotion import MoodTracker, extract_reply_emotion
 
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -18,6 +19,7 @@ MEMORY_DATA_ROOT = (
 class RuRuntimeCore:
     def __init__(self):
         self.runner = ModelRunner()
+        self.mood_tracker = MoodTracker()
         self.memory_index_path = MEMORY_DATA_ROOT / "memory_index.faiss"
         self.memory_texts_path = MEMORY_DATA_ROOT / "memory_texts.json"
         self.memory_db_path = MEMORY_DATA_ROOT / "memory.db"
@@ -72,9 +74,6 @@ class RuRuntimeCore:
                 store = self.get_memory_store()
                 store.remember_turn(prompt, reply)
             except Exception as error:
-                # Rebuild once after a transient store failure. Holding the
-                # core lock prevents clear_memory or another writer from
-                # closing a newly-created store during this retry.
                 logger.warning("Memory write failed (%s); retrying with a fresh store", error)
                 if self.memory_store is not None:
                     try:
@@ -106,15 +105,23 @@ class RuRuntimeCore:
                 records = store.retrieve(prompt)
                 context = store.render_context(records)
 
-        return self.runner.generate_reply(
+        self.mood_tracker.observe_user_input(prompt)
+        mood_desc = self.mood_tracker.state.describe_for_prompt()
+
+        reply = self.runner.generate_reply(
             prompt=prompt,
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             top_k=top_k,
             memory_context=context,
+            mood_context=mood_desc,
             allow_web_search=allow_web_search,
             turns_history=turns_history or (),
             on_stream_delta=on_stream_delta,
             on_stream_reset=on_stream_reset,
             vts_instruction=vts_instruction,
         )
+
+        _, emotion = extract_reply_emotion(reply)
+        self.mood_tracker.update_from_reply_emotion(emotion)
+        return reply

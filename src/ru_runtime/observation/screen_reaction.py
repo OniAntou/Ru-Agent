@@ -49,6 +49,7 @@ class VisionObservation:
     novelty: float
     comment_worthiness: float
     visible_text: tuple[str, ...] = ()
+    reaction: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

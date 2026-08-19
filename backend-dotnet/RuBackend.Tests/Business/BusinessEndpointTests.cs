@@ -227,6 +227,33 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task PostSettings_without_a_url_preserves_the_hand_edited_backend_url()
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(
+            data.Paths.SettingsFile,
+            "{\"backend\":\"ollama\",\"ollama_model\":\"qwen3:8b\",\"ollama_url\":\"http://10.0.0.5:11434/v1\"}");
+        var runtime = new FakeRuntimeSettingsLoader();
+        using var factory = CreateAspNetFactory(
+            data.Paths,
+            runtimeLoader: runtime);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/settings",
+            new
+            {
+                backend_choice = "ollama",
+                ollama_model = "qwen3:8b",
+                max_new_tokens = 192,
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var loaded = Assert.Single(runtime.Candidates);
+        Assert.Equal("http://10.0.0.5:11434/v1", loaded.OllamaUrl);
+    }
+
+    [Fact]
     public async Task Session_routes_create_list_activate_and_delete_the_same_document()
     {
         using var data = TemporaryBusinessData.Create();

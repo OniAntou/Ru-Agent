@@ -21,6 +21,23 @@ public sealed class SettingsDtoTests
     }
 
     [Fact]
+    public void UnsetBackendUrlsAreOmittedFromTheSavePayload()
+    {
+        string payload = JsonSerializer.Serialize(new AppSettingsDto
+        {
+            CustomApiKey = "sk-custom",
+        });
+
+        using JsonDocument document = JsonDocument.Parse(payload);
+
+        Assert.False(document.RootElement.TryGetProperty("ollama_url", out _));
+        Assert.False(document.RootElement.TryGetProperty("lmstudio_url", out _));
+        Assert.Equal(
+            "http://localhost:8000/v1",
+            document.RootElement.GetProperty("custom_url").GetString());
+    }
+
+    [Fact]
     public void KiloReasoningEnabledUsesTheBackendWireName()
     {
         string payload = JsonSerializer.Serialize(new AppSettingsDto

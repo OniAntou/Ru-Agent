@@ -354,12 +354,19 @@ namespace RuApp
 
             // 2. Python Worker status
             bool workerOk = false;
+            string? workerError = null;
             if (backendRunning)
             {
-                workerOk = await _apiService.CheckWorkerHealthAsync();
+                (workerOk, workerError) = await _apiService.CheckWorkerHealthAsync();
             }
             DotWorker.Fill = workerOk ? successBrush : (backendRunning ? warningBrush : dangerBrush);
-            TextWorker.Text = workerOk ? "AI Worker: Sẵn sàng" : (backendRunning ? "AI Worker: Đang đợi..." : "AI Worker: Tắt");
+            TextWorker.Text = workerOk
+                ? "AI Worker: Sẵn sàng"
+                : backendRunning && workerError != null
+                    ? $"AI Worker: Lỗi ({workerError})"
+                    : backendRunning
+                        ? "AI Worker: Đang đợi..."
+                        : "AI Worker: Tắt";
 
             // 3. VTube Studio status
             bool vtsConnected = false;

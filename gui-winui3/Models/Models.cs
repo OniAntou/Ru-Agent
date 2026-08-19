@@ -175,10 +175,12 @@ namespace RuApp.Models
         public string CustomModel { get; set; } = "default";
 
         [JsonPropertyName("ollama_url")]
-        public string OllamaUrl { get; set; } = "http://localhost:11434/v1";
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? OllamaUrl { get; set; }
 
         [JsonPropertyName("lmstudio_url")]
-        public string LmStudioUrl { get; set; } = "http://localhost:1234/v1";
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? LmStudioUrl { get; set; }
 
         [JsonPropertyName("custom_url")]
         public string CustomUrl { get; set; } = "http://localhost:8000/v1";

@@ -494,17 +494,30 @@ namespace RuApp.Services
             return null;
         }
 
-        public async Task<bool> CheckWorkerHealthAsync()
+public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
         {
             try
             {
                 var response = await _httpClient.GetAsync($"{_baseUrl}/status");
-                return response.IsSuccessStatusCode;
+                if (!response.IsSuccessStatusCode)
+                {
+                    return (false, null);
+                }
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+                if (payload.TryGetProperty("status", out var status) &&
+                    status.GetString() == "error")
+                {
+                    string? message = payload.TryGetProperty("message", out var messageProp)
+                        ? messageProp.GetString()
+                        : null;
+                    return (false, string.IsNullOrWhiteSpace(message) ? null : message);
+                }
+                return (true, null);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[ApiService] CheckWorkerHealthAsync failed: {ex.Message}");
-                return false;
+                return (false, null);
             }
         }
 

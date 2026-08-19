@@ -205,6 +205,24 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
+    public async Task Read_uppercase_retired_gguf_backend_still_migrates_without_legacy_model()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        await File.WriteAllTextAsync(paths.SettingsFile, """
+            {
+              "backend": "LLAMA.CPP",
+              "model": "LFM2.5-2.6B-Q4_K_M.gguf"
+            }
+            """);
+
+        var snapshot = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Equal("OpenCode Zen", snapshot.Backend);
+        Assert.Equal(string.Empty, snapshot.OpenCodeModel);
+    }
+
+    [Fact]
     public async Task Save_never_persists_a_retired_gguf_legacy_model()
     {
         var (store, paths) = CreateStore();

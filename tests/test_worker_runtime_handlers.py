@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 
 import pytest
 
@@ -346,6 +347,82 @@ def test_runtime_load_failure_is_redacted(caplog) -> None:
     assert reply.type == ERROR
     assert reply.payload == {"code": "runtime_load_failed", "retryable": False}
     assert "private credential" not in caplog.text
+
+
+def test_runtime_load_rollback_restores_load_error(monkeypatch) -> None:
+    from ru_runtime.worker.v1 import handlers as handlers_module
+
+    class FakeRunner:
+        def __init__(self) -> None:
+            self.backend = "OpenCode Zen"
+            self.checkpoint_path = None
+            self.openai_runtime = None
+            self.kilo_reasoning_enabled = False
+            self.load_error = "previous load error"
+
+        def select_backend(self, backend: str) -> None:
+            self.backend = backend
+
+        def load(self, **_kwargs) -> str:
+            raise RuntimeError("boom")
+
+    runner = FakeRunner()
+    monkeypatch.setattr(
+        "ru_runtime.worker.v1.runtime_services.core",
+        SimpleNamespace(
+            runner=runner,
+            opencode_cred=SimpleNamespace(get_key=lambda: ""),
+            kilo_cred=SimpleNamespace(get_key=lambda: ""),
+            custom_cred=SimpleNamespace(get_key=lambda: ""),
+        ),
+    )
+
+    handlers = handlers_module.create_runtime_handlers()
+    reply = single(
+        asyncio.run(
+            collect(
+                handlers.runtime(
+                    {"backend": "Ollama", "ollama_model": "qwen3:8b"},
+                    asyncio.Event(),
+                )
+            )
+        )
+    )
+
+    assert reply.type == ERROR
+    assert reply.payload == {"code": "runtime_load_failed", "retryable": False}
+    assert runner.backend == "OpenCode Zen"
+    assert runner.load_error == "previous load error"
+
+
+def test_runtime_load_rejects_custom_api_key_in_the_payload() -> None:
+    called = []
+
+    def runtime_load(payload: dict) -> dict:
+        called.append(payload)
+        return {"status": "success"}
+
+    handlers = build_runtime_handlers(
+        RuntimeDependencies(
+            runner=FakeRunner("[]"),
+            runtime_load=runtime_load,
+        )
+    )
+
+    reply = single(
+        asyncio.run(
+            collect(
+                handlers.runtime(
+                    {"backend": "Custom OpenAI", "custom_api_key": "sk-x"},
+                    asyncio.Event(),
+                )
+            )
+        )
+    )
+
+    assert reply.type == ERROR
+    assert reply.payload == {"code": "invalid_request", "retryable": False}
+    assert called == []
 
 
 def test_runtime_request_delegates_exact_route_and_returns_json() -> None:

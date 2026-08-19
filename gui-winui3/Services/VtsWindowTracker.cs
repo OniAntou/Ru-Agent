@@ -24,7 +24,7 @@ public interface IVtsWindowNative
 public sealed class VtsWindowLocator : IVtsWindowLocator
 {
     private const string WindowTitle = "VTube Studio";
-    private static readonly string[] ProcessNames = ["VTube Studio", "VTubeStudio"];
+    private static readonly string[] ProcessNames = ["VTube Studio", "VTubeStudio", "RuDesktopOverlay"];
     private static readonly TimeSpan DefaultProcessRetryDelay = TimeSpan.FromSeconds(2);
 
     private readonly IVtsWindowNative _native;

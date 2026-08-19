@@ -340,6 +340,12 @@ public static class BusinessEndpoints
         result["auto_pace_enabled"] = value.AutoPaceEnabled;
         result["auto_read_replies"] = value.AutoReadReplies;
         result["show_subtitles"] = value.ShowSubtitles;
+        result["subtitle_color"] = value.SubtitleColor;
+        result["subtitle_size"] = value.SubtitleSize;
+        result["subtitle_duration"] = value.SubtitleDuration;
+        result["subtitle_pos_mode"] = value.SubtitlePosMode;
+        result["subtitle_pos_x"] = value.SubtitlePosX;
+        result["subtitle_pos_y"] = value.SubtitlePosY;
         result["opencode_api_key"] = string.Empty;
         result["kilo_api_key"] = string.Empty;
         result["gemini_vision_api_key"] = string.Empty;

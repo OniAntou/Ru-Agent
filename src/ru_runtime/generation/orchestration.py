@@ -56,6 +56,7 @@ def execute_reply(
     on_stream_delta: Callable[[str], None] | None = None,
     on_stream_reset: Callable[[], None] | None = None,
     on_complete_timing: Callable[[float], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
 ) -> str:
     messages = build_conversation_messages(
         system_instruction,
@@ -71,6 +72,7 @@ def execute_reply(
         on_stream_delta=on_stream_delta,
         on_stream_reset=on_stream_reset,
         on_complete_timing=on_complete_timing,
+        is_cancelled=is_cancelled,
     )
     search_match = _SEARCH_MARKER.search(response)
     if not allow_web_search:
@@ -108,6 +110,7 @@ def execute_reply(
             on_stream_delta=on_stream_delta,
             on_stream_reset=on_stream_reset,
             on_complete_timing=on_complete_timing,
+            is_cancelled=is_cancelled,
         )
     except Exception as error:
         # The grounded follow-up already streamed nothing; fall back to the

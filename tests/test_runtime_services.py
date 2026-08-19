@@ -69,6 +69,12 @@ def test_voice_status_uses_saved_runtime_settings(monkeypatch) -> None:
         "auto_pace_enabled": False,
         "auto_read_replies": True,
         "show_subtitles": True,
+        "subtitle_color": "#FFFFFF",
+        "subtitle_size": "medium",
+        "subtitle_duration": 2.0,
+        "subtitle_pos_mode": "auto",
+        "subtitle_pos_x": -1,
+        "subtitle_pos_y": -1,
     }
 
 

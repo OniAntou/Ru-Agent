@@ -49,7 +49,7 @@ builder.Services.AddSingleton<IMemoryRepository, SqliteMemoryRepository>();
 builder.Services.AddSingleton<IMemoryPolicy, MemoryPolicy>();
 builder.Services.AddSingleton<IMemoryService, MemoryService>();
 builder.WebHost.UseUrls(
-    builder.Configuration["RuBackend:BindUrl"] ?? "http://127.0.0.1:8010");
+    builder.Configuration["RuBackend:BindUrl"] ?? "http://127.0.0.1:8000");
 
 var app = builder.Build();
 
@@ -69,24 +69,6 @@ SttEndpoints.Map(app);
 VtsEndpoints.Map(app);
 
 app.Run();
-
-static MemorySqliteOptions BuildMemorySqliteOptions(IConfiguration configuration)
-{
-    var dataRoot = configuration["RU_DATA_ROOT"]
-        ?? Environment.GetEnvironmentVariable("RU_DATA_ROOT");
-    var root = string.IsNullOrWhiteSpace(dataRoot)
-        ? Path.Combine(Directory.GetCurrentDirectory(), "data", "conversations")
-        : dataRoot.Trim();
-
-    return new MemorySqliteOptions
-    {
-        DatabasePath = configuration["RuBackend:Memory:DatabasePath"]
-            ?? Path.Combine(root, "memory.db"),
-        LegacyTextsPath = configuration["RuBackend:Memory:LegacyTextsPath"]
-            ?? Path.Combine(root, "memory_texts.json"),
-        ReadOnly = false,
-    };
-}
 
 static DataPaths BuildDataPaths(IConfiguration configuration)
 {
@@ -111,6 +93,24 @@ static DataPaths BuildDataPaths(IConfiguration configuration)
         dataRoot);
 }
 
+static MemorySqliteOptions BuildMemorySqliteOptions(IConfiguration configuration)
+{
+    var dataRoot = configuration["RU_DATA_ROOT"]
+        ?? Environment.GetEnvironmentVariable("RU_DATA_ROOT");
+    var root = string.IsNullOrWhiteSpace(dataRoot)
+        ? Path.Combine(Directory.GetCurrentDirectory(), "data", "conversations")
+        : dataRoot.Trim();
+
+    return new MemorySqliteOptions
+    {
+        DatabasePath = configuration["RuBackend:Memory:DatabasePath"]
+            ?? Path.Combine(root, "memory.db"),
+        LegacyTextsPath = configuration["RuBackend:Memory:LegacyTextsPath"]
+            ?? Path.Combine(root, "memory_texts.json"),
+        ReadOnly = false,
+    };
+}
+
 static WorkerClientOptions BuildWorkerClientOptions(IConfiguration configuration)
 {
     var workerUrl = configuration["RuBackend:WorkerUrl"];
@@ -121,7 +121,7 @@ static WorkerClientOptions BuildWorkerClientOptions(IConfiguration configuration
     return new WorkerClientOptions
     {
         Uri = string.IsNullOrWhiteSpace(workerUrl)
-            ? new Uri("ws://127.0.0.1:5053/worker/v1")
+            ? new Uri("ws://127.0.0.1:8005/worker/v1")
             : new Uri(workerUrl, UriKind.Absolute),
         Token = workerToken,
     };

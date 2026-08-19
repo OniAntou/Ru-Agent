@@ -333,7 +333,7 @@ namespace RuApp.Views
                         if (last != null)
                         {
                             string display = string.IsNullOrWhiteSpace(content)
-                                ? last.Content
+                                ? StripDisplayMarkers(last.Content)
                                 : StripDisplayMarkers(content);
                             last.Content = display;
                             last.IsStreaming = false;
@@ -442,7 +442,7 @@ namespace RuApp.Views
                 }
                 else
                 {
-                    return $"Check backend logs at D:\\LLM\\logs\\server_err.log";
+                    return "Vui lòng kiểm tra nhật ký trong tab Nhật ký hoặc file log hệ thống.";
                 }
             }
             catch (Exception ex)

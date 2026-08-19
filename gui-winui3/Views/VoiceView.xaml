@@ -82,10 +82,75 @@
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                             <TextBlock Text="Hiện phụ đề Subtitle trên mô hình VTube Studio" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                            <TextBlock Text="Hiển thị khung phụ đề trong suốt tự bám theo chuyển động mô hình Live2D" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            <TextBlock Text="Hiển thị phụ đề chữ nổi trong suốt tự bám theo chuyển động mô hình Live2D" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                         </StackPanel>
                         <ToggleSwitch x:Name="SubtitleToggle" Grid.Column="1" IsOn="False" Toggled="OnSubtitleToggled"/>
                     </Grid>
+
+                    <!-- Subtitle Customization Panel -->
+                    <StackPanel x:Name="SubtitleCustomizationPanel" Spacing="14" Margin="0,4,0,0" Visibility="Collapsed">
+                        <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
+
+                        <!-- Font Size Selector -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="Cỡ chữ phụ đề" FontSize="13.5" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                <TextBlock Text="Điều chỉnh độ lớn của dòng phụ đề trên màn hình" FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            </StackPanel>
+                            <ComboBox x:Name="SubtitleSizeCombo" Grid.Column="1" Width="150" SelectionChanged="OnSubtitleSizeChanged">
+                                <ComboBoxItem Content="Nhỏ (Small)" Tag="small"/>
+                                <ComboBoxItem Content="Vừa (Medium)" Tag="medium" IsSelected="True"/>
+                                <ComboBoxItem Content="Lớn (Large)" Tag="large"/>
+                                <ComboBoxItem Content="Rất lớn (XLarge)" Tag="xlarge"/>
+                            </ComboBox>
+                        </Grid>
+
+                        <!-- Color Selector -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="Màu sắc chữ phụ đề" FontSize="13.5" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                <TextBlock Text="Màu chữ nổi bật kết hợp viền tương phản cao" FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            </StackPanel>
+                            <ComboBox x:Name="SubtitleColorCombo" Grid.Column="1" Width="150" SelectionChanged="OnSubtitleColorChanged">
+                                <ComboBoxItem Content="Trắng tinh khiết" Tag="#FFFFFF" IsSelected="True"/>
+                                <ComboBoxItem Content="Vàng Pastel" Tag="#FFE082"/>
+                                <ComboBoxItem Content="Hồng Sakura" Tag="#FF80AB"/>
+                                <ComboBoxItem Content="Xanh Sky Blue" Tag="#80D8FF"/>
+                                <ComboBoxItem Content="Xanh Bạc Hà" Tag="#B9F6CA"/>
+                            </ComboBox>
+                        </Grid>
+
+                        <!-- Hold Duration Slider -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="Thời gian giữ phụ đề" FontSize="13.5" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                <TextBlock x:Name="SubtitleDurationLabel" Text="Thời gian hiển thị sau khi đọc xong: 2.0s" FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            </StackPanel>
+                            <Slider x:Name="SubtitleDurationSlider" Grid.Column="1" Width="150" Minimum="1.0" Maximum="5.0" StepFrequency="0.5" Value="2.0" ValueChanged="OnSubtitleDurationChanged"/>
+                        </Grid>
+
+                        <!-- Subtitle Position Mode & Drag-Drop Controls -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="Vị trí hiển thị phụ đề" FontSize="13.5" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                <TextBlock x:Name="SubtitlePositionStatusLabel" Text="Trạng thái: Tự động bám theo Avatar Live2D" FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="SubtitleDragButton" Click="OnSubtitleDragButtonClicked" Style="{StaticResource AccentButtonStyle}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon x:Name="SubtitleDragIcon" Glyph="&#xE7C2;" FontSize="13"/>
+                                        <TextBlock x:Name="SubtitleDragButtonText" Text="Kéo thả vị trí"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="SubtitleResetPosButton" Click="OnSubtitleResetPosClicked" ToolTipService.ToolTip="Đặt lại vị trí tự động bám theo Live2D">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE72C;" FontSize="13"/>
+                                        <TextBlock Text="Mặc định"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 

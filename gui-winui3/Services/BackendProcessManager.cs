@@ -184,7 +184,7 @@ public class BackendProcessManager : IDisposable
         var raw = Environment.GetEnvironmentVariable("RU_BACKEND_WORKER_PORT");
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return 8001;
+            return 8005;
         }
 
         if (!int.TryParse(raw, out var workerPort))
@@ -192,11 +192,11 @@ public class BackendProcessManager : IDisposable
             throw new ArgumentException("RU_BACKEND_WORKER_PORT must be an integer.", nameof(raw));
         }
 
-        if (workerPort is < 1024 or > 65535 || workerPort == 8000)
+        if (workerPort is < 1024 or > 65535 || workerPort == 8000 || workerPort == 8001)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(raw),
-                "RU_BACKEND_WORKER_PORT must be between 1024 and 65535 and cannot be 8000.");
+                "RU_BACKEND_WORKER_PORT must be between 1024 and 65535 and cannot be 8000 (public host) or 8001 (VTube Studio).");
         }
 
         return workerPort;

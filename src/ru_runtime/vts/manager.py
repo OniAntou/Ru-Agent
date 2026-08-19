@@ -65,7 +65,7 @@ class VTSManager:
 
     def __init__(self, random_source=None):
         plugin_info = {
-            "plugin_name": "Ru",
+            "plugin_name": "RuApp",
             "developer": "Antigravity",
             "authentication_token_path": str(VTS_TOKEN_PATH),
         }
@@ -213,9 +213,10 @@ class VTSManager:
         self._sway_running = False
         self.set_speaking(False)
         self._sway_controller.reset()
-        for timer in self._timers:
-            timer.cancel()
-        self._timers.clear()
+        with self._action_lock:
+            for timer in self._timers:
+                timer.cancel()
+            self._timers.clear()
         loop = self._loop
         if loop is None or not loop.is_running():
             return
@@ -527,6 +528,16 @@ class VTSManager:
             self.last_connect_error = str(e)
             logger.error("VTS reconnect failed: %s", e)
 
+    def trigger_connect(self) -> None:
+        """Trigger an immediate connect/reconnect attempt on the VTS loop."""
+        self._run_on_vts_loop(self._reconnect_now(), wait=False)
+
+    async def _reconnect_now(self) -> None:
+        async with self._reconnect_lock_provider():
+            if self.is_connected:
+                return
+            await self._reconnect()
+
     # ── Mouse eye tracking ──────────────────────────────────────────────
 
     def set_mouse_tracking(self, enabled: bool, sensitivity: float = 1.0) -> None:
@@ -684,13 +695,14 @@ class VTSManager:
 
         self.trigger_hotkey_sync(primary_hotkey)
         if reset_hotkey is not None and self.is_connected:
-            self._prune_timers()
             def _reset_with_guard() -> None:
                 if self.is_connected:
                     self.trigger_hotkey_sync(reset_hotkey)
             reset_timer = threading.Timer(reset_delay, _reset_with_guard)
             reset_timer.daemon = True
-            self._timers.append(reset_timer)
+            with self._action_lock:
+                self._prune_timers()
+                self._timers.append(reset_timer)
             reset_timer.start()
         return True
 
@@ -771,10 +783,11 @@ class VTSManager:
             logger.warning("Could not trigger VTube catalog actions: %s", error)
 
     def _schedule_expression_deactivation(self, expression_key: tuple[str, str]) -> None:
-        self._prune_timers()
         timer = threading.Timer(EXPRESSION_ACTIVE_SECONDS, self._deactivate_expression_sync, args=(expression_key,))
         timer.daemon = True
-        self._timers.append(timer)
+        with self._action_lock:
+            self._prune_timers()
+            self._timers.append(timer)
         timer.start()
 
     def _prune_timers(self) -> None:

@@ -66,3 +66,17 @@ def test_set_mouse_tracking_applies_sensitivity():
 
 def test_last_connect_error_defaults_none():
     assert VTSManager().last_connect_error is None
+
+
+def test_trigger_connect_without_loop_does_not_raise():
+    manager = VTSManager()
+    manager.trigger_connect()
+
+
+def test_reconnect_now_noop_when_already_connected():
+    import asyncio
+
+    manager = VTSManager()
+    manager.is_connected = True
+    asyncio.run(manager._reconnect_now())
+    assert manager.is_connected is True

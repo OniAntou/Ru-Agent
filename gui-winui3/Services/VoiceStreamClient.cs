@@ -25,6 +25,7 @@ public sealed class VoiceStreamClient : IDisposable
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly Uri _endpoint;
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
     private ClientWebSocket? _socket;
     private bool _disposed;
 
@@ -185,6 +186,7 @@ public sealed class VoiceStreamClient : IDisposable
             _socket?.Abort();
             _socket?.Dispose();
             _socket = null;
+            _sendLock.Dispose();
         }
     }
 
@@ -196,17 +198,28 @@ public sealed class VoiceStreamClient : IDisposable
         }
     }
 
-    private static async Task SendTextAsync(
+    private async Task SendTextAsync(
         ClientWebSocket socket,
         string text,
         CancellationToken cancellationToken)
     {
         byte[] bytes = Encoding.UTF8.GetBytes(text);
-        await socket.SendAsync(
-            new ArraySegment<byte>(bytes),
-            WebSocketMessageType.Text,
-            endOfMessage: true,
-            cancellationToken);
+        await _sendLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (socket.State == WebSocketState.Open)
+            {
+                await socket.SendAsync(
+                    new ArraySegment<byte>(bytes),
+                    WebSocketMessageType.Text,
+                    endOfMessage: true,
+                    cancellationToken);
+            }
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
     }
 
     private static async Task<ReceivedMessage?> ReceiveMessageAsync(

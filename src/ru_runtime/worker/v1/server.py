@@ -399,7 +399,7 @@ def _safe_request_id(raw: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ru private protocol worker")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8001)
+    parser.add_argument("--port", type=int, default=8005)
     args = parser.parse_args(argv)
     token = os.environ.get("RU_WORKER_TOKEN", "").strip()
     if not token:

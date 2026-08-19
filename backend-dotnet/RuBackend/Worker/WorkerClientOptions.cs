@@ -5,7 +5,7 @@ public sealed class WorkerClientOptions
     public const int CurrentProtocolVersion = 1;
     public const int DefaultMaxMessageBytes = 8 * 1024 * 1024;
 
-    public Uri Uri { get; init; } = new("ws://127.0.0.1:5053/worker/v1");
+    public Uri Uri { get; init; } = new("ws://127.0.0.1:8005/worker/v1");
 
     public string Token { get; init; } = string.Empty;
 

@@ -94,6 +94,12 @@ public sealed class SettingsStore : ISettingsStore
             persisted["auto_pace_enabled"] = candidate.AutoPaceEnabled;
             persisted["auto_read_replies"] = candidate.AutoReadReplies;
             persisted["show_subtitles"] = candidate.ShowSubtitles;
+            persisted["subtitle_color"] = candidate.SubtitleColor;
+            persisted["subtitle_size"] = candidate.SubtitleSize;
+            persisted["subtitle_duration"] = candidate.SubtitleDuration;
+            persisted["subtitle_pos_mode"] = candidate.SubtitlePosMode;
+            persisted["subtitle_pos_x"] = candidate.SubtitlePosX;
+            persisted["subtitle_pos_y"] = candidate.SubtitlePosY;
             persisted["ollama_model"] = candidate.OllamaModel;
             persisted["lmstudio_model"] = candidate.LmStudioModel;
             persisted["custom_model"] = candidate.CustomModel;
@@ -175,6 +181,12 @@ public sealed class SettingsStore : ISettingsStore
             ReadBoolean(raw, "auto_pace_enabled", false),
             ReadBoolean(raw, "auto_read_replies", true),
             ReadBoolean(raw, "show_subtitles", false),
+            ReadString(raw, "subtitle_color", "#FFFFFF"),
+            ReadString(raw, "subtitle_size", "medium"),
+            ReadBoundedNumber(raw, "subtitle_duration", 2.0, 1.0, 10.0),
+            ReadString(raw, "subtitle_pos_mode", "auto"),
+            ReadBoundedInt(raw, "subtitle_pos_x", -1, -1, 10000),
+            ReadBoundedInt(raw, "subtitle_pos_y", -1, -1, 10000),
             ReadString(raw, "ollama_model", "qwen2.5:latest"),
             ReadString(raw, "lmstudio_model", "default"),
             ReadString(raw, "custom_model", "default"),
@@ -265,6 +277,21 @@ public sealed class SettingsStore : ISettingsStore
         }
 
         return Math.Clamp(result, minimum, maximum);
+    }
+
+    private static int ReadBoundedInt(
+        JsonObject raw,
+        string key,
+        int fallback,
+        int minimum,
+        int maximum)
+    {
+        if (raw[key] is not JsonValue value || !TryReadNumber(value, out var result))
+        {
+            return fallback;
+        }
+
+        return Math.Clamp((int)Math.Round(result), minimum, maximum);
     }
 
     private static bool TryReadNumber(JsonValue value, out double result)

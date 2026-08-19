@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using RuApp.Models;
 using RuApp.Services;
 
 namespace RuApp.Views
@@ -13,6 +14,10 @@ namespace RuApp.Views
         private VoicePlaybackService? _voicePlayback;
         private SubtitleOverlayService? _overlayService;
         private DispatcherTimer? _speedDebounceTimer;
+        private bool _isDraggingMode = false;
+        private string _subtitlePosMode = "auto";
+        private int _subtitlePosX = -1;
+        private int _subtitlePosY = -1;
 
         public VoiceView()
         {
@@ -44,9 +49,14 @@ namespace RuApp.Views
         private async Task LoadVoiceSettingsAsync()
         {
             if (_apiService == null) return;
+            var settings = await _apiService.GetSettingsAsync();
+            PopulateUi(settings);
+        }
+
+        private void PopulateUi(AppSettingsDto? settings)
+        {
             _isUpdatingUi = true;
 
-            var settings = await _apiService.GetSettingsAsync();
             if (settings != null)
             {
                 foreach (ComboBoxItem item in VoiceProfileComboBox.Items)
@@ -63,10 +73,116 @@ namespace RuApp.Views
                 AutoPaceToggle.IsOn = settings.AutoPaceEnabled;
                 AutoReadToggle.IsOn = settings.AutoReadReplies;
                 SubtitleToggle.IsOn = settings.ShowSubtitles;
+                SubtitleCustomizationPanel.Visibility = settings.ShowSubtitles ? Visibility.Visible : Visibility.Collapsed;
+
+                foreach (ComboBoxItem item in SubtitleSizeCombo.Items)
+                {
+                    if ((item.Tag as string) == settings.SubtitleSize)
+                    {
+                        SubtitleSizeCombo.SelectedItem = item;
+                        break;
+                    }
+                }
+
+                foreach (ComboBoxItem item in SubtitleColorCombo.Items)
+                {
+                    if (string.Equals(item.Tag as string, settings.SubtitleColor, StringComparison.OrdinalIgnoreCase))
+                    {
+                        SubtitleColorCombo.SelectedItem = item;
+                        break;
+                    }
+                }
+
+                SubtitleDurationSlider.Value = settings.SubtitleDuration;
+                SubtitleDurationLabel.Text = $"Thời gian hiển thị sau khi đọc xong: {settings.SubtitleDuration:F1}s";
+
+                _subtitlePosMode = settings.SubtitlePosMode ?? "auto";
+                _subtitlePosX = settings.SubtitlePosX;
+                _subtitlePosY = settings.SubtitlePosY;
+                UpdatePositionStatusUi();
+
+                if (_overlayService != null)
+                {
+                    _overlayService.PositionChanged -= OnOverlayPositionChanged;
+                    _overlayService.PositionChanged += OnOverlayPositionChanged;
+                }
+
                 ApplySubtitleToggle(settings.ShowSubtitles);
+                _overlayService?.ApplyCustomization(
+                    settings.SubtitleColor,
+                    settings.SubtitleSize,
+                    settings.SubtitleDuration,
+                    _subtitlePosMode,
+                    _subtitlePosX,
+                    _subtitlePosY);
             }
 
             _isUpdatingUi = false;
+        }
+
+        private void UpdatePositionStatusUi()
+        {
+            if (SubtitlePositionStatusLabel == null) return;
+            if (_subtitlePosMode == "custom" && _subtitlePosX >= 0 && _subtitlePosY >= 0)
+            {
+                SubtitlePositionStatusLabel.Text = $"Trạng thái: Vị trí tùy chỉnh (X: {_subtitlePosX}, Y: {_subtitlePosY})";
+            }
+            else
+            {
+                SubtitlePositionStatusLabel.Text = "Trạng thái: Tự động bám theo Avatar Live2D";
+            }
+        }
+
+        private void OnOverlayPositionChanged(int x, int y)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                _subtitlePosX = x;
+                _subtitlePosY = y;
+                _subtitlePosMode = "custom";
+                UpdatePositionStatusUi();
+                _ = SaveVoiceSettingsAsync();
+            });
+        }
+
+        private async void OnSubtitleDragButtonClicked(object sender, RoutedEventArgs e)
+        {
+            _isDraggingMode = !_isDraggingMode;
+            if (_isDraggingMode)
+            {
+                SubtitleDragButtonText.Text = "Lưu & Khóa vị trí";
+                SubtitleDragIcon.Glyph = "\uE73E";
+                if (!SubtitleToggle.IsOn)
+                {
+                    SubtitleToggle.IsOn = true;
+                    SubtitleCustomizationPanel.Visibility = Visibility.Visible;
+                    ApplySubtitleToggle(true);
+                }
+                _overlayService?.SetDragMode(true);
+                SubtitlePositionStatusLabel.Text = "Đang chỉnh vị trí: Hãy nhấn giữ chuột trái vào phụ đề trên màn hình để kéo thả.";
+            }
+            else
+            {
+                SubtitleDragButtonText.Text = "Kéo thả vị trí";
+                SubtitleDragIcon.Glyph = "\uE7C2";
+                _overlayService?.SetDragMode(false);
+                UpdatePositionStatusUi();
+                await SaveVoiceSettingsAsync();
+            }
+        }
+
+        private async void OnSubtitleResetPosClicked(object sender, RoutedEventArgs e)
+        {
+            _isDraggingMode = false;
+            SubtitleDragButtonText.Text = "Kéo thả vị trí";
+            SubtitleDragIcon.Glyph = "\uE7C2";
+            _subtitlePosMode = "auto";
+            _subtitlePosX = -1;
+            _subtitlePosY = -1;
+            _overlayService?.SetDragMode(false);
+            _overlayService?.ResetPosition();
+            UpdatePositionStatusUi();
+            await SaveVoiceSettingsAsync();
         }
 
         private async void OnVoiceProfileChanged(object sender, SelectionChangedEventArgs e)
@@ -102,8 +218,39 @@ namespace RuApp.Views
         {
             if (_isUpdatingUi || _apiService == null) return;
             bool isOn = SubtitleToggle.IsOn;
+            SubtitleCustomizationPanel.Visibility = isOn ? Visibility.Visible : Visibility.Collapsed;
+            if (!isOn && _isDraggingMode)
+            {
+                _isDraggingMode = false;
+                SubtitleDragButtonText.Text = "Kéo thả vị trí";
+                SubtitleDragIcon.Glyph = "\uE7C2";
+                _overlayService?.SetDragMode(false);
+            }
             ApplySubtitleToggle(isOn);
             await SaveVoiceSettingsAsync();
+        }
+
+        private async void OnSubtitleSizeChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isUpdatingUi || _apiService == null) return;
+            await SaveVoiceSettingsAsync();
+        }
+
+        private async void OnSubtitleColorChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isUpdatingUi || _apiService == null) return;
+            await SaveVoiceSettingsAsync();
+        }
+
+        private void OnSubtitleDurationChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            if (SubtitleDurationLabel != null)
+            {
+                SubtitleDurationLabel.Text = $"Thời gian hiển thị sau khi đọc xong: {e.NewValue:F1}s";
+            }
+            if (_isUpdatingUi || _apiService == null) return;
+            _speedDebounceTimer?.Stop();
+            _speedDebounceTimer?.Start();
         }
 
         private void ApplySubtitleToggle(bool isOn)
@@ -127,13 +274,32 @@ namespace RuApp.Views
         {
             if (_apiService == null) return;
             string label = (VoiceProfileComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Ru (OmniVoice)";
+            string subtitleSize = (SubtitleSizeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "medium";
+            string subtitleColor = (SubtitleColorCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "#FFFFFF";
+            double subtitleDuration = SubtitleDurationSlider.Value;
+
             await _apiService.UpdateVoiceAsync(
                 label,
                 SpeedSlider.Value,
                 AutoPaceToggle.IsOn,
                 AutoReadToggle.IsOn,
                 SubtitleToggle.IsOn,
-                "original");
+                "original",
+                subtitleColor,
+                subtitleSize,
+                subtitleDuration,
+                _subtitlePosMode,
+                _subtitlePosX,
+                _subtitlePosY);
+
+            _overlayService?.ApplyCustomization(
+                subtitleColor,
+                subtitleSize,
+                subtitleDuration,
+                _subtitlePosMode,
+                _subtitlePosX,
+                _subtitlePosY);
+
             if (_voicePlayback != null)
             {
                 await _voicePlayback.RefreshSettingsAsync();

@@ -189,7 +189,13 @@ namespace RuApp.Services
             bool autoPace,
             bool autoRead,
             bool showSubtitles,
-            string voiceStyleId)
+            string voiceStyleId,
+            string subtitleColor = "#FFFFFF",
+            string subtitleSize = "medium",
+            double subtitleDuration = 2.0,
+            string subtitlePosMode = "auto",
+            int subtitlePosX = -1,
+            int subtitlePosY = -1)
         {
             try
             {
@@ -201,6 +207,12 @@ namespace RuApp.Services
                     AutoReadReplies = autoRead,
                     ShowSubtitles = showSubtitles,
                     VoiceStyleId = voiceStyleId,
+                    SubtitleColor = subtitleColor,
+                    SubtitleSize = subtitleSize,
+                    SubtitleDuration = subtitleDuration,
+                    SubtitlePosMode = subtitlePosMode,
+                    SubtitlePosX = subtitlePosX,
+                    SubtitlePosY = subtitlePosY,
                 };
                 var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
                 return response.IsSuccessStatusCode;

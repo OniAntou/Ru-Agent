@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using RuApp.Models;
@@ -21,6 +22,12 @@ public sealed class SubtitleOverlayService : IDisposable
     private bool _disposed;
     private bool _vtsHidden = true;
 
+    public event Action<int, int>? PositionChanged;
+
+    public string PosMode { get; set; } = "auto";
+    public int CustomX { get; set; } = -1;
+    public int CustomY { get; set; } = -1;
+
     public SubtitleOverlayService(SubtitleOverlayWindow window, VtsWindowTracker tracker, SubtitlePresenter presenter)
     {
         _window = window;
@@ -28,6 +35,14 @@ public sealed class SubtitleOverlayService : IDisposable
         _presenter = presenter;
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread()
             ?? throw new InvalidOperationException("Subtitle overlay must be created on the UI thread.");
+
+        _window.PositionMoved += (x, y) =>
+        {
+            CustomX = x;
+            CustomY = y;
+            PosMode = "custom";
+            PositionChanged?.Invoke(x, y);
+        };
 
         _trackerTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
         _trackerTimer.Tick += (_, __) => PollTracker();
@@ -42,6 +57,30 @@ public sealed class SubtitleOverlayService : IDisposable
         _presenter.SnapshotChanged += OnPresenterSnapshotChanged;
     }
 
+    public void SetDragMode(bool enableDrag)
+    {
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            if (enableDrag && !_started)
+            {
+                Start();
+            }
+            _window.SetDraggable(enableDrag);
+        });
+    }
+
+    public void ResetPosition()
+    {
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            PosMode = "auto";
+            CustomX = -1;
+            CustomY = -1;
+            _placementCache.Reset();
+            PollTracker();
+        });
+    }
+
     public void Start()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -50,6 +89,42 @@ public sealed class SubtitleOverlayService : IDisposable
 
         _trackerTimer.Start();
         PollTracker();
+    }
+
+    public void ApplyCustomization(
+        string? color,
+        string? size,
+        double durationSeconds,
+        string? posMode = null,
+        int customX = -1,
+        int customY = -1)
+    {
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            if (!string.IsNullOrWhiteSpace(color))
+            {
+                _window.SetTextColor(color);
+            }
+            if (!string.IsNullOrWhiteSpace(size))
+            {
+                _window.SetSizeCategory(size);
+            }
+            if (durationSeconds >= 1.0 && durationSeconds <= 10.0)
+            {
+                _fadeTimer.Interval = TimeSpan.FromSeconds(durationSeconds);
+            }
+            if (!string.IsNullOrWhiteSpace(posMode))
+            {
+                PosMode = posMode;
+            }
+            if (customX >= 0) CustomX = customX;
+            if (customY >= 0) CustomY = customY;
+
+            if (PosMode == "custom" && CustomX >= 0 && CustomY >= 0)
+            {
+                _window.SetPositionOnly(CustomX, CustomY);
+            }
+        });
     }
 
     public void Pause()
@@ -85,28 +160,53 @@ public sealed class SubtitleOverlayService : IDisposable
 
     private void PollTracker()
     {
-        if (!_started || _disposed) return;
-        VtsWindowSnapshot snapshot = _tracker.GetCurrent();
-        if (!snapshot.Visible)
+        if (!_started || _disposed || _window.IsDraggable) return;
+
+        if (PosMode == "custom" && CustomX >= 0 && CustomY >= 0)
         {
-            _window.HideOverlay();
-            _window.CancelFadeOut();
-            _fadeTimer.Stop();
-            _fadeState.Reset();
-            _vtsHidden = true;
-            return;
+            GetPrimaryWorkArea(out int dpi);
+            int fontSize = SubtitleLayout.ToEffectiveFontSize(24, dpi);
+            var customRect = new RectPx(CustomX, CustomY, 600, 80);
+            if (_placementCache.ShouldApply(customRect, fontSize))
+            {
+                _window.MoveAndResize(customRect, fontSize);
+            }
+        }
+        else
+        {
+            VtsWindowSnapshot snapshot = _tracker.GetCurrent();
+            RectPx anchorRect;
+            RectPx workArea;
+            int dpi;
+
+            if (snapshot.Visible)
+            {
+                anchorRect = snapshot.Rect;
+                workArea = snapshot.WorkArea;
+                dpi = snapshot.Dpi;
+            }
+            else
+            {
+                workArea = GetPrimaryWorkArea(out dpi);
+                int fallbackWidth = Math.Clamp(workArea.Width / 2, 260, 640);
+                int fallbackHeight = 200;
+                int x = workArea.X + (workArea.Width - fallbackWidth) / 2;
+                int y = workArea.Bottom - fallbackHeight - 40;
+                anchorRect = new RectPx(x, y, fallbackWidth, fallbackHeight);
+            }
+
+            (RectPx rect, int physicalFontSize, bool _) = SubtitleLayout.ComputeSubtitleRect(
+                anchorRect, workArea);
+            int fontSize = SubtitleLayout.ToEffectiveFontSize(physicalFontSize, dpi);
+            if (_placementCache.ShouldApply(rect, fontSize))
+            {
+                _window.MoveAndResize(rect, fontSize);
+            }
         }
 
         bool becameVisible = _vtsHidden;
         _vtsHidden = false;
-        (RectPx rect, int physicalFontSize, bool _) = SubtitleLayout.ComputeSubtitleRect(
-            snapshot.Rect, snapshot.WorkArea);
-        int fontSize = SubtitleLayout.ToEffectiveFontSize(physicalFontSize, snapshot.Dpi);
-        if (_placementCache.ShouldApply(rect, fontSize))
-        {
-            _window.MoveAndResize(rect, fontSize);
-        }
-
+        _window.EnsureTopmost();
         SubtitleSnapshot current = _presenter.Current;
         if (becameVisible && current != SubtitleSnapshot.Empty)
         {
@@ -129,7 +229,6 @@ public sealed class SubtitleOverlayService : IDisposable
             return;
         }
 
-        if (_vtsHidden) return;
         ApplyFadeAction(_fadeState.OnTextAvailable(), snapshot);
     }
 
@@ -161,4 +260,50 @@ public sealed class SubtitleOverlayService : IDisposable
     {
         ApplyFadeAction(_fadeState.OnFadeCompleted(), SubtitleSnapshot.Empty);
     }
+
+    private static RectPx GetPrimaryWorkArea(out int dpi)
+    {
+        dpi = 96;
+        try
+        {
+            IntPtr monitor = MonitorFromPoint(new POINT { X = 0, Y = 0 }, 2);
+            if (monitor != IntPtr.Zero)
+            {
+                var info = new MONITORINFO { Size = (uint)Marshal.SizeOf<MONITORINFO>() };
+                if (GetMonitorInfo(monitor, ref info))
+                {
+                    uint sysDpi = GetDpiForSystem();
+                    if (sysDpi > 0) dpi = (int)sysDpi;
+                    return new RectPx(
+                        info.WorkArea.Left,
+                        info.WorkArea.Top,
+                        info.WorkArea.Right - info.WorkArea.Left,
+                        info.WorkArea.Bottom - info.WorkArea.Top);
+                }
+            }
+        }
+        catch
+        {
+        }
+        return new RectPx(0, 0, 1920, 1080);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT { public int X; public int Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MONITORINFO { public uint Size; public RECT Monitor; public RECT WorkArea; public uint Flags; }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForSystem();
 }

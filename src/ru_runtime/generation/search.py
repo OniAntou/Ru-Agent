@@ -94,14 +94,19 @@ def perform_web_search(query: str, max_results: int = 3) -> str:
         logger.warning("Web search is busy (hash=%s)", query_hash)
         return "Web search is busy. Try again."
     try:
+        def _fetch_results():
+            try:
+                client = DDGS(timeout=10)
+            except TypeError:
+                client = DDGS()
+            return client.text(query, max_results=max_results)
+
         with _SEARCH_EXECUTOR_LOCK:
             if _SEARCH_EXECUTOR_SHUTTING_DOWN:
                 _SEARCH_IN_FLIGHT.release()
                 logger.warning("Web search unavailable during shutdown (hash=%s)", query_hash)
                 return "Web search is unavailable during shutdown."
-            future = _search_executor_locked().submit(
-                lambda: DDGS().text(query, max_results=max_results)
-            )
+            future = _search_executor_locked().submit(_fetch_results)
             _SEARCH_FUTURES.add(future)
     except Exception as error:
         _SEARCH_IN_FLIGHT.release()

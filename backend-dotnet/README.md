@@ -13,7 +13,7 @@ ASP.NET Core :8000
         |
         | protocol v1, separate per-run token
         v
-Python runtime worker :8001
+Python runtime worker :8005
         |
         +-- LFM2.5 / hosted model adapters
         +-- OmniVoice and Google STT
@@ -29,7 +29,7 @@ pre-decommission rollback checkpoint if repository-level recovery is required.
 ASP.NET Core directly owns authentication, request-size boundaries, settings,
 credentials, sessions, history, activity, structured memory, chat ordering,
 metadata filtering, and every public endpoint contract. Runtime-dependent work
-uses the authenticated `ws://127.0.0.1:8001/worker/v1` protocol:
+uses the authenticated `ws://127.0.0.1:8005/worker/v1` protocol:
 
 - model generation and runtime transitions;
 - TTS, streaming voice, STT, and GPU lifecycle calls;
@@ -47,7 +47,7 @@ persistent text.
 | --- | --- | --- |
 | `RU_DESKTOP_TOKEN` | required per run | Authenticates public REST/WebSocket clients. |
 | `RU_WORKER_TOKEN` | required per run | Authenticates ASP.NET to the private worker. |
-| `RU_BACKEND_WORKER_PORT` | `8001` | Private worker loopback port selected by RuApp. |
+| `RU_BACKEND_WORKER_PORT` | `8005` | Private worker loopback port selected by RuApp. |
 | `RuBackend__BindUrl` | `http://127.0.0.1:8010` standalone | Public ASP.NET bind URL; RuApp sets port `8000`. |
 | `RuBackend__WorkerUrl` | `ws://127.0.0.1:5053/worker/v1` standalone | Private worker protocol URL; RuApp overrides it. |
 | `RU_DATA_ROOT` | project/user data default | Isolates settings, sessions, activity, and memory for tests. |

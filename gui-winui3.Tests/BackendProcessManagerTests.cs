@@ -13,7 +13,7 @@ public sealed class BackendProcessManagerTests
         var jobs = new FakeJobFactory();
         var readiness = new FakeReadinessProbe(ready: true);
         using var manager = new BackendProcessManager(
-            workerPort: 8001,
+            workerPort: 8005,
             processFactory: launcher,
             jobFactory: jobs,
             readinessProbe: readiness);
@@ -37,7 +37,7 @@ public sealed class BackendProcessManagerTests
         var jobs = new FakeJobFactory();
         var readiness = new FakeReadinessProbe(ready: false);
         using var manager = new BackendProcessManager(
-            workerPort: 8001,
+            workerPort: 8005,
             processFactory: launcher,
             jobFactory: jobs,
             readinessProbe: readiness);
@@ -59,7 +59,7 @@ public sealed class BackendProcessManagerTests
         var jobs = new FakeJobFactory();
         var readiness = new FakeReadinessProbe(ready: true);
         using var manager = new BackendProcessManager(
-            workerPort: 8001,
+            workerPort: 8005,
             processFactory: launcher,
             jobFactory: jobs,
             readinessProbe: readiness);
@@ -70,6 +70,41 @@ public sealed class BackendProcessManagerTests
         Assert.Empty(launcher.Specs);
         Assert.Contains("RuBackend.exe", manager.LastError ?? string.Empty, StringComparison.Ordinal);
         Assert.Empty(jobs.Created);
+    }
+
+    [Fact]
+    public void DefaultsWorkerPortTo8005WhenEnvVarUnset()
+    {
+        var original = Environment.GetEnvironmentVariable("RU_BACKEND_WORKER_PORT");
+        try
+        {
+            Environment.SetEnvironmentVariable("RU_BACKEND_WORKER_PORT", null);
+            using var manager = new BackendProcessManager();
+            Assert.Equal(8005, manager.WorkerPort);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RU_BACKEND_WORKER_PORT", original);
+        }
+    }
+
+    [Theory]
+    [InlineData("8000")]
+    [InlineData("8001")]
+    [InlineData("79999")]
+    [InlineData("not-a-number")]
+    public void RejectsInvalidOrCollidingWorkerPortEnvVar(string invalidValue)
+    {
+        var original = Environment.GetEnvironmentVariable("RU_BACKEND_WORKER_PORT");
+        try
+        {
+            Environment.SetEnvironmentVariable("RU_BACKEND_WORKER_PORT", invalidValue);
+            Assert.ThrowsAny<ArgumentException>(() => new BackendProcessManager());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RU_BACKEND_WORKER_PORT", original);
+        }
     }
 
     private sealed class FakeProcessFactory : IBackendProcessFactory

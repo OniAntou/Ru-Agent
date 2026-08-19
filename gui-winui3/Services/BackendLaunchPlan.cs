@@ -50,10 +50,10 @@ public sealed class BackendLaunchPlan
         }
 
         var logRoot = Path.Combine(root, "logs");
-        if (workerPort == publicPort)
+        if (workerPort == publicPort || workerPort == 8001)
         {
             throw new ArgumentException(
-                "The ASP.NET Core worker port must differ from public port 8000.",
+                "The ASP.NET Core worker port must differ from public port 8000 and VTube Studio port 8001.",
                 nameof(workerPort));
         }
 

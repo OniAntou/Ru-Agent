@@ -355,7 +355,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
 
     private void TryEnqueueLearning(SettingsSnapshot settings, string prompt, string response)
     {
-        if (!settings.EnableSelfLearning)
+        if (!settings.EnableSelfLearning || string.IsNullOrWhiteSpace(prompt) || string.IsNullOrWhiteSpace(response))
         {
             return;
         }

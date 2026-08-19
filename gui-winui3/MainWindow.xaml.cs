@@ -125,13 +125,28 @@ namespace RuApp
                 _wsClient = new ChatWebSocketClient(_processManager.AuthSecret, _processManager.Port);
                 _wsClient.Start();
                 _voicePlayback = new VoicePlaybackService(_apiService);
-                await _voicePlayback.RefreshSettingsAsync();
-
                 var subtitleWindow = new Views.SubtitleOverlayWindow();
                 var subtitleTracker = new Services.VtsWindowTracker(new Services.VtsWindowLocator());
                 var subtitlePresenter = new Services.SubtitlePresenter();
                 _subtitleOverlay = new Services.SubtitleOverlayService(subtitleWindow, subtitleTracker, subtitlePresenter);
                 _voicePlayback.ConfigureSubtitles(subtitlePresenter);
+
+                await _voicePlayback.RefreshSettingsAsync();
+                var voiceStatus = await _apiService.GetVoiceStatusAsync();
+                if (voiceStatus != null)
+                {
+                    _subtitleOverlay.ApplyCustomization(
+                        voiceStatus.SubtitleColor,
+                        voiceStatus.SubtitleSize,
+                        voiceStatus.SubtitleDuration,
+                        voiceStatus.SubtitlePosMode,
+                        voiceStatus.SubtitlePosX,
+                        voiceStatus.SubtitlePosY);
+                }
+                if (_voicePlayback.SubtitlesEnabled)
+                {
+                    _subtitleOverlay.Start();
+                }
 
                 _chatView = new ChatView();
                 _chatView.Initialize(_apiService, _wsClient, _voicePlayback);

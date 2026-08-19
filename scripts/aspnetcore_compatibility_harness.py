@@ -541,7 +541,7 @@ def main() -> int:
         description="Run an isolated ASP.NET Core and private-runtime probe"
     )
     parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parents[1])
-    parser.add_argument("--worker-port", type=int, default=8001)
+    parser.add_argument("--worker-port", type=int, default=8005)
     parser.add_argument("--edge-port", type=int, default=8010)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--require-voice-audio", action="store_true")

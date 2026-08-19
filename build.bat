@@ -50,14 +50,10 @@ for %%f in ("%OBJ_DIR%\Views\*.xbf") do (
     copy /Y "%%f" "%PUBLISH_DIR%\Views\" >nul 2>&1
 )
 
-echo [5/6] Skipping manual resources.pri generation (relying on MSBuild)
-
-if exist "%PUBLISH_DIR%\RuApp.pri" (
-    echo    RuApp.pri created successfully!
-) else (
-    echo    WARNING: RuApp.pri was NOT created. App may not start.
-    pause
-    exit /b 1
+echo [5/6] Ensuring native desktop overlay is built...
+if not exist "%~dp0tools\ru_desktop_overlay\out\build\Release\RuDesktopOverlay.exe" (
+    echo    Building RuDesktopOverlay.exe...
+    powershell -ExecutionPolicy Bypass -File "%~dp0scripts\build_ru_desktop_overlay.ps1"
 )
 
 echo [6/6] Build complete!

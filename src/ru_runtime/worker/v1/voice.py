@@ -27,6 +27,16 @@ def voice_status() -> dict[str, object]:
             "auto_read_replies", defaults["auto_read_replies"]
         ),
         "show_subtitles": settings.get("show_subtitles", defaults["show_subtitles"]),
+        "subtitle_color": settings.get("subtitle_color", defaults["subtitle_color"]),
+        "subtitle_size": settings.get("subtitle_size", defaults["subtitle_size"]),
+        "subtitle_duration": settings.get(
+            "subtitle_duration", defaults["subtitle_duration"]
+        ),
+        "subtitle_pos_mode": settings.get(
+            "subtitle_pos_mode", defaults["subtitle_pos_mode"]
+        ),
+        "subtitle_pos_x": settings.get("subtitle_pos_x", defaults["subtitle_pos_x"]),
+        "subtitle_pos_y": settings.get("subtitle_pos_y", defaults["subtitle_pos_y"]),
     }
 
 

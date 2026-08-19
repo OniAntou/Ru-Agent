@@ -362,7 +362,10 @@ class OpenAIRuntime:
                     backoff = _RETRY_DELAY_SECONDS * (attempt + 1)
                 else:
                     backoff = min(max(0.0, retry_after), _MAX_RETRY_DELAY_SECONDS)
-                time.sleep(backoff)
+                sleep_end = perf_counter() + backoff
+                while perf_counter() < sleep_end:
+                    _raise_if_cancelled(is_cancelled)
+                    time.sleep(min(0.05, max(0.0, sleep_end - perf_counter())))
 
         if on_complete_timing is not None:
             on_complete_timing(max(0.0, perf_counter() - started))

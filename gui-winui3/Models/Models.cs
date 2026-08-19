@@ -221,6 +221,24 @@ namespace RuApp.Models
         [JsonPropertyName("show_subtitles")]
         public bool ShowSubtitles { get; set; } = false;
 
+        [JsonPropertyName("subtitle_color")]
+        public string SubtitleColor { get; set; } = "#FFFFFF";
+
+        [JsonPropertyName("subtitle_size")]
+        public string SubtitleSize { get; set; } = "medium";
+
+        [JsonPropertyName("subtitle_duration")]
+        public double SubtitleDuration { get; set; } = 2.0;
+
+        [JsonPropertyName("subtitle_pos_mode")]
+        public string SubtitlePosMode { get; set; } = "auto";
+
+        [JsonPropertyName("subtitle_pos_x")]
+        public int SubtitlePosX { get; set; } = -1;
+
+        [JsonPropertyName("subtitle_pos_y")]
+        public int SubtitlePosY { get; set; } = -1;
+
         [JsonPropertyName("temperature")]
         public double Temperature { get; set; } = 0.7;
 
@@ -262,6 +280,24 @@ namespace RuApp.Models
 
         [JsonPropertyName("show_subtitles")]
         public bool ShowSubtitles { get; set; } = false;
+
+        [JsonPropertyName("subtitle_color")]
+        public string SubtitleColor { get; set; } = "#FFFFFF";
+
+        [JsonPropertyName("subtitle_size")]
+        public string SubtitleSize { get; set; } = "medium";
+
+        [JsonPropertyName("subtitle_duration")]
+        public double SubtitleDuration { get; set; } = 2.0;
+
+        [JsonPropertyName("subtitle_pos_mode")]
+        public string SubtitlePosMode { get; set; } = "auto";
+
+        [JsonPropertyName("subtitle_pos_x")]
+        public int SubtitlePosX { get; set; } = -1;
+
+        [JsonPropertyName("subtitle_pos_y")]
+        public int SubtitlePosY { get; set; } = -1;
     }
 
     public sealed class VoiceSettingsUpdateDto
@@ -283,6 +319,24 @@ namespace RuApp.Models
 
         [JsonPropertyName("show_subtitles")]
         public bool ShowSubtitles { get; set; } = false;
+
+        [JsonPropertyName("subtitle_color")]
+        public string SubtitleColor { get; set; } = "#FFFFFF";
+
+        [JsonPropertyName("subtitle_size")]
+        public string SubtitleSize { get; set; } = "medium";
+
+        [JsonPropertyName("subtitle_duration")]
+        public double SubtitleDuration { get; set; } = 2.0;
+
+        [JsonPropertyName("subtitle_pos_mode")]
+        public string SubtitlePosMode { get; set; } = "auto";
+
+        [JsonPropertyName("subtitle_pos_x")]
+        public int SubtitlePosX { get; set; } = -1;
+
+        [JsonPropertyName("subtitle_pos_y")]
+        public int SubtitlePosY { get; set; } = -1;
     }
 
     public class VtsStatusDto

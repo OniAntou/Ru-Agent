@@ -173,10 +173,12 @@ class ModelRunner:
         on_stream_delta=None,
         on_stream_reset=None,
         on_complete_timing=None,
+        is_cancelled=None,
     ) -> str:
         if self.backend in OPENAI_COMPATIBLE_BACKENDS and self.openai_runtime:
             kwargs = {
                 "on_complete_timing": on_complete_timing,
+                "is_cancelled": is_cancelled,
             }
             if self.backend == BACKEND_KILO and not self.kilo_reasoning_enabled:
                 kwargs["reasoning_effort_override"] = "none"
@@ -211,6 +213,7 @@ class ModelRunner:
         on_stream_delta=None,
         on_stream_reset=None,
         on_complete_timing=None,
+        is_cancelled=None,
     ) -> str:
         system_prompt = RU_CLOUD_SYSTEM_PROMPT if self.backend in OPENAI_COMPATIBLE_BACKENDS else RU_SYSTEM_PROMPT
         return execute_reply(
@@ -227,6 +230,7 @@ class ModelRunner:
             on_stream_delta=on_stream_delta,
             on_stream_reset=on_stream_reset,
             on_complete_timing=on_complete_timing,
+            is_cancelled=is_cancelled,
         )
 
     def generate_screen_reaction(

@@ -16,7 +16,7 @@ Current maintainer documentation:
 ## Runtime topology
 
 `RuApp.exe` owns the process lifecycle. It creates per-run secrets, starts the
-private Runtime Worker on loopback port 8001, starts the ASP.NET Core Public
+private Runtime Worker on loopback port 8005, starts the ASP.NET Core Public
 Host on port 8000, waits for public readiness, and places all owned children in
 a Windows kill-on-close Job Object.
 

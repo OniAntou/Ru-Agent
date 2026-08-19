@@ -67,6 +67,7 @@ namespace RuApp.Services
             VoiceLabel = voice.VoiceLabel;
             VoiceSpeed = voice.VoiceSpeed;
             AutoReadReplies = voice.AutoReadReplies;
+            SubtitlesEnabled = voice.ShowSubtitles;
         }
 
         public async Task SpeakTextAsync(string text, bool interrupt = true)
@@ -92,6 +93,7 @@ namespace RuApp.Services
             _playbackQueue = playbackQueue;
 
             bool receivedAudio = false;
+            bool subtitleShown = false;
             VoiceStreamTerminalEvent? terminal = null;
             try
             {
@@ -103,6 +105,11 @@ namespace RuApp.Services
                     VoiceSpeed,
                     async chunk =>
                     {
+                        if (!subtitleShown && SubtitlesEnabled)
+                        {
+                            subtitleShown = true;
+                            _subtitleEvents?.TryShow(new VoiceSubtitleCue(requestId, text.Trim()));
+                        }
                         receivedAudio = true;
                         await playbackQueue.EnqueueAsync(requestId, chunk, cts.Token);
                     },
@@ -148,10 +155,14 @@ namespace RuApp.Services
             }
             finally
             {
-                if (IsCurrentRequest(requestId) && _vtsSpeaking)
+                if (IsCurrentRequest(requestId))
                 {
-                    _vtsSpeaking = false;
-                    await ResetVtsSpeakingAsync();
+                    _subtitleEvents?.TryClear();
+                    if (_vtsSpeaking)
+                    {
+                        _vtsSpeaking = false;
+                        await ResetVtsSpeakingAsync();
+                    }
                 }
                 playbackQueue.Dispose();
                 streamClient.Dispose();
@@ -790,6 +801,10 @@ namespace RuApp.Services
             {
                 return;
             }
+            if (SubtitlesEnabled)
+            {
+                _subtitleEvents?.TryShow(new VoiceSubtitleCue(Guid.NewGuid().ToString("N"), text));
+            }
             await PlayWavAsync(audio, cancellationToken);
         }
 
@@ -802,7 +817,7 @@ namespace RuApp.Services
             cancellationToken.ThrowIfCancellationRequested();
             var player = new MediaPlayer { AutoPlay = false };
             var stream = new InMemoryRandomAccessStream();
-            var writer = new DataWriter(stream);
+            using var writer = new DataWriter(stream);
             writer.WriteBytes(audio);
             await writer.StoreAsync();
             writer.DetachStream();

@@ -9,7 +9,7 @@ acceptance are maintained in
 ## Process topology
 
 RuApp owns the desktop lifecycle. It creates separate per-run desktop and
-worker secrets, starts the private Runtime Worker on loopback port 8001, then
+worker secrets, starts the private Runtime Worker on loopback port 8005, then
 starts the ASP.NET Core Public Host on port 8000. Both children enter one
 Windows kill-on-close Job Object. Startup succeeds only after public readiness;
 shutdown or startup failure terminates the owned process tree.
@@ -20,7 +20,7 @@ The current process flow is:
 RuApp
   -> ASP.NET Core Public Host :8000
        -> direct business and persistence services
-       -> authenticated Runtime Worker protocol v1 :8001
+       -> authenticated Runtime Worker protocol v1 :8005
             -> LFM2.5 and hosted model adapters
             -> Google STT, VTube Studio, and observation implementations
             -> OmniVoice Flask service :5052 in omnivoice_env

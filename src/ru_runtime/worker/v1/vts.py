@@ -119,6 +119,7 @@ def vts_connect() -> dict[str, object]:
     manager = shared._vts_manager()
     if manager.is_connected:
         return {"status": "ok", "connected": True}
+    manager.trigger_connect()
     deadline = time.monotonic() + shared.VTS_CONNECT_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
         if manager.is_connected:

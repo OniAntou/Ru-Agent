@@ -152,6 +152,12 @@ _DEFAULT_SETTINGS = {
     "auto_pace_enabled": False,
     "auto_read_replies": True,
     "show_subtitles": False,
+    "subtitle_color": "#FFFFFF",
+    "subtitle_size": "medium",
+    "subtitle_duration": 2.0,
+    "subtitle_pos_mode": "auto",
+    "subtitle_pos_x": -1,
+    "subtitle_pos_y": -1,
 }
 
 _VALID_BACKENDS = ALL_BACKENDS
@@ -398,6 +404,7 @@ def _effective_settings_unlocked() -> dict:
     bounded_number("temperature", 0.1, 2.0)
     bounded_number("top_k", 1, 200)
     bounded_number("voice_speed", 0.5, 2.0)
+    bounded_number("subtitle_duration", 1.0, 10.0)
     merged["max_tokens"] = int(merged["max_tokens"])
     merged["top_k"] = int(merged["top_k"])
     for key in (
@@ -411,6 +418,16 @@ def _effective_settings_unlocked() -> dict:
     ):
         if not isinstance(merged.get(key), bool):
             merged[key] = _DEFAULT_SETTINGS[key]
+    if not isinstance(merged.get("subtitle_color"), str):
+        merged["subtitle_color"] = _DEFAULT_SETTINGS["subtitle_color"]
+    if not isinstance(merged.get("subtitle_size"), str):
+        merged["subtitle_size"] = _DEFAULT_SETTINGS["subtitle_size"]
+    if not isinstance(merged.get("subtitle_pos_mode"), str):
+        merged["subtitle_pos_mode"] = _DEFAULT_SETTINGS["subtitle_pos_mode"]
+    if not isinstance(merged.get("subtitle_pos_x"), int):
+        merged["subtitle_pos_x"] = _DEFAULT_SETTINGS["subtitle_pos_x"]
+    if not isinstance(merged.get("subtitle_pos_y"), int):
+        merged["subtitle_pos_y"] = _DEFAULT_SETTINGS["subtitle_pos_y"]
     merged["voice_style_id"] = voice_style_from_saved(
         merged.get("voice_style_id")
     ).id

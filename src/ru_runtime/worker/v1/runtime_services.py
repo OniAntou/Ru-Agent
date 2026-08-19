@@ -777,8 +777,10 @@ def apply_saved_settings() -> str:
     if backend not in _VALID_BACKENDS:
         return f"No persisted settings to apply (backend={backend!r})"
     api_key = ""
-    if backend in (BACKEND_OPENCODE, BACKEND_KILO):
-        store = core.opencode_cred if backend == BACKEND_OPENCODE else core.kilo_cred
+    if backend in (BACKEND_OPENCODE, BACKEND_KILO, BACKEND_CUSTOM):
+        store = core.opencode_cred if backend == BACKEND_OPENCODE else (
+            core.kilo_cred if backend == BACKEND_KILO else core.custom_cred
+        )
         try:
             api_key = store.get_key() or ""
         except Exception as error:
@@ -788,20 +790,20 @@ def apply_saved_settings() -> str:
     model_name = ""
     base_url = None
     if backend == BACKEND_OPENCODE:
-        model_name = settings.get("opencode_model") or settings.get("model", _DEFAULT_SETTINGS["opencode_model"])
+        model_name = settings.get("opencode_model") or _DEFAULT_SETTINGS["opencode_model"]
     elif backend == BACKEND_KILO:
-        model_name = settings.get("kilo_model") or settings.get("model", _DEFAULT_SETTINGS["kilo_model"])
+        model_name = settings.get("kilo_model") or _DEFAULT_SETTINGS["kilo_model"]
         logger.info("Using Kilo model: %s", model_name)
     elif backend == BACKEND_OLLAMA:
-        model_name = settings.get("ollama_model") or settings.get("model", _DEFAULT_SETTINGS["ollama_model"])
+        model_name = settings.get("ollama_model") or _DEFAULT_SETTINGS["ollama_model"]
         base_url = settings.get("ollama_url", _DEFAULT_SETTINGS["ollama_url"])
         logger.info("Using Ollama model: %s (%s)", model_name, base_url)
     elif backend == BACKEND_LMSTUDIO:
-        model_name = settings.get("lmstudio_model") or settings.get("model", _DEFAULT_SETTINGS["lmstudio_model"])
+        model_name = settings.get("lmstudio_model") or _DEFAULT_SETTINGS["lmstudio_model"]
         base_url = settings.get("lmstudio_url", _DEFAULT_SETTINGS["lmstudio_url"])
         logger.info("Using LM Studio model: %s (%s)", model_name, base_url)
     elif backend == BACKEND_CUSTOM:
-        model_name = settings.get("custom_model") or settings.get("model", _DEFAULT_SETTINGS["custom_model"])
+        model_name = settings.get("custom_model") or _DEFAULT_SETTINGS["custom_model"]
         base_url = settings.get("custom_url", _DEFAULT_SETTINGS["custom_url"])
         logger.info("Using Custom OpenAI model: %s (%s)", model_name, base_url)
     else:

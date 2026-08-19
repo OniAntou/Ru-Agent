@@ -166,6 +166,41 @@ def test_apply_saved_settings_migrates_retired_gguf_to_opencode(monkeypatch, tmp
     assert result == "Ready"
 
 
+def test_apply_saved_settings_loads_custom_key_for_custom_backend(
+    monkeypatch, tmp_path
+) -> None:
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(
+        '{"backend": "Custom OpenAI", "custom_model": "my-model", "custom_url": "http://localhost:9000/v1"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(shared, "SETTINGS_FILE", settings_file)
+    monkeypatch.setattr(
+        shared.core.custom_cred,
+        "get_key",
+        lambda: "private-custom-key",
+    )
+    loaded: dict = {}
+
+    def fake_load(**kwargs) -> str:
+        loaded.update(kwargs)
+        return "Ready"
+
+    monkeypatch.setattr(shared.core.runner, "load", fake_load)
+    monkeypatch.setattr(
+        shared.core.runner,
+        "select_backend",
+        lambda backend: None,
+    )
+
+    result = shared.apply_saved_settings()
+
+    assert loaded["api_key"] == "private-custom-key"
+    assert loaded["model_name"] == "my-model"
+    assert loaded["base_url"] == "http://localhost:9000/v1"
+    assert result == "Ready"
+
+
 def test_malformed_runtime_json_returns_bounded_422() -> None:
     response = dispatch_runtime_request(
         "POST",

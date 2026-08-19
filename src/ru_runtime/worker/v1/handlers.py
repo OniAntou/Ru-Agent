@@ -59,20 +59,20 @@ def _runtime_load_params(payload: dict[str, Any]) -> dict[str, Any]:
     backend = str(payload.get("backend") or "")
     if backend not in _RUNTIME_BACKENDS:
         raise ValueError("unsupported runtime backend")
-    model_name = str(payload.get("model") or "")
+    model_name = ""
     base_url: str | None = None
     if backend == "OpenCode Zen":
-        model_name = str(payload.get("opencode_model") or model_name)
+        model_name = str(payload.get("opencode_model") or "")
     elif backend == "Kilo Gateway":
-        model_name = str(payload.get("kilo_model") or model_name)
+        model_name = str(payload.get("kilo_model") or "")
     elif backend == "Ollama":
-        model_name = str(payload.get("ollama_model") or model_name)
+        model_name = str(payload.get("ollama_model") or "")
         base_url = str(payload.get("ollama_url") or "") or None
     elif backend == "LM Studio":
-        model_name = str(payload.get("lmstudio_model") or model_name)
+        model_name = str(payload.get("lmstudio_model") or "")
         base_url = str(payload.get("lmstudio_url") or "") or None
     else:
-        model_name = str(payload.get("custom_model") or model_name)
+        model_name = str(payload.get("custom_model") or "")
         base_url = str(payload.get("custom_url") or "") or None
     checkpoint_path = str(payload.get("checkpoint_path") or "")
     api_variant = str(payload.get("api_variant") or "")
@@ -152,6 +152,7 @@ def create_runtime_handlers() -> WorkerHandlers:
                 "checkpoint_path": runner.checkpoint_path,
                 "openai_runtime": runner.openai_runtime,
                 "kilo_reasoning_enabled": runner.kilo_reasoning_enabled,
+                "load_error": runner.load_error,
             }
             try:
                 api_key = ""
@@ -180,6 +181,7 @@ def create_runtime_handlers() -> WorkerHandlers:
                 runner.checkpoint_path = previous["checkpoint_path"]
                 runner.openai_runtime = previous["openai_runtime"]
                 runner.kilo_reasoning_enabled = previous["kilo_reasoning_enabled"]
+                runner.load_error = previous["load_error"]
                 raise RuntimeError("runtime_load_failed") from None
 
     return build_runtime_handlers(
@@ -229,17 +231,18 @@ async def _chat_handler(
             with dependencies.turn_locks():
                 with dependencies.generation_scope():
                     raw_reply = dependencies.runner.generate_reply(
-                    prompt=request.prompt,
-                    max_new_tokens=request.max_tokens,
-                    temperature=request.temperature,
-                    top_k=request.top_k,
-                    allow_web_search=request.allow_web_search,
-                    turns_history=request.turns,
-                    memory_context=request.memory_context,
-                    on_stream_delta=on_stream_delta,
-                    on_stream_reset=on_stream_reset,
-                    vts_instruction=request.vts_instruction,
-                )
+                        prompt=request.prompt,
+                        max_new_tokens=request.max_tokens,
+                        temperature=request.temperature,
+                        top_k=request.top_k,
+                        allow_web_search=request.allow_web_search,
+                        turns_history=request.turns,
+                        memory_context=request.memory_context,
+                        on_stream_delta=on_stream_delta,
+                        on_stream_reset=on_stream_reset,
+                        vts_instruction=request.vts_instruction,
+                        is_cancelled=cancelled.is_set,
+                    )
             if not isinstance(raw_reply, str):
                 raise TypeError("model reply must be text")
             publish(WorkerReply(CHAT_DONE, {"raw_reply": raw_reply}))
@@ -340,6 +343,7 @@ async def _runtime_handler(
         "opencode_api_key",
         "kilo_api_key",
         "gemini_vision_api_key",
+        "custom_api_key",
         "token",
         "secret",
     }

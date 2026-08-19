@@ -136,7 +136,7 @@ public sealed class SettingsStore : ISettingsStore
         }
 
         var rawBackend = ReadString(raw, "backend", string.Empty);
-        var migratedFromGguf = rawBackend is "gguf" or "llama.cpp";
+        var migratedFromGguf = rawBackend.Trim().ToLowerInvariant() is "gguf" or "llama.cpp";
         var backend = NormalizeBackend(rawBackend);
         var model = ReadString(raw, "model", string.Empty);
         var openCodeModel = ReadString(raw, "opencode_model", string.Empty);

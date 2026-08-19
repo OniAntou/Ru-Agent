@@ -437,6 +437,7 @@ def test_runtime_load_params_maps_ollama_lmstudio_and_custom() -> None:
     ollama = _runtime_load_params(
         {
             "backend": "Ollama",
+            "model": "LFM2.5-2.6B-Q4_K_M.gguf",
             "ollama_model": "qwen3:8b",
             "ollama_url": "http://127.0.0.1:11434/v1",
         }
@@ -448,6 +449,7 @@ def test_runtime_load_params_maps_ollama_lmstudio_and_custom() -> None:
     lmstudio = _runtime_load_params(
         {
             "backend": "LM Studio",
+            "model": "LFM2.5-2.6B-Q4_K_M.gguf",
             "lmstudio_model": "local-model",
             "lmstudio_url": "http://127.0.0.1:1234/v1",
         }
@@ -458,6 +460,7 @@ def test_runtime_load_params_maps_ollama_lmstudio_and_custom() -> None:
     custom = _runtime_load_params(
         {
             "backend": "Custom OpenAI",
+            "model": "LFM2.5-2.6B-Q4_K_M.gguf",
             "custom_model": "my-model",
             "custom_url": "http://localhost:9000/v1",
         }
@@ -470,6 +473,11 @@ def test_runtime_load_params_maps_ollama_lmstudio_and_custom() -> None:
     )
     assert kilo["model_name"] == "kilo-auto/free"
     assert kilo["base_url"] is None
+
+    migrated = _runtime_load_params(
+        {"backend": "OpenCode Zen", "model": "LFM2.5-2.6B-Q4_K_M.gguf"}
+    )
+    assert migrated["model_name"] == ""
 
 
 def test_runtime_load_params_rejects_retired_and_unknown_backends() -> None:

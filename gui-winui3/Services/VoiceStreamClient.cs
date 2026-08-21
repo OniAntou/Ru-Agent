@@ -30,9 +30,14 @@ public sealed class VoiceStreamClient : IDisposable
     private bool _disposed;
 
     public VoiceStreamClient(string authSecret, int port = 8000)
+        : this(BackendSession.FromLoopback(port, authSecret))
     {
-        _endpoint = new Uri(
-            $"ws://127.0.0.1:{port}/voice/stream?token={Uri.EscapeDataString(authSecret)}");
+    }
+
+    public VoiceStreamClient(BackendSession session)
+    {
+        _endpoint = session?.VoiceStreamUri
+            ?? throw new ArgumentNullException(nameof(session));
     }
 
     public static string SerializeStartFrame(string requestId, string text, string voiceLabel, double speed, string? correlationId = null)

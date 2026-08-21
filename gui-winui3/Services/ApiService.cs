@@ -16,21 +16,24 @@ namespace RuApp.Services
     {
         private readonly HttpClient _httpClient;
         private readonly string _baseUrl;
-        private readonly string _authSecret;
-        private readonly int _port;
+        private readonly BackendSession _session;
 
         public ApiService(string authSecret, int port = 8000)
+            : this(BackendSession.FromLoopback(port, authSecret))
         {
-            _authSecret = authSecret;
-            _port = port;
-            _baseUrl = $"http://127.0.0.1:{port}";
+        }
+
+        public ApiService(BackendSession session)
+        {
+            _session = session ?? throw new ArgumentNullException(nameof(session));
+            _baseUrl = session.HttpBaseUri.ToString().TrimEnd('/');
             _httpClient = new HttpClient();
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", authSecret);
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AuthSecret);
         }
 
         public VoiceStreamClient CreateVoiceStreamClient()
         {
-            return new VoiceStreamClient(_authSecret, _port);
+            return new VoiceStreamClient(_session);
         }
 
         public async Task<AppSettingsDto?> GetSettingsAsync()

@@ -15,8 +15,7 @@ namespace RuApp.Services
 
         private ClientWebSocket? _webSocket;
         private CancellationTokenSource? _cts;
-        private readonly string _authSecret;
-        private readonly int _port;
+        private readonly BackendSession _session;
         private bool _disposed;
         private bool _backendStopped;
 
@@ -31,9 +30,13 @@ namespace RuApp.Services
         public bool IsConnected => _webSocket != null && _webSocket.State == WebSocketState.Open;
 
         public ChatWebSocketClient(string authSecret, int port = 8000)
+            : this(BackendSession.FromLoopback(port, authSecret))
         {
-            _authSecret = authSecret;
-            _port = port;
+        }
+
+        public ChatWebSocketClient(BackendSession session)
+        {
+            _session = session ?? throw new ArgumentNullException(nameof(session));
         }
 
         public void NotifyBackendStopped()
@@ -77,7 +80,7 @@ namespace RuApp.Services
 
         private async Task ConnectAndListenAsync(CancellationToken ct)
         {
-            var uri = new Uri($"ws://127.0.0.1:{_port}/chat?token={Uri.EscapeDataString(_authSecret)}");
+            var uri = _session.ChatUri;
             var socket = new ClientWebSocket();
             await socket.ConnectAsync(uri, ct);
             if (ct.IsCancellationRequested || _disposed)

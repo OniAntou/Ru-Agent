@@ -1,7 +1,7 @@
 # Ru hands-free voice conversation design
 
-**Status:** Proposed for review  
-**Date:** 2026-08-21  
+**Status:** Proposed for review
+**Date:** 2026-08-21
 **Scope:** WinUI 3 Chat voice interaction only
 
 ## Problem

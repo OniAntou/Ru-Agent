@@ -560,20 +560,6 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
         }
 
-        public async Task<bool> TriggerVtsActionAsync(string action)
-        {
-            try
-            {
-                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/vts/action", new { action });
-                return response.IsSuccessStatusCode;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[ApiService] TriggerVtsActionAsync failed: {ex.Message}");
-                return false;
-            }
-        }
-
         public async Task<List<MemoryItemDto>?> GetMemoryAsync()
         {
             try

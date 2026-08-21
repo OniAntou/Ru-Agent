@@ -398,14 +398,6 @@ namespace RuApp.Views
             _ = PollVtsStatusAsync();
         }
 
-        private async void OnVtsActionClick(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button btn && btn.Tag is string action && _apiService != null)
-            {
-                await _apiService.TriggerVtsActionAsync(action);
-            }
-        }
-
         private void OnVtsConfigSliderChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
         {
             System.Diagnostics.Debug.WriteLine($"[SettingsView] Slider changed: {sender?.GetType().Name} new={e.NewValue:0}");

@@ -23,14 +23,17 @@ from benchmark_aspnetcore_compat import (
     _websocket_url,
     benchmark_target,
 )
+from harness.routes import RouteSafety
 
 
-def classify_route_for_safe_probe(entry: dict[str, Any]) -> str:
+def classify_route_for_safe_probe(entry: dict[str, Any]) -> str | RouteSafety:
     if entry.get("transport") == "websocket":
         return "websocket"
+    if str(entry.get("path") or "").startswith("/observation/"):
+        return RouteSafety.EXTERNAL_SKIP
     if entry.get("method") == "GET":
         return "probe"
-    return "skip: mutating HTTP method"
+    return RouteSafety.FIXTURE_MUTATION
 
 
 _OPTIONAL_UNAVAILABLE_STATUSES: dict[str, frozenset[int]] = {

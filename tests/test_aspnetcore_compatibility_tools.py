@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
+from harness.routes import RouteSafety
 from aspnetcore_compatibility_harness import (
     build_runtime_environment,
     classify_route_for_safe_probe,
@@ -29,10 +30,10 @@ def test_empty_summary_is_explicit_and_failure_count_is_preserved() -> None:
     }
 
 
-def test_safe_probe_skips_mutating_routes() -> None:
+def test_safe_probe_classifies_mutating_routes() -> None:
     assert classify_route_for_safe_probe(
         {"method": "POST", "transport": "http", "path": "/settings"}
-    ) == "skip: mutating HTTP method"
+    ) == RouteSafety.FIXTURE_MUTATION
     assert classify_route_for_safe_probe(
         {"method": "GET", "transport": "http", "path": "/status"}
     ) == "probe"

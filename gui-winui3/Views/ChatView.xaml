@@ -191,7 +191,7 @@
                     Background="{StaticResource RuSurfaceBrush}"
                     BorderBrush="{StaticResource RuLineBrush}"
                     BorderThickness="0,1,0,0"
-                    CornerRadius="0"
+                    CornerRadius="{StaticResource RuControlCornerRadius}"
                     Padding="4,4">
                 <Grid ColumnDefinitions="Auto,*,Auto">
                     <Button x:Name="MicButton"

@@ -171,6 +171,26 @@ public sealed class EditorialReadingRoomContractTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Shell_and_chat_use_subtle_shared_rounding()
+    {
+        var shell = File.ReadAllText(FindSource("MainWindow.xaml"));
+        var chat = File.ReadAllText(FindSource("ChatView.xaml"));
+
+        Assert.Contains(
+            "<Border Grid.Column=\"0\" Background=\"{StaticResource RuSidebarBrush}\" BorderThickness=\"0\" CornerRadius=\"0,6,6,0\">",
+            shell,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Name=\"InputBorder\"",
+            chat,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "CornerRadius=\"{StaticResource RuControlCornerRadius}\"",
+            chat,
+            StringComparison.Ordinal);
+    }
+
     private static string FindSource(string fileName)
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

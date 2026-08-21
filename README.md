@@ -91,15 +91,30 @@ manual acceptance boundaries.
 
 ## Verification
 
-Run heavyweight gates sequentially:
+Run heavyweight gates sequentially. The deterministic backend Harness owns a
+temporary worker/edge session with dynamic loopback ports and emits a safe
+schema-v2 artifact:
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
 dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --nologo
 dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --deterministic-chat --output D:\LLM\artifacts\aspnetcore\deterministic-chat-gate.json
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output D:\LLM\artifacts\aspnetcore\ru-harness-vnext.json
 cmd /c D:\LLM\build.bat
+```
+
+The backend artifact covers 41 HTTP routes and 2 WebSocket routes, requires
+correct-bearer success plus wrong/missing-bearer rejection, and records
+observation routes as explicit hardware/external skips. It uses synthetic
+STT/TTS and records only statuses, timings, counts, event types, and cleanup
+state. `--deterministic-chat` remains an alias for the backend mode.
+
+The production live voice gate is separate and must be run with the real
+runtime/audio path:
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode runtime-live --require-voice-audio --benchmark-samples 20
 ```
 
 The logging latency gate can be run independently; it uses temporary activity

@@ -17,7 +17,12 @@ jobs:
       - run: pip install -e ".[dev,runtime]"
       - run: python -m pytest -q
       - run: python scripts/check_aspnetcore_route_matrix.py
-      - run: python scripts/aspnetcore_compatibility_harness.py --deterministic-chat --output artifacts/aspnetcore/ci-deterministic-chat-gate.json
+      - run: python scripts/aspnetcore_compatibility_harness.py --mode backend-deterministic --output artifacts/aspnetcore/ru-harness-vnext.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ru-harness-vnext
+          path: artifacts/aspnetcore/ru-harness-vnext.json
       - run: pip check
 
   dotnet:

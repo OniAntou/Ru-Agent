@@ -36,6 +36,17 @@ Runtime Worker -> model adapters / Voice Engine / STT / VTS / observation
 The typed worker protocol v2 and framed Voice Engine are accepted decisions,
 not claims about the currently running v1/Flask implementation.
 
+## Harness ownership
+
+The vNext compatibility Harness is a test-only owner. Its CLI creates a
+temporary data/log root, two dynamically leased loopback ports, memory-only
+bearers, and one worker plus one ASP.NET Core edge child. It classifies all 41
+HTTP and 2 WebSocket contract entries, uses deterministic fixtures for safe
+mutations and voice, skips observation routes that require hardware or
+external services, and removes the temporary root during idempotent cleanup.
+The Harness does not change RuApp's normal production ownership of its
+children, credentials, or fixed runtime defaults.
+
 ## Ownership
 
 | Owner | Responsibilities |

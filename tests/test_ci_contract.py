@@ -11,7 +11,9 @@ def test_ci_uses_current_python_extras_and_route_contract() -> None:
     assert ".[dev,runtime]" in workflow
     assert "dev,server" not in workflow
     assert "scripts/check_aspnetcore_route_matrix.py" in workflow
-    assert "scripts/aspnetcore_compatibility_harness.py --deterministic-chat" in workflow
+    assert "--mode backend-deterministic" in workflow
+    assert "actions/upload-artifact@v4" in workflow
+    assert "ru-harness-vnext" in workflow
     assert "python -m pytest -q" in workflow
     assert "pip check" in workflow
 

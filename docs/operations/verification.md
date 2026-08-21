@@ -23,19 +23,35 @@ The route checker must report 41 HTTP routes and 2 WebSocket routes. The build
 must produce self-contained `RuBackend.exe` and `RuApp.exe`; verification does
 not launch them.
 
-The compatibility harness is the deterministic public-edge regression gate. It
-uses a temporary data root, probes safe GET routes with fail-closed status
-checks, verifies chat privacy/order, and always verifies child and port cleanup:
+The backend Harness vNext is the deterministic public-edge regression gate. It
+owns a temporary worker/edge session, leases free loopback ports, generates
+memory-only desktop and worker bearers, classifies every route, and always
+verifies child and port cleanup:
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --deterministic-chat --output D:\LLM\artifacts\aspnetcore\deterministic-chat-gate.json
+$artifact = Join-Path $env:TEMP 'ru-harness-vnext-backend.json'
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output $artifact
 ```
 
-The live voice gate is optional because it requires OmniVoice and a real
-audio-producing worker:
+The artifact uses schema version 2 and records only bounded statuses, reason
+codes, timings, counts, route coverage, and cleanup booleans. The expected
+coverage is 41 HTTP routes and 2 WebSocket routes. Observation routes are
+explicitly `skipped` with `hardware_or_external_observation_required`; all
+other safe routes use isolated fixtures. Auth ownership must show the generated
+bearer succeeding and both wrong/missing bearers receiving 401/403. A child
+that exits after Harness stop is recorded as `expected_stop`, including a
+non-zero shutdown code.
+
+`--deterministic-chat` remains a compatibility alias for
+`--mode backend-deterministic`. The backend mode uses dynamic ports and
+synthetic PCM WAV/STT/TTS; it never requires a model, microphone, speaker, or
+VTube Studio connection.
+
+The production live voice gate is separate because it requires OmniVoice and a
+real audio-producing worker:
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --require-voice-audio --benchmark-samples 20
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode runtime-live --require-voice-audio --benchmark-samples 20
 ```
 
 Automated voice tests prove protocol ordering, cancellation, cleanup, metadata

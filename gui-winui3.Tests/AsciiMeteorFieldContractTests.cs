@@ -14,7 +14,7 @@ public sealed class AsciiMeteorFieldContractTests
         Assert.Contains("x:Name=\"MeteorField\"", xaml, StringComparison.Ordinal);
         Assert.Contains("IsHitTestVisible=\"False\"", xaml, StringComparison.Ordinal);
         Assert.Contains("MeteorField.IsActive = !hasMessages", code, StringComparison.Ordinal);
-        Assert.Contains("MeteorField.Dispose()", code, StringComparison.Ordinal);
+        Assert.Contains("MeteorField?.Dispose()", code, StringComparison.Ordinal);
     }
 
     [Fact]

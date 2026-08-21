@@ -7,7 +7,8 @@
 **Visual follow-up:** The initially implemented welcome ambient wash was removed
 after visual inspection because its hard-edged rectangle read as an unintended
 block in Dark mode. The signature now relies on typography, spacing, accent
-rules, and focus state without a welcome wash layer.
+rules, and native control states without a welcome wash layer or a decorative
+composer focus line.
 
 ## Decision summary
 
@@ -105,8 +106,8 @@ The welcome composition becomes an editorial starting point:
 
 - Keep the existing 6 px shared rounding and reading-column placement.
 - Strengthen the composer as the visual endpoint with a slightly deeper
-  theme-aware surface, a clear focus rule, and a more deliberate send-button
-  contrast.
+  theme-aware surface and a more deliberate send-button contrast. Keep the
+  prompt's native caret/focus behavior without adding a separate accent line.
 - Keep microphone/send buttons, tooltips, keyboard behavior, Enter, and
   Shift+Enter unchanged.
 - Do not turn the composer into a capsule or floating glass panel.
@@ -130,7 +131,8 @@ The welcome composition becomes an editorial starting point:
   animate each token or delay response rendering.
 - Theme icon changes with a short crossfade or glyph transition that does not
   block the click.
-- Focus states remain visible through both color and shape/rule changes.
+- Focus states retain native control affordances without a decorative prompt
+  underline or extra focus surface.
 - Under reduced motion, all optional transitions become immediate/static.
 - No animation may call the backend, recreate an ItemsSource, restart polling,
   or affect voice/subtitle/VTS timing.
@@ -182,7 +184,8 @@ in both Light and Dark:
 - The Ru wordmark is recognizable but quiet.
 - The welcome state feels authored without looking like a landing page.
 - The single warm accent guides attention without dominating the canvas.
-- Message hierarchy and composer focus are immediately legible.
+- Message hierarchy and the prompt surface remain immediately legible without
+  a decorative focus line.
 - Hover/focus/theme transitions feel deliberate and short.
 - No clipping, horizontal scroll, excessive rounded surfaces, visual noise, or
   generic AI-dashboard patterns appear.

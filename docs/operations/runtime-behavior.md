@@ -106,10 +106,11 @@ structural correctness. Visual resizing and live audio/VTS behavior remain
 manual acceptance checks.
 
 The current Ru signature layer is also presentation-only: a quiet title-bar
-wordmark, an editorial welcome eyebrow, message edge rules, and a composer focus
-rule. There is no ambient welcome rectangle or decorative surface layer. These
-elements do not add Chat content, VTS/voice metadata, fake status indicators,
-backend calls, or timing changes.
+wordmark, an editorial welcome eyebrow, and message edge rules. The composer
+keeps the native TextBox caret/focus behavior without a decorative accent line;
+there is no ambient welcome rectangle or extra surface layer. These elements do
+not add Chat content, VTS/voice metadata, fake status indicators, backend calls,
+or timing changes.
 
 ## Persistence and privacy
 

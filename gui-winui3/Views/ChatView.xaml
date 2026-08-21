@@ -235,8 +235,6 @@
                              Grid.Column="1"
                              PlaceholderText="Viết cho Ru..."
                              PreviewKeyDown="OnChatInputPreviewKeyDown"
-                             GotFocus="OnChatInputGotFocus"
-                             LostFocus="OnChatInputLostFocus"
                              AcceptsReturn="True"
                              MaxHeight="120"
                              VerticalAlignment="Center"
@@ -270,14 +268,6 @@
                             ToolTipService.ToolTip="Gửi tin nhắn">
                         <FontIcon Glyph="&#xE725;" FontSize="14" Foreground="White" Margin="-1,1,0,0" />
                     </Button>
-
-                    <Rectangle x:Name="ComposerFocusRule"
-                               Grid.ColumnSpan="3"
-                               Height="2"
-                               VerticalAlignment="Bottom"
-                               Fill="{StaticResource RuAccentBrush}"
-                               Opacity="0"
-                               IsHitTestVisible="False" />
                 </Grid>
             </Border>
         </Grid>

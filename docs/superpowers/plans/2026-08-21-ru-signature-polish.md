@@ -9,7 +9,8 @@
 **Post-implementation correction (2026-08-21):** The ambient wash token and
 welcome rectangle described in the original plan were removed. The contract
 tests now assert their absence while retaining the typography and accent-rule
-markers.
+markers. The composer focus line and its visual-only handlers were also removed
+after visual review; prompt focus now relies on the native TextBox behavior.
 
 **Tech Stack:** WinUI 3 XAML, C#, existing Ru resources, xUnit source/XAML contracts, sequential dotnet test and Release build.
 
@@ -60,14 +61,13 @@ public void Chat_has_authored_welcome_and_reading_rhythm_markers()
 }
 
 [Fact]
-public void Composer_exposes_a_theme_aware_focus_rule_without_new_behavior()
+public void Composer_does_not_expose_a_decorative_focus_rule()
 {
     var source = File.ReadAllText(FindSource("ChatView.xaml"));
 
-    Assert.Contains("x:Name=\"ComposerFocusRule\"", source, StringComparison.Ordinal);
-    Assert.Contains("GotFocus=\"OnChatInputGotFocus\"", source, StringComparison.Ordinal);
-    Assert.Contains("LostFocus=\"OnChatInputLostFocus\"", source, StringComparison.Ordinal);
-    Assert.Contains("Grid.ColumnSpan=\"3\"", source, StringComparison.Ordinal);
+    Assert.DoesNotContain("x:Name=\"ComposerFocusRule\"", source, StringComparison.Ordinal);
+    Assert.DoesNotContain("GotFocus=\"OnChatInputGotFocus\"", source, StringComparison.Ordinal);
+    Assert.DoesNotContain("LostFocus=\"OnChatInputLostFocus\"", source, StringComparison.Ordinal);
 }
 
 [Fact]
@@ -241,69 +241,39 @@ git add gui-winui3/Views/ChatView.xaml gui-winui3.Tests/EditorialReadingRoomCont
 git commit -m "style: add Ru editorial message rhythm"
 ~~~
 
-### Task 4: Add composer focus polish without changing input behavior
+### Task 4: Remove the decorative composer focus line
 
 **Files:**
 - Modify: gui-winui3/Views/ChatView.xaml
 - Modify: gui-winui3/Views/ChatView.xaml.cs
 - Test: gui-winui3.Tests/EditorialReadingRoomContractTests.cs
 
-- [ ] **Step 1: Add a focus rule to the composer grid**
+- [x] **Step 1: Remove the focus rule and XAML event hooks**
 
-Add this Rectangle inside the InputBorder child Grid:
+Visual review showed that the orange focus line was too prominent. Remove the
+`ComposerFocusRule` rectangle and the `GotFocus`/`LostFocus` hooks from
+`ChatInputTextBox`; keep `PreviewKeyDown`, send behavior, and all keyboard
+semantics unchanged.
 
-~~~xml
-<Rectangle x:Name="ComposerFocusRule"
-           Grid.ColumnSpan="3"
-           Height="2"
-           VerticalAlignment="Bottom"
-           Fill="{StaticResource RuAccentBrush}"
-           Opacity="0"
-           IsHitTestVisible="False" />
-~~~
+- [x] **Step 2: Remove the visual-only focus handlers**
 
-Add GotFocus="OnChatInputGotFocus" and LostFocus="OnChatInputLostFocus" to ChatInputTextBox. Keep all existing handlers and keyboard behavior unchanged.
+Delete `OnChatInputGotFocus` and `OnChatInputLostFocus` from
+`ChatView.xaml.cs`. Native TextBox caret/focus behavior remains available.
 
-- [ ] **Step 2: Add visual-only focus handlers**
+- [x] **Step 3: Add the removal contract and run focused tests**
 
-Add to ChatView.xaml.cs:
-
-~~~csharp
-private void OnChatInputGotFocus(object sender, RoutedEventArgs e)
-{
-    ComposerFocusRule.Opacity = 1;
-}
-
-private void OnChatInputLostFocus(object sender, RoutedEventArgs e)
-{
-    ComposerFocusRule.Opacity = 0;
-}
-~~~
-
-The handlers must only change ComposerFocusRule opacity.
-
-- [ ] **Step 3: Add the exact focus contract and run focused tests**
-
-Add:
+The contract must assert that the decorative rule, XAML hooks, and handlers are
+absent:
 
 ~~~csharp
 [Fact]
-public void Chat_focus_polish_handlers_are_visual_only()
+public void Composer_does_not_expose_a_decorative_focus_rule()
 {
-    var source = File.ReadAllText(FindSource("ChatView.xaml.cs"));
-    var gotFocusStart = source.IndexOf("private void OnChatInputGotFocus", StringComparison.Ordinal);
-    var lostFocusStart = source.IndexOf("private void OnChatInputLostFocus", StringComparison.Ordinal);
-    var nextMethodStart = source.IndexOf("private ", lostFocusStart + 1, StringComparison.Ordinal);
+    var source = File.ReadAllText(FindSource("ChatView.xaml"));
 
-    Assert.True(gotFocusStart >= 0);
-    Assert.True(lostFocusStart > gotFocusStart);
-    Assert.True(nextMethodStart > lostFocusStart);
-
-    var handlers = source[gotFocusStart..nextMethodStart];
-    Assert.DoesNotContain("SendCurrentMessageAsync", handlers, StringComparison.Ordinal);
-    Assert.DoesNotContain("ApiService", handlers, StringComparison.Ordinal);
-    Assert.Contains("ComposerFocusRule.Opacity = 1", handlers, StringComparison.Ordinal);
-    Assert.Contains("ComposerFocusRule.Opacity = 0", handlers, StringComparison.Ordinal);
+    Assert.DoesNotContain("x:Name=\"ComposerFocusRule\"", source, StringComparison.Ordinal);
+    Assert.DoesNotContain("GotFocus=\"OnChatInputGotFocus\"", source, StringComparison.Ordinal);
+    Assert.DoesNotContain("LostFocus=\"OnChatInputLostFocus\"", source, StringComparison.Ordinal);
 }
 ~~~
 
@@ -313,7 +283,7 @@ Run:
 dotnet test gui-winui3.Tests --nologo --filter FullyQualifiedName~EditorialReadingRoomContractTests
 ~~~
 
-Expected: all focused contracts pass.
+Expected: all focused contracts pass and the composer removal contracts stay green.
 
 - [ ] **Step 4: Build the GUI Release project**
 
@@ -323,11 +293,11 @@ dotnet build gui-winui3/RuApp.csproj -c Release -r win-x64 --self-contained true
 
 Expected: exit 0 with zero warnings and zero errors.
 
-- [ ] **Step 5: Commit the composer slice**
+- [x] **Step 5: Commit the composer removal slice**
 
 ~~~powershell
 git add gui-winui3/Views/ChatView.xaml gui-winui3/Views/ChatView.xaml.cs gui-winui3.Tests/EditorialReadingRoomContractTests.cs
-git commit -m "style: polish Ru composer focus state"
+git commit -m "fix: remove composer focus rule"
 ~~~
 
 ### Task 5: Reconcile documentation and complete verification
@@ -339,9 +309,10 @@ git commit -m "style: polish Ru composer focus state"
 - [ ] **Step 1: Update current runtime documentation**
 
 Add that Ru's visual signature is expressed by the wordmark, editorial welcome
-eyebrow, message edge rules, and composer focus rule. State that the removed
-ambient rectangle must not return and that these remain presentation-only,
-adding no backend calls, VTS metadata, or Chat content.
+eyebrow, and message edge rules. State that the removed ambient rectangle and
+decorative composer focus line must not return; the native prompt focus/caret
+behavior remains presentation-only and adds no backend calls, VTS metadata, or
+Chat content.
 
 - [ ] **Step 2: Mark the signature design implemented**
 

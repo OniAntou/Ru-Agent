@@ -91,7 +91,7 @@ tokens, typography, spacing, and editorial layout.
 | `RuInkBrush` | `#20231F` | Primary text |
 | `RuMutedBrush` | `#5F685F` | Secondary text and quiet metadata |
 | `RuLineBrush` | `#C9CEC5` | Dividers and borders |
-| `RuAccentBrush` | `#A84B38` | Active navigation, focus rule, primary action |
+| `RuAccentBrush` | `#A84B38` | Active navigation and primary action |
 | `RuAccentSoftBrush` | `#EEDFD9` | Subtle selection and action background |
 | `RuSuccessBrush` | `#2F6F51` | Positive service state |
 | `RuWarningBrush` | `#9A6C1F` | Warning service state |
@@ -194,8 +194,8 @@ is added.
 
 - Keep the composer at the bottom of the reading column rather than as a
   floating capsule spanning the full content area.
-- Use a flat surface with one top divider and an accent focus rule along the
-  lower edge.
+- Use a flat surface with one top divider. Keep prompt focus native and avoid a
+  decorative accent rule along the lower edge.
 - Keep the existing microphone and send buttons, click handlers, tooltips,
   hit targets, and keyboard behavior.
 - Keep the TextBox transparent inside the composer. Use the shorter placeholder

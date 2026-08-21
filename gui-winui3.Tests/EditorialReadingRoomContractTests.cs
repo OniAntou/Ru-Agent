@@ -93,33 +93,23 @@ public sealed class EditorialReadingRoomContractTests
     }
 
     [Fact]
-    public void Composer_exposes_a_theme_aware_focus_rule_without_new_behavior()
+    public void Composer_does_not_expose_a_decorative_focus_rule()
     {
         var source = File.ReadAllText(FindSource("ChatView.xaml"));
 
-        Assert.Contains("x:Name=\"ComposerFocusRule\"", source, StringComparison.Ordinal);
-        Assert.Contains("GotFocus=\"OnChatInputGotFocus\"", source, StringComparison.Ordinal);
-        Assert.Contains("LostFocus=\"OnChatInputLostFocus\"", source, StringComparison.Ordinal);
-        Assert.Contains("Grid.ColumnSpan=\"3\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"ComposerFocusRule\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("GotFocus=\"OnChatInputGotFocus\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("LostFocus=\"OnChatInputLostFocus\"", source, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Chat_focus_polish_handlers_are_visual_only()
+    public void Chat_focus_polish_handlers_are_removed()
     {
         var source = File.ReadAllText(FindSource("ChatView.xaml.cs"));
-        var gotFocusStart = source.IndexOf("private void OnChatInputGotFocus", StringComparison.Ordinal);
-        var lostFocusStart = source.IndexOf("private void OnChatInputLostFocus", StringComparison.Ordinal);
-        var nextMethodStart = source.IndexOf("private ", lostFocusStart + 1, StringComparison.Ordinal);
 
-        Assert.True(gotFocusStart >= 0);
-        Assert.True(lostFocusStart > gotFocusStart);
-        Assert.True(nextMethodStart > lostFocusStart);
-
-        var handlers = source[gotFocusStart..nextMethodStart];
-        Assert.DoesNotContain("SendCurrentMessageAsync", handlers, StringComparison.Ordinal);
-        Assert.DoesNotContain("ApiService", handlers, StringComparison.Ordinal);
-        Assert.Contains("ComposerFocusRule.Opacity = 1", handlers, StringComparison.Ordinal);
-        Assert.Contains("ComposerFocusRule.Opacity = 0", handlers, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnChatInputGotFocus", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnChatInputLostFocus", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("ComposerFocusRule", source, StringComparison.Ordinal);
     }
 
     [Fact]

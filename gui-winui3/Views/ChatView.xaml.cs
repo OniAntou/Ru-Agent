@@ -128,16 +128,6 @@ namespace RuApp.Views
             _typingDebounce?.Start();
         }
 
-        private void OnChatInputGotFocus(object sender, RoutedEventArgs e)
-        {
-            ComposerFocusRule.Opacity = 1;
-        }
-
-        private void OnChatInputLostFocus(object sender, RoutedEventArgs e)
-        {
-            ComposerFocusRule.Opacity = 0;
-        }
-
         private void OnWsConnected()
         {
             DispatcherQueue.TryEnqueue(() =>

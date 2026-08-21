@@ -17,6 +17,8 @@
                 <Border MaxWidth="560"
                         HorizontalAlignment="Right"
                         Background="{StaticResource RuSurfaceBrush}"
+                        BorderBrush="{StaticResource RuAccentBrush}"
+                        BorderThickness="0,0,2,0"
                         Padding="14,10">
                     <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
                                             FontSize="16"
@@ -28,22 +30,34 @@
 
         <DataTemplate x:Key="AssistantMessageTemplate" x:DataType="models:ChatMessageItem">
             <Grid Margin="0,18" HorizontalAlignment="Stretch">
-                <StackPanel MaxWidth="700" HorizontalAlignment="Left" Spacing="6">
-                    <TextBlock Text="Ru"
-                               FontFamily="{StaticResource RuDisplayFontFamily}"
-                               FontSize="12"
-                               Foreground="{StaticResource RuAccentBrush}" />
-                    <Rectangle x:Name="TypingCaret"
-                               Width="1"
-                               Height="20"
+                <Grid MaxWidth="700"
+                      HorizontalAlignment="Left"
+                      ColumnDefinitions="2,*">
+                    <Rectangle x:Name="AssistantAccentRule"
+                               Grid.Column="0"
+                               Width="2"
                                Fill="{StaticResource RuAccentBrush}"
-                               Visibility="{x:Bind ShowTypingDots, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                    <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
-                                            FontSize="16"
-                                            Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
-                                            FontFamily="{StaticResource RuUiFontFamily}"
-                                            Visibility="{x:Bind ShowContent, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                </StackPanel>
+                               Opacity="0.72"
+                               VerticalAlignment="Stretch" />
+                    <StackPanel Grid.Column="1"
+                                Spacing="6"
+                                Margin="12,0,0,0">
+                        <TextBlock Text="Ru"
+                                   FontFamily="{StaticResource RuDisplayFontFamily}"
+                                   FontSize="12"
+                                   Foreground="{StaticResource RuAccentBrush}" />
+                        <Rectangle x:Name="TypingCaret"
+                                   Width="1"
+                                   Height="20"
+                                   Fill="{StaticResource RuAccentBrush}"
+                                   Visibility="{x:Bind ShowTypingDots, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
+                                                FontSize="16"
+                                                Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
+                                                FontFamily="{StaticResource RuUiFontFamily}"
+                                                Visibility="{x:Bind ShowContent, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    </StackPanel>
+                </Grid>
             </Grid>
         </DataTemplate>
 
@@ -90,6 +104,14 @@
               Grid.Row="0"
               HorizontalAlignment="Center"
               Background="Transparent">
+            <Rectangle x:Name="WelcomeAccentWash"
+                       Width="320"
+                       Height="112"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Top"
+                       Margin="0,16,0,0"
+                       Fill="{StaticResource RuAccentWashBrush}"
+                       IsHitTestVisible="False" />
             <StackPanel x:Name="WelcomeHeroPanel"
                         MaxWidth="820"
                         HorizontalAlignment="Stretch"
@@ -97,6 +119,13 @@
                         Spacing="18"
                         Margin="24,16"
                         Visibility="Visible">
+                <TextBlock x:Name="WelcomeEyebrow"
+                           Text="RU / CONVERSATIONAL RUNTIME"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           CharacterSpacing="120"
+                           Foreground="{StaticResource RuMutedBrush}" />
                 <TextBlock Text="Ru"
                            FontFamily="{StaticResource RuDisplayFontFamily}"
                            FontSize="14"

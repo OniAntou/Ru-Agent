@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the Architecture v2 branch, 2026-08-13.
+Status: operating contract for the Architecture v2 branch, 2026-08-21.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -46,9 +46,22 @@ reported as unavailable and never silently changes the saved engine/profile.
 
 ## Speech input and VTube Studio
 
-Microphone capture is bounded 16 kHz mono PCM WAV. Google recognition with the
-`vi-VN` locale is the current experimental STT implementation; audio leaves the
-machine for that explicitly requested operation and is not persisted by Ru.
+Microphone capture is bounded 16 kHz mono PCM WAV. In WinUI Chat the primary
+microphone button starts an explicit, user-controlled half-duplex conversation:
+the local AudioGraph/VAD capture waits for one turn, sends only a non-empty
+transcript through the existing `/voice/transcribe` Google `vi-VN` path, submits
+it to the active WebSocket session, and waits for the existing reply-completion
+boundary before opening the microphone again. The button, typed Send, session
+switch, and view shutdown cancel the loop; cancellation is idempotent and a
+late STT result cannot create a prompt. The microphone remains closed while Ru
+speaks, so speaker audio is not fed back into STT.
+
+Raw PCM frames and transcripts are held only in memory for the active turn.
+Audio leaves the machine for the explicitly requested STT operation and is not
+persisted by Ru. A no-speech turn returns to Listening without sending an empty
+prompt. The controller and VAD are covered by deterministic tests; physical
+microphone accuracy, speaker output, and live VTube Studio behavior remain
+manual acceptance gates.
 
 VTube Studio hotkeys and expressions are resolved from the connected model's
 current catalog. The runtime revalidates catalog codes before dispatch and

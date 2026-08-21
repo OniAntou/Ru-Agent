@@ -2,8 +2,10 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
@@ -50,7 +52,8 @@ namespace RuApp.Views
         private ApiService? _apiService;
         private ChatWebSocketClient? _wsClient;
         private VoicePlaybackService? _voicePlayback;
-        private MicRecorderService _micRecorder = new();
+        private VoiceTurnCaptureService? _voiceCapture;
+        private VoiceConversationService? _voiceConversation;
         private string _activeSessionId = "default";
         public ObservableCollection<ChatMessageItem> Messages { get; } = new();
         private DispatcherTimer? _typingDebounce;
@@ -95,6 +98,12 @@ namespace RuApp.Views
             _apiService = apiService;
             _wsClient = wsClient;
             _voicePlayback = voicePlayback;
+            _voiceCapture = new VoiceTurnCaptureService();
+            _voiceConversation = new VoiceConversationService(
+                _voiceCapture,
+                TranscribeVoiceAsync,
+                SendVoiceMessageAsync);
+            _voiceConversation.StatusChanged += OnVoiceConversationStatusChanged;
 
             _wsClient.OnDeltaReceived += OnWsDeltaReceived;
             _wsClient.OnDoneReceived += OnWsDoneReceived;
@@ -225,7 +234,7 @@ namespace RuApp.Views
                 string text = ChatInputTextBox.Text.Trim();
                 if (string.IsNullOrEmpty(text) || _wsClient == null) return;
 
-                _voicePlayback?.StopVoice();
+                await StopVoiceConversationAsync();
 
                 ChatInputTextBox.Text = string.Empty;
                 if (_typingPushed)
@@ -234,39 +243,97 @@ namespace RuApp.Views
                     _ = _apiService?.PushVtsActivityAsync(false);
                 }
 
-                Messages.Add(new ChatMessageItem { Role = "user", Content = text });
-                var assistantMsg = new ChatMessageItem { Role = "assistant", Content = "", IsStreaming = true };
-                Messages.Add(assistantMsg);
-                if (_voicePlayback?.AutoReadReplies == true)
-                {
-                    _voicePlayback.BeginReplyStream();
-                }
-
-                ScrollChatToBottom();
-
-                await _wsClient.SendMessageAsync(text, _activeSessionId);
+                await SendMessageTextAsync(text, CancellationToken.None);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in SendCurrentMessageAsync: {ex.Message}");
-                _voicePlayback?.StopVoice();
-                var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
-                if (last != null)
+                HandleSendError(ex, "SendCurrentMessageAsync");
+            }
+        }
+
+        private async Task SendVoiceMessageAsync(string text, CancellationToken cancellationToken)
+        {
+            if (DispatcherQueue.HasThreadAccess)
+            {
+                await SendVoiceMessageOnUiThreadAsync(text, cancellationToken);
+                return;
+            }
+
+            var completion = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!DispatcherQueue.TryEnqueue(async () =>
+            {
+                try
                 {
-                    last.Content = $"**LỖI GỬI:** {ex.Message}";
-                    last.IsStreaming = false;
-                    last.IsError = true;
+                    await SendVoiceMessageOnUiThreadAsync(text, cancellationToken);
+                    completion.TrySetResult(true);
                 }
-                else
+                catch (Exception ex)
                 {
-                    Messages.Add(new ChatMessageItem
-                    {
-                        Role = "assistant",
-                        Content = $"**LỖI GỬI:** {ex.Message}",
-                        IsStreaming = false,
-                        IsError = true
-                    });
+                    completion.TrySetException(ex);
                 }
+            }))
+            {
+                throw new InvalidOperationException("Không thể chuyển lượt nói sang UI thread.");
+            }
+
+            await completion.Task.ConfigureAwait(false);
+        }
+
+        private async Task SendVoiceMessageOnUiThreadAsync(string text, CancellationToken cancellationToken)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await SendMessageTextAsync(text, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                HandleSendError(ex, "SendVoiceMessageAsync");
+                throw;
+            }
+        }
+
+        private async Task SendMessageTextAsync(string text, CancellationToken cancellationToken)
+        {
+            if (_wsClient == null)
+            {
+                throw new InvalidOperationException("Chat WebSocket chưa sẵn sàng.");
+            }
+
+            _voicePlayback?.StopVoice();
+            Messages.Add(new ChatMessageItem { Role = "user", Content = text });
+            Messages.Add(new ChatMessageItem { Role = "assistant", Content = "", IsStreaming = true });
+            if (_voicePlayback?.AutoReadReplies == true)
+            {
+                _voicePlayback.BeginReplyStream();
+            }
+
+            ScrollChatToBottom();
+            cancellationToken.ThrowIfCancellationRequested();
+            await _wsClient.SendMessageAsync(text, _activeSessionId, cancellationToken);
+        }
+
+        private void HandleSendError(Exception exception, string operation)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in {operation}: {exception.Message}");
+            _voicePlayback?.StopVoice();
+            var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
+            if (last != null)
+            {
+                last.Content = $"**LỖI GỬI:** {exception.Message}";
+                last.IsStreaming = false;
+                last.IsError = true;
+            }
+            else
+            {
+                Messages.Add(new ChatMessageItem
+                {
+                    Role = "assistant",
+                    Content = $"**LỖI GỬI:** {exception.Message}",
+                    IsStreaming = false,
+                    IsError = true
+                });
             }
         }
 
@@ -403,9 +470,12 @@ namespace RuApp.Views
                         {
                             await _voicePlayback.CompleteReplyStreamAsync(finalVoiceText);
                         }
+
+                        _voiceConversation?.NotifyReplyCompleted();
                     }
                     catch (Exception ex)
                     {
+                        _voiceConversation?.NotifyReplyError(ex);
                         System.Diagnostics.Debug.WriteLine($"Error in OnWsDoneReceived queue: {ex.Message}");
                     }
                 });
@@ -421,6 +491,7 @@ namespace RuApp.Views
             try
             {
                 _voicePlayback?.FailReplyStream();
+                _voiceConversation?.NotifyReplyError(new InvalidOperationException(error));
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
@@ -503,6 +574,7 @@ namespace RuApp.Views
             try
             {
                 if (_apiService == null) return;
+                await StopVoiceConversationAsync();
                 _activeSessionId = sessionId;
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
                 Messages.Clear();
@@ -538,40 +610,100 @@ namespace RuApp.Views
 
         private async void OnMicClick(object sender, RoutedEventArgs e)
         {
-            if (_apiService == null) return;
-
-            if (_micRecorder.IsRecording)
+            if (_voiceConversation == null)
             {
-                MicButton.IsEnabled = false;
-                var wav = await _micRecorder.StopAsync();
-                MicIcon.Glyph = "\uE720";
-                MicButton.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                return;
+            }
 
-                if (wav != null && wav.Length > 0)
+            try
+            {
+                if (_voiceConversation.IsRunning)
                 {
-                    string? text = await _apiService.TranscribeAudioAsync(wav);
-                    if (!string.IsNullOrEmpty(text))
-                    {
-                        ChatInputTextBox.Text = text;
-                        ChatInputTextBox.Focus(FocusState.Programmatic);
-                    }
-                    else
-                    {
-                        ChatInputTextBox.PlaceholderText = "Không nghe rõ, thử lại nha.";
-                    }
+                    await StopVoiceConversationAsync();
+                    return;
                 }
-                MicButton.IsEnabled = true;
+
+                _voicePlayback?.StopVoice();
+                await _voiceConversation.StartAsync();
+                SetVoiceButtonState(true);
+            }
+            catch (Exception ex)
+            {
+                SetVoiceButtonState(false);
+                ChatInputTextBox.PlaceholderText = "Không truy cập được micro. Kiểm tra quyền mic.";
+                System.Diagnostics.Debug.WriteLine($"Error starting voice conversation: {ex.Message}");
+            }
+        }
+
+        private async Task StopVoiceConversationAsync()
+        {
+            if (_voiceConversation == null || !_voiceConversation.IsRunning)
+            {
+                _voicePlayback?.StopVoice();
+                SetVoiceButtonState(false);
                 return;
             }
 
-            bool ok = await _micRecorder.StartAsync();
-            if (!ok)
+            await _voiceConversation.StopAsync();
+            _voicePlayback?.StopVoice();
+            SetVoiceButtonState(false);
+        }
+
+        private async Task<string?> TranscribeVoiceAsync(byte[] wavBytes, CancellationToken cancellationToken)
+        {
+            if (_apiService == null)
             {
-                ChatInputTextBox.PlaceholderText = "Không truy cập được micro. Kiểm tra quyền mic.";
-                return;
+                throw new InvalidOperationException("Voice API chưa sẵn sàng.");
             }
-            MicIcon.Glyph = "\uE7C7";
-            MicButton.Background = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
+
+            string? text = await _apiService.TranscribeAudioAsync(wavBytes, cancellationToken);
+            if (text == null)
+            {
+                throw new InvalidOperationException("Dịch vụ nhận dạng giọng nói không khả dụng.");
+            }
+
+            return text;
+        }
+
+        private void OnVoiceConversationStatusChanged(object? sender, VoiceConversationStatus status)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (status.State == VoiceConversationState.Stopped)
+                {
+                    SetVoiceButtonState(false);
+                    return;
+                }
+
+                if (status.State == VoiceConversationState.Error)
+                {
+                    SetVoiceButtonState(false);
+                    ChatInputTextBox.PlaceholderText = status.Message
+                        ?? "Cuộc trò chuyện bằng giọng nói đã dừng.";
+                    return;
+                }
+
+                SetVoiceButtonState(true);
+                if (!string.IsNullOrWhiteSpace(status.Message))
+                {
+                    ChatInputTextBox.PlaceholderText = status.Message;
+                }
+            });
+        }
+
+        private void SetVoiceButtonState(bool active)
+        {
+            MicButton.IsEnabled = true;
+            MicIcon.Glyph = active ? "\uE7C7" : "\uE720";
+            MicButton.Background = active
+                ? (SolidColorBrush)Application.Current.Resources["AppDangerBrush"]
+                : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            ToolTipService.SetToolTip(
+                MicButton,
+                active ? "Dừng trò chuyện bằng giọng nói" : "Nói chuyện với Ru bằng giọng nói");
+            AutomationProperties.SetName(
+                MicButton,
+                active ? "Dừng trò chuyện bằng giọng nói" : "Bắt đầu trò chuyện bằng giọng nói");
         }
 
         public void Dispose()
@@ -588,7 +720,15 @@ namespace RuApp.Views
             _typingDebounce?.Stop();
             _typingDebounce = null;
             MeteorField?.Dispose();
-            _micRecorder.Dispose();
+            _voicePlayback?.StopVoice();
+            if (_voiceConversation != null)
+            {
+                _voiceConversation.StatusChanged -= OnVoiceConversationStatusChanged;
+                _voiceConversation.Dispose();
+                _voiceConversation = null;
+            }
+            _voiceCapture?.Dispose();
+            _voiceCapture = null;
         }
     }
 }

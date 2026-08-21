@@ -228,7 +228,8 @@
                             Background="Transparent"
                             BorderThickness="0"
                             VerticalAlignment="Center"
-                            ToolTipService.ToolTip="Nói cho Ru nghe (STT)">
+                            AutomationProperties.Name="Bắt đầu trò chuyện bằng giọng nói"
+                            ToolTipService.ToolTip="Nói chuyện với Ru bằng giọng nói">
                         <FontIcon x:Name="MicIcon"
                                   Glyph="&#xE720;"
                                   FontSize="15"

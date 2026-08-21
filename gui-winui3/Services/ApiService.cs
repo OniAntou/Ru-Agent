@@ -6,6 +6,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using RuApp.Models;
 
@@ -479,7 +480,7 @@ namespace RuApp.Services
             return new List<string>();
         }
 
-        public async Task<string?> TranscribeAudioAsync(byte[] wavBytes)
+        public async Task<string?> TranscribeAudioAsync(byte[] wavBytes, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -489,15 +490,22 @@ namespace RuApp.Services
                     audio_b64 = audioB64,
                     sample_rate = 16000
                 };
-                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/voice/transcribe", payload);
+                var response = await _httpClient.PostAsJsonAsync(
+                    $"{_baseUrl}/voice/transcribe",
+                    payload,
+                    cancellationToken);
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+                    var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
                     if (result.TryGetProperty("text", out var textProp))
                     {
                         return textProp.GetString();
                     }
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

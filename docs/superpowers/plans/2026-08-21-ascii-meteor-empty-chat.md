@@ -362,13 +362,14 @@ This keeps typing, sending, WebSocket deltas, STT, and backend events out of the
 
 - [ ] **Step 3: Dispose the field with ChatView**
 
-At the end of ChatView.Dispose(), after stopping _typingDebounce and before or alongside _micRecorder.Dispose(), add:
+At the end of ChatView.Dispose(), after stopping _typingDebounce and alongside
+the active voice-conversation cleanup, add:
 
 ~~~csharp
 MeteorField?.Dispose();
 ~~~
 
-Do not replace the existing WebSocket unsubscription or recorder cleanup.
+Do not replace the existing WebSocket unsubscription or voice cleanup.
 
 - [ ] **Step 4: Run the focused contracts and verify green**
 

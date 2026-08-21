@@ -72,7 +72,12 @@ the Runtime Worker or voice engine as independent public services.
 - OmniVoice is the local TTS engine. The accepted quality baseline is the
   original voice at native 1.00x speed; non-1.00x native speed still requires
   listening acceptance.
-- Google `vi-VN` recognition is the current experimental microphone STT path.
+- In Chat, click the microphone once to start an explicit half-duplex voice
+  conversation. Ru detects each bounded turn locally, sends it through the
+  existing Google `vi-VN` STT path, submits a non-empty transcript
+  automatically, waits for the current reply audio to finish, and listens for
+  the next turn. Click the microphone again to stop; the typed composer remains
+  available when voice mode is idle.
 - VTube Studio actions and lip sync remain private runtime metadata.
   `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
 - Screen observation is opt-in from Settings. When a Gemini Vision key and a
@@ -106,7 +111,8 @@ and diagnostic roots and requires p95 and p99 overhead to stay within both
 ```
 
 Automated tests do not establish speaker quality, physical-microphone accuracy,
-or live VTube Studio behavior. Those remain user-run hardware checks.
+or live VTube Studio behavior. The hands-free loop's microphone, speaker,
+subtitle, and VTube Studio checks remain user-run hardware acceptance.
 
 ## Data and privacy
 

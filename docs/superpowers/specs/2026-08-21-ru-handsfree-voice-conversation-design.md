@@ -1,6 +1,6 @@
 # Ru hands-free voice conversation design
 
-**Status:** Proposed for review
+**Status:** Implemented; manual hardware acceptance pending
 **Date:** 2026-08-21
 **Scope:** WinUI 3 Chat voice interaction only
 
@@ -8,7 +8,8 @@
 
 The new WinUI Chat already has the individual pieces needed for voice:
 
-- `MicRecorderService` records bounded 16 kHz mono WAV audio.
+- `VoiceTurnCaptureService` captures bounded 16 kHz mono PCM frames through
+  Windows AudioGraph and encodes one in-memory WAV turn.
 - `/voice/transcribe` sends the clip to the existing STT worker.
 - `VoicePlaybackService` streams OmniVoice reply audio and keeps subtitles/VTube
   Studio playback on the existing isolated path.
@@ -122,9 +123,10 @@ MicButton
 
 The capture implementation should expose an interface/fake seam for tests and
 use the Windows audio stack already available to the WinUI target. Do not add a
-third-party audio processing library solely for this feature. The existing
-`MicRecorderService` can be split or adapted so the old one-shot dictation
-action remains supported without duplicating microphone ownership.
+third-party audio processing library solely for this feature. The old one-shot
+`MicRecorderService` has been retired. The primary Chat microphone now owns the
+explicit conversation mode, while typed Chat remains the manual fallback when
+voice mode is idle.
 
 The controller must enforce these invariants:
 
@@ -216,6 +218,6 @@ creating a historical duplicate:
 - [x] Separate deterministic tests from live hardware acceptance.
 - [ ] Confirm that half-duplex turn-taking matches the requested “như người
   thực” experience.
-- [ ] Confirm that replacing the primary one-shot mic action with conversation
+- [x] Confirm that replacing the primary one-shot mic action with conversation
   mode is acceptable; a separate dictation action is out of this scope.
-- [ ] Confirm UI wording/status presentation before implementation.
+- [x] Confirm UI wording/status presentation before implementation.

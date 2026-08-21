@@ -183,11 +183,20 @@ namespace RuApp.Services
 
         public async Task SendMessageAsync(string messageText, string sessionId)
         {
+            await SendMessageAsync(messageText, sessionId, CancellationToken.None);
+        }
+
+        public async Task SendMessageAsync(
+            string messageText,
+            string sessionId,
+            CancellationToken cancellationToken)
+        {
             const int connectTimeoutMs = 10000;
             var startTime = DateTime.UtcNow;
             while (!IsConnected && !_disposed)
             {
-                await Task.Delay(250);
+                await Task.Delay(250, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
                 if ((DateTime.UtcNow - startTime).TotalMilliseconds > connectTimeoutMs)
                 {
                     throw new InvalidOperationException("WebSocket chưa kết nối trong vòng 10 giây.");
@@ -208,7 +217,7 @@ namespace RuApp.Services
             var payload = new { prompt = messageText, session_id = sessionId, correlation_id = correlationId };
             string json = JsonSerializer.Serialize(payload);
             byte[] bytes = Encoding.UTF8.GetBytes(json);
-            await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+            await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
         }
 
         public void Disconnect()

@@ -8,6 +8,11 @@
 
 **Tech Stack:** C#/.NET 10, WinUI 3, Windows AudioGraph/AudioFrameOutputNode, existing ApiService, ChatWebSocketClient, VoicePlaybackService, xUnit, and sequential dotnet test/build.bat verification.
 
+**Execution decision (2026-08-21):** The user explicitly directed this work to
+run on `main` after the parallel UI agent finished. The worktree/feature-branch
+instructions below are retained as the original coordination record, but were
+not used; no branch or worktree was created for this implementation.
+
 ---
 
 ## Coordination boundary with the parallel UI agent
@@ -43,7 +48,7 @@ All implementation commits belong on codex/handsfree-voice. Integration into the
 | gui-winui3/Services/ApiService.cs | Cancellable STT request overload | Modify |
 | gui-winui3/Views/ChatView.xaml.cs | Chat transport adapter, reply completion, lifecycle wiring | Modify only at UI checkpoint |
 | gui-winui3/Views/ChatView.xaml | Mic/status presentation and accessibility names | Modify only at UI checkpoint |
-| gui-winui3/Services/MicRecorderService.cs | Old one-shot recorder | Delete after reference audit |
+| gui-winui3/Services/MicRecorderService.cs | Old one-shot recorder | Deleted after reference audit |
 | gui-winui3/RuApp.csproj | Enable native audio-buffer interop | Modify |
 | gui-winui3.Tests/VoiceActivityDetectorTests.cs | Deterministic VAD tests | Create |
 | gui-winui3.Tests/PcmWavEncoderTests.cs | WAV header/size/privacy-boundary tests | Create |
@@ -55,6 +60,16 @@ All implementation commits belong on codex/handsfree-voice. Integration into the
 | README.md | User-facing capability summary | Modify |
 
 The backend route contract, Python STT worker, VoiceStreamClient, VoicePlaybackQueue, VoiceReplyAudioQueue, subtitle pump, and VTS protocol are not implementation targets for this feature.
+
+## Implementation record
+
+Implemented on `main` on 2026-08-21. The final slice adds AudioGraph capture,
+bounded PCM16 VAD/WAV encoding, the cancel-safe voice conversation controller,
+cancellable STT/WebSocket calls, Chat reply-completion handoff, the static Chat
+privacy/retirement contract, and deterministic lifecycle tests. The former
+one-shot `MicRecorderService` was deleted after the source reference audit.
+Automated tests cover the implementation; real microphone, speaker, subtitles,
+and VTube Studio behavior remain a separate user-run acceptance gate.
 
 ## Task 1: Establish the isolated branch and baseline
 

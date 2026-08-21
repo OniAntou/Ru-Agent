@@ -589,7 +589,7 @@ Keep InputContainer, InputBorder, MicButton, ChatInputTextBox, SendButton, their
                     Height="36"
                     Background="Transparent"
                     BorderThickness="0"
-                    ToolTipService.ToolTip="Nói cho Ru nghe (STT)" />
+                    ToolTipService.ToolTip="Nói chuyện với Ru bằng giọng nói" />
             <TextBox x:Name="ChatInputTextBox"
                      Grid.Column="1"
                      PlaceholderText="Viết cho Ru..."

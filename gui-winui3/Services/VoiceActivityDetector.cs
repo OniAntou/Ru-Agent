@@ -72,6 +72,8 @@ public sealed class VoiceActivityDetector
         Reset();
     }
 
+    public bool IsAtMaximumDuration => _frameCount >= _maximumFrames;
+
     public VoiceActivityFrameResult ProcessFrame(ReadOnlySpan<short> samples)
     {
         if (samples.Length != _options.FrameSamples)

@@ -39,7 +39,16 @@ audio-producing worker:
 ```
 
 Automated voice tests prove protocol ordering, cancellation, cleanup, metadata
-privacy, and non-empty audio frames. They do not prove that speakers sound
-correct, a physical microphone transcribes correctly, or a live VTube Studio
-model reacts as intended. Listening, microphone, and VTS acceptance remain
-explicit user-run hardware checks.
+privacy, non-empty WAV frames, VAD boundaries, capture lifetime, the
+hands-free state machine, stale-transcription suppression, and the Chat
+integration contract. They do not prove that speakers sound correct, a
+physical microphone transcribes correctly, or a live VTube Studio model reacts
+as intended.
+
+The separate hands-free hardware gate is user-run: start the Chat microphone,
+speak two Vietnamese or mixed Vietnamese-English turns, confirm one automatic
+send per turn and one audible reply per turn, confirm the microphone stays
+closed while Ru speaks, then stop during listening/STT/playback and verify no
+late prompt or audio is produced. Repeat once with subtitles and VTube Studio
+enabled. This gate is intentionally not represented as a passing automated
+test.

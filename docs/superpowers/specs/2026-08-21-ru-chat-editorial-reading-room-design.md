@@ -1,7 +1,7 @@
 # Ru Chat Editorial Reading Room Design
 
 **Date:** 2026-08-21
-**Status:** Draft for user review
+**Status:** Implemented; palette refined 2026-08-21
 **Scope:** Phase 1 visual redesign of the WinUI 3 shell/sidebar and Chat view
 
 ## Decision summary
@@ -79,17 +79,21 @@ without a purple-blue gradient, glow, or glass treatment.
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `RuCanvasBrush` | `#F3F4F0` | Main content background |
-| `RuSidebarBrush` | `#E9ECE6` | Sidebar background |
-| `RuSurfaceBrush` | `#FBFCF8` | Composer and restrained elevated surfaces |
+| `RuCanvasBrush` | `#E7E9E3` | Main content background |
+| `RuSidebarBrush` | `#DCE1D9` | Sidebar background |
+| `RuSurfaceBrush` | `#F0F2EC` | Composer and restrained elevated surfaces |
 | `RuInkBrush` | `#20231F` | Primary text |
-| `RuMutedBrush` | `#687067` | Secondary text and quiet metadata |
-| `RuLineBrush` | `#D9DDD5` | Dividers and borders |
+| `RuMutedBrush` | `#5F685F` | Secondary text and quiet metadata |
+| `RuLineBrush` | `#C9CEC5` | Dividers and borders |
 | `RuAccentBrush` | `#A84B38` | Active navigation, focus rule, primary action |
-| `RuAccentSoftBrush` | `#F3E5E0` | Subtle selection and action background |
+| `RuAccentSoftBrush` | `#EEDFD9` | Subtle selection and action background |
 | `RuSuccessBrush` | `#2F6F51` | Positive service state |
 | `RuWarningBrush` | `#9A6C1F` | Warning service state |
 | `RuDangerBrush` | `#A73A3A` | Error state |
+
+The shared palette was softened after visual review while keeping the same
+editorial layout and one-light-theme decision. The refinement is recorded in
+`2026-08-21-ru-mineral-paper-palette-refinement-design.md`.
 
 Typography uses `Segoe UI Variable` for UI and message body. `Cambria` is
 reserved for page titles and Markdown headings, where the editorial contrast

@@ -34,6 +34,22 @@ public sealed class EditorialReadingRoomContractTests
         }
     }
 
+    [Theory]
+    [InlineData("RuCanvasColor", "#E7E9E3")]
+    [InlineData("RuSidebarColor", "#DCE1D9")]
+    [InlineData("RuSurfaceColor", "#F0F2EC")]
+    [InlineData("RuInkColor", "#20231F")]
+    [InlineData("RuMutedColor", "#5F685F")]
+    [InlineData("RuLineColor", "#C9CEC5")]
+    [InlineData("RuAccentColor", "#A84B38")]
+    [InlineData("RuAccentSoftColor", "#EEDFD9")]
+    public void App_uses_the_muted_mineral_paper_palette(string resourceKey, string expectedColor)
+    {
+        var source = File.ReadAllText(FindSource("App.xaml"));
+
+        Assert.Contains($"<Color x:Key=\"{resourceKey}\">{expectedColor}</Color>", source, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void App_requests_light_theme_for_default_control_contrast()
     {

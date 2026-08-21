@@ -15,14 +15,14 @@
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
 
             <!-- Editorial reading-room palette -->
-            <Color x:Key="RuCanvasColor">#F3F4F0</Color>
-            <Color x:Key="RuSidebarColor">#E9ECE6</Color>
-            <Color x:Key="RuSurfaceColor">#FBFCF8</Color>
+            <Color x:Key="RuCanvasColor">#E7E9E3</Color>
+            <Color x:Key="RuSidebarColor">#DCE1D9</Color>
+            <Color x:Key="RuSurfaceColor">#F0F2EC</Color>
             <Color x:Key="RuInkColor">#20231F</Color>
-            <Color x:Key="RuMutedColor">#687067</Color>
-            <Color x:Key="RuLineColor">#D9DDD5</Color>
+            <Color x:Key="RuMutedColor">#5F685F</Color>
+            <Color x:Key="RuLineColor">#C9CEC5</Color>
             <Color x:Key="RuAccentColor">#A84B38</Color>
-            <Color x:Key="RuAccentSoftColor">#F3E5E0</Color>
+            <Color x:Key="RuAccentSoftColor">#EEDFD9</Color>
             <Color x:Key="RuSuccessColor">#2F6F51</Color>
             <Color x:Key="RuWarningColor">#9A6C1F</Color>
             <Color x:Key="RuDangerColor">#A73A3A</Color>

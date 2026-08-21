@@ -1,7 +1,7 @@
 # Ru Mineral Paper Palette Refinement
 
 **Date:** 2026-08-21  
-**Status:** Draft for user review  
+**Status:** Implemented
 **Scope:** Tone down the shared light palette after visual feedback that the
 current shell and Settings surface feels too bright
 

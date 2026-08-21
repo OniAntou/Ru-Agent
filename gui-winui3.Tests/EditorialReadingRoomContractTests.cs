@@ -109,6 +109,16 @@ public sealed class EditorialReadingRoomContractTests
         Assert.DoesNotContain("Dot3Storyboard", source, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("MarkdownBlock.cs", "new FontFamily(\"Segoe UI Variable\")")]
+    [InlineData("MarkdownBlock.cs", "new FontFamily(\"Cambria\")")]
+    [InlineData("MarkdownBlock.cs", "new FontFamily(\"Consolas\")")]
+    [InlineData("MarkdownBlock.cs", "RegisterPropertyChangedCallback")]
+    public void Markdown_renderer_has_explicit_editorial_typography(string fileName, string marker)
+    {
+        Assert.Contains(marker, File.ReadAllText(FindSource(fileName)), StringComparison.Ordinal);
+    }
+
     private static string FindSource(string fileName)
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
@@ -118,7 +128,8 @@ public sealed class EditorialReadingRoomContractTests
             foreach (var path in new[]
             {
                 Path.Combine(directory.FullName, "gui-winui3", fileName),
-                Path.Combine(directory.FullName, "gui-winui3", "Views", fileName)
+                Path.Combine(directory.FullName, "gui-winui3", "Views", fileName),
+                Path.Combine(directory.FullName, "gui-winui3", "Controls", fileName)
             })
             {
                 if (File.Exists(path)) return path;

@@ -106,11 +106,14 @@ structural correctness. Visual resizing and live audio/VTS behavior remain
 manual acceptance checks.
 
 The current Ru signature layer is also presentation-only: a quiet title-bar
-wordmark, an editorial welcome eyebrow, and message edge rules. The composer
-keeps the native TextBox caret/focus behavior without a decorative accent line;
-there is no ambient welcome rectangle or extra surface layer. These elements do
-not add Chat content, VTS/voice metadata, fake status indicators, backend calls,
-or timing changes.
+wordmark, an editorial welcome eyebrow, message edge rules, and a sparse ASCII
+meteor field in the empty Chat state. The field uses the existing Ru accent
+token, is active only while `Messages.Count == 0`, and stops and clears its
+elements as soon as the first message exists. The composer keeps the native
+TextBox caret/focus behavior without a decorative accent line; there is no
+ambient welcome rectangle or extra surface layer. These elements do not add
+Chat content, VTS/voice metadata, fake status indicators, or calls to the
+backend, WebSocket, STT, voice, subtitle, VTS, or memory paths.
 
 ## Persistence and privacy
 

@@ -80,9 +80,9 @@ namespace RuApp.Views
             {
                 ChatScrollHost.Visibility = hasMessages ? Visibility.Visible : Visibility.Collapsed;
             }
-            if (MeteorField != null)
+            if (MeteorShowerField != null)
             {
-                MeteorField.IsActive = !hasMessages;
+                MeteorShowerField.IsActive = !hasMessages;
             }
         }
 
@@ -719,7 +719,7 @@ namespace RuApp.Views
             }
             _typingDebounce?.Stop();
             _typingDebounce = null;
-            MeteorField?.Dispose();
+            MeteorShowerField?.Dispose();
             _voicePlayback?.StopVoice();
             if (_voiceConversation != null)
             {

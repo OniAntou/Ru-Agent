@@ -104,10 +104,10 @@
               Grid.Row="0"
               HorizontalAlignment="Center"
               Background="Transparent">
-            <controls:AsciiMeteorField x:Name="MeteorField"
-                                       HorizontalAlignment="Stretch"
-                                       VerticalAlignment="Stretch"
-                                       IsHitTestVisible="False" />
+            <controls:MeteorShowerField x:Name="MeteorShowerField"
+                                        HorizontalAlignment="Stretch"
+                                        VerticalAlignment="Stretch"
+                                        IsHitTestVisible="False" />
             <StackPanel x:Name="WelcomeHeroPanel"
                         MaxWidth="820"
                         HorizontalAlignment="Stretch"

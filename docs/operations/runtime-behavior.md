@@ -87,6 +87,18 @@ Automated tests cover policy boundaries, XAML state markers, vertical-only list
 surfaces, and build correctness. Visual resizing at representative window sizes
 remains a user-run acceptance check.
 
+The phase-one Chat redesign uses the same tiers. The shell and Chat use the
+Editorial reading room presentation: a light mineral canvas, a flat sidebar,
+and a centered document-style reading column. Voice/VTS, Log, Diagnostics,
+Settings, and Memory retain their existing layout in this phase.
+
+The redesign is presentation-only. It does not recreate message or session
+sources, call the backend during layout, alter WebSocket ordering, change STT,
+voice playback, subtitles, VTube Studio control, or persist a new UI setting.
+Automated source/XAML contracts and the WinUI build cover structural
+correctness. Visual resizing and live audio/VTS behavior remain manual
+acceptance checks.
+
 ## Persistence and privacy
 
 ASP.NET Core owns settings, credentials, sessions/history, activity, structured

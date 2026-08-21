@@ -91,6 +91,9 @@ The phase-one Chat redesign uses the same tiers. The shell and Chat use the
 Editorial reading room presentation: a light mineral canvas, a flat sidebar,
 and a centered document-style reading column. Voice/VTS, Log, Diagnostics,
 Settings, and Memory retain their existing layout in this phase.
+The application requests the light WinUI theme globally so default form
+controls on those retained views inherit readable dark foregrounds on the
+light palette.
 
 The redesign is presentation-only. It does not recreate message or session
 sources, call the backend during layout, alter WebSocket ordering, change STT,

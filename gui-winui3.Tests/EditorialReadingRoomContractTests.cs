@@ -35,6 +35,14 @@ public sealed class EditorialReadingRoomContractTests
     }
 
     [Fact]
+    public void App_requests_light_theme_for_default_control_contrast()
+    {
+        var source = File.ReadAllText(FindSource("App.xaml"));
+
+        Assert.Contains("RequestedTheme=\"Light\"", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Legacy_brush_keys_remain_available_for_untouched_views()
     {
         var source = File.ReadAllText(FindSource("App.xaml"));

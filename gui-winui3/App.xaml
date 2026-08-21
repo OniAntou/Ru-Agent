@@ -55,6 +55,9 @@
             <SolidColorBrush x:Key="RuSuccessBrush" Color="{ThemeResource RuSuccessColor}" />
             <SolidColorBrush x:Key="RuWarningBrush" Color="{ThemeResource RuWarningColor}" />
             <SolidColorBrush x:Key="RuDangerBrush" Color="{ThemeResource RuDangerColor}" />
+            <SolidColorBrush x:Key="RuAccentWashBrush"
+                             Color="{ThemeResource RuAccentSoftColor}"
+                             Opacity="0.18" />
 
             <FontFamily x:Key="RuUiFontFamily">Segoe UI Variable</FontFamily>
             <FontFamily x:Key="RuDisplayFontFamily">Cambria</FontFamily>

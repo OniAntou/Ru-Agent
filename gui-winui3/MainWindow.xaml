@@ -16,18 +16,32 @@
 
         <!-- Custom App TitleBar -->
         <Grid x:Name="AppTitleBar" Grid.Row="0" Height="48" Background="Transparent" Padding="24,0,24,0">
-            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                <TextBlock Text="Ru"
+            <Grid x:Name="BrandLockup"
+                  ColumnDefinitions="Auto,Auto,Auto"
+                  ColumnSpacing="9"
+                  VerticalAlignment="Center">
+                <TextBlock x:Name="BrandName"
+                           Text="Ru"
                            FontFamily="{StaticResource RuDisplayFontFamily}"
-                           FontSize="19"
+                           FontSize="21"
+                           FontWeight="SemiBold"
                            Foreground="{StaticResource RuInkBrush}"
                            VerticalAlignment="Center" />
-                <TextBlock Text="conversational runtime"
+                <Rectangle x:Name="BrandRule"
+                           Grid.Column="1"
+                           Width="16"
+                           Height="1"
+                           Fill="{StaticResource RuAccentBrush}"
+                           VerticalAlignment="Center"
+                           Opacity="0.82" />
+                <TextBlock x:Name="BrandDescriptor"
+                           Grid.Column="2"
+                           Text="conversational runtime"
                            FontFamily="{StaticResource RuUiFontFamily}"
                            FontSize="11"
                            Foreground="{StaticResource RuMutedBrush}"
                            VerticalAlignment="Center" />
-            </StackPanel>
+            </Grid>
         </Grid>
 
         <!-- Main Content Area -->

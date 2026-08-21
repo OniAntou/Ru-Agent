@@ -4,7 +4,12 @@
 
 **Goal:** Make Ru distinctive through a restrained wordmark, editorial welcome state, signature message rhythm, and purposeful micro-interactions while preserving runtime behavior.
 
-**Architecture:** Extend the existing theme-token and XAML presentation system only. Add a low-opacity accent-wash brush, stronger title-bar lockup, non-card welcome layer, message edge rules, and focus-state presentation; keep Chat handlers, data templates, theme persistence, responsive policy, and backend paths intact.
+**Architecture:** Extend the existing theme-token and XAML presentation system only. Add a stronger title-bar lockup, editorial welcome eyebrow, message edge rules, and focus-state presentation; keep Chat handlers, data templates, theme persistence, responsive policy, and backend paths intact. Do not add a rectangular ambient wash: visual review showed that it reads as an unintended block in Dark mode.
+
+**Post-implementation correction (2026-08-21):** The ambient wash token and
+welcome rectangle described in the original plan were removed. The contract
+tests now assert their absence while retaining the typography and accent-rule
+markers.
 
 **Tech Stack:** WinUI 3 XAML, C#, existing Ru resources, xUnit source/XAML contracts, sequential dotnet test and Release build.
 
@@ -21,13 +26,11 @@ Add these focused tests:
 
 ~~~csharp
 [Fact]
-public void App_defines_a_theme_aware_signature_wash()
+public void App_does_not_define_a_hard_edged_signature_wash()
 {
     var source = File.ReadAllText(FindSource("App.xaml"));
 
-    Assert.Contains("x:Key=\"RuAccentWashBrush\"", source, StringComparison.Ordinal);
-    Assert.Contains("Color=\"{ThemeResource RuAccentSoftColor}\"", source, StringComparison.Ordinal);
-    Assert.Contains("Opacity=\"0.18\"", source, StringComparison.Ordinal);
+    Assert.DoesNotContain("x:Key=\"RuAccentWashBrush\"", source, StringComparison.Ordinal);
 }
 
 [Fact]
@@ -50,8 +53,8 @@ public void Chat_has_authored_welcome_and_reading_rhythm_markers()
 
     Assert.Contains("x:Name=\"WelcomeEyebrow\"", source, StringComparison.Ordinal);
     Assert.Contains("Text=\"RU / CONVERSATIONAL RUNTIME\"", source, StringComparison.Ordinal);
-    Assert.Contains("x:Name=\"WelcomeAccentWash\"", source, StringComparison.Ordinal);
-    Assert.Contains("IsHitTestVisible=\"False\"", source, StringComparison.Ordinal);
+    Assert.DoesNotContain("x:Name=\"WelcomeAccentWash\"", source, StringComparison.Ordinal);
+    Assert.DoesNotContain("RuAccentWashBrush", source, StringComparison.Ordinal);
     Assert.Contains("x:Name=\"AssistantAccentRule\"", source, StringComparison.Ordinal);
     Assert.Contains("BorderThickness=\"0,0,2,0\"", source, StringComparison.Ordinal);
 }
@@ -107,22 +110,17 @@ git add gui-winui3.Tests/EditorialReadingRoomContractTests.cs
 git commit -m "test: define Ru signature polish contracts"
 ~~~
 
-### Task 2: Add signature tokens and the title-bar lockup
+### Task 2: Add signature resources and the title-bar lockup
 
 **Files:**
 - Modify: gui-winui3/App.xaml
 - Modify: gui-winui3/MainWindow.xaml
 - Test: gui-winui3.Tests/EditorialReadingRoomContractTests.cs
 
-- [ ] **Step 1: Add one restrained ambient token**
+- [x] **Step 1: Keep the signature resource set free of an ambient wash**
 
-After the existing Ru accent brushes in App.xaml, add:
-
-~~~xml
-<SolidColorBrush x:Key="RuAccentWashBrush"
-                 Color="{ThemeResource RuAccentSoftColor}"
-                 Opacity="0.18" />
-~~~
+Visual review showed that a low-opacity rectangular wash becomes a visible
+block in Dark mode, so no `RuAccentWashBrush` is added to `App.xaml`.
 
 - [ ] **Step 2: Replace the title-bar text stack with the brand lockup**
 
@@ -176,20 +174,7 @@ git commit -m "style: add Ru signature brand lockup"
 - Modify: gui-winui3/Views/ChatView.xaml
 - Test: gui-winui3.Tests/EditorialReadingRoomContractTests.cs
 
-- [ ] **Step 1: Add the welcome eyebrow and accent wash**
-
-Inside ReadingColumn, place the wash before WelcomeHeroPanel:
-
-~~~xml
-<Rectangle x:Name="WelcomeAccentWash"
-           Width="320"
-           Height="112"
-           HorizontalAlignment="Left"
-           VerticalAlignment="Top"
-           Margin="0,16,0,0"
-           Fill="{StaticResource RuAccentWashBrush}"
-           IsHitTestVisible="False" />
-~~~
+- [x] **Step 1: Add the welcome eyebrow without an ambient rectangle**
 
 At the top of WelcomeHeroPanel, add:
 
@@ -354,9 +339,9 @@ git commit -m "style: polish Ru composer focus state"
 - [ ] **Step 1: Update current runtime documentation**
 
 Add that Ru's visual signature is expressed by the wordmark, editorial welcome
-eyebrow, single token-based accent wash, message edge rules, and composer focus
-rule. State that these remain presentation-only and add no backend calls, VTS
-metadata, or Chat content.
+eyebrow, message edge rules, and composer focus rule. State that the removed
+ambient rectangle must not return and that these remain presentation-only,
+adding no backend calls, VTS metadata, or Chat content.
 
 - [ ] **Step 2: Mark the signature design implemented**
 

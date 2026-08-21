@@ -104,14 +104,6 @@
               Grid.Row="0"
               HorizontalAlignment="Center"
               Background="Transparent">
-            <Rectangle x:Name="WelcomeAccentWash"
-                       Width="320"
-                       Height="112"
-                       HorizontalAlignment="Left"
-                       VerticalAlignment="Top"
-                       Margin="0,16,0,0"
-                       Fill="{StaticResource RuAccentWashBrush}"
-                       IsHitTestVisible="False" />
             <StackPanel x:Name="WelcomeHeroPanel"
                         MaxWidth="820"
                         HorizontalAlignment="Stretch"

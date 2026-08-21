@@ -59,13 +59,11 @@ public sealed class EditorialReadingRoomContractTests
     }
 
     [Fact]
-    public void App_defines_a_theme_aware_signature_wash()
+    public void App_does_not_define_a_hard_edged_signature_wash()
     {
         var source = File.ReadAllText(FindSource("App.xaml"));
 
-        Assert.Contains("x:Key=\"RuAccentWashBrush\"", source, StringComparison.Ordinal);
-        Assert.Contains("Color=\"{ThemeResource RuAccentSoftColor}\"", source, StringComparison.Ordinal);
-        Assert.Contains("Opacity=\"0.18\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Key=\"RuAccentWashBrush\"", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -88,8 +86,8 @@ public sealed class EditorialReadingRoomContractTests
 
         Assert.Contains("x:Name=\"WelcomeEyebrow\"", source, StringComparison.Ordinal);
         Assert.Contains("Text=\"RU / CONVERSATIONAL RUNTIME\"", source, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"WelcomeAccentWash\"", source, StringComparison.Ordinal);
-        Assert.Contains("IsHitTestVisible=\"False\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"WelcomeAccentWash\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("RuAccentWashBrush", source, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AssistantAccentRule\"", source, StringComparison.Ordinal);
         Assert.Contains("BorderThickness=\"0,0,2,0\"", source, StringComparison.Ordinal);
     }

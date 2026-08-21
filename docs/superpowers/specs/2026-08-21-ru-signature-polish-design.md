@@ -4,6 +4,11 @@
 **Status:** Implemented 2026-08-21
 **Scope:** A visual polish pass for the existing Light/Dark Ru WinUI 3 shell and Chat view
 
+**Visual follow-up:** The initially implemented welcome ambient wash was removed
+after visual inspection because its hard-edged rectangle read as an unintended
+block in Dark mode. The signature now relies on typography, spacing, accent
+rules, and focus state without a welcome wash layer.
+
 ## Decision summary
 
 Ru will become more distinctive through composition, typography, hierarchy, and
@@ -33,8 +38,9 @@ The implementation must not add:
   delays reading or sending.
 
 “Wow” must come from editorial contrast, asymmetric spacing, a single warm
-accent, clear state changes, and a recognizable Ru mark. Any ambient wash must
-be a single low-opacity token-based layer, never a multi-stop visual effect.
+accent, clear state changes, and a recognizable Ru mark. Do not add a welcome
+ambient wash: a flat low-opacity rectangle becomes visual noise, especially in
+Dark mode.
 
 ## Goals
 
@@ -80,8 +86,7 @@ The welcome composition becomes an editorial starting point:
 - The existing Vietnamese welcome line remains the primary heading.
 - Suggestion actions remain flat text actions with icons and a short underline or
   accent response on hover.
-- A very subtle token-based accent wash may sit behind the upper edge of the
-  reading column; it must not become a hero gradient or a card.
+- No rectangular ambient layer sits behind the welcome state.
 - The composition stays left-anchored within the existing reading column and
   retains the existing suggestion handlers.
 
@@ -134,8 +139,8 @@ The welcome composition becomes an editorial starting point:
 
 | Area | Responsibility |
 | --- | --- |
-| gui-winui3/App.xaml | Add only the theme-aware signature/focus/ambient tokens required by the polish |
-| gui-winui3/MainWindow.xaml | Wordmark, ambient layer, navigation/status presentation, and responsive setters |
+| gui-winui3/App.xaml | Add only the theme-aware signature/focus tokens required by the polish |
+| gui-winui3/MainWindow.xaml | Wordmark, navigation/status presentation, and responsive setters |
 | gui-winui3/MainWindow.xaml.cs | Minimal visual state updates; preserve navigation, theme persistence, and lifecycle |
 | gui-winui3/Views/ChatView.xaml | Welcome composition, message markers, composer emphasis, and restrained transitions |
 | gui-winui3/Views/ChatView.xaml.cs | No behavior changes; retain existing suggestion/send/STT/stream hooks |

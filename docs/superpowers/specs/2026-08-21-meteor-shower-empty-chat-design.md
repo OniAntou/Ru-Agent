@@ -1,7 +1,7 @@
 # Cinematic Meteor Shower Empty Chat
 
 **Date:** 2026-08-21
-**Status:** Draft — awaiting user spec review
+**Status:** Implemented 2026-08-21
 **Supersedes:** 2026-08-21-ascii-meteor-empty-chat-design.md
 **Scope:** A choreographed, vector-native meteor shower for the empty Chat view
 
@@ -206,4 +206,3 @@ The shower is presentation-only. It does not alter:
 - STT, voice playback, subtitle rendering, or VTube Studio control.
 - Theme preference persistence or responsive breakpoints.
 - Chat copy, internal marker privacy, or no-emoji policy.
-

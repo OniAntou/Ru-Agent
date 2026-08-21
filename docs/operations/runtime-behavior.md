@@ -119,15 +119,15 @@ structural correctness. Visual resizing and live audio/VTS behavior remain
 manual acceptance checks.
 
 The current Ru signature layer is also presentation-only: a quiet title-bar
-wordmark, an editorial welcome eyebrow, message edge rules, and a single sparse
-ASCII meteor streak in the empty Chat state. The streak is one contiguous
-`..---*` mark that travels through a fixed lane using the existing Ru accent
-token. It is active only while `Messages.Count == 0`, and stops and clears as
-soon as the first message exists. The composer keeps the native TextBox
-caret/focus behavior without a decorative accent line; there is no ambient
-welcome rectangle or extra surface layer. These elements do not add Chat
-content, VTS/voice metadata, fake status indicators, or calls to the backend,
-WebSocket, STT, voice, subtitle, VTS, or memory paths.
+wordmark, an editorial welcome eyebrow, message edge rules, and a choreographed
+vector meteor shower in the empty Chat state. The shower uses five fixed
+near/far lanes with the existing Ru accent tokens, runs only while
+`Messages.Count == 0`, and stops and clears every visual group as soon as the
+first message exists. The composer keeps the native TextBox caret/focus
+behavior without a decorative accent line; there is no ambient welcome
+rectangle or extra surface layer. These elements do not add Chat content,
+VTS/voice metadata, fake status indicators, or calls to the backend, WebSocket,
+STT, voice, subtitle, VTS, or memory paths.
 
 ## Persistence and privacy
 

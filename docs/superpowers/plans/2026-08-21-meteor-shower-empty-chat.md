@@ -4,6 +4,8 @@
 
 **Goal:** Replace the rejected ASCII meteor control with a deterministic, vector-native five-meteor shower that feels cinematic in the empty Chat state and disappears immediately when a conversation starts.
 
+**Status:** Implemented 2026-08-21
+
 **Architecture:** Add a focused MeteorShowerField Canvas control with five reusable native-shape groups, a fixed MeteorSpec choreography, and an Idle/Burst/Rest state machine driven by one high-frequency DispatcherTimer. Rename the ChatView XAML/code lifecycle reference, delete the obsolete ASCII control and contracts, and keep the effect presentation-only.
 
 **Tech Stack:** WinUI 3 XAML/C#, Canvas, Polygon, Line, CompositeTransform, DispatcherTimer, Stopwatch, existing RuAccentBrush/RuAccentSoftBrush/RuMutedBrush resources, xUnit source/XAML contracts, sequential Release test/build verification.
@@ -756,4 +758,3 @@ Do not launch or control RuApp automatically. Ask the user to inspect Light
 and Dark at 1440×900, 1024×768, and 800×600; confirm the burst reads as a
 cinematic five-streak shower, remains behind the welcome content, pauses long
 enough between bursts, and clears immediately after the first message.
-

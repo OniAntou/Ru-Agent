@@ -84,14 +84,45 @@ public sealed class EditorialReadingRoomContractTests
         Assert.DoesNotContain("x:Name=\"StatusVtsBadge\"", source, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("ChatView.xaml", "x:Name=\"ReadingColumn\"")]
+    [InlineData("ChatView.xaml", "x:Name=\"WelcomeIntro\"")]
+    [InlineData("ChatView.xaml", "Background=\"{StaticResource RuCanvasBrush}\"")]
+    [InlineData("ChatView.xaml", "Text=\"Viết cho Ru...\"")]
+    [InlineData("ChatView.xaml.cs", "var promptText = button.Tag as string")]
+    [InlineData("ChatView.xaml.cs", "ReadingColumnMaxWidth = 820")]
+    public void Chat_exposes_the_reading_room_contract(string fileName, string marker)
+    {
+        Assert.Contains(marker, File.ReadAllText(FindSource(fileName)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Chat_removes_the_old_bubble_and_capsule_markers()
+    {
+        var source = File.ReadAllText(FindSource("ChatView.xaml"));
+
+        Assert.DoesNotContain("CornerRadius=\"26\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("CornerRadius=\"18\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"Ru đang ở đây cùng anh nè ~\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Dot1Storyboard", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Dot2Storyboard", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Dot3Storyboard", source, StringComparison.Ordinal);
+    }
+
     private static string FindSource(string fileName)
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
              directory is not null;
              directory = directory.Parent)
         {
-            var path = Path.Combine(directory.FullName, "gui-winui3", fileName);
-            if (File.Exists(path)) return path;
+            foreach (var path in new[]
+            {
+                Path.Combine(directory.FullName, "gui-winui3", fileName),
+                Path.Combine(directory.FullName, "gui-winui3", "Views", fileName)
+            })
+            {
+                if (File.Exists(path)) return path;
+            }
         }
 
         throw new FileNotFoundException(fileName);

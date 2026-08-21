@@ -45,7 +45,7 @@ namespace RuApp.Views
     public sealed partial class ChatView : UserControl, IDisposable
     {
         private const string VtsMarkerPattern = @"\s*\[\[(?:VTS|VOICE_PACE):[^\]]*\]\]";
-        private const double InputMaxWidth = 1200;
+        private const double ReadingColumnMaxWidth = 820;
 
         private ApiService? _apiService;
         private ChatWebSocketClient? _wsClient;
@@ -166,16 +166,19 @@ namespace RuApp.Views
 
         private async void OnSuggestionClick(object sender, RoutedEventArgs e)
         {
-            if (sender is Button btn && btn.Content is StackPanel sp)
+            if (sender is not Button button)
             {
-                var promptText = sp.Children.OfType<TextBlock>().ElementAtOrDefault(1)?.Text 
-                    ?? sp.Children.OfType<TextBlock>().FirstOrDefault()?.Text;
-                if (!string.IsNullOrWhiteSpace(promptText))
-                {
-                    ChatInputTextBox.Text = promptText;
-                    await SendCurrentMessageAsync();
-                }
+                return;
             }
+
+            var promptText = button.Tag as string;
+            if (string.IsNullOrWhiteSpace(promptText))
+            {
+                return;
+            }
+
+            ChatInputTextBox.Text = promptText;
+            await SendCurrentMessageAsync();
         }
 
         private async void OnSendClick(object sender, RoutedEventArgs e)
@@ -267,9 +270,28 @@ namespace RuApp.Views
         {
             if (RootGrid == null || RootGrid.ActualWidth <= 0) return;
 
-            double horizontalInset = RootGrid.ActualWidth < 900 ? 24 : 64;
+            double horizontalInset = RootGrid.ActualWidth < 900
+                ? 24
+                : RootGrid.ActualWidth < 1280
+                    ? 48
+                    : 96;
             double availableWidth = Math.Max(160, RootGrid.ActualWidth - horizontalInset);
-            double targetWidth = Math.Min(InputMaxWidth, availableWidth);
+            double targetWidth = Math.Min(ReadingColumnMaxWidth, availableWidth);
+
+            if (ReadingColumn != null)
+            {
+                ReadingColumn.Width = targetWidth;
+            }
+
+            if (WelcomeHeroPanel != null)
+            {
+                WelcomeHeroPanel.Width = targetWidth;
+            }
+
+            if (InputContainer != null)
+            {
+                InputContainer.Width = targetWidth;
+            }
 
             if (InputBorder != null)
             {

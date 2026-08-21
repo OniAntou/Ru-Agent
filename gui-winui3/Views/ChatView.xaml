@@ -8,214 +8,211 @@
     xmlns:controls="using:RuApp.Controls"
     xmlns:views="using:RuApp.Views"
     mc:Ignorable="d"
-    HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+    HorizontalAlignment="Stretch"
+    VerticalAlignment="Stretch">
 
     <UserControl.Resources>
-        <!-- User Message Bubble (Clean Matte Slate Capsule) -->
         <DataTemplate x:Key="UserMessageTemplate" x:DataType="models:ChatMessageItem">
-            <Grid Margin="0,6" HorizontalAlignment="Stretch">
-                <Grid HorizontalAlignment="Right" Margin="48,0,0,0">
-                    <Border Background="#1C1F2B" BorderBrush="#282D3D" BorderThickness="1" 
-                            CornerRadius="14,14,3,14" Padding="16,11">
-                        <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}" FontSize="14" 
-                                                Foreground="{StaticResource AppTextPrimaryBrush}" HorizontalAlignment="Right"/>
-                    </Border>
-                </Grid>
+            <Grid Margin="0,16" HorizontalAlignment="Stretch">
+                <Border MaxWidth="560"
+                        HorizontalAlignment="Right"
+                        Background="{StaticResource RuSurfaceBrush}"
+                        Padding="14,10">
+                    <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
+                                            FontSize="16"
+                                            Foreground="{StaticResource RuInkBrush}"
+                                            FontFamily="{StaticResource RuUiFontFamily}" />
+                </Border>
             </Grid>
         </DataTemplate>
 
-        <!-- Assistant Message Bubble (Clean Matte Surface) -->
         <DataTemplate x:Key="AssistantMessageTemplate" x:DataType="models:ChatMessageItem">
-            <Grid Margin="0,6" HorizontalAlignment="Stretch">
-                <Grid HorizontalAlignment="Left" Margin="0,0,48,0">
-                    <StackPanel Spacing="6">
-                        <!-- Ru Avatar Badge -->
-                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="2,0,0,0">
-                            <Border Width="20" Height="20" CornerRadius="6" Background="{StaticResource AppCardBackgroundHoverBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1">
-                                <FontIcon Glyph="&#xE8BD;" FontSize="10" Foreground="{StaticResource AppTextSecondaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <TextBlock Text="Ru" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
-                        </StackPanel>
-
-                        <!-- Content Card -->
-                        <Border x:Name="MessageBorder" Background="{StaticResource AppCardBackgroundBrush}" 
-                                BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" 
-                                CornerRadius="3,14,14,14" Padding="18,13">
-                            <Grid>
-                                <!-- Pulsing 3 Dots Wave (Visible when waiting for first token) -->
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
-                                            Visibility="{x:Bind ShowTypingDots, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                            Padding="4,2">
-                                    <Ellipse x:Name="Dot1" Width="6" Height="6" Fill="{StaticResource AppTextSecondaryBrush}" Opacity="0.4">
-                                        <Ellipse.Resources>
-                                            <Storyboard x:Name="Dot1Storyboard" RepeatBehavior="Forever" AutoReverse="True">
-                                                <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.3" To="1.0" Duration="0:0:0.6"/>
-                                            </Storyboard>
-                                        </Ellipse.Resources>
-                                    </Ellipse>
-                                    <Ellipse x:Name="Dot2" Width="6" Height="6" Fill="{StaticResource AppTextSecondaryBrush}" Opacity="0.7">
-                                        <Ellipse.Resources>
-                                            <Storyboard x:Name="Dot2Storyboard" RepeatBehavior="Forever" AutoReverse="True" BeginTime="0:0:0.2">
-                                                <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.3" To="1.0" Duration="0:0:0.6"/>
-                                            </Storyboard>
-                                        </Ellipse.Resources>
-                                    </Ellipse>
-                                    <Ellipse x:Name="Dot3" Width="6" Height="6" Fill="{StaticResource AppTextSecondaryBrush}" Opacity="1.0">
-                                        <Ellipse.Resources>
-                                            <Storyboard x:Name="Dot3Storyboard" RepeatBehavior="Forever" AutoReverse="True" BeginTime="0:0:0.4">
-                                                <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.3" To="1.0" Duration="0:0:0.6"/>
-                                            </Storyboard>
-                                        </Ellipse.Resources>
-                                    </Ellipse>
-                                </StackPanel>
-
-                                <!-- Markdown Content Block (Visible when text exists) -->
-                                <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}" FontSize="14" 
-                                                        Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}" 
-                                                        Visibility="{x:Bind ShowContent, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                        HorizontalAlignment="Left"/>
-                            </Grid>
-                        </Border>
-                    </StackPanel>
-                </Grid>
+            <Grid Margin="0,18" HorizontalAlignment="Stretch">
+                <StackPanel MaxWidth="700" HorizontalAlignment="Left" Spacing="6">
+                    <TextBlock Text="Ru"
+                               FontFamily="{StaticResource RuDisplayFontFamily}"
+                               FontSize="12"
+                               Foreground="{StaticResource RuAccentBrush}" />
+                    <Rectangle x:Name="TypingCaret"
+                               Width="1"
+                               Height="20"
+                               Fill="{StaticResource RuAccentBrush}"
+                               Visibility="{x:Bind ShowTypingDots, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
+                                            FontSize="16"
+                                            Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
+                                            FontFamily="{StaticResource RuUiFontFamily}"
+                                            Visibility="{x:Bind ShowContent, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                </StackPanel>
             </Grid>
         </DataTemplate>
 
         <views:ChatMessageTemplateSelector x:Key="ChatTemplateSelector"
-            UserTemplate="{StaticResource UserMessageTemplate}"
-            AssistantTemplate="{StaticResource AssistantMessageTemplate}" />
+                                           UserTemplate="{StaticResource UserMessageTemplate}"
+                                           AssistantTemplate="{StaticResource AssistantMessageTemplate}" />
     </UserControl.Resources>
 
-    <Grid x:Name="RootGrid" RowDefinitions="*,Auto" Background="Transparent">
+    <Grid x:Name="RootGrid" RowDefinitions="*,Auto" Background="{StaticResource RuCanvasBrush}">
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="ResponsiveStates">
                 <VisualState x:Name="Wide">
                     <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="1280"/>
+                        <AdaptiveTrigger MinWindowWidth="1280" />
                     </VisualState.StateTriggers>
                 </VisualState>
 
                 <VisualState x:Name="Compact">
                     <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="900"/>
+                        <AdaptiveTrigger MinWindowWidth="900" />
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
-                        <Setter Target="InputContainer.Padding" Value="0,6,0,18"/>
-                        <Setter Target="WelcomeHeroPanel.Margin" Value="16,12"/>
+                        <Setter Target="InputContainer.Padding" Value="0,6,0,18" />
+                        <Setter Target="WelcomeHeroPanel.Margin" Value="16,12" />
                     </VisualState.Setters>
                 </VisualState>
 
                 <VisualState x:Name="Narrow">
                     <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="0"/>
+                        <AdaptiveTrigger MinWindowWidth="0" />
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
-                        <Setter Target="SuggestionPanel.Orientation" Value="Vertical"/>
-                        <Setter Target="SuggestionPanel.HorizontalAlignment" Value="Stretch"/>
-                        <Setter Target="InputContainer.Padding" Value="0,4,0,12"/>
-                        <Setter Target="InputBorder.Padding" Value="4,2"/>
-                        <Setter Target="WelcomeHeroPanel.Margin" Value="12,8"/>
+                        <Setter Target="SuggestionPanel.Orientation" Value="Vertical" />
+                        <Setter Target="SuggestionPanel.HorizontalAlignment" Value="Stretch" />
+                        <Setter Target="InputContainer.Padding" Value="0,4,0,12" />
+                        <Setter Target="InputBorder.Padding" Value="4,2" />
+                        <Setter Target="WelcomeHeroPanel.Margin" Value="12,8" />
                     </VisualState.Setters>
                 </VisualState>
             </VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
-        
-        <!-- Welcome Hero View (Centered when session is empty) -->
-        <StackPanel x:Name="WelcomeHeroPanel" Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Center" 
-                    Spacing="24" Margin="24,16" Visibility="Visible" MaxWidth="580">
-            <Border Background="{StaticResource AppCardBackgroundBrush}" BorderBrush="{StaticResource AppCardBorderBrush}"
-                    BorderThickness="1" CornerRadius="18" Padding="32,28">
-                <StackPanel Spacing="18" HorizontalAlignment="Center">
-                    <!-- Avatar Emblem -->
-                    <Border Width="60" Height="60" CornerRadius="18" Background="{StaticResource AppCardBackgroundHoverBrush}" 
-                            BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" HorizontalAlignment="Center">
-                        <FontIcon Glyph="&#xE8BD;" FontSize="26" Foreground="{StaticResource AppTextPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                    
-                    <StackPanel Spacing="6" HorizontalAlignment="Center">
-                        <TextBlock Text="Ru đang ở đây cùng anh nè ~" FontSize="20" FontFamily="Segoe UI Variable Display" 
-                                   FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}" HorizontalAlignment="Center"/>
-                        <TextBlock Text="Đồng hành trực tiếp qua Live2D Avatar và giọng nói OmniVoice" FontSize="13" 
-                                   Foreground="{StaticResource AppTextSecondaryBrush}" HorizontalAlignment="Center"/>
-                    </StackPanel>
 
-                    <!-- Quick topic pills -->
-                    <StackPanel x:Name="SuggestionPanel" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Margin="0,6,0,0">
-                        <Button Click="OnSuggestionClick" Padding="14,8" Background="{StaticResource AppSurfaceBrush}" 
-                                BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <FontIcon Glyph="&#xE8F2;" FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                                <TextBlock Text="Hôm nay thế nào rồi em?" FontSize="12.5" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                            </StackPanel>
-                        </Button>
-                        <Button Click="OnSuggestionClick" Padding="14,8" Background="{StaticResource AppSurfaceBrush}" 
-                                BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <FontIcon Glyph="&#xE720;" FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                                <TextBlock Text="Kể cho anh một câu chuyện vui" FontSize="12.5" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
+        <Grid x:Name="ReadingColumn"
+              Grid.Row="0"
+              HorizontalAlignment="Center"
+              Background="Transparent">
+            <StackPanel x:Name="WelcomeHeroPanel"
+                        MaxWidth="820"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="18"
+                        Margin="24,16"
+                        Visibility="Visible">
+                <TextBlock Text="Ru"
+                           FontFamily="{StaticResource RuDisplayFontFamily}"
+                           FontSize="14"
+                           Foreground="{StaticResource RuAccentBrush}" />
+                <TextBlock x:Name="WelcomeIntro"
+                           Text="Chào anh. Hôm nay mình bắt đầu từ đâu?"
+                           FontFamily="{StaticResource RuDisplayFontFamily}"
+                           FontSize="28"
+                           Foreground="{StaticResource RuInkBrush}"
+                           TextWrapping="Wrap" />
+                <StackPanel x:Name="SuggestionPanel"
+                            Orientation="Horizontal"
+                            Spacing="24">
+                    <Button Tag="Hỏi về một việc đang làm"
+                            Click="OnSuggestionClick"
+                            Content="Hỏi về một việc đang làm"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Foreground="{StaticResource RuMutedBrush}"
+                            Padding="0,8"
+                            FontFamily="{StaticResource RuUiFontFamily}"
+                            ToolTipService.ToolTip="Hỏi về một việc đang làm" />
+                    <Button Tag="Nói cho Ru nghe"
+                            Click="OnSuggestionClick"
+                            Content="Nói cho Ru nghe"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Foreground="{StaticResource RuMutedBrush}"
+                            Padding="0,8"
+                            FontFamily="{StaticResource RuUiFontFamily}"
+                            ToolTipService.ToolTip="Nói cho Ru nghe" />
                 </StackPanel>
-            </Border>
-        </StackPanel>
+            </StackPanel>
 
-        <!-- Scrollable Messages List (Full-Width ScrollHost so ScrollBar is pinned to the far right edge) -->
-        <ScrollViewer x:Name="ChatScrollHost"
-                      Grid.Row="0"
-                      HorizontalAlignment="Stretch"
-                      HorizontalContentAlignment="Stretch"
-                      VerticalContentAlignment="Bottom"
-                      HorizontalScrollBarVisibility="Disabled"
-                      VerticalScrollBarVisibility="Auto"
-                      Visibility="Collapsed">
-            <Grid x:Name="ChatContentGrid" HorizontalAlignment="Center">
-                <ListView x:Name="ChatListView"
-                          Padding="16,16,16,16"
-                          SelectionMode="None"
+            <ScrollViewer x:Name="ChatScrollHost"
                           HorizontalAlignment="Stretch"
                           HorizontalContentAlignment="Stretch"
-                          ItemTemplateSelector="{StaticResource ChatTemplateSelector}"
-                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                          ScrollViewer.VerticalScrollBarVisibility="Disabled">
-                    <ListView.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <ItemsStackPanel Orientation="Vertical"
-                                             HorizontalAlignment="Stretch" />
-                        </ItemsPanelTemplate>
-                    </ListView.ItemsPanel>
+                          VerticalContentAlignment="Bottom"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto"
+                          Visibility="Collapsed">
+                <Grid x:Name="ChatContentGrid" HorizontalAlignment="Center">
+                    <ListView x:Name="ChatListView"
+                              Padding="16,16,16,16"
+                              SelectionMode="None"
+                              HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Stretch"
+                              Background="Transparent"
+                              BorderThickness="0"
+                              ItemTemplateSelector="{StaticResource ChatTemplateSelector}"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                        <ListView.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <ItemsStackPanel Orientation="Vertical"
+                                                 HorizontalAlignment="Stretch" />
+                            </ItemsPanelTemplate>
+                        </ListView.ItemsPanel>
 
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <Setter Property="HorizontalAlignment" Value="Stretch" />
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                            <Setter Property="Margin" Value="0" />
-                            <Setter Property="Padding" Value="0" />
-                        </Style>
-                    </ListView.ItemContainerStyle>
-                </ListView>
-            </Grid>
-        </ScrollViewer>
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Margin" Value="0" />
+                                <Setter Property="Padding" Value="0" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                    </ListView>
+                </Grid>
+            </ScrollViewer>
+        </Grid>
 
-        <!-- Row 1: Fixed Bottom Floating Input Capsule -->
-        <Grid x:Name="InputContainer" Grid.Row="1" Background="Transparent" Padding="0,6,0,24" VerticalAlignment="Bottom" HorizontalAlignment="Center">
-            <Border x:Name="InputBorder" CornerRadius="26" 
-                    Background="{StaticResource AppCardBackgroundBrush}" BorderThickness="1" 
-                    BorderBrush="{StaticResource AppCardBorderBrush}" 
-                    MinHeight="52">
-                <Grid ColumnDefinitions="Auto,*,Auto" Padding="8,4">
-                    <!-- Microphone STT Button -->
-                    <Button x:Name="MicButton" Grid.Column="0" Click="OnMicClick" Width="36" Height="36" 
-                            CornerRadius="18" Background="Transparent" BorderThickness="0" 
-                            VerticalAlignment="Center" ToolTipService.ToolTip="Nói cho Ru nghe (STT)">
-                        <FontIcon x:Name="MicIcon" Glyph="&#xE720;" FontSize="15" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+        <Grid x:Name="InputContainer"
+              Grid.Row="1"
+              Width="820"
+              MaxWidth="820"
+              Background="Transparent"
+              Padding="0,8,0,24"
+              VerticalAlignment="Bottom"
+              HorizontalAlignment="Center">
+            <Border x:Name="InputBorder"
+                    Background="{StaticResource RuSurfaceBrush}"
+                    BorderBrush="{StaticResource RuLineBrush}"
+                    BorderThickness="0,1,0,0"
+                    CornerRadius="0"
+                    Padding="4,4">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <Button x:Name="MicButton"
+                            Grid.Column="0"
+                            Click="OnMicClick"
+                            Width="36"
+                            Height="36"
+                            CornerRadius="0"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            VerticalAlignment="Center"
+                            ToolTipService.ToolTip="Nói cho Ru nghe (STT)">
+                        <FontIcon x:Name="MicIcon"
+                                  Glyph="&#xE720;"
+                                  FontSize="15"
+                                  Foreground="{StaticResource RuMutedBrush}" />
                     </Button>
 
-                    <!-- Text Input Box -->
-                    <TextBox x:Name="ChatInputTextBox" Grid.Column="1" PlaceholderText="Hỏi Ru bất cứ điều gì... (Enter gửi, Shift+Enter xuống dòng)"
-                             PreviewKeyDown="OnChatInputPreviewKeyDown" AcceptsReturn="True" MaxHeight="120" VerticalAlignment="Center"
-                             Background="Transparent" BorderThickness="0" FontSize="13.5" Margin="8,0"
-                             Foreground="{StaticResource AppTextPrimaryBrush}">
+                    <TextBox x:Name="ChatInputTextBox"
+                             Grid.Column="1"
+                             PlaceholderText="Viết cho Ru..."
+                             PreviewKeyDown="OnChatInputPreviewKeyDown"
+                             AcceptsReturn="True"
+                             MaxHeight="120"
+                             VerticalAlignment="Center"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             FontFamily="{StaticResource RuUiFontFamily}"
+                             FontSize="16"
+                             Margin="8,0"
+                             Foreground="{StaticResource RuInkBrush}">
                         <TextBox.Resources>
                             <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
                             <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
@@ -225,15 +222,20 @@
                         </TextBox.Resources>
                     </TextBox>
 
-                    <!-- Send Message Button -->
-                    <Button x:Name="SendButton" Grid.Column="2" Click="OnSendClick" Width="36" Height="36" 
-                            CornerRadius="18" Background="{StaticResource AppAccentBrush}" BorderThickness="0"
-                            VerticalAlignment="Center" ToolTipService.ToolTip="Gửi tin nhắn">
-                        <FontIcon Glyph="&#xE725;" FontSize="14" Foreground="White" Margin="-1,1,0,0"/>
+                    <Button x:Name="SendButton"
+                            Grid.Column="2"
+                            Click="OnSendClick"
+                            Width="36"
+                            Height="36"
+                            CornerRadius="0"
+                            Background="{StaticResource RuAccentBrush}"
+                            BorderThickness="0"
+                            VerticalAlignment="Center"
+                            ToolTipService.ToolTip="Gửi tin nhắn">
+                        <FontIcon Glyph="&#xE725;" FontSize="14" Foreground="White" Margin="-1,1,0,0" />
                     </Button>
                 </Grid>
             </Border>
         </Grid>
-
     </Grid>
 </UserControl>

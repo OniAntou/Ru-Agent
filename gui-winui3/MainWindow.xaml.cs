@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using Microsoft.UI.Xaml.Automation;
 using RuApp.Models;
 using RuApp.Services;
 using RuApp.Views;
@@ -33,6 +34,9 @@ namespace RuApp
         private DispatcherTimer? _sessionsTimer;
         private ResponsiveLayoutTier? _responsiveTier;
         private double _lastExpandedSidebarWidth = 250;
+        private readonly UiThemePreferenceStore _themePreferenceStore = new();
+        private Microsoft.UI.Windowing.AppWindow? _appWindow;
+        private UiTheme _currentTheme = UiTheme.Light;
 
         public static MainWindow? Instance { get; private set; }
 
@@ -53,21 +57,11 @@ namespace RuApp
 
                     var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
                     var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(windowHandle);
-                    var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
-
-                    if (appWindow != null && appWindow.TitleBar != null)
-                    {
-                        appWindow.TitleBar.ButtonForegroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 32, 35, 31);
-                        appWindow.TitleBar.ButtonHoverForegroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 32, 35, 31);
-                        appWindow.TitleBar.ButtonHoverBackgroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 217, 221, 213);
-                        appWindow.TitleBar.ButtonPressedForegroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 32, 35, 31);
-                        appWindow.TitleBar.ButtonPressedBackgroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 200, 206, 198);
-                        appWindow.TitleBar.ButtonInactiveForegroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 104, 112, 103);
-                        appWindow.TitleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
-                        appWindow.TitleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
-                    }
+                    _appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
                 }
                 catch { }
+
+                ApplyTheme(_themePreferenceStore.Load());
 
                 _processManager = new BackendProcessManager();
                 this.Closed += OnWindowClosed;
@@ -79,6 +73,57 @@ namespace RuApp
                 GuiDiagnosticWriter.WriteCrashEvent(ex);
                 throw;
             }
+        }
+
+        private void OnThemeToggleClick(object sender, RoutedEventArgs e)
+        {
+            var nextTheme = _currentTheme == UiTheme.Dark ? UiTheme.Light : UiTheme.Dark;
+            ApplyTheme(nextTheme);
+            _themePreferenceStore.TrySave(nextTheme);
+        }
+
+        private void ApplyTheme(UiTheme theme)
+        {
+            _currentTheme = theme;
+            ShellRoot.RequestedTheme = theme == UiTheme.Dark ? ElementTheme.Dark : ElementTheme.Light;
+
+            bool isDark = theme == UiTheme.Dark;
+            var label = isDark ? "Chuyển sang sáng" : "Chuyển sang tối";
+            LabelThemeToggle.Text = label;
+            ThemeToggleIcon.Glyph = isDark ? "\uE793" : "\uE706";
+            ToolTipService.SetToolTip(ThemeToggleButton, label);
+            AutomationProperties.SetName(ThemeToggleButton, label);
+            ApplyTitleBarTheme(isDark);
+        }
+
+        private void ApplyTitleBarTheme(bool isDark)
+        {
+            if (_appWindow?.TitleBar is not { } titleBar)
+            {
+                return;
+            }
+
+            var foreground = isDark
+                ? Microsoft.UI.ColorHelper.FromArgb(255, 238, 242, 235)
+                : Microsoft.UI.ColorHelper.FromArgb(255, 32, 35, 31);
+            var muted = isDark
+                ? Microsoft.UI.ColorHelper.FromArgb(255, 169, 179, 167)
+                : Microsoft.UI.ColorHelper.FromArgb(255, 95, 104, 95);
+            var hover = isDark
+                ? Microsoft.UI.ColorHelper.FromArgb(255, 45, 54, 47)
+                : Microsoft.UI.ColorHelper.FromArgb(255, 217, 221, 213);
+            var pressed = isDark
+                ? Microsoft.UI.ColorHelper.FromArgb(255, 57, 68, 58)
+                : Microsoft.UI.ColorHelper.FromArgb(255, 200, 206, 198);
+
+            titleBar.ButtonForegroundColor = foreground;
+            titleBar.ButtonHoverForegroundColor = foreground;
+            titleBar.ButtonHoverBackgroundColor = hover;
+            titleBar.ButtonPressedForegroundColor = foreground;
+            titleBar.ButtonPressedBackgroundColor = pressed;
+            titleBar.ButtonInactiveForegroundColor = muted;
+            titleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+            titleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
         }
 
         private static string? ResolveProjectRoot()

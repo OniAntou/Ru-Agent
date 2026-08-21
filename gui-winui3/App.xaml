@@ -10,34 +10,51 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
 
+            <!-- Editorial reading-room palette -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <Color x:Key="RuCanvasColor">#E7E9E3</Color>
+                    <Color x:Key="RuSidebarColor">#DCE1D9</Color>
+                    <Color x:Key="RuSurfaceColor">#F0F2EC</Color>
+                    <Color x:Key="RuInkColor">#20231F</Color>
+                    <Color x:Key="RuMutedColor">#5F685F</Color>
+                    <Color x:Key="RuLineColor">#C9CEC5</Color>
+                    <Color x:Key="RuAccentColor">#A84B38</Color>
+                    <Color x:Key="RuAccentSoftColor">#EEDFD9</Color>
+                    <Color x:Key="RuSuccessColor">#2F6F51</Color>
+                    <Color x:Key="RuWarningColor">#9A6C1F</Color>
+                    <Color x:Key="RuDangerColor">#A73A3A</Color>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <Color x:Key="RuCanvasColor">#191C19</Color>
+                    <Color x:Key="RuSidebarColor">#121612</Color>
+                    <Color x:Key="RuSurfaceColor">#232923</Color>
+                    <Color x:Key="RuInkColor">#EEF2EB</Color>
+                    <Color x:Key="RuMutedColor">#A9B3A7</Color>
+                    <Color x:Key="RuLineColor">#39443A</Color>
+                    <Color x:Key="RuAccentColor">#C76A52</Color>
+                    <Color x:Key="RuAccentSoftColor">#3A2924</Color>
+                    <Color x:Key="RuSuccessColor">#75B28D</Color>
+                    <Color x:Key="RuWarningColor">#D7A759</Color>
+                    <Color x:Key="RuDangerColor">#E38181</Color>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
             <!-- Converters -->
             <converters:ErrorColorConverter x:Key="ErrorColorConverter" />
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
 
-            <!-- Editorial reading-room palette -->
-            <Color x:Key="RuCanvasColor">#E7E9E3</Color>
-            <Color x:Key="RuSidebarColor">#DCE1D9</Color>
-            <Color x:Key="RuSurfaceColor">#F0F2EC</Color>
-            <Color x:Key="RuInkColor">#20231F</Color>
-            <Color x:Key="RuMutedColor">#5F685F</Color>
-            <Color x:Key="RuLineColor">#C9CEC5</Color>
-            <Color x:Key="RuAccentColor">#A84B38</Color>
-            <Color x:Key="RuAccentSoftColor">#EEDFD9</Color>
-            <Color x:Key="RuSuccessColor">#2F6F51</Color>
-            <Color x:Key="RuWarningColor">#9A6C1F</Color>
-            <Color x:Key="RuDangerColor">#A73A3A</Color>
-
-            <SolidColorBrush x:Key="RuCanvasBrush" Color="{StaticResource RuCanvasColor}" />
-            <SolidColorBrush x:Key="RuSidebarBrush" Color="{StaticResource RuSidebarColor}" />
-            <SolidColorBrush x:Key="RuSurfaceBrush" Color="{StaticResource RuSurfaceColor}" />
-            <SolidColorBrush x:Key="RuInkBrush" Color="{StaticResource RuInkColor}" />
-            <SolidColorBrush x:Key="RuMutedBrush" Color="{StaticResource RuMutedColor}" />
-            <SolidColorBrush x:Key="RuLineBrush" Color="{StaticResource RuLineColor}" />
-            <SolidColorBrush x:Key="RuAccentBrush" Color="{StaticResource RuAccentColor}" />
-            <SolidColorBrush x:Key="RuAccentSoftBrush" Color="{StaticResource RuAccentSoftColor}" />
-            <SolidColorBrush x:Key="RuSuccessBrush" Color="{StaticResource RuSuccessColor}" />
-            <SolidColorBrush x:Key="RuWarningBrush" Color="{StaticResource RuWarningColor}" />
-            <SolidColorBrush x:Key="RuDangerBrush" Color="{StaticResource RuDangerColor}" />
+            <SolidColorBrush x:Key="RuCanvasBrush" Color="{ThemeResource RuCanvasColor}" />
+            <SolidColorBrush x:Key="RuSidebarBrush" Color="{ThemeResource RuSidebarColor}" />
+            <SolidColorBrush x:Key="RuSurfaceBrush" Color="{ThemeResource RuSurfaceColor}" />
+            <SolidColorBrush x:Key="RuInkBrush" Color="{ThemeResource RuInkColor}" />
+            <SolidColorBrush x:Key="RuMutedBrush" Color="{ThemeResource RuMutedColor}" />
+            <SolidColorBrush x:Key="RuLineBrush" Color="{ThemeResource RuLineColor}" />
+            <SolidColorBrush x:Key="RuAccentBrush" Color="{ThemeResource RuAccentColor}" />
+            <SolidColorBrush x:Key="RuAccentSoftBrush" Color="{ThemeResource RuAccentSoftColor}" />
+            <SolidColorBrush x:Key="RuSuccessBrush" Color="{ThemeResource RuSuccessColor}" />
+            <SolidColorBrush x:Key="RuWarningBrush" Color="{ThemeResource RuWarningColor}" />
+            <SolidColorBrush x:Key="RuDangerBrush" Color="{ThemeResource RuDangerColor}" />
 
             <FontFamily x:Key="RuUiFontFamily">Segoe UI Variable</FontFamily>
             <FontFamily x:Key="RuDisplayFontFamily">Cambria</FontFamily>
@@ -45,32 +62,32 @@
             <CornerRadius x:Key="RuControlCornerRadius">6</CornerRadius>
 
             <!-- Legacy resource names remain available to untouched views. -->
-            <SolidColorBrush x:Key="AppSurfaceBrush" Color="{StaticResource RuCanvasColor}" />
-            <SolidColorBrush x:Key="AppSidebarBackgroundBrush" Color="{StaticResource RuSidebarColor}" />
-            <SolidColorBrush x:Key="AppSidebarBorderBrush" Color="{StaticResource RuLineColor}" />
-            <SolidColorBrush x:Key="AppCardBackgroundBrush" Color="{StaticResource RuSurfaceColor}" />
-            <SolidColorBrush x:Key="AppCardBackgroundHoverBrush" Color="{StaticResource RuAccentSoftColor}" />
-            <SolidColorBrush x:Key="AppCardBorderBrush" Color="{StaticResource RuLineColor}" />
-            <SolidColorBrush x:Key="AppCardBorderSubtleBrush" Color="{StaticResource RuLineColor}" />
-            <SolidColorBrush x:Key="AppCardBorderHighlightBrush" Color="{StaticResource RuLineColor}" />
+            <SolidColorBrush x:Key="AppSurfaceBrush" Color="{ThemeResource RuCanvasColor}" />
+            <SolidColorBrush x:Key="AppSidebarBackgroundBrush" Color="{ThemeResource RuSidebarColor}" />
+            <SolidColorBrush x:Key="AppSidebarBorderBrush" Color="{ThemeResource RuLineColor}" />
+            <SolidColorBrush x:Key="AppCardBackgroundBrush" Color="{ThemeResource RuSurfaceColor}" />
+            <SolidColorBrush x:Key="AppCardBackgroundHoverBrush" Color="{ThemeResource RuAccentSoftColor}" />
+            <SolidColorBrush x:Key="AppCardBorderBrush" Color="{ThemeResource RuLineColor}" />
+            <SolidColorBrush x:Key="AppCardBorderSubtleBrush" Color="{ThemeResource RuLineColor}" />
+            <SolidColorBrush x:Key="AppCardBorderHighlightBrush" Color="{ThemeResource RuLineColor}" />
 
-            <SolidColorBrush x:Key="AppAccentBrush" Color="{StaticResource RuAccentColor}" />
-            <SolidColorBrush x:Key="AppAccentHoverBrush" Color="{StaticResource RuAccentColor}" />
-            <SolidColorBrush x:Key="AppAccentSubtleBrush" Color="{StaticResource RuAccentSoftColor}" />
-            <SolidColorBrush x:Key="AppAccentGlowBrush" Color="{StaticResource RuAccentColor}" />
-            <SolidColorBrush x:Key="AppSecondaryAccentBrush" Color="{StaticResource RuMutedColor}" />
-            <SolidColorBrush x:Key="AppSecondaryAccentSubtleBrush" Color="{StaticResource RuSidebarColor}" />
+            <SolidColorBrush x:Key="AppAccentBrush" Color="{ThemeResource RuAccentColor}" />
+            <SolidColorBrush x:Key="AppAccentHoverBrush" Color="{ThemeResource RuAccentColor}" />
+            <SolidColorBrush x:Key="AppAccentSubtleBrush" Color="{ThemeResource RuAccentSoftColor}" />
+            <SolidColorBrush x:Key="AppAccentGlowBrush" Color="{ThemeResource RuAccentColor}" />
+            <SolidColorBrush x:Key="AppSecondaryAccentBrush" Color="{ThemeResource RuMutedColor}" />
+            <SolidColorBrush x:Key="AppSecondaryAccentSubtleBrush" Color="{ThemeResource RuSidebarColor}" />
 
-            <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="{StaticResource RuInkColor}" />
-            <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="{StaticResource RuMutedColor}" />
-            <SolidColorBrush x:Key="AppTextTertiaryBrush" Color="{StaticResource RuMutedColor}" />
+            <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="{ThemeResource RuInkColor}" />
+            <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="{ThemeResource RuMutedColor}" />
+            <SolidColorBrush x:Key="AppTextTertiaryBrush" Color="{ThemeResource RuMutedColor}" />
 
-            <SolidColorBrush x:Key="AppSuccessBrush" Color="{StaticResource RuSuccessColor}" />
-            <SolidColorBrush x:Key="AppSuccessSubtleBrush" Color="{StaticResource RuSidebarColor}" />
-            <SolidColorBrush x:Key="AppWarningBrush" Color="{StaticResource RuWarningColor}" />
-            <SolidColorBrush x:Key="AppWarningSubtleBrush" Color="{StaticResource RuSidebarColor}" />
-            <SolidColorBrush x:Key="AppDangerBrush" Color="{StaticResource RuDangerColor}" />
-            <SolidColorBrush x:Key="AppDangerSubtleBrush" Color="{StaticResource RuSidebarColor}" />
+            <SolidColorBrush x:Key="AppSuccessBrush" Color="{ThemeResource RuSuccessColor}" />
+            <SolidColorBrush x:Key="AppSuccessSubtleBrush" Color="{ThemeResource RuSidebarColor}" />
+            <SolidColorBrush x:Key="AppWarningBrush" Color="{ThemeResource RuWarningColor}" />
+            <SolidColorBrush x:Key="AppWarningSubtleBrush" Color="{ThemeResource RuSidebarColor}" />
+            <SolidColorBrush x:Key="AppDangerBrush" Color="{ThemeResource RuDangerColor}" />
+            <SolidColorBrush x:Key="AppDangerSubtleBrush" Color="{ThemeResource RuSidebarColor}" />
 
             <!-- CornerRadius Design Tokens -->
             <CornerRadius x:Key="AppCardCornerRadius">6</CornerRadius>

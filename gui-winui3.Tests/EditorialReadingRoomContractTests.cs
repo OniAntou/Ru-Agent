@@ -59,6 +59,42 @@ public sealed class EditorialReadingRoomContractTests
     }
 
     [Fact]
+    public void App_defines_light_and_dark_theme_dictionaries_with_dynamic_brushes()
+    {
+        var source = File.ReadAllText(FindSource("App.xaml"));
+
+        Assert.Contains("<ResourceDictionary x:Key=\"Light\">", source, StringComparison.Ordinal);
+        Assert.Contains("<ResourceDictionary x:Key=\"Dark\">", source, StringComparison.Ordinal);
+        Assert.Contains("Color=\"{ThemeResource RuCanvasColor}\"", source, StringComparison.Ordinal);
+        Assert.Contains("<Color x:Key=\"RuCanvasColor\">#191C19</Color>", source, StringComparison.Ordinal);
+        Assert.Contains("<Color x:Key=\"RuAccentColor\">#C76A52</Color>", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Shell_exposes_a_persistent_theme_toggle_before_settings()
+    {
+        var source = File.ReadAllText(FindSource("MainWindow.xaml"));
+
+        Assert.Contains("x:Name=\"ThemeToggleButton\"", source, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnThemeToggleClick\"", source, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"LabelThemeToggle\"", source, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ThemeToggleIcon\"", source, StringComparison.Ordinal);
+        Assert.True(source.IndexOf("x:Name=\"ThemeToggleButton\"", StringComparison.Ordinal)
+            < source.IndexOf("x:Name=\"NavSettings\"", StringComparison.Ordinal));
+        Assert.Contains("Target=\"LabelThemeToggle.Visibility\" Value=\"Collapsed\"", source, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("UiThemePreferenceStore")]
+    [InlineData("ApplyTheme")]
+    [InlineData("ThemeToggleButton")]
+    [InlineData("ButtonHoverBackgroundColor")]
+    public void MainWindow_owns_theme_application_and_title_bar_state(string marker)
+    {
+        Assert.Contains(marker, File.ReadAllText(FindSource("MainWindow.xaml.cs")), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Legacy_brush_keys_remain_available_for_untouched_views()
     {
         var source = File.ReadAllText(FindSource("App.xaml"));
@@ -166,7 +202,7 @@ public sealed class EditorialReadingRoomContractTests
         var source = File.ReadAllText(FindSource("ChatView.xaml"));
 
         Assert.Contains(
-            "x:Key=\"TextControlPlaceholderForeground\" Color=\"{StaticResource RuMutedColor}\"",
+            "x:Key=\"TextControlPlaceholderForeground\" Color=\"{ThemeResource RuMutedColor}\"",
             source,
             StringComparison.Ordinal);
     }

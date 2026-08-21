@@ -8,7 +8,7 @@
         <MicaBackdrop Kind="Base" />
     </Window.SystemBackdrop>
 
-    <Grid Background="{StaticResource RuCanvasBrush}">
+    <Grid x:Name="ShellRoot" Background="{StaticResource RuCanvasBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -51,6 +51,7 @@
                             <Setter Target="NavLog.Padding" Value="10,7"/>
                             <Setter Target="NavDiagnostics.Padding" Value="10,7"/>
                             <Setter Target="NavSettings.Padding" Value="10,7"/>
+                            <Setter Target="ThemeToggleButton.Padding" Value="10,7"/>
                         </VisualState.Setters>
                     </VisualState>
 
@@ -64,6 +65,7 @@
                             <Setter Target="LabelVoice.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelLog.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelDiagnostics.Visibility" Value="Collapsed"/>
+                            <Setter Target="LabelThemeToggle.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelSettings.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelRecents.Visibility" Value="Collapsed"/>
                             <Setter Target="NavNewChat.HorizontalContentAlignment" Value="Center"/>
@@ -71,12 +73,14 @@
                             <Setter Target="NavVoice.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavLog.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavDiagnostics.HorizontalContentAlignment" Value="Center"/>
+                            <Setter Target="ThemeToggleButton.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavSettings.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavNewChat.Padding" Value="8"/>
                             <Setter Target="NavChat.Padding" Value="8"/>
                             <Setter Target="NavVoice.Padding" Value="8"/>
                             <Setter Target="NavLog.Padding" Value="8"/>
                             <Setter Target="NavDiagnostics.Padding" Value="8"/>
+                            <Setter Target="ThemeToggleButton.Padding" Value="8"/>
                             <Setter Target="NavSettings.Padding" Value="8"/>
                             <Setter Target="SidebarResizer.Visibility" Value="Collapsed"/>
                             <Setter Target="StatusText.Visibility" Value="Collapsed"/>
@@ -236,6 +240,34 @@
                         </StackPanel>
 
                         <Border Height="1" Background="{StaticResource RuLineBrush}" Margin="0,0,0,8"/>
+
+                        <Button x:Name="ThemeToggleButton"
+                                Click="OnThemeToggleClick"
+                                HorizontalAlignment="Stretch"
+                                Background="Transparent"
+                                Foreground="{StaticResource RuMutedBrush}"
+                                Padding="10,8"
+                                CornerRadius="0"
+                                BorderBrush="Transparent"
+                                BorderThickness="0"
+                                HorizontalContentAlignment="Left"
+                                ToolTipService.ToolTip="Chuyển sang tối"
+                                AutomationProperties.Name="Chuyển sang tối">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <FontIcon x:Name="ThemeToggleIcon"
+                                          Grid.Column="0"
+                                          Glyph="&#xE706;"
+                                          FontSize="15"
+                                          Margin="0,0,12,0" />
+                                <TextBlock x:Name="LabelThemeToggle"
+                                           Grid.Column="1"
+                                           Text="Chuyển sang tối"
+                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                           FontSize="13.5"
+                                           FontWeight="Medium"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Button>
 
                         <Button x:Name="NavSettings" Tag="settings" Click="OnNavClick" HorizontalAlignment="Stretch"
                                 Background="Transparent" Foreground="{StaticResource RuMutedBrush}"

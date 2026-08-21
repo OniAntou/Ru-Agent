@@ -228,9 +228,9 @@
                             <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
                             <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
                             <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
-                            <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="{StaticResource RuMutedColor}" />
-                            <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="{StaticResource RuMutedColor}" />
-                            <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="{StaticResource RuMutedColor}" />
+                            <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="{ThemeResource RuMutedColor}" />
+                            <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="{ThemeResource RuMutedColor}" />
+                            <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="{ThemeResource RuMutedColor}" />
                             <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
                         </TextBox.Resources>
                     </TextBox>

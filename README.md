@@ -110,6 +110,21 @@ observation routes as explicit hardware/external skips. It uses synthetic
 STT/TTS and records only statuses, timings, counts, event types, and cleanup
 state. `--deterministic-chat` remains an alias for the backend mode.
 
+The deterministic GUI voice Harness is manual and interactive on Windows. It
+publishes the real WinUI shell, injects deterministic capture/playback at the
+physical boundaries, runs the typed UI Automation driver for turn/stop/cancel/
+stale-session scenarios, and writes a separate schema-v2 artifact:
+
+~~~powershell
+dotnet publish D:\LLM\gui-winui3\RuApp.csproj -c Release -r win-x64 --self-contained true --nologo
+dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --nologo
+& D:\LLM\scripts\run_gui_voice_harness.ps1 -AppPath D:\LLM\gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe -DriverProject D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -OutputPath D:\LLM\artifacts\gui\ru-harness-vnext-gui.json
+~~~
+
+It refuses an existing RuApp instance and never opens physical microphone,
+speaker, or VTube Studio devices. Deterministic GUI success does not replace
+the separate live hardware acceptance gate.
+
 The production live voice gate is separate and must be run with the real
 runtime/audio path:
 

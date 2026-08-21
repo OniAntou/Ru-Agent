@@ -132,6 +132,7 @@
                                     Background="Transparent" BorderBrush="Transparent"
                                     BorderThickness="0" Foreground="{StaticResource RuAccentBrush}" Padding="10,8"
                                     CornerRadius="0" HorizontalContentAlignment="Left"
+                                    AutomationProperties.AutomationId="NewSessionButton"
                                     ToolTipService.ToolTip="Đoạn chat mới" AutomationProperties.Name="Đoạn chat mới">
                                 <Grid ColumnDefinitions="Auto,*">
                                     <FontIcon Grid.Column="0" Glyph="&#xE710;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" Margin="0,0,10,0"/>
@@ -189,6 +190,7 @@
                         
                         <!-- Sessions List -->
                         <ListView x:Name="SidebarSessionList" Grid.Row="2" SelectionMode="Single"
+                                  AutomationProperties.AutomationId="SessionList"
                                   SelectionChanged="OnSessionSelectionChanged" Margin="8,0" Padding="0,0,0,16"
                                   Background="Transparent" BorderThickness="0">
                             <ListView.ItemContainerStyle>
@@ -237,6 +239,7 @@
                                      Fill="{StaticResource RuSuccessBrush}"
                                      VerticalAlignment="Center" />
                             <TextBlock x:Name="StatusText"
+                                       AutomationProperties.AutomationId="BackendStatus"
                                        Text="Hệ thống đã sẵn sàng"
                                        FontFamily="{StaticResource RuUiFontFamily}"
                                        FontSize="12"

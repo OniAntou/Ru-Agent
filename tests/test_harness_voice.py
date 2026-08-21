@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import wave
 
 from harness.deterministic_worker import (
     collect_deterministic_stream,
     deterministic_worker_dependencies,
     _voice,
 )
-from harness.voice_fixtures import build_synthetic_wav, inspect_wav, is_valid_wav
+from harness.voice_fixtures import (
+    build_synthetic_wav,
+    inspect_wav,
+    is_valid_transcription_fixture,
+    is_valid_wav,
+)
 
 
 def test_synthetic_wav_is_mono_pcm_with_bounded_nonzero_duration() -> None:
@@ -29,6 +36,18 @@ def test_synthetic_tts_stream_emits_audio_then_one_ended_event() -> None:
     assert events[0].binary is not None
     assert is_valid_wav(events[0].binary) is True
     assert events[-1].request_id == "voice-1"
+
+
+def test_transcription_fixture_accepts_bounded_pcm_and_rejects_silence() -> None:
+    assert is_valid_transcription_fixture(build_synthetic_wav()) is True
+
+    silent = io.BytesIO()
+    with wave.open(silent, "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(16_000)
+        audio.writeframes(b"\x00\x00" * 3_200)
+    assert is_valid_transcription_fixture(silent.getvalue()) is False
 
 
 def test_synthetic_worker_never_uses_model_or_device_runtime() -> None:

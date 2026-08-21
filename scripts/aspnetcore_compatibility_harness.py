@@ -188,6 +188,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--worker-port", type=int)
     parser.add_argument("--edge-port", type=int)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--app-path", "--app", type=Path)
+    parser.add_argument("--driver-project", type=Path)
+    parser.add_argument(
+        "--scenario",
+        choices=("turn", "stop", "cancel", "stale-session"),
+        default="turn",
+    )
+    parser.add_argument("--timeout-seconds", type=float, default=180.0)
     parser.add_argument("--require-voice-audio", action="store_true")
     parser.add_argument("--benchmark-samples", type=int, default=0)
     parser.add_argument("--deterministic-chat", action="store_true")
@@ -204,6 +212,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.benchmark_samples < 0:
         parser.error("--benchmark-samples cannot be negative")
+    if args.timeout_seconds <= 0 or args.timeout_seconds > 300:
+        parser.error("--timeout-seconds must be between 0 and 300")
     mode = "backend-deterministic" if args.deterministic_chat else args.mode
     if args.require_voice_audio and mode != "runtime-live":
         parser.error("--require-voice-audio is only valid with --mode runtime-live")
@@ -223,7 +233,13 @@ def main(argv: list[str] | None = None) -> int:
             worker_port=args.worker_port,
             edge_port=args.edge_port,
         )
-        artifact = session.run(mode=mode)
+        artifact = session.run(
+            mode=mode,
+            app_path=args.app_path,
+            driver_project=args.driver_project,
+            scenario=args.scenario,
+            timeout_seconds=args.timeout_seconds,
+        )
     except Exception as error:
         artifact = {
             "schema_version": 2,

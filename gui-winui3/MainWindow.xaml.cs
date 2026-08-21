@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -16,7 +17,8 @@ namespace RuApp
 {
     public sealed partial class MainWindow : Window
     {
-        private readonly BackendProcessManager _processManager;
+        private readonly RuAppComposition _composition;
+        private readonly IRuBackendSessionProvider _backendProvider;
         private ApiService? _apiService;
         private ChatWebSocketClient? _wsClient;
         private VoicePlaybackService? _voicePlayback;
@@ -43,7 +45,14 @@ namespace RuApp
         public ObservableCollection<SessionInfo> Sessions { get; } = new();
 
         public MainWindow()
+            : this(RuAppComposition.Production())
         {
+        }
+
+        public MainWindow(RuAppComposition composition)
+        {
+            _composition = composition ?? throw new ArgumentNullException(nameof(composition));
+            _backendProvider = composition.BackendProvider;
             Instance = this;
             try
             {
@@ -63,7 +72,6 @@ namespace RuApp
 
                 ApplyTheme(_themePreferenceStore.Load());
 
-                _processManager = new BackendProcessManager();
                 this.Closed += OnWindowClosed;
 
                 _ = InitializeAppAsync();
@@ -157,10 +165,10 @@ namespace RuApp
         private async Task InitializeAppAsync()
         {
             SidebarSessionList.ItemsSource = Sessions;
-            StatusText.Text = $"Đang khởi động {_processManager.DisplayName} Backend...";
+            StatusText.Text = $"Đang khởi động {_backendProvider.DisplayName} Backend...";
             StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppWarningBrush"];
 
-            string? projectRoot = ResolveProjectRoot();
+            string? projectRoot = _composition.IsHarness ? string.Empty : ResolveProjectRoot();
             if (projectRoot == null)
             {
                 StatusText.Text = "Không tìm thấy project root. Hãy đặt RuApp.exe trong hoặc dưới thư mục D:\\LLM.";
@@ -168,26 +176,37 @@ namespace RuApp
                 return;
             }
 
-            bool ok = await _processManager.StartBackendAsync(projectRoot);
-            if (ok)
+            BackendSession? backendSession = await _backendProvider.StartAsync(
+                projectRoot,
+                CancellationToken.None);
+            if (backendSession != null)
             {
-                StatusText.Text = $"{_processManager.DisplayName} Backend đã sẵn sàng (127.0.0.1:8000)";
+                StatusText.Text = $"{_backendProvider.DisplayName} Backend đã sẵn sàng (127.0.0.1:{backendSession.HttpBaseUri.Port})";
                 StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
-                _processManager.BackendExited += OnBackendExited;
+                _backendProvider.BackendExited += OnBackendExited;
 
-                _apiService = new ApiService(_processManager.AuthSecret, _processManager.Port);
-                _wsClient = new ChatWebSocketClient(_processManager.AuthSecret, _processManager.Port);
+                _apiService = new ApiService(backendSession);
+                _wsClient = new ChatWebSocketClient(backendSession);
                 _wsClient.Start();
-                _voicePlayback = new VoicePlaybackService(_apiService);
-                var subtitleWindow = new Views.SubtitleOverlayWindow();
-                var subtitleTracker = new Services.VtsWindowTracker(new Services.VtsWindowLocator());
-                _subtitlePresenter = new Services.SubtitlePresenter();
-                _subtitleOverlay = new Services.SubtitleOverlayService(subtitleWindow, subtitleTracker, _subtitlePresenter);
-                _voicePlayback.ConfigureSubtitles(_subtitlePresenter);
+                _voicePlayback = new VoicePlaybackService(
+                    _apiService,
+                    _composition.PlaybackDeviceFactory?.Invoke());
+
+                if (_composition.EnableSubtitleOverlay)
+                {
+                    var subtitleWindow = new Views.SubtitleOverlayWindow();
+                    var subtitleTracker = new Services.VtsWindowTracker(new Services.VtsWindowLocator());
+                    _subtitlePresenter = new Services.SubtitlePresenter();
+                    _subtitleOverlay = new Services.SubtitleOverlayService(
+                        subtitleWindow,
+                        subtitleTracker,
+                        _subtitlePresenter);
+                    _voicePlayback.ConfigureSubtitles(_subtitlePresenter);
+                }
 
                 await _voicePlayback.RefreshSettingsAsync();
                 var voiceStatus = await _apiService.GetVoiceStatusAsync();
-                if (voiceStatus != null)
+                if (voiceStatus != null && _subtitleOverlay != null)
                 {
                     _subtitleOverlay.ApplyCustomization(
                         voiceStatus.SubtitleColor,
@@ -197,13 +216,19 @@ namespace RuApp
                         voiceStatus.SubtitlePosX,
                         voiceStatus.SubtitlePosY);
                 }
-                if (_voicePlayback.SubtitlesEnabled)
+                if (_voicePlayback.SubtitlesEnabled && _subtitleOverlay != null)
                 {
                     _subtitleOverlay.Start();
                 }
 
                 _chatView = new ChatView();
-                _chatView.Initialize(_apiService, _wsClient, _voicePlayback);
+                _chatView.Initialize(
+                    _apiService,
+                    _wsClient,
+                    _voicePlayback,
+                    _composition.VoiceSourceFactory,
+                    _composition.HarnessEvents,
+                    _composition.HarnessScenario);
                 _chatView.SessionOpened += (_, e) => SyncSidebarSelection(e.SessionId);
 
                 _voiceView = new VoiceView();
@@ -229,17 +254,16 @@ namespace RuApp
                 _sessionsTimer.Tick += OnSessionsTimerTick;
                 _sessionsTimer.Start();
 
-                _observationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-                _observationTimer.Tick += OnObservationTimerTick;
-                _observationTimer.Start();
+                if (!_composition.IsHarness)
+                {
+                    _observationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                    _observationTimer.Tick += OnObservationTimerTick;
+                    _observationTimer.Start();
+                }
             }
             else
             {
-                StatusText.Text = $"Không thể kết nối {_processManager.DisplayName} Backend!";
-                if (!string.IsNullOrWhiteSpace(_processManager.LastError))
-                {
-                    StatusText.Text += $" {_processManager.LastError}";
-                }
+                StatusText.Text = $"Không thể kết nối {_backendProvider.DisplayName} Backend!";
                 var danger = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
                 StatusDot.Fill = danger;
                 DotBackend.Fill = danger;
@@ -323,7 +347,7 @@ namespace RuApp
             {
                 var dangerBrush = (SolidColorBrush)Application.Current.Resources["AppDangerBrush"];
                 var mutedBrush = (SolidColorBrush)Application.Current.Resources["AppTextTertiaryBrush"];
-                StatusText.Text = $"{_processManager.DisplayName} Backend đã dừng.";
+                StatusText.Text = $"{_backendProvider.DisplayName} Backend đã dừng.";
                 StatusDot.Fill = dangerBrush;
                 DotBackend.Fill = dangerBrush;
                 DotWorker.Fill = dangerBrush;
@@ -360,7 +384,8 @@ namespace RuApp
             }
             _wsClient?.Dispose();
             _apiService?.Dispose();
-            _processManager.Dispose();
+            _backendProvider.BackendExited -= OnBackendExited;
+            _composition.Dispose();
         }
 
         private async Task LoadSessionsAsync()
@@ -496,7 +521,7 @@ namespace RuApp
             var mutedBrush = (SolidColorBrush)Application.Current.Resources["AppTextTertiaryBrush"];
 
             // 1. .NET Backend status
-            bool backendRunning = _processManager.IsRunning;
+            bool backendRunning = _backendProvider.Session != null;
             DotBackend.Fill = backendRunning ? successBrush : dangerBrush;
             TextBackend.Text = backendRunning ? ".NET Backend: OK" : ".NET Backend: Lỗi";
 
@@ -518,13 +543,15 @@ namespace RuApp
 
             // 3. VTube Studio status
             bool vtsConnected = false;
-            if (workerOk)
+            if (!_composition.IsHarness && workerOk)
             {
                 var vtsStatus = await _apiService.GetVtsStatusAsync();
                 vtsConnected = vtsStatus?.Connected == true;
             }
             DotVts.Fill = vtsConnected ? successBrush : mutedBrush;
-            TextVts.Text = vtsConnected ? "VTS: Đã kết nối" : "VTS: Chưa mở";
+            TextVts.Text = _composition.IsHarness
+                ? "VTS: Bỏ qua trong Harness"
+                : vtsConnected ? "VTS: Đã kết nối" : "VTS: Chưa mở";
 
             // Overall summary text
             if (!backendRunning)
@@ -540,7 +567,9 @@ namespace RuApp
             else
             {
                 StatusDot.Fill = successBrush;
-                StatusText.Text = vtsConnected ? "Hệ thống sẵn sàng (Đã kết nối Live2D)" : "Hệ thống đã sẵn sàng";
+                StatusText.Text = _composition.IsHarness
+                    ? "Harness đã sẵn sàng"
+                    : vtsConnected ? "Hệ thống sẵn sàng (Đã kết nối Live2D)" : "Hệ thống đã sẵn sàng";
             }
 
             UpdateShellStatusTooltip();

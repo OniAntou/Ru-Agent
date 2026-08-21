@@ -10,6 +10,7 @@ import asyncio
 import argparse
 import base64
 import json
+import os
 from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -29,7 +30,7 @@ from ru_runtime.worker.v1.protocol import (
 )
 from ru_runtime.worker.v1.server import WorkerHandlers, WorkerReply, serve_worker
 
-from .voice_fixtures import build_synthetic_wav
+from .voice_fixtures import build_synthetic_wav, is_valid_transcription_fixture
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +48,15 @@ def collect_deterministic_stream(request_id: str) -> Iterator[DeterministicVoice
 
 def deterministic_worker_dependencies() -> dict[str, bool]:
     return {"model": False, "microphone": False, "speaker": False, "vts": False}
+
+
+def _harness_delay_seconds(name: str) -> float:
+    raw = os.environ.get(name, "0")
+    try:
+        milliseconds = min(max(int(raw), 0), 5_000)
+    except (TypeError, ValueError):
+        milliseconds = 0
+    return milliseconds / 1000.0
 
 
 async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
@@ -102,7 +112,7 @@ def _decode_json_body(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     return decoded
 
 
-async def _runtime(payload: Mapping[str, Any], _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
+async def _runtime(payload: Mapping[str, Any], cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
     if "method" not in payload and "path_and_query" not in payload:
         yield WorkerReply(
             RUNTIME_STATE,
@@ -118,12 +128,20 @@ async def _runtime(payload: Mapping[str, Any], _cancelled: asyncio.Event) -> Asy
         return
 
     if path == "/voice/transcribe":
+        delay = _harness_delay_seconds("RU_HARNESS_TRANSCRIBE_DELAY_MS")
+        if delay:
+            await asyncio.sleep(delay)
+        if cancelled.is_set():
+            yield _json_response({"status": "error", "message": "cancelled"}, 499)
+            return
         encoded = body.get("audio_b64")
         sample_rate = body.get("sample_rate", 16_000)
         valid = False
         if isinstance(encoded, str) and sample_rate == 16_000:
             try:
-                valid = base64.b64decode(encoded, validate=True) == build_synthetic_wav()
+                valid = is_valid_transcription_fixture(
+                    base64.b64decode(encoded, validate=True)
+                )
             except (ValueError, base64.binascii.Error):
                 valid = False
         yield _json_response(
@@ -164,6 +182,9 @@ async def _voice(payload: Mapping[str, Any], cancelled: asyncio.Event) -> AsyncI
     operation = payload.get("operation")
     request_id = str(payload.get("request_id") or "")
     if operation in {"stream", "tts"}:
+        delay = _harness_delay_seconds("RU_HARNESS_VOICE_DELAY_MS")
+        if delay:
+            await asyncio.sleep(delay)
         audio = build_synthetic_wav()
         if cancelled.is_set():
             yield WorkerReply(VOICE_DONE, {"state": "cancelled", "request_id": request_id})

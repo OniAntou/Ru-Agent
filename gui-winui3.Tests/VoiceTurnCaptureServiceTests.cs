@@ -7,6 +7,46 @@ namespace RuApp.Tests;
 public sealed class VoiceTurnCaptureServiceTests
 {
     [Fact]
+    public async Task Deterministic_source_emits_one_speech_turn_and_stops_cleanly()
+    {
+        using var source = new DeterministicVoiceFrameSource(
+            new DeterministicVoiceFrameOptions(
+                SpeechDelay: TimeSpan.Zero,
+                EndDelay: TimeSpan.FromMilliseconds(10)));
+        var frames = new List<short[]>();
+        source.FrameReady += samples => frames.Add(samples.ToArray());
+
+        await source.StartAsync(CancellationToken.None);
+        await Task.Delay(50);
+        await source.StopAsync();
+
+        Assert.NotEmpty(frames);
+        Assert.Contains(frames.SelectMany(item => item), sample => sample != 0);
+    }
+
+    [Fact]
+    public async Task Deterministic_source_supports_back_to_back_voice_turns()
+    {
+        using var service = new VoiceTurnCaptureService(
+            () => new DeterministicVoiceFrameSource(
+                new DeterministicVoiceFrameOptions(
+                    SpeechDelay: TimeSpan.Zero,
+                    EndDelay: TimeSpan.Zero)));
+
+        VoiceTurnCaptureResult first = await service
+            .CaptureTurnAsync(CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(1));
+        VoiceTurnCaptureResult second = await service
+            .CaptureTurnAsync(CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(VoiceTurnStopReason.SpeechEnded, first.Reason);
+        Assert.Equal(VoiceTurnStopReason.SpeechEnded, second.Reason);
+        Assert.NotNull(first.WavBytes);
+        Assert.NotNull(second.WavBytes);
+    }
+
+    [Fact]
     public async Task CapturesAVoicedTurnAndReleasesTheSource()
     {
         var source = new FakeVoiceFrameSource();

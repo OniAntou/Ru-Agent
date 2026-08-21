@@ -30,6 +30,7 @@ public sealed class VoiceConversationService : IDisposable
     private readonly IVoiceTurnCapture _capture;
     private readonly Func<byte[], CancellationToken, Task<string?>> _transcribe;
     private readonly Func<string, CancellationToken, Task> _sendText;
+    private readonly HarnessEventSink? _harnessEvents;
     private readonly object _gate = new();
     private CancellationTokenSource? _conversationCancellation;
     private Task? _conversationTask;
@@ -39,11 +40,13 @@ public sealed class VoiceConversationService : IDisposable
     public VoiceConversationService(
         IVoiceTurnCapture capture,
         Func<byte[], CancellationToken, Task<string?>> transcribe,
-        Func<string, CancellationToken, Task> sendText)
+        Func<string, CancellationToken, Task> sendText,
+        HarnessEventSink? harnessEvents = null)
     {
         _capture = capture ?? throw new ArgumentNullException(nameof(capture));
         _transcribe = transcribe ?? throw new ArgumentNullException(nameof(transcribe));
         _sendText = sendText ?? throw new ArgumentNullException(nameof(sendText));
+        _harnessEvents = harnessEvents;
     }
 
     public bool IsRunning
@@ -105,6 +108,12 @@ public sealed class VoiceConversationService : IDisposable
                 await conversation.ConfigureAwait(false);
             }
         }
+    }
+
+    public async Task ReplaceSessionAsync()
+    {
+        await StopAsync().ConfigureAwait(false);
+        _harnessEvents?.Write("voice.session.replaced");
     }
 
     public void NotifyReplyCompleted()

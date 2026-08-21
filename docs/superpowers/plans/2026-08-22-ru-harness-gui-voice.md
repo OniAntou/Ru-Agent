@@ -1,5 +1,9 @@
 # Ru Harness vNext GUI Voice Implementation Plan
 
+> Implementation status: complete on `main` as of 2026-08-22. The backend
+> single-receive WebSocket fix was added alongside the GUI Harness because
+> sequential voice relistening exposed a real lost-prompt race.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** Run the real WinUI Ru shell through a typed external-session composition seam and verify one-to-one voice turns with deterministic frame input, deterministic backend audio, UI Automation, cancellation, session replacement, and privacy checks without opening physical devices.
@@ -112,7 +116,7 @@ Modify these existing tests:
 - Test: gui-winui3.Tests/RuAppCompositionTests.cs
 - Test: gui-winui3.Tests/HarnessSessionDescriptorTests.cs
 
-- [ ] **Step 1: Write endpoint and descriptor tests first**
+- [x] **Step 1: Write endpoint and descriptor tests first**
 
 Add tests for the exact validated endpoint behavior:
 
@@ -156,7 +160,7 @@ public async Task Harness_composition_returns_external_session_without_starting_
 }
 ~~~
 
-- [ ] **Step 2: Run the new endpoint tests and verify they fail**
+- [x] **Step 2: Run the new endpoint tests and verify they fail**
 
 Run:
 
@@ -167,7 +171,7 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --filter "FullyQuali
 Expected: compilation fails because BackendSession, the provider contract, and
 the composition types do not exist.
 
-- [ ] **Step 3: Implement BackendSession and compatible client construction**
+- [x] **Step 3: Implement BackendSession and compatible client construction**
 
 Define:
 
@@ -193,7 +197,7 @@ normal callers and existing tests remain source-compatible. All clients must
 derive URLs from the session instead of concatenating a fixed port in multiple
 places.
 
-- [ ] **Step 4: Implement managed/external providers and composition**
+- [x] **Step 4: Implement managed/external providers and composition**
 
 IRuBackendSessionProvider must expose:
 
@@ -218,7 +222,7 @@ factory must accept the external provider, a frame-source factory, a playback
 device factory, an event sink, and EnableSubtitleOverlay=false. Do not use a
 global environment-variable branch inside views.
 
-- [ ] **Step 5: Implement the one-shot restricted descriptor**
+- [x] **Step 5: Implement the one-shot restricted descriptor**
 
 HarnessSessionDescriptor must contain base_url, auth_token, scenario,
 events_path, and voice_mode. LoadFromArgument(string arguments) accepts only
@@ -233,7 +237,7 @@ Use Windows ACLs in the PowerShell/Python writer to remove inherited access and
 grant the current runner identity full access to the descriptor. The app-side
 loader still treats the file as one-shot and removes it in a finally block.
 
-- [ ] **Step 6: Run endpoint, composition, and existing manager tests**
+- [x] **Step 6: Run endpoint, composition, and existing manager tests**
 
 Run:
 
@@ -244,7 +248,7 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --filter "FullyQuali
 Expected: all new tests pass; managed mode still uses port 8000 and the
 existing worker-port validation; Harness mode reports no managed child start.
 
-- [ ] **Step 7: Commit the composition boundary**
+- [x] **Step 7: Commit the composition boundary**
 
 Run:
 
@@ -265,7 +269,7 @@ git commit -m "feat: add RuApp external backend composition"
 - Test: gui-winui3.Tests/VoicePlaybackDeviceTests.cs
 - Test: gui-winui3.Tests/HarnessEventSinkTests.cs
 
-- [ ] **Step 1: Write the failing playback seam tests**
+- [x] **Step 1: Write the failing playback seam tests**
 
 ~~~csharp
 [Fact]
@@ -296,7 +300,7 @@ BuildValidWav() in the test must create a 16-bit mono 16000 Hz in-memory WAV
 with 3200 frames. The first run must fail because the device and event sink do
 not exist.
 
-- [ ] **Step 2: Run the focused playback tests and verify failure**
+- [x] **Step 2: Run the focused playback tests and verify failure**
 
 Run:
 
@@ -307,7 +311,7 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --filter "FullyQuali
 Expected: compilation fails with missing IVoicePlaybackDevice and
 InMemoryHarnessEventSink.
 
-- [ ] **Step 3: Define the physical playback boundary**
+- [x] **Step 3: Define the physical playback boundary**
 
 Add:
 
@@ -327,7 +331,7 @@ MediaPlayerVoicePlaybackDevice. Preserve playback-first ordering: the device
 must call MediaPlayer.Play() before invoking onStarted, and cancellation must
 dispose the player and stream.
 
-- [ ] **Step 4: Implement the recording device and safe event sink**
+- [x] **Step 4: Implement the recording device and safe event sink**
 
 RecordingVoicePlaybackDevice validates the WAV using RIFF parsing, records only
 play/start/end/error counts and bounded elapsed milliseconds, and completes
@@ -343,7 +347,7 @@ voice.session.replaced. Reject keys named token, secret, audio, transcript,
 prompt, response, session_id, or request_body; cap the file at 64 KiB and rotate
 to an in-memory failure state instead of growing.
 
-- [ ] **Step 5: Delegate VoicePlaybackService to the device**
+- [x] **Step 5: Delegate VoicePlaybackService to the device**
 
 Change the constructor to:
 
@@ -364,7 +368,7 @@ IsPlaying forwards to the device; StopVoice calls _playbackDevice.Stop();
 its existing PlayWavAsync calls PlayAsync and keeps request acknowledgement
 around that call. Dispose the device exactly once.
 
-- [ ] **Step 6: Run playback, voice queue, and latency tests**
+- [x] **Step 6: Run playback, voice queue, and latency tests**
 
 Run sequentially:
 
@@ -376,7 +380,7 @@ Expected: recording playback passes without a device, existing queue ordering
 and subtitle isolation remain green, and cancellation does not report a late
 playback-ended event.
 
-- [ ] **Step 7: Commit the playback seam**
+- [x] **Step 7: Commit the playback seam**
 
 Run:
 
@@ -399,7 +403,7 @@ git commit -m "feat: inject deterministic voice playback boundary"
 - Modify: gui-winui3.Tests/VoiceConversationServiceTests.cs
 - Modify: gui-winui3.Tests/ChatViewVoiceContractTests.cs
 
-- [ ] **Step 1: Write the deterministic-source and composition integration tests**
+- [x] **Step 1: Write the deterministic-source and composition integration tests**
 
 Add a source test that proves no physical audio object is constructed:
 
@@ -439,7 +443,7 @@ Extend VoiceConversationServiceTests with a session replacement case that
 completes an old transcription after StopAsync and verifies zero send, zero
 playback, and one voice.session.replaced event.
 
-- [ ] **Step 2: Run the focused tests and verify the new assertions fail**
+- [x] **Step 2: Run the focused tests and verify the new assertions fail**
 
 Run:
 
@@ -450,7 +454,7 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --filter "FullyQuali
 Expected: the deterministic source and ChatView.Initialize factory assertion
 fail before implementation; all existing capture/state tests remain visible.
 
-- [ ] **Step 3: Implement the deterministic frame source**
+- [x] **Step 3: Implement the deterministic frame source**
 
 DeterministicVoiceFrameSource implements the existing IVoiceFrameSource:
 
@@ -468,7 +472,7 @@ LateFrameDelay; validate all delays to 0-5000 ms. Keep the existing
 VoiceTurnCaptureService VAD and WAV encoding path under test rather than
 bypassing it.
 
-- [ ] **Step 4: Wire ChatView to the injected source factory**
+- [x] **Step 4: Wire ChatView to the injected source factory**
 
 Change the signature to:
 
@@ -493,7 +497,7 @@ TextBlock named VoiceConversationStatusText; it displays only user-safe state
 labels such as Đang nghe..., Đang xử lý..., Đang chờ Ru trả lời..., and Đã dừng.
 SetVoiceButtonState and OnVoiceConversationStatusChanged update that state text.
 
-- [ ] **Step 5: Wire App and MainWindow to the composition**
+- [x] **Step 5: Wire App and MainWindow to the composition**
 
 In App.OnLaunched, call RuAppComposition.FromArguments(args.Arguments);
 production arguments return RuAppComposition.Production(), while a valid Harness
@@ -514,7 +518,7 @@ device. Keep the normal timers and overlay behavior unchanged in production
 mode. Add AutomationProperties.AutomationId="BackendStatus" to StatusText,
 NewSessionButton, and SessionList in MainWindow.xaml.
 
-- [ ] **Step 6: Run the focused GUI tests**
+- [x] **Step 6: Run the focused GUI tests**
 
 Run sequentially:
 
@@ -527,7 +531,7 @@ Expected: capture, state-machine, stale-result, privacy, manager, and static
 automation-ID tests pass; Release build succeeds with no warnings introduced
 by the composition seam.
 
-- [ ] **Step 7: Commit the GUI composition wiring**
+- [x] **Step 7: Commit the GUI composition wiring**
 
 Run:
 
@@ -545,7 +549,7 @@ git commit -m "feat: wire deterministic voice capture into RuApp composition"
 - Create: gui-winui3.Harness/UiAutomationScenario.cs
 - Create: gui-winui3.Harness/HarnessGuiResult.cs
 
-- [ ] **Step 1: Add driver project and pure result tests**
+- [x] **Step 1: Add driver project and pure result tests**
 
 Create a Windows console project targeting
 net10.0-windows10.0.26100.0, with UseWPF=true for
@@ -583,7 +587,7 @@ public sealed record HarnessGuiResult(
 The driver output is safe JSON only; it contains no token, path, transcript,
 audio, window title beyond a stable status, or request body.
 
-- [ ] **Step 2: Implement bounded AutomationId selectors**
+- [x] **Step 2: Implement bounded AutomationId selectors**
 
 UiAutomationScenario must find AutomationElements by
 AutomationElement.AutomationIdProperty, never by screen coordinates or fuzzy
@@ -604,7 +608,7 @@ HarnessGuiCheck. A missing control, wrong button name, wrong status label, or
 timeout is a failure for the exact check ID; it does not throw an unclassified
 exception into the artifact.
 
-- [ ] **Step 3: Implement the normal deterministic turn scenario**
+- [x] **Step 3: Implement the normal deterministic turn scenario**
 
 Program validates --app, --session, --scenario, and --timeout, refuses to run
 when the app path is missing, and checks for an existing RuApp process or
@@ -628,7 +632,7 @@ For scenario turn, the driver must:
 The driver must close the app through its normal window close path, then use
 process-tree cleanup only if the app remains after the bounded close timeout.
 
-- [ ] **Step 4: Implement stop, cancellation, and stale-session scenarios**
+- [x] **Step 4: Implement stop, cancellation, and stale-session scenarios**
 
 For scenario stop, click MicButton during the deterministic source delay, assert
 Đã dừng, then wait 500 ms and require zero voice.chat.sent and zero
@@ -643,7 +647,7 @@ assert voice.session.replaced, and require the old result not to update
 ChatMessages, VoiceConversationStatus, or playback. The driver returns separate
 check IDs gui.voice_stop, gui.voice_cancel, and gui.voice_stale_result.
 
-- [ ] **Step 5: Build and run driver-side contract checks**
+- [x] **Step 5: Build and run driver-side contract checks**
 
 Run:
 
@@ -656,7 +660,7 @@ Expected: the driver builds and its production-side state/automation contract
 tests pass. Do not claim UI Automation acceptance until the interactive scenario
 has run.
 
-- [ ] **Step 6: Commit the typed driver**
+- [x] **Step 6: Commit the typed driver**
 
 Run:
 
@@ -676,7 +680,7 @@ git commit -m "test: add typed RuApp voice UI Harness driver"
 - Test: tests/test_harness_session.py
 - Test: tests/test_ci_contract.py
 
-- [ ] **Step 1: Define the GUI callback contract in the backend session**
+- [x] **Step 1: Define the GUI callback contract in the backend session**
 
 Add a session method with this exact shape:
 
@@ -699,7 +703,7 @@ even when the driver exits nonzero. A driver startup error is gui.driver_start;
 a nonzero scenario result preserves its check IDs and does not turn into a
 generic pass/fail-only message.
 
-- [ ] **Step 2: Add deterministic delay controls without changing public routes**
+- [x] **Step 2: Add deterministic delay controls without changing public routes**
 
 Pass scenario timing through the temporary worker command/environment only:
 
@@ -715,7 +719,7 @@ to 0-5000 ms, and does not include them in the artifact. turn uses 0 ms STT and
 use 300 ms STT delay. No environment from the user's machine is copied into the
 descriptor or JSON result.
 
-- [ ] **Step 3: Add the PowerShell interactive wrapper**
+- [x] **Step 3: Add the PowerShell interactive wrapper**
 
 run_gui_voice_harness.ps1 must require:
 
@@ -740,7 +744,7 @@ Example command:
 if ($LASTEXITCODE -ne 0) { throw "GUI Harness failed with exit code $LASTEXITCODE." }
 ~~~
 
-- [ ] **Step 4: Add artifact and CI contract checks**
+- [x] **Step 4: Add artifact and CI contract checks**
 
 Extend artifact validation so mode accepts gui-deterministic and
 full-deterministic, components.gui contains launched and closed, and checks
@@ -753,7 +757,7 @@ Add tests/test_ci_contract.py assertions for a separate GUI workflow with
 workflow_dispatch, self-hosted, windows, ru-gui, and the PowerShell wrapper.
 Keep the ordinary headless CI job free of UI Automation.
 
-- [ ] **Step 5: Run the backend session and script contract tests**
+- [x] **Step 5: Run the backend session and script contract tests**
 
 Run:
 
@@ -765,7 +769,7 @@ Expected: descriptor cleanup, scenario allowlist, artifact merge, and workflow
 contract tests pass. The interactive app scenarios are intentionally not
 claimed by this headless command.
 
-- [ ] **Step 6: Commit orchestration**
+- [x] **Step 6: Commit orchestration**
 
 Run:
 
@@ -784,7 +788,7 @@ git commit -m "test: orchestrate deterministic RuApp voice scenarios"
 - Modify: docs/architecture.md
 - Modify: tests/test_current_documentation.py
 
-- [ ] **Step 1: Add the manual/self-hosted workflow**
+- [x] **Step 1: Add the manual/self-hosted workflow**
 
 Create a workflow triggered only by workflow_dispatch on a runner labelled
 self-hosted, windows, and ru-gui. The job checks out the repository, restores
@@ -793,7 +797,7 @@ scripts/run_gui_voice_harness.ps1, and uploads only the safe JSON artifact with
 actions/upload-artifact@v4 under ru-harness-vnext-gui. It must not run on an
 ordinary headless pull request job.
 
-- [ ] **Step 2: Update verification documentation**
+- [x] **Step 2: Update verification documentation**
 
 In docs/operations/verification.md, add the exact PowerShell command, the
 required interactive runner, the four scenarios, stable automation states, and
@@ -802,7 +806,7 @@ that deterministic GUI success proves the application lifecycle and protocol
 boundaries only; it does not prove microphone capture, audible OmniVoice, or
 VTube Studio behavior.
 
-- [ ] **Step 3: Update README and architecture documents**
+- [x] **Step 3: Update README and architecture documents**
 
 In README.md, add the GUI Harness command after the backend Harness command and
 explain that an existing RuApp instance causes a safe failure. In
@@ -810,7 +814,7 @@ docs/architecture.md, document the external BackendSession, normal managed
 provider, explicit descriptor, deterministic physical audio adapters, and the
 fact that production still owns its real process/audio/VTS lifecycle.
 
-- [ ] **Step 4: Run documentation and build verification**
+- [x] **Step 4: Run documentation and build verification**
 
 Run sequentially:
 
@@ -824,7 +828,7 @@ dotnet publish D:\LLM\gui-winui3\RuApp.csproj -c Release -r win-x64 --self-conta
 Expected: documentation contracts pass, the driver builds, WinUI tests pass,
 and the published app exists at the path passed to the wrapper.
 
-- [ ] **Step 5: Commit workflow and documentation**
+- [x] **Step 5: Commit workflow and documentation**
 
 Run:
 
@@ -856,14 +860,14 @@ pass count.
 
 ## 9. Self-review checklist
 
-- [ ] Every GUI spec requirement maps to a task: external composition, dynamic
+- [x] Every GUI spec requirement maps to a task: external composition, dynamic
       endpoint injection, fake frame source, recording playback, UI Automation,
       relisten, stop, cancel, session replacement, privacy, cleanup, artifact,
       and live hardware separation.
-- [ ] BackendSession, IRuBackendSessionProvider, RuAppComposition,
+- [x] BackendSession, IRuBackendSessionProvider, RuAppComposition,
       IVoicePlaybackDevice, HarnessSessionDescriptor, and the AutomationId names
       are consistent across all tasks.
-- [ ] The plan contains no incomplete marker or unspecified implementation step.
-- [ ] No staging command includes existing unrelated dirty files.
-- [ ] The app fails safely when another instance is already open and never
+- [x] The plan contains no incomplete marker or unspecified implementation step.
+- [x] No staging command includes existing unrelated dirty files.
+- [x] The app fails safely when another instance is already open and never
       silently controls the user's desktop.

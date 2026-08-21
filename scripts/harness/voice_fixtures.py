@@ -73,3 +73,14 @@ def inspect_wav(payload: bytes) -> WavInfo:
 
 def is_valid_wav(payload: bytes) -> bool:
     return inspect_wav(payload)["valid"]
+
+
+def is_valid_transcription_fixture(payload: bytes) -> bool:
+    info = inspect_wav(payload)
+    if not info["valid"] or info["frames"] > 20_000:
+        return False
+    try:
+        with wave.open(io.BytesIO(payload), "rb") as audio:
+            return any(audio.readframes(info["frames"]))
+    except (OSError, EOFError, wave.Error):
+        return False

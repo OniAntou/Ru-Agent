@@ -54,10 +54,13 @@ namespace RuApp.Views
         private VoicePlaybackService? _voicePlayback;
         private VoiceTurnCaptureService? _voiceCapture;
         private VoiceConversationService? _voiceConversation;
+        private HarnessEventSink? _harnessEvents;
+        private string? _harnessScenario;
         private string _activeSessionId = "default";
         public ObservableCollection<ChatMessageItem> Messages { get; } = new();
         private DispatcherTimer? _typingDebounce;
         private bool _typingPushed;
+        private bool _voiceTurnPending;
 
         public ChatView()
         {
@@ -93,16 +96,25 @@ namespace RuApp.Views
 
         public event EventHandler<SessionOpenedEventArgs>? SessionOpened;
 
-        public void Initialize(ApiService apiService, ChatWebSocketClient wsClient, VoicePlaybackService voicePlayback)
+        public void Initialize(
+            ApiService apiService,
+            ChatWebSocketClient wsClient,
+            VoicePlaybackService voicePlayback,
+            Func<IVoiceFrameSource>? voiceSourceFactory = null,
+            HarnessEventSink? harnessEvents = null,
+            string? harnessScenario = null)
         {
             _apiService = apiService;
             _wsClient = wsClient;
             _voicePlayback = voicePlayback;
-            _voiceCapture = new VoiceTurnCaptureService();
+            _harnessEvents = harnessEvents;
+            _harnessScenario = harnessScenario;
+            _voiceCapture = new VoiceTurnCaptureService(voiceSourceFactory);
             _voiceConversation = new VoiceConversationService(
                 _voiceCapture,
                 TranscribeVoiceAsync,
-                SendVoiceMessageAsync);
+                SendVoiceMessageAsync,
+                harnessEvents);
             _voiceConversation.StatusChanged += OnVoiceConversationStatusChanged;
 
             _wsClient.OnDeltaReceived += OnWsDeltaReceived;
@@ -285,10 +297,12 @@ namespace RuApp.Views
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                _voiceTurnPending = true;
                 await SendMessageTextAsync(text, cancellationToken);
             }
             catch (Exception ex)
             {
+                _voiceTurnPending = false;
                 HandleSendError(ex, "SendVoiceMessageAsync");
                 throw;
             }
@@ -307,6 +321,11 @@ namespace RuApp.Views
             if (_voicePlayback?.AutoReadReplies == true)
             {
                 _voicePlayback.BeginReplyStream();
+            }
+
+            if (_voiceTurnPending)
+            {
+                _harnessEvents?.Write("voice.chat.sent");
             }
 
             ScrollChatToBottom();
@@ -436,6 +455,11 @@ namespace RuApp.Views
         {
             try
             {
+                if (_voiceTurnPending)
+                {
+                    _harnessEvents?.Write("voice.reply.received");
+                }
+
                 DispatcherQueue.TryEnqueue(async () =>
                 {
                     try
@@ -471,10 +495,19 @@ namespace RuApp.Views
                             await _voicePlayback.CompleteReplyStreamAsync(finalVoiceText);
                         }
 
+                        if (_voiceTurnPending)
+                        {
+                            _harnessEvents?.Write("voice.reply.completed");
+                            _voiceTurnPending = false;
+                        }
                         _voiceConversation?.NotifyReplyCompleted();
                     }
                     catch (Exception ex)
                     {
+                        if (_voiceTurnPending)
+                        {
+                            _harnessEvents?.Write("voice.reply.failed");
+                        }
                         _voiceConversation?.NotifyReplyError(ex);
                         System.Diagnostics.Debug.WriteLine($"Error in OnWsDoneReceived queue: {ex.Message}");
                     }
@@ -491,6 +524,7 @@ namespace RuApp.Views
             try
             {
                 _voicePlayback?.FailReplyStream();
+                _voiceTurnPending = false;
                 _voiceConversation?.NotifyReplyError(new InvalidOperationException(error));
                 DispatcherQueue.TryEnqueue(() =>
                 {
@@ -574,7 +608,7 @@ namespace RuApp.Views
             try
             {
                 if (_apiService == null) return;
-                await StopVoiceConversationAsync();
+                await ReplaceVoiceSessionAsync();
                 _activeSessionId = sessionId;
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
                 Messages.Clear();
@@ -645,6 +679,23 @@ namespace RuApp.Views
             }
 
             await _voiceConversation.StopAsync();
+            _voiceTurnPending = false;
+            _harnessEvents?.Write(
+                string.Equals(_harnessScenario, "cancel", StringComparison.OrdinalIgnoreCase)
+                    ? "voice.conversation.cancelled"
+                    : "voice.conversation.stopped");
+            _voicePlayback?.StopVoice();
+            SetVoiceButtonState(false);
+        }
+
+        private async Task ReplaceVoiceSessionAsync()
+        {
+            if (_voiceConversation != null)
+            {
+                await _voiceConversation.ReplaceSessionAsync();
+            }
+
+            _voiceTurnPending = false;
             _voicePlayback?.StopVoice();
             SetVoiceButtonState(false);
         }
@@ -662,6 +713,7 @@ namespace RuApp.Views
                 throw new InvalidOperationException("Dịch vụ nhận dạng giọng nói không khả dụng.");
             }
 
+            _harnessEvents?.Write("voice.transcribe.completed");
             return text;
         }
 
@@ -672,6 +724,8 @@ namespace RuApp.Views
                 if (status.State == VoiceConversationState.Stopped)
                 {
                     SetVoiceButtonState(false);
+                    VoiceConversationStatusText.Text = "Đã dừng";
+                    VoiceConversationStatusText.Visibility = Visibility.Visible;
                     return;
                 }
 
@@ -680,10 +734,28 @@ namespace RuApp.Views
                     SetVoiceButtonState(false);
                     ChatInputTextBox.PlaceholderText = status.Message
                         ?? "Cuộc trò chuyện bằng giọng nói đã dừng.";
+                    VoiceConversationStatusText.Text = status.Message ?? "Không truy cập được micro.";
+                    VoiceConversationStatusText.Visibility = Visibility.Visible;
                     return;
                 }
 
                 SetVoiceButtonState(true);
+                VoiceConversationStatusText.Text = status.State switch
+                {
+                    VoiceConversationState.Listening => "Đang nghe...",
+                    VoiceConversationState.Transcribing => "Đang xử lý...",
+                    VoiceConversationState.Sending or VoiceConversationState.WaitingForReply => "Đang chờ Ru trả lời...",
+                    _ => status.Message ?? string.Empty,
+                };
+                VoiceConversationStatusText.Visibility = Visibility.Visible;
+                if (status.State == VoiceConversationState.Listening)
+                {
+                    _harnessEvents?.Write("voice.capture.started");
+                }
+                else if (status.State == VoiceConversationState.Transcribing)
+                {
+                    _harnessEvents?.Write("voice.capture.ended");
+                }
                 if (!string.IsNullOrWhiteSpace(status.Message))
                 {
                     ChatInputTextBox.PlaceholderText = status.Message;

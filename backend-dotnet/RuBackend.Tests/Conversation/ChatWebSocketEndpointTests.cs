@@ -32,6 +32,31 @@ public sealed class ChatWebSocketEndpointTests
         Assert.DoesNotContain("error_code", events[^1].GetRawText(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Sequential_requests_after_done_are_not_consumed_by_disconnect_monitor()
+    {
+        var coordinator = new FakeCoordinator();
+        using var factory = Factory(coordinator);
+        using var socket = await ConnectAsync(factory, "?token=test-secret");
+
+        await SendTextAsync(socket, "{\"prompt\":\"Lượt một\"}");
+        for (var index = 0; index < 4; index++)
+        {
+            await ReceiveTextAsync(socket);
+        }
+
+        await SendTextAsync(socket, "{\"prompt\":\"Lượt hai\"}");
+        var secondTurn = new List<JsonElement>();
+        for (var index = 0; index < 4; index++)
+        {
+            secondTurn.Add(JsonDocument.Parse(await ReceiveTextAsync(socket)).RootElement.Clone());
+        }
+
+        Assert.Equal(["session", "reset", "chunk", "done"],
+            secondTurn.Select(item => item.GetProperty("type").GetString()));
+        Assert.Equal(["Lượt một", "Lượt hai"], coordinator.Requests.Select(request => request.Prompt));
+    }
+
     [Theory]
     [InlineData("{")]
     [InlineData("[]")]

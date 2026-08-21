@@ -113,6 +113,46 @@ public sealed class VoiceConversationServiceTests
         Assert.Equal(0, sendCalls);
     }
 
+    [Fact]
+    public async Task SessionReplacementCancelsLateTranscriptionAndRecordsSafeEvent()
+    {
+        var capture = new FakeVoiceTurnCapture();
+        var transcriptionStarted = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var lateTranscription = new TaskCompletionSource<string?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var events = new InMemoryHarnessEventSink();
+        int sendCalls = 0;
+        int playbackCalls = 0;
+        var service = new VoiceConversationService(
+            capture,
+            (_, _) =>
+            {
+                transcriptionStarted.TrySetResult(true);
+                return lateTranscription.Task;
+            },
+            (_, _) =>
+            {
+                sendCalls++;
+                playbackCalls++;
+                return Task.CompletedTask;
+            },
+            events);
+
+        await service.StartAsync();
+        await capture.WaitForCaptureAsync(1);
+        capture.CompleteNext(new VoiceTurnCaptureResult(new byte[] { 1 }, VoiceTurnStopReason.SpeechEnded));
+        await transcriptionStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        await service.ReplaceSessionAsync();
+        lateTranscription.TrySetResult("stale prompt");
+        await Task.Delay(20);
+
+        Assert.Equal(0, sendCalls);
+        Assert.Equal(0, playbackCalls);
+        Assert.Equal(1, events.Counts["voice.session.replaced"]);
+    }
+
     private sealed class FakeVoiceTurnCapture : IVoiceTurnCapture
     {
         private readonly object _gate = new();

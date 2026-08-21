@@ -1,6 +1,6 @@
 # Ru Harness vNext Design
 
-**Status:** Draft for implementation review
+**Status:** Implemented on main; deterministic GUI acceptance passed 2026-08-22
 **Date:** 2026-08-22
 **Scope:** Deterministic backend Harness and deterministic GUI voice Harness
 

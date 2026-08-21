@@ -16,6 +16,7 @@ namespace RuBackend.Tests;
 
 public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program>
 {
+    private readonly string? _ownedDataRoot;
     private readonly IMemoryService? _memoryService;
     private readonly IRuntimeWorkerClient _runtimeWorkerClient;
     private readonly DataPaths? _dataPaths;
@@ -35,6 +36,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         IConversationCoordinator? conversationCoordinator = null,
         IVoiceProtocolClient? voiceProtocolClient = null)
     {
+        _ownedDataRoot = dataPaths is null
+            ? Path.Combine(Path.GetTempPath(), "ru-backend-test-" + Guid.NewGuid().ToString("N"))
+            : null;
         _memoryService = memoryService;
         _runtimeWorkerClient = runtimeWorkerClient ?? StubRuntimeWorkerClient.Healthy();
         _dataPaths = dataPaths;
@@ -48,6 +52,12 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("RU_DESKTOP_TOKEN", "test-secret");
+        if (_ownedDataRoot is not null)
+        {
+            builder.UseSetting("RU_DATA_ROOT", _ownedDataRoot);
+            builder.UseSetting("RU_LOG_ROOT", Path.Combine(_ownedDataRoot, "logs"));
+        }
+
         builder.ConfigureTestServices(services =>
         {
             if (_memoryService is not null)
@@ -95,6 +105,29 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
                 services.AddSingleton(_voiceProtocolClient);
             }
         });
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (!disposing || _ownedDataRoot is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (Directory.Exists(_ownedDataRoot))
+            {
+                Directory.Delete(_ownedDataRoot, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     public HttpClient CreateAuthenticatedClient()

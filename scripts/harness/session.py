@@ -31,6 +31,7 @@ from .routes import RouteSafety, build_route_registry, load_contract
 from .voice_fixtures import build_synthetic_wav, is_valid_wav
 
 HarnessMode = Literal["backend-deterministic", "gui-deterministic", "runtime-live"]
+GuiScenario = Literal["turn", "stop", "cancel", "stale-session"]
 
 
 class HarnessSession:
@@ -60,6 +61,11 @@ class HarnessSession:
         self._log_root = self._temporary_root / "logs"
         self._desktop_token = secrets.token_hex(24)
         self._worker_token = secrets.token_hex(24)
+        self._gui_components: dict[str, object] = {
+            "status": "not_run",
+            "launched": False,
+            "closed": False,
+        }
         self.worker_lease: PortLease | None = None
         self.edge_lease: PortLease | None = None
         try:
@@ -84,15 +90,32 @@ class HarnessSession:
             test_mode=True,
         )
 
-    def run(self, *, mode: HarnessMode = "backend-deterministic") -> dict[str, object]:
+    def run(
+        self,
+        *,
+        mode: HarnessMode = "backend-deterministic",
+        app_path: Path | None = None,
+        driver_project: Path | None = None,
+        scenario: GuiScenario = "turn",
+        timeout_seconds: float = 180.0,
+    ) -> dict[str, object]:
         started = time.perf_counter()
         started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         checks: list[CheckResult] = []
         errors: list[object] = []
         try:
             if mode == "gui-deterministic":
-                raise ValueError("gui-deterministic requires the GUI driver callback")
-            if self._test_mode:
+                if app_path is None or driver_project is None:
+                    raise ValueError("gui-deterministic requires app_path and driver_project")
+                checks.extend(
+                    self.run_gui(
+                        app_path=app_path,
+                        driver_project=driver_project,
+                        scenario=scenario,
+                        timeout_seconds=timeout_seconds,
+                    )
+                )
+            elif self._test_mode:
                 checks.extend(self._run_test_checks())
             else:
                 checks.extend(self._run_backend(mode))
@@ -127,6 +150,7 @@ class HarnessSession:
             components={
                 "edge": {"status": "passed" if self._edge_ready() else "not_ready"},
                 "worker": {"status": "passed" if self._worker_ready() else "not_ready"},
+                **({"gui": self._gui_components} if mode == "gui-deterministic" else {}),
             },
             checks=checks,
             coverage=self._coverage(checks),
@@ -134,6 +158,287 @@ class HarnessSession:
             errors=errors,
             secrets=(self._desktop_token, self._worker_token),
         )
+
+    def run_gui(
+        self,
+        *,
+        app_path: Path,
+        driver_project: Path,
+        scenario: GuiScenario,
+        timeout_seconds: float,
+    ) -> list[CheckResult]:
+        started = time.perf_counter()
+        if scenario not in {"turn", "stop", "cancel", "stale-session"}:
+            raise ValueError("GUI Harness scenario is not allowed")
+        if timeout_seconds <= 0 or timeout_seconds > 300:
+            raise ValueError("GUI Harness timeout must be between 0 and 300 seconds")
+
+        app_path = app_path.resolve()
+        driver_project = driver_project.resolve()
+        if not app_path.is_file() or not driver_project.is_file():
+            self._gui_components = {
+                "status": "failed",
+                "launched": False,
+                "closed": False,
+            }
+            return [
+                CheckResult(
+                    "gui.driver_start",
+                    "failed",
+                    (time.perf_counter() - started) * 1000,
+                    reason="app_or_driver_missing",
+                )
+            ]
+
+        self._start_children(deterministic=True, harness_scenario=scenario)
+        if not self._wait_for_readiness():
+            self._gui_components = {
+                "status": "blocked_by_startup",
+                "launched": False,
+                "closed": False,
+            }
+            return [
+                CheckResult(
+                    "gui.backend_ready",
+                    "blocked_by_startup",
+                    (time.perf_counter() - started) * 1000,
+                    reason="edge_not_ready",
+                )
+            ]
+
+        gui_root = self._temporary_root / "gui"
+        gui_root.mkdir(parents=True, exist_ok=True)
+        events_path = gui_root / "events.jsonl"
+        self._descriptor_path = gui_root / "session.json"
+        self._write_gui_descriptor(
+            self._descriptor_path,
+            events_path=events_path,
+            scenario=scenario,
+        )
+
+        command = [
+            "dotnet",
+            "run",
+            "--project",
+            str(driver_project),
+            "--configuration",
+            "Release",
+            "--no-launch-profile",
+            "--",
+            "--app",
+            str(app_path),
+            "--session",
+            str(self._descriptor_path),
+            "--scenario",
+            scenario,
+            "--timeout",
+            str(timeout_seconds),
+        ]
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "NO_PROXY": "127.0.0.1,localhost",
+                "no_proxy": "127.0.0.1,localhost",
+            }
+        )
+        self._gui_components = {
+            "status": "running",
+            "launched": False,
+            "closed": False,
+        }
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=self.project_root,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds + 30,
+            )
+        except subprocess.TimeoutExpired:
+            self._gui_components = {
+                "status": "failed",
+                "launched": True,
+                "closed": False,
+            }
+            return [
+                CheckResult(
+                    "gui.driver_start",
+                    "failed",
+                    (time.perf_counter() - started) * 1000,
+                    reason="driver_timeout",
+                )
+            ]
+        except OSError as error:
+            self._gui_components = {
+                "status": "failed",
+                "launched": False,
+                "closed": False,
+            }
+            return [
+                CheckResult(
+                    "gui.driver_start",
+                    "failed",
+                    (time.perf_counter() - started) * 1000,
+                    reason="driver_process_error",
+                    details={"error_type": type(error).__name__},
+                )
+            ]
+
+        self._gui_components = {
+            "status": "passed" if completed.returncode == 0 else "failed",
+            "launched": True,
+            "closed": False,
+        }
+        stdout = completed.stdout or ""
+        if len(stdout.encode("utf-8", errors="replace")) > 64 * 1024:
+            self._gui_components["status"] = "failed"
+            return [
+                CheckResult(
+                    "gui.driver_start",
+                    "failed",
+                    (time.perf_counter() - started) * 1000,
+                    reason="driver_output_too_large",
+                )
+            ]
+
+        try:
+            payload = self._parse_gui_driver_output(stdout)
+        except (ValueError, json.JSONDecodeError):
+            self._gui_components["status"] = "failed"
+            return [
+                CheckResult(
+                    "gui.driver_start",
+                    "failed",
+                    (time.perf_counter() - started) * 1000,
+                    reason="invalid_driver_output",
+                )
+            ]
+
+        self._gui_components["launched"] = bool(payload.get("launched", True))
+        self._gui_components["closed"] = bool(payload.get("app_closed", False))
+        self._gui_components["status"] = (
+            "passed"
+            if completed.returncode == 0 and self._gui_components["closed"]
+            else "failed"
+        )
+        checks = self._convert_gui_checks(payload)
+        if completed.returncode != 0 and not any(check.status == "failed" for check in checks):
+            checks.append(
+                CheckResult(
+                    "gui.driver_start",
+                    "failed",
+                    (time.perf_counter() - started) * 1000,
+                    reason="driver_nonzero_exit",
+                )
+            )
+        return checks
+
+    def _write_gui_descriptor(
+        self,
+        descriptor_path: Path,
+        *,
+        events_path: Path,
+        scenario: GuiScenario,
+    ) -> None:
+        descriptor_path.write_text(
+            json.dumps(
+                {
+                    "base_url": self.edge_base_url,
+                    "auth_token": self._desktop_token,
+                    "scenario": scenario,
+                    "events_path": str(events_path.resolve()),
+                    "voice_mode": "deterministic",
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        if os.name == "nt":
+            identity = f"{os.environ.get('USERDOMAIN', '')}\\{os.environ.get('USERNAME', '')}".strip("\\")
+            if identity:
+                try:
+                    subprocess.run(
+                        [
+                            "icacls",
+                            str(descriptor_path),
+                            "/inheritance:r",
+                            "/grant:r",
+                            f"{identity}:F",
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                except (OSError, subprocess.SubprocessError):
+                    descriptor_path.chmod(0o600)
+        else:
+            descriptor_path.chmod(0o600)
+
+    @staticmethod
+    def _parse_gui_driver_output(stdout: str) -> dict[str, object]:
+        lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+        if not lines:
+            raise ValueError("GUI driver produced no JSON")
+        payload = json.loads(lines[-1])
+        if not isinstance(payload, dict) or payload.get("schema_version") != 2:
+            raise ValueError("GUI driver schema is invalid")
+        serialized = json.dumps(payload, ensure_ascii=False).casefold()
+        if any(
+            fragment in serialized
+            for fragment in ('"bearer"', '"transcript"', '"audio"', '"request_body"')
+        ):
+            raise ValueError("GUI driver output contains private fields")
+        allowed = {
+            "schema_version",
+            "scenario",
+            "checks",
+            "event_counts",
+            "existing_instance_detected",
+            "app_closed",
+        }
+        if set(payload) - allowed:
+            raise ValueError("GUI driver output contains unsupported fields")
+        return payload
+
+    @staticmethod
+    def _convert_gui_checks(payload: dict[str, object]) -> list[CheckResult]:
+        raw_checks = payload.get("checks")
+        if not isinstance(raw_checks, list):
+            raise ValueError("GUI driver checks are invalid")
+        event_counts = payload.get("event_counts", {})
+        if not isinstance(event_counts, dict) or not all(
+            isinstance(key, str) and isinstance(value, int)
+            for key, value in event_counts.items()
+        ):
+            raise ValueError("GUI driver event counts are invalid")
+        checks: list[CheckResult] = []
+        allowed_check_fields = {"id", "status", "duration_ms", "reason"}
+        for raw in raw_checks:
+            if not isinstance(raw, dict) or set(raw) - allowed_check_fields:
+                raise ValueError("GUI driver check contains unsupported fields")
+            check_id = raw.get("id")
+            status = raw.get("status")
+            duration_ms = raw.get("duration_ms")
+            reason = raw.get("reason")
+            if not isinstance(check_id, str) or not isinstance(status, str):
+                raise ValueError("GUI driver check identity is invalid")
+            if not isinstance(duration_ms, (int, float)) or duration_ms < 0:
+                raise ValueError("GUI driver check duration is invalid")
+            if reason is not None and not isinstance(reason, str):
+                raise ValueError("GUI driver check reason is invalid")
+            checks.append(
+                CheckResult(
+                    check_id,
+                    status,
+                    float(duration_ms),
+                    reason=reason,
+                    details={"event_counts": dict(event_counts)},
+                )
+            )
+        return checks
 
     def close(self) -> dict[str, bool]:
         if self._cleanup_result is not None:
@@ -273,7 +578,12 @@ class HarnessSession:
         )
         return checks
 
-    def _start_children(self, *, deterministic: bool) -> None:
+    def _start_children(
+        self,
+        *,
+        deterministic: bool,
+        harness_scenario: GuiScenario | None = None,
+    ) -> None:
         assert self.worker_lease is not None and self.edge_lease is not None
         self.worker_lease.handoff()
         self.edge_lease.handoff()
@@ -299,6 +609,18 @@ class HarnessSession:
                 "PYTHONPATH": os.pathsep.join(python_paths),
             }
         )
+        if deterministic and harness_scenario is not None:
+            environment.update(
+                {
+                    "RU_HARNESS_SCENARIO": harness_scenario,
+                    "RU_HARNESS_TRANSCRIBE_DELAY_MS": (
+                        "300" if harness_scenario in {"cancel", "stale-session"} else "0"
+                    ),
+                    "RU_HARNESS_VOICE_DELAY_MS": (
+                        "100" if harness_scenario == "stop" else "0"
+                    ),
+                }
+            )
         if deterministic:
             worker_command = [
                 str(python_executable),

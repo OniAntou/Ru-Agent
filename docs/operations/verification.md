@@ -47,6 +47,25 @@ non-zero shutdown code.
 synthetic PCM WAV/STT/TTS; it never requires a model, microphone, speaker, or
 VTube Studio connection.
 
+The deterministic GUI voice Harness is a separate, manual, interactive Windows
+gate. It publishes the real WinUI shell, starts a typed UI Automation driver,
+and replaces only microphone frames and speaker playback with deterministic
+test doubles. It refuses to run when another RuApp instance is present and
+does not request microphone permission, open a MediaPlayer, connect to VTube
+Studio, or write audio/transcript content to the artifact:
+
+~~~powershell
+dotnet publish D:\LLM\gui-winui3\RuApp.csproj -c Release -r win-x64 --self-contained true --nologo
+dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --nologo
+& D:\LLM\scripts\run_gui_voice_harness.ps1 -AppPath D:\LLM\gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe -DriverProject D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -OutputPath D:\LLM\artifacts\gui\ru-harness-vnext-gui.json
+~~~
+
+The wrapper runs fresh turn, stop, cancel, and stale-session sessions, then
+writes one schema-v2 aggregate only after descriptor, child, port, and
+temporary-root cleanup has been checked. A successful deterministic GUI result
+does not accept live microphone capture, audible OmniVoice, subtitles, or
+VTube Studio; those remain the user-owned hardware gate below.
+
 The production live voice gate is separate because it requires OmniVoice and a
 real audio-producing worker:
 

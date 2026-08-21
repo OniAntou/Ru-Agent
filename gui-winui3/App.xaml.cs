@@ -3,6 +3,7 @@ using System.Threading;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
+using RuApp.Services;
 
 namespace RuApp;
 
@@ -35,17 +36,43 @@ public partial class App : Application
 
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
+        RuAppComposition composition = RuAppComposition.FromArguments(
+            ResolveLaunchArguments(args.Arguments));
         const string mutexName = "RuApp_WinUI3_SingleInstance";
         _singleInstanceMutex = new Mutex(true, mutexName, out bool createdNew);
         if (!createdNew)
         {
-            ActivateExistingInstance();
+            if (!composition.IsHarness)
+            {
+                ActivateExistingInstance();
+            }
+
+            composition.Dispose();
             Environment.Exit(0);
             return;
         }
 
-        _window = new MainWindow();
+        _window = new MainWindow(composition);
         _window.Activate();
+    }
+
+    private static string ResolveLaunchArguments(string? activatedArguments)
+    {
+        if (!string.IsNullOrWhiteSpace(activatedArguments))
+        {
+            return activatedArguments;
+        }
+
+        string[] processArguments = Environment.GetCommandLineArgs();
+        for (int index = 1; index < processArguments.Length - 1; index++)
+        {
+            if (string.Equals(processArguments[index], "--ru-harness-session", StringComparison.Ordinal))
+            {
+                return $"--ru-harness-session \"{processArguments[index + 1]}\"";
+            }
+        }
+
+        return string.Empty;
     }
 
     private static void ActivateExistingInstance()

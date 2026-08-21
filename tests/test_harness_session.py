@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+import pytest
+
 from harness.session import HarnessSession
 
 
@@ -28,3 +33,64 @@ def test_deterministic_chat_requires_order_privacy_and_one_terminal_event() -> N
     assert statuses["chat.private_metadata"] == "passed"
     assert statuses["voice.synthetic_stt"] == "passed"
     assert statuses["voice.synthetic_tts"] == "passed"
+
+
+def test_gui_driver_output_is_converted_to_safe_checks(tmp_path: Path) -> None:
+    payload = {
+        "schema_version": 2,
+        "scenario": "turn",
+        "checks": [
+            {
+                "id": "gui.voice_turn",
+                "status": "passed",
+                "duration_ms": 12.5,
+                "reason": None,
+            }
+        ],
+        "event_counts": {"voice.reply.completed": 1},
+        "existing_instance_detected": False,
+        "app_closed": True,
+    }
+
+    checks = HarnessSession._convert_gui_checks(payload)
+
+    assert checks[0].check_id == "gui.voice_turn"
+    assert checks[0].status == "passed"
+    assert checks[0].details == {"event_counts": {"voice.reply.completed": 1}}
+
+
+def test_gui_driver_output_rejects_private_or_unknown_fields() -> None:
+    with pytest.raises(ValueError, match="private"):
+        HarnessSession._parse_gui_driver_output(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "scenario": "turn",
+                    "checks": [],
+                    "event_counts": {},
+                    "existing_instance_detected": False,
+                    "app_closed": True,
+                    "transcript": "must not pass",
+                }
+            )
+        )
+
+    with pytest.raises(ValueError, match="unsupported"):
+        HarnessSession._convert_gui_checks(
+            {
+                "schema_version": 2,
+                "scenario": "turn",
+                "checks": [
+                    {
+                        "id": "gui.voice_turn",
+                        "status": "passed",
+                        "duration_ms": 1.0,
+                        "reason": None,
+                        "details": {"private": True},
+                    }
+                ],
+                "event_counts": {},
+                "existing_instance_detected": False,
+                "app_closed": True,
+            }
+        )

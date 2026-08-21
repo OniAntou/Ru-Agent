@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading.Channels;
 using RuBackend.Diagnostics;
 namespace RuBackend.Conversation;
 
@@ -31,20 +32,29 @@ public static class ChatWebSocketEndpoint
             cancellationToken,
             context.RequestAborted);
         using var sendLock = new SemaphoreSlim(1, 1);
+        var inbound = Channel.CreateBounded<InboundMessage>(
+            new BoundedChannelOptions(32)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = true,
+                SingleWriter = true,
+            });
+        Task receiveLoop = ReceiveLoopAsync(
+            socket,
+            inbound.Writer,
+            connectionCancellation.Token);
         try
         {
-            while (!connectionCancellation.IsCancellationRequested
-                   && socket.State == WebSocketState.Open)
+            await foreach (var message in inbound.Reader
+                .ReadAllAsync(connectionCancellation.Token)
+                .ConfigureAwait(false))
             {
-                var inbound = await ReceiveMessageAsync(
-                    socket,
-                    connectionCancellation.Token).ConfigureAwait(false);
-                if (inbound.Closed)
+                if (message.Closed)
                 {
                     return;
                 }
 
-                if (inbound.TooLarge)
+                if (message.TooLarge)
                 {
                     await SendAsync(
                         socket,
@@ -56,8 +66,8 @@ public static class ChatWebSocketEndpoint
 
                 ChatRequest? request = null;
                 ChatEvent? parseError = null;
-                if (inbound.MessageType != WebSocketMessageType.Text
-                    || !TryParseRequest(inbound.Bytes, out request, out parseError))
+                if (message.MessageType != WebSocketMessageType.Text
+                    || !TryParseRequest(message.Bytes, out request, out parseError))
                 {
                     await SendAsync(
                         socket,
@@ -90,6 +100,7 @@ public static class ChatWebSocketEndpoint
                     sendLock,
                     coordinator,
                     new ChatRequest(prompt, request.SessionId?.Trim(), request.CorrelationId),
+                    inbound.Reader,
                     connectionCancellation.Token).ConfigureAwait(false);
                 if (closed)
                 {
@@ -106,6 +117,21 @@ public static class ChatWebSocketEndpoint
         finally
         {
             connectionCancellation.Cancel();
+            inbound.Writer.TryComplete();
+            try
+            {
+                await receiveLoop.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (WebSocketException)
+            {
+            }
+            catch (IOException)
+            {
+            }
+
             if (socket.State == WebSocketState.Open)
             {
                 try
@@ -122,28 +148,78 @@ public static class ChatWebSocketEndpoint
         }
     }
 
+    private static async Task ReceiveLoopAsync(
+        WebSocket socket,
+        ChannelWriter<InboundMessage> writer,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                InboundMessage message = await ReceiveMessageAsync(
+                    socket,
+                    cancellationToken).ConfigureAwait(false);
+                await writer.WriteAsync(message, cancellationToken).ConfigureAwait(false);
+                if (message.Closed)
+                {
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (WebSocketException)
+        {
+        }
+        catch (IOException)
+        {
+        }
+        finally
+        {
+            writer.TryComplete();
+        }
+    }
+
     private static async Task<bool> StreamTurnAsync(
         WebSocket socket,
         SemaphoreSlim sendLock,
         IConversationCoordinator coordinator,
         ChatRequest request,
+        ChannelReader<InboundMessage> inbound,
         CancellationToken connectionCancellation)
     {
         using var correlationScope = CorrelationContext.Push(request.CorrelationId);
         using var turnCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             connectionCancellation);
-        var monitor = MonitorDisconnectAsync(socket, sendLock, turnCancellation);
+        using var monitorCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            connectionCancellation);
+        var monitor = MonitorDisconnectAsync(
+            socket,
+            inbound,
+            sendLock,
+            turnCancellation,
+            monitorCancellation.Token);
         var closed = false;
         try
         {
             await foreach (var item in coordinator.HandleAsync(request, turnCancellation.Token)
                 .WithCancellation(turnCancellation.Token).ConfigureAwait(false))
             {
-                await SendAsync(socket, sendLock, item, turnCancellation.Token).ConfigureAwait(false);
                 if (item.Type is "done" or "error")
                 {
+                    // Stop the disconnect reader before publishing the terminal
+                    // event. Otherwise it can consume the next request after
+                    // the client observes this event, racing the main reader.
+                    monitorCancellation.Cancel();
+                    await SendAsync(socket, sendLock, item, connectionCancellation)
+                        .ConfigureAwait(false);
                     break;
                 }
+
+                await SendAsync(socket, sendLock, item, turnCancellation.Token)
+                    .ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (turnCancellation.IsCancellationRequested)
@@ -157,6 +233,7 @@ public static class ChatWebSocketEndpoint
         finally
         {
             turnCancellation.Cancel();
+            monitorCancellation.Cancel();
             try
             {
                 closed |= await monitor.ConfigureAwait(false);
@@ -175,49 +252,43 @@ public static class ChatWebSocketEndpoint
 
     private static async Task<bool> MonitorDisconnectAsync(
         WebSocket socket,
+        ChannelReader<InboundMessage> inbound,
         SemaphoreSlim sendLock,
-        CancellationTokenSource turnCancellation)
+        CancellationTokenSource turnCancellation,
+        CancellationToken monitorCancellation)
     {
-        var buffer = new byte[4 * 1024];
-        while (!turnCancellation.IsCancellationRequested)
+        try
         {
-            var result = await socket.ReceiveAsync(
-                buffer,
-                turnCancellation.Token).ConfigureAwait(false);
-            if (result.MessageType == WebSocketMessageType.Close)
+            await foreach (InboundMessage message in inbound
+                .ReadAllAsync(monitorCancellation)
+                .ConfigureAwait(false))
             {
-                turnCancellation.Cancel();
-                return true;
-            }
-
-            var hasMore = !result.EndOfMessage;
-            while (hasMore)
-            {
-                result = await socket.ReceiveAsync(
-                    buffer,
-                    turnCancellation.Token).ConfigureAwait(false);
-                if (result.MessageType == WebSocketMessageType.Close)
+                if (message.Closed)
                 {
                     turnCancellation.Cancel();
                     return true;
                 }
-                hasMore = !result.EndOfMessage;
-            }
 
-            try
-            {
-                await SendAsync(
-                    socket,
-                    sendLock,
-                    Error("busy", "Turn is already in progress."),
-                    turnCancellation.Token).ConfigureAwait(false);
+                try
+                {
+                    await SendAsync(
+                        socket,
+                        sendLock,
+                        Error("busy", "Turn is already in progress."),
+                        monitorCancellation).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (monitorCancellation.IsCancellationRequested)
+                {
+                    return false;
+                }
+                catch (WebSocketException)
+                {
+                    return true;
+                }
             }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (WebSocketException)
-            {
-            }
+        }
+        catch (OperationCanceledException) when (monitorCancellation.IsCancellationRequested)
+        {
         }
 
         return false;

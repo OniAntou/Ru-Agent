@@ -47,6 +47,16 @@ external services, and removes the temporary root during idempotent cleanup.
 The Harness does not change RuApp's normal production ownership of its
 children, credentials, or fixed runtime defaults.
 
+The GUI Harness extends that ownership boundary through an explicit
+RuAppComposition: production uses the managed backend provider and physical
+AudioGraph/MediaPlayer adapters, while a short-lived loopback descriptor selects
+an external Harness edge, deterministic PCM frame source, recording playback
+device, and bounded JSONL event sink. The WinUI shell, API clients,
+WebSocket clients, voice state machine, chat history path, and reply lifecycle
+remain the same. Harness mode skips subtitle overlay and observation polling,
+never takes over an existing RuApp instance, and does not report VTube Studio
+as connected.
+
 ## Ownership
 
 | Owner | Responsibilities |
@@ -78,6 +88,13 @@ Public `/voice/stream` audio is carried as binary WAV frames. In the current
 implementation the Runtime Worker reaches OmniVoice over loopback HTTP on port
 5052. The accepted Voice Engine target uses bounded stdin/stdout control and
 binary frames, keeps native-speed audio, and exposes no network listener.
+
+The public `/chat` endpoint has one receive owner per WebSocket connection. It
+places inbound frames on a bounded channel while a turn is running; the active
+turn drains that channel for controlled `busy` responses, then the main loop
+processes the next request only after the terminal `done` event. This preserves
+sequential voice relistening and avoids concurrent `ReceiveAsync` calls racing
+the next prompt.
 
 ## Data ownership
 

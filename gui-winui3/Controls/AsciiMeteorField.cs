@@ -1,25 +1,36 @@
 using System;
-using System.Collections.Generic;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
+using Windows.Foundation;
 
 namespace RuApp.Controls;
 
 public sealed class AsciiMeteorField : Canvas, IDisposable
 {
-    private const int MaxMeteorCount = 3;
+    private const int MaxMeteorCount = 1;
     private const double TickSeconds = 0.06;
-    private const double BaseOpacity = 0.22;
+    private const double InitialDelaySeconds = 1.6;
+    private const double TravelSeconds = 1.8;
+    private const double RestSeconds = 8.0;
+    private const double BaseOpacity = 0.15;
+    private const string MeteorMark = "..---*";
 
     private readonly DispatcherTimer _timer;
-    private readonly List<Meteor> _meteors = new();
-    private readonly Random _random = new();
+    private TextBlock? _meteorElement;
     private bool _isLoaded;
     private bool _isActive;
+    private bool _isInFlight;
     private bool _disposed;
-    private double _spawnCountdown;
+    private double _phaseRemaining;
+    private double _progress;
+    private double _startX;
+    private double _startY;
+    private double _endX;
+    private double _endY;
+
+    private int MeteorCount => _meteorElement is null ? 0 : 1;
 
     public bool IsActive
     {
@@ -66,7 +77,9 @@ public sealed class AsciiMeteorField : Canvas, IDisposable
         Visibility = Visibility.Visible;
         if (!_timer.IsEnabled)
         {
-            _spawnCountdown = 1.0;
+            _isInFlight = false;
+            _progress = 0;
+            _phaseRemaining = InitialDelaySeconds;
             _timer.Start();
         }
     }
@@ -75,6 +88,10 @@ public sealed class AsciiMeteorField : Canvas, IDisposable
     {
         if (!_isActive || !_isLoaded || _disposed) return;
 
+        Clip = new RectangleGeometry
+        {
+            Rect = new Rect(0, 0, ActualWidth, ActualHeight)
+        };
         StopAndClear();
         SyncActivity();
     }
@@ -87,80 +104,100 @@ public sealed class AsciiMeteorField : Canvas, IDisposable
             return;
         }
 
-        _spawnCountdown -= TickSeconds;
-        if (_spawnCountdown <= 0 && _meteors.Count < MaxMeteorCount)
+        if (!_isInFlight)
         {
-            SpawnMeteor();
-            _spawnCountdown = 3.5 + _random.NextDouble() * 2.5;
-        }
-
-        for (var index = _meteors.Count - 1; index >= 0; index--)
-        {
-            var meteor = _meteors[index];
-            meteor.Age += TickSeconds;
-            meteor.X += meteor.VelocityX * TickSeconds;
-            meteor.Y += meteor.VelocityY * TickSeconds;
-            Canvas.SetLeft(meteor.Element, meteor.X);
-            Canvas.SetTop(meteor.Element, meteor.Y);
-            meteor.Element.Opacity = OpacityFor(meteor.Age / meteor.Lifetime);
-
-            if (meteor.Age >= meteor.Lifetime ||
-                meteor.X > ActualWidth + 48 ||
-                meteor.Y > ActualHeight + 48)
+            _phaseRemaining -= TickSeconds;
+            if (_phaseRemaining <= 0)
             {
-                Children.Remove(meteor.Element);
-                _meteors.RemoveAt(index);
+                BeginMeteor();
             }
+
+            return;
         }
+
+        _progress += TickSeconds / TravelSeconds;
+        if (_progress >= 1)
+        {
+            StopMeteor();
+            _phaseRemaining = RestSeconds;
+            return;
+        }
+
+        UpdateMeteorPosition();
     }
 
-    private void SpawnMeteor()
+    private void BeginMeteor()
     {
-        if (ActualWidth <= 0 || ActualHeight <= 0) return;
-
-        var element = new TextBlock
+        if (MeteorCount >= MaxMeteorCount || ActualWidth <= 0 || ActualHeight <= 0)
         {
-            Text = _random.Next(2) == 0 ? "..-*" : "---*",
+            _phaseRemaining = 1.0;
+            return;
+        }
+
+        _startX = -56;
+        _startY = Math.Clamp(ActualHeight * 0.12, 16, Math.Max(16, ActualHeight - 100));
+        _endX = Math.Max(_startX + 140, ActualWidth * 0.82);
+        _endY = Math.Min(ActualHeight - 36, _startY + Math.Max(64, ActualHeight * 0.18));
+        if (_endY <= _startY)
+        {
+            _endY = _startY + 64;
+        }
+
+        _meteorElement = new TextBlock
+        {
+            Text = MeteorMark,
             FontFamily = Application.Current.Resources["RuMonoFontFamily"] as FontFamily
                 ?? new FontFamily("Consolas"),
             Foreground = Application.Current.Resources["RuAccentBrush"] as Brush
                 ?? new SolidColorBrush(Color.FromArgb(255, 168, 75, 56)),
-            FontSize = 12 + _random.Next(4),
+            FontSize = 14,
             IsHitTestVisible = false,
-            Opacity = BaseOpacity
+            Opacity = 0
         };
 
-        var meteor = new Meteor
+        _progress = 0;
+        _isInFlight = true;
+        Canvas.SetLeft(_meteorElement, _startX);
+        Canvas.SetTop(_meteorElement, _startY);
+        Children.Add(_meteorElement);
+        UpdateMeteorPosition();
+    }
+
+    private void UpdateMeteorPosition()
+    {
+        if (_meteorElement is null) return;
+
+        double x = _startX + ((_endX - _startX) * _progress);
+        double y = _startY + ((_endY - _startY) * _progress);
+        Canvas.SetLeft(_meteorElement, x);
+        Canvas.SetTop(_meteorElement, y);
+        _meteorElement.Opacity = OpacityFor(_progress);
+    }
+
+    private void StopMeteor()
+    {
+        if (_meteorElement is not null)
         {
-            Element = element,
-            X = _random.NextDouble() * Math.Max(1, ActualWidth * 0.42) - 24,
-            Y = _random.NextDouble() * Math.Max(1, ActualHeight * 0.28),
-            VelocityX = 80 + _random.NextDouble() * 50,
-            VelocityY = 80 + _random.NextDouble() * 60,
-            Lifetime = 2.2 + _random.NextDouble() * 1.6
-        };
+            Children.Remove(_meteorElement);
+            _meteorElement = null;
+        }
 
-        Canvas.SetLeft(element, meteor.X);
-        Canvas.SetTop(element, meteor.Y);
-        Children.Add(element);
-        _meteors.Add(meteor);
+        _isInFlight = false;
+        _progress = 0;
     }
 
     private static double OpacityFor(double progress)
     {
-        if (progress < 0.15) return BaseOpacity * progress / 0.15;
-        if (progress > 0.80) return BaseOpacity * (1 - progress) / 0.20;
+        if (progress < 0.12) return BaseOpacity * progress / 0.12;
+        if (progress > 0.88) return BaseOpacity * (1 - progress) / 0.12;
         return BaseOpacity;
     }
 
     private void StopAndClear()
     {
         _timer.Stop();
-        foreach (var meteor in _meteors)
-        {
-            Children.Remove(meteor.Element);
-        }
-        _meteors.Clear();
+        StopMeteor();
+        _phaseRemaining = 0;
         Visibility = Visibility.Collapsed;
     }
 
@@ -174,16 +211,5 @@ public sealed class AsciiMeteorField : Canvas, IDisposable
         Loaded -= OnLoaded;
         Unloaded -= OnUnloaded;
         SizeChanged -= OnSizeChanged;
-    }
-
-    private sealed class Meteor
-    {
-        public required TextBlock Element { get; init; }
-        public double X { get; set; }
-        public double Y { get; set; }
-        public double VelocityX { get; init; }
-        public double VelocityY { get; init; }
-        public double Lifetime { get; init; }
-        public double Age { get; set; }
     }
 }

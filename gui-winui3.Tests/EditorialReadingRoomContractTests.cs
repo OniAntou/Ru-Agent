@@ -59,6 +59,75 @@ public sealed class EditorialReadingRoomContractTests
     }
 
     [Fact]
+    public void App_defines_a_theme_aware_signature_wash()
+    {
+        var source = File.ReadAllText(FindSource("App.xaml"));
+
+        Assert.Contains("x:Key=\"RuAccentWashBrush\"", source, StringComparison.Ordinal);
+        Assert.Contains("Color=\"{ThemeResource RuAccentSoftColor}\"", source, StringComparison.Ordinal);
+        Assert.Contains("Opacity=\"0.18\"", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Shell_has_a_quiet_Ru_brand_lockup_without_dashboard_badges()
+    {
+        var source = File.ReadAllText(FindSource("MainWindow.xaml"));
+
+        Assert.Contains("x:Name=\"BrandLockup\"", source, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"BrandName\"", source, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"BrandRule\"", source, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"BrandDescriptor\"", source, StringComparison.Ordinal);
+        Assert.Contains("Text=\"conversational runtime\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Live2D Companion", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Chat_has_authored_welcome_and_reading_rhythm_markers()
+    {
+        var source = File.ReadAllText(FindSource("ChatView.xaml"));
+
+        Assert.Contains("x:Name=\"WelcomeEyebrow\"", source, StringComparison.Ordinal);
+        Assert.Contains("Text=\"RU / CONVERSATIONAL RUNTIME\"", source, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"WelcomeAccentWash\"", source, StringComparison.Ordinal);
+        Assert.Contains("IsHitTestVisible=\"False\"", source, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"AssistantAccentRule\"", source, StringComparison.Ordinal);
+        Assert.Contains("BorderThickness=\"0,0,2,0\"", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Composer_exposes_a_theme_aware_focus_rule_without_new_behavior()
+    {
+        var source = File.ReadAllText(FindSource("ChatView.xaml"));
+
+        Assert.Contains("x:Name=\"ComposerFocusRule\"", source, StringComparison.Ordinal);
+        Assert.Contains("GotFocus=\"OnChatInputGotFocus\"", source, StringComparison.Ordinal);
+        Assert.Contains("LostFocus=\"OnChatInputLostFocus\"", source, StringComparison.Ordinal);
+        Assert.Contains("Grid.ColumnSpan=\"3\"", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Signature_polish_does_not_introduce_AI_dashboard_decoration()
+    {
+        var shell = File.ReadAllText(FindSource("MainWindow.xaml"));
+        var chat = File.ReadAllText(FindSource("ChatView.xaml"));
+
+        foreach (var staleMarker in new[]
+        {
+            "LinearGradientBrush",
+            "RadialGradientBrush",
+            "BlurEffect",
+            "CornerRadius=\"18\"",
+            "CornerRadius=\"26\"",
+            "Text=\"AI companion\"",
+            "Text=\"Live2D Companion\""
+        })
+        {
+            Assert.DoesNotContain(staleMarker, shell, StringComparison.Ordinal);
+            Assert.DoesNotContain(staleMarker, chat, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void App_defines_light_and_dark_theme_dictionaries_with_dynamic_brushes()
     {
         var source = File.ReadAllText(FindSource("App.xaml"));

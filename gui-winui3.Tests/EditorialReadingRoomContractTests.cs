@@ -106,6 +106,25 @@ public sealed class EditorialReadingRoomContractTests
     }
 
     [Fact]
+    public void Chat_focus_polish_handlers_are_visual_only()
+    {
+        var source = File.ReadAllText(FindSource("ChatView.xaml.cs"));
+        var gotFocusStart = source.IndexOf("private void OnChatInputGotFocus", StringComparison.Ordinal);
+        var lostFocusStart = source.IndexOf("private void OnChatInputLostFocus", StringComparison.Ordinal);
+        var nextMethodStart = source.IndexOf("private ", lostFocusStart + 1, StringComparison.Ordinal);
+
+        Assert.True(gotFocusStart >= 0);
+        Assert.True(lostFocusStart > gotFocusStart);
+        Assert.True(nextMethodStart > lostFocusStart);
+
+        var handlers = source[gotFocusStart..nextMethodStart];
+        Assert.DoesNotContain("SendCurrentMessageAsync", handlers, StringComparison.Ordinal);
+        Assert.DoesNotContain("ApiService", handlers, StringComparison.Ordinal);
+        Assert.Contains("ComposerFocusRule.Opacity = 1", handlers, StringComparison.Ordinal);
+        Assert.Contains("ComposerFocusRule.Opacity = 0", handlers, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Signature_polish_does_not_introduce_AI_dashboard_decoration()
     {
         var shell = File.ReadAllText(FindSource("MainWindow.xaml"));

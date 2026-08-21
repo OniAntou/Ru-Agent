@@ -119,6 +119,34 @@ public sealed class EditorialReadingRoomContractTests
         Assert.Contains(marker, File.ReadAllText(FindSource(fileName)), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Welcome_content_is_left_anchored_inside_the_reading_column()
+    {
+        var source = File.ReadAllText(FindSource("ChatView.xaml")).Replace("\r\n", "\n");
+
+        Assert.Contains(
+            "x:Name=\"WelcomeHeroPanel\"\n                        MaxWidth=\"820\"\n                        HorizontalAlignment=\"Stretch\"",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Name=\"WelcomeIntro\"\n                           Text=\"Chào anh. Hôm nay mình bắt đầu từ đâu?\"\n                           FontFamily=\"{StaticResource RuDisplayFontFamily}\"\n                           FontSize=\"28\"\n                           Foreground=\"{StaticResource RuInkBrush}\"\n                           HorizontalAlignment=\"Left\"",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("Text=\"Hỏi về một việc đang làm\"", source, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Nói cho Ru nghe\"", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Chat_input_has_an_editorial_placeholder_brush()
+    {
+        var source = File.ReadAllText(FindSource("ChatView.xaml"));
+
+        Assert.Contains(
+            "x:Key=\"TextControlPlaceholderForeground\" Color=\"{StaticResource RuMutedColor}\"",
+            source,
+            StringComparison.Ordinal);
+    }
+
     private static string FindSource(string fileName)
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

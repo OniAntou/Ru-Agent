@@ -92,7 +92,7 @@
               Background="Transparent">
             <StackPanel x:Name="WelcomeHeroPanel"
                         MaxWidth="820"
-                        HorizontalAlignment="Center"
+                        HorizontalAlignment="Stretch"
                         VerticalAlignment="Center"
                         Spacing="18"
                         Margin="24,16"
@@ -106,28 +106,38 @@
                            FontFamily="{StaticResource RuDisplayFontFamily}"
                            FontSize="28"
                            Foreground="{StaticResource RuInkBrush}"
+                           HorizontalAlignment="Left"
                            TextWrapping="Wrap" />
                 <StackPanel x:Name="SuggestionPanel"
                             Orientation="Horizontal"
+                            HorizontalAlignment="Left"
                             Spacing="24">
                     <Button Tag="Hỏi về một việc đang làm"
                             Click="OnSuggestionClick"
-                            Content="Hỏi về một việc đang làm"
                             Background="Transparent"
                             BorderThickness="0"
                             Foreground="{StaticResource RuMutedBrush}"
                             Padding="0,8"
+                            HorizontalContentAlignment="Left"
                             FontFamily="{StaticResource RuUiFontFamily}"
-                            ToolTipService.ToolTip="Hỏi về một việc đang làm" />
+                            ToolTipService.ToolTip="Hỏi về một việc đang làm">
+                        <TextBlock Text="Hỏi về một việc đang làm"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   Foreground="{StaticResource RuMutedBrush}" />
+                    </Button>
                     <Button Tag="Nói cho Ru nghe"
                             Click="OnSuggestionClick"
-                            Content="Nói cho Ru nghe"
                             Background="Transparent"
                             BorderThickness="0"
                             Foreground="{StaticResource RuMutedBrush}"
                             Padding="0,8"
+                            HorizontalContentAlignment="Left"
                             FontFamily="{StaticResource RuUiFontFamily}"
-                            ToolTipService.ToolTip="Nói cho Ru nghe" />
+                            ToolTipService.ToolTip="Nói cho Ru nghe">
+                        <TextBlock Text="Nói cho Ru nghe"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   Foreground="{StaticResource RuMutedBrush}" />
+                    </Button>
                 </StackPanel>
             </StackPanel>
 
@@ -218,6 +228,9 @@
                             <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
                             <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
                             <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
+                            <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="{StaticResource RuMutedColor}" />
+                            <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="{StaticResource RuMutedColor}" />
+                            <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="{StaticResource RuMutedColor}" />
                             <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
                         </TextBox.Resources>
                     </TextBox>

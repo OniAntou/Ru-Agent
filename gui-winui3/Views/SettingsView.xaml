@@ -276,14 +276,6 @@
                                 <TextBlock Text="Nhận thức Màn hình (Gemini Flash Live Observer)" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
 
-                            <Border Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="{StaticResource AppAccentBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16">
-                                <StackPanel Spacing="6">
-                                    <TextBlock Text="✨ Gemini Flash Vision Live Observer" FontSize="14" FontWeight="Bold" Foreground="{StaticResource AppAccentHoverBrush}"/>
-                                    <TextBlock Text="Ru sẽ tự động quan sát màn hình của anh qua Gemini Flash Vision, hiểu ngữ cảnh anh đang làm gì (lập trình, xem video, chơi game...) để tự nhiên bắt chuyện hoặc trêu anh." 
-                                               Foreground="{StaticResource AppTextPrimaryBrush}" FontSize="13" TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </Border>
-
                             <Grid ColumnDefinitions="*,Auto">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0" Spacing="2">
                                     <TextBlock Text="Bật Nhận thức Màn hình (Live Screen Observer)" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>

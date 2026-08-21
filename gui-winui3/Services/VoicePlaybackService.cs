@@ -5,18 +5,14 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
-using Windows.Media.Core;
-using Windows.Media.Playback;
-using Windows.Storage.Streams;
 
 namespace RuApp.Services
 {
     public sealed class VoicePlaybackService : IDisposable
     {
         private readonly ApiService _apiService;
+        private readonly IVoicePlaybackDevice _playbackDevice;
         private readonly object _replyGate = new();
-        private MediaPlayer? _player;
-        private InMemoryRandomAccessStream? _stream;
         private CancellationTokenSource? _cts;
         private VoiceStreamClient? _streamClient;
         private VoicePlaybackQueue? _playbackQueue;
@@ -46,14 +42,17 @@ namespace RuApp.Services
             set => _subtitleEvents?.SetEnabled(value);
         }
 
-        public bool IsPlaying => _player?.PlaybackSession.PlaybackState == MediaPlaybackState.Playing;
+        public bool IsPlaying => _playbackDevice.IsPlaying;
 
         private bool IsReplyPipelineActive =>
             _replyStreamCts is not null || _replyAudioQueue is not null || _replyStreamWorker is not null;
 
-        public VoicePlaybackService(ApiService apiService)
+        public VoicePlaybackService(
+            ApiService apiService,
+            IVoicePlaybackDevice? playbackDevice = null)
         {
             _apiService = apiService;
+            _playbackDevice = playbackDevice ?? new MediaPlayerVoicePlaybackDevice();
         }
 
         public void ConfigureSubtitles(SubtitlePresenter presenter)
@@ -822,31 +821,8 @@ namespace RuApp.Services
             Action? onPlaybackStarted = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var player = new MediaPlayer { AutoPlay = false };
-            var stream = new InMemoryRandomAccessStream();
-            using var writer = new DataWriter(stream);
-            writer.WriteBytes(audio);
-            await writer.StoreAsync();
-            writer.DetachStream();
-            stream.Seek(0);
-
-            var opened = NewCompletionSource();
-            var ended = NewCompletionSource();
-            player.MediaOpened += (_, _) => opened.TrySetResult(true);
-            player.MediaEnded += (_, _) => ended.TrySetResult(true);
-            player.MediaFailed += (_, _) =>
-            {
-                var error = new InvalidOperationException("The audio chunk could not be played.");
-                opened.TrySetException(error);
-                ended.TrySetException(error);
-            };
-
-            _player = player;
-            _stream = stream;
             try
             {
-                player.Source = MediaSource.CreateFromStream(stream, "audio/wav");
-                await opened.Task.WaitAsync(cancellationToken);
                 if (!_vtsSpeaking)
                 {
                     bool ok = await _apiService.SetVtsSpeakingAsync(true);
@@ -861,17 +837,7 @@ namespace RuApp.Services
                     }
                 }
 
-                cancellationToken.ThrowIfCancellationRequested();
-                player.Play();
-                try
-                {
-                    onPlaybackStarted?.Invoke();
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"[VoicePlayback] Playback-start observer failed: {ex.Message}");
-                }
-                await ended.Task.WaitAsync(cancellationToken);
+                await _playbackDevice.PlayAsync(audio, cancellationToken, onPlaybackStarted);
             }
             catch (OperationCanceledException)
             {
@@ -885,36 +851,9 @@ namespace RuApp.Services
                 }
                 throw;
             }
-            finally
-            {
-                if (ReferenceEquals(_player, player))
-                {
-                    _player = null;
-                }
-                if (ReferenceEquals(_stream, stream))
-                {
-                    _stream = null;
-                }
-                try
-                {
-                    player.Pause();
-                    player.Source = null;
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"[VoicePlayback] Player cleanup failed: {ex.Message}");
-                }
-                player.Dispose();
-                stream.Dispose();
-            }
         }
 
         private bool IsCurrentRequest(string requestId) => _activeRequestId == requestId;
-
-        private static TaskCompletionSource<bool> NewCompletionSource()
-        {
-            return new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        }
 
         private static async Task CancelStreamAsync(VoiceStreamClient client, string requestId)
         {
@@ -960,21 +899,7 @@ namespace RuApp.Services
 
         private void CleanupPlayer()
         {
-            var player = _player;
-            _player = null;
-            if (player == null) return;
-            try
-            {
-                player.Pause();
-                player.Source = null;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[VoicePlayback] Player cleanup failed: {ex.Message}");
-            }
-            player.Dispose();
-            _stream?.Dispose();
-            _stream = null;
+            _playbackDevice.Stop();
         }
 
         public void Dispose()
@@ -984,6 +909,7 @@ namespace RuApp.Services
             StopVoice();
             _subtitleEvents?.Dispose();
             _subtitleEvents = null;
+            _playbackDevice.Dispose();
         }
 
         public async ValueTask DisposeAsync()
@@ -993,6 +919,7 @@ namespace RuApp.Services
             StopVoice();
             _subtitleEvents?.Dispose();
             _subtitleEvents = null;
+            _playbackDevice.Dispose();
             if (_vtsSpeaking)
             {
                 _vtsSpeaking = false;

@@ -1,8 +1,12 @@
 # ASCII Meteor Empty Chat Background
 
 **Date:** 2026-08-21
-**Status:** Implemented 2026-08-21
+**Status:** Superseded 2026-08-21
 **Scope:** A restrained animated ASCII meteor field for the empty Chat view
+
+This record documents the rejected ASCII meteor implementation. The current
+approved direction is the vector-based cinematic shower in
+2026-08-21-meteor-shower-empty-chat-design.md.
 
 ## Decision summary
 

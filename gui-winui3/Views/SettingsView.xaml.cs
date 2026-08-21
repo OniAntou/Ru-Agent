@@ -343,7 +343,6 @@ namespace RuApp.Views
                     CustomModel = backend == "custom" ? modelChoice : "default",
                     CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
                     CustomApiKey = CustomApiKeyBox.Password,
-                    CheckpointPath = string.Empty,
                     Temperature = double.TryParse(TemperatureNumberBox.Text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double temp) ? temp : 0.7,
                     TopK = int.TryParse(TopKNumberBox.Text, out int topK) ? topK : 40,
                     MaxNewTokens = int.TryParse(MaxTokensNumberBox.Text, out int maxTokens) ? maxTokens : 512,

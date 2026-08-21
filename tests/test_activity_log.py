@@ -1,16 +1,21 @@
 import json
+import os
 import threading
 import time
 from pathlib import Path
 
 import pytest
 
-from ru_runtime.persistence.activity_log import LOG_FILE, append, clear, read
+from ru_runtime.persistence.activity_log import append, clear, read, get_activity_log_file
+from ru_runtime.persistence.activity_outbox import reset_global_outbox_writer
 
 
 @pytest.fixture(autouse=True)
 def isolated_log(monkeypatch, tmp_path):
-    monkeypatch.setattr("ru_runtime.persistence.activity_log.LOG_FILE", tmp_path / "activity_log.jsonl")
+    reset_global_outbox_writer()
+    monkeypatch.setenv("RU_LOG_ROOT", str(tmp_path))
+    yield
+    reset_global_outbox_writer()
 
 
 def test_append_and_read_roundtrip():
@@ -18,12 +23,12 @@ def test_append_and_read_roundtrip():
     events = read()
     assert len(events) == 1
     assert events[0]["type"] == "chat"
-    assert events[0]["data"]["content"] == "hi"
+    assert "content" not in events[0]["data"]
+    assert events[0]["data"]["preview"] == "hi"
+    assert events[0]["data"]["original_length"] == 2
 
 
 def test_append_default_timestamp_is_unix_epoch():
-    # The GUI filters/renders by Unix epoch seconds (e.Ts * 1000 vs epoch ms).
-    # time.monotonic() values (~1e5) are invisible to that filter.
     before = time.time()
     append({"type": "chat", "session_id": None, "data": {"role": "user", "content": "hi"}})
     after = time.time()
@@ -42,7 +47,7 @@ def test_read_respects_limit():
 def test_read_sorted_by_timestamp():
     append({"ts": 2.0, "iso": "...", "type": "chat", "session_id": None, "data": {"role": "assistant", "content": "b"}})
     append({"ts": 1.0, "iso": "...", "type": "chat", "session_id": None, "data": {"role": "assistant", "content": "a"}})
-    assert [e["data"]["content"] for e in read()] == ["a", "b"]
+    assert [e["data"]["preview"] for e in read()] == ["a", "b"]
 
 
 def test_append_thread_safe():
@@ -68,7 +73,7 @@ def test_clear_empties_log():
     clear()
     assert read() == []
     append({"type": "chat", "session_id": None, "data": {"role": "user", "content": "after"}})
-    assert [e["data"]["content"] for e in read()] == ["after"]
+    assert [e["data"]["preview"] for e in read()] == ["after"]
 
 
 def test_clear_missing_file_is_noop():

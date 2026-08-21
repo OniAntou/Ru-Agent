@@ -83,6 +83,9 @@ public sealed class MemoryPolicyTests
     [InlineData("[[VTS:vts_01]]")]
     [InlineData("[[VOICE_PACE:1.10]]")]
     [InlineData("[[EMO:happy]]")]
+    [InlineData("[APP_OPEN: notepad]")]
+    [InlineData("[VOLUME: up]")]
+    [InlineData("[SEARCH: weather]")]
     public void Rejects_blank_sensitive_and_private_input(string text)
     {
         Assert.True(_policy.IsSensitiveOrUnsafe(text));
@@ -97,6 +100,18 @@ public sealed class MemoryPolicyTests
         Assert.Single(candidates);
         Assert.DoesNotContain("VTS", candidates[0].Content, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("VTS", candidates[0].Evidence, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Strips_desktop_action_metadata_without_disabling_desktop_actions()
+    {
+        var stripped = _policy.StripInternalMetadata(
+            "Anh thích Notepad [APP_OPEN: notepad] [VOLUME: up] [SEARCH: weather]");
+
+        Assert.Equal("Anh thích Notepad", stripped);
+        Assert.DoesNotContain("[APP_OPEN:", stripped, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("[VOLUME:", stripped, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("[SEARCH:", stripped, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

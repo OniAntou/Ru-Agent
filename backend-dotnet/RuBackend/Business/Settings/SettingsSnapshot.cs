@@ -16,7 +16,6 @@ public sealed record SettingsSnapshot(
     bool EnableSelfLearning,
     bool ShareMemoryWithCloud,
     bool KiloReasoningEnabled,
-    string CheckpointPath,
     string VoiceLabel,
     string VoiceStyleId,
     double VoiceSpeed,

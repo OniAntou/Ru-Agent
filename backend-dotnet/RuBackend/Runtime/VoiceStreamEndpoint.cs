@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuBackend.Diagnostics;
 using RuBackend.Worker;
 
 namespace RuBackend.Runtime;
@@ -70,6 +71,7 @@ public static class VoiceStreamEndpoint
                     activeRequestId = request!.RequestId;
                     activeCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                         connectionCancellation.Token);
+                    using var correlationScope = CorrelationContext.Push(initialControl.CorrelationId);
                     activeStream = StreamAsync(
                         socket,
                         sendLock,
@@ -309,7 +311,8 @@ public static class VoiceStreamEndpoint
                 ReadString(root["text"]),
                 ReadString(root["voice_label"]),
                 ReadDouble(root["speed"]),
-                ReadString(root["state"]));
+                ReadString(root["state"]),
+                ReadString(root["correlation_id"]));
             return true;
         }
         catch (Exception error) when (error is JsonException or DecoderFallbackException)
@@ -462,7 +465,8 @@ public static class VoiceStreamEndpoint
         string? Text,
         string? VoiceLabel,
         double? Speed,
-        string? State);
+        string? State,
+        string? CorrelationId = null);
 
     private sealed record Inbound(
         WebSocketMessageType MessageType,

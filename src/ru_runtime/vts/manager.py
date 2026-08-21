@@ -13,6 +13,7 @@ from .catalog import VtsCatalog, build_catalog
 from .config import MotionConfig
 from .context import MotionContextProvider
 from .emotion import EmotionTag
+from .hotkey_mapping import resolve_hotkey
 from ru_runtime.persistence.canonical import canonical_data_root
 from .motion import (
     body_pose_entries,
@@ -681,11 +682,13 @@ class VTSManager:
         return triggered
 
     def _trigger_action(self, action: str) -> bool:
-        configuration = ACTION_HOTKEYS.get(action)
-        if configuration is None or not self.is_connected:
+        if not self.is_connected:
             return False
 
-        primary_hotkey, reset_hotkey, reset_delay = configuration
+        primary_hotkey, reset_hotkey, reset_delay = resolve_hotkey(action, self.hotkeys)
+        if not primary_hotkey:
+            return False
+
         now = time.monotonic()
         with self._action_lock:
             last_triggered = self._last_action_at.get(action)

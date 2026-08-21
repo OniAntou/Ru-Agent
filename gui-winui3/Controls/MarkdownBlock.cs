@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -100,7 +100,7 @@ namespace RuApp.Controls
                 return;
             }
 
-            Match bullet = Regex.Match(line, @"^([-*+])\s+(.+)$");
+            Match bullet = BulletRegex().Match(line);
             if (bullet.Success)
             {
                 paragraph.Inlines.Add(new Run { Text = "\u2022  " });
@@ -108,7 +108,7 @@ namespace RuApp.Controls
                 return;
             }
 
-            Match numbered = Regex.Match(line, @"^(\d+)[.)]\s+(.+)$");
+            Match numbered = NumberedRegex().Match(line);
             if (numbered.Success)
             {
                 paragraph.Inlines.Add(new Run { Text = numbered.Groups[1].Value + ".  " });
@@ -121,9 +121,8 @@ namespace RuApp.Controls
 
         private void AddInlines(Paragraph paragraph, string text, double size, FontWeight? weight)
         {
-            var tokenRegex = new Regex(@"(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)");
             int pos = 0;
-            foreach (Match match in tokenRegex.Matches(text))
+            foreach (Match match in TokenRegex().Matches(text))
             {
                 if (match.Index > pos)
                 {
@@ -170,5 +169,14 @@ namespace RuApp.Controls
         {
             return new Run { Text = text, FontSize = size, FontStyle = Windows.UI.Text.FontStyle.Italic };
         }
+
+        [GeneratedRegex(@"^([-*+])\s+(.+)$", RegexOptions.CultureInvariant)]
+        private static partial Regex BulletRegex();
+
+        [GeneratedRegex(@"^(\d+)[.)]\s+(.+)$", RegexOptions.CultureInvariant)]
+        private static partial Regex NumberedRegex();
+
+        [GeneratedRegex(@"(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)", RegexOptions.CultureInvariant)]
+        private static partial Regex TokenRegex();
     }
 }

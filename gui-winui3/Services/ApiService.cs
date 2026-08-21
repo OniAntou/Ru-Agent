@@ -642,6 +642,92 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
         }
 
+        public async Task<bool> AcknowledgeObservationAsync(string observationId, bool played)
+        {
+            if (string.IsNullOrWhiteSpace(observationId)) return false;
+            try
+            {
+                var response = await _httpClient.PostAsJsonAsync(
+                    $"{_baseUrl}/observation/ack",
+                    new { observation_id = observationId, played });
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] AcknowledgeObservationAsync failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<DiagnosticLogResultDto?> GetDiagnosticLogsAsync(
+            int? limit = null,
+            string? since = null,
+            string? level = null,
+            string? component = null,
+            string? eventCode = null,
+            string? correlationId = null,
+            string? cursor = null)
+        {
+            try
+            {
+                var queryParams = new List<string>();
+                if (limit.HasValue) queryParams.Add($"limit={limit.Value}");
+                if (!string.IsNullOrWhiteSpace(since)) queryParams.Add($"since={Uri.EscapeDataString(since)}");
+                if (!string.IsNullOrWhiteSpace(level)) queryParams.Add($"level={Uri.EscapeDataString(level)}");
+                if (!string.IsNullOrWhiteSpace(component)) queryParams.Add($"component={Uri.EscapeDataString(component)}");
+                if (!string.IsNullOrWhiteSpace(eventCode)) queryParams.Add($"event_code={Uri.EscapeDataString(eventCode)}");
+                if (!string.IsNullOrWhiteSpace(correlationId)) queryParams.Add($"correlation_id={Uri.EscapeDataString(correlationId)}");
+                if (!string.IsNullOrWhiteSpace(cursor)) queryParams.Add($"cursor={Uri.EscapeDataString(cursor)}");
+
+                var url = $"{_baseUrl}/diagnostics/logs" + (queryParams.Count > 0 ? "?" + string.Join("&", queryParams) : "");
+                return await _httpClient.GetFromJsonAsync<DiagnosticLogResultDto>(url);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] GetDiagnosticLogsAsync failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task<string?> ExportDiagnosticLogsAsync(
+            string? since = null,
+            string? level = null,
+            string? component = null,
+            string? eventCode = null,
+            string? correlationId = null)
+        {
+            try
+            {
+                var queryParams = new List<string>();
+                if (!string.IsNullOrWhiteSpace(since)) queryParams.Add($"since={Uri.EscapeDataString(since)}");
+                if (!string.IsNullOrWhiteSpace(level)) queryParams.Add($"level={Uri.EscapeDataString(level)}");
+                if (!string.IsNullOrWhiteSpace(component)) queryParams.Add($"component={Uri.EscapeDataString(component)}");
+                if (!string.IsNullOrWhiteSpace(eventCode)) queryParams.Add($"event_code={Uri.EscapeDataString(eventCode)}");
+                if (!string.IsNullOrWhiteSpace(correlationId)) queryParams.Add($"correlation_id={Uri.EscapeDataString(correlationId)}");
+
+                var url = $"{_baseUrl}/diagnostics/export" + (queryParams.Count > 0 ? "?" + string.Join("&", queryParams) : "");
+                return await _httpClient.GetStringAsync(url);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] ExportDiagnosticLogsAsync failed: {ex.Message}");
+                return null;
+            }
+        }
+
+        public async Task<DiagnosticStatusDto?> GetDiagnosticStatusAsync()
+        {
+            try
+            {
+                return await _httpClient.GetFromJsonAsync<DiagnosticStatusDto>($"{_baseUrl}/diagnostics/status");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ApiService] GetDiagnosticStatusAsync failed: {ex.Message}");
+                return null;
+            }
+        }
+
         public void Dispose()
         {
             _httpClient.Dispose();

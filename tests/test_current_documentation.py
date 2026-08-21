@@ -41,14 +41,14 @@ def test_context_uses_approved_ru_domain_language() -> None:
         "**Public Contract**:",
         "**Worker Contract**:",
         "**Protected User Data**:",
-        "**Legacy Llama Assets**:",
+        "**Retired Local Model Assets**:",
     ):
         assert term in context
 
 
 def test_adrs_are_accepted_and_concise() -> None:
     adrs = sorted((ROOT / "docs" / "adr").glob("*.md"))
-    assert [path.name[:4] for path in adrs] == ["0001", "0002", "0003", "0004", "0005"]
+    assert [path.name[:4] for path in adrs] == ["0001", "0002", "0003", "0004", "0005", "0006"]
     for path in adrs:
         text = path.read_text(encoding="utf-8")
         assert "status: accepted" in text.casefold()
@@ -58,7 +58,7 @@ def test_adrs_are_accepted_and_concise() -> None:
 def test_architecture_records_current_ownership_and_privacy() -> None:
     architecture = _text("docs/architecture.md")
     assert "ASP.NET Core" in architecture
-    assert "38 HTTP" in architecture
+    assert "41 HTTP" in architecture
     assert "2 WebSocket" in architecture
     assert "typed worker protocol v2" in architecture
     assert "chat text" in architecture

@@ -6,7 +6,7 @@ from ru_runtime.memory.store import StructuredMemoryStore
 
 
 def test_operations_after_close_raise_descriptive_error(tmp_path) -> None:
-    store = StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "index.bin")
+    store = StructuredMemoryStore(tmp_path / "memory.db")
     store.close()
 
     with pytest.raises(RuntimeError, match="closed"):
@@ -20,8 +20,8 @@ def test_operations_after_close_raise_descriptive_error(tmp_path) -> None:
 
 
 def test_memory_can_be_reopened_after_close(tmp_path) -> None:
-    store = StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "index.bin")
+    store = StructuredMemoryStore(tmp_path / "memory.db")
     store.close()
-    reopened = StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "index.bin")
+    reopened = StructuredMemoryStore(tmp_path / "memory.db")
     assert reopened.count_active() == 0
     reopened.close()

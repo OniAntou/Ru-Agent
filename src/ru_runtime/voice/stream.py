@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import threading
 from collections.abc import AsyncIterator, Callable
@@ -154,7 +155,8 @@ class VoiceStreamCoordinator:
         def cleanup(completed_worker: asyncio.Task[object]) -> None:
             self._consume_background_worker_result(completed_worker)
             if release_memory_lock and self._memory_lock is not None:
-                self._memory_lock.release()
+                with contextlib.suppress(RuntimeError):
+                    self._memory_lock.release()
             self._finish_request(request_id)
 
         worker_completion.add_done_callback(cleanup)

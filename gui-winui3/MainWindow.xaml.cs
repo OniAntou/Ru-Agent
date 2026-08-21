@@ -22,22 +22,29 @@ namespace RuApp
         private SubtitleOverlayService? _subtitleOverlay;
         private SubtitlePresenter? _subtitlePresenter;
         private DispatcherTimer? _observationTimer;
-        private string? _lastSeenReactionText;
+        private string? _lastSeenReactionId;
+        private bool _observationPollInFlight;
 
         private ChatView? _chatView;
         private VoiceView? _voiceView;
         private SettingsView? _settingsView;
         private LogView? _logView;
+        private DiagnosticsView? _diagnosticsView;
         private DispatcherTimer? _sessionsTimer;
+        private ResponsiveLayoutTier? _responsiveTier;
+        private double _lastExpandedSidebarWidth = 250;
+
+        public static MainWindow? Instance { get; private set; }
 
         public ObservableCollection<SessionInfo> Sessions { get; } = new();
 
         public MainWindow()
         {
+            Instance = this;
             try
             {
                 this.InitializeComponent();
-                this.Title = "Ru — Local LFM2.5 Conversational Runtime";
+                this.Title = "Ru — Conversational Runtime";
                 
                 try
                 {
@@ -69,8 +76,7 @@ namespace RuApp
             }
             catch (Exception ex)
             {
-                string msg = $"MainWindow Constructor Exception:\n{ex}\n--- Inner ---\n{ex.InnerException}";
-                try { File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "crash_log.txt"), msg); } catch { }
+                GuiDiagnosticWriter.WriteCrashEvent(ex);
                 throw;
             }
         }
@@ -164,6 +170,9 @@ namespace RuApp
                 _logView = new LogView();
                 _logView.Initialize(_apiService);
 
+                _diagnosticsView = new DiagnosticsView();
+                _diagnosticsView.Initialize(_apiService);
+
                 // Default: Chat
                 ContentFrame.Content = _chatView;
                 SetActiveNav(NavChat);
@@ -210,6 +219,8 @@ namespace RuApp
             NavSettings.Foreground = textSecondary;
             NavLog.Background = transparent;
             NavLog.Foreground = textSecondary;
+            NavDiagnostics.Background = transparent;
+            NavDiagnostics.Foreground = textSecondary;
 
             activeBtn.Background = activeBg;
             activeBtn.Foreground = textPrimary;
@@ -227,8 +238,19 @@ namespace RuApp
                     "voice" => _voiceView,
                     "settings" => _settingsView,
                     "log" => _logView,
+                    "diagnostics" => _diagnosticsView,
                     _ => _chatView
                 };
+            }
+        }
+
+        public void NavigateToDiagnostics(string? correlationId = null)
+        {
+            SetActiveNav(NavDiagnostics);
+            ContentFrame.Content = _diagnosticsView;
+            if (!string.IsNullOrWhiteSpace(correlationId))
+            {
+                _diagnosticsView?.FilterByCorrelation(correlationId);
             }
         }
 
@@ -263,6 +285,7 @@ namespace RuApp
             _settingsView?.Dispose();
             _voiceView?.Dispose();
             _logView?.Dispose();
+            _diagnosticsView?.Dispose();
             _subtitleOverlay?.Dispose();
             _subtitlePresenter?.Dispose();
             if (_voicePlayback != null)
@@ -365,28 +388,43 @@ namespace RuApp
 
         private async void OnObservationTimerTick(object? sender, object e)
         {
-            if (_apiService == null || _subtitlePresenter == null) return;
+            if (_apiService == null || _voicePlayback == null || _observationPollInFlight) return;
+            _observationPollInFlight = true;
             try
             {
                 var status = await _apiService.GetObservationStatusAsync();
-                if (status != null && status.Active && !string.IsNullOrWhiteSpace(status.LastReaction))
+                if (status != null
+                    && status.Active
+                    && !string.IsNullOrWhiteSpace(status.LastReaction)
+                    && !string.IsNullOrWhiteSpace(status.LastReactionId)
+                    && !string.Equals(_lastSeenReactionId, status.LastReactionId, StringComparison.Ordinal))
                 {
-                    if (!string.Equals(_lastSeenReactionText, status.LastReaction, StringComparison.Ordinal))
+                    if (status.LastReactionAt is double reactionAt
+                        && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0 - reactionAt > 15.0)
                     {
-                        _lastSeenReactionText = status.LastReaction;
-                        string segId = Guid.NewGuid().ToString("N");
-                        _subtitlePresenter.BeginSegment(segId, status.LastReaction);
-                        _ = Task.Delay(4500).ContinueWith(_ =>
-                        {
-                            DispatcherQueue?.TryEnqueue(() =>
-                            {
-                                _subtitlePresenter.EndSegment(segId);
-                            });
-                        });
+                        _lastSeenReactionId = status.LastReactionId;
+                        _ = _apiService.AcknowledgeObservationAsync(
+                            status.LastReactionId,
+                            played: false);
+                        return;
+                    }
+                    bool played = await _voicePlayback.SpeakTextAsync(
+                        status.LastReaction,
+                        interrupt: false);
+                    if (played)
+                    {
+                        _lastSeenReactionId = status.LastReactionId;
+                        _ = _apiService.AcknowledgeObservationAsync(
+                            status.LastReactionId,
+                            played: true);
                     }
                 }
             }
             catch { }
+            finally
+            {
+                _observationPollInFlight = false;
+            }
         }
 
         private async Task UpdateHealthStatusAsync()
@@ -510,6 +548,49 @@ namespace RuApp
                     deleteBtn.Opacity = 0.0;
                 }
             }
+        }
+
+        private void RootLayoutGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (e.NewSize.Width <= 0)
+            {
+                return;
+            }
+
+            ApplyResponsiveShell(e.NewSize.Width);
+        }
+
+        private void ApplyResponsiveShell(double width)
+        {
+            var metrics = ResponsiveLayoutPolicy.GetForWidth(width);
+            if (_responsiveTier == metrics.Tier)
+            {
+                return;
+            }
+
+            if (metrics.Tier == ResponsiveLayoutTier.Narrow)
+            {
+                if (_responsiveTier is not null && SidebarColumn.ActualWidth > 0)
+                {
+                    _lastExpandedSidebarWidth = SidebarColumn.ActualWidth;
+                }
+
+                SidebarColumn.MinWidth = metrics.MinSidebarWidth;
+                SidebarColumn.MaxWidth = metrics.MaxSidebarWidth;
+                SidebarColumn.Width = new GridLength(metrics.NarrowRailWidth);
+            }
+            else
+            {
+                SidebarColumn.MinWidth = metrics.MinSidebarWidth;
+                SidebarColumn.MaxWidth = metrics.MaxSidebarWidth;
+                var restoredWidth = _responsiveTier == ResponsiveLayoutTier.Narrow
+                    ? _lastExpandedSidebarWidth
+                    : SidebarColumn.ActualWidth > 0 ? SidebarColumn.ActualWidth : metrics.DefaultSidebarWidth;
+                SidebarColumn.Width = new GridLength(
+                    ResponsiveLayoutPolicy.ClampSidebarWidth(restoredWidth, metrics));
+            }
+
+            _responsiveTier = metrics.Tier;
         }
 
         private bool _isResizing = false;

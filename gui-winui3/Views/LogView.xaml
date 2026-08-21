@@ -11,34 +11,74 @@
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibility" />
     </UserControl.Resources>
 
-    <Grid Padding="36,24,36,36" RowDefinitions="Auto,*" Background="Transparent">
+    <Grid x:Name="ResponsiveRoot" Padding="36,24,36,36" RowDefinitions="Auto,*" Background="Transparent">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="ResponsiveStates">
+                <VisualState x:Name="Wide">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1280"/>
+                    </VisualState.StateTriggers>
+                </VisualState>
+
+                <VisualState x:Name="Compact">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="900"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="HeaderActionsPanel.(Grid.Row)" Value="1"/>
+                        <Setter Target="HeaderActionsPanel.(Grid.Column)" Value="0"/>
+                        <Setter Target="HeaderActionsPanel.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="HeaderActionsPanel.HorizontalAlignment" Value="Left"/>
+                    </VisualState.Setters>
+                </VisualState>
+
+                <VisualState x:Name="Narrow">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="HeaderActionsPanel.(Grid.Row)" Value="1"/>
+                        <Setter Target="HeaderActionsPanel.(Grid.Column)" Value="0"/>
+                        <Setter Target="HeaderActionsPanel.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="HeaderActionsPanel.Orientation" Value="Vertical"/>
+                        <Setter Target="HeaderActionsPanel.HorizontalAlignment" Value="Stretch"/>
+                        <Setter Target="FilterChat.HorizontalAlignment" Value="Stretch"/>
+                        <Setter Target="FilterEmotion.HorizontalAlignment" Value="Stretch"/>
+                        <Setter Target="FilterVts.HorizontalAlignment" Value="Stretch"/>
+                        <Setter Target="ClearButton.HorizontalAlignment" Value="Stretch"/>
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
 
         <!-- Header & Filters Bar -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="0,0,0,20" VerticalAlignment="Center">
-            <StackPanel Grid.Column="0" Spacing="4">
+        <Grid Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" Margin="0,0,0,20" VerticalAlignment="Center">
+            <StackPanel x:Name="HeaderTitlePanel" Grid.Row="0" Grid.Column="0" Spacing="4">
                 <TextBlock Text="Nhật ký hoạt động (Activity Timeline)" FontSize="22" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
                 <TextBlock Text="Theo dõi các sự kiện chat, phân tích cảm xúc và điều khiển VTube Studio theo thời gian thực" FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
             </StackPanel>
 
-            <ToggleButton Grid.Column="1" x:Name="FilterChat" Content="Chat" FontSize="12.5" Padding="14,6" Margin="6,0"
+            <StackPanel x:Name="HeaderActionsPanel" Grid.Row="0" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <ToggleButton x:Name="FilterChat" Content="Chat" FontSize="12.5" Padding="14,6" Margin="6,0"
                           Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#60A5FA"
                           Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="#60A5FA" BorderThickness="1" 
                           CornerRadius="{StaticResource AppControlCornerRadius}"/>
             
-            <ToggleButton Grid.Column="2" x:Name="FilterEmotion" Content="Cảm xúc" FontSize="12.5" Padding="14,6" Margin="6,0"
+            <ToggleButton x:Name="FilterEmotion" Content="Cảm xúc" FontSize="12.5" Padding="14,6" Margin="6,0"
                           Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#C084FC"
                           Background="#20C084FC" BorderBrush="#C084FC" BorderThickness="1" 
                           CornerRadius="{StaticResource AppControlCornerRadius}"/>
             
-            <ToggleButton Grid.Column="3" x:Name="FilterVts" Content="VTS" FontSize="12.5" Padding="14,6" Margin="6,0"
+            <ToggleButton x:Name="FilterVts" Content="VTS" FontSize="12.5" Padding="14,6" Margin="6,0"
                           Checked="OnFilterToggled" Unchecked="OnFilterToggled" Foreground="#F472B6"
                           Background="#20F472B6" BorderBrush="#F472B6" BorderThickness="1" 
                           CornerRadius="{StaticResource AppControlCornerRadius}"/>
             
-            <Button Grid.Column="4" x:Name="ClearButton" Content="Xóa nhật ký" FontSize="12.5" Padding="14,6" Margin="10,0,0,0"
+            <Button x:Name="ClearButton" Content="Xóa nhật ký" FontSize="12.5" Padding="14,6" Margin="10,0,0,0"
                     Click="OnClearClicked" Foreground="{StaticResource AppDangerBrush}" Background="{StaticResource AppDangerSubtleBrush}"
                     BorderBrush="{StaticResource AppDangerBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" 
                     HorizontalAlignment="Right"/>
+            </StackPanel>
         </Grid>
 
         <!-- Timeline Card Container -->
@@ -51,6 +91,7 @@
                       Background="Transparent"
                       BorderThickness="0"
                       Padding="4"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                       ScrollViewer.VerticalScrollBarVisibility="Auto">
                 <ListView.ItemContainerStyle>
                     <Style TargetType="ListViewItem">
@@ -65,7 +106,7 @@
                     <DataTemplate>
                         <Border Background="{StaticResource AppCardBackgroundHoverBrush}" BorderBrush="{StaticResource AppCardBorderSubtleBrush}" 
                                 BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="14,10">
-                            <Grid ColumnDefinitions="Auto,80,Auto,*">
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,*">
                                 <!-- Dot -->
                                 <Ellipse Grid.Column="0" Width="9" Height="9"
                                          Fill="{Binding DotBrush}" VerticalAlignment="Top" Margin="0,5,12,0"/>
@@ -82,7 +123,7 @@
                                 </Border>
 
                                 <!-- Content + Detail -->
-                                <StackPanel Grid.Column="3">
+                                <StackPanel Grid.Column="3" MinWidth="0">
                                     <TextBlock Text="{Binding Content}" TextWrapping="Wrap" Foreground="{StaticResource AppTextPrimaryBrush}"
                                                FontSize="13.5" VerticalAlignment="Top" Margin="0,2,0,4"/>
 

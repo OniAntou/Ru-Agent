@@ -17,6 +17,8 @@ public sealed class StreamSanitizer : IStreamSanitizer
         "[[voice_pace:",
         "[[emo:",
         "[search:",
+        "[app_open:",
+        "[volume:",
     ];
 
     public string Append(string raw, string delta)

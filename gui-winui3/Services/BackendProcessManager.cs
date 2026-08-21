@@ -130,14 +130,14 @@ public class BackendProcessManager : IDisposable
     {
         try
         {
-            foreach (var child in children)
-            {
-                if (child.HasExited)
-                {
-                    continue;
-                }
+            var exitTasks = children
+                .Where(child => !child.HasExited)
+                .Select(child => Task.Run(() => child.WaitForExit(Timeout.InfiniteTimeSpan)))
+                .ToList();
 
-                await Task.Run(() => child.WaitForExit(Timeout.InfiniteTimeSpan));
+            if (exitTasks.Count > 0)
+            {
+                await Task.WhenAny(exitTasks);
             }
 
             lock (_gate)

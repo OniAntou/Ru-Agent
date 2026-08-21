@@ -69,6 +69,68 @@ def test_analyze_screenshot_missing_key():
     assert obs is None
 
 
+def test_gemini_37_request_uses_header_auth_and_omits_deprecated_sampling_fields():
+    fake_gemini_response = {
+        "candidates": [
+            {"content": {"parts": [{"text": json.dumps({"scene": "Desktop"})}]}}
+        ]
+    }
+    captured: dict[str, object] = {}
+
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = json.dumps(fake_gemini_response).encode("utf-8")
+    mock_resp.__enter__.return_value = mock_resp
+
+    def capture_request(request, timeout):
+        captured["url"] = request.full_url
+        captured["api_key"] = next(
+            value
+            for key, value in request.header_items()
+            if key.casefold() == "x-goog-api-key"
+        )
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        return mock_resp
+
+    with patch("urllib.request.urlopen", side_effect=capture_request):
+        obs = analyze_screenshot_with_gemini(
+            image_bytes=b"fake_jpeg",
+            api_key="fake_key_123",
+            model_name="gemini-3.7-flash",
+        )
+
+    assert obs is not None
+    assert captured["url"] == (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "gemini-3.7-flash:generateContent"
+    )
+    assert captured["api_key"] == "fake_key_123"
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert "temperature" not in payload["generationConfig"]
+
+
+def test_gemini_31_request_retains_supported_temperature():
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = json.dumps(
+        {"candidates": [{"content": {"parts": [{"text": '{"scene":"Desktop"}'}]}}]}
+    ).encode("utf-8")
+    mock_resp.__enter__.return_value = mock_resp
+    captured: dict[str, object] = {}
+
+    def capture_request(request, timeout):
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        return mock_resp
+
+    with patch("urllib.request.urlopen", side_effect=capture_request):
+        analyze_screenshot_with_gemini(
+            image_bytes=b"fake_jpeg",
+            api_key="fake_key_123",
+            model_name="gemini-3.1-flash-lite",
+        )
+
+    assert captured["payload"]["generationConfig"]["temperature"] == 0.7
+
+
 def test_screen_observer_loop_start_stop():
     mock_shared = MagicMock()
     mock_shared._TURN_LOCK.locked.return_value = False
@@ -86,3 +148,38 @@ def test_screen_observer_loop_start_stop():
 
     loop.stop()
     assert loop.is_running is False
+
+
+def test_observer_publishes_reaction_without_playing_audio_in_worker(monkeypatch):
+    import ru_runtime.observation.observer_loop as observer_module
+
+    observation = VisionObservation(
+        scene="Editor",
+        event="Writing tests",
+        confidence=0.95,
+        novelty=0.8,
+        comment_worthiness=0.9,
+        reaction="Anh đang test đấy à.",
+    )
+    shared = MagicMock()
+    shared._TURN_LOCK.locked.return_value = False
+    shared.core.gemini_vision_cred.get_key.return_value = "fake_key"
+    shared._strip_voice_markers.side_effect = lambda text: text
+
+    monkeypatch.setattr(observer_module, "capture_screen_jpeg", lambda **kwargs: b"jpeg")
+    monkeypatch.setattr(
+        observer_module,
+        "analyze_screenshot_with_gemini",
+        lambda **kwargs: observation,
+    )
+
+    loop = observer_module.ScreenObserverLoop(shared, interval_seconds=1.0)
+    loop._observe_once()
+
+    status = loop.status()
+    assert status["frame_count"] == 1
+    assert status["vision_count"] == 1
+    assert status["emitted_count"] == 1
+    assert status["last_reaction_id"]
+    assert status["last_reaction"] == "Anh đang test đấy à."
+    shared.request_voice_audio.assert_not_called()

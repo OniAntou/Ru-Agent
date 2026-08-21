@@ -2,8 +2,13 @@ import logging
 import os
 import threading
 from pathlib import Path
-from ru_runtime.generation.runner import BACKEND_KILO, BACKEND_OPENCODE, ModelRunner
-from ru_runtime.memory.store import StructuredMemoryStore, MemoryStore
+from ru_runtime.generation.runner import (
+    BACKEND_KILO,
+    BACKEND_OPENCODE,
+    OPENAI_COMPATIBLE_BACKENDS,
+    ModelRunner,
+)
+from ru_runtime.memory.store import StructuredMemoryStore
 from ru_runtime.persistence.credential_store import CredentialStore
 from ru_runtime.vts.emotion import MoodTracker, extract_reply_emotion
 
@@ -20,7 +25,6 @@ class RuRuntimeCore:
     def __init__(self):
         self.runner = ModelRunner()
         self.mood_tracker = MoodTracker()
-        self.memory_index_path = MEMORY_DATA_ROOT / "memory_index.faiss"
         self.memory_texts_path = MEMORY_DATA_ROOT / "memory_texts.json"
         self.memory_db_path = MEMORY_DATA_ROOT / "memory.db"
         self.memory_store = None
@@ -35,7 +39,7 @@ class RuRuntimeCore:
         with self._memory_store_lock:
             if self.memory_store is None:
                 self.memory_db_path.parent.mkdir(parents=True, exist_ok=True)
-                self.memory_store = StructuredMemoryStore(self.memory_db_path, index_path=self.memory_index_path)
+                self.memory_store = StructuredMemoryStore(self.memory_db_path)
                 try:
                     self.memory_store.migrate_legacy_transcripts(self.memory_texts_path)
                 except Exception:
@@ -49,7 +53,6 @@ class RuRuntimeCore:
             if self.memory_store is not None:
                 self.memory_store.close()
                 self.memory_store = None
-            MemoryStore.clear_artifacts(self.memory_index_path, self.memory_texts_path)
             for path in (
                 self.memory_db_path,
                 Path(f"{self.memory_db_path}-wal"),
@@ -66,7 +69,6 @@ class RuRuntimeCore:
             if self.memory_store is not None:
                 self.memory_store.close()
                 self.memory_store = None
-        self.runner.release_gpu()
 
     def remember(self, prompt: str, reply: str):
         with self._memory_store_lock:
@@ -97,7 +99,7 @@ class RuRuntimeCore:
         vts_instruction: str = "",
         share_memory_with_cloud: bool = True,
     ):
-        hosted = self.runner.backend in (BACKEND_OPENCODE, BACKEND_KILO)
+        hosted = self.runner.backend in OPENAI_COMPATIBLE_BACKENDS
         context = None
         if not hosted or share_memory_with_cloud:
             with self._memory_store_lock:

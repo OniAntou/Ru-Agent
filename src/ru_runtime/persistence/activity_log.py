@@ -1,9 +1,6 @@
 """Append-only activity log for Ru runtime.
 
-Mỗi dòng là 1 JSON object (JSONL) với schema:
-  {"ts": float, "iso": str, "type": "chat"|"emotion"|"vts_action", "session_id": str|None, "data": dict}
-
-File được giới hạn tối đa 5000 entries (xoá entry cũ nhất khi vượt).
+Routing activity events through the safe activity outbox.
 """
 
 from __future__ import annotations
@@ -15,27 +12,22 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import List, Optional
 
-from ru_runtime.persistence.canonical import canonical_data_root
+from ru_runtime.persistence.activity_outbox import (
+    get_outbox_file,
+    get_activity_outbox_writer,
+    sanitize_activity_event,
+)
 
 logger = logging.getLogger("ru_runtime.persistence.activity_log")
 
-_configured_data_root = os.environ.get("RU_DATA_ROOT", "").strip()
-LOG_ROOT = (
-    Path(_configured_data_root)
-    if _configured_data_root
-    else canonical_data_root()
-)
-LOG_FILE = LOG_ROOT / "activity_log.jsonl"
 MAX_ENTRIES = 5000
 _log_lock = threading.Lock()
 
 
-def _ensure_log_dir() -> None:
-    try:
-        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        logger.warning("activity_log mkdir failed: %s", e)
+def get_activity_log_file() -> Path:
+    return get_outbox_file()
 
 
 def _now_iso() -> str:
@@ -43,37 +35,35 @@ def _now_iso() -> str:
 
 
 def append(event: dict) -> None:
+    """Publish a sanitized activity event to the worker outbox."""
     event.setdefault("ts", time.time())
     event.setdefault("iso", _now_iso())
-    with _log_lock:
-        try:
-            _ensure_log_dir()
-            line = json.dumps(event, ensure_ascii=False)
-            with LOG_FILE.open("a", encoding="utf-8") as fh:
-                fh.write(line + "\n")
-            _maybe_trim()
-        except OSError as e:
-            logger.warning("activity_log append failed: %s", e)
+    writer = get_activity_outbox_writer()
+    writer.try_enqueue(event)
 
 
 def clear() -> None:
-    """Xoá toàn bộ nhật ký hiện có. File sẽ được tạo lại khi append lần sau."""
+    """Clear outbox log."""
     with _log_lock:
         try:
-            LOG_FILE.unlink(missing_ok=True)
+            get_activity_outbox_writer().flush(timeout_seconds=0.5)
+            get_activity_log_file().unlink(missing_ok=True)
         except OSError as e:
             logger.warning("activity_log clear failed: %s", e)
 
 
-def read(limit: int = 200) -> list[dict]:
+def read(limit: int = 200) -> List[dict]:
     limit = max(1, min(int(limit), 500))
-    if not LOG_FILE.is_file():
+    writer = get_activity_outbox_writer()
+    writer.flush(timeout_seconds=1.0)
+
+    target = get_activity_log_file()
+    if not target.is_file():
         return []
-    events: list[dict] = []
+    events: List[dict] = []
     with _log_lock:
         try:
-            _ensure_log_dir()
-            with LOG_FILE.open("r", encoding="utf-8") as fh:
+            with target.open("r", encoding="utf-8") as fh:
                 for line in fh:
                     line = line.strip()
                     if not line:
@@ -87,18 +77,3 @@ def read(limit: int = 200) -> list[dict]:
             return []
     events.sort(key=lambda e: e.get("ts", 0.0))
     return events[-limit:]
-
-
-def _maybe_trim() -> None:
-    if not LOG_FILE.is_file():
-        return
-    try:
-        with LOG_FILE.open("r", encoding="utf-8") as fh:
-            lines = fh.readlines()
-        if len(lines) <= MAX_ENTRIES:
-            return
-        keep = lines[-MAX_ENTRIES:]
-        with LOG_FILE.open("w", encoding="utf-8") as fh:
-            fh.writelines(keep)
-    except OSError as e:
-        logger.warning("activity_log trim failed: %s", e)

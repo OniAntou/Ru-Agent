@@ -1,0 +1,196 @@
+<UserControl
+    x:Class="RuApp.Views.DiagnosticsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:converters="using:RuApp.Converters"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+    </UserControl.Resources>
+
+    <Grid x:Name="ResponsiveRoot" SizeChanged="ResponsiveRoot_SizeChanged" Padding="36,24,36,36" RowDefinitions="Auto,Auto,Auto,*" Background="Transparent">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="ResponsiveStates">
+                <VisualState x:Name="Wide">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1280"/>
+                    </VisualState.StateTriggers>
+                </VisualState>
+
+                <VisualState x:Name="Compact">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="900"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="HeaderActionsPanel.(Grid.Row)" Value="1"/>
+                        <Setter Target="HeaderActionsPanel.(Grid.Column)" Value="0"/>
+                        <Setter Target="HeaderActionsPanel.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="HeaderActionsPanel.HorizontalAlignment" Value="Left"/>
+                    </VisualState.Setters>
+                </VisualState>
+
+                <VisualState x:Name="Narrow">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="HeaderActionsPanel.(Grid.Row)" Value="1"/>
+                        <Setter Target="HeaderActionsPanel.(Grid.Column)" Value="0"/>
+                        <Setter Target="HeaderActionsPanel.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="HeaderActionsPanel.Orientation" Value="Vertical"/>
+                        <Setter Target="HeaderActionsPanel.HorizontalAlignment" Value="Stretch"/>
+                        <Setter Target="ComponentFilterBox.HorizontalAlignment" Value="Stretch"/>
+                        <Setter Target="EventCodeFilterBox.HorizontalAlignment" Value="Stretch"/>
+                        <Setter Target="CorrelationFilterBox.HorizontalAlignment" Value="Stretch"/>
+                        <Setter Target="LevelFilterCombo.HorizontalAlignment" Value="Stretch"/>
+                        <Setter Target="PauseButton.HorizontalAlignment" Value="Stretch"/>
+                        <Setter Target="ExportButton.HorizontalAlignment" Value="Stretch"/>
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
+        <!-- Header & Filters Bar -->
+        <Grid Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" Margin="0,0,0,16" VerticalAlignment="Center">
+            <StackPanel x:Name="HeaderTitlePanel" Grid.Row="0" Grid.Column="0" Spacing="4">
+                <TextBlock Text="Chẩn đoán kỹ thuật (Technical Diagnostics)" FontSize="22" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                <TextBlock Text="Theo dõi các chỉ số vận hành, mã sự kiện và mã tương quan (Correlation ID) theo thời gian thực" FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+            </StackPanel>
+
+            <StackPanel x:Name="HeaderActionsPanel" Grid.Row="0" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <TextBox x:Name="ComponentFilterBox" PlaceholderText="Component..." Width="120" Margin="4,0"
+                     TextChanged="OnComponentFilterChanged" FontSize="12.5" Padding="8,6"
+                     CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="1"/>
+
+            <TextBox x:Name="EventCodeFilterBox" PlaceholderText="Event Code..." Width="130" Margin="4,0"
+                     TextChanged="OnEventCodeFilterChanged" FontSize="12.5" Padding="8,6"
+                     CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="1"/>
+
+            <TextBox x:Name="CorrelationFilterBox" PlaceholderText="Correlation ID..." Width="150" Margin="4,0"
+                     TextChanged="OnCorrelationFilterChanged" FontSize="12.5" Padding="8,6"
+                     CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="1"/>
+
+            <ComboBox x:Name="LevelFilterCombo" SelectionChanged="OnLevelSelectionChanged" SelectedIndex="0" Margin="4,0" Width="105"
+                      CornerRadius="{StaticResource AppControlCornerRadius}">
+                <ComboBoxItem Content="Tất cả Level"/>
+                <ComboBoxItem Content="info"/>
+                <ComboBoxItem Content="warning"/>
+                <ComboBoxItem Content="error"/>
+            </ComboBox>
+
+            <Button x:Name="PauseButton" Content="Tạm dừng" FontSize="12.5" Padding="12,6" Margin="4,0"
+                    Click="OnPauseClicked" Foreground="{StaticResource AppTextPrimaryBrush}" Background="{StaticResource AppCardBackgroundBrush}"
+                    BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}"/>
+
+            <Button x:Name="ExportButton" Content="Xuất NDJSON" FontSize="12.5" Padding="14,6" Margin="4,0,0,0"
+                    Click="OnExportClicked" Foreground="{StaticResource AppAccentHoverBrush}" Background="{StaticResource AppAccentSubtleBrush}"
+                    BorderBrush="{StaticResource AppAccentHoverBrush}" BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" 
+                    HorizontalAlignment="Right"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Warning Alert Banner -->
+        <Border Grid.Row="1" x:Name="WarningBanner" Visibility="Collapsed"
+                Background="#33EF4444" BorderBrush="#BBEF4444" BorderThickness="1"
+                CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16,10" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE783;" FontSize="16" Foreground="#EF4444"/>
+                <TextBlock x:Name="WarningBannerText" Text="Cảnh báo: Phát hiện lỗi ghi nhật ký hoặc rớt gói tin log." FontSize="12.5" FontWeight="SemiBold" Foreground="#EF4444"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Status Card -->
+        <Border Grid.Row="2" Background="{StaticResource AppCardBackgroundBrush}" BorderBrush="{StaticResource AppCardBorderSubtleBrush}"
+                BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16,10" Margin="0,0,0,16">
+            <Grid x:Name="StatusMetricsGrid" RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="*,*,*,*">
+                <StackPanel x:Name="QueueMetricPanel" Grid.Column="0" Grid.Row="0" Spacing="2">
+                    <TextBlock Text="HÀNG ĐỢI (QUEUE)" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextTertiaryBrush}"/>
+                    <TextBlock x:Name="QueueDepthText" Text="Độ sâu: 0" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                </StackPanel>
+                <StackPanel x:Name="DroppedMetricPanel" Grid.Column="1" Grid.Row="0" Spacing="2">
+                    <TextBlock Text="BẢN GHI ĐÃ BỎ (DROPPED)" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextTertiaryBrush}"/>
+                    <TextBlock x:Name="DroppedCountText" Text="0 bản ghi" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                </StackPanel>
+                <StackPanel x:Name="FailuresMetricPanel" Grid.Column="2" Grid.Row="0" Spacing="2">
+                    <TextBlock Text="LỖI GHI (FAILURES)" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextTertiaryBrush}"/>
+                    <TextBlock x:Name="WriteFailuresText" Text="0 lỗi" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                </StackPanel>
+                <StackPanel x:Name="FilesMetricPanel" Grid.Column="3" Grid.Row="0" Spacing="2">
+                    <TextBlock Text="DUNG LƯỢNG NHẬT KÝ" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource AppTextTertiaryBrush}"/>
+                    <TextBlock x:Name="TotalFilesText" Text="0 files (0 KB)" FontSize="12.5" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Diagnostics Container -->
+        <Border Grid.Row="3" Style="{StaticResource FluentCardStyle}" Padding="16">
+            <ListView x:Name="DiagnosticsList"
+                      ItemsSource="{x:Bind Rows}"
+                      IsItemClickEnabled="True"
+                      ItemClick="OnRowClicked"
+                      SelectionMode="None"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      Padding="4"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0,0,0,8"/>
+                        <Setter Property="MinHeight" Value="0"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{StaticResource AppCardBackgroundHoverBrush}" BorderBrush="{StaticResource AppCardBorderSubtleBrush}" 
+                                BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="14,10">
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*">
+                                <!-- Dot -->
+                                <Ellipse Grid.Column="0" Width="9" Height="9"
+                                         Fill="{Binding DotBrush}" VerticalAlignment="Top" Margin="0,5,12,0"/>
+
+                                <!-- Time -->
+                                <TextBlock Grid.Column="1" Text="{Binding Time}" FontFamily="Consolas, Cascadia Code, Courier New"
+                                           FontSize="12" Foreground="{StaticResource AppTextTertiaryBrush}" VerticalAlignment="Top" Margin="0,3,8,0"/>
+
+                                <!-- Level badge -->
+                                <Border Grid.Column="2" Background="{Binding LevelBrush}" CornerRadius="6"
+                                        Padding="8,2" Margin="0,1,8,0" VerticalAlignment="Top">
+                                    <TextBlock Text="{Binding Level}" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                </Border>
+
+                                <!-- Component badge -->
+                                <Border Grid.Column="3" Background="#2038BDF8" BorderBrush="#38BDF8" BorderThickness="1" CornerRadius="6"
+                                        Padding="6,2" Margin="0,1,12,0" VerticalAlignment="Top">
+                                    <TextBlock Text="{Binding Component}" FontSize="11" Foreground="#38BDF8"/>
+                                </Border>
+
+                                <!-- Content + Detail -->
+                                <StackPanel Grid.Column="4" MinWidth="0">
+                                    <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Foreground="{StaticResource AppTextPrimaryBrush}"
+                                               FontSize="13.5" VerticalAlignment="Top" Margin="0,2,0,4"/>
+
+                                    <Border Background="#141418" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" 
+                                            CornerRadius="6" Padding="12,10" Margin="0,6,0,4"
+                                            Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="CHI TIẾT CHẨN ĐOÁN" FontSize="10" Foreground="{StaticResource AppAccentHoverBrush}" FontWeight="Bold"/>
+                                            <TextBlock Text="{Binding Detail}" FontFamily="Consolas, Cascadia Code, Courier New"
+                                                       FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Border>
+    </Grid>
+</UserControl>

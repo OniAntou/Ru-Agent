@@ -74,7 +74,6 @@ def _runtime_load_params(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         model_name = str(payload.get("custom_model") or "")
         base_url = str(payload.get("custom_url") or "") or None
-    checkpoint_path = str(payload.get("checkpoint_path") or "")
     api_variant = str(payload.get("api_variant") or "")
     reasoning = payload.get("kilo_reasoning_enabled", False)
     if not isinstance(reasoning, bool):
@@ -83,7 +82,6 @@ def _runtime_load_params(payload: dict[str, Any]) -> dict[str, Any]:
         "backend": backend,
         "model_name": model_name,
         "base_url": base_url,
-        "checkpoint_path": checkpoint_path,
         "api_variant": api_variant,
         "kilo_reasoning_enabled": reasoning,
     }
@@ -122,7 +120,6 @@ def create_runtime_handlers() -> WorkerHandlers:
     credential, voice, or VTube Studio state.
     """
     from ru_runtime.worker.v1 import runtime_services as shared
-    from ru_runtime.generation.runner import BACKEND_GGUF
     from ru_runtime.worker.v1.http import dispatch_runtime_request
     from ru_runtime.worker.v1.voice_bridge import RuntimeVoiceBridge
 
@@ -140,8 +137,6 @@ def create_runtime_handlers() -> WorkerHandlers:
         return dispatch_runtime_request(method, path_and_query, content_type, body)
 
     def generation_scope() -> ContextManager[Any]:
-        if shared.core.runner.backend == BACKEND_GGUF:
-            return shared._gpu_lifecycle().local_generation()
         return contextlib.nullcontext()
 
     def runtime_load(payload: dict[str, Any]) -> Mapping[str, Any]:
@@ -152,7 +147,6 @@ def create_runtime_handlers() -> WorkerHandlers:
         with _RUNTIME_TRANSITION_LOCK:
             previous = {
                 "backend": runner.backend,
-                "checkpoint_path": runner.checkpoint_path,
                 "openai_runtime": runner.openai_runtime,
                 "kilo_reasoning_enabled": runner.kilo_reasoning_enabled,
                 "load_error": runner.load_error,
@@ -167,7 +161,6 @@ def create_runtime_handlers() -> WorkerHandlers:
                     api_key = shared.core.custom_cred.get_key() or ""
                 runner.select_backend(backend)
                 message = runner.load(
-                    checkpoint_path=params["checkpoint_path"],
                     api_key=api_key,
                     model_name=params["model_name"],
                     api_variant=params["api_variant"],
@@ -181,7 +174,6 @@ def create_runtime_handlers() -> WorkerHandlers:
                 }
             except Exception:
                 runner.select_backend(previous["backend"])
-                runner.checkpoint_path = previous["checkpoint_path"]
                 runner.openai_runtime = previous["openai_runtime"]
                 runner.kilo_reasoning_enabled = previous["kilo_reasoning_enabled"]
                 runner.load_error = previous["load_error"]
@@ -612,13 +604,6 @@ async def _vts_handler(
         yield WorkerReply(VTS_ACTION, {"status": "ok"})
         return
 
-    yield _error("unsupported_operation", retryable=False)
-
-
-async def _unsupported_handler(
-    _payload: dict[str, Any],
-    _cancelled: asyncio.Event,
-) -> AsyncIterator[WorkerReply]:
     yield _error("unsupported_operation", retryable=False)
 
 

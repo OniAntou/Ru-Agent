@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager
 import hmac
 import json
 import logging
@@ -26,7 +26,6 @@ from ru_runtime.voice.gpu_lifecycle import GpuLifecycle, VoiceServiceController
 from ru_runtime.generation.runner import (
     ALL_BACKENDS,
     BACKEND_CUSTOM,
-    BACKEND_GGUF,
     BACKEND_KILO,
     BACKEND_LMSTUDIO,
     BACKEND_OLLAMA,
@@ -107,7 +106,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 # ── constants ─────────────────────────────────────────────────────────
 
 _MAX_HISTORY_MESSAGES = 200
-_MAX_CONTEXT_TURNS = 8
 _MAX_SESSION_TITLE_CHARS = 50
 _DEFAULT_SESSION_TITLE = "Cuộc trò chuyện mới"
 _SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
@@ -145,7 +143,6 @@ _DEFAULT_SETTINGS = {
     "enable_self_learning": True,
     "share_memory_with_cloud": True,
     "kilo_reasoning_enabled": False,
-    "checkpoint_path": "",
     "voice_label": "Ru (OmniVoice)",
     "voice_style_id": ORIGINAL_STYLE_ID,
     "voice_speed": 1.0,
@@ -163,7 +160,6 @@ _DEFAULT_SETTINGS = {
 _VALID_BACKENDS = ALL_BACKENDS
 
 _BACKEND_ALIASES: dict[str, str] = {
-    "gguf": BACKEND_GGUF,
     "opencode": BACKEND_OPENCODE,
     "kilo": BACKEND_KILO,
     "ollama": BACKEND_OLLAMA,
@@ -174,7 +170,6 @@ _BACKEND_ALIASES: dict[str, str] = {
 
 # ── shared state ──────────────────────────────────────────────────────
 
-_HISTORY_LOCK = threading.Lock()
 _SETTINGS_LOCK = threading.Lock()
 _TURN_LOCK = threading.Lock()
 _VOICE_LOCK = threading.Lock()
@@ -367,11 +362,6 @@ def effective_settings() -> dict:
     return merged
 
 
-def save_settings_to_file(data: dict) -> None:
-    with _SETTINGS_LOCK:
-        atomic_write_json(SETTINGS_FILE, data, indent=2)
-
-
 def _merge_settings(mutate: "Callable[[dict], None]") -> None:
     """Read-modify-write of the settings file under one lock so concurrent
     updates (settings API + VTS state + motion config) cannot clobber each other."""
@@ -443,29 +433,6 @@ def _effective_settings_unlocked() -> dict:
     return merged
 
 
-def load_history() -> list[dict[str, str]]:
-    with _HISTORY_LOCK:
-        if not HISTORY_FILE.is_file():
-            return []
-        try:
-            data = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            logger.warning("Could not read history file %s: %s", HISTORY_FILE, error)
-            return []
-        if not isinstance(data, list):
-            return []
-        return [
-            item
-            for item in data
-            if isinstance(item, dict) and item.get("role") in ("user", "ai") and isinstance(item.get("content"), str)
-        ]
-
-
-def save_history(messages: list[dict[str, str]]) -> None:
-    with _HISTORY_LOCK:
-        atomic_write_json(HISTORY_FILE, messages[-_MAX_HISTORY_MESSAGES:], indent=2)
-
-
 def _new_session_id() -> str:
     from uuid import uuid4
     return uuid4().hex
@@ -486,27 +453,6 @@ def _create_session_file() -> str | None:
     return session_id
 
 
-def load_sessions() -> list[dict]:
-    if not SESSION_DIR.is_dir():
-        return []
-    sessions = []
-    for path in SESSION_DIR.glob("*.json"):
-        data = _load_session_file(path.stem)
-        if data is None:
-            continue
-        sessions.append(
-            {
-                "id": data["id"],
-                "title": data.get("title") or _DEFAULT_SESSION_TITLE,
-                "created_at": data.get("created_at"),
-                "updated_at": data.get("updated_at"),
-                "message_count": len(data.get("messages", [])),
-            }
-        )
-    sessions.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
-    return sessions
-
-
 def _session_append_messages(session_id: str, messages: list[dict]) -> bool:
     with _SESSION_LOCK:
         data = _load_session_file(session_id)
@@ -518,30 +464,6 @@ def _session_append_messages(session_id: str, messages: list[dict]) -> bool:
             data["title"] = _session_title_from_messages(merged)
         data["updated_at"] = _utc_now_iso()
         return _save_session_file(session_id, data)
-
-
-def _rebuild_session_turns(session_id: str) -> dict | None:
-    with _SESSION_LOCK:
-        return _load_session_file(session_id)
-
-
-def _session_turns(session_id: str) -> list[ChatTurn]:
-    with _SESSION_LOCK:
-        data = _load_session_file(session_id)
-        if data is None:
-            return []
-        pending_prompt: str | None = None
-        turns: list[ChatTurn] = []
-        for message in data.get("messages", []):
-            content = str(message.get("content", "")).strip()
-            if not content:
-                continue
-            if message.get("role") == "user":
-                pending_prompt = content
-            elif pending_prompt is not None:
-                turns.append(ChatTurn(pending_prompt, content))
-                pending_prompt = None
-        return turns[-_MAX_CONTEXT_TURNS:]
 
 
 def migrate_legacy_history() -> None:
@@ -749,7 +671,6 @@ def _gpu_lifecycle() -> GpuLifecycle:
     if _GPU_LIFECYCLE is None:
         _GPU_LIFECYCLE = GpuLifecycle(
             _GPU_LOCK,
-            release_local_runtime=core.runner.release_gpu,
             voice_services={
                 "omnivoice": VoiceServiceController(
                     available=voice_available,
@@ -799,7 +720,7 @@ def _schedule_cloud_voice_warmup() -> bool:
 def apply_saved_settings() -> str:
     settings = load_settings()
     backend = _resolve_backend(settings.get("backend"))
-    if backend in (BACKEND_GGUF, "gguf", "llama.cpp"):
+    if str(settings.get("backend") or "").casefold() in {"gguf", "llama.cpp"}:
         logger.info(
             "Retired llama.cpp backend in saved settings; migrating to %s",
             BACKEND_OPENCODE,
@@ -845,14 +766,12 @@ def apply_saved_settings() -> str:
         base_url = settings.get("custom_url", _DEFAULT_SETTINGS["custom_url"])
         logger.info("Using Custom OpenAI model: %s (%s)", model_name, base_url)
     else:
-        model_name = settings.get("model", _DEFAULT_SETTINGS["model"])
-        logger.info("Using local model field: %s", model_name)
+        model_name = _DEFAULT_SETTINGS["opencode_model"]
+        logger.info("Using cloud default model after backend migration: %s", model_name)
 
-    checkpoint_path = settings.get("checkpoint_path", "")
-    logger.info("Loading with checkpoint_path=%s, model_name=%s", checkpoint_path, model_name)
+    logger.info("Loading cloud-compatible runtime with model_name=%s", model_name)
 
     return core.runner.load(
-        checkpoint_path=checkpoint_path,
         api_key=api_key,
         model_name=model_name,
         api_variant=settings.get("api_variant", _DEFAULT_SETTINGS["api_variant"]),
@@ -879,14 +798,6 @@ def _apply_settings_on_startup() -> None:
         _schedule_cloud_voice_warmup()
     except Exception as error:
         logger.error("Failed to schedule cloud voice warm-up: %s", error)
-
-
-def _start_voice_service() -> None:
-    try:
-        ensure_voice_service()
-        logger.info("Voice service is running on startup")
-    except Exception as error:
-        logger.error("Failed to auto-start voice service: %s", error)
 
 
 def _stop_owned_voice_service() -> None:
@@ -1052,30 +963,6 @@ def _invalidate_memory_queue() -> None:
                 pass
 
 
-def _learn_from_turn(prompt: str, reply: str) -> None:
-    if not effective_settings()["enable_self_learning"]:
-        return
-    with _MEMORY_QUEUE_LOCK:
-        generation = _MEMORY_QUEUE_GENERATION
-    item = (generation, prompt, reply)
-    try:
-        _MEMORY_QUEUE.put_nowait(item)
-    except queue.Full:
-        try:
-            _MEMORY_QUEUE.get_nowait()
-        except queue.Empty:
-            pass
-        else:
-            try:
-                _MEMORY_QUEUE.task_done()
-            except ValueError:
-                pass
-        try:
-            _MEMORY_QUEUE.put_nowait(item)
-        except queue.Full:
-            logger.debug("Memory queue full; dropping learning turn")
-
-
 def _process_memory_turn(prompt: str, reply: str, generation: int | None = None) -> None:
     if generation is not None and not _memory_turn_generation_is_current(generation):
         logger.debug("Skipping stale self-learning turn after memory clear")
@@ -1094,23 +981,17 @@ def _process_memory_turn(prompt: str, reply: str, generation: int | None = None)
     try:
         if generation is not None and not _memory_turn_generation_is_current(generation):
             return
-        generation_context = (
-            _gpu_lifecycle().local_generation()
-            if core.runner.backend == BACKEND_GGUF
-            else nullcontext()
+        facts = extract_facts_with_llm(
+            prompt,
+            reply,
+            lambda fact_prompt, max_new_tokens, temperature, top_k, allow_web_search: core.runner.generate_reply(
+                prompt=fact_prompt,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_k=top_k,
+                allow_web_search=allow_web_search,
+            ),
         )
-        with generation_context:
-            facts = extract_facts_with_llm(
-                prompt,
-                reply,
-                lambda fact_prompt, max_new_tokens, temperature, top_k, allow_web_search: core.runner.generate_reply(
-                    prompt=fact_prompt,
-                    max_new_tokens=max_new_tokens,
-                    temperature=temperature,
-                    top_k=top_k,
-                    allow_web_search=allow_web_search,
-                ),
-            )
         store = core.get_memory_store()
         existing = {record.content.casefold() for record in store.list_active()}
         for fact in facts:

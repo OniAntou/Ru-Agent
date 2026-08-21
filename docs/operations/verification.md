@@ -19,20 +19,24 @@ dotnet list D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj package
 cmd /c D:\LLM\build.bat
 ```
 
-The route checker must report 38 HTTP routes and 2 WebSocket routes. The build
+The route checker must report 41 HTTP routes and 2 WebSocket routes. The build
 must produce self-contained `RuBackend.exe` and `RuApp.exe`; verification does
 not launch them.
 
-The current model-neutral evaluation entrypoint is optional because its LLM
-judge can require external credentials. Its deterministic layer can be run
-without the judge:
+The compatibility harness is the deterministic public-edge regression gate. It
+uses a temporary data root, probes safe GET routes with fail-closed status
+checks, verifies chat privacy/order, and always verifies child and port cleanup:
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\evaluate_ru_model.py --config D:\LLM\configs\ru_judge_eval.json --models v1 --suite smoke --no-judge
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --deterministic-chat --output D:\LLM\artifacts\aspnetcore\deterministic-chat-gate.json
 ```
 
-Evaluation output must remain local and must not be treated as an adoption
-decision without bilingual conversation review.
+The live voice gate is optional because it requires OmniVoice and a real
+audio-producing worker:
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --require-voice-audio --benchmark-samples 20
+```
 
 Automated voice tests prove protocol ordering, cancellation, cleanup, metadata
 privacy, and non-empty audio frames. They do not prove that speakers sound

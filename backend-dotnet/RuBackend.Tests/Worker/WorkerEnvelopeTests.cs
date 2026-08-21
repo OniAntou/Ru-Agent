@@ -96,4 +96,22 @@ public sealed class WorkerEnvelopeTests
         Assert.DoesNotContain("private prompt", summary, StringComparison.Ordinal);
         Assert.DoesNotContain("request-containing-private-id", summary, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void CorrelationId_round_trips_in_envelope()
+    {
+        var envelope = new WorkerEnvelope(
+            1,
+            "req-corr",
+            WorkerMessageTypes.Hello,
+            null,
+            new JsonObject(),
+            "c_1234567890abcdef");
+
+        var json = WorkerEnvelopeCodec.Serialize(envelope);
+        Assert.Contains("\"correlation_id\":\"c_1234567890abcdef\"", json);
+
+        var parsed = WorkerEnvelopeCodec.Parse(json);
+        Assert.Equal("c_1234567890abcdef", parsed.CorrelationId);
+    }
 }

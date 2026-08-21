@@ -17,7 +17,7 @@ def evaluate_cases(cases: list[dict[str, object]], database_path: Path) -> dict[
             raise ValueError(f"memory evaluation case {index} is missing: {', '.join(missing)}")
         if not isinstance(case["turns"], list) or not case["turns"]:
             raise ValueError(f"memory evaluation case {index} requires a non-empty turns list")
-        store = StructuredMemoryStore(database_path.parent / f"case-{index}.db", index_path=database_path.parent / f"case-{index}.faiss")
+        store = StructuredMemoryStore(database_path.parent / f"case-{index}.db")
         for prompt, response in case["turns"]:
             store.remember_turn(prompt, response)
         context = store.render_context(store.retrieve(case["query"]), max_chars=1200)

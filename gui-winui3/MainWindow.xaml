@@ -30,14 +30,74 @@
                 </Border>
                 <TextBlock Text="Ru" FontSize="14" FontFamily="Segoe UI Variable Display" FontWeight="Bold" 
                            Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
-                <Border Background="{StaticResource AppCardBackgroundBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="8,2" Margin="2,0,0,0">
+                <Border x:Name="BrandModeBadge" Background="{StaticResource AppCardBackgroundBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="8,2" Margin="2,0,0,0">
                     <TextBlock Text="Live2D Companion" FontSize="11" FontWeight="Medium" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                 </Border>
             </StackPanel>
         </Grid>
 
         <!-- Main Content Area -->
-        <Grid Grid.Row="1">
+        <Grid x:Name="RootLayoutGrid" Grid.Row="1" SizeChanged="RootLayoutGrid_SizeChanged">
+            <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="ResponsiveStates">
+                    <VisualState x:Name="Wide">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="1280"/>
+                        </VisualState.StateTriggers>
+                    </VisualState>
+
+                    <VisualState x:Name="Compact">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="900"/>
+                        </VisualState.StateTriggers>
+                        <VisualState.Setters>
+                            <Setter Target="NavNewChat.Padding" Value="10,8"/>
+                            <Setter Target="NavChat.Padding" Value="10,7"/>
+                            <Setter Target="NavVoice.Padding" Value="10,7"/>
+                            <Setter Target="NavLog.Padding" Value="10,7"/>
+                            <Setter Target="NavDiagnostics.Padding" Value="10,7"/>
+                            <Setter Target="NavSettings.Padding" Value="10,7"/>
+                        </VisualState.Setters>
+                    </VisualState>
+
+                    <VisualState x:Name="Narrow">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="0"/>
+                        </VisualState.StateTriggers>
+                        <VisualState.Setters>
+                            <Setter Target="BrandModeBadge.Visibility" Value="Collapsed"/>
+                            <Setter Target="LabelNewChat.Visibility" Value="Collapsed"/>
+                            <Setter Target="LabelChat.Visibility" Value="Collapsed"/>
+                            <Setter Target="LabelVoice.Visibility" Value="Collapsed"/>
+                            <Setter Target="LabelLog.Visibility" Value="Collapsed"/>
+                            <Setter Target="LabelDiagnostics.Visibility" Value="Collapsed"/>
+                            <Setter Target="LabelSettings.Visibility" Value="Collapsed"/>
+                            <Setter Target="LabelRecents.Visibility" Value="Collapsed"/>
+                            <Setter Target="NavNewChat.HorizontalContentAlignment" Value="Center"/>
+                            <Setter Target="NavChat.HorizontalContentAlignment" Value="Center"/>
+                            <Setter Target="NavVoice.HorizontalContentAlignment" Value="Center"/>
+                            <Setter Target="NavLog.HorizontalContentAlignment" Value="Center"/>
+                            <Setter Target="NavDiagnostics.HorizontalContentAlignment" Value="Center"/>
+                            <Setter Target="NavSettings.HorizontalContentAlignment" Value="Center"/>
+                            <Setter Target="NavNewChat.Padding" Value="8"/>
+                            <Setter Target="NavChat.Padding" Value="8"/>
+                            <Setter Target="NavVoice.Padding" Value="8"/>
+                            <Setter Target="NavLog.Padding" Value="8"/>
+                            <Setter Target="NavDiagnostics.Padding" Value="8"/>
+                            <Setter Target="NavSettings.Padding" Value="8"/>
+                            <Setter Target="SidebarResizer.Visibility" Value="Collapsed"/>
+                            <Setter Target="StatusText.Visibility" Value="Collapsed"/>
+                            <Setter Target="TextBackend.Visibility" Value="Collapsed"/>
+                            <Setter Target="TextWorker.Visibility" Value="Collapsed"/>
+                            <Setter Target="TextVts.Visibility" Value="Collapsed"/>
+                            <Setter Target="StatusBackendBadge.Padding" Value="6,3"/>
+                            <Setter Target="StatusWorkerBadge.Padding" Value="6,3"/>
+                            <Setter Target="StatusVtsBadge.Padding" Value="6,3"/>
+                        </VisualState.Setters>
+                    </VisualState>
+                </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
+
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="SidebarColumn" Width="250" MinWidth="180" MaxWidth="400"/>
                 <ColumnDefinition Width="1"/>
@@ -65,7 +125,8 @@
                             <Button x:Name="NavNewChat" Click="OnNewChatClick" HorizontalAlignment="Stretch" Margin="0,0,0,8"
                                     Background="{StaticResource AppCardBackgroundBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" 
                                     BorderThickness="1" Foreground="{StaticResource AppTextPrimaryBrush}" Padding="12,9" 
-                                    CornerRadius="{StaticResource AppControlCornerRadius}" HorizontalContentAlignment="Left">
+                                    CornerRadius="{StaticResource AppControlCornerRadius}" HorizontalContentAlignment="Left"
+                                    ToolTipService.ToolTip="Đoạn chat mới" AutomationProperties.Name="Đoạn chat mới">
                                 <Grid ColumnDefinitions="Auto,*">
                                     <FontIcon Grid.Column="0" Glyph="&#xE710;" FontSize="13" Foreground="{StaticResource AppTextPrimaryBrush}" Margin="0,0,10,0"/>
                                     <TextBlock Grid.Column="1" x:Name="LabelNewChat" Text="Đoạn chat mới" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
@@ -75,7 +136,8 @@
                             <!-- Navigation Tabs -->
                             <Button x:Name="NavChat" Tag="chat" Click="OnNavClick" HorizontalAlignment="Stretch"
                                     Background="{StaticResource AppCardBackgroundHoverBrush}" Foreground="{StaticResource AppTextPrimaryBrush}" 
-                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left">
+                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left"
+                                    ToolTipService.ToolTip="Trò chuyện" AutomationProperties.Name="Trò chuyện">
                                 <Grid ColumnDefinitions="Auto,*">
                                     <FontIcon Grid.Column="0" Glyph="&#xE8F2;" FontSize="15" Foreground="{StaticResource AppTextPrimaryBrush}" Margin="0,0,12,0"/>
                                     <TextBlock Grid.Column="1" x:Name="LabelChat" Text="Trò chuyện" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
@@ -84,7 +146,8 @@
 
                             <Button x:Name="NavVoice" Tag="voice" Click="OnNavClick" HorizontalAlignment="Stretch"
                                     Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" 
-                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left">
+                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left"
+                                    ToolTipService.ToolTip="Giọng nói &amp; VTS" AutomationProperties.Name="Giọng nói và VTS">
                                 <Grid ColumnDefinitions="Auto,*">
                                     <FontIcon Grid.Column="0" Glyph="&#xE720;" FontSize="15" Margin="0,0,12,0"/>
                                     <TextBlock Grid.Column="1" x:Name="LabelVoice" Text="Giọng nói &amp; VTS" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
@@ -93,10 +156,21 @@
 
                             <Button x:Name="NavLog" Tag="log" Click="OnNavClick" HorizontalAlignment="Stretch"
                                     Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" 
-                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left">
+                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left"
+                                    ToolTipService.ToolTip="Nhật ký hoạt động" AutomationProperties.Name="Nhật ký hoạt động">
                                 <Grid ColumnDefinitions="Auto,*">
                                     <FontIcon Grid.Column="0" Glyph="&#xE9D9;" FontSize="15" Margin="0,0,12,0"/>
                                     <TextBlock Grid.Column="1" x:Name="LabelLog" Text="Nhật ký hoạt động" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Button>
+
+                            <Button x:Name="NavDiagnostics" Tag="diagnostics" Click="OnNavClick" HorizontalAlignment="Stretch"
+                                    Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}"
+                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left"
+                                    ToolTipService.ToolTip="Chẩn đoán kỹ thuật" AutomationProperties.Name="Chẩn đoán kỹ thuật">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <FontIcon Grid.Column="0" Glyph="&#xEBE8;" FontSize="15" Margin="0,0,12,0"/>
+                                    <TextBlock Grid.Column="1" x:Name="LabelDiagnostics" Text="Chẩn đoán kỹ thuật" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
                         </StackPanel>
@@ -148,7 +222,8 @@
                         
                         <Button x:Name="NavSettings" Tag="settings" Click="OnNavClick" HorizontalAlignment="Stretch"
                                 Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" 
-                                Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left">
+                                Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left"
+                                ToolTipService.ToolTip="Cài đặt hệ thống" AutomationProperties.Name="Cài đặt hệ thống">
                             <Grid ColumnDefinitions="Auto,*">
                                 <FontIcon Grid.Column="0" Glyph="&#xE713;" FontSize="15" Margin="0,0,12,0"/>
                                 <TextBlock Grid.Column="1" x:Name="LabelSettings" Text="Cài đặt hệ thống" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>

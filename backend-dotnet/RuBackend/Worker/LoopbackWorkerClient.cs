@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
+using RuBackend.Diagnostics;
 
 namespace RuBackend.Worker;
 
@@ -36,7 +37,8 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
             request.RequestId,
             WorkerMessageTypes.ChatStart,
             null,
-            []));
+            [],
+            CorrelationContext.Current));
 
         await using var connection = new WorkerConnection(_options);
         var hello = await connection.ConnectAsync(cancellationToken);
@@ -54,7 +56,8 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
                 request.RequestId,
                 WorkerMessageTypes.ChatStart,
                 null,
-                BuildChatPayload(request));
+                BuildChatPayload(request),
+                CorrelationContext.Current);
             await using var enumerator = connection
                 .SendRequestAsync(envelope, receiveCancellation.Token)
                 .GetAsyncEnumerator();
@@ -110,7 +113,8 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
             {
                 ["prompt"] = prompt,
                 ["response"] = response,
-            });
+            },
+            CorrelationContext.Current);
 
         await foreach (var item in connection.SendRequestAsync(request, cancellationToken))
         {
@@ -143,7 +147,8 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
             requestId,
             WorkerMessageTypes.VtsCatalog,
             null,
-            new JsonObject { ["operation"] = "catalog" });
+            new JsonObject { ["operation"] = "catalog" },
+            CorrelationContext.Current);
 
         await foreach (var item in connection.SendRequestAsync(request, cancellationToken))
         {
@@ -191,7 +196,8 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
                 ["operation"] = "action",
                 ["codes"] = new JsonArray(
                     normalized.Select(code => (JsonNode?)code).ToArray()),
-            });
+            },
+            CorrelationContext.Current);
 
         await foreach (var item in connection.SendRequestAsync(request, cancellationToken))
         {
@@ -236,7 +242,8 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
             $"health-{Guid.NewGuid():N}",
             WorkerMessageTypes.WorkerHealth,
             null,
-            []);
+            [],
+            CorrelationContext.Current);
 
         await foreach (var item in connection.SendRequestAsync(request, cancellationToken))
         {
@@ -286,7 +293,8 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
                 ["path_and_query"] = request.PathAndQuery,
                 ["content_type"] = request.ContentType,
                 ["body"] = System.Text.Encoding.UTF8.GetString(request.Body),
-            });
+            },
+            CorrelationContext.Current);
 
         await foreach (var item in connection.SendRequestAsync(envelope, cancellationToken))
         {
@@ -359,7 +367,8 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
                     ["voice_label"] = request.VoiceLabel,
                     ["speed"] = request.Speed,
                     ["voice_style_id"] = request.VoiceStyleId,
-                });
+                },
+                CorrelationContext.Current);
             await using var enumerator = connection
                 .SendRequestAsync(envelope, receiveCancellation.Token)
                 .GetAsyncEnumerator();

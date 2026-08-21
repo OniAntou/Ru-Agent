@@ -4,6 +4,7 @@ using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
 using RuBackend.Configuration;
 using RuBackend.Conversation;
+using RuBackend.Diagnostics;
 using RuBackend.Memory;
 using RuBackend.Runtime;
 using RuBackend.Security;
@@ -44,6 +45,16 @@ builder.Services.AddSingleton<ISettingsTransitionService, SettingsTransitionServ
 builder.Services.AddSingleton<ISessionStore, SessionStore>();
 builder.Services.AddSingleton<IHistoryStore, HistoryStore>();
 builder.Services.AddSingleton<IActivityLogStore, ActivityLogStore>();
+builder.Services.AddSingleton<ActivityLogMigrationService>();
+builder.Services.AddHostedService<ActivityOutboxIngestionService>();
+builder.Services.AddSingleton(services =>
+    new StructuredDiagnosticLogWriter(services.GetRequiredService<DataPaths>().LogRoot, "aspnetcore-"));
+builder.Services.AddSingleton<IDiagnosticEmitter, DiagnosticEmitter>();
+builder.Services.AddSingleton<ILoggerProvider, StructuredDiagnosticLoggerProvider>();
+builder.Services.AddSingleton(services =>
+    new DiagnosticRetentionService(services.GetRequiredService<DataPaths>().LogRoot));
+builder.Services.AddHostedService(services =>
+    services.GetRequiredService<DiagnosticRetentionService>());
 builder.Services.AddSingleton(BuildMemorySqliteOptions(builder.Configuration));
 builder.Services.AddSingleton<IMemoryRepository, SqliteMemoryRepository>();
 builder.Services.AddSingleton<IMemoryPolicy, MemoryPolicy>();
@@ -53,14 +64,23 @@ builder.WebHost.UseUrls(
 
 var app = builder.Build();
 
+using (var scope = app.Services.CreateScope())
+{
+    var migration = scope.ServiceProvider.GetRequiredService<ActivityLogMigrationService>();
+    await migration.MigrateAsync();
+}
+
 app.UseWebSockets();
+app.UseMiddleware<CorrelationMiddleware>();
 app.UseMiddleware<DesktopTokenMiddleware>();
 app.UseMiddleware<RequestSizeMiddleware>();
+app.UseMiddleware<DiagnosticRequestMiddleware>();
 
 app.MapMethods("/{**path}", new[] { HttpMethods.Options }, () => Results.NoContent());
 ChatWebSocketEndpoint.Map(app);
 VoiceStreamEndpoint.Map(app);
 BusinessEndpoints.Map(app);
+DiagnosticEndpoints.Map(app);
 MemoryEndpoints.Map(app);
 StatusEndpoints.Map(app);
 VoiceEndpoints.Map(app);
@@ -74,6 +94,8 @@ static DataPaths BuildDataPaths(IConfiguration configuration)
 {
     var dataRoot = configuration["RU_DATA_ROOT"]
         ?? Environment.GetEnvironmentVariable("RU_DATA_ROOT");
+    var logRoot = configuration["RU_LOG_ROOT"]
+        ?? Environment.GetEnvironmentVariable("RU_LOG_ROOT");
     var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     if (string.IsNullOrWhiteSpace(userProfile))
     {
@@ -90,7 +112,8 @@ static DataPaths BuildDataPaths(IConfiguration configuration)
         Directory.GetCurrentDirectory(),
         userProfile,
         localAppData,
-        dataRoot);
+        dataRoot,
+        logRoot);
 }
 
 static MemorySqliteOptions BuildMemorySqliteOptions(IConfiguration configuration)

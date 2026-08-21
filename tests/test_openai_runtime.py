@@ -335,6 +335,50 @@ def test_fetch_models_raises_for_cloud_when_key_is_blank() -> None:
         OpenAIRuntime.fetch_models("", "https://opencode.ai/zen/v1")
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://attacker.example/api/1234",
+        "https://localhost.attacker.example/v1",
+        "https://example.test/11434/v1",
+        "http://192.168.1.50:1234/v1",
+    ],
+)
+def test_generate_rejects_remote_urls_that_contain_local_tokens(monkeypatch, base_url: str) -> None:
+    runtime = OpenAIRuntime("", base_url=base_url)
+    monkeypatch.setattr(runtime, "_read_stream", lambda *args, **kwargs: "unexpected")
+
+    with pytest.raises(ValueError, match="missing"):
+        runtime.generate(
+            [("user", "hello")],
+            max_new_tokens=32,
+            temperature=0.7,
+            top_k=20,
+            max_retries=0,
+        )
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://localhost:11434/v1",
+        "http://127.0.0.1:1234/v1",
+        "http://[::1]:8000/v1",
+    ],
+)
+def test_generate_allows_exact_loopback_urls_without_api_key(monkeypatch, base_url: str) -> None:
+    runtime = OpenAIRuntime("", base_url=base_url)
+    monkeypatch.setattr(runtime, "_read_stream", lambda *args, **kwargs: "local response")
+
+    assert runtime.generate(
+        [("user", "hello")],
+        max_new_tokens=32,
+        temperature=0.7,
+        top_k=20,
+        max_retries=0,
+    ) == "local response"
+
+
 def test_model_runner_supports_ollama_and_lmstudio_backends() -> None:
     from ru_runtime.generation.runner import (
         ModelRunner,

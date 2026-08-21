@@ -1,0 +1,313 @@
+import os
+import sys
+import time
+import argparse
+import tempfile
+import statistics
+from pathlib import Path
+
+# Add src to path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
+from ru_runtime.persistence.diagnostic_log import DiagnosticLogWriter
+from ru_runtime.persistence.activity_outbox import ActivityOutboxWriter
+from ru_runtime.voice.vietnamese_tts_normalizer import normalize_vietnamese_tts_text
+from ru_runtime.worker.v1.protocol import encode_envelope, validate_envelope, CHAT_START, VOICE_START, VTS_ACTION
+
+
+def run_benchmark(samples: int = 30, output_path: str = None):
+    print(f"Running logging performance benchmark with {samples} paired samples per real pipeline path...")
+    # Average a small batch per sample so scheduler noise does not dominate
+    # the sub-millisecond enqueue cost being gated.
+    repetitions_per_sample = 5
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        diag_dir = Path(tmp_dir) / "diag"
+        activity_dir = Path(tmp_dir) / "activity"
+        diag_writer = DiagnosticLogWriter(log_dir=str(diag_dir), batch_size=100)
+        activity_writer = ActivityOutboxWriter(log_dir=str(activity_dir), batch_size=100)
+
+        paths = [
+            "chat_pipeline",
+            "voice_pipeline",
+            "stt_pipeline",
+            "vts_pipeline",
+            "observation_pipeline",
+        ]
+        results = {}
+
+        for path in paths:
+            # Baseline work functions representing the typical CPU cycle of each pipeline (~15 ms)
+            def do_chat_work():
+                total = 0
+                for _ in range(1500):
+                    payload = {
+                        "v": 1,
+                        "id": "req-chat-01",
+                        "type": CHAT_START,
+                        "seq": 0,
+                        "payload": {
+                            "prompt": "Chào Ru, hôm nay em thế nào rồi? Có chuyện gì vui không kể anh nghe với nha!",
+                            "session_id": "session-123",
+                            "history": [{"role": "user", "text": "Hi"}],
+                        },
+                    }
+                    encoded = encode_envelope(payload)
+                    decoded = validate_envelope(encoded if isinstance(encoded, dict) else payload)
+                    total += sum(b for b in str(decoded).encode("utf-8"))
+                return total
+
+            def do_voice_work():
+                total = 0
+                for _ in range(1000):
+                    text = "Chào chủ nhân yêu dấu, em là Ru nè, rất vui được trò chuyện cùng anh!"
+                    norm = normalize_vietnamese_tts_text(text)
+                    payload = {
+                        "v": 1,
+                        "id": "req-voice-01",
+                        "type": VOICE_START,
+                        "seq": 0,
+                        "payload": {"text": norm, "voice_label": "Ru (OmniVoice)", "speed": 1.0},
+                    }
+                    encoded = encode_envelope(payload)
+                    total += len(encoded)
+                return total
+
+            def do_stt_work():
+                total = 0
+                for _ in range(1000):
+                    sample_text = "Em đang làm gì đó Ru ơi, có thể giúp anh một việc được không?"
+                    norm = normalize_vietnamese_tts_text(sample_text)
+                    total += len(norm)
+                return total
+
+            def do_vts_work():
+                total = 0
+                for _ in range(2500):
+                    payload = {
+                        "v": 1,
+                        "id": "req-vts-01",
+                        "type": VTS_ACTION,
+                        "seq": 0,
+                        "payload": {"codes": ["*nod*", "*smile*"]},
+                    }
+                    encoded = encode_envelope(payload)
+                    decoded = validate_envelope(encoded if isinstance(encoded, dict) else payload)
+                    total += len(encoded) + len(decoded)
+                return total
+
+            def do_observation_work():
+                total = 0
+                for _ in range(1200):
+                    scene = "Code editor with python file open in IDE"
+                    event = "User typed a new function implementation"
+                    reaction = normalize_vietnamese_tts_text("Chủ nhân đang viết code chăm chỉ quá nè!")
+                    total += len(scene) + len(event) + len(reaction)
+                return total
+
+            work_map = {
+                "chat_pipeline": do_chat_work,
+                "voice_pipeline": do_voice_work,
+                "stt_pipeline": do_stt_work,
+                "vts_pipeline": do_vts_work,
+                "observation_pipeline": do_observation_work,
+            }
+            work_fn = work_map[path]
+
+            def emit_logging_event(event_index):
+                if path == "chat_pipeline":
+                    activity_writer.try_enqueue({"type": "chat", "data": {"role": "user", "preview": "test message"}, "session_id": "s_1"})
+                    diag_writer.try_enqueue(
+                        DiagnosticEvent(
+                            event_id=f"evt_chat_{event_index}",
+                            ts=time.time(),
+                            iso="2026-08-20T12:00:00.000Z",
+                            level="info",
+                            component="worker.chat",
+                            event_code="chat_completed",
+                            duration_ms=0.2,
+                        )
+                    )
+
+                elif path == "voice_pipeline":
+                    diag_writer.try_enqueue(
+                        DiagnosticEvent(
+                            event_id=f"evt_voice_{event_index}",
+                            ts=time.time(),
+                            iso="2026-08-20T12:00:00.000Z",
+                            level="info",
+                            component="worker.voice",
+                            event_code="voice_completed",
+                            duration_ms=0.3,
+                        )
+                    )
+                elif path == "stt_pipeline":
+                    diag_writer.try_enqueue(
+                        DiagnosticEvent(
+                            event_id=f"evt_stt_{event_index}",
+                            ts=time.time(),
+                            iso="2026-08-20T12:00:00.000Z",
+                            level="info",
+                            component="worker.stt",
+                            event_code="stt_completed",
+                            duration_ms=0.1,
+                        )
+                    )
+                elif path == "vts_pipeline":
+                    activity_writer.try_enqueue({"type": "vts_action", "data": {"category": "nod", "status": "ok"}, "session_id": "s_1"})
+                    diag_writer.try_enqueue(
+                        DiagnosticEvent(
+                            event_id=f"evt_vts_{event_index}",
+                            ts=time.time(),
+                            iso="2026-08-20T12:00:00.000Z",
+                            level="info",
+                            component="worker.vts",
+                            event_code="vts_action_completed",
+                            duration_ms=0.1,
+                        )
+                    )
+                elif path == "observation_pipeline":
+                    activity_writer.try_enqueue({"type": "observation_reaction", "data": {"preview": "test", "scene": "screen"}, "session_id": "s_1"})
+                    diag_writer.try_enqueue(
+                        DiagnosticEvent(
+                            event_id=f"evt_obs_{event_index}",
+                            ts=time.time(),
+                            iso="2026-08-20T12:00:00.000Z",
+                            level="info",
+                            component="worker.observation",
+                            event_code="observation_completed",
+                            duration_ms=0.2,
+                        )
+                    )
+
+            def measure_baseline():
+                t0 = time.perf_counter()
+                for _ in range(repetitions_per_sample):
+                    work_fn()
+                return (time.perf_counter() - t0) * 1000.0 / repetitions_per_sample
+
+            def measure_logging(event_index):
+                t0 = time.perf_counter()
+                for repeat in range(repetitions_per_sample):
+                    work_fn()
+                    emit_logging_event((event_index * repetitions_per_sample) + repeat)
+                return (time.perf_counter() - t0) * 1000.0 / repetitions_per_sample
+
+            # Warm-up (run 15 iterations to stabilize CPU caches)
+            for _ in range(15):
+                work_fn()
+
+            baseline_times = []
+            logging_times = []
+
+            # Interleaved paired sampling to avoid CPU throttling / scheduling bias
+            import gc
+            for i in range(samples):
+                gc.collect()
+                gc.disable()
+                try:
+                    # Alternate order to avoid attributing one-sided CPU
+                    # throttling or scheduler spikes to the second mode.
+                    if i % 2 == 0:
+                        baseline_time = measure_baseline()
+                        logging_time = measure_logging(i)
+                    else:
+                        logging_time = measure_logging(i)
+                        baseline_time = measure_baseline()
+                    baseline_times.append(baseline_time)
+                    logging_times.append(logging_time)
+                finally:
+                    gc.enable()
+
+            def percentile(values, quantile):
+                ordered = sorted(values)
+                if len(ordered) == 1:
+                    return ordered[0]
+                position = (len(ordered) - 1) * quantile
+                lower = int(position)
+                upper = min(len(ordered) - 1, lower + 1)
+                fraction = position - lower
+                return ordered[lower] + ((ordered[upper] - ordered[lower]) * fraction)
+
+            base_p50 = statistics.median(baseline_times)
+            base_p95 = percentile(baseline_times, 0.95)
+            base_p99 = percentile(baseline_times, 0.99)
+
+            log_p50 = statistics.median(logging_times)
+            log_p95 = percentile(logging_times, 0.95)
+            log_p99 = percentile(logging_times, 0.99)
+
+            # Gate the reported tail percentiles against the corresponding
+            # baseline percentiles. Sampling order is still alternated above,
+            # while the percentile comparison avoids pairing unrelated tail
+            # scheduler spikes from two different distributions.
+            delta_p95 = log_p95 - base_p95
+            pct_p95 = (delta_p95 / base_p95) * 100.0 if base_p95 > 0 else 0.0
+            delta_p99 = log_p99 - base_p99
+            pct_p99 = (delta_p99 / base_p99) * 100.0 if base_p99 > 0 else 0.0
+
+            results[path] = {
+                "base_p50": base_p50,
+                "base_p95": base_p95,
+                "base_p99": base_p99,
+                "log_p50": log_p50,
+                "log_p95": log_p95,
+                "log_p99": log_p99,
+                "delta_p95": delta_p95,
+                "pct_p95": pct_p95,
+                "delta_p99": delta_p99,
+                "pct_p99": pct_p99,
+            }
+
+        activity_writer.close()
+        diag_writer.close()
+
+    # Generate Markdown report
+    lines = [
+        "# Logging Performance Benchmark Results",
+        f"\nDate: 2026-08-20 | Samples per path: {samples}\n",
+        "| Operation Path | Baseline p50 (ms) | Baseline p95 (ms) | Baseline p99 (ms) | Logging p50 (ms) | Logging p95 (ms) | Logging p99 (ms) | Delta p95 (ms) | Delta p95 % | Delta p99 (ms) | Delta p99 % | Status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+    ]
+
+    all_passed = True
+    for path, data in results.items():
+        # Gate both tail percentiles: logging overhead must stay within
+        # 2.0 ms and 2.0% at p95 and p99.
+        passed = all(
+            value <= limit
+            for value, limit in (
+                (data["delta_p95"], 2.0),
+                (data["pct_p95"], 2.0),
+                (data["delta_p99"], 2.0),
+                (data["pct_p99"], 2.0),
+            )
+        )
+        if not passed:
+            all_passed = False
+        status_str = "PASS" if passed else "FAIL"
+        lines.append(
+            f"| `{path}` | {data['base_p50']:.3f} | {data['base_p95']:.3f} | {data['base_p99']:.3f} | {data['log_p50']:.3f} | {data['log_p95']:.3f} | {data['log_p99']:.3f} | {data['delta_p95']:+.3f} | {data['pct_p95']:+.1f}% | {data['delta_p99']:+.3f} | {data['pct_p99']:+.1f}% | {status_str} |"
+        )
+
+    report_content = "\n".join(lines) + "\n"
+    print(report_content)
+
+    if output_path:
+        out_file = Path(output_path)
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        out_file.write_text(report_content, encoding="utf-8")
+        print(f"Wrote benchmark report to {output_path}")
+
+    return 0 if all_passed else 1
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Logging performance benchmark")
+    parser.add_argument("--samples", type=int, default=30, help="Samples per path (default: 30)")
+    parser.add_argument("--output", type=str, default=None, help="Markdown report output path")
+    args = parser.parse_args()
+
+    exit_code = run_benchmark(samples=args.samples, output_path=args.output)
+    sys.exit(exit_code)

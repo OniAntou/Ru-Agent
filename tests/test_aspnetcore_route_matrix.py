@@ -7,6 +7,9 @@ from check_aspnetcore_route_matrix import load_route_contract, validate_route_co
 
 EXPECTED_HTTP_ROUTES = {
     ("GET", "/status"),
+    ("GET", "/diagnostics/logs"),
+    ("GET", "/diagnostics/export"),
+    ("GET", "/diagnostics/status"),
     ("GET", "/activity-log"),
     ("DELETE", "/activity-log"),
     ("GET", "/models"),
@@ -52,7 +55,7 @@ EXPECTED_WEBSOCKET_ROUTES = {("WS", "/chat"), ("WS", "/voice/stream")}
 def test_public_route_contract_matches_the_final_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    assert validate_route_contract(repo_root) == (38, 2)
+    assert validate_route_contract(repo_root) == (41, 2)
     contract = load_route_contract(repo_root)
 
     assert {
@@ -72,6 +75,9 @@ def test_every_public_route_has_one_final_aspnet_execution_class() -> None:
     contract = load_route_contract(repo_root)
 
     direct_paths = {
+        "/diagnostics/logs",
+        "/diagnostics/export",
+        "/diagnostics/status",
         "/activity-log",
         "/history",
         "/memory",

@@ -21,7 +21,7 @@ RuApp
   -> ASP.NET Core Public Host :8000
        -> direct business and persistence services
        -> authenticated Runtime Worker protocol v1 :8005
-            -> LFM2.5 and hosted model adapters
+            -> hosted and external OpenAI-compatible provider adapters
             -> Google STT, VTube Studio, and observation implementations
             -> OmniVoice Flask service :5052 in omnivoice_env
 ```
@@ -41,8 +41,8 @@ not claims about the currently running v1/Flask implementation.
 | Owner | Responsibilities |
 | --- | --- |
 | RuApp | Desktop views, playback, microphone capture, public client calls, child lifecycle, and user-visible state. |
-| ASP.NET Core Public Host | Authentication, limits, all 38 HTTP and 2 WebSocket routes, settings transactions, credentials, sessions, history, activity, structured memory, chat ordering, public error mapping, and metadata filtering. |
-| Runtime Worker | Model/device implementations that materially require Python: generation, provider adapters, STT execution, VTS, observation, and current OmniVoice coordination. |
+| ASP.NET Core Public Host | Authentication, limits, all 41 HTTP and 2 WebSocket routes, settings transactions, credentials, sessions, history, activity, structured memory, chat ordering, public error mapping, and metadata filtering. |
+| Runtime Worker | Provider adapters and device implementations that materially require Python: generation, STT execution, VTS, observation, and current OmniVoice coordination. |
 | Voice Engine | OmniVoice model lifecycle and native WAV synthesis inside its isolated environment; currently reached through Flask and replaced by framed process I/O in a later plan. |
 
 Unknown public paths stop in ASP.NET Core. Python has no public HTTP fallback,
@@ -52,7 +52,7 @@ forwarding catch-all, route ownership selector, or alternate host mode.
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-38 HTTP method/path pairs and 2 WebSocket routes (`/chat` and
+41 HTTP method/path pairs and 2 WebSocket routes (`/chat` and
 `/voice/stream`). REST and WebSocket clients authenticate with the desktop
 secret. ASP.NET Core maps every public response and error.
 
@@ -79,7 +79,7 @@ Manager rather than JSON files.
 The transactional migration from `~\.minigpt` completed on 2026-08-17 with
 copy, validation, hashing, atomic activation, readability checks, and
 credential migration performed before legacy records were retired; see
-[docs/validation/plan3-task6-migration-evidence.md](validation/plan3-task6-migration-evidence.md).
+[ADR 0004](adr/0004-canonical-ru-data-location.md).
 
 ## Privacy boundary
 

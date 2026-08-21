@@ -14,9 +14,10 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: python -m pip install --upgrade pip
-      - run: pip install -e ".[dev,runtime,gguf]"
+      - run: pip install -e ".[dev,runtime]"
       - run: python -m pytest -q
       - run: python scripts/check_aspnetcore_route_matrix.py
+      - run: python scripts/aspnetcore_compatibility_harness.py --deterministic-chat --output artifacts/aspnetcore/ci-deterministic-chat-gate.json
       - run: pip check
 
   dotnet:

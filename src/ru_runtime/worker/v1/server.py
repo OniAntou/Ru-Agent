@@ -7,6 +7,9 @@ import hmac
 import json
 import logging
 import os
+import time
+import uuid
+from datetime import datetime, timezone
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeAlias
@@ -14,6 +17,12 @@ from typing import Any, TypeAlias
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
+from ru_runtime.persistence.diagnostic_context import correlation_scope
+from ru_runtime.persistence.diagnostic_log import (
+    get_diagnostic_log_writer,
+    install_diagnostic_logging_handler,
+)
+from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
 from ru_runtime.worker.v1.protocol import (
     CHAT_CANCEL,
     CHAT_START,
@@ -79,6 +88,7 @@ async def serve_worker(
     if not isinstance(token, str) or not token.strip():
         raise ValueError("worker token is required")
 
+    install_diagnostic_logging_handler(get_diagnostic_log_writer())
     shutdown = stop_event or asyncio.Event()
 
     async def handle(connection: ServerConnection) -> None:
@@ -265,6 +275,7 @@ async def _handle_connection(
                     dict(envelope["payload"]),
                     handler,
                     cancelled,
+                    envelope.get("correlation_id"),
                 )
             )
             request_tasks[request_id] = task
@@ -297,50 +308,90 @@ async def _run_request(
     payload: WorkerPayload,
     handler: WorkerHandler,
     cancelled: asyncio.Event,
+    correlation_id: str | None = None,
 ) -> None:
-    sequence = 0
-    try:
-        async for reply in handler(payload, cancelled):
-            if cancelled.is_set():
-                raise asyncio.CancelledError
+    with correlation_scope(correlation_id):
+        sequence = 0
+        t0 = asyncio.get_event_loop().time()
+        diag_writer = get_diagnostic_log_writer()
+        try:
+            async for reply in handler(payload, cancelled):
+                if cancelled.is_set():
+                    raise asyncio.CancelledError
 
-            response_payload = dict(reply.payload)
-            binary = reply.binary
-            announces_binary = (
-                reply.type == VOICE_CONTROL
-                and response_payload.get("state") == "audio_ready"
-            ) or (
-                reply.type == RUNTIME_RESPONSE
-                and response_payload.get("binary") is True
-            )
-            if announces_binary and not binary:
-                raise ValueError("announced binary requires non-empty payload")
-            if binary is not None and (not binary or not announces_binary):
-                raise ValueError("binary frame requires an announcing control")
-            if binary is not None:
-                response_payload["byte_length"] = len(binary)
-
-            envelope = {
-                "v": PROTOCOL_VERSION,
-                "id": request_id,
-                "type": reply.type,
-                "seq": sequence,
-                "payload": response_payload,
-            }
-            async with send_lock:
-                await connection.send(encode_envelope(envelope))
+                response_payload = dict(reply.payload)
+                binary = reply.binary
+                announces_binary = (
+                    reply.type == VOICE_CONTROL
+                    and response_payload.get("state") == "audio_ready"
+                ) or (
+                    reply.type == RUNTIME_RESPONSE
+                    and response_payload.get("binary") is True
+                )
+                if announces_binary and not binary:
+                    raise ValueError("announced binary requires non-empty payload")
+                if binary is not None and (not binary or not announces_binary):
+                    raise ValueError("binary frame requires an announcing control")
                 if binary is not None:
-                    await connection.send(binary)
-            sequence += 1
-    except asyncio.CancelledError:
-        with contextlib.suppress(ConnectionClosed):
-            await _send_error(connection, send_lock, request_id, "cancelled", False, sequence)
-        raise
-    except ConnectionClosed:
-        return
-    except Exception:
-        with contextlib.suppress(ConnectionClosed):
-            await _send_error(connection, send_lock, request_id, "worker_failure", True, sequence)
+                    response_payload["byte_length"] = len(binary)
+
+                envelope: dict[str, Any] = {
+                    "v": PROTOCOL_VERSION,
+                    "id": request_id,
+                    "type": reply.type,
+                    "seq": sequence,
+                    "payload": response_payload,
+                }
+                if correlation_id:
+                    envelope["correlation_id"] = correlation_id
+
+                async with send_lock:
+                    await connection.send(encode_envelope(envelope))
+                    if binary is not None:
+                        await connection.send(binary)
+                sequence += 1
+
+            duration_ms = (asyncio.get_event_loop().time() - t0) * 1000.0
+            if diag_writer:
+                diag_writer.try_enqueue(
+                    DiagnosticEvent(
+                        event_id=f"evt_{uuid.uuid4().hex[:12]}",
+                        ts=time.time(),
+                        iso=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                        level="info",
+                        component="worker",
+                        event_code="worker_completed",
+                        correlation_id=correlation_id,
+                        duration_ms=round(duration_ms, 2),
+                        status="succeeded",
+                    )
+                )
+        except asyncio.CancelledError:
+            with contextlib.suppress(ConnectionClosed):
+                await _send_error(connection, send_lock, request_id, "cancelled", False, sequence)
+            raise
+        except ConnectionClosed:
+            return
+        except Exception:
+            duration_ms = (asyncio.get_event_loop().time() - t0) * 1000.0
+            if diag_writer:
+                diag_writer.try_enqueue(
+                    DiagnosticEvent(
+                        event_id=f"evt_{uuid.uuid4().hex[:12]}",
+                        ts=time.time(),
+                        iso=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                        level="error",
+                        component="worker",
+                        event_code="worker_failed",
+                        correlation_id=correlation_id,
+                        duration_ms=round(duration_ms, 2),
+                        status="failed",
+                        error_code="worker_failure",
+                        exception_kind="unknown",
+                    )
+                )
+            with contextlib.suppress(ConnectionClosed):
+                await _send_error(connection, send_lock, request_id, "worker_failure", True, sequence)
 
 
 def _select_handler(message_type: str, handlers: WorkerHandlers) -> WorkerHandler | None:

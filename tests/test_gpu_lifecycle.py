@@ -14,11 +14,10 @@ def service(events: list[object], name: str, *, available: bool = True) -> Voice
     )
 
 
-def test_omnivoice_warmup_warms_voice_before_releasing_llama() -> None:
+def test_omnivoice_warmup_warms_voice_before_releasing_other_voice_services() -> None:
     events: list[object] = []
     lifecycle = GpuLifecycle(
         threading.Lock(),
-        release_local_runtime=lambda: events.append("release llama"),
         voice_services={"omnivoice": service(events, "omnivoice", available=False)},
         clock=iter((10.0, 12.5)).__next__,
     )
@@ -33,15 +32,13 @@ def test_omnivoice_warmup_warms_voice_before_releasing_llama() -> None:
         "Warming OmniVoice voice...",
         "start omnivoice",
         ("omnivoice", "/warmup", {"voice_profile": "ai_vy"}),
-        "release llama",
     ]
 
 
-def test_voice_warmup_failure_does_not_release_llama() -> None:
+def test_voice_warmup_failure_does_not_release_other_services() -> None:
     events: list[object] = []
     lifecycle = GpuLifecycle(
         threading.Lock(),
-        release_local_runtime=lambda: events.append("release llama"),
         voice_services={
             "omnivoice": VoiceServiceController(
                 available=lambda: False,
@@ -61,18 +58,3 @@ def test_voice_warmup_failure_does_not_release_llama() -> None:
         pass
     else:
         raise AssertionError("expected warmup failure to raise RuntimeError")
-
-    assert "release llama" not in events
-
-
-def test_local_generation_releases_every_available_voice_service() -> None:
-    events: list[object] = []
-    lifecycle = GpuLifecycle(
-        threading.Lock(),
-        release_local_runtime=lambda: events.append("release llama"),
-        voice_services={"omnivoice": service(events, "omnivoice")},
-    )
-
-    lifecycle.prepare_local_generation()
-
-    assert events == [("omnivoice", "/release", None)]

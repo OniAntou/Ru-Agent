@@ -32,11 +32,6 @@ def _search_executor_locked() -> ThreadPoolExecutor:
     return _SEARCH_EXECUTOR
 
 
-def _search_executor() -> ThreadPoolExecutor:
-    with _SEARCH_EXECUTOR_LOCK:
-        return _search_executor_locked()
-
-
 def shutdown_search_executor() -> None:
     global _SEARCH_EXECUTOR, _SEARCH_EXECUTOR_SHUTTING_DOWN
     with _SEARCH_EXECUTOR_LOCK:

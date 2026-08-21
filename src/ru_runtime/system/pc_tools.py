@@ -172,10 +172,7 @@ def open_application_or_url(target: str) -> tuple[bool, str]:
                 break
 
     if not matched_exe:
-        if target_clean.endswith(".exe") and not any(c in target_clean for c in [":", "/", "\\", "..", ";", "&", "|"]):
-            matched_exe = target_clean
-        else:
-            return False, f"Không tìm thấy ứng dụng hoặc không được phép mở: '{target}'"
+        return False, f"Không tìm thấy ứng dụng hoặc không được phép mở: '{target}'"
 
     try:
         if platform.system() == "Windows":

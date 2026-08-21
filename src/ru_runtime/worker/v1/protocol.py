@@ -120,6 +120,13 @@ def validate_envelope(value: object) -> dict[str, Any]:
     }
     if sequence is not None:
         normalized["seq"] = sequence
+
+    correlation_id = value.get("correlation_id") or value.get("correlationId")
+    if correlation_id is not None:
+        if not isinstance(correlation_id, str) or not correlation_id.strip() or len(correlation_id) > 64:
+            raise ProtocolError("invalid_correlation_id")
+        normalized["correlation_id"] = correlation_id.strip()
+
     return normalized
 
 

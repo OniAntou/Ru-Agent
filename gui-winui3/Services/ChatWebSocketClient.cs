@@ -204,7 +204,8 @@ namespace RuApp.Services
                 throw new InvalidOperationException("WebSocket không khả dụng.");
             }
 
-            var payload = new { prompt = messageText, session_id = sessionId };
+            var correlationId = $"c_{Guid.NewGuid():N}";
+            var payload = new { prompt = messageText, session_id = sessionId, correlation_id = correlationId };
             string json = JsonSerializer.Serialize(payload);
             byte[] bytes = Encoding.UTF8.GetBytes(json);
             await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);

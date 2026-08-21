@@ -267,7 +267,9 @@ namespace RuApp.Views
         {
             if (RootGrid == null || RootGrid.ActualWidth <= 0) return;
 
-            double targetWidth = Math.Max(280, Math.Min(900, RootGrid.ActualWidth - 64));
+            double horizontalInset = RootGrid.ActualWidth < 900 ? 24 : 64;
+            double availableWidth = Math.Max(160, RootGrid.ActualWidth - horizontalInset);
+            double targetWidth = Math.Min(InputMaxWidth, availableWidth);
 
             if (InputBorder != null)
             {
@@ -448,7 +450,7 @@ namespace RuApp.Views
                 }
                 else if (error.Contains("model") || error.Contains("load"))
                 {
-                    return "Lỗi load model. Kiểm tra: Model file có tồn tại? Checkpoint path có đúng? GGUF files có đầy đủ?";
+                    return "Lỗi kết nối provider. Kiểm tra model name, endpoint và credential trong Settings.";
                 }
                 else if (error.Contains("memory") || error.Contains("GPU"))
                 {

@@ -16,13 +16,7 @@ public partial class App : Application
         InitializeComponent();
         this.UnhandledException += (s, e) =>
         {
-            try
-            {
-                System.IO.File.WriteAllText(
-                    System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app_crash.txt"),
-                    e.Exception.ToString());
-            }
-            catch { }
+            Services.GuiDiagnosticWriter.WriteCrashEvent(e.Exception);
 
             // Only swallow exceptions that are recoverable; let truly fatal
             // failures crash so bugs are not hidden behind an empty UI.
@@ -58,7 +52,7 @@ public partial class App : Application
     {
         try
         {
-            IntPtr hwnd = FindWindowW(null, "Ru — Local LFM2.5 Conversational Runtime");
+            IntPtr hwnd = FindWindowW(null, "Ru — Conversational Runtime");
             if (hwnd != IntPtr.Zero)
             {
                 ShowWindow(hwnd, 9); // SW_RESTORE

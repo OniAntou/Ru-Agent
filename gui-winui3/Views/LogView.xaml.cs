@@ -107,18 +107,26 @@ namespace RuApp.Views
                 time = "--:--:--";
             }
 
+            string summary = e.Type switch
+            {
+                "chat" => FormatChat(e.Data),
+                "emotion" => FormatEmotion(e.Data),
+                "vts_action" => FormatVts(e.Data),
+                _ => e.Type ?? "",
+            };
+
             string detail =
                 $"Loại: {e.Type ?? "-"}\n" +
                 $"Thời gian (UTC): {e.Iso ?? "-"}\n" +
                 $"Phiên: {e.SessionId ?? "-"}\n" +
-                $"Dữ liệu: {e.Data.ToString()}";
+                $"Nội dung: {summary}";
 
             return e.Type switch
             {
-                "chat" => new LogRow(time, "CHAT", LogRowKind.Chat, FormatChat(e.Data), detail),
-                "emotion" => new LogRow(time, "CẢM XÚC", LogRowKind.Emotion, FormatEmotion(e.Data), detail),
-                "vts_action" => new LogRow(time, "VTS", LogRowKind.Vts, FormatVts(e.Data), detail),
-                _ => new LogRow(time, e.Type ?? "?", LogRowKind.Info, e.Type ?? "", detail),
+                "chat" => new LogRow(time, "CHAT", LogRowKind.Chat, summary, detail),
+                "emotion" => new LogRow(time, "CẢM XÚC", LogRowKind.Emotion, summary, detail),
+                "vts_action" => new LogRow(time, "VTS", LogRowKind.Vts, summary, detail),
+                _ => new LogRow(time, e.Type ?? "?", LogRowKind.Info, summary, detail),
             };
         }
 
@@ -132,9 +140,13 @@ namespace RuApp.Views
         {
             try
             {
-                string role = data.GetProperty("role").GetString() ?? "";
-                string content = data.GetProperty("content").GetString() ?? "";
-                return role == "user" ? $"Anh: {content}" : $"Ru: {content}";
+                string role = data.TryGetProperty("role", out var r) ? (r.GetString() ?? "") : "";
+                string preview = data.TryGetProperty("preview", out var p) ? (p.GetString() ?? "") : "";
+                if (string.IsNullOrEmpty(preview) && data.TryGetProperty("content", out var c))
+                {
+                    preview = c.GetString() ?? "";
+                }
+                return role == "user" ? $"Anh: {preview}" : $"Ru: {preview}";
             }
             catch
             {
@@ -146,7 +158,7 @@ namespace RuApp.Views
         {
             try
             {
-                string emotion = data.GetProperty("emotion").GetString() ?? "không xác định";
+                string emotion = data.TryGetProperty("emotion", out var em) ? (em.GetString() ?? "không xác định") : "không xác định";
                 return $"Cảm xúc: {emotion}";
             }
             catch
@@ -159,16 +171,11 @@ namespace RuApp.Views
         {
             try
             {
-                string facial = data.GetProperty("facial").GetString() ?? string.Empty;
-                string body = data.GetProperty("body").GetString() ?? string.Empty;
-                string codes = data.GetProperty("codes").GetString() ?? string.Empty;
+                string category = data.TryGetProperty("category", out var cat) ? (cat.GetString() ?? "") : "";
+                string status = data.TryGetProperty("status", out var st) ? (st.GetString() ?? "") : "";
 
-                if (!string.IsNullOrEmpty(facial))
-                    return $"Biểu cảm: {facial}";
-                if (!string.IsNullOrEmpty(body))
-                    return $"Cử động: {body}";
-                if (!string.IsNullOrEmpty(codes))
-                    return $"Codes: {codes}";
+                if (!string.IsNullOrEmpty(category))
+                    return $"VTS: {category} ({status})";
                 return "Hành động VTS";
             }
             catch

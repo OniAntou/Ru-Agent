@@ -4,10 +4,9 @@ This record contains the final measured evidence for removing the public
 FastAPI backend. It supersedes the earlier staged-cutover evidence and its
 runtime ownership flags.
 
-Note: the gate counts recorded below predate the architecture-v2 refactor;
-later measured gates are recorded in
-[docs/validation/](validation/). This record remains authoritative for the
-FastAPI decommission itself.
+Note: the gate counts recorded below are historical. Current measured gates
+are recorded in `docs/operations/verification.md`; this record remains
+authoritative for the FastAPI decommission itself.
 
 ## Final architecture and rollback
 

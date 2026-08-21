@@ -13,7 +13,21 @@ public sealed record WorkerEnvelope(
     [property: JsonPropertyName("seq")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     long? Seq,
-    [property: JsonPropertyName("payload")] JsonObject Payload);
+    [property: JsonPropertyName("payload")] JsonObject Payload,
+    [property: JsonPropertyName("correlation_id")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? CorrelationId = null)
+{
+    public WorkerEnvelope(
+        int v,
+        string id,
+        string type,
+        long? seq,
+        JsonObject payload)
+        : this(v, id, type, seq, payload, null)
+    {
+    }
+}
 
 public sealed class WorkerProtocolException : Exception
 {
@@ -32,6 +46,7 @@ public static class WorkerEnvelopeCodec
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
     public static WorkerEnvelope Parse(string json)
@@ -53,12 +68,19 @@ public static class WorkerEnvelopeCodec
                 throw new WorkerProtocolException("invalid_payload");
             }
 
+            string? correlationId = null;
+            if (root.TryGetPropertyValue("correlation_id", out var cNode) && cNode is JsonValue cVal && cVal.TryGetValue<string>(out var cStr))
+            {
+                correlationId = string.IsNullOrWhiteSpace(cStr) ? null : cStr.Trim();
+            }
+
             var envelope = new WorkerEnvelope(
                 version,
                 id,
                 type,
                 sequence,
-                payload.DeepClone().AsObject());
+                payload.DeepClone().AsObject(),
+                correlationId);
             Validate(envelope);
             return envelope;
         }

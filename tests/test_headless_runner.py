@@ -12,14 +12,9 @@ def test_select_backend_rejects_retired_transformers_backend() -> None:
         runner.select_backend("Transformers")
 
 
-def test_release_gpu_stops_gguf_runtime(monkeypatch) -> None:
-    stopped: list[str] = []
-    runner = runtime.ModelRunner()
-    monkeypatch.setattr(runner.gguf_runtime, "stop", lambda: stopped.append("gguf"))
-
-    runner.release_gpu()
-
-    assert stopped == ["gguf"]
+def test_runner_exposes_only_openai_compatible_backends() -> None:
+    assert runtime.ALL_BACKENDS == runtime.OPENAI_COMPATIBLE_BACKENDS
+    assert not hasattr(runtime, "BACKEND_GGUF")
 
 
 def test_kilo_chat_disables_reasoning_by_default() -> None:
@@ -47,85 +42,6 @@ def test_kilo_chat_keeps_reasoning_when_explicitly_enabled() -> None:
     runner._generate((("user", "Giải bài này"),), 128, 0.7, 40)
 
     assert "reasoning_effort_override" not in captured
-
-
-def test_gguf_checkpoint_path_rejects_sibling_prefix(monkeypatch, tmp_path) -> None:
-    runner = runtime.ModelRunner()
-    runner.backend = runtime.BACKEND_GGUF
-    monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
-    sibling = runtime.PROJECT_ROOT / "models-evil" / "checkpoint.gguf"
-
-    with pytest.raises(ValueError, match="must be inside"):
-        runner.load(sibling)
-
-
-def test_gguf_load_defaults_to_lfm25_when_checkpoint_is_blank(monkeypatch) -> None:
-    runner = runtime.ModelRunner()
-    runner.backend = runtime.BACKEND_GGUF
-    monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
-
-    status = runner.load("")
-
-    assert runner.checkpoint_path == runner.gguf_runtime.base_model.resolve()
-    assert "LFM2.5-2.6B Q4_K_M" in status
-
-
-def test_runner_uses_v1_lora_when_only_v1_adapter_exists(monkeypatch, tmp_path) -> None:
-    adapter = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1-lora.gguf"
-    adapter.parent.mkdir(parents=True)
-    adapter.write_bytes(b"adapter")
-    monkeypatch.setattr(runtime, "PROJECT_ROOT", tmp_path)
-
-    runner = runtime.ModelRunner()
-    runner.backend = runtime.BACKEND_GGUF
-    monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
-
-    assert runner.gguf_runtime.adapter == adapter
-    assert "v1 LoRA" in runner.load("")
-
-
-def test_runner_uses_v1_1_lora_by_default_when_v1_and_v1_1_exist(monkeypatch, tmp_path) -> None:
-    adapter_v1 = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1-lora.gguf"
-    adapter_v1_1 = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1_1-lora.gguf"
-    adapter_v1.parent.mkdir(parents=True)
-    adapter_v1.write_bytes(b"adapter1")
-    adapter_v1_1.write_bytes(b"adapter11")
-    monkeypatch.setattr(runtime, "PROJECT_ROOT", tmp_path)
-
-    runner = runtime.ModelRunner()
-    runner.backend = runtime.BACKEND_GGUF
-    monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
-
-    assert runner.gguf_runtime.adapter == adapter_v1_1
-    assert "v1.1 LoRA" in runner.load("")
-
-
-def test_runner_uses_v1_2_lora_by_default_when_it_exists(monkeypatch, tmp_path) -> None:
-    adapter_v1 = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1-lora.gguf"
-    adapter_v1_1 = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1_1-lora.gguf"
-    adapter_v1_2 = tmp_path / "models" / "gguf" / "ru-lfm2.5-2.6b-v1_2-lora.gguf"
-    adapter_v1.parent.mkdir(parents=True)
-    adapter_v1.write_bytes(b"adapter1")
-    adapter_v1_1.write_bytes(b"adapter11")
-    adapter_v1_2.write_bytes(b"adapter12")
-    monkeypatch.setattr(runtime, "PROJECT_ROOT", tmp_path)
-
-    runner = runtime.ModelRunner()
-    runner.backend = runtime.BACKEND_GGUF
-    monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
-
-    assert runner.gguf_runtime.adapter == adapter_v1_2
-    assert "v1.2 LoRA" in runner.load("")
-
-
-def test_gguf_load_migrates_an_allowed_legacy_checkpoint_to_lfm25(monkeypatch) -> None:
-    runner = runtime.ModelRunner()
-    runner.backend = runtime.BACKEND_GGUF
-    monkeypatch.setattr(runner.gguf_runtime, "validate_assets", lambda: None)
-
-    runner.load("checkpoints/ru-llama3.1-8b-instruct-v6.2-fresh")
-
-    assert runner.checkpoint_path == runner.gguf_runtime.base_model.resolve()
 
 
 def test_screen_reaction_uses_hosted_runtime_without_search_memory_or_history() -> None:

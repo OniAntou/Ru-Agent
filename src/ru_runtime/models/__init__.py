@@ -1,1 +1,1 @@
-"""Local and hosted model adapters."""
+"""Runtime-owned voice model assets."""

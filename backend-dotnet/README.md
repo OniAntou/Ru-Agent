@@ -1,7 +1,7 @@
 # Ru ASP.NET Core backend
 
 `RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
-when launched by RuApp and owns all 38 HTTP method/path pairs plus `/chat` and
+when launched by RuApp and owns all 41 HTTP method/path pairs plus `/chat` and
 `/voice/stream`.
 
 ```text
@@ -15,7 +15,7 @@ ASP.NET Core :8000
         v
 Python runtime worker :8005
         |
-        +-- LFM2.5 / hosted model adapters
+        +-- hosted / external OpenAI-compatible provider adapters
         +-- OmniVoice and Google STT
         +-- VTube Studio and observation runtime
 ```

@@ -7,22 +7,19 @@ history. Where automated and live evidence differ, the narrower claim wins.
 
 ## Conversation and generation
 
-The local desktop default is `LFM2.5-2.6B-Q4_K_M.gguf` through the private
-llama.cpp generation kernel. Hosted OpenCode Zen and Kilo Gateway providers are
-optional adapters. Switching models must preserve one-owner GPU lifecycle,
-bounded context, cancellation, streamed visible-text normalization, and public
-error mapping by ASP.NET Core.
+The cloud-first desktop default is OpenCode Zen. Hosted OpenCode Zen and Kilo
+Gateway providers are the supported cloud adapters; OpenAI-compatible custom
+adapters remain available for explicitly configured external services. Ru no
+longer ships or starts an in-process conversational model. Switching providers
+must preserve bounded context, cancellation, streamed visible-text
+normalization, and public error mapping by ASP.NET Core. Stale `llama.cpp` or
+GGUF settings migrate to the cloud default and cannot select a removed runtime.
 
 Ru mirrors Vietnamese, English, and mixed-language turns. In Vietnamese Ru
 calls the user `anh` and itself `em`. Chat contains no Unicode emoji or ASCII
 emoticons. Search commands, model controls, voice pace, VTS actions, segment
 identifiers, and transport timings are private metadata and must be removed
 before display, TTS, history, memory, logs, or reviewed examples.
-
-The model-neutral V5 evaluation suite is exposed by
-`scripts/evaluate_ru_model.py` and `configs/ru_judge_eval.json`. Deterministic
-hard rules run without an external judge. Judge scores are supporting evidence;
-they do not replace bilingual conversation and context review.
 
 ## Voice output
 
@@ -62,15 +59,33 @@ appearance remain user-run acceptance checks.
 
 ## Observation and desktop overlay
 
-Local desktop capture and the former local vision provider are disabled. The
-ASP.NET Core observation contract remains bounded and reports `disabled` when
-no replacement provider is configured. It must not pretend that capture or a
-reaction occurred.
+Screen observation is opt-in. With a Gemini Vision key and a supported hosted
+generation backend, the private worker captures bounded JPEG frames, sends
+them to the configured Gemini model, and publishes a reaction event containing
+real counters, a reaction ID, and an acknowledgement boundary. WinUI polls the
+bounded status contract and passes each event through `VoicePlaybackService`,
+so MediaPlayer playback, subtitles, VTS speaking state, and acknowledgement
+share the normal voice path. Missing credentials, stale events, or a busy chat
+must report a skip/error and must not pretend that capture, reaction, or audio
+playback occurred.
 
 `RuDesktopOverlay` is an optional separate Spout2 receiver. It does not own
 RuApp, VTube Studio, the model, VTS actions, or voice. Building the receiver may
 use a local vcpkg cache; the cache is build infrastructure, not application
 data or a distributable artifact.
+
+## WinUI responsive shell
+
+The WinUI shell has three presentation tiers based on client width: Wide at
+1280 px and above, Compact from 900 through 1279 px, and Narrow below 900 px.
+Wide keeps the resizable 180–400 px sidebar; Compact keeps labels with tighter
+spacing and 180–320 px bounds; Narrow uses a 72 px icon rail and stacks page
+controls. These transitions are presentation-only and do not call the backend,
+restart polling, recreate list sources, or alter audio/VTS behavior.
+
+Automated tests cover policy boundaries, XAML state markers, vertical-only list
+surfaces, and build correctness. Visual resizing at representative window sizes
+remains a user-run acceptance check.
 
 ## Persistence and privacy
 
@@ -78,13 +93,20 @@ ASP.NET Core owns settings, credentials, sessions/history, activity, structured
 memory, and reviewed-example policy. Business records live in the canonical
 `%LOCALAPPDATA%\Ru` location; the transactional migration from the legacy
 location completed on 2026-08-17 (see
-`docs/validation/plan3-task6-migration-evidence.md`). Windows Credential
+`docs/adr/0004-canonical-ru-data-location.md`). Windows Credential
 Manager remains the secret store.
 
 Logs, telemetry, manifests, and automated evidence may contain fixed event
 types, counts, durations, hashes, and statuses only. They must not contain
 credentials, bearer values, request bodies, user/session identifiers,
 transcripts, raw audio, chat responses, or private VTS/voice metadata.
+
+Technical diagnostics are structured JSONL under `RU_LOG_ROOT` (defaulting to
+`%LOCALAPPDATA%\Ru\logs`) with bounded ASP.NET, Python-worker, and WinUI
+writers. The HTTP boundary records fixed route categories and durations; the
+diagnostics API rejects invalid/oversized queries and caps exports at 2 MB.
+Activity Timeline writes continue through the private worker outbox and
+ASP.NET ingestion path, with read-time re-sanitization for legacy records.
 
 ## Acceptance boundary
 

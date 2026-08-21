@@ -7,7 +7,9 @@ from aspnetcore_compatibility_harness import (
     build_runtime_environment,
     classify_route_for_safe_probe,
     inspect_chat_state,
+    is_valid_wav,
     redact_secrets,
+    safe_probe_status_ok,
     summarize_chat_events,
 )
 from benchmark_aspnetcore_compat import percentile, summarize_samples
@@ -37,6 +39,45 @@ def test_safe_probe_skips_mutating_routes() -> None:
     assert classify_route_for_safe_probe(
         {"method": "WS", "transport": "websocket", "path": "/chat"}
     ) == "websocket"
+
+
+def test_safe_probe_fails_closed_for_auth_routing_and_validation_errors() -> None:
+    entry = {"method": "GET", "transport": "http", "path": "/status"}
+
+    assert safe_probe_status_ok(entry, 200) is True
+    assert safe_probe_status_ok(entry, 401) is False
+    assert safe_probe_status_ok(entry, 404) is False
+    assert safe_probe_status_ok(entry, 422) is False
+    assert safe_probe_status_ok(entry, 500) is False
+
+
+def test_safe_probe_allows_explicitly_offline_optional_devices_only() -> None:
+    assert safe_probe_status_ok(
+        {"path": "/voice/status"},
+        503,
+    ) is True
+    assert safe_probe_status_ok({"path": "/settings"}, 503) is False
+    assert safe_probe_status_ok(
+        {"path": "/status", "classification": "runtime-worker"},
+        503,
+        allow_worker_unavailable=True,
+    ) is True
+
+
+def test_wav_probe_rejects_non_audio_bytes_and_accepts_playable_wav() -> None:
+    assert is_valid_wav(b"RIFF-not-a-wave") is False
+
+    import io
+    import wave
+
+    output = io.BytesIO()
+    with wave.open(output, "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(24_000)
+        audio.writeframes(b"\x00\x00" * 24)
+
+    assert is_valid_wav(output.getvalue()) is True
 
 
 def test_redaction_removes_secrets_without_retaining_body_text() -> None:

@@ -17,8 +17,8 @@ implementations retained in Python.
 _Avoid_: Python backend, upstream server
 
 **Generation Kernel**:
-The module that owns model selection, lifecycle, cancellation, GPU ownership,
-and generation across local and hosted model adapters.
+The module that owns provider selection, cancellation, and generation across
+hosted and explicitly configured OpenAI-compatible adapters.
 _Avoid_: ModelRunner globals, backend core
 
 **Voice Engine**:
@@ -28,7 +28,7 @@ over a private lifecycle/TTS contract.
 _Avoid_: TTS web server, Flask voice server
 
 **Public Contract**:
-The stable authenticated surface of 38 HTTP method/path pairs plus `/chat` and
+The stable authenticated surface of 41 HTTP method/path pairs plus `/chat` and
 `/voice/stream`.
 _Avoid_: Compatibility routes
 
@@ -44,7 +44,7 @@ reviewed examples used by the active product. Business records live under
 `data/conversations`. `RU_DATA_ROOT` isolates both for tests.
 _Avoid_: Cleanup candidates, generated data
 
-**Legacy Llama Assets**:
+**Retired Local Model Assets**:
 Source, configs, scripts, datasets, checkpoints, evaluations, and documents
-whose only supported purpose is Llama 3.1 or a v6.x adapter.
-_Avoid_: Active LFM2.5 assets
+whose only purpose was in-process conversational-model generation or training.
+_Avoid_: Reintroducing local model or training dependencies

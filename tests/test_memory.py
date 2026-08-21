@@ -4,13 +4,13 @@ import threading
 
 import pytest
 
-from ru_runtime.memory.store import MemoryKind, MemoryStore, StructuredMemoryStore
+from ru_runtime.memory.store import MemoryKind, StructuredMemoryStore
 
 
 @pytest.fixture(scope="session")
 def shared_store(tmp_path_factory):
     base = tmp_path_factory.mktemp("shared_memory")
-    store = StructuredMemoryStore(base / "memory.db", index_path=base / "memory.faiss")
+    store = StructuredMemoryStore(base / "memory.db")
     yield store
     store.clear()
 
@@ -20,7 +20,7 @@ def test_structured_store_can_be_created_in_worker_then_read_from_gui_thread(tmp
 
     worker = threading.Thread(
         target=lambda: created.append(
-            StructuredMemoryStore(tmp_path / "memory.db", index_path=tmp_path / "memory.faiss")
+            StructuredMemoryStore(tmp_path / "memory.db")
         )
     )
     worker.start()
@@ -36,21 +36,6 @@ def test_structured_store_can_be_created_in_worker_then_read_from_gui_thread(tmp
     )
 
     assert created[0].get(record.id) == record
-
-
-def test_clear_removes_only_memory_artifacts(tmp_path):
-    index_path = tmp_path / "memory.faiss"
-    texts_path = tmp_path / "memory.json"
-    unrelated_path = tmp_path / "keep.txt"
-    index_path.write_bytes(b"index")
-    texts_path.write_text("[]", encoding="utf-8")
-    unrelated_path.write_text("keep", encoding="utf-8")
-
-    MemoryStore.clear_artifacts(index_path, texts_path)
-
-    assert not index_path.exists()
-    assert not texts_path.exists()
-    assert unrelated_path.read_text(encoding="utf-8") == "keep"
 
 
 def test_store_creates_and_reads_active_record(shared_store):

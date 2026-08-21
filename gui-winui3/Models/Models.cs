@@ -194,9 +194,6 @@ namespace RuApp.Models
         [JsonPropertyName("kilo_reasoning_enabled")]
         public bool KiloReasoningEnabled { get; set; } = false;
 
-        [JsonPropertyName("checkpoint_path")]
-        public string CheckpointPath { get; set; } = string.Empty;
-
         [JsonPropertyName("gemini_vision_api_key")]
         public string GeminiVisionApiKey { get; set; } = string.Empty;
 
@@ -243,10 +240,10 @@ namespace RuApp.Models
         public double Temperature { get; set; } = 0.7;
 
         [JsonPropertyName("top_k")]
-        public int TopK { get; set; } = 40;
+        public int TopK { get; set; } = 50;
 
         [JsonPropertyName("max_new_tokens")]
-        public int MaxNewTokens { get; set; } = 512;
+        public int MaxNewTokens { get; set; } = 256;
 
         [JsonPropertyName("allow_online_search")]
         public bool AllowOnlineSearch { get; set; } = true;
@@ -390,14 +387,14 @@ namespace RuApp.Models
         public bool Enabled { get; set; } = false;
 
         [JsonPropertyName("running")]
-        public bool Running { get; set; } = false;
-
-        [JsonPropertyName("error")]
         public string? Error { get; set; }
     }
 
-    public class ActivityLogEventDto
+    public class ActivityLogItem
     {
+        [JsonPropertyName("event_id")]
+        public string? EventId { get; set; }
+
         [JsonPropertyName("ts")]
         public double Ts { get; set; }
 
@@ -413,6 +410,8 @@ namespace RuApp.Models
         [JsonPropertyName("data")]
         public System.Text.Json.JsonElement Data { get; set; }
     }
+
+    public class ActivityLogEventDto : ActivityLogItem { }
 
     public class VtsConfigDto
     {
@@ -481,7 +480,44 @@ namespace RuApp.Models
         [JsonPropertyName("last_reaction")]
         public string? LastReaction { get; set; }
 
+        [JsonPropertyName("last_reaction_id")]
+        public string? LastReactionId { get; set; }
+
+        [JsonPropertyName("last_reaction_at")]
+        public double? LastReactionAt { get; set; }
+
         [JsonPropertyName("last_error")]
         public string? LastError { get; set; }
     }
+
+    public sealed record DiagnosticEventDto(
+        [property: JsonPropertyName("event_id")] string EventId,
+        [property: JsonPropertyName("ts")] double Ts,
+        [property: JsonPropertyName("iso")] string Iso,
+        [property: JsonPropertyName("level")] string Level,
+        [property: JsonPropertyName("component")] string Component,
+        [property: JsonPropertyName("event_code")] string EventCode,
+        [property: JsonPropertyName("correlation_id")] string? CorrelationId,
+        [property: JsonPropertyName("duration_ms")] double? DurationMs,
+        [property: JsonPropertyName("status")] string? Status,
+        [property: JsonPropertyName("error_code")] string? ErrorCode,
+        [property: JsonPropertyName("exception_kind")] string? ExceptionKind);
+
+    public sealed record DiagnosticLogResultDto(
+        [property: JsonPropertyName("events")] IReadOnlyList<DiagnosticEventDto> Events,
+        [property: JsonPropertyName("cursor")] string? Cursor);
+
+    public sealed record DiagnosticWriterStatusDto(
+        [property: JsonPropertyName("queue_depth")] int QueueDepth,
+        [property: JsonPropertyName("enqueued_count")] long EnqueuedCount,
+        [property: JsonPropertyName("dropped_count")] long DroppedCount,
+        [property: JsonPropertyName("write_failure_count")] long WriteFailureCount,
+        [property: JsonPropertyName("total_bytes")] long TotalBytes,
+        [property: JsonPropertyName("active_files_count")] int ActiveFilesCount);
+
+    public sealed record DiagnosticStatusDto(
+        [property: JsonPropertyName("status")] string Status,
+        [property: JsonPropertyName("total_log_files")] int TotalLogFiles,
+        [property: JsonPropertyName("total_size_bytes")] long TotalSizeBytes,
+        [property: JsonPropertyName("writer")] DiagnosticWriterStatusDto? Writer = null);
 }

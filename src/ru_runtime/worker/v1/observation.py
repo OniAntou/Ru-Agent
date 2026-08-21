@@ -75,11 +75,8 @@ def observation_vision_config() -> dict[str, str]:
         return {"status": "ok", "engine": "gemini"}
     return {
         "status": "disabled",
-        "engine": "local",
-        "message": (
-            "Local screen observation is temporarily disabled while waiting for a "
-            "replacement vision model."
-        ),
+        "engine": "gemini",
+        "message": "Gemini Vision API key is not configured.",
     }
 
 
@@ -239,7 +236,7 @@ def observation_start() -> dict[str, object]:
 
     loop = shared.get_screen_observer_loop()
     loop.start()
-    return {"status": "ok", "active": True}
+    return {"status": "ok", "active": loop.is_running}
 
 
 def observation_stop() -> dict[str, object]:
@@ -247,7 +244,7 @@ def observation_stop() -> dict[str, object]:
 
     loop = shared.get_screen_observer_loop()
     loop.stop()
-    return {"status": "ok", "active": False}
+    return {"status": "ok", "active": loop.is_running}
 
 
 def observation_status() -> dict[str, object]:
@@ -255,37 +252,42 @@ def observation_status() -> dict[str, object]:
 
     loop = shared.get_screen_observer_loop()
     loop_status = loop.status()
+    counters = {
+        "frame_count": loop_status.get("frame_count", 0),
+        "vision_count": loop_status.get("vision_count", 0),
+        "emitted_count": loop_status.get("emitted_count", 0),
+        "stale_drops": loop_status.get("stale_drops", 0),
+    }
+    last_fields = {
+        "last_scene": loop_status.get("last_scene"),
+        "last_event": loop_status.get("last_event"),
+        "last_reaction": loop_status.get("last_reaction"),
+        "last_reaction_id": loop_status.get("last_reaction_id"),
+        "last_reaction_at": loop_status.get("last_reaction_at"),
+        "last_error": loop_status.get("last_error"),
+        "interval_seconds": loop_status.get("interval_seconds", 15.0),
+    }
     if not loop_status["running"]:
         return {
             "status": "disabled",
             "active": False,
-            "frame_count": 0,
-            "vision_count": 0,
-            "emitted_count": 0,
-            "stale_drops": 0,
+            **counters,
             "ms_before": 0,
             "ms_cloud": 0,
             "ms_after": 0,
             "last_motion_delta": 0.0,
-            "engine": "disabled",
+            "engine": loop_status.get("engine", "disabled"),
         }
     return {
         "status": "ok",
         "active": True,
-        "frame_count": 1,
-        "vision_count": 1,
-        "emitted_count": 1,
-        "stale_drops": 0,
+        **counters,
         "ms_before": 0,
         "ms_cloud": 0,
         "ms_after": 0,
         "last_motion_delta": 0.0,
-        "engine": "gemini",
-        "last_scene": loop_status.get("last_scene"),
-        "last_event": loop_status.get("last_event"),
-        "last_reaction": loop_status.get("last_reaction"),
-        "last_error": loop_status.get("last_error"),
-        "interval_seconds": loop_status.get("interval_seconds", 15.0),
+        "engine": loop_status.get("engine", "gemini"),
+        **last_fields,
     }
 
 

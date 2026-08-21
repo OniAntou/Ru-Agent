@@ -30,7 +30,8 @@ public sealed class BackendLaunchPlan
         string authSecret,
         string workerSecret,
         int workerPort,
-        string? edgeExecutable = null)
+        string? edgeExecutable = null,
+        string? configuredLogRoot = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(authSecret);
@@ -49,7 +50,39 @@ public sealed class BackendLaunchPlan
             pythonExecutable = "python.exe";
         }
 
-        var logRoot = Path.Combine(root, "logs");
+        var explicitLogRoot = !string.IsNullOrWhiteSpace(configuredLogRoot)
+            ? configuredLogRoot.Trim()
+            : Environment.GetEnvironmentVariable("RU_LOG_ROOT");
+
+        string resolvedLogRoot;
+        if (!string.IsNullOrWhiteSpace(explicitLogRoot))
+        {
+            resolvedLogRoot = Path.GetFullPath(explicitLogRoot);
+        }
+        else
+        {
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrWhiteSpace(localAppData))
+            {
+                localAppData = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            }
+            if (string.IsNullOrWhiteSpace(localAppData))
+            {
+                localAppData = root;
+            }
+            resolvedLogRoot = Path.Combine(localAppData, "Ru", "logs");
+        }
+
+        var bootstrapRoot = Path.Combine(resolvedLogRoot, "bootstrap");
+        try
+        {
+            Directory.CreateDirectory(bootstrapRoot);
+        }
+        catch
+        {
+            // Ignore directory creation failure; fallback remains best-effort
+        }
+
         if (workerPort == publicPort || workerPort == 8001)
         {
             throw new ArgumentException(
@@ -83,11 +116,13 @@ public sealed class BackendLaunchPlan
         var workerEnvironment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["RU_WORKER_TOKEN"] = workerSecret,
+            ["RU_LOG_ROOT"] = resolvedLogRoot,
         };
         var edgeEnvironment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["RU_DESKTOP_TOKEN"] = authSecret,
             ["RU_WORKER_TOKEN"] = workerSecret,
+            ["RU_LOG_ROOT"] = resolvedLogRoot,
             ["RuBackend__BindUrl"] = $"http://127.0.0.1:{publicPort}",
             ["RuBackend__WorkerUrl"] = $"ws://127.0.0.1:{workerPort}/worker/v1",
         };
@@ -99,8 +134,8 @@ public sealed class BackendLaunchPlan
                 $"-m ru_runtime.worker.v1.server --host 127.0.0.1 --port {workerPort}",
                 root,
                 workerEnvironment,
-                Path.Combine(logRoot, "backend_worker_out.log"),
-                Path.Combine(logRoot, "backend_worker_err.log")),
+                Path.Combine(bootstrapRoot, "backend_worker_out.log"),
+                Path.Combine(bootstrapRoot, "backend_worker_err.log")),
         };
         children.Add(
             new BackendProcessSpec(
@@ -109,8 +144,8 @@ public sealed class BackendLaunchPlan
                 $"--urls http://127.0.0.1:{publicPort}",
                 root,
                 edgeEnvironment,
-                Path.Combine(logRoot, "backend_aspnetcore_out.log"),
-                Path.Combine(logRoot, "backend_aspnetcore_err.log")));
+                Path.Combine(bootstrapRoot, "backend_aspnetcore_out.log"),
+                Path.Combine(bootstrapRoot, "backend_aspnetcore_err.log")));
 
         return new BackendLaunchPlan(publicPort, workerPort, children);
     }

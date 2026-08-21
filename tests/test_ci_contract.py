@@ -8,9 +8,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_ci_uses_current_python_extras_and_route_contract() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert ".[dev,runtime,gguf]" in workflow
+    assert ".[dev,runtime]" in workflow
     assert "dev,server" not in workflow
     assert "scripts/check_aspnetcore_route_matrix.py" in workflow
+    assert "scripts/aspnetcore_compatibility_harness.py --deterministic-chat" in workflow
     assert "python -m pytest -q" in workflow
     assert "pip check" in workflow
 

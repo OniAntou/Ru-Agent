@@ -116,9 +116,9 @@ public sealed class Win32VtsWindowNative : IVtsWindowNative
                 continue;
             }
 
-            foreach (Process process in processes)
+            try
             {
-                using (process)
+                foreach (Process process in processes)
                 {
                     try
                     {
@@ -128,6 +128,13 @@ public sealed class Win32VtsWindowNative : IVtsWindowNative
                     {
                         // The process exited between enumeration and inspection.
                     }
+                }
+            }
+            finally
+            {
+                foreach (Process process in processes)
+                {
+                    process.Dispose();
                 }
             }
         }

@@ -7,19 +7,12 @@ import re
 import sqlite3
 import threading
 import uuid
-import weakref
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
-from typing import List
 
-# The production memory path is SQLite/lexical. Keep the legacy compatibility
-# class disabled without importing multi-hundred-megabyte embedding stacks at
-# backend startup.
-faiss = None
-SentenceTransformer = None
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +30,6 @@ _RETRIEVE_SCAN_LIMIT = 2000
 # Memories not touched for this long are not scanned by lexical retrieval;
 # they stay stored and become visible again when the user interacts with them.
 _RETRIEVE_LOOKBACK_DAYS = 90
-
-_memory_store_registry: weakref.WeakSet[MemoryStore] = weakref.WeakSet()
-
 
 class MemoryKind(StrEnum):
     PROFILE = "profile"
@@ -83,9 +73,8 @@ def _parse_datetime(value: str | None) -> datetime | None:
 
 
 class StructuredMemoryStore:
-    def __init__(self, database_path: str | Path, *, index_path: str | Path):
+    def __init__(self, database_path: str | Path):
         self.database_path = Path(database_path)
-        self.index_path = Path(index_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._database_lock = threading.RLock()
         self._db_conn = None
@@ -463,12 +452,6 @@ class StructuredMemoryStore:
         with self._database_lock, self._db_conn:
             self._db_conn.execute("DELETE FROM memories")
             self._db_conn.execute("DELETE FROM legacy_memory_migrations")
-        stores = list(_memory_store_registry)
-        if stores:
-            for store in stores:
-                store.clear()
-        elif self.index_path.is_file():
-            self.index_path.unlink()
 
     def close(self) -> None:
         with self._database_lock:
@@ -530,116 +513,3 @@ class StructuredMemoryStore:
                 "INSERT OR IGNORE INTO legacy_memory_migrations (source_hash) VALUES (?)", (source_hash,)
             )
         return {"imported": imported, "rejected": rejected}
-
-
-class MemoryStore:
-    @staticmethod
-    def clear_artifacts(index_path: str | Path, texts_path: str | Path) -> None:
-        for path in (Path(index_path), Path(texts_path)):
-            if path.is_file():
-                path.unlink()
-
-    def __init__(self, index_path: str | Path, texts_path: str | Path):
-        self.index_path = Path(index_path)
-        self.texts_path = Path(texts_path)
-        self.texts: List[str] = []
-        self.model = None
-        self.index = None
-        self._lock = threading.RLock()
-
-        if faiss is None or SentenceTransformer is None:
-            logger.warning("faiss-cpu or sentence-transformers is not installed. MemoryStore disabled.")
-            return
-
-        self.index_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info("Loading sentence-transformers/all-MiniLM-L6-v2 model (CPU)...")
-        try:
-            self.model = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
-        except Exception as exc:
-            logger.warning("Failed to load embedding model, MemoryStore disabled: %s", exc)
-            return
-        self.d = self.model.get_embedding_dimension()
-        if self.texts_path.is_file():
-            try:
-                with open(self.texts_path, "r", encoding="utf-8") as file:
-                    loaded = json.load(file)
-                if isinstance(loaded, list):
-                    self.texts = [str(item) for item in loaded]
-                else:
-                    logger.warning("memory_texts.json is not a list, resetting index")
-                    self.texts = []
-            except (json.JSONDecodeError, OSError) as exc:
-                logger.warning("Failed to load memory texts, resetting index: %s", exc)
-                self.texts = []
-        if self.index_path.is_file():
-            try:
-                self.index = faiss.read_index(str(self.index_path))
-                if self.index.ntotal != len(self.texts):
-                    logger.warning("FAISS index size mismatch with texts list. Rebuilding index...")
-                    self.index = None
-            except Exception as exc:
-                logger.warning("Failed to load FAISS index (%s), rebuilding: %s", self.index_path, exc)
-                self.index = None
-            if self.index is None:
-                self._rebuild_index()
-        else:
-            self._rebuild_index()
-        _memory_store_registry.add(self)
-
-    def _rebuild_index(self) -> None:
-        self.index = faiss.IndexFlatL2(self.d)
-        if self.texts:
-            self.index.add(self.model.encode(self.texts, convert_to_numpy=True))
-        self._save()
-
-    def _save(self) -> None:
-        if self.index is not None:
-            tmp_index = self.index_path.with_name(self.index_path.name + ".tmp")
-            faiss.write_index(self.index, str(tmp_index))
-            os.replace(tmp_index, self.index_path)
-        tmp_texts = self.texts_path.with_name(self.texts_path.name + ".tmp")
-        with open(tmp_texts, "w", encoding="utf-8") as file:
-            json.dump(self.texts, file, ensure_ascii=False, indent=2)
-        os.replace(tmp_texts, self.texts_path)
-
-    def add_memory(self, text: str) -> None:
-        if self.model is None or self.index is None:
-            return
-        with self._lock:
-            text = text.strip()
-            if not text or text in self.texts:
-                return
-            backup = faiss.clone_index(self.index)
-            self.index.add(self.model.encode([text], convert_to_numpy=True))
-            self.texts.append(text)
-            try:
-                self._save()
-            except Exception:
-                self.index = backup
-                self.texts.pop()
-                raise
-            logger.info("Saved memory block (Total: %d)", len(self.texts))
-
-    def search_memory(self, query: str, k: int = 2) -> List[str]:
-        if self.model is None or self.index is None or self.index.ntotal == 0:
-            return []
-        with self._lock:
-            _, indices = self.index.search(
-                self.model.encode([query], convert_to_numpy=True), min(k, self.index.ntotal)
-            )
-            return [self.texts[index] for index in indices[0] if 0 <= index < len(self.texts)]
-
-    def clear(self) -> None:
-        with self._lock:
-            self.texts = []
-            if self.index is not None:
-                self.index.reset()
-                self._save()
-            else:
-                self.clear_artifacts(self.index_path, self.texts_path)
-
-    def close(self) -> None:
-        _memory_store_registry.discard(self)
-        with self._lock:
-            self.model = None
-            self.index = None

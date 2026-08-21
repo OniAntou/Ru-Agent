@@ -8,7 +8,6 @@ from ru_runtime.generation.runner import BACKEND_KILO
 
 def test_clear_memory_closes_sqlite_before_removing_database(tmp_path: Path) -> None:
     core = RuRuntimeCore()
-    core.memory_index_path = tmp_path / "memory.faiss"
     core.memory_texts_path = tmp_path / "memory_texts.json"
     core.memory_db_path = tmp_path / "memory.db"
     store = core.get_memory_store()
@@ -22,7 +21,6 @@ def test_clear_memory_closes_sqlite_before_removing_database(tmp_path: Path) -> 
 
 def test_clear_memory_waits_for_an_inflight_remember_write(tmp_path: Path) -> None:
     core = RuRuntimeCore()
-    core.memory_index_path = tmp_path / "memory.faiss"
     core.memory_texts_path = tmp_path / "memory_texts.json"
     core.memory_db_path = tmp_path / "memory.db"
     remember_started = threading.Event()

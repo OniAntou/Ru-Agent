@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -21,11 +22,11 @@ public sealed class MemoryPolicy : IMemoryPolicy
         @"\b(?:api[ _-]?key|password|mật khẩu|token|secret|bearer|authorization|credential|passphrase|access[ _-]?key|số tài khoản|bệnh án)\b|" +
         @"(?:sk|pk|ghp|gho|github_pat)_[A-Za-z0-9_-]+|" +
         @"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|" +
-        @"https?://|\[\[(?:VTS|EMO|VOICE_PACE):",
+        @"https?://|\[\[(?:VTS|EMO|VOICE_PACE):|\[(?:SEARCH|APP_OPEN|VOLUME):",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
-    private static readonly Regex VtsPattern = new(
-        @"\[\[VTS:.*?\]\]",
+    private static readonly Regex PrivateMarkerPattern = new(
+        @"\[\[VTS:[^\]]*\]\]|\[(?:SEARCH|APP_OPEN|VOLUME):[^\]]*\]",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     public IReadOnlyList<MemoryCandidate> ExtractCandidates(string prompt, string response)
@@ -81,11 +82,15 @@ public sealed class MemoryPolicy : IMemoryPolicy
     public bool IsSensitiveOrUnsafe(string text) =>
         string.IsNullOrWhiteSpace(text) || SensitivePattern.IsMatch(text);
 
-    public string StripInternalMetadata(string text) => VtsPattern.Replace(text, string.Empty).Trim();
+    public string StripInternalMetadata(string text) => PrivateMarkerPattern.Replace(text, string.Empty).Trim();
 
-    private static Regex PreferencePattern(string addressName) => new(
-        $@"(?<!\btrai\s)(?<!\bbạn\s)\b{Regex.Escape(addressName)}\s+(?:thích|muốn|ưu tiên)\s+(.{{1,200}}?)(?:\s+và\s+(?:dự án|project)\b|[.!?]|$)",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    private static readonly ConcurrentDictionary<string, Regex> PreferencePatterns = new(StringComparer.OrdinalIgnoreCase);
+
+    private static Regex PreferencePattern(string addressName) => PreferencePatterns.GetOrAdd(
+        addressName,
+        name => new(
+            $@"(?<!\btrai\s)(?<!\bbạn\s)\b{Regex.Escape(name)}\s+(?:thích|muốn|ưu tiên)\s+(.{{1,200}}?)(?:\s+và\s+(?:dự án|project)\b|[.!?]|$)",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase));
 
     private static string NormalizeText(string text) =>
         text.Normalize(NormalizationForm.FormC).Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Trim();

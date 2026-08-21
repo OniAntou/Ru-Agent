@@ -6,7 +6,43 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <ScrollViewer Padding="36,28,36,36" Background="Transparent">
+    <ScrollViewer x:Name="ResponsiveRoot" Padding="36,28,36,36" Background="Transparent"
+                  HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="ResponsiveStates">
+                <VisualState x:Name="Wide">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1280"/>
+                    </VisualState.StateTriggers>
+                </VisualState>
+
+                <VisualState x:Name="Compact">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="900"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="ResponsiveRoot.Padding" Value="24,20,24,28"/>
+                    </VisualState.Setters>
+                </VisualState>
+
+                <VisualState x:Name="Narrow">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="ResponsiveRoot.Padding" Value="12,16,12,24"/>
+                        <Setter Target="ActionButtonsPanel.Orientation" Value="Vertical"/>
+                        <Setter Target="VtsActionButtonsPanel.Orientation" Value="Vertical"/>
+                        <Setter Target="TestTextBox.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="TestVoiceButton.(Grid.Row)" Value="1"/>
+                        <Setter Target="TestVoiceButton.(Grid.Column)" Value="0"/>
+                        <Setter Target="TestVoiceButton.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="TestTextBox.Margin" Value="0,0,0,8"/>
+                        <Setter Target="TestVoiceButton.HorizontalAlignment" Value="Stretch"/>
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
         <StackPanel Spacing="24" HorizontalAlignment="Stretch">
             <!-- Page Title -->
             <StackPanel Spacing="4" Margin="0,0,0,8">
@@ -165,7 +201,7 @@
                     <TextBlock Text="Khởi động trước trọng số mô hình OmniVoice vào VRAM để giảm độ trễ câu đầu tiên, hoặc giải phóng GPU khi cần dùng ứng dụng khác." 
                                FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
 
-                    <StackPanel Orientation="Horizontal" Spacing="14" Margin="0,6,0,0">
+                    <StackPanel x:Name="ActionButtonsPanel" Orientation="Horizontal" Spacing="14" Margin="0,6,0,0">
                         <Button x:Name="WarmupButton" Click="OnWarmupClick" Padding="18,10" 
                                 CornerRadius="{StaticResource AppControlCornerRadius}" 
                                 Background="{StaticResource AppAccentBrush}" Foreground="White" BorderThickness="0">
@@ -190,12 +226,12 @@
             <!-- Voice Sample Tester Card -->
             <Border Style="{StaticResource FluentCardStyle}">
                 <StackPanel Spacing="16">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
+                            <StackPanel x:Name="VtsActionButtonsPanel" Orientation="Horizontal" Spacing="10">
                         <FontIcon Glyph="&#xE767;" FontSize="18" Foreground="{StaticResource AppAccentHoverBrush}" VerticalAlignment="Center"/>
                         <TextBlock Text="Phát thử âm thanh mẫu" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
                     </StackPanel>
 
-                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                    <Grid x:Name="TestVoiceRow" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
                         <TextBox x:Name="TestTextBox" Grid.Column="0" Text="Xin chào, em là Ru! Hôm nay bạn thế nào rồi?" 
                                  Margin="0,0,16,0" VerticalAlignment="Center" Padding="12,10"
                                  CornerRadius="{StaticResource AppControlCornerRadius}"/>

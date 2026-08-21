@@ -35,10 +35,11 @@ public sealed class VoiceStreamClient : IDisposable
             $"ws://127.0.0.1:{port}/voice/stream?token={Uri.EscapeDataString(authSecret)}");
     }
 
-    public static string SerializeStartFrame(string requestId, string text, string voiceLabel, double speed)
+    public static string SerializeStartFrame(string requestId, string text, string voiceLabel, double speed, string? correlationId = null)
     {
+        var corr = string.IsNullOrWhiteSpace(correlationId) ? $"c_{Guid.NewGuid():N}" : correlationId;
         return JsonSerializer.Serialize(
-            new { type = "start", request_id = requestId, text, voice_label = voiceLabel, speed },
+            new { type = "start", request_id = requestId, text, voice_label = voiceLabel, speed, correlation_id = corr },
             JsonOptions);
     }
 

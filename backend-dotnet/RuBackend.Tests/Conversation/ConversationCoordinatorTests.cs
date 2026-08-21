@@ -384,7 +384,7 @@ public sealed class ConversationCoordinatorTests
             _log.Add("settings.read");
             return Task.FromResult(new SettingsSnapshot(
                 new JsonObject { ["api_key"] = "secret" },
-                "llama.cpp",
+                "OpenCode Zen",
                 "local",
                 "open/free",
                 "kilo/free",
@@ -396,7 +396,6 @@ public sealed class ConversationCoordinatorTests
                 true,
                 true,
                 false,
-                string.Empty,
                 "Ru (OmniVoice)",
                 "original",
                 1.0,

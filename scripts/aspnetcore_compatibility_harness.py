@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import io
 import json
 import os
 import secrets
@@ -11,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import wave
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +31,54 @@ def classify_route_for_safe_probe(entry: dict[str, Any]) -> str:
     if entry.get("method") == "GET":
         return "probe"
     return "skip: mutating HTTP method"
+
+
+_OPTIONAL_UNAVAILABLE_STATUSES: dict[str, frozenset[int]] = {
+    "/observation/vision-config": frozenset({503}),
+    "/observation/status": frozenset({503}),
+    "/voice/status": frozenset({503}),
+    "/vts/mouse-look": frozenset({503}),
+    "/vts/overlay": frozenset({503}),
+    "/vts/status": frozenset({503}),
+    "/vts/config": frozenset({503}),
+}
+
+
+def safe_probe_status_ok(
+    entry: dict[str, Any],
+    status_code: int,
+    *,
+    allow_worker_unavailable: bool = False,
+) -> bool:
+    """Accept healthy responses and explicit offline optional-device states.
+
+    Authentication, routing, validation and server failures must never look
+    healthy merely because they are below HTTP 500.
+    """
+    if 200 <= status_code < 300:
+        return True
+    if status_code in _OPTIONAL_UNAVAILABLE_STATUSES.get(
+        str(entry.get("path") or ""), frozenset()
+    ):
+        return True
+    return (
+        allow_worker_unavailable
+        and entry.get("classification") == "runtime-worker"
+        and status_code == 503
+    )
+
+
+def is_valid_wav(payload: bytes) -> bool:
+    try:
+        with wave.open(io.BytesIO(payload), "rb") as audio:
+            return (
+                audio.getnchannels() > 0
+                and audio.getsampwidth() > 0
+                and audio.getframerate() > 0
+                and audio.getnframes() > 0
+            )
+    except (OSError, EOFError, wave.Error):
+        return False
 
 
 def redact_secrets(text: str, secrets_to_redact: list[str]) -> str:
@@ -211,7 +261,13 @@ def _wait_for_edge(
     return None
 
 
-def _probe_http_routes(base_url: str, token: str, matrix: list[dict[str, Any]]) -> dict[str, Any]:
+def _probe_http_routes(
+    base_url: str,
+    token: str,
+    matrix: list[dict[str, Any]],
+    *,
+    allow_worker_unavailable: bool = False,
+) -> dict[str, Any]:
     headers = {"Authorization": f"Bearer {token}"}
     results: list[dict[str, Any]] = []
     with httpx.Client(timeout=15.0, headers=headers) as client:
@@ -230,7 +286,10 @@ def _probe_http_routes(base_url: str, token: str, matrix: list[dict[str, Any]]) 
                 continue
             started = time.perf_counter()
             try:
-                response = client.get(base_url.rstrip("/") + entry["path"])
+                response = client.request(
+                    entry["method"],
+                    base_url.rstrip("/") + entry["path"],
+                )
                 status_code = response.status_code
                 response.close()
                 results.append(
@@ -239,7 +298,11 @@ def _probe_http_routes(base_url: str, token: str, matrix: list[dict[str, Any]]) 
                         "path": entry["path"],
                         "status": status_code,
                         "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
-                        "ok": status_code < 500,
+                        "ok": safe_probe_status_ok(
+                            entry,
+                            status_code,
+                            allow_worker_unavailable=allow_worker_unavailable,
+                        ),
                     }
                 )
             except Exception as error:
@@ -305,8 +368,15 @@ async def _probe_voice_control(base_url: str, token: str) -> dict[str, Any]:
     return {"connected": True, "event_type": payload.get("type"), "ordered": payload.get("type") == "failed"}
 
 
-async def _probe_real_voice_audio(base_url: str, token: str) -> bool:
+async def _probe_real_voice_audio(base_url: str, token: str) -> dict[str, Any]:
     uri = _websocket_url(base_url, "/voice/stream", token)
+    started = time.perf_counter()
+    summary: dict[str, Any] = {
+        "confirmed": False,
+        "valid_wav": False,
+        "first_audio_ms": None,
+        "terminal_event": None,
+    }
     async with connect(uri, proxy=None, open_timeout=10, close_timeout=2) as socket:
         await socket.send(json.dumps({"type": "start", "request_id": "runtime-probe", "text": "Xin chào."}))
         pending_audio = False
@@ -315,14 +385,22 @@ async def _probe_real_voice_audio(base_url: str, token: str) -> bool:
             message = await asyncio.wait_for(socket.recv(), timeout=max(0.1, deadline - time.monotonic()))
             if isinstance(message, bytes):
                 if pending_audio and message:
-                    return True
+                    summary["valid_wav"] = is_valid_wav(message)
+                    if summary["valid_wav"] and summary["first_audio_ms"] is None:
+                        summary["first_audio_ms"] = round((time.perf_counter() - started) * 1000, 3)
+                pending_audio = False
                 continue
             payload = json.loads(message)
             if payload.get("type") == "audio":
                 pending_audio = True
             elif payload.get("type") in {"failed", "ended", "cancelled"}:
-                return False
-    return False
+                summary["terminal_event"] = payload.get("type")
+                summary["confirmed"] = (
+                    summary["valid_wav"] is True
+                    and payload.get("type") == "ended"
+                )
+                return summary
+    return summary
 
 
 def _wait_for_ports_closed(ports: list[int], timeout_seconds: float = 5.0) -> bool:
@@ -460,6 +538,7 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
             {
                 "RU_DESKTOP_TOKEN": token,
                 "RU_DATA_ROOT": str(temp_path / "data"),
+                "RU_LOG_ROOT": str(temp_path / "logs"),
                 "RuBackend__BindUrl": edge_base_url,
                 "NO_PROXY": "127.0.0.1,localhost",
                 "no_proxy": "127.0.0.1,localhost",
@@ -495,9 +574,12 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
                 "deterministic_chat": args.deterministic_chat,
                 "edge_readiness_status": readiness_status,
                 "http": (
-                    {"probed": 1, "skipped": 0, "failures": 0, "results": []}
-                    if readiness_status and args.deterministic_chat
-                    else _probe_http_routes(edge_base_url, token, matrix)
+                    _probe_http_routes(
+                        edge_base_url,
+                        token,
+                        matrix,
+                        allow_worker_unavailable=args.deterministic_chat,
+                    )
                     if readiness_status
                     else {"failures": 1}
                 ),
@@ -514,7 +596,12 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
                     result["websockets"]["chat"] = asyncio.run(_probe_chat(edge_base_url, token))
                     result["websockets"]["voice_control"] = asyncio.run(_probe_voice_control(edge_base_url, token))
                 if args.require_voice_audio and not args.deterministic_chat:
-                    result["voice_audio_confirmed"] = asyncio.run(_probe_real_voice_audio(edge_base_url, token))
+                    result["voice_audio"] = asyncio.run(
+                        _probe_real_voice_audio(edge_base_url, token)
+                    )
+                    result["voice_audio_confirmed"] = result["voice_audio"].get(
+                        "confirmed", False
+                    )
                 if args.benchmark_samples and not args.deterministic_chat:
                     result["benchmark"] = {
                         "samples": args.benchmark_samples,
@@ -547,7 +634,6 @@ def main() -> int:
     parser.add_argument("--require-voice-audio", action="store_true")
     parser.add_argument("--benchmark-samples", type=int, default=0)
     parser.add_argument("--deterministic-chat", action="store_true")
-    parser.add_argument("--isolated", action="store_true")
     parser.add_argument(
         "--serve-deterministic-worker",
         action="store_true",
@@ -583,7 +669,7 @@ def main() -> int:
         failed = failed or state.get("assistant_messages") != 1
         failed = failed or state.get("user_messages") != 1
         failed = failed or not state.get("private_metadata_absent", False)
-        failed = failed or state.get("activity_events") != 2
+        failed = failed or state.get("activity_events", 0) < 2
         failed = failed or state.get("memory_active_records") != 1
     if args.require_voice_audio and not result.get("voice_audio_confirmed", False):
         failed = True

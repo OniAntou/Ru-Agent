@@ -29,9 +29,37 @@ public sealed class BackendLaunchPlanTests
         Assert.False(plan.Children[0].Environment.ContainsKey("RU_DESKTOP_TOKEN"));
         Assert.Equal("secret-token", plan.Children[1].Environment["RU_DESKTOP_TOKEN"]);
         Assert.Equal("worker-secret", plan.Children[1].Environment["RU_WORKER_TOKEN"]);
+        Assert.True(plan.Children[0].Environment.ContainsKey("RU_LOG_ROOT"));
+        Assert.True(plan.Children[1].Environment.ContainsKey("RU_LOG_ROOT"));
+        Assert.Equal(plan.Children[0].Environment["RU_LOG_ROOT"], plan.Children[1].Environment["RU_LOG_ROOT"]);
+        var logRoot = plan.Children[0].Environment["RU_LOG_ROOT"];
+        Assert.DoesNotContain(project.Root, logRoot, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_worker_out.log"), plan.Children[0].StandardOutputLogPath);
+        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_worker_err.log"), plan.Children[0].StandardErrorLogPath);
+        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_aspnetcore_out.log"), plan.Children[1].StandardOutputLogPath);
+        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_aspnetcore_err.log"), plan.Children[1].StandardErrorLogPath);
         Assert.DoesNotContain(
             plan.Children[1].Environment.Keys,
             key => key.Contains("Ownership", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void CustomLogRootIsPropagatedAndUsedForBootstrapPaths()
+    {
+        using var project = TemporaryProject.Create(includePublishedEdge: true);
+        var customLogRoot = Path.Combine(Path.GetTempPath(), "ru-custom-logs-" + Guid.NewGuid().ToString("N"));
+
+        var plan = BackendLaunchPlan.Create(
+            project.Root,
+            "secret-token",
+            "worker-secret",
+            workerPort: 8005,
+            configuredLogRoot: customLogRoot);
+
+        Assert.Equal(Path.GetFullPath(customLogRoot), plan.Children[0].Environment["RU_LOG_ROOT"]);
+        Assert.Equal(Path.GetFullPath(customLogRoot), plan.Children[1].Environment["RU_LOG_ROOT"]);
+        Assert.Equal(Path.Combine(customLogRoot, "bootstrap", "backend_worker_out.log"), plan.Children[0].StandardOutputLogPath);
+        Assert.Equal(Path.Combine(customLogRoot, "bootstrap", "backend_aspnetcore_out.log"), plan.Children[1].StandardOutputLogPath);
     }
 
     [Theory]

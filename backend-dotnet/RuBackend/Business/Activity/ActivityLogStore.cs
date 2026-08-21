@@ -14,25 +14,12 @@ public sealed class ActivityLogStore : IActivityLogStore
         WriteIndented = false,
     };
 
-    private static readonly string[] SensitiveKeyFragments =
-    [
-        "api_key",
-        "password",
-        "secret",
-        "token",
-        "audio",
-        "voice",
-        "vts",
-        "codes",
-        "facial",
-        "body",
-        "emotion",
-        "marker",
-    ];
-
     private readonly string _logFile;
     private readonly TimeProvider _clock;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly HashSet<string> _seenEventIds = new(StringComparer.Ordinal);
+    private readonly Queue<string> _seenOrder = new();
+    private int _appendsSinceTrim = 0;
 
     public ActivityLogStore(DataPaths paths, TimeProvider? clock = null)
     {
@@ -46,23 +33,33 @@ public sealed class ActivityLogStore : IActivityLogStore
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(activity);
+
+        var sanitized = ActivityPreview.SanitizeEvent(activity, _clock);
+
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var now = _clock.GetUtcNow().ToUniversalTime();
-            var normalized = new ActivityEvent(
-                !double.IsFinite(activity.Ts) || activity.Ts <= 0
-                    ? now.ToUnixTimeMilliseconds() / 1000d
-                    : activity.Ts,
-                string.IsNullOrWhiteSpace(activity.Iso) ? now.ToString("O") : activity.Iso,
-                string.IsNullOrWhiteSpace(activity.Type) ? "unknown" : activity.Type,
-                activity.SessionId,
-                SanitizeObject(activity.Data));
+            if (!string.IsNullOrWhiteSpace(sanitized.EventId))
+            {
+                if (_seenEventIds.Contains(sanitized.EventId))
+                {
+                    return; // Duplicate event suppression
+                }
+
+                _seenEventIds.Add(sanitized.EventId);
+                _seenOrder.Enqueue(sanitized.EventId);
+                if (_seenOrder.Count > MaximumEntries)
+                {
+                    var oldest = _seenOrder.Dequeue();
+                    _seenEventIds.Remove(oldest);
+                }
+            }
 
             var parent = Path.GetDirectoryName(_logFile)
                 ?? throw new InvalidOperationException("Activity log path has no parent directory.");
             Directory.CreateDirectory(parent);
-            var line = JsonSerializer.Serialize(normalized, JsonOptions) + Environment.NewLine;
+
+            var line = JsonSerializer.Serialize(sanitized, JsonOptions) + Environment.NewLine;
             var bytes = Encoding.UTF8.GetBytes(line);
             await using (var stream = new FileStream(
                 _logFile,
@@ -70,13 +67,17 @@ public sealed class ActivityLogStore : IActivityLogStore
                 FileAccess.Write,
                 FileShare.Read,
                 4096,
-                FileOptions.Asynchronous | FileOptions.WriteThrough))
+                useAsync: true))
             {
                 await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            await TrimUnlockedAsync(cancellationToken).ConfigureAwait(false);
+            var fileInfo = new FileInfo(_logFile);
+            if (fileInfo.Length > 400_000 || _seenOrder.Count >= MaximumEntries || ++_appendsSinceTrim >= 50)
+            {
+                _appendsSinceTrim = 0;
+                await TrimUnlockedAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -105,7 +106,9 @@ public sealed class ActivityLogStore : IActivityLogStore
                 var parsed = ParseEvent(line);
                 if (parsed is not null)
                 {
-                    events.Add(parsed);
+                    // Re-sanitize on read as a defense-in-depth boundary for
+                    // legacy files written before the privacy policy existed.
+                    events.Add(ActivityPreview.SanitizeEvent(parsed, _clock));
                 }
             }
 
@@ -133,6 +136,8 @@ public sealed class ActivityLogStore : IActivityLogStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            _seenEventIds.Clear();
+            _seenOrder.Clear();
             File.Delete(_logFile);
         }
         finally
@@ -174,7 +179,7 @@ public sealed class ActivityLogStore : IActivityLogStore
                 FileAccess.Write,
                 FileShare.None,
                 4096,
-                FileOptions.Asynchronous | FileOptions.WriteThrough))
+                useAsync: true))
             {
                 await stream.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
                 await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -205,6 +210,13 @@ public sealed class ActivityLogStore : IActivityLogStore
                 return null;
             }
 
+            string? eventId = null;
+            if (root["event_id"] is JsonValue eventIdValue &&
+                eventIdValue.TryGetValue<string>(out var parsedEventId))
+            {
+                eventId = parsedEventId;
+            }
+
             string? sessionId = null;
             if (root["session_id"] is JsonValue sessionValue &&
                 sessionValue.TryGetValue<string>(out var parsedSession))
@@ -213,48 +225,15 @@ public sealed class ActivityLogStore : IActivityLogStore
             }
 
             var data = root["data"] is JsonObject dataObject
-                ? SanitizeObject(dataObject)
+                ? dataObject
                 : [];
-            return new ActivityEvent(timestamp, iso, type, sessionId, data);
+
+            return new ActivityEvent(eventId, timestamp, iso, type, sessionId, data);
         }
         catch (JsonException)
         {
             return null;
         }
-    }
-
-    private static JsonObject SanitizeObject(JsonObject source)
-    {
-        var sanitized = new JsonObject();
-        foreach (var property in source)
-        {
-            if (IsSensitiveKey(property.Key))
-            {
-                continue;
-            }
-
-            sanitized[property.Key] = SanitizeNode(property.Value);
-        }
-
-        return sanitized;
-    }
-
-    private static JsonNode? SanitizeNode(JsonNode? node)
-    {
-        return node switch
-        {
-            JsonObject nestedObject => SanitizeObject(nestedObject),
-            JsonArray nestedArray => new JsonArray(
-                nestedArray.Select(SanitizeNode).ToArray()),
-            null => null,
-            _ => node.DeepClone(),
-        };
-    }
-
-    private static bool IsSensitiveKey(string key)
-    {
-        var normalized = key.Trim().ToLowerInvariant().Replace('-', '_');
-        return SensitiveKeyFragments.Any(fragment => normalized.Contains(fragment, StringComparison.Ordinal));
     }
 
     private static bool TryReadString(JsonNode? node, out string value)

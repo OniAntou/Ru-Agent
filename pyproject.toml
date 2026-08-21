@@ -5,12 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ru-runtime"
 version = "0.1.0"
-description = "Local Vietnamese-English Ru conversational runtime using LiquidAI LFM2.5-2.6B."
+description = "Cloud-first Vietnamese-English Ru conversational runtime."
 requires-python = ">=3.11,<3.15"
 dependencies = [
     "numpy>=1.26",
-    "datasets>=3.0",
-    "tokenizers>=0.22,<0.23.1",
     "torch>=2.9,<3",
     "SpeechRecognition>=3.10",
     "pyaudio>=0.2",
@@ -23,15 +21,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "flask>=3.1,<4"]
 runtime = [
-    "accelerate>=1.0,<2",
-    "bitsandbytes>=0.48,<1",
     "ddgs>=9.0",
     "httpx>=0.25",
     "keyring>=25",
-    "peft>=0.14,<1",
-    "transformers>=5,<6",
 ]
-gguf = ["sentencepiece>=0.2,<1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

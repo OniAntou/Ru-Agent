@@ -87,7 +87,7 @@ public sealed class SettingsStore : ISettingsStore
             persisted["enable_self_learning"] = candidate.EnableSelfLearning;
             persisted["share_memory_with_cloud"] = candidate.ShareMemoryWithCloud;
             persisted["kilo_reasoning_enabled"] = candidate.KiloReasoningEnabled;
-            persisted["checkpoint_path"] = candidate.CheckpointPath;
+            persisted.Remove("checkpoint_path");
             persisted["voice_label"] = candidate.VoiceLabel;
             persisted["voice_style_id"] = candidate.VoiceStyleId;
             persisted["voice_speed"] = candidate.VoiceSpeed;
@@ -174,7 +174,6 @@ public sealed class SettingsStore : ISettingsStore
             ReadBoolean(raw, "enable_self_learning", true),
             ReadBoolean(raw, "share_memory_with_cloud", true),
             ReadBoolean(raw, "kilo_reasoning_enabled", false),
-            ReadString(raw, "checkpoint_path", string.Empty),
             ReadString(raw, "voice_label", "Ru (OmniVoice)"),
             NormalizeVoiceStyle(ReadString(raw, "voice_style_id", OriginalVoiceStyle)),
             ReadBoundedNumber(raw, "voice_speed", 1.0, 0.5, 2.0),
@@ -324,7 +323,6 @@ public sealed class SettingsStore : ISettingsStore
         ValidateLength(candidate.LmStudioUrl, 1024, nameof(candidate.LmStudioUrl));
         ValidateLength(candidate.CustomUrl, 1024, nameof(candidate.CustomUrl));
         ValidateLength(candidate.ApiVariant, 64, nameof(candidate.ApiVariant));
-        ValidateLength(candidate.CheckpointPath, 1024, nameof(candidate.CheckpointPath));
         ValidateLength(candidate.VoiceLabel, 128, nameof(candidate.VoiceLabel));
 
         if (candidate.MaxTokens is < 1 or > 1024)

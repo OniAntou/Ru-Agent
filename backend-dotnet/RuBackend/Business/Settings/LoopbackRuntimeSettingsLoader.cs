@@ -43,7 +43,6 @@ public sealed class LoopbackRuntimeSettingsLoader : IRuntimeSettingsLoader
                 ["lmstudio_url"] = candidate.LmStudioUrl,
                 ["custom_url"] = candidate.CustomUrl,
                 ["api_variant"] = candidate.ApiVariant,
-                ["checkpoint_path"] = candidate.CheckpointPath,
                 ["kilo_reasoning_enabled"] = candidate.KiloReasoningEnabled,
             });
 

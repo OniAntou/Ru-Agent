@@ -105,22 +105,19 @@ def execute_reply(
         is_cancelled=is_cancelled,
     )
     
-    # Execute any PC tools (App open, Volume)
-    response = _execute_pc_tool_markers(response)
-
     search_match = _SEARCH_MARKER.search(response)
-    if not allow_web_search:
-        if search_match is not None:
+    if not allow_web_search or search_match is None:
+        response = _execute_pc_tool_markers(response)
+        if not allow_web_search and search_match is not None:
             logger.warning("Model requested a web search but web search is disabled; stripping the marker")
             cleaned = _strip_search_marker(response)
             if cleaned:
                 return strip_emojis_and_emoticons(cleaned)
         return strip_emojis_and_emoticons(response)
-    if search_match is None:
-        return strip_emojis_and_emoticons(response)
 
     query = search_match.group(1).strip()
     if not query:
+        response = _execute_pc_tool_markers(response)
         cleaned = _strip_search_marker(response)
         return strip_emojis_and_emoticons(cleaned) if cleaned else strip_emojis_and_emoticons(response)
     try:
@@ -148,5 +145,6 @@ def execute_reply(
         return strip_emojis_and_emoticons(grounded_response)
     except Exception as error:
         logger.warning("Grounded follow-up failed: %s", error)
+        response = _execute_pc_tool_markers(response)
         fallback = _strip_search_marker(response)
         return strip_emojis_and_emoticons(fallback) if fallback else strip_emojis_and_emoticons(response)

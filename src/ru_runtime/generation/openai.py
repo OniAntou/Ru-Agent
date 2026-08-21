@@ -5,6 +5,7 @@ import logging
 import time
 from collections.abc import Callable, Sequence
 from time import perf_counter
+from urllib.parse import urlsplit
 
 import httpx
 from httpx import HTTPStatusError, RequestError, TimeoutException
@@ -24,6 +25,7 @@ _MAX_RETRIES = 2
 _MAX_RETRY_DELAY_SECONDS = 60.0
 _HTTP_UNAUTHORIZED = 401
 _HTTP_TOO_MANY_REQUESTS = 429
+_LOOPBACK_HOSTNAMES = frozenset({"localhost", "127.0.0.1", "0.0.0.0", "::1"})
 
 
 class _NetworkStreamError(RuntimeError):
@@ -66,6 +68,21 @@ def _raise_if_cancelled(is_cancelled: Callable[[], bool] | None) -> None:
         raise OpenAIGenerationCancelled("Hosted generation was superseded.")
 
 
+def _is_loopback_url(base_url: str) -> bool:
+    """Return true only for an exact loopback hostname.
+
+    Credential bypass decisions must never be based on substring matches: a
+    remote host, path, or port can legitimately contain words such as
+    ``localhost`` or ``1234``.
+    """
+    try:
+        parsed = urlsplit(base_url)
+        hostname = (parsed.hostname or "").rstrip(".").casefold()
+    except ValueError:
+        return False
+    return parsed.scheme.casefold() in {"http", "https"} and hostname in _LOOPBACK_HOSTNAMES
+
+
 class OpenAIRuntime:
     """Uses the OpenCode OpenAI-compatible API to generate responses."""
 
@@ -95,7 +112,7 @@ class OpenAIRuntime:
     @staticmethod
     def fetch_models(api_key: str, base_url: str) -> list[dict]:
         base_url = base_url.rstrip('/')
-        is_local = any(host in base_url for host in ("localhost", "127.0.0.1", "0.0.0.0", "11434", "1234"))
+        is_local = _is_loopback_url(base_url)
         if not api_key and not is_local:
             raise ValueError("API Key is missing")
         url = f"{base_url}/models"
@@ -130,15 +147,6 @@ class OpenAIRuntime:
         models = [m for m in data if isinstance(m, dict) and isinstance(m.get("id"), str)]
         models.sort(key=lambda m: m["id"])
         return models
-
-    def is_cached(self) -> bool:
-        return False
-
-    def stop(self) -> None:
-        pass
-
-    def release_gpu(self) -> None:
-        pass
 
     @staticmethod
     def _event_content(decoded: object, *, has_content: bool) -> str | None:
@@ -294,8 +302,9 @@ class OpenAIRuntime:
     ) -> str:
         if not messages or messages[-1][0] != "user":
             raise ValueError("messages must end with a user turn")
-        if not self.api_key:
-            raise ValueError("OpenCode API Key is missing. Please set it in Settings.")
+        is_local = _is_loopback_url(self.base_url)
+        if not self.api_key and not is_local:
+            raise ValueError("API Key is missing. Please set it in Settings.")
         if max_new_tokens <= 0:
             raise ValueError("max new tokens must be positive")
         if not 0 < temperature <= 2:
@@ -320,9 +329,10 @@ class OpenAIRuntime:
         data = json.dumps(body).encode("utf-8")
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
             "User-Agent": "Ru-LocalLLM/0.1",
         }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
 
         started = perf_counter()
         content = ""

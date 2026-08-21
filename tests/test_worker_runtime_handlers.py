@@ -309,7 +309,6 @@ def test_runtime_load_delegates_without_persisting_settings_or_credentials() -> 
         "opencode_model": "opencode/free",
         "kilo_model": "kilo-auto/free",
         "api_variant": "Default",
-        "checkpoint_path": "",
         "kilo_reasoning_enabled": False,
     }
 
@@ -355,7 +354,6 @@ def test_runtime_load_rollback_restores_load_error(monkeypatch) -> None:
     class FakeRunner:
         def __init__(self) -> None:
             self.backend = "OpenCode Zen"
-            self.checkpoint_path = None
             self.openai_runtime = None
             self.kilo_reasoning_enabled = False
             self.load_error = "previous load error"

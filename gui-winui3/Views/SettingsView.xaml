@@ -7,14 +7,53 @@
     xmlns:views="using:RuApp.Views"
     mc:Ignorable="d">
 
-    <Pivot Margin="0,8,0,0">
+    <Grid x:Name="ResponsiveRoot">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="ResponsiveStates">
+                <VisualState x:Name="Wide">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1280"/>
+                    </VisualState.StateTriggers>
+                </VisualState>
+
+                <VisualState x:Name="Compact">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="900"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="SystemSettingsScrollViewer.Padding" Value="24,12,24,28"/>
+                        <Setter Target="ObservationScrollViewer.Padding" Value="24,12,24,28"/>
+                        <Setter Target="VtsSettingsScrollViewer.Padding" Value="24,12,24,28"/>
+                    </VisualState.Setters>
+                </VisualState>
+
+                <VisualState x:Name="Narrow">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="SystemSettingsScrollViewer.Padding" Value="12,12,12,24"/>
+                        <Setter Target="ObservationScrollViewer.Padding" Value="12,12,12,24"/>
+                        <Setter Target="VtsSettingsScrollViewer.Padding" Value="12,12,12,24"/>
+                        <Setter Target="VtsActionsPanel.Orientation" Value="Vertical"/>
+                        <Setter Target="ConnectVtsButton.(Grid.Row)" Value="1"/>
+                        <Setter Target="ConnectVtsButton.(Grid.Column)" Value="0"/>
+                        <Setter Target="ConnectVtsButton.(Grid.ColumnSpan)" Value="2"/>
+                        <Setter Target="ConnectVtsButton.HorizontalAlignment" Value="Stretch"/>
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
+    <Pivot x:Name="SettingsPivot" Margin="0,8,0,0">
         <!-- Tab 1: System Settings -->
         <PivotItem Header="Hệ thống &amp; Mô hình" Margin="0,12,0,0">
-            <ScrollViewer Padding="36,12,36,36" Background="Transparent">
+            <ScrollViewer x:Name="SystemSettingsScrollViewer" Padding="36,12,36,36" Background="Transparent"
+                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="24" HorizontalAlignment="Stretch">
                     <StackPanel Spacing="4">
                         <TextBlock Text="Cấu hình Hệ thống &amp; Mô hình" FontSize="22" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                        <TextBlock Text="Quản lý backend model (Local GGUF / Cloud APIs), tham số sinh và tính năng bộ nhớ" FontSize="13.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                        <TextBlock Text="Quản lý provider OpenAI-compatible, tham số sinh và tính năng bộ nhớ" FontSize="13.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                     </StackPanel>
 
                     <!-- Backend Model Card -->
@@ -30,7 +69,7 @@
                             <Grid ColumnDefinitions="*,Auto">
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                                     <TextBlock Text="Loại Backend" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                                    <TextBlock Text="Chọn mô hình cục bộ hoặc dịch vụ đám mây" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                    <TextBlock Text="Chọn dịch vụ đám mây hoặc provider ngoài" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                                 </StackPanel>
                                 <ComboBox x:Name="BackendComboBox" Grid.Column="1" Width="300" SelectionChanged="OnBackendSelectionChanged">
                                     <ComboBoxItem Content="OpenCode Zen (Cloud API)" Tag="opencode"/>
@@ -227,7 +266,8 @@
 
         <!-- Tab 2: Screen Observation -->
         <PivotItem Header="Nhận thức Màn hình" Margin="0,12,0,0">
-            <ScrollViewer Padding="36,12,36,36" Background="Transparent">
+            <ScrollViewer x:Name="ObservationScrollViewer" Padding="36,12,36,36" Background="Transparent"
+                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="24" HorizontalAlignment="Stretch">
                     <Border Style="{StaticResource FluentCardStyle}">
                         <StackPanel Spacing="20">
@@ -270,11 +310,12 @@
 
         <!-- Tab 3: VTube Studio -->
         <PivotItem Header="VTube Studio" Margin="0,12,0,0">
-            <ScrollViewer Padding="36,12,36,36" Background="Transparent">
+            <ScrollViewer x:Name="VtsSettingsScrollViewer" Padding="36,12,36,36" Background="Transparent"
+                          HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="24" HorizontalAlignment="Stretch">
                     <Border Style="{StaticResource FluentCardStyle}">
                         <StackPanel Spacing="20">
-                            <Grid ColumnDefinitions="*,Auto">
+                            <Grid x:Name="VtsConnectRow" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
                                 <StackPanel Grid.Column="0" Spacing="4">
                                     <TextBlock Text="Avatar Live2D VTube Studio" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
                                     <TextBlock x:Name="VtsStatusText" Text="Trạng thái: Chưa kết nối" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="13"/>
@@ -293,7 +334,7 @@
                             <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
 
                             <TextBlock Text="Kích hoạt thủ công biểu cảm &amp; cử động:" FontSize="13.5" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                            <StackPanel Orientation="Horizontal" Spacing="10">
+                            <StackPanel x:Name="VtsActionsPanel" Orientation="Horizontal" Spacing="10">
                                 <Button Content="Vui vẻ" Click="OnVtsActionClick" Tag="joy" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16,8"
                                         Background="{StaticResource AppCardBackgroundHoverBrush}" BorderThickness="0"/>
                                 <Button Content="Ngạc nhiên" Click="OnVtsActionClick" Tag="surprised" CornerRadius="{StaticResource AppControlCornerRadius}" Padding="16,8"
@@ -369,4 +410,5 @@
             <views:MemoryView x:Name="MemoryControl" />
         </PivotItem>
     </Pivot>
+    </Grid>
 </UserControl>

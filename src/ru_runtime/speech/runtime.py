@@ -19,10 +19,6 @@ class SpeechRecognitionError(RuntimeError):
     """A user-safe failure while turning one captured utterance into text."""
 
 
-class SpeechEngineUnavailable(SpeechRecognitionError):
-    pass
-
-
 class SpeechConfigurationError(SpeechRecognitionError):
     pass
 

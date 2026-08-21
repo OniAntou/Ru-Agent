@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using RuBackend.Business.Activity;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
+using RuBackend.Diagnostics;
 using RuBackend.Memory;
 using RuBackend.Worker;
 
@@ -36,6 +37,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
     private readonly IMetadataPolicy _metadata;
     private readonly IStreamSanitizer _sanitizer;
     private readonly ConversationTurnGate _gate;
+    private readonly IDiagnosticEmitter? _diagnosticEmitter;
 
     public ConversationCoordinator(
         ISessionStore sessions,
@@ -45,7 +47,8 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         IWorkerClient worker,
         IMetadataPolicy metadata,
         IStreamSanitizer sanitizer,
-        ConversationTurnGate gate)
+        ConversationTurnGate gate,
+        IDiagnosticEmitter? diagnosticEmitter = null)
     {
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _memory = memory ?? throw new ArgumentNullException(nameof(memory));
@@ -55,6 +58,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         _metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
         _sanitizer = sanitizer ?? throw new ArgumentNullException(nameof(sanitizer));
         _gate = gate ?? throw new ArgumentNullException(nameof(gate));
+        _diagnosticEmitter = diagnosticEmitter;
     }
 
     public IAsyncEnumerable<ChatEvent> HandleAsync(
@@ -77,6 +81,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         ChannelWriter<ChatEvent> writer,
         CancellationToken cancellationToken)
     {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         string? sessionId = null;
         var userAppended = false;
         Exception? completionError = null;
@@ -206,15 +211,22 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                         await TryTriggerVtsAsync(requestId, codes, cancellationToken)
                             .ConfigureAwait(false);
                         TryEnqueueLearning(settings, cleanPrompt, fullReply);
-                        await TryAppendActivityAsync(
+                        _ = TryAppendActivityAsync(
                             sessionId,
                             cleanPrompt,
                             fullReply,
-                            emotion).ConfigureAwait(false);
+                            emotion);
                         await WriteAsync(
                             writer,
                             new ChatEvent("done", fullReply, sessionId),
                             cancellationToken).ConfigureAwait(false);
+
+                        _diagnosticEmitter?.TryEmit(
+                            "info",
+                            "host.conversation",
+                            DiagnosticCodes.TurnDone,
+                            durationMs: stopwatch.Elapsed.TotalMilliseconds,
+                            status: "succeeded");
                         return;
                     case WorkerMessageTypes.Error:
                         throw new ConversationException(ReadWorkerErrorCode(item.Payload));
@@ -228,6 +240,13 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         catch (OperationCanceledException error) when (cancellationToken.IsCancellationRequested)
         {
             completionError = error;
+            _diagnosticEmitter?.TryEmit(
+                "warning",
+                "host.conversation",
+                DiagnosticCodes.TurnCancelled,
+                durationMs: stopwatch.Elapsed.TotalMilliseconds,
+                status: "cancelled",
+                exceptionKind: "cancelled");
         }
         catch (Exception error)
         {
@@ -242,6 +261,15 @@ public sealed class ConversationCoordinator : IConversationCoordinator
             {
                 await TryAppendProcessingFailureAsync(sessionId).ConfigureAwait(false);
             }
+
+            _diagnosticEmitter?.TryEmit(
+                "error",
+                "host.conversation",
+                DiagnosticCodes.TurnFailed,
+                durationMs: stopwatch.Elapsed.TotalMilliseconds,
+                status: "failed",
+                errorCode: code,
+                exceptionKind: "unknown");
 
             await TryWriteTerminalErrorAsync(writer, code, sessionId).ConfigureAwait(false);
         }
@@ -370,24 +398,29 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         }
     }
 
-    private async Task TryAppendActivityAsync(
+    private Task TryAppendActivityAsync(
         string sessionId,
         string prompt,
         string response,
         string? emotion)
     {
-        try
+        return PersistActivityAsync();
+
+        async Task PersistActivityAsync()
         {
-            await _activity.AppendAsync(
-                Activity("user", sessionId, prompt, null),
-                CancellationToken.None).ConfigureAwait(false);
-            await _activity.AppendAsync(
-                Activity("assistant", sessionId, response, emotion),
-                CancellationToken.None).ConfigureAwait(false);
-        }
-        catch
-        {
-            // Activity history must not replace a completed chat response.
+            try
+            {
+                await _activity.AppendAsync(
+                    Activity("user", sessionId, prompt, null),
+                    CancellationToken.None).ConfigureAwait(false);
+                await _activity.AppendAsync(
+                    Activity("assistant", sessionId, response, emotion),
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Activity history must not replace a completed chat response.
+            }
         }
     }
 

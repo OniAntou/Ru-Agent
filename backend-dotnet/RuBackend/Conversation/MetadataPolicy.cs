@@ -138,12 +138,12 @@ public sealed partial class MetadataPolicy : IMetadataPolicy
     private static partial Regex CodeDelimiter();
 
     [GeneratedRegex(
-        @"\s*(?:\[\[(?:VTS|VOICE_PACE|EMO):[^\]]*\]\]|\[SEARCH:[^\]]*\])\s*",
+        @"\s*(?:\[\[(?:VTS|VOICE_PACE|EMO):[^\]]*\]\]|\[(?:SEARCH|APP_OPEN|VOLUME):[^\]]*\])\s*",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex CompletePrivateMarker();
 
     [GeneratedRegex(
-        @"\s*(?:\[\[(?:VTS|VOICE_PACE|EMO):|\[SEARCH:).*$",
+        @"\s*(?:\[\[(?:VTS|VOICE_PACE|EMO):|\[(?:SEARCH|APP_OPEN|VOLUME):).*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline)]
     private static partial Regex UnterminatedPrivateMarker();
 

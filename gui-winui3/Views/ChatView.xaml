@@ -14,7 +14,7 @@
         <!-- User Message Bubble (Clean Matte Slate Capsule) -->
         <DataTemplate x:Key="UserMessageTemplate" x:DataType="models:ChatMessageItem">
             <Grid Margin="0,6" HorizontalAlignment="Stretch">
-                <Grid HorizontalAlignment="Right" Margin="80,0,0,0">
+                <Grid HorizontalAlignment="Right" Margin="48,0,0,0">
                     <Border Background="#1C1F2B" BorderBrush="#282D3D" BorderThickness="1" 
                             CornerRadius="14,14,3,14" Padding="16,11">
                         <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}" FontSize="14" 
@@ -27,7 +27,7 @@
         <!-- Assistant Message Bubble (Clean Matte Surface) -->
         <DataTemplate x:Key="AssistantMessageTemplate" x:DataType="models:ChatMessageItem">
             <Grid Margin="0,6" HorizontalAlignment="Stretch">
-                <Grid HorizontalAlignment="Left" Margin="0,0,80,0">
+                <Grid HorizontalAlignment="Left" Margin="0,0,48,0">
                     <StackPanel Spacing="6">
                         <!-- Ru Avatar Badge -->
                         <StackPanel Orientation="Horizontal" Spacing="8" Margin="2,0,0,0">
@@ -87,6 +87,38 @@
     </UserControl.Resources>
 
     <Grid x:Name="RootGrid" RowDefinitions="*,Auto" Background="Transparent">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="ResponsiveStates">
+                <VisualState x:Name="Wide">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1280"/>
+                    </VisualState.StateTriggers>
+                </VisualState>
+
+                <VisualState x:Name="Compact">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="900"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="InputContainer.Padding" Value="0,6,0,18"/>
+                        <Setter Target="WelcomeHeroPanel.Margin" Value="16,12"/>
+                    </VisualState.Setters>
+                </VisualState>
+
+                <VisualState x:Name="Narrow">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0"/>
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="SuggestionPanel.Orientation" Value="Vertical"/>
+                        <Setter Target="SuggestionPanel.HorizontalAlignment" Value="Stretch"/>
+                        <Setter Target="InputContainer.Padding" Value="0,4,0,12"/>
+                        <Setter Target="InputBorder.Padding" Value="4,2"/>
+                        <Setter Target="WelcomeHeroPanel.Margin" Value="12,8"/>
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
         
         <!-- Welcome Hero View (Centered when session is empty) -->
         <StackPanel x:Name="WelcomeHeroPanel" Grid.Row="0" VerticalAlignment="Center" HorizontalAlignment="Center" 
@@ -108,7 +140,7 @@
                     </StackPanel>
 
                     <!-- Quick topic pills -->
-                    <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Margin="0,6,0,0">
+                    <StackPanel x:Name="SuggestionPanel" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Margin="0,6,0,0">
                         <Button Click="OnSuggestionClick" Padding="14,8" Background="{StaticResource AppSurfaceBrush}" 
                                 BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" CornerRadius="16">
                             <StackPanel Orientation="Horizontal" Spacing="6">

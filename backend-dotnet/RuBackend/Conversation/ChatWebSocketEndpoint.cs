@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuBackend.Diagnostics;
 namespace RuBackend.Conversation;
 
 public static class ChatWebSocketEndpoint
@@ -29,6 +30,7 @@ public static class ChatWebSocketEndpoint
         using var connectionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             context.RequestAborted);
+        using var sendLock = new SemaphoreSlim(1, 1);
         try
         {
             while (!connectionCancellation.IsCancellationRequested
@@ -46,6 +48,7 @@ public static class ChatWebSocketEndpoint
                 {
                     await SendAsync(
                         socket,
+                        sendLock,
                         Error("message_too_large", "Message too large."),
                         connectionCancellation.Token).ConfigureAwait(false);
                     continue;
@@ -58,6 +61,7 @@ public static class ChatWebSocketEndpoint
                 {
                     await SendAsync(
                         socket,
+                        sendLock,
                         parseError ?? Error("malformed_message", "Malformed message."),
                         connectionCancellation.Token).ConfigureAwait(false);
                     continue;
@@ -73,6 +77,7 @@ public static class ChatWebSocketEndpoint
                 {
                     await SendAsync(
                         socket,
+                        sendLock,
                         Error(
                             "prompt_too_long",
                             $"Prompt too long (max {ChatRequest.MaxPromptCharacters} characters)."),
@@ -82,8 +87,9 @@ public static class ChatWebSocketEndpoint
 
                 var closed = await StreamTurnAsync(
                     socket,
+                    sendLock,
                     coordinator,
-                    new ChatRequest(prompt, request.SessionId?.Trim()),
+                    new ChatRequest(prompt, request.SessionId?.Trim(), request.CorrelationId),
                     connectionCancellation.Token).ConfigureAwait(false);
                 if (closed)
                 {
@@ -118,20 +124,22 @@ public static class ChatWebSocketEndpoint
 
     private static async Task<bool> StreamTurnAsync(
         WebSocket socket,
+        SemaphoreSlim sendLock,
         IConversationCoordinator coordinator,
         ChatRequest request,
         CancellationToken connectionCancellation)
     {
+        using var correlationScope = CorrelationContext.Push(request.CorrelationId);
         using var turnCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             connectionCancellation);
-        var monitor = MonitorDisconnectAsync(socket, turnCancellation);
+        var monitor = MonitorDisconnectAsync(socket, sendLock, turnCancellation);
         var closed = false;
         try
         {
             await foreach (var item in coordinator.HandleAsync(request, turnCancellation.Token)
                 .WithCancellation(turnCancellation.Token).ConfigureAwait(false))
             {
-                await SendAsync(socket, item, turnCancellation.Token).ConfigureAwait(false);
+                await SendAsync(socket, sendLock, item, turnCancellation.Token).ConfigureAwait(false);
                 if (item.Type is "done" or "error")
                 {
                     break;
@@ -167,6 +175,7 @@ public static class ChatWebSocketEndpoint
 
     private static async Task<bool> MonitorDisconnectAsync(
         WebSocket socket,
+        SemaphoreSlim sendLock,
         CancellationTokenSource turnCancellation)
     {
         var buffer = new byte[4 * 1024];
@@ -181,7 +190,8 @@ public static class ChatWebSocketEndpoint
                 return true;
             }
 
-            while (!result.EndOfMessage)
+            var hasMore = !result.EndOfMessage;
+            while (hasMore)
             {
                 result = await socket.ReceiveAsync(
                     buffer,
@@ -191,6 +201,22 @@ public static class ChatWebSocketEndpoint
                     turnCancellation.Cancel();
                     return true;
                 }
+                hasMore = !result.EndOfMessage;
+            }
+
+            try
+            {
+                await SendAsync(
+                    socket,
+                    sendLock,
+                    Error("busy", "Turn is already in progress."),
+                    turnCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (WebSocketException)
+            {
             }
         }
 
@@ -269,7 +295,13 @@ public static class ChatWebSocketEndpoint
                 }
             }
 
-            request = new ChatRequest(prompt, sessionId);
+            string? correlationId = null;
+            if (root["correlation_id"] is JsonValue corrValue && corrValue.TryGetValue<string>(out var parsedCorr))
+            {
+                correlationId = parsedCorr;
+            }
+
+            request = new ChatRequest(prompt, sessionId, correlationId);
             return true;
         }
         catch (Exception parseError) when (parseError is JsonException or DecoderFallbackException)
@@ -281,15 +313,28 @@ public static class ChatWebSocketEndpoint
 
     private static async Task SendAsync(
         WebSocket socket,
+        SemaphoreSlim sendLock,
         ChatEvent value,
         CancellationToken cancellationToken)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(value);
-        await socket.SendAsync(
-            bytes,
-            WebSocketMessageType.Text,
-            true,
-            cancellationToken).ConfigureAwait(false);
+        await sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (socket.State != WebSocketState.Open)
+            {
+                return;
+            }
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(value);
+            await socket.SendAsync(
+                bytes,
+                WebSocketMessageType.Text,
+                true,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            sendLock.Release();
+        }
     }
 
     private static ChatEvent Error(string code, string content) =>

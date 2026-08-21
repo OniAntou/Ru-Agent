@@ -289,18 +289,44 @@ public sealed class SubtitleOverlayWindow : IDisposable
     {
         if (_hwnd == IntPtr.Zero || _disposed || _width <= 0 || _height <= 0) return;
 
-        using var bitmap = new Bitmap(_width, _height, PixelFormat.Format32bppArgb);
+        string displayText = _text;
+        if (_isDraggable && string.IsNullOrWhiteSpace(displayText))
+        {
+            displayText = "✨ [Nhấn giữ chuột trái để kéo thả vị trí phụ đề] ✨";
+        }
+
+        int effectiveFontSize = Math.Max(12, (int)Math.Round(_fontSize * _sizeScale));
+        int targetWidth = _width;
+        int targetHeight = _height;
+
+        // Dynamically measure required text height to prevent clipping long sentences
+        if (!string.IsNullOrWhiteSpace(displayText))
+        {
+            using var measureBmp = new Bitmap(1, 1, PixelFormat.Format32bppArgb);
+            using var mg = Graphics.FromImage(measureBmp);
+            using var font = new Font("Segoe UI", effectiveFontSize, FontStyle.Bold, GraphicsUnit.Pixel);
+            using var sfMeasure = new StringFormat
+            {
+                Alignment = StringAlignment.Center,
+                LineAlignment = StringAlignment.Center,
+                FormatFlags = 0
+            };
+
+            float contentWidth = Math.Max(100, targetWidth - 24);
+            var measured = mg.MeasureString(displayText, font, new SizeF(contentWidth, 4000), sfMeasure);
+            int neededHeight = (int)Math.Ceiling(measured.Height) + 24; // Extra padding for 4.5px outline stroke
+            if (neededHeight > targetHeight)
+            {
+                targetHeight = neededHeight;
+            }
+        }
+
+        using var bitmap = new Bitmap(targetWidth, targetHeight, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bitmap))
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
             g.Clear(Color.Transparent);
-
-            string displayText = _text;
-            if (_isDraggable && string.IsNullOrWhiteSpace(displayText))
-            {
-                displayText = "✨ [Nhấn giữ chuột trái để kéo thả vị trí phụ đề] ✨";
-            }
 
             if (_isDraggable)
             {
@@ -309,12 +335,11 @@ public sealed class SubtitleOverlayWindow : IDisposable
                 {
                     DashStyle = DashStyle.Dash
                 };
-                g.DrawRectangle(guidePen, 1, 1, _width - 2, _height - 2);
+                g.DrawRectangle(guidePen, 1, 1, targetWidth - 2, targetHeight - 2);
             }
 
             if (!string.IsNullOrWhiteSpace(displayText))
             {
-                int effectiveFontSize = Math.Max(12, (int)Math.Round(_fontSize * _sizeScale));
                 using var path = new GraphicsPath();
                 using var font = new Font("Segoe UI", effectiveFontSize, FontStyle.Bold, GraphicsUnit.Pixel);
                 using var sf = new StringFormat
@@ -324,7 +349,7 @@ public sealed class SubtitleOverlayWindow : IDisposable
                     FormatFlags = 0
                 };
 
-                var layoutRect = new RectangleF(8, 0, _width - 16, _height);
+                var layoutRect = new RectangleF(12, 4, targetWidth - 24, targetHeight - 8);
                 path.AddString(displayText, font.FontFamily, (int)font.Style, effectiveFontSize, layoutRect, sf);
 
                 // Deep dark outline (pen width = 4.5px) for high contrast on any background
@@ -347,7 +372,7 @@ public sealed class SubtitleOverlayWindow : IDisposable
 
         var ptSrc = new POINT { X = 0, Y = 0 };
         var ptDst = new POINT { X = _x, Y = _y };
-        var sz = new SIZE { cx = _width, cy = _height };
+        var sz = new SIZE { cx = targetWidth, cy = targetHeight };
         var blend = new BLENDFUNCTION
         {
             BlendOp = AC_SRC_OVER,

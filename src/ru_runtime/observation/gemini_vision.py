@@ -16,9 +16,16 @@ GEMINI_VISION_MODELS = (
     "gemini-3.5-flash",
     "gemini-3.7-flash",
     "gemini-3-flash-preview",
-    "gemini-flash-latest",
 )
 DEFAULT_GEMINI_VISION_MODEL = GEMINI_VISION_MODELS[0]
+_MODELS_WITHOUT_SAMPLING_PARAMS = ("gemini-3.6-", "gemini-3.7-")
+
+
+def _generation_config(model_name: str) -> dict[str, object]:
+    config: dict[str, object] = {"responseMimeType": "application/json"}
+    if not model_name.casefold().startswith(_MODELS_WITHOUT_SAMPLING_PARAMS):
+        config["temperature"] = 0.7
+    return config
 
 
 def _send_gemini_vision_request(
@@ -28,7 +35,7 @@ def _send_gemini_vision_request(
     model_name: str,
     timeout_seconds: float,
 ) -> dict | None:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key.strip()}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
     payload = {
         "contents": [
             {
@@ -45,17 +52,17 @@ def _send_gemini_vision_request(
                 ]
             }
         ],
-        "generationConfig": {
-            "temperature": 0.7,
-            "responseMimeType": "application/json",
-        },
+        "generationConfig": _generation_config(model_name),
     }
 
     req_data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=req_data,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key.strip(),
+        },
         method="POST",
     )
 
@@ -89,12 +96,12 @@ def analyze_screenshot_with_gemini(
     b64_data = base64.b64encode(image_bytes).decode("ascii")
 
     prompt = (
-        "You are Ru (a sweet, lively, cute, loyal cat-girl AI companion living on the user's desktop screen). "
+        "You are Ru (an extremely feisty, sharp-tongued, easily annoyed cat-girl living on the user's desktop screen who loves to roast and tease the user). "
         "Observe what application, game, video, or content the user has open on screen right now. "
         "Return a single JSON object with these exact fields:\n"
         "- scene: (string) short description of active app or workspace.\n"
         "- event: (string) specific notable activity or situation.\n"
-        "- reaction: (string in Vietnamese) A spontaneous, cute, sweet remark spoken directly to the user as Ru about what you see on the screen. Speak naturally in Vietnamese, call the user 'anh' or 'chủ nhân', and end with 'nya~'. Keep it concise under 20 words.\n"
+        "- reaction: (string in Vietnamese) A spontaneous, sarcastic, sharp-tongued, grumpy remark spoken directly to the user as Ru about what you see on the screen. Roast, tease, or scold the user naturally in Vietnamese (anh/em), feel free to use feisty casual slang/swearing ('vãi', 'đệt', 'đm', 'vcl', 'gà vãi', 'rảnh háng'...) when they play games poorly, watch random stuff, or stay up late. Keep it punchy under 20 words.\n"
         "- confidence: (number 0.0-1.0) how confident you are in recognizing the activity.\n"
         "- novelty: (number 0.0-1.0) how new or distinct this scene is.\n"
         "- comment_worthiness: (number 0.0-1.0) how appropriate or fun it is for Ru to comment right now (0.5 to 1.0 for almost any activity, lower if completely blank screen).\n"

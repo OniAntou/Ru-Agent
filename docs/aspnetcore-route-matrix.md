@@ -2,7 +2,7 @@
 
 The canonical public surface is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-38 HTTP method/path pairs and two WebSocket routes. ASP.NET Core is the only
+41 HTTP method/path pairs and two WebSocket routes. ASP.NET Core is the only
 public owner.
 
 Each entry contains:

@@ -5,11 +5,12 @@ date: 2026-08-13
 
 # Retire the legacy Llama line
 
-Ru's supported local model is LFM2.5. Llama 3.1/v6.x-only source and local
-assets are removed after a path/reference/protection manifest because retaining
-an unsupported training line obscures the active runtime and produces
-misleading operations documentation.
+Ru's conversational generation is cloud-first. Llama 3.1/v6.x and the later
+LFM2.5 local-generation/training line are removed after a path/reference/
+protection manifest because retaining unsupported local assets obscures the
+active runtime and produces misleading operations documentation.
 
-Plan 2 completed the approved tracked and local retirement. One dirty
-training-compatibility file remains protected until Plan 3 migrates its active
-LFM2.5 token-ending behavior; current llama.cpp runtime code is not legacy.
+The tracked local runtime, training tooling, evaluator, configs, and generated
+local assets were removed on 2026-08-21. A narrow settings migration remains so
+old persisted `llama.cpp`/GGUF values fall back to the cloud default; it does
+not load or retain a local model.

@@ -48,6 +48,9 @@ namespace RuApp.Services
 
         public bool IsPlaying => _player?.PlaybackSession.PlaybackState == MediaPlaybackState.Playing;
 
+        private bool IsReplyPipelineActive =>
+            _replyStreamCts is not null || _replyAudioQueue is not null || _replyStreamWorker is not null;
+
         public VoicePlaybackService(ApiService apiService)
         {
             _apiService = apiService;
@@ -70,17 +73,17 @@ namespace RuApp.Services
             SubtitlesEnabled = voice.ShowSubtitles;
         }
 
-        public async Task SpeakTextAsync(string text, bool interrupt = true)
+        public async Task<bool> SpeakTextAsync(string text, bool interrupt = true)
         {
-            if (_disposed || string.IsNullOrWhiteSpace(text)) return;
+            if (_disposed || string.IsNullOrWhiteSpace(text)) return false;
 
             if (interrupt)
             {
                 StopVoice();
             }
-            else if (_activeRequestId is not null || IsPlaying)
+            else if (_activeRequestId is not null || IsPlaying || IsReplyPipelineActive)
             {
-                return;
+                return false;
             }
 
             string requestId = Guid.NewGuid().ToString("N");
@@ -93,6 +96,7 @@ namespace RuApp.Services
             _playbackQueue = playbackQueue;
 
             bool receivedAudio = false;
+            bool playbackSucceeded = false;
             bool subtitleShown = false;
             VoiceStreamTerminalEvent? terminal = null;
             try
@@ -124,13 +128,14 @@ namespace RuApp.Services
                 {
                     await playbackQueue.CompleteAsync(requestId);
                     await ReportPlaybackAsync(requestId, "ended");
+                    playbackSucceeded = receivedAudio;
                 }
                 else
                 {
                     playbackQueue.Cancel(requestId);
                     if (!receivedAudio && !cts.IsCancellationRequested && IsCurrentRequest(requestId))
                     {
-                        await PlayFallbackAsync(text.Trim(), cts.Token);
+                        playbackSucceeded = await PlayFallbackAsync(text.Trim(), cts.Token);
                     }
                 }
             }
@@ -150,7 +155,7 @@ namespace RuApp.Services
 
                 if (!receivedAudio && !cts.IsCancellationRequested && IsCurrentRequest(requestId))
                 {
-                    await PlayFallbackAsync(text.Trim(), cts.Token);
+                    playbackSucceeded = await PlayFallbackAsync(text.Trim(), cts.Token);
                 }
             }
             finally
@@ -179,6 +184,7 @@ namespace RuApp.Services
                     cts.Dispose();
                 }
             }
+            return playbackSucceeded;
         }
 
         public void BeginReplyStream()
@@ -794,18 +800,19 @@ namespace RuApp.Services
             await PlayWavAsync(chunk.Audio, cancellationToken, chunk.RequestId);
         }
 
-        private async Task PlayFallbackAsync(string text, CancellationToken cancellationToken)
+        private async Task<bool> PlayFallbackAsync(string text, CancellationToken cancellationToken)
         {
             byte[]? audio = await _apiService.SynthesizeTtsAsync(text, VoiceLabel, VoiceSpeed);
             if (audio is null || audio.Length == 0 || cancellationToken.IsCancellationRequested)
             {
-                return;
+                return false;
             }
             if (SubtitlesEnabled)
             {
                 _subtitleEvents?.TryShow(new VoiceSubtitleCue(Guid.NewGuid().ToString("N"), text));
             }
             await PlayWavAsync(audio, cancellationToken);
+            return true;
         }
 
         private async Task PlayWavAsync(

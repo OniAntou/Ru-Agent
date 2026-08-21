@@ -7,7 +7,7 @@ import threading
 from collections.abc import AsyncIterator
 from typing import Any
 
-from ru_runtime.generation.runner import BACKEND_KILO, BACKEND_OPENCODE
+from ru_runtime.generation.runner import OPENAI_COMPATIBLE_BACKENDS
 from ru_runtime.worker.v1.http import RuntimeHttpResponse
 from ru_runtime.voice.stream import VoiceStreamCoordinator, VoiceStreamEvent
 from ru_runtime.voice.style import voice_style_from_saved
@@ -61,7 +61,7 @@ class RuntimeVoiceBridge:
             or settings.get("voice_style_id")
         )
         hosted_chat_active = (
-            self._shared.core.runner.backend in (BACKEND_OPENCODE, BACKEND_KILO)
+            self._shared.core.runner.backend in OPENAI_COMPATIBLE_BACKENDS
             and self._shared._TURN_LOCK.locked()
         )
         coordinator = VoiceStreamCoordinator(

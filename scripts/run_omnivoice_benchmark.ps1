@@ -24,25 +24,7 @@ function Assert-BenchmarkInputs {
     }
 }
 
-function Get-RuComputeBlocker {
-    $gpuPids = @(& nvidia-smi --query-compute-apps=pid --format=csv,noheader,nounits 2>$null |
-        ForEach-Object { $_.Trim() } |
-        Where-Object { $_ -match '^\d+$' } |
-        ForEach-Object { [int]$_ })
-    if (-not $gpuPids) {
-        return $null
-    }
-    $pattern = 'llama-server|llama-cli|ru_runtime\.transformers|transformers.*ru_runtime'
-    return Get-CimInstance Win32_Process | Where-Object {
-        $_.ProcessId -in $gpuPids -and $_.CommandLine -match $pattern
-    } | Select-Object -First 1
-}
-
 Assert-BenchmarkInputs
-$blocker = Get-RuComputeBlocker
-if ($blocker) {
-    throw "Ru local model is using the GPU (PID $($blocker.ProcessId)); release it before running the benchmark."
-}
 
 if ($WhatIf) {
     Write-Output "Preflight only: OmniVoice cold plus five warm passes would run from $omniPython"

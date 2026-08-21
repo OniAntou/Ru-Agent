@@ -333,7 +333,7 @@ public static class BusinessEndpoints
         result["self_learning_enabled"] = value.EnableSelfLearning;
         result["share_memory_with_cloud"] = value.ShareMemoryWithCloud;
         result["cloud_memory_consent"] = value.ShareMemoryWithCloud;
-        result["checkpoint_path"] = value.CheckpointPath;
+        result.Remove("checkpoint_path");
         result["voice_label"] = value.VoiceLabel;
         result["voice_style_id"] = value.VoiceStyleId;
         result["voice_speed"] = value.VoiceSpeed;

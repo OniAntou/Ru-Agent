@@ -9,15 +9,6 @@ public interface IRuntimeSettingsLoader
         CancellationToken cancellationToken);
 }
 
-public sealed class UnavailableRuntimeSettingsLoader : IRuntimeSettingsLoader
-{
-    public Task<string> LoadAsync(
-        SettingsSnapshot candidate,
-        CancellationToken cancellationToken) =>
-        Task.FromException<string>(
-            new InvalidOperationException("Private runtime worker is unavailable."));
-}
-
 public sealed record SettingsTransitionResult(bool Success, string Message);
 
 public interface ISettingsTransitionService
@@ -201,12 +192,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         var customUrl = OptionalString(payload, "custom_url", 1024)
             ?? current.CustomUrl;
         var apiVariant = OptionalString(payload, "api_variant", 64) ?? current.ApiVariant;
-        var checkpoint = OptionalString(payload, "checkpoint_path", 1024);
-        if (string.IsNullOrWhiteSpace(checkpoint))
-        {
-            checkpoint = current.CheckpointPath;
-        }
-
         var voiceStyle = OptionalString(payload, "voice_style_id", 32)
             ?? current.VoiceStyleId;
         if (!string.Equals(voiceStyle, "original", StringComparison.Ordinal))
@@ -237,7 +222,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
                 ?? current.ShareMemoryWithCloud,
             OptionalBoolean(payload, "kilo_reasoning_enabled")
                 ?? current.KiloReasoningEnabled,
-            checkpoint,
             OptionalString(payload, "voice_label", 128) ?? current.VoiceLabel,
             voiceStyle,
             OptionalDouble(payload, "voice_speed", 0.5, 2.0) ?? current.VoiceSpeed,
@@ -323,7 +307,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             "custom_api_key",
             "api_variant",
             "kilo_reasoning_enabled",
-            "checkpoint_path",
         };
         return runtimeFields.Any(payload.ContainsKey)
             || updates.Any(update =>

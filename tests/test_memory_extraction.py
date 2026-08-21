@@ -43,6 +43,22 @@ def test_strip_internal_metadata():
     assert result == "Hello  world"
 
 
+def test_strips_desktop_action_markers_before_memory_extraction():
+    result = strip_internal_metadata(
+        "Anh thích Notepad [APP_OPEN: notepad] [VOLUME: up] [SEARCH: weather]"
+    )
+
+    assert result == "Anh thích Notepad"
+    assert "[APP_OPEN:" not in result
+    assert "[VOLUME:" not in result
+    assert "[SEARCH:" not in result
+
+
+def test_memory_policy_rejects_desktop_action_markers_as_sensitive_metadata():
+    for marker in ("[APP_OPEN: notepad]", "[VOLUME: up]", "[SEARCH: weather]"):
+        assert is_sensitive_or_unsafe(marker) is True
+
+
 def test_is_sensitive_rejects_password():
     assert is_sensitive_or_unsafe("password là abc123") is True
 

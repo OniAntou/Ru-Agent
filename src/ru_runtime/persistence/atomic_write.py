@@ -95,31 +95,6 @@ def atomic_write_text(path: str | Path, content: str) -> None:
             raise
 
 
-def atomic_append_jsonl(path: str | Path, line: str) -> None:
-    """Append a single JSON line to *path* atomically.
-
-    Uses a read-append-write cycle under an in-process lock: reads existing
-    content, writes everything to a temp file, then replaces. Writers from
-    other processes are not protected.
-    """
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    try:
-        json.loads(line)
-    except json.JSONDecodeError:
-        raise ValueError("line must be valid JSON")
-
-    with _WRITE_LOCK:
-        existing = ""
-        if path.is_file():
-            try:
-                existing = path.read_text(encoding="utf-8")
-            except OSError as exc:
-                raise OSError(f"Cannot read existing JSONL file {path} before appending: {exc}") from exc
-        atomic_write_text(path, existing + line + "\n")
-
-
 def _cleanup_tmp(tmp_path: str) -> None:
     try:
         Path(tmp_path).unlink(missing_ok=True)

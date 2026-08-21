@@ -148,7 +148,6 @@ public sealed class RuntimeSettingsLoaderTests
         true,
         true,
         false,
-        string.Empty,
         "Ru (OmniVoice)",
         "original",
         1.0,

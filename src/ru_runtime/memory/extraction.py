@@ -16,7 +16,7 @@ _SENSITIVE_PATTERN = re.compile(
     r"passphrase|access[ _-]?key|số tài khoản|bệnh án)\b|"
     r"(?:sk|pk|ghp|gho|github_pat)_[A-Za-z0-9_-]+|"
     r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|"
-    r"https?://|\[\[(?:VTS|EMO|VOICE_PACE):",
+    r"https?://|\[\[(?:VTS|EMO|VOICE_PACE):|\[(?:SEARCH|APP_OPEN|VOLUME):",
     re.IGNORECASE,
 )
 
@@ -32,7 +32,12 @@ class MemoryCandidate:
 
 
 def strip_internal_metadata(text: str) -> str:
-    return re.sub(r"\[\[VTS:.*?\]\]", "", text, flags=re.IGNORECASE).strip()
+    return re.sub(
+        r"\[\[VTS:[^\]]*\]\]|\[(?:SEARCH|APP_OPEN|VOLUME):[^\]]*\]",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
 
 
 def is_sensitive_or_unsafe(text: str) -> bool:

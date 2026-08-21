@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+
 from harness.deterministic_worker import (
     collect_deterministic_stream,
     deterministic_worker_dependencies,
+    _voice,
 )
 from harness.voice_fixtures import build_synthetic_wav, inspect_wav, is_valid_wav
 
@@ -35,3 +38,21 @@ def test_synthetic_worker_never_uses_model_or_device_runtime() -> None:
         "speaker": False,
         "vts": False,
     }
+
+
+def test_deterministic_worker_voice_events_have_public_type_and_request_id() -> None:
+    async def collect() -> list[object]:
+        return [
+            event
+            async for event in _voice(
+                {"operation": "stream", "request_id": "voice-1"},
+                asyncio.Event(),
+            )
+        ]
+
+    replies = asyncio.run(collect())
+
+    assert replies[0].payload["type"] == "audio"
+    assert replies[0].payload["request_id"] == "voice-1"
+    assert replies[1].payload["type"] == "ended"
+    assert replies[1].payload["request_id"] == "voice-1"

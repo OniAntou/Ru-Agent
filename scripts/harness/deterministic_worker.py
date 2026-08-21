@@ -7,6 +7,7 @@ Studio runtime imports. It only supplies fixed protocol fixtures.
 from __future__ import annotations
 
 import asyncio
+import argparse
 import base64
 import json
 from collections.abc import AsyncIterator, Iterator, Mapping
@@ -169,12 +170,17 @@ async def _voice(payload: Mapping[str, Any], cancelled: asyncio.Event) -> AsyncI
             return
         yield WorkerReply(
             VOICE_CONTROL,
-            {"state": "audio_ready", "request_id": request_id},
+            {
+                "type": "audio",
+                "state": "audio_ready",
+                "request_id": request_id,
+            },
             binary=audio,
         )
         yield WorkerReply(
             VOICE_DONE,
             {
+                "type": "ended",
                 "state": "ended" if operation == "stream" else "done",
                 "request_id": request_id,
             },
@@ -217,3 +223,19 @@ def create_deterministic_handlers() -> WorkerHandlers:
 def serve_deterministic_worker(port: int, token: str) -> int:
     asyncio.run(serve_worker("127.0.0.1", port, token, create_deterministic_handlers()))
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run the Ru deterministic Harness worker")
+    parser.add_argument("--port", type=int, required=True)
+    args = parser.parse_args(argv)
+    import os
+
+    token = os.environ.get("RU_WORKER_TOKEN", "").strip()
+    if not token:
+        parser.error("RU_WORKER_TOKEN is required")
+    return serve_deterministic_worker(args.port, token)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

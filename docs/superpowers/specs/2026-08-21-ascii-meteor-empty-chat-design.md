@@ -1,16 +1,16 @@
 # ASCII Meteor Empty Chat Background
 
 **Date:** 2026-08-21
-**Status:** Implemented 2026-08-21
+**Status:** Draft refinement — awaiting user spec review
 **Scope:** A restrained animated ASCII meteor field for the empty Chat view
 
 ## Decision summary
 
-The empty Chat state will gain a sparse, warm ASCII meteor background that
+The empty Chat state will gain one coherent, warm ASCII meteor streak that
 supports Ru's quiet signature without turning the shell into a visual-effects
-demo. The field appears only while the current Chat view has no messages. The
+demo. The streak appears only while the current Chat view has no messages. The
 first sent message changes the view to the normal conversation state, stops the
-animation, removes its elements, and leaves no background activity running.
+animation, removes the streak, and leaves no background activity running.
 
 The effect is text-only and uses a small `Canvas`-based control. It adds no
 bitmap asset, gradient, third-party package, backend call, polling path, or
@@ -42,26 +42,28 @@ conversation content.
 
 ### Meteor mark
 
-Each meteor is rendered as a short ASCII text mark such as:
+The meteor is rendered as one short, contiguous ASCII text mark:
 
 ~~~text
-..-* 
----*
+..---*
 ~~~
 
-The final `*` is the head and the preceding dots/dashes are the tail. The mark
-travels diagonally from the upper-left toward the lower-right. The mark is
-short, has no glow, and uses the existing Ru warm accent brush at restrained
-opacity. The field is behind the welcome content and never captures input.
+The final `*` is the head and the preceding dots/dashes are the tail. The whole
+mark moves as one object diagonally from the upper-left toward the lower-right,
+so the eye reads a single travelling streak rather than scattered text. It has
+no glow and uses the existing Ru warm accent brush at restrained opacity. The
+field is behind the welcome content and never captures input.
 
 ### Density and timing
 
-- At most three meteors may exist simultaneously.
-- Spawn cadence is deliberately irregular and sparse, approximately every
-  3.5–6 seconds.
-- A meteor crosses its short path in approximately 2–4 seconds.
-- The field uses a UI-thread timer appropriate for a handful of text elements;
-  it must not run a full-screen per-pixel render loop.
+- Exactly one meteor may exist at a time; there is no random multi-meteor
+  spawning.
+- A meteor crosses its short path in approximately 1.5–2 seconds, making the
+  direction clearly visible without becoming a constant distraction.
+- After each pass, the field rests for approximately 7–10 seconds before the
+  next pass.
+- The field uses a UI-thread timer appropriate for one text element; it must
+  not run a full-screen per-pixel render loop.
 - The field is clipped to its own bounds and does not participate in layout
   measurement for the welcome content.
 
@@ -71,18 +73,18 @@ opacity. The field is behind the welcome content and never captures input.
 - Light and Dark inherit their existing accent contrast from the shared theme
   resources.
 - The field fills only the Chat reading area, never the sidebar or composer.
-- Narrow layouts reduce the active meteor count when needed; they do not move,
-  resize, or obscure the welcome heading and prompt.
+- Narrow layouts shorten or reposition the fixed travel lane when needed; they
+  do not move, resize, or obscure the welcome heading and prompt.
 
 ## Architecture and state flow
 
 ### `AsciiMeteorField`
 
-Add a focused control under `gui-winui3/Controls/` that derives from `Canvas`.
+Keep a focused control under `gui-winui3/Controls/` that derives from `Canvas`.
 The control owns:
 
-- The small collection of spawned `TextBlock` meteor elements.
-- Spawn timing, position updates, and path cleanup.
+- One `TextBlock` meteor element at most.
+- A fixed travel lane, progress updates, rest timing, and path cleanup.
 - Its active/inactive state.
 - Timer start/stop and unload/dispose cleanup.
 
@@ -103,9 +105,9 @@ Messages.CollectionChanged
 ~~~
 
 The empty state (`Messages.Count == 0`) activates the field. Any non-empty state
-deactivates it, stops its timer, removes meteor children, and collapses its
+deactivates it, stops its timer, removes the meteor child, and collapses its
 surface. Clearing a conversation returns to the empty state and starts a fresh
-field without retaining old meteor positions.
+field with progress reset to the beginning of the lane.
 
 The control must remain `IsHitTestVisible="False"`. No send, typing, STT, or
 WebSocket handler may be changed to support the effect.
@@ -116,7 +118,7 @@ WebSocket handler may be changed to support the effect.
 - Stop on `Unloaded`, `Dispose`, or transition to a non-empty Chat state.
 - Stop before clearing children so no timer tick can update a removed element.
 - Do not keep a timer alive when the field is collapsed.
-- Resize handling must keep all positions inside the field bounds without
+- Resize handling must keep the fixed lane inside the field bounds without
   changing the reading column's measured size.
 - A failed or unavailable animation tick must fail visually only; it must not
   affect Chat state or surface an error message.
@@ -129,7 +131,8 @@ Automated contracts must prove:
    non-interactive.
 2. `ChatView.xaml.cs` drives the field from the existing message-count state
    path rather than from typing or backend events.
-3. The field uses ASCII-only meteor marks and a bounded active count.
+3. The field uses one contiguous ASCII meteor mark and never creates more than
+   one active text element.
 4. Start/stop cleanup exists for empty-to-chat, unload, and dispose paths.
 5. No backend, WebSocket, STT, voice, subtitle, VTS, memory, or composer
    behavior is introduced.
@@ -140,14 +143,15 @@ Automated contracts must prove:
 Manual acceptance remains user-run in Light and Dark at 1440×900, 1024×768,
 and 800×600:
 
-- Empty Chat shows only occasional subtle `..-*`/`---*` marks.
+- Empty Chat shows an occasional contiguous `..---*` streak whose direction is
+  clearly visible but whose opacity remains restrained.
 - The animation stays behind the welcome content and does not compete with the
   heading, suggestions, or composer.
 - Sending the first message removes the field immediately and permanently for
   that conversation state.
 - Returning to a genuinely empty Chat starts a fresh, clean field.
-- No clipping, layout shift, input interference, visible timer artifacts, or
-  generic particle/starfield aesthetic appears.
+- No clipping, layout shift, input interference, visible timer artifacts,
+  random scatter, or generic particle/starfield aesthetic appears.
 
 ## Explicit preserved boundaries
 

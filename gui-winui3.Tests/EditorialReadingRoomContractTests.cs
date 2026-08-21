@@ -61,6 +61,29 @@ public sealed class EditorialReadingRoomContractTests
         Assert.Contains("<CornerRadius x:Key=\"AppPillCornerRadius\">6</CornerRadius>", source, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("MainWindow.xaml", "x:Name=\"ShellStatusRow\"")]
+    [InlineData("MainWindow.xaml", "Background=\"{StaticResource RuSidebarBrush}\"")]
+    [InlineData("MainWindow.xaml", "ToolTipService.ToolTip=\"Đoạn chat mới\"")]
+    [InlineData("MainWindow.xaml", "AutomationProperties.Name=\"Trò chuyện\"")]
+    [InlineData("MainWindow.xaml.cs", "RuAccentBrush")]
+    [InlineData("MainWindow.xaml.cs", "activeBtn.BorderThickness = new Thickness(2, 0, 0, 0)")]
+    [InlineData("MainWindow.xaml.cs", "UpdateShellStatusTooltip")]
+    public void Shell_exposes_the_editorial_navigation_contract(string fileName, string marker)
+    {
+        Assert.Contains(marker, File.ReadAllText(FindSource(fileName)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Shell_does_not_render_the_old_status_badge_containers()
+    {
+        var source = File.ReadAllText(FindSource("MainWindow.xaml"));
+
+        Assert.DoesNotContain("x:Name=\"StatusBackendBadge\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"StatusWorkerBadge\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"StatusVtsBadge\"", source, StringComparison.Ordinal);
+    }
+
     private static string FindSource(string fileName)
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

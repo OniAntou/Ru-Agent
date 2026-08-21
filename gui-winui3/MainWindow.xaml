@@ -8,31 +8,25 @@
         <MicaBackdrop Kind="Base" />
     </Window.SystemBackdrop>
 
-    <Grid Background="{StaticResource AppSurfaceBrush}">
+    <Grid Background="{StaticResource RuCanvasBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Custom App TitleBar -->
-        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="42" Background="Transparent" Padding="16,0,16,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- App Brand & Icon -->
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                <Border Width="24" Height="24" CornerRadius="7" Background="{StaticResource AppCardBackgroundHoverBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1">
-                    <FontIcon Glyph="&#xE8BD;" FontSize="12" Foreground="{StaticResource AppTextPrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                </Border>
-                <TextBlock Text="Ru" FontSize="14" FontFamily="Segoe UI Variable Display" FontWeight="Bold" 
-                           Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
-                <Border x:Name="BrandModeBadge" Background="{StaticResource AppCardBackgroundBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="8,2" Margin="2,0,0,0">
-                    <TextBlock Text="Live2D Companion" FontSize="11" FontWeight="Medium" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                </Border>
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="48" Background="Transparent" Padding="24,0,24,0">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <TextBlock Text="Ru"
+                           FontFamily="{StaticResource RuDisplayFontFamily}"
+                           FontSize="19"
+                           Foreground="{StaticResource RuInkBrush}"
+                           VerticalAlignment="Center" />
+                <TextBlock Text="conversational runtime"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="11"
+                           Foreground="{StaticResource RuMutedBrush}"
+                           VerticalAlignment="Center" />
             </StackPanel>
         </Grid>
 
@@ -65,7 +59,6 @@
                             <AdaptiveTrigger MinWindowWidth="0"/>
                         </VisualState.StateTriggers>
                         <VisualState.Setters>
-                            <Setter Target="BrandModeBadge.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelNewChat.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelChat.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelVoice.Visibility" Value="Collapsed"/>
@@ -87,12 +80,7 @@
                             <Setter Target="NavSettings.Padding" Value="8"/>
                             <Setter Target="SidebarResizer.Visibility" Value="Collapsed"/>
                             <Setter Target="StatusText.Visibility" Value="Collapsed"/>
-                            <Setter Target="TextBackend.Visibility" Value="Collapsed"/>
-                            <Setter Target="TextWorker.Visibility" Value="Collapsed"/>
-                            <Setter Target="TextVts.Visibility" Value="Collapsed"/>
-                            <Setter Target="StatusBackendBadge.Padding" Value="6,3"/>
-                            <Setter Target="StatusWorkerBadge.Padding" Value="6,3"/>
-                            <Setter Target="StatusVtsBadge.Padding" Value="6,3"/>
+                            <Setter Target="StatusServiceDetails.Visibility" Value="Collapsed"/>
                         </VisualState.Setters>
                     </VisualState>
                 </VisualStateGroup>
@@ -105,7 +93,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- Navigation Sidebar -->
-            <Border Grid.Column="0" Background="{StaticResource AppSidebarBackgroundBrush}" BorderThickness="0">
+            <Border Grid.Column="0" Background="{StaticResource RuSidebarBrush}" BorderThickness="0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
@@ -120,77 +108,78 @@
                         </Grid.RowDefinitions>
 
                         <!-- Primary Navigation Items -->
-                        <StackPanel Grid.Row="0" Padding="10,12,10,0" Spacing="4">
-                            <!-- New Chat Button (Sleek Satin Obsidian Button) -->
+                        <StackPanel Grid.Row="0" Padding="14,16,14,0" Spacing="2">
+                            <!-- New Chat Button -->
                             <Button x:Name="NavNewChat" Click="OnNewChatClick" HorizontalAlignment="Stretch" Margin="0,0,0,8"
-                                    Background="{StaticResource AppCardBackgroundBrush}" BorderBrush="{StaticResource AppCardBorderBrush}" 
-                                    BorderThickness="1" Foreground="{StaticResource AppTextPrimaryBrush}" Padding="12,9" 
-                                    CornerRadius="{StaticResource AppControlCornerRadius}" HorizontalContentAlignment="Left"
+                                    Background="Transparent" BorderBrush="Transparent"
+                                    BorderThickness="0" Foreground="{StaticResource RuAccentBrush}" Padding="10,8"
+                                    CornerRadius="0" HorizontalContentAlignment="Left"
                                     ToolTipService.ToolTip="Đoạn chat mới" AutomationProperties.Name="Đoạn chat mới">
                                 <Grid ColumnDefinitions="Auto,*">
-                                    <FontIcon Grid.Column="0" Glyph="&#xE710;" FontSize="13" Foreground="{StaticResource AppTextPrimaryBrush}" Margin="0,0,10,0"/>
-                                    <TextBlock Grid.Column="1" x:Name="LabelNewChat" Text="Đoạn chat mới" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE710;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" Margin="0,0,10,0"/>
+                                    <TextBlock Grid.Column="1" x:Name="LabelNewChat" Text="Đoạn chat mới" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
 
                             <!-- Navigation Tabs -->
                             <Button x:Name="NavChat" Tag="chat" Click="OnNavClick" HorizontalAlignment="Stretch"
-                                    Background="{StaticResource AppCardBackgroundHoverBrush}" Foreground="{StaticResource AppTextPrimaryBrush}" 
-                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left"
+                                    Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
+                                    Padding="10,8" CornerRadius="0" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
                                     ToolTipService.ToolTip="Trò chuyện" AutomationProperties.Name="Trò chuyện">
                                 <Grid ColumnDefinitions="Auto,*">
-                                    <FontIcon Grid.Column="0" Glyph="&#xE8F2;" FontSize="15" Foreground="{StaticResource AppTextPrimaryBrush}" Margin="0,0,12,0"/>
-                                    <TextBlock Grid.Column="1" x:Name="LabelChat" Text="Trò chuyện" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8F2;" FontSize="15" Margin="0,0,12,0"/>
+                                    <TextBlock Grid.Column="1" x:Name="LabelChat" Text="Trò chuyện" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
 
                             <Button x:Name="NavVoice" Tag="voice" Click="OnNavClick" HorizontalAlignment="Stretch"
-                                    Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" 
-                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left"
+                                    Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
+                                    Padding="10,8" CornerRadius="0" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
                                     ToolTipService.ToolTip="Giọng nói &amp; VTS" AutomationProperties.Name="Giọng nói và VTS">
                                 <Grid ColumnDefinitions="Auto,*">
                                     <FontIcon Grid.Column="0" Glyph="&#xE720;" FontSize="15" Margin="0,0,12,0"/>
-                                    <TextBlock Grid.Column="1" x:Name="LabelVoice" Text="Giọng nói &amp; VTS" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" x:Name="LabelVoice" Text="Giọng nói &amp; VTS" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
 
                             <Button x:Name="NavLog" Tag="log" Click="OnNavClick" HorizontalAlignment="Stretch"
-                                    Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" 
-                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left"
+                                    Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
+                                    Padding="10,8" CornerRadius="0" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
                                     ToolTipService.ToolTip="Nhật ký hoạt động" AutomationProperties.Name="Nhật ký hoạt động">
                                 <Grid ColumnDefinitions="Auto,*">
                                     <FontIcon Grid.Column="0" Glyph="&#xE9D9;" FontSize="15" Margin="0,0,12,0"/>
-                                    <TextBlock Grid.Column="1" x:Name="LabelLog" Text="Nhật ký hoạt động" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" x:Name="LabelLog" Text="Nhật ký hoạt động" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
 
                             <Button x:Name="NavDiagnostics" Tag="diagnostics" Click="OnNavClick" HorizontalAlignment="Stretch"
-                                    Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}"
-                                    Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left"
+                                    Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
+                                    Padding="10,8" CornerRadius="0" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
                                     ToolTipService.ToolTip="Chẩn đoán kỹ thuật" AutomationProperties.Name="Chẩn đoán kỹ thuật">
                                 <Grid ColumnDefinitions="Auto,*">
                                     <FontIcon Grid.Column="0" Glyph="&#xEBE8;" FontSize="15" Margin="0,0,12,0"/>
-                                    <TextBlock Grid.Column="1" x:Name="LabelDiagnostics" Text="Chẩn đoán kỹ thuật" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" x:Name="LabelDiagnostics" Text="Chẩn đoán kỹ thuật" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
                         </StackPanel>
 
                         <!-- Recent Chats Header -->
                         <Grid Grid.Row="1" Margin="14,20,14,6" ColumnDefinitions="*,Auto">
-                            <TextBlock x:Name="LabelRecents" Grid.Column="0" Text="GẦN ĐÂY" FontSize="11" FontWeight="Bold" 
-                                       Foreground="{StaticResource AppTextTertiaryBrush}" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="LabelRecents" Grid.Column="0" Text="GẦN ĐÂY" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
+                                       Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                         </Grid>
                         
                         <!-- Sessions List -->
-                        <ListView x:Name="SidebarSessionList" Grid.Row="2" SelectionMode="Single" 
-                                  SelectionChanged="OnSessionSelectionChanged" Margin="6,0" Padding="0,0,0,16">
+                        <ListView x:Name="SidebarSessionList" Grid.Row="2" SelectionMode="Single"
+                                  SelectionChanged="OnSessionSelectionChanged" Margin="8,0" Padding="0,0,0,16"
+                                  Background="Transparent" BorderThickness="0">
                             <ListView.ItemContainerStyle>
                                 <Style TargetType="ListViewItem">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                     <Setter Property="MinHeight" Value="34" />
                                     <Setter Property="Padding" Value="10,4" />
-                                    <Setter Property="CornerRadius" Value="{StaticResource AppControlCornerRadius}" />
-                                    <Setter Property="Margin" Value="0,2" />
+                                    <Setter Property="CornerRadius" Value="0" />
+                                    <Setter Property="Margin" Value="0,1" />
                                 </Style>
                             </ListView.ItemContainerStyle>
                             <ListView.ItemTemplate>
@@ -201,12 +190,12 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <FontIcon Grid.Column="0" Glyph="&#xE8BD;" FontSize="12" Foreground="{StaticResource AppTextTertiaryBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="{x:Bind Title}" FontSize="13" Foreground="{StaticResource AppTextPrimaryBrush}" 
+                                        <FontIcon Grid.Column="0" Glyph="&#xE8BD;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
                                                    TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Title}" 
                                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <Button Grid.Column="2" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
-                                                Width="24" Height="24" CornerRadius="4" Click="OnDeleteSessionClick" 
+                                                Width="24" Height="24" CornerRadius="0" Click="OnDeleteSessionClick"
                                                 Tag="{x:Bind Id}" ToolTipService.ToolTip="Xóa đoạn chat" Opacity="0">
                                             <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource AppDangerBrush}"/>
                                         </Button>
@@ -216,17 +205,45 @@
                         </ListView>
                     </Grid>
 
-                    <!-- Bottom Settings & Memory Nav -->
-                    <StackPanel Grid.Row="1" Padding="10,8,10,12" Spacing="4">
-                        <Border Height="1" Background="{StaticResource AppSidebarBorderBrush}" Margin="0,0,0,8"/>
-                        
+                    <!-- Status and settings -->
+                    <StackPanel Grid.Row="1" Padding="14,8,14,14" Spacing="4">
+                        <StackPanel x:Name="ShellStatusRow"
+                                    Orientation="Horizontal"
+                                    Spacing="8"
+                                    Padding="10,8,10,12"
+                                    VerticalAlignment="Center"
+                                    ToolTipService.ToolTip="Đang kiểm tra trạng thái dịch vụ">
+                            <Ellipse x:Name="StatusDot"
+                                     Width="7"
+                                     Height="7"
+                                     Fill="{StaticResource RuSuccessBrush}"
+                                     VerticalAlignment="Center" />
+                            <TextBlock x:Name="StatusText"
+                                       Text="Hệ thống đã sẵn sàng"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="12"
+                                       Foreground="{StaticResource RuMutedBrush}"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center" />
+                            <StackPanel x:Name="StatusServiceDetails" Visibility="Collapsed">
+                                <TextBlock x:Name="TextBackend" Text=".NET Backend" />
+                                <TextBlock x:Name="TextWorker" Text="AI Worker" />
+                                <TextBlock x:Name="TextVts" Text="VTS Live2D" />
+                                <Ellipse x:Name="DotBackend" />
+                                <Ellipse x:Name="DotWorker" />
+                                <Ellipse x:Name="DotVts" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Border Height="1" Background="{StaticResource RuLineBrush}" Margin="0,0,0,8"/>
+
                         <Button x:Name="NavSettings" Tag="settings" Click="OnNavClick" HorizontalAlignment="Stretch"
-                                Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" 
-                                Padding="12,8" CornerRadius="{StaticResource AppControlCornerRadius}" BorderThickness="0" HorizontalContentAlignment="Left"
+                                Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
+                                Padding="10,8" CornerRadius="0" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
                                 ToolTipService.ToolTip="Cài đặt hệ thống" AutomationProperties.Name="Cài đặt hệ thống">
                             <Grid ColumnDefinitions="Auto,*">
                                 <FontIcon Grid.Column="0" Glyph="&#xE713;" FontSize="15" Margin="0,0,12,0"/>
-                                <TextBlock Grid.Column="1" x:Name="LabelSettings" Text="Cài đặt hệ thống" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" x:Name="LabelSettings" Text="Cài đặt hệ thống" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                             </Grid>
                         </Button>
                     </StackPanel>
@@ -234,7 +251,7 @@
             </Border>
 
             <!-- Sidebar Divider / Resizer -->
-            <Border x:Name="SidebarResizer" Grid.Column="1" Background="{StaticResource AppSidebarBorderBrush}"
+            <Border x:Name="SidebarResizer" Grid.Column="1" Background="{StaticResource RuLineBrush}"
                     PointerPressed="Resizer_PointerPressed" PointerMoved="Resizer_PointerMoved" PointerReleased="Resizer_PointerReleased" />
 
             <!-- Content Frame with Smooth Native Transition -->
@@ -249,60 +266,5 @@
             </ContentControl>
         </Grid>
 
-        <!-- Sleek Multi-Service Status Bar -->
-        <Border Grid.Row="2" Background="{StaticResource AppSidebarBackgroundBrush}" BorderBrush="{StaticResource AppSidebarBorderBrush}" BorderThickness="0,1,0,0">
-            <Grid Padding="16,6">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <!-- Left: Overall Status Summary -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="{StaticResource AppSuccessBrush}" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="StatusText" Text="Hệ thống đã sẵn sàng" FontSize="12" FontFamily="Segoe UI"
-                               Foreground="{StaticResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
-                </StackPanel>
-
-                <!-- Right: Detailed Service Health Badges -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <!-- .NET Backend Status Badge -->
-                    <Border x:Name="StatusBackendBadge" Background="{StaticResource AppCardBackgroundBrush}" 
-                            BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1"
-                            CornerRadius="6" Padding="8,3"
-                            ToolTipService.ToolTip="ASP.NET Core Server (Cổng 8000)">
-                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <Ellipse x:Name="DotBackend" Width="6.5" Height="6.5" Fill="{StaticResource AppSuccessBrush}" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TextBackend" Text=".NET Backend" FontSize="11.5" FontFamily="Segoe UI"
-                                       Foreground="{StaticResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Python AI Worker Status Badge -->
-                    <Border x:Name="StatusWorkerBadge" Background="{StaticResource AppCardBackgroundBrush}" 
-                            BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1"
-                            CornerRadius="6" Padding="8,3"
-                            ToolTipService.ToolTip="Python AI Worker (LLM &amp; Voice Runtime)">
-                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <Ellipse x:Name="DotWorker" Width="6.5" Height="6.5" Fill="{StaticResource AppSuccessBrush}" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TextWorker" Text="AI Worker" FontSize="11.5" FontFamily="Segoe UI"
-                                       Foreground="{StaticResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- VTube Studio Status Badge -->
-                    <Border x:Name="StatusVtsBadge" Background="{StaticResource AppCardBackgroundBrush}" 
-                            BorderBrush="{StaticResource AppCardBorderBrush}" BorderThickness="1"
-                            CornerRadius="6" Padding="8,3"
-                            ToolTipService.ToolTip="VTube Studio Live2D API (Cổng 25565)">
-                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <Ellipse x:Name="DotVts" Width="6.5" Height="6.5" Fill="{StaticResource AppTextTertiaryBrush}" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="TextVts" Text="VTS Live2D" FontSize="11.5" FontFamily="Segoe UI"
-                                       Foreground="{StaticResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-            </Grid>
-        </Border>
     </Grid>
 </Window>

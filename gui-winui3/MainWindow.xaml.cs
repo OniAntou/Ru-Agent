@@ -57,12 +57,12 @@ namespace RuApp
 
                     if (appWindow != null && appWindow.TitleBar != null)
                     {
-                        appWindow.TitleBar.ButtonForegroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 248, 250, 252);
-                        appWindow.TitleBar.ButtonHoverForegroundColor = Microsoft.UI.Colors.White;
-                        appWindow.TitleBar.ButtonHoverBackgroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 38, 43, 56);
-                        appWindow.TitleBar.ButtonPressedForegroundColor = Microsoft.UI.Colors.White;
-                        appWindow.TitleBar.ButtonPressedBackgroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 52, 59, 76);
-                        appWindow.TitleBar.ButtonInactiveForegroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 140, 145, 160);
+                        appWindow.TitleBar.ButtonForegroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 32, 35, 31);
+                        appWindow.TitleBar.ButtonHoverForegroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 32, 35, 31);
+                        appWindow.TitleBar.ButtonHoverBackgroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 217, 221, 213);
+                        appWindow.TitleBar.ButtonPressedForegroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 32, 35, 31);
+                        appWindow.TitleBar.ButtonPressedBackgroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 200, 206, 198);
+                        appWindow.TitleBar.ButtonInactiveForegroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 104, 112, 103);
                         appWindow.TitleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
                         appWindow.TitleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
                     }
@@ -207,23 +207,36 @@ namespace RuApp
         private void SetActiveNav(Button activeBtn)
         {
             var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            var activeBg = (SolidColorBrush)Application.Current.Resources["AppCardBackgroundHoverBrush"];
-            var textPrimary = (SolidColorBrush)Application.Current.Resources["AppTextPrimaryBrush"];
-            var textSecondary = (SolidColorBrush)Application.Current.Resources["AppTextSecondaryBrush"];
+            var muted = (SolidColorBrush)Application.Current.Resources["RuMutedBrush"];
+            var ink = (SolidColorBrush)Application.Current.Resources["RuInkBrush"];
+            var accent = (SolidColorBrush)Application.Current.Resources["RuAccentBrush"];
 
-            NavChat.Background = transparent;
-            NavChat.Foreground = textSecondary;
-            NavVoice.Background = transparent;
-            NavVoice.Foreground = textSecondary;
-            NavSettings.Background = transparent;
-            NavSettings.Foreground = textSecondary;
-            NavLog.Background = transparent;
-            NavLog.Foreground = textSecondary;
-            NavDiagnostics.Background = transparent;
-            NavDiagnostics.Foreground = textSecondary;
+            foreach (var button in new[] { NavChat, NavVoice, NavLog, NavDiagnostics, NavSettings })
+            {
+                button.Background = transparent;
+                button.Foreground = muted;
+                button.BorderBrush = transparent;
+                button.BorderThickness = new Thickness(0);
+            }
 
-            activeBtn.Background = activeBg;
-            activeBtn.Foreground = textPrimary;
+            activeBtn.Background = transparent;
+            activeBtn.Foreground = ink;
+            activeBtn.BorderBrush = accent;
+            activeBtn.BorderThickness = new Thickness(2, 0, 0, 0);
+        }
+
+        private void UpdateShellStatusTooltip()
+        {
+            if (ShellStatusRow == null) return;
+
+            var details = string.Join(
+                Environment.NewLine,
+                new[] { TextBackend.Text, TextWorker.Text, TextVts.Text }
+                    .Where(value => !string.IsNullOrWhiteSpace(value)));
+
+            ToolTipService.SetToolTip(
+                ShellStatusRow,
+                string.IsNullOrWhiteSpace(details) ? StatusText.Text : details);
         }
 
         private void OnNavClick(object sender, RoutedEventArgs e)
@@ -273,6 +286,7 @@ namespace RuApp
                 TextBackend.Text = ".NET Backend: Đã dừng";
                 TextWorker.Text = "AI Worker: Đã dừng";
                 TextVts.Text = "VTS: Đã ngắt";
+                UpdateShellStatusTooltip();
                 _wsClient?.NotifyBackendStopped();
             });
         }
@@ -483,6 +497,8 @@ namespace RuApp
                 StatusDot.Fill = successBrush;
                 StatusText.Text = vtsConnected ? "Hệ thống sẵn sàng (Đã kết nối Live2D)" : "Hệ thống đã sẵn sàng";
             }
+
+            UpdateShellStatusTooltip();
         }
 
         private async void OnNewChatClick(object sender, RoutedEventArgs e)

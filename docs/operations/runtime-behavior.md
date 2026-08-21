@@ -88,19 +88,22 @@ surfaces, and build correctness. Visual resizing at representative window sizes
 remains a user-run acceptance check.
 
 The phase-one Chat redesign uses the same tiers. The shell and Chat use the
-Editorial reading room presentation: a light mineral canvas, a flat sidebar,
-and a centered document-style reading column. Voice/VTS, Log, Diagnostics,
-Settings, and Memory retain their existing layout in this phase.
-The application requests the light WinUI theme globally so default form
-controls on those retained views inherit readable dark foregrounds on the
-light palette.
+Editorial reading room presentation: the approved light mineral palette as the
+baseline, a flat sidebar, and a centered document-style reading column.
+Voice/VTS, Log, Diagnostics, Settings, and Memory retain their existing layout
+in this phase while inheriting the active shared Light or Dark token set.
+The application keeps Light as its fallback and MainWindow can request the
+active theme on the shell root so default controls follow the same contrast.
 
-The redesign is presentation-only. It does not recreate message or session
-sources, call the backend during layout, alter WebSocket ordering, change STT,
-voice playback, subtitles, VTube Studio control, or persist a new UI setting.
-Automated source/XAML contracts and the WinUI build cover structural
-correctness. Visual resizing and live audio/VTS behavior remain manual
-acceptance checks.
+The appearance action in the sidebar footer switches Light and Dark
+synchronously. The selected appearance is UI-only state stored at
+`%LOCALAPPDATA%\Ru\ui-preferences.json`; it is not an ASP.NET setting or model
+configuration. Switching remains presentation-only for application behavior:
+it does not recreate message or session sources, call the backend during
+layout, alter WebSocket ordering, change STT, voice playback, subtitles, or
+VTube Studio control. Automated source/XAML contracts and the WinUI build cover
+structural correctness. Visual resizing and live audio/VTS behavior remain
+manual acceptance checks.
 
 ## Persistence and privacy
 

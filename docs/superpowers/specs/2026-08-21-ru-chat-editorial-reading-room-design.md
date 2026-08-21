@@ -1,7 +1,7 @@
 # Ru Chat Editorial Reading Room Design
 
 **Date:** 2026-08-21
-**Status:** Implemented; palette refined 2026-08-21
+**Status:** Implemented; palette refined and Light/Dark toggle added 2026-08-21
 **Scope:** Phase 1 visual redesign of the WinUI 3 shell/sidebar and Chat view
 
 ## Decision summary
@@ -9,7 +9,9 @@
 Ru will move from the current dark card-and-bubble presentation to a light,
 editorial reading room. The first slice covers the shell/sidebar and Chat view
 only. The other views keep their existing layout and behavior, but the shared
-tokens created here must be reusable when they are redesigned later.
+tokens created here must be reusable when they are redesigned later. The Light
+palette remains the visual baseline; a later same-day extension adds a Dark
+dictionary and a local appearance toggle without changing this layout.
 
 The redesign preserves the existing navigation, session selection, streamed
 chat, Markdown rendering, STT microphone action, send behavior, responsive
@@ -57,7 +59,8 @@ within this design slice and must not stage or commit unrelated work.
 - No redesign of Voice/VTS, Log, Diagnostics, Settings, or Memory content in
   this phase.
 - No navigation framework migration and no third-party UI package.
-- No new persisted UI preference.
+- No backend or business-data preference. The later Dark-theme extension adds
+  only a local UI appearance preference under `%LOCALAPPDATA%\Ru`.
 - No new backend endpoint or UI polling path.
 - No automated launching or control of RuApp or VTube Studio.
 - No content rewrite beyond the approved welcome intro and composer placeholder;
@@ -74,8 +77,11 @@ generic AI product surface.
 
 ### Theme and tokens
 
-Phase 1 uses one light theme. It is intentionally mineral and paper-like,
-without a purple-blue gradient, glow, or glass treatment.
+Phase 1 uses the Light theme as its baseline. It is intentionally mineral and
+paper-like, without a purple-blue gradient, glow, or glass treatment. The
+active shell may now use the matching Dark charcoal-mineral dictionary defined
+in `2026-08-21-ru-dark-theme-toggle-design.md`; both themes preserve the same
+tokens, typography, spacing, and editorial layout.
 
 | Token | Value | Use |
 | --- | --- | --- |
@@ -92,8 +98,10 @@ without a purple-blue gradient, glow, or glass treatment.
 | `RuDangerBrush` | `#A73A3A` | Error state |
 
 The shared palette was softened after visual review while keeping the same
-editorial layout and one-light-theme decision. The refinement is recorded in
+editorial layout and Light baseline. The refinement is recorded in
 `2026-08-21-ru-mineral-paper-palette-refinement-design.md`.
+The persistent Light/Dark selector and its local preference are recorded in
+`2026-08-21-ru-dark-theme-toggle-design.md`.
 
 Typography uses `Segoe UI Variable` for UI and message body. `Cambria` is
 reserved for page titles and Markdown headings, where the editorial contrast

@@ -1,17 +1,18 @@
 # Ru Mineral Paper Palette Refinement
 
 **Date:** 2026-08-21  
-**Status:** Implemented
+**Status:** Implemented as the Light baseline; Dark extension added 2026-08-21
 **Scope:** Tone down the shared light palette after visual feedback that the
 current shell and Settings surface feels too bright
 
 ## Decision summary
 
 Keep the current editorial reading-room layout, typography, navigation, and
-light WinUI theme. Recalibrate only the shared mineral palette so the canvas,
+Light baseline. Recalibrate only the shared mineral palette so the canvas,
 sidebar, cards, dividers, and subtle action fills have less luminance and less
 white-on-white contrast. Primary ink, semantic status colors, behavior, and
-responsive layout remain unchanged.
+responsive layout remain unchanged. The later Dark-theme extension mirrors
+these tokens without changing this Light baseline.
 
 ## Design read
 
@@ -43,10 +44,12 @@ Legacy `App*Brush` aliases continue to resolve through the shared Ru tokens.
 ## Scope boundaries
 
 - Change only shared palette values and the matching palette contract tests.
-- Keep `RequestedTheme="Light"`; default WinUI controls must remain readable.
+- Keep `RequestedTheme="Light"` as the application fallback; the shell root may
+  request the active Dark dictionary while default controls remain readable.
 - Do not modify layout, spacing, typography, content, navigation, settings
-  behavior, backend calls, voice/VTS behavior, or persisted settings.
-- Do not add a theme selector or a new user preference.
+  behavior, backend calls, voice/VTS behavior, or backend/business settings.
+- The later Dark-theme extension owns the appearance selector and its local
+  UI-only preference; this palette refinement does not define that behavior.
 - Do not launch or control RuApp or VTube Studio automatically.
 
 ## Acceptance criteria
@@ -67,8 +70,8 @@ to distinguish. No horizontal clipping or behavior change is expected.
 
 ## Documentation
 
-After implementation, update the runtime behavior note if its palette
-description no longer matches the shipped values. Review nearby design specs
-for stale token tables; do not retire the original reading-room spec because
-this is a refinement of its shared palette, not a change to its layout
-decision.
+The current runtime behavior and Light/Dark selector are documented in
+`docs/operations/runtime-behavior.md` and
+`2026-08-21-ru-dark-theme-toggle-design.md`. Keep this document as the
+historical Light-baseline record; do not retire the original reading-room spec
+because the extension preserves its layout decision.

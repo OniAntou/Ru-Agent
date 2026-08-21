@@ -1,7 +1,7 @@
 # Ru Dark Theme Toggle
 
 **Date:** 2026-08-21  
-**Status:** Approved; implementation pending  
+**Status:** Implemented 2026-08-21  
 **Scope:** Persistent light/dark theme switching for the Ru WinUI 3 shell
 
 ## Decision summary

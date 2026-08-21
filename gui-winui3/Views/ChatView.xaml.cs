@@ -77,6 +77,10 @@ namespace RuApp.Views
             {
                 ChatScrollHost.Visibility = hasMessages ? Visibility.Visible : Visibility.Collapsed;
             }
+            if (MeteorField != null)
+            {
+                MeteorField.IsActive = !hasMessages;
+            }
         }
 
         private void OnRootGridSizeChanged(object sender, SizeChangedEventArgs e)
@@ -583,6 +587,7 @@ namespace RuApp.Views
             }
             _typingDebounce?.Stop();
             _typingDebounce = null;
+            MeteorField?.Dispose();
             _micRecorder.Dispose();
         }
     }

@@ -172,6 +172,9 @@ def stop_owned_child(
 ) -> ChildExit:
     """Request a bounded graceful stop, then kill only the owned process tree."""
 
+    before_stop = child.poll()
+    if before_stop.code is not None:
+        return before_stop
     child.request_stop()
     try:
         if child.process.poll() is None:

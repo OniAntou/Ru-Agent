@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from harness.processes import ChildLifecycle
+from harness.processes import ChildLifecycle, stop_owned_child
 
 
 class FakeChild:
@@ -42,3 +42,14 @@ def test_ready_child_exit_after_harness_stop_is_expected_stop() -> None:
     result = state.poll()
     assert result.classification == "expected_stop"
     assert result.code == 1
+
+
+def test_child_that_exited_before_cleanup_remains_unexpected() -> None:
+    child = FakeChild()
+    state = ChildLifecycle(role="edge", process=child)
+    state.mark_ready()
+    child.exit()
+
+    result = stop_owned_child(state)
+
+    assert result.classification == "unexpected_exit"

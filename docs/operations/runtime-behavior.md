@@ -105,6 +105,12 @@ VTube Studio control. Automated source/XAML contracts and the WinUI build cover
 structural correctness. Visual resizing and live audio/VTS behavior remain
 manual acceptance checks.
 
+The current Ru signature layer is also presentation-only: a quiet title-bar
+wordmark, an editorial welcome eyebrow, one low-opacity token-based accent wash,
+message edge rules, and a composer focus rule. These elements do not add Chat
+content, VTS/voice metadata, fake status indicators, backend calls, or timing
+changes.
+
 ## Persistence and privacy
 
 ASP.NET Core owns settings, credentials, sessions/history, activity, structured

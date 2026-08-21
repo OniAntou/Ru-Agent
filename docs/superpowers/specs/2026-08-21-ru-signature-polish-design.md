@@ -1,7 +1,7 @@
 # Ru Signature Polish
 
 **Date:** 2026-08-21
-**Status:** Approved; implementation pending
+**Status:** Implemented 2026-08-21
 **Scope:** A visual polish pass for the existing Light/Dark Ru WinUI 3 shell and Chat view
 
 ## Decision summary
@@ -191,4 +191,3 @@ current visual layer as only a static reading room. Keep the existing Light/Dark
 design spec as the palette and preference source of truth, and keep this
 document as the signature-polish boundary. Historical implementation plans are
 not deleted solely because this visual pass extends them.
-

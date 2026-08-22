@@ -26,7 +26,6 @@ def test_normalize_relative_path_rejects_broad_or_external_paths(value: str) -> 
         ".venv/Lib/site-packages/example.py",
         "omnivoice_env/python.exe",
         "models/omnivoice/model.bin",
-        "data/conversations/ru_v1/train.jsonl",
         "data/conversations/approved.jsonl",
         "data/conversations/memory.db",
         "data/memory.db",
@@ -57,6 +56,9 @@ def test_candidate_root_is_protected_when_it_contains_a_dirty_path() -> None:
 @pytest.mark.parametrize(
     "relative",
     (
+        "data/conversations/ru_v1/train.jsonl",
+        "data/conversations/ru_v1_1/train.jsonl",
+        "data/conversations/ru_v1_2/train.jsonl",
         "configs/ru_llama3_1_v6_3.json",
         "src/ru_runtime/ru_v6_3_corpus.py",
         "src/ru_runtime/_base_corpus.py",
@@ -83,7 +85,7 @@ def test_candidate_root_is_protected_when_it_contains_a_dirty_path() -> None:
         "eval_results/ru_llama3_1_v6_style.json",
     ),
 )
-def test_llama_only_paths_are_classified_as_legacy(relative: str) -> None:
+def test_retired_local_model_paths_are_classified_as_legacy(relative: str) -> None:
     decision = classify_path(
         relative,
         tracked=relative.startswith(("configs/", "src/", "scripts/", "tests/")),

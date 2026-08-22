@@ -28,7 +28,6 @@ _PROTECTED_ROOTS = (
     ".minigpt",
     "models/omnivoice",
     "models/vision",
-    "data/conversations/ru_v1",
     "data/conversations/approved.jsonl",
     "data/conversations/memory.db",
     "data/conversations/memory.db-wal",
@@ -59,6 +58,9 @@ _REBUILDABLE_ROOTS = (
 )
 
 _LEGACY_ROOTS = (
+    "data/conversations/ru_v1",
+    "data/conversations/ru_v1_1",
+    "data/conversations/ru_v1_2",
     "models/lfm2.5-2.6b-hf",
     "models/gguf",
     "checkpoints/ru-lfm2.5-2.6b-v1",

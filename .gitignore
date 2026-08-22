@@ -56,6 +56,7 @@ rustup-init.exe
 # Scratch/verification artifacts
 artifacts/aspnetcore/
 artifacts/cleanup/
+artifacts/gui/
 tmp_verify_fresh*/
 resources.pri.xml
 *.lnk

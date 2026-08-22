@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using RuBackend.Business.Activity;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
+using RuBackend.Agent;
 using RuBackend.Diagnostics;
 using RuBackend.Memory;
 using RuBackend.Worker;
@@ -38,6 +39,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
     private readonly IStreamSanitizer _sanitizer;
     private readonly ConversationTurnGate _gate;
     private readonly IDiagnosticEmitter? _diagnosticEmitter;
+    private readonly IAgentTurnCoordinator? _agent;
 
     public ConversationCoordinator(
         ISessionStore sessions,
@@ -48,7 +50,8 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         IMetadataPolicy metadata,
         IStreamSanitizer sanitizer,
         ConversationTurnGate gate,
-        IDiagnosticEmitter? diagnosticEmitter = null)
+        IDiagnosticEmitter? diagnosticEmitter = null,
+        IAgentTurnCoordinator? agent = null)
     {
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _memory = memory ?? throw new ArgumentNullException(nameof(memory));
@@ -59,6 +62,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         _sanitizer = sanitizer ?? throw new ArgumentNullException(nameof(sanitizer));
         _gate = gate ?? throw new ArgumentNullException(nameof(gate));
         _diagnosticEmitter = diagnosticEmitter;
+        _agent = agent;
     }
 
     public IAsyncEnumerable<ChatEvent> HandleAsync(
@@ -155,7 +159,24 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                 turns.Select(turn => new WorkerTurn(turn.Prompt, turn.Response)).ToArray(),
                 ShouldShareMemory(settings) ? RenderMemory(memories) : string.Empty,
                 BuildVtsInstruction(catalog),
-                BuildWorkerSettings(settings));
+                BuildWorkerSettings(settings, request.AgentMode));
+            if (request.AgentMode)
+            {
+                if (_agent is null)
+                {
+                    throw new ConversationException("agent_unavailable");
+                }
+
+                workerRequest = workerRequest with
+                {
+                    ToolHandler = (tool, toolCancellation) =>
+                        _agent.ExecuteToolAsync(
+                            new AgentTurnRequest(
+                                tool,
+                                value => WriteAsync(writer, value, toolCancellation)),
+                            toolCancellation),
+                };
+            }
 
             var rawStream = string.Empty;
             var visibleStream = string.Empty;
@@ -228,6 +249,16 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                             durationMs: stopwatch.Elapsed.TotalMilliseconds,
                             status: "succeeded");
                         return;
+                    case WorkerMessageTypes.ChatToolRequest:
+                        // The LoopbackWorkerClient completes the private tool
+                        // exchange before yielding this event. Keep metadata
+                        // out of visible chat while preserving a safe activity
+                        // notification if a different WorkerClient is used.
+                        await WriteAsync(
+                            writer,
+                            new ChatEvent("agent.activity", "Agent is using a tool.", sessionId),
+                            cancellationToken).ConfigureAwait(false);
+                        break;
                     case WorkerMessageTypes.Error:
                         throw new ConversationException(ReadWorkerErrorCode(item.Payload));
                     default:
@@ -514,12 +545,13 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         }
     }
 
-    private static JsonObject BuildWorkerSettings(SettingsSnapshot settings) => new()
+    private static JsonObject BuildWorkerSettings(SettingsSnapshot settings, bool agentMode) => new()
     {
         ["max_tokens"] = settings.MaxTokens,
         ["temperature"] = settings.Temperature,
         ["top_k"] = settings.TopK,
         ["allow_web_search"] = settings.AllowWebSearch,
+        ["agent_mode"] = agentMode,
     };
 
     private static bool ShouldShareMemory(SettingsSnapshot settings) =>

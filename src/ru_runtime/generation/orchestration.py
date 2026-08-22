@@ -86,6 +86,7 @@ def execute_reply(
     on_stream_reset: Callable[[], None] | None = None,
     on_complete_timing: Callable[[float], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
+    allow_legacy_markers: bool = True,
 ) -> str:
     messages = build_conversation_messages(
         system_instruction,
@@ -107,7 +108,7 @@ def execute_reply(
     
     search_match = _SEARCH_MARKER.search(response)
     if not allow_web_search or search_match is None:
-        response = _execute_pc_tool_markers(response)
+        response = _execute_pc_tool_markers(response) if allow_legacy_markers else _strip_search_marker(response)
         if not allow_web_search and search_match is not None:
             logger.warning("Model requested a web search but web search is disabled; stripping the marker")
             cleaned = _strip_search_marker(response)
@@ -141,10 +142,14 @@ def execute_reply(
             on_complete_timing=on_complete_timing,
             is_cancelled=is_cancelled,
         )
-        grounded_response = _execute_pc_tool_markers(grounded_response)
+        grounded_response = (
+            _execute_pc_tool_markers(grounded_response)
+            if allow_legacy_markers
+            else _strip_search_marker(grounded_response)
+        )
         return strip_emojis_and_emoticons(grounded_response)
     except Exception as error:
         logger.warning("Grounded follow-up failed: %s", error)
-        response = _execute_pc_tool_markers(response)
+        response = _execute_pc_tool_markers(response) if allow_legacy_markers else _strip_search_marker(response)
         fallback = _strip_search_marker(response)
         return strip_emojis_and_emoticons(fallback) if fallback else strip_emojis_and_emoticons(response)

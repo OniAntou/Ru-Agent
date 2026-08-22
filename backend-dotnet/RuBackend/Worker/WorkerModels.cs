@@ -9,9 +9,28 @@ public sealed record WorkerChatRequest(
     IReadOnlyList<WorkerTurn> Turns,
     string MemoryContext,
     string VtsInstruction,
-    JsonObject Settings);
+    JsonObject Settings)
+{
+    public Func<WorkerToolRequest, CancellationToken, Task<WorkerToolResult>>? ToolHandler { get; init; }
+}
 
 public sealed record WorkerTurn(string Prompt, string Response);
+
+public sealed record WorkerToolRequest(
+    string RequestId,
+    string SessionId,
+    string CorrelationId,
+    string ToolId,
+    string ToolVersion,
+    JsonObject Arguments,
+    int DeadlineMs);
+
+public sealed record WorkerToolResult(
+    string RequestId,
+    string Status,
+    JsonObject Output,
+    string? ErrorCode,
+    string SafeSummary);
 
 public sealed record WorkerEvent(
     string RequestId,

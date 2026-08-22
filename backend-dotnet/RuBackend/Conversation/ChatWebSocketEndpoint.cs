@@ -99,7 +99,11 @@ public static class ChatWebSocketEndpoint
                     socket,
                     sendLock,
                     coordinator,
-                    new ChatRequest(prompt, request.SessionId?.Trim(), request.CorrelationId),
+                    new ChatRequest(
+                        prompt,
+                        request.SessionId?.Trim(),
+                        request.CorrelationId,
+                        request.AgentMode),
                     inbound.Reader,
                     connectionCancellation.Token).ConfigureAwait(false);
                 if (closed)
@@ -372,7 +376,18 @@ public static class ChatWebSocketEndpoint
                 correlationId = parsedCorr;
             }
 
-            request = new ChatRequest(prompt, sessionId, correlationId);
+            var agentMode = false;
+            if (root["agent_mode"] is JsonNode agentNode)
+            {
+                if (agentNode is not JsonValue agentValue
+                    || !agentValue.TryGetValue<bool>(out agentMode))
+                {
+                    error = Error("malformed_message", "Malformed message.");
+                    return false;
+                }
+            }
+
+            request = new ChatRequest(prompt, sessionId, correlationId, agentMode);
             return true;
         }
         catch (Exception parseError) when (parseError is JsonException or DecoderFallbackException)

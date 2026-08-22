@@ -26,6 +26,9 @@ from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
 from ru_runtime.worker.v1.protocol import (
     CHAT_CANCEL,
     CHAT_START,
+    CHAT_TOOL_CANCEL,
+    CHAT_TOOL_REQUEST,
+    CHAT_TOOL_RESULT,
     ERROR,
     HELLO,
     HELLO_OK,
@@ -70,6 +73,11 @@ class WorkerHandlers:
     runtime: WorkerHandler
     voice: WorkerHandler
     vts: WorkerHandler
+
+
+_TOOL_RESULT_QUEUE = "__worker_tool_result_queue"
+_TOOL_SESSION_ID = "__worker_session_id"
+_TOOL_CORRELATION_ID = "__worker_correlation_id"
 
 
 async def serve_worker(
@@ -160,6 +168,8 @@ async def _handle_connection(
     send_lock = asyncio.Lock()
     request_tasks: dict[str, asyncio.Task[None]] = {}
     cancellation_events: dict[str, asyncio.Event] = {}
+    tool_result_queues: dict[str, asyncio.Queue[Mapping[str, Any]]] = {}
+    tool_contexts: dict[str, tuple[str, str | None]] = {}
 
     try:
         try:
@@ -257,6 +267,32 @@ async def _handle_connection(
                     await _send_error(connection, send_lock, request_id, "request_not_found", False)
                 continue
 
+            if message_type in (CHAT_TOOL_RESULT, CHAT_TOOL_CANCEL):
+                queue = tool_result_queues.get(request_id)
+                context = tool_contexts.get(request_id)
+                if queue is None or context is None:
+                    await _send_error(connection, send_lock, request_id, "request_not_found", False)
+                    continue
+                payload = envelope["payload"]
+                if payload.get("session_id") != context[0] or (
+                    context[1] is not None and payload.get("correlation_id") != context[1]
+                ):
+                    await _send_error(connection, send_lock, request_id, "tool_context_mismatch", False)
+                    continue
+                if message_type == CHAT_TOOL_CANCEL:
+                    cancelled = cancellation_events.get(request_id)
+                    if cancelled is not None:
+                        cancelled.set()
+                    task = request_tasks.get(request_id)
+                    if task is not None and not task.done():
+                        task.cancel()
+                    continue
+                try:
+                    queue.put_nowait(dict(payload))
+                except asyncio.QueueFull:
+                    await _send_error(connection, send_lock, request_id, "duplicate_tool_result", False)
+                continue
+
             handler = _select_handler(message_type, handlers)
             if handler is None:
                 await _send_error(connection, send_lock, request_id, "unsupported_operation", False)
@@ -267,6 +303,14 @@ async def _handle_connection(
 
             cancelled = asyncio.Event()
             cancellation_events[request_id] = cancelled
+            session_id = envelope["payload"].get("session_id")
+            if not isinstance(session_id, str) or not session_id.strip():
+                session_id = ""
+            request_tool_queue = None
+            if message_type == CHAT_START:
+                request_tool_queue = asyncio.Queue(maxsize=1)
+                tool_result_queues[request_id] = request_tool_queue
+                tool_contexts[request_id] = (session_id, envelope.get("correlation_id"))
             task = asyncio.create_task(
                 _run_request(
                     connection,
@@ -276,6 +320,8 @@ async def _handle_connection(
                     handler,
                     cancelled,
                     envelope.get("correlation_id"),
+                    request_tool_queue,
+                    session_id,
                 )
             )
             request_tasks[request_id] = task
@@ -288,6 +334,8 @@ async def _handle_connection(
                 if request_tasks.get(completed_id) is completed:
                     request_tasks.pop(completed_id, None)
                     cancellation_events.pop(completed_id, None)
+                    tool_result_queues.pop(completed_id, None)
+                    tool_contexts.pop(completed_id, None)
 
             task.add_done_callback(remove_completed)
     except ConnectionClosed:
@@ -309,13 +357,20 @@ async def _run_request(
     handler: WorkerHandler,
     cancelled: asyncio.Event,
     correlation_id: str | None = None,
+    tool_result_queue: asyncio.Queue[Mapping[str, Any]] | None = None,
+    session_id: str = "",
 ) -> None:
     with correlation_scope(correlation_id):
         sequence = 0
         t0 = asyncio.get_event_loop().time()
         diag_writer = get_diagnostic_log_writer()
         try:
-            async for reply in handler(payload, cancelled):
+            request_payload = dict(payload)
+            if tool_result_queue is not None:
+                request_payload[_TOOL_RESULT_QUEUE] = tool_result_queue
+                request_payload[_TOOL_SESSION_ID] = session_id
+                request_payload[_TOOL_CORRELATION_ID] = correlation_id
+            async for reply in handler(request_payload, cancelled):
                 if cancelled.is_set():
                     raise asyncio.CancelledError
 

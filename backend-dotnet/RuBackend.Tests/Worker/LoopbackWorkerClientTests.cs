@@ -75,6 +75,63 @@ public sealed class LoopbackWorkerClientTests
     }
 
     [Fact]
+    public async Task GenerateChat_returns_tool_request_and_sends_typed_result()
+    {
+        WorkerEnvelope? observedResult = null;
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            await CompleteHandshakeAsync(socket);
+            var request = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(
+                socket,
+                Event(
+                    request.Id,
+                    WorkerMessageTypes.ChatToolRequest,
+                    0,
+                    new JsonObject
+                    {
+                        ["request_id"] = "tool-request-1",
+                        ["session_id"] = "session",
+                        ["correlation_id"] = "corr-1",
+                        ["tool_id"] = "files.list",
+                        ["tool_version"] = "1.0.0",
+                        ["arguments"] = new JsonObject { ["path"] = "src" },
+                        ["deadline_ms"] = 30_000,
+                    }));
+            observedResult = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(
+                socket,
+                Event(
+                    request.Id,
+                    WorkerMessageTypes.ChatDone,
+                    1,
+                    new JsonObject { ["raw_reply"] = "Đã xong." }));
+        });
+
+        await using var client = CreateClient(server.Uri);
+        var request = EmptyChatRequest("chat-tool") with
+        {
+            ToolHandler = (tool, _) => Task.FromResult(
+                new WorkerToolResult(
+                    tool.RequestId,
+                    "succeeded",
+                    new JsonObject { ["entries"] = new JsonArray() },
+                    null,
+                    "Listed 0 entries."))
+        };
+
+        var events = await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None));
+
+        Assert.Equal(WorkerMessageTypes.ChatToolRequest, events[0].Type);
+        Assert.NotNull(observedResult);
+        Assert.Equal(WorkerMessageTypes.ChatToolResult, observedResult!.Type);
+        Assert.Equal("tool-request-1", observedResult.Payload["request_id"]!.GetValue<string>());
+        Assert.Equal("session", observedResult.Payload["session_id"]!.GetValue<string>());
+        Assert.Equal("corr-1", observedResult.Payload["correlation_id"]!.GetValue<string>());
+        Assert.Equal("succeeded", observedResult.Payload["status"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task GenerateChat_rejects_non_monotonic_sequences()
     {
         await using var server = await FakeWorkerServer.StartAsync(async socket =>

@@ -9,6 +9,9 @@ public static class WorkerMessageTypes
     public const string ChatChunk = "chat.chunk";
     public const string ChatDone = "chat.done";
     public const string ChatCancel = "chat.cancel";
+    public const string ChatToolRequest = "chat.tool.request";
+    public const string ChatToolResult = "chat.tool.result";
+    public const string ChatToolCancel = "chat.tool.cancel";
     public const string MemoryExtract = "memory.extract";
     public const string MemoryFacts = "memory.facts";
     public const string RuntimeLoad = "runtime.load";
@@ -33,6 +36,9 @@ public static class WorkerMessageTypes
             ChatChunk,
             ChatDone,
             ChatCancel,
+            ChatToolRequest,
+            ChatToolResult,
+            ChatToolCancel,
             MemoryExtract,
             MemoryFacts,
             RuntimeLoad,

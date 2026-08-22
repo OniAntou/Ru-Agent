@@ -84,7 +84,18 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
                     yield break;
                 }
 
-                yield return enumerator.Current;
+                var item = enumerator.Current;
+                if (item.Type == WorkerMessageTypes.ChatToolRequest
+                    && request.ToolHandler is not null)
+                {
+                    var toolRequest = ParseToolRequest(item.Payload);
+                    var result = await request.ToolHandler(toolRequest, cancellationToken);
+                    await connection.SendEnvelopeAsync(
+                        ToolResultEnvelope(request.RequestId, toolRequest, result),
+                        cancellationToken);
+                }
+
+                yield return item;
             }
         }
         finally
@@ -506,6 +517,43 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
             WorkerMessageTypes.ChatCancel,
             null,
             []);
+
+    private static WorkerEnvelope ToolResultEnvelope(
+        string parentRequestId,
+        WorkerToolRequest request,
+        WorkerToolResult result) =>
+        new(
+            WorkerClientOptions.CurrentProtocolVersion,
+            parentRequestId,
+            WorkerMessageTypes.ChatToolResult,
+            null,
+            new JsonObject
+            {
+                ["request_id"] = result.RequestId,
+                ["session_id"] = request.SessionId,
+                ["correlation_id"] = request.CorrelationId,
+                ["status"] = result.Status,
+                ["output"] = result.Output.DeepClone(),
+                ["error_code"] = result.ErrorCode,
+                ["safe_summary"] = result.SafeSummary,
+            });
+
+    private static WorkerToolRequest ParseToolRequest(JsonObject payload)
+    {
+        if (payload["arguments"] is not JsonObject arguments)
+        {
+            throw new WorkerProtocolException("invalid_tool_request");
+        }
+
+        return new WorkerToolRequest(
+            ReadString(payload["request_id"], "invalid_tool_request"),
+            ReadString(payload["session_id"], "invalid_tool_request"),
+            ReadString(payload["correlation_id"], "invalid_tool_request"),
+            ReadString(payload["tool_id"], "invalid_tool_request"),
+            ReadString(payload["tool_version"], "invalid_tool_request"),
+            arguments.DeepClone().AsObject(),
+            ReadInt32(payload["deadline_ms"], "invalid_tool_request"));
+    }
 
     private static async Task TrySendCancellationAsync(
         WorkerConnection connection,

@@ -17,6 +17,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
     <ProjectReference Include="..\RuBackend\RuBackend.csproj" />
   </ItemGroup>
 </Project>

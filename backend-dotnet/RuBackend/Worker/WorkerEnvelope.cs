@@ -132,6 +132,20 @@ public static class WorkerEnvelopeCodec
         {
             throw new WorkerProtocolException("invalid_payload");
         }
+
+        switch (envelope.Type)
+        {
+            case WorkerMessageTypes.ChatToolRequest:
+                ValidateToolRequest(envelope.Payload);
+                break;
+            case WorkerMessageTypes.ChatToolResult:
+                ValidateToolResult(envelope.Payload);
+                break;
+            case WorkerMessageTypes.ChatToolCancel:
+                ValidateToolContext(envelope.Payload, "invalid_tool_cancel");
+                ValidateToolRequestId(envelope.Payload, "invalid_tool_cancel");
+                break;
+        }
     }
 
     private static int ReadInt32(JsonNode? node, string code)
@@ -175,6 +189,58 @@ public static class WorkerEnvelopeCodec
         }
 
         throw new WorkerProtocolException("invalid_sequence");
+    }
+
+    private static void ValidateToolRequest(JsonObject payload)
+    {
+        ValidateToolContext(payload, "invalid_tool_request");
+        ValidateToolRequestId(payload, "invalid_tool_request");
+        ValidateString(payload["tool_id"], 128, "invalid_tool_request");
+        ValidateString(payload["tool_version"], 64, "invalid_tool_request");
+        if (payload["arguments"] is not JsonObject)
+        {
+            throw new WorkerProtocolException("invalid_tool_request");
+        }
+
+        var deadline = ReadInt32(payload["deadline_ms"], "invalid_tool_request");
+        if (deadline is < 1 or > 300_000)
+        {
+            throw new WorkerProtocolException("invalid_tool_request");
+        }
+    }
+
+    private static void ValidateToolResult(JsonObject payload)
+    {
+        ValidateToolRequestId(payload, "invalid_tool_result");
+        var status = ReadString(payload["status"], "invalid_tool_result");
+        if (!new HashSet<string>(["succeeded", "failed", "denied", "cancelled", "timed_out"], StringComparer.Ordinal).Contains(status)
+            || payload["output"] is not JsonObject
+            || payload["safe_summary"] is not JsonValue safeSummary
+            || !safeSummary.TryGetValue<string>(out var summary)
+            || summary.Length > 4096)
+        {
+            throw new WorkerProtocolException("invalid_tool_result");
+        }
+    }
+
+    private static void ValidateToolContext(JsonObject payload, string code)
+    {
+        ValidateString(payload["session_id"], 128, code);
+        ValidateString(payload["correlation_id"], 128, code);
+    }
+
+    private static void ValidateToolRequestId(JsonObject payload, string code) =>
+        ValidateString(payload["request_id"], 128, code);
+
+    private static void ValidateString(JsonNode? node, int maxLength, string code)
+    {
+        if (node is not JsonValue value
+            || !value.TryGetValue<string>(out var text)
+            || string.IsNullOrWhiteSpace(text)
+            || text.Length > maxLength)
+        {
+            throw new WorkerProtocolException(code);
+        }
     }
 }
 

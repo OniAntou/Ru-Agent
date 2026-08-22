@@ -13,6 +13,8 @@ from ru_runtime.worker.v1.protocol import (
     CHAT_CHUNK,
     CHAT_DONE,
     CHAT_RESET,
+    CHAT_TOOL_REQUEST,
+    CHAT_TOOL_RESULT,
     ERROR,
     HELLO,
     MEMORY_FACTS,
@@ -92,6 +94,68 @@ def test_chat_handler_streams_reset_chunk_done_with_monotonic_sequences() -> Non
                 assert [event["type"] for event in events] == [CHAT_RESET, CHAT_CHUNK, CHAT_DONE]
                 assert [event["seq"] for event in events] == [0, 1, 2]
                 assert events[1]["payload"]["text"] == "Em nghe đây."
+
+    asyncio.run(scenario())
+
+
+def test_chat_tool_result_is_routed_to_the_pending_chat_turn() -> None:
+    async def chat(payload: dict, _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
+        yield WorkerReply(
+            CHAT_TOOL_REQUEST,
+            {
+                "request_id": "tool-request-1",
+                "session_id": payload["session_id"],
+                "correlation_id": "corr-1",
+                "tool_id": "files.list",
+                "tool_version": "1.0.0",
+                "arguments": {"path": "src"},
+                "deadline_ms": 30_000,
+            },
+        )
+        result = await payload["__worker_tool_result_queue"].get()
+        assert result["request_id"] == "tool-request-1"
+        yield WorkerReply(CHAT_DONE, {"raw_reply": result["safe_summary"]})
+
+    async def scenario() -> None:
+        async with running_server(default_handlers(chat=chat)) as uri:
+            async with connect(uri) as websocket:
+                await send_hello(websocket, "worker-secret")
+                await websocket.recv()
+                await websocket.send(
+                    encode_envelope(
+                        {
+                            "v": 1,
+                            "id": "chat-tool-1",
+                            "type": "chat.start",
+                            "correlation_id": "corr-1",
+                            "payload": {"session_id": "session-1"},
+                        }
+                    )
+                )
+                request = validate_envelope(json.loads(await websocket.recv()))
+                assert request["type"] == CHAT_TOOL_REQUEST
+                assert request["seq"] == 0
+                await websocket.send(
+                    encode_envelope(
+                        {
+                            "v": 1,
+                            "id": "chat-tool-1",
+                            "type": CHAT_TOOL_RESULT,
+                            "payload": {
+                                "request_id": "tool-request-1",
+                                "session_id": "session-1",
+                                "correlation_id": "corr-1",
+                                "status": "succeeded",
+                                "output": {"entries": []},
+                                "safe_summary": "Tool result received.",
+                            },
+                        }
+                    )
+                )
+                done = validate_envelope(json.loads(await websocket.recv()))
+                assert done["type"] == CHAT_DONE
+                assert done["seq"] == 1
+                assert done["payload"]["raw_reply"] == "Tool result received."
 
     asyncio.run(scenario())
 

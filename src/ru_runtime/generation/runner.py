@@ -107,6 +107,7 @@ class ModelRunner:
         on_stream_reset=None,
         on_complete_timing=None,
         is_cancelled=None,
+        structured_tools_only=False,
     ) -> str:
         if self.backend in OPENAI_COMPATIBLE_BACKENDS and self.openai_runtime:
             kwargs = {
@@ -162,6 +163,7 @@ class ModelRunner:
             on_stream_reset=on_stream_reset,
             on_complete_timing=on_complete_timing,
             is_cancelled=is_cancelled,
+            allow_legacy_markers=not structured_tools_only,
         )
 
     def generate_screen_reaction(

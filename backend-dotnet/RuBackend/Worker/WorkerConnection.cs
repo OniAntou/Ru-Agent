@@ -13,6 +13,7 @@ public sealed class WorkerConnection : IAsyncDisposable
             WorkerMessageTypes.ChatReset,
             WorkerMessageTypes.ChatChunk,
             WorkerMessageTypes.ChatDone,
+            WorkerMessageTypes.ChatToolRequest,
             WorkerMessageTypes.MemoryFacts,
             WorkerMessageTypes.RuntimeState,
             WorkerMessageTypes.RuntimeResponse,

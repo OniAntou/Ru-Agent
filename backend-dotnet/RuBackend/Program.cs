@@ -2,6 +2,7 @@ using RuBackend.Business;
 using RuBackend.Business.Activity;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
+using RuBackend.Agent;
 using RuBackend.Configuration;
 using RuBackend.Conversation;
 using RuBackend.Diagnostics;
@@ -38,6 +39,12 @@ builder.Services.AddSingleton<ConversationTurnGate>();
 builder.Services.AddSingleton<IMetadataPolicy, MetadataPolicy>();
 builder.Services.AddSingleton<IStreamSanitizer, StreamSanitizer>();
 builder.Services.AddSingleton<IConversationCoordinator, ConversationCoordinator>();
+builder.Services.AddSingleton<IAgentTurnCoordinator, AgentTurnCoordinator>();
+var brokerDescriptor = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR");
+if (!string.IsNullOrWhiteSpace(brokerDescriptor))
+{
+    builder.Services.AddSingleton<IAgentBrokerClient>(_ => new AgentBrokerClient(brokerDescriptor));
+}
 builder.Services.AddSingleton<ISettingsStore, SettingsStore>();
 builder.Services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
 builder.Services.AddSingleton<IRuntimeSettingsLoader, LoopbackRuntimeSettingsLoader>();

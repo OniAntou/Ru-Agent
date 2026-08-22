@@ -212,6 +212,7 @@ namespace RuApp.Views
         {
             if (AgentModeButton.IsChecked == true)
             {
+                _agentSession.ObserveSession(_activeSessionId);
                 _agentSession.BeginRequest(_activeSessionId);
                 AgentActivity.Text = "Agent mode đã bật";
                 AgentActivity.Visibility = Visibility.Visible;

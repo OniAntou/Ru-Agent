@@ -212,10 +212,15 @@ public sealed class UiAutomationScenario : IDisposable
         TimeSpan timeout)
     {
         DateTimeOffset started = DateTimeOffset.UtcNow;
+        string stage = "find_agent_mode";
         try
         {
             AutomationElement mode = await WaitForElementAsync(AgentModeAutomationId, timeout);
-            Invoke(mode);
+            stage = $"toggle_agent_mode_on_"
+                + $"{(mode.Current.IsEnabled ? "enabled" : "disabled")}_"
+                + $"{(mode.Current.IsOffscreen ? "offscreen" : "onscreen")}";
+            Toggle(mode);
+            stage = "wait_agent_mode_on";
             bool enabled = await WaitUntilAsync(
                 () => IsToggleOn(mode)
                     && ContainsIgnoreCase(
@@ -227,11 +232,16 @@ public sealed class UiAutomationScenario : IDisposable
                 return Check("gui.agent_enable", false, started, "Agent mode did not enable for the session");
             }
 
+            stage = "find_chat_input";
             AutomationElement input = await WaitForElementAsync(ChatInputAutomationId, timeout);
+            stage = "set_chat_input";
             SetValue(input, "Harness agent turn");
+            stage = "find_send_button";
             AutomationElement send = await WaitForElementAsync(SendButtonAutomationId, timeout);
+            stage = "invoke_send";
             Invoke(send);
 
+            stage = "wait_agent_activity";
             bool activity = await WaitUntilAsync(
                 () => HasAtLeast("agent.activity", 1),
                 timeout);
@@ -242,10 +252,9 @@ public sealed class UiAutomationScenario : IDisposable
                 bool noLateAgentUpdate = !HasUserAndAssistantMessages()
                     && !VisibleMessageContainsPrivateMarker()
                     && !AgentSurfaceContainsPrivateMarker();
-                if (IsToggleOn(mode))
-                {
-                    Invoke(mode);
-                }
+                stage = "toggle_agent_mode_off_after_replacement";
+                EnsureToggleOff(mode);
+                stage = "wait_agent_mode_off_after_replacement";
                 bool disabledAfterReplacement = await WaitUntilAsync(
                     () => !IsToggleOn(mode),
                     timeout);
@@ -272,18 +281,29 @@ public sealed class UiAutomationScenario : IDisposable
                 && truthfulVolumeFailure
                 && privateAbsent;
 
-            Invoke(mode);
+            stage = "toggle_agent_mode_off";
+            EnsureToggleOff(mode);
+            stage = "wait_agent_mode_off";
             bool disabled = await WaitUntilAsync(() => !IsToggleOn(mode), timeout);
             passed &= disabled;
             return Check(
                 "gui." + scenario,
                 passed,
                 started,
-                passed ? null : "Agent mode, failed volume contract, activity, or privacy assertions did not complete");
+                passed
+                    ? null
+                    : $"agent_assertions_failed:activity={activity};"
+                        + $"message_items={CountVisibleMessageItems()};"
+                        + $"truthful_failure={truthfulVolumeFailure};"
+                        + $"private_absent={privateAbsent};disabled={disabled}");
         }
         catch (Exception ex)
         {
-            return Failure("gui." + scenario, started, ex);
+            return Check(
+                "gui." + scenario,
+                false,
+                started,
+                $"{stage}:{ex.GetType().Name}");
         }
     }
 
@@ -413,17 +433,20 @@ public sealed class UiAutomationScenario : IDisposable
     }
 
     private bool HasUserAndAssistantMessages()
+        => CountVisibleMessageItems() >= 2;
+
+    private int CountVisibleMessageItems()
     {
         AutomationElement? messages = FindByAutomationId(ChatMessagesAutomationId);
         if (messages == null)
         {
-            return false;
+            return 0;
         }
 
         AutomationElementCollection items = messages.FindAll(
             TreeScope.Descendants,
             new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem));
-        return items.Count >= 2;
+        return items.Count;
     }
 
     private bool VisibleMessageContainsPrivateMarker()
@@ -490,6 +513,25 @@ public sealed class UiAutomationScenario : IDisposable
         }
 
         invokePattern.Invoke();
+    }
+
+    private static void Toggle(AutomationElement element)
+    {
+        if (!element.TryGetCurrentPattern(TogglePattern.Pattern, out object pattern)
+            || pattern is not TogglePattern togglePattern)
+        {
+            throw new NotSupportedException("Automation control does not support TogglePattern.");
+        }
+
+        togglePattern.Toggle();
+    }
+
+    private static void EnsureToggleOff(AutomationElement element)
+    {
+        if (IsToggleOn(element))
+        {
+            Toggle(element);
+        }
     }
 
     private static string GetName(AutomationElement? element)

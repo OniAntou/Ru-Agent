@@ -44,6 +44,28 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains("ClearAgentApproval();", setup, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Agent_toggle_observes_the_active_session_before_beginning_a_request()
+    {
+        string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+        int clickHandler = codeBehind.IndexOf("private void OnAgentModeClick", StringComparison.Ordinal);
+        int nextHandler = codeBehind.IndexOf(
+            "private void OnAgentSessionReceived",
+            clickHandler,
+            StringComparison.Ordinal);
+        string handler = codeBehind[clickHandler..nextHandler];
+
+        int observe = handler.IndexOf(
+            "_agentSession.ObserveSession(_activeSessionId);",
+            StringComparison.Ordinal);
+        int begin = handler.IndexOf(
+            "_agentSession.BeginRequest(_activeSessionId);",
+            StringComparison.Ordinal);
+
+        Assert.True(observe >= 0);
+        Assert.True(begin > observe);
+    }
+
     private static string FindSource(params string[] parts)
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

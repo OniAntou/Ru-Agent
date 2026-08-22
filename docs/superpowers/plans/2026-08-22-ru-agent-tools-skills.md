@@ -12,6 +12,14 @@
 
 ## Execution boundaries
 
+> **Execution status (2026-08-22):** Workstreams 1–6 and the deterministic
+> portion of Workstream 7 are implemented and verified. The GUI now exposes a
+> session-scoped Agent toggle plus bounded activity and approval-required
+> status. One-click approval/rejection is intentionally not wired end-to-end
+> yet; raw shell, web, notes, and connector side effects therefore remain
+> fail-closed behind `approval_required` until that UI/API slice is added.
+> Live GUI, terminal, account, and hardware acceptance remains user-owned.
+
 The approved design is:
 
 D:\LLM\docs\superpowers\specs\2026-08-22-ru-agent-tools-skills-design.md

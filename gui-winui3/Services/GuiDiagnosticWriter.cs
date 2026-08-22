@@ -75,25 +75,28 @@ public sealed class GuiDiagnosticWriter : IDisposable
             ErrorCode: "gui_exception",
             ExceptionKind: ClassifyException(exception));
 
-        lock (_gate)
+        return TryEnqueueEvent(diagnosticEvent);
+    }
+
+    public bool TryEnqueueVoiceCaptureFailure(string errorCode, Exception? exception = null)
+    {
+        if (string.IsNullOrWhiteSpace(errorCode) || errorCode.Length > 64)
         {
-            if (_closed)
-            {
-                return false;
-            }
-
-            if (_queue.Count >= _capacity)
-            {
-                _queue.Dequeue();
-                _droppedCount++;
-            }
-
-            _queue.Enqueue(diagnosticEvent);
-            _drained.Reset();
+            throw new ArgumentException("Voice diagnostic error code must be 1-64 characters.", nameof(errorCode));
         }
 
-        _signal.Set();
-        return true;
+        var diagnosticEvent = new GuiDiagnosticEvent(
+            EventId: $"evt_{Guid.NewGuid():N}",
+            Timestamp: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0,
+            Iso: DateTimeOffset.UtcNow.ToString("O"),
+            Level: "error",
+            Component: "gui",
+            EventCode: "gui_voice_capture",
+            Status: "failed",
+            ErrorCode: errorCode,
+            ExceptionKind: ClassifyException(exception));
+
+        return TryEnqueueEvent(diagnosticEvent);
     }
 
     public bool Flush(TimeSpan timeout)
@@ -118,6 +121,23 @@ public sealed class GuiDiagnosticWriter : IDisposable
         catch
         {
             // Diagnostics must never replace the original crash path.
+            return false;
+        }
+    }
+
+    public static bool WriteVoiceCaptureFailure(
+        string errorCode,
+        Exception? exception = null,
+        string? logRoot = null)
+    {
+        try
+        {
+            using var writer = new GuiDiagnosticWriter(logRoot, capacity: 1);
+            return writer.TryEnqueueVoiceCaptureFailure(errorCode, exception)
+                && writer.Flush(TimeSpan.FromMilliseconds(500));
+        }
+        catch
+        {
             return false;
         }
     }
@@ -211,6 +231,29 @@ public sealed class GuiDiagnosticWriter : IDisposable
         }
     }
 
+    private bool TryEnqueueEvent(GuiDiagnosticEvent diagnosticEvent)
+    {
+        lock (_gate)
+        {
+            if (_closed)
+            {
+                return false;
+            }
+
+            if (_queue.Count >= _capacity)
+            {
+                _queue.Dequeue();
+                _droppedCount++;
+            }
+
+            _queue.Enqueue(diagnosticEvent);
+            _drained.Reset();
+        }
+
+        _signal.Set();
+        return true;
+    }
+
     private bool WriteBatch(IReadOnlyList<GuiDiagnosticEvent> batch)
     {
         var written = 0;
@@ -293,6 +336,8 @@ public sealed class GuiDiagnosticWriter : IDisposable
             TimeoutException => "timeout",
             UnauthorizedAccessException => "permission",
             IOException => "io",
+            InvalidCastException => "invalid_cast",
+            System.Runtime.InteropServices.COMException => "com",
             System.Net.Http.HttpRequestException => "network",
             System.Net.WebSockets.WebSocketException => "network",
             _ => "unknown",

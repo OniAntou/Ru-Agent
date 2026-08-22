@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using WinRT;
 using Windows.Foundation;
 using Windows.Media;
 using Windows.Media.Audio;
@@ -241,6 +242,7 @@ public sealed class VoiceTurnCaptureService : IVoiceTurnCapture
     {
         private readonly VoiceActivityDetector _detector;
         private readonly Queue<short[]> _preRoll = new();
+        private readonly List<short> _pendingSamples = new();
         private readonly List<short> _samples = new();
         private readonly object _frameGate = new();
         private readonly int _preRollFrames;
@@ -271,46 +273,54 @@ public sealed class VoiceTurnCaptureService : IVoiceTurnCapture
                     return;
                 }
 
-                short[] frameCopy = frame.ToArray();
                 try
                 {
-                    bool hadSpeech = _hasSpeech;
-                    VoiceActivityFrameResult frameResult = _detector.ProcessFrame(frameCopy);
-
-                    if (!hadSpeech)
+                    _pendingSamples.AddRange(frame.ToArray());
+                    while (_pendingSamples.Count >= _options.FrameSamples && result == null)
                     {
-                        _preRoll.Enqueue(frameCopy);
-                        while (_preRoll.Count > _preRollFrames)
+                        short[] frameCopy = _pendingSamples
+                            .GetRange(0, _options.FrameSamples)
+                            .ToArray();
+                        _pendingSamples.RemoveRange(0, _options.FrameSamples);
+
+                        bool hadSpeech = _hasSpeech;
+                        VoiceActivityFrameResult frameResult = _detector.ProcessFrame(frameCopy);
+
+                        if (!hadSpeech)
                         {
-                            _preRoll.Dequeue();
+                            _preRoll.Enqueue(frameCopy);
+                            while (_preRoll.Count > _preRollFrames)
+                            {
+                                _preRoll.Dequeue();
+                            }
                         }
-                    }
 
-                    if (!_hasSpeech && frameResult.HasSpeech)
-                    {
-                        _hasSpeech = true;
-                        foreach (short[] preRollFrame in _preRoll)
+                        if (!_hasSpeech && frameResult.HasSpeech)
                         {
-                            _samples.AddRange(preRollFrame);
+                            _hasSpeech = true;
+                            foreach (short[] preRollFrame in _preRoll)
+                            {
+                                _samples.AddRange(preRollFrame);
+                            }
                         }
-                    }
 
-                    if (_hasSpeech && hadSpeech)
-                    {
-                        _samples.AddRange(frameCopy);
-                    }
+                        if (_hasSpeech && hadSpeech)
+                        {
+                            _samples.AddRange(frameCopy);
+                        }
 
-                    if (frameResult.ShouldComplete)
-                    {
-                        VoiceTurnStopReason reason = frameResult.HasSpeech
-                            ? (_detector.IsAtMaximumDuration
-                                ? VoiceTurnStopReason.MaximumDuration
-                                : VoiceTurnStopReason.SpeechEnded)
-                            : VoiceTurnStopReason.NoSpeech;
-                        byte[]? wav = reason is VoiceTurnStopReason.SpeechEnded or VoiceTurnStopReason.MaximumDuration
-                            ? PcmWavEncoder.Encode(_samples, _options.SampleRate, 1)
-                            : null;
-                        result = new VoiceTurnCaptureResult(wav, reason);
+                        if (frameResult.ShouldComplete)
+                        {
+                            VoiceTurnStopReason reason = frameResult.HasSpeech
+                                ? (_detector.IsAtMaximumDuration
+                                    ? VoiceTurnStopReason.MaximumDuration
+                                    : VoiceTurnStopReason.SpeechEnded)
+                                : VoiceTurnStopReason.NoSpeech;
+                            byte[]? wav = reason is VoiceTurnStopReason.SpeechEnded or VoiceTurnStopReason.MaximumDuration
+                                ? PcmWavEncoder.Encode(_samples, _options.SampleRate, 1)
+                                : null;
+                            result = new VoiceTurnCaptureResult(wav, reason);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -338,9 +348,9 @@ public sealed class VoiceTurnCaptureService : IVoiceTurnCapture
 }
 
 /// <summary>
-/// Windows AudioGraph source that emits fixed-size mono PCM16 frames.
-/// AudioGraph's QuantumStarted callback is synchronous, so the frame is copied
-/// immediately and only the small PCM frame is sent to the capture service.
+/// Windows AudioGraph source that emits mono PCM16 graph quanta.
+/// AudioGraph's QuantumStarted callback is synchronous, so each quantum is
+/// copied immediately. The capture session re-frames quanta to the VAD size.
 /// </summary>
 public sealed class WindowsAudioGraphFrameSource : IVoiceFrameSource
 {
@@ -354,6 +364,7 @@ public sealed class WindowsAudioGraphFrameSource : IVoiceFrameSource
     private AudioDeviceInputNode? _inputNode;
     private AudioFrameOutputNode? _outputNode;
     private bool _started;
+    private bool _faultReported;
     private bool _disposed;
 
     public event Action<ReadOnlyMemory<short>>? FrameReady;
@@ -369,6 +380,7 @@ public sealed class WindowsAudioGraphFrameSource : IVoiceFrameSource
         AudioDeviceInputNode? input = null;
         AudioFrameOutputNode? output = null;
         bool installed = false;
+        string failureCode = "audio_graph_start";
         try
         {
             var settings = new AudioGraphSettings(AudioRenderCategory.Media)
@@ -377,27 +389,33 @@ public sealed class WindowsAudioGraphFrameSource : IVoiceFrameSource
                     (uint)SampleRate,
                     (uint)Channels,
                     (uint)BitsPerSample),
+                QuantumSizeSelectionMode = QuantumSizeSelectionMode.ClosestToDesired,
                 DesiredSamplesPerQuantum = SamplesPerQuantum,
             };
 
             var graphResult = await AudioGraph.CreateAsync(settings);
             if (graphResult.Status != AudioGraphCreationStatus.Success || graphResult.Graph == null)
             {
+                failureCode = $"audio_graph_{graphResult.Status}";
                 throw new InvalidOperationException($"AudioGraph creation failed: {graphResult.Status}.");
             }
 
             graph = graphResult.Graph;
             AudioEncodingProperties encoding = settings.EncodingProperties;
+            failureCode = "frame_output_create";
             output = graph.CreateFrameOutputNode(encoding);
+            failureCode = "device_input_create";
             CreateAudioDeviceInputNodeResult inputResult = await graph.CreateDeviceInputNodeAsync(
                 MediaCategory.Speech,
                 encoding);
             if (inputResult.Status != AudioDeviceNodeCreationStatus.Success || inputResult.DeviceInputNode == null)
             {
+                failureCode = $"device_input_{inputResult.Status}";
                 throw new InvalidOperationException($"Microphone input creation failed: {inputResult.Status}.");
             }
 
             input = inputResult.DeviceInputNode;
+            failureCode = "graph_connect";
             input.AddOutgoingConnection(output);
             graph.QuantumStarted += OnQuantumStarted;
             graph.UnrecoverableErrorOccurred += OnUnrecoverableError;
@@ -409,7 +427,9 @@ public sealed class WindowsAudioGraphFrameSource : IVoiceFrameSource
                 _inputNode = input;
                 _outputNode = output;
                 _started = true;
+                _faultReported = false;
                 installed = true;
+                failureCode = "graph_start";
                 output.Start();
                 graph.Start();
             }
@@ -418,8 +438,9 @@ public sealed class WindowsAudioGraphFrameSource : IVoiceFrameSource
             input = null;
             output = null;
         }
-        catch
+        catch (Exception ex)
         {
+            GuiDiagnosticWriter.WriteVoiceCaptureFailure(failureCode, ex);
             if (installed)
             {
                 await StopAsync().ConfigureAwait(false);
@@ -516,12 +537,16 @@ public sealed class WindowsAudioGraphFrameSource : IVoiceFrameSource
             return;
         }
 
+        string failureCode = "frame_get";
         try
         {
             using AudioFrame frame = output.GetFrame();
+            failureCode = "frame_lock";
             using AudioBuffer buffer = frame.LockBuffer(AudioBufferAccessMode.Read);
+            failureCode = "frame_reference";
             using IMemoryBufferReference reference = buffer.CreateReference();
-            var byteAccess = (IMemoryBufferByteAccess)reference;
+            failureCode = "frame_byte_access";
+            var byteAccess = reference.As<IMemoryBufferByteAccess>();
             byteAccess.GetBuffer(out byte* data, out uint capacity);
             if (data == null || capacity < sizeof(short))
             {
@@ -530,21 +555,41 @@ public sealed class WindowsAudioGraphFrameSource : IVoiceFrameSource
 
             int byteCount = checked((int)capacity);
             var bytes = new ReadOnlySpan<byte>(data, byteCount);
+            failureCode = "frame_decode";
             short[] samples = DecodePcm16(bytes);
             if (samples.Length > 0)
             {
+                failureCode = "frame_ready";
                 FrameReady?.Invoke(samples);
             }
         }
         catch (Exception ex)
         {
-            Faulted?.Invoke(ex);
+            ReportFault(failureCode, ex);
         }
     }
 
     private void OnUnrecoverableError(AudioGraph sender, AudioGraphUnrecoverableErrorOccurredEventArgs args)
     {
-        Faulted?.Invoke(new InvalidOperationException("AudioGraph reported an unrecoverable error."));
+        ReportFault(
+            "graph_unrecoverable",
+            new InvalidOperationException("AudioGraph reported an unrecoverable error."));
+    }
+
+    private void ReportFault(string errorCode, Exception exception)
+    {
+        lock (_gate)
+        {
+            if (_faultReported)
+            {
+                return;
+            }
+
+            _faultReported = true;
+        }
+
+        GuiDiagnosticWriter.WriteVoiceCaptureFailure(errorCode, exception);
+        Faulted?.Invoke(exception);
     }
 
     private static short[] DecodePcm16(ReadOnlySpan<byte> bytes)

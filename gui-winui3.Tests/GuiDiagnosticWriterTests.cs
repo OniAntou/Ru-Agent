@@ -44,4 +44,22 @@ public sealed class GuiDiagnosticWriterTests : IDisposable
         Assert.DoesNotContain("InvalidOperationException", content, StringComparison.Ordinal);
         Assert.DoesNotContain("stack", content, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Writer_persists_safe_voice_capture_failure_stage()
+    {
+        using var writer = new GuiDiagnosticWriter(_logRoot, capacity: 4);
+
+        Assert.True(writer.TryEnqueueVoiceCaptureFailure(
+            "device_input_access_denied",
+            new InvalidOperationException("secret microphone details")));
+        Assert.True(writer.Flush(TimeSpan.FromSeconds(2)));
+
+        var file = Assert.Single(Directory.GetFiles(_logRoot, "gui-*.jsonl"));
+        var content = File.ReadAllText(file);
+        Assert.Contains("gui_voice_capture", content, StringComparison.Ordinal);
+        Assert.Contains("device_input_access_denied", content, StringComparison.Ordinal);
+        Assert.Contains("unknown", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret microphone details", content, StringComparison.OrdinalIgnoreCase);
+    }
 }

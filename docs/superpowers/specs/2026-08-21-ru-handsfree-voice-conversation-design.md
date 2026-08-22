@@ -80,6 +80,8 @@ The capture layer uses native Windows audio frames and a testable energy-based
 voice activity detector:
 
 - target format is 16 kHz, mono, 16-bit PCM;
+- AudioGraph quantum size is not assumed to be fixed; the capture session
+  accumulates and re-frames each quantum to the VAD frame size before detection;
 - retain a short pre-roll so the first consonant is not clipped;
 - require a short voiced window before accepting a turn;
 - end a turn after a bounded silence window;

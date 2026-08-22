@@ -72,6 +72,46 @@ public sealed class VoiceTurnCaptureServiceTests
     }
 
     [Fact]
+    public async Task ReframesAudioGraphQuantaToDetectorFrameSize()
+    {
+        var source = new FakeVoiceFrameSource();
+        var options = VoiceActivityOptions.Default with
+        {
+            SpeechStart = TimeSpan.FromMilliseconds(40),
+            TrailingSilence = TimeSpan.FromMilliseconds(60),
+            MaxTurn = TimeSpan.FromSeconds(2),
+        };
+        var service = new VoiceTurnCaptureService(() => source, options);
+
+        Task<VoiceTurnCaptureResult> capture = service.CaptureTurnAsync(CancellationToken.None);
+        await source.Started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        for (int i = 0; i < 4; i++)
+        {
+            source.Emit(Samples(160, 0.20));
+        }
+        for (int i = 0; i < 6; i++)
+        {
+            source.Emit(Samples(160, 0.0));
+        }
+
+        VoiceTurnCaptureResult result = await capture.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(VoiceTurnStopReason.SpeechEnded, result.Reason);
+        Assert.NotNull(result.WavBytes);
+        Assert.Equal(1, source.StopCalls);
+    }
+
+    [Fact]
+    public void AudioBufferReference_uses_the_CsWinRt_com_projection()
+    {
+        string sourcePath = Path.Combine(FindSourceRoot(), "Services", "VoiceTurnCaptureService.cs");
+        string source = File.ReadAllText(sourcePath);
+
+        Assert.Contains("reference.As<IMemoryBufferByteAccess>()", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("(IMemoryBufferByteAccess)reference", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task NoSpeechReturnsWithoutSendingAudio()
     {
         var source = new FakeVoiceFrameSource();
@@ -163,6 +203,22 @@ public sealed class VoiceTurnCaptureServiceTests
     {
         short value = (short)Math.Round(Math.Clamp(amplitude, -1.0, 1.0) * short.MaxValue);
         return Enumerable.Repeat(value, count).ToArray();
+    }
+
+    private static string FindSourceRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            string sourceRoot = Path.Combine(directory.FullName, "gui-winui3");
+            if (Directory.Exists(sourceRoot))
+            {
+                return sourceRoot;
+            }
+        }
+
+        throw new DirectoryNotFoundException("gui-winui3 source root was not found.");
     }
 
     private sealed class FakeVoiceFrameSource : IVoiceFrameSource

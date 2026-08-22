@@ -70,6 +70,13 @@ privacy/retirement contract, and deterministic lifecycle tests. The former
 one-shot `MicRecorderService` was deleted after the source reference audit.
 Automated tests cover the implementation; real microphone, speaker, subtitles,
 and VTube Studio behavior remain a separate user-run acceptance gate.
+The capture boundary also selects the closest requested AudioGraph quantum and
+re-frames any device-provided quantum size before VAD processing, because
+Windows does not guarantee the requested quantum size.
+On 2026-08-22, a live publish test found that direct COM casting of the locked
+WinRT buffer fails under this WinUI/CsWinRT target; the handler now obtains
+`IMemoryBufferByteAccess` through `reference.As<T>()`, and live capture reached
+`Đang nghe...` without a frame-read failure.
 
 ## Task 1: Establish the isolated branch and baseline
 
@@ -283,7 +290,13 @@ Expected: FAIL because the capture interface and implementation do not exist.
 
 - [ ] **Step 3: Implement native AudioGraph capture behind the interface.**
 
-Use AudioGraphSettings with AudioEncodingProperties.CreatePcm(16_000, 1, 16), DesiredSamplesPerQuantum = 320, and AudioGraph.CreateAsync. Create a speech device input node and an AudioFrameOutputNode with the same PCM format, connect the input to the output, and call GetFrame synchronously from the graph's QuantumStarted handler. Microsoft documents this synchronized frame-output pattern and the IMemoryBufferByteAccess bridge for reading raw audio buffers.
+Use AudioGraphSettings with AudioEncodingProperties.CreatePcm(16_000, 1, 16),
+QuantumSizeSelectionMode = ClosestToDesired, DesiredSamplesPerQuantum = 320,
+and AudioGraph.CreateAsync. Create a speech device input node and an
+AudioFrameOutputNode with the same PCM format, connect the input to the output,
+and call GetFrame synchronously from the graph's QuantumStarted handler.
+Microsoft documents this synchronized frame-output pattern and the
+IMemoryBufferByteAccess bridge for reading raw audio buffers.
 
 Declare the native buffer bridge once in this service using the documented interface GUID 5B0D3235-4DBA-4D44-865E-8F1D0E4FD04D; enable unsafe blocks in RuApp.csproj with:
 
@@ -306,9 +319,12 @@ private unsafe interface IMemoryBufferByteAccess
 
 In the quantum handler:
 
-1. Lock the frame buffer for read and copy its bytes immediately; never retain a pointer after the buffer/reference is disposed.
+1. Lock the frame buffer for read, obtain the COM bridge with
+   `reference.As<IMemoryBufferByteAccess>()`, and copy its bytes immediately;
+   never retain a pointer after the buffer/reference is disposed.
 2. Convert float frames to normalized short samples if Windows reports IEEE float; copy PCM16 frames directly when the frame subtype is PCM.
-3. Feed exact 320-sample frames to VoiceActivityDetector.
+3. Accumulate variable AudioGraph quanta and feed exact 320-sample frames to
+   VoiceActivityDetector.
 4. Keep a deque containing the last 250 ms of samples while waiting for speech.
 5. Once speech starts, append the pre-roll and all subsequent frames to a per-turn List<short>.
 6. When the detector says complete, signal the awaiting task; stop the graph, dispose the input/output nodes and graph, and encode the samples with PcmWavEncoder only if HasSpeech is true.

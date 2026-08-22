@@ -39,6 +39,7 @@ builder.Services.AddSingleton<ConversationTurnGate>();
 builder.Services.AddSingleton<IMetadataPolicy, MetadataPolicy>();
 builder.Services.AddSingleton<IStreamSanitizer, StreamSanitizer>();
 builder.Services.AddSingleton<IAgentApprovalCoordinator, AgentApprovalCoordinator>();
+builder.Services.AddSingleton<IActionOutcomeContextStore, ActionOutcomeContextStore>();
 builder.Services.AddSingleton<IConversationCoordinator, ConversationCoordinator>();
 builder.Services.AddSingleton<IAgentTurnCoordinator, AgentTurnCoordinator>();
 var brokerDescriptor = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR");

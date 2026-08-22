@@ -36,6 +36,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
     private readonly ISettingsStore _settings;
     private readonly IActivityLogStore _activity;
     private readonly IWorkerClient _worker;
+    private readonly IActionOutcomeContextStore _actionOutcomes;
     private readonly IMetadataPolicy _metadata;
     private readonly IStreamSanitizer _sanitizer;
     private readonly ConversationTurnGate _gate;
@@ -48,6 +49,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         ISettingsStore settings,
         IActivityLogStore activity,
         IWorkerClient worker,
+        IActionOutcomeContextStore actionOutcomes,
         IMetadataPolicy metadata,
         IStreamSanitizer sanitizer,
         ConversationTurnGate gate,
@@ -59,6 +61,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _activity = activity ?? throw new ArgumentNullException(nameof(activity));
         _worker = worker ?? throw new ArgumentNullException(nameof(worker));
+        _actionOutcomes = actionOutcomes ?? throw new ArgumentNullException(nameof(actionOutcomes));
         _metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
         _sanitizer = sanitizer ?? throw new ArgumentNullException(nameof(sanitizer));
         _gate = gate ?? throw new ArgumentNullException(nameof(gate));
@@ -112,6 +115,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
             }
 
             sessionId = resolved.Value.SessionId;
+            var lastActionOutcome = _actionOutcomes.Take(sessionId);
             using var turnLease = _gate.TryEnterTurn();
             if (turnLease is null)
             {
@@ -167,7 +171,10 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                 turns.Select(turn => new WorkerTurn(turn.Prompt, turn.Response)).ToArray(),
                 ShouldShareMemory(settings) ? RenderMemory(memories) : string.Empty,
                 BuildVtsInstruction(catalog),
-                BuildWorkerSettings(settings, request.AgentMode, modelTools));
+                BuildWorkerSettings(settings, request.AgentMode, modelTools))
+            {
+                LastActionOutcome = lastActionOutcome,
+            };
             if (_agent is not null && modelTools.Length > 0)
             {
                 workerRequest = workerRequest with
@@ -212,6 +219,8 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                             item.Payload,
                             "raw_reply",
                             "invalid_worker_response");
+                        var actionOutcome = WorkerActionOutcome.ParseOptional(
+                            item.Payload["action_outcome"]);
                         var (splitVisible, codes, emotion) = _metadata.SplitReply(rawReply, catalog);
                         var fullReply = _metadata.StripVoiceMarkers(splitVisible);
                         await ReconcileFinalVisibleAsync(
@@ -230,6 +239,15 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                                 cancellationToken).ConfigureAwait(false))
                         {
                             throw new ConversationException("session_write_failed");
+                        }
+
+                        if (actionOutcome is { ShouldRetain: true })
+                        {
+                            _actionOutcomes.Put(sessionId, actionOutcome);
+                        }
+                        else if (actionOutcome is not null)
+                        {
+                            _actionOutcomes.Remove(sessionId);
                         }
 
                         await TryTriggerVtsAsync(requestId, codes, cancellationToken)

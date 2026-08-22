@@ -219,6 +219,151 @@ public sealed class ConversationCoordinatorTests
         Assert.Equal(2, sessions.Messages.Count);
     }
 
+    [Fact]
+    public async Task Failed_action_outcome_is_forwarded_once_and_never_persisted()
+    {
+        var log = new List<string>();
+        var sessions = new FakeSessionStore(log);
+        var memory = new FakeMemoryService(log);
+        var worker = new FakeWorkerClient(log);
+        worker.EventBatches.Enqueue(
+        [
+            Event(
+                WorkerMessageTypes.ChatDone,
+                0,
+                new JsonObject
+                {
+                    ["raw_reply"] = "Windows không chấp nhận thay đổi âm lượng.",
+                    ["action_outcome"] = Outcome("failed", "write_failed"),
+                }),
+        ]);
+        worker.EventBatches.Enqueue(
+        [
+            Event(
+                WorkerMessageTypes.ChatDone,
+                0,
+                new JsonObject { ["raw_reply"] = "Em kể chuyện khác." }),
+        ]);
+        worker.EventBatches.Enqueue(
+        [
+            Event(
+                WorkerMessageTypes.ChatDone,
+                0,
+                new JsonObject { ["raw_reply"] = "Em nghe tiếp." }),
+        ]);
+        var outcomes = new ActionOutcomeContextStore();
+        var coordinator = CreateCoordinator(
+            log,
+            sessions,
+            memory,
+            worker,
+            outcomes: outcomes);
+
+        _ = await CollectAsync(coordinator.HandleAsync(
+            new ChatRequest("Đặt âm lượng về 2", "session-1"),
+            CancellationToken.None));
+        _ = await CollectAsync(coordinator.HandleAsync(
+            new ChatRequest("Kể em nghe chuyện khác", "session-1"),
+            CancellationToken.None));
+        _ = await CollectAsync(coordinator.HandleAsync(
+            new ChatRequest("Tiếp đi em", "session-1"),
+            CancellationToken.None));
+
+        Assert.Equal(3, worker.ChatRequests.Count);
+        Assert.Null(worker.ChatRequests[0].LastActionOutcome);
+        Assert.Equal(
+            "write_failed",
+            worker.ChatRequests[1].LastActionOutcome!.ReasonCode);
+        Assert.Null(worker.ChatRequests[2].LastActionOutcome);
+        var persisted = string.Join(
+            "\n",
+            sessions.Messages.Select(message => message.Content));
+        var remembered = string.Join(
+            "\n",
+            memory.RememberedTurns.Select(turn => $"{turn.Prompt}\n{turn.Response}"));
+        Assert.DoesNotContain("action_outcome", persisted, StringComparison.Ordinal);
+        Assert.DoesNotContain("reason_code", persisted, StringComparison.Ordinal);
+        Assert.DoesNotContain("write_failed", persisted, StringComparison.Ordinal);
+        Assert.DoesNotContain("action_outcome", remembered, StringComparison.Ordinal);
+        Assert.DoesNotContain("reason_code", remembered, StringComparison.Ordinal);
+        Assert.DoesNotContain("write_failed", remembered, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Successful_action_outcome_is_not_forwarded_to_the_next_turn()
+    {
+        var log = new List<string>();
+        var worker = new FakeWorkerClient(log);
+        worker.EventBatches.Enqueue(
+        [
+            Event(
+                WorkerMessageTypes.ChatDone,
+                0,
+                new JsonObject
+                {
+                    ["raw_reply"] = "Em đã đặt âm lượng về 2% rồi anh.",
+                    ["action_outcome"] = Outcome("succeeded", null),
+                }),
+        ]);
+        worker.EventBatches.Enqueue(
+        [
+            Event(
+                WorkerMessageTypes.ChatDone,
+                0,
+                new JsonObject { ["raw_reply"] = "Em nghe đây." }),
+        ]);
+        var coordinator = CreateCoordinator(
+            log,
+            new FakeSessionStore(log),
+            new FakeMemoryService(log),
+            worker,
+            outcomes: new ActionOutcomeContextStore());
+
+        _ = await CollectAsync(coordinator.HandleAsync(
+            new ChatRequest("Đặt âm lượng về 2", "session-1"),
+            CancellationToken.None));
+        _ = await CollectAsync(coordinator.HandleAsync(
+            new ChatRequest("sao vậy?", "session-1"),
+            CancellationToken.None));
+
+        Assert.Equal(2, worker.ChatRequests.Count);
+        Assert.Null(worker.ChatRequests[1].LastActionOutcome);
+    }
+
+    [Fact]
+    public async Task Failed_outcome_is_not_retained_when_visible_reply_append_fails()
+    {
+        var log = new List<string>();
+        var sessions = new FakeSessionStore(log) { FailNextAssistantAppend = true };
+        var outcomes = new ActionOutcomeContextStore();
+        var worker = new FakeWorkerClient(log)
+        {
+            Events =
+            [
+                Event(
+                    WorkerMessageTypes.ChatDone,
+                    0,
+                    new JsonObject
+                    {
+                        ["raw_reply"] = "Windows không chấp nhận thay đổi âm lượng.",
+                        ["action_outcome"] = Outcome("failed", "write_failed"),
+                    }),
+            ],
+        };
+        var coordinator = CreateCoordinator(
+            log,
+            sessions,
+            new FakeMemoryService(log),
+            worker,
+            outcomes: outcomes);
+
+        _ = await CollectAsync(coordinator.HandleAsync(
+            new ChatRequest("Đặt âm lượng về 2", "session-1"),
+            CancellationToken.None));
+
+        Assert.Null(outcomes.Take("session-1"));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -316,12 +461,14 @@ public sealed class ConversationCoordinatorTests
         FakeMemoryService memory,
         FakeWorkerClient worker,
         ConversationTurnGate? gate = null,
-        IAgentTurnCoordinator? agent = null) => new(
+        IAgentTurnCoordinator? agent = null,
+        IActionOutcomeContextStore? outcomes = null) => new(
             sessions,
             memory,
             new FakeSettingsStore(log),
             new FakeActivityLogStore(log),
             worker,
+            outcomes ?? new ActionOutcomeContextStore(),
             new MetadataPolicy(),
             new StreamSanitizer(),
             gate ?? new ConversationTurnGate(TimeSpan.FromSeconds(1)),
@@ -337,6 +484,15 @@ public sealed class ConversationCoordinatorTests
 
     private static WorkerEvent Event(string type, long sequence, JsonObject payload) =>
         new("worker-request", type, sequence, payload, ReadOnlyMemory<byte>.Empty);
+
+    private static JsonObject Outcome(string status, string? reasonCode) => new()
+    {
+        ["schema_version"] = 1,
+        ["tool_id"] = "system.volume",
+        ["tool_version"] = "1.0.0",
+        ["status"] = status,
+        ["reason_code"] = reasonCode,
+    };
 
     private static async Task<List<ChatEvent>> CollectAsync(IAsyncEnumerable<ChatEvent> events)
     {
@@ -359,6 +515,7 @@ public sealed class ConversationCoordinatorTests
         }
 
         public bool ExistingSession { get; set; } = true;
+        public bool FailNextAssistantAppend { get; set; }
         public List<SessionMessage> Messages { get; } = [];
 
         public Task<SessionDocument?> GetAsync(string sessionId, CancellationToken cancellationToken)
@@ -381,6 +538,12 @@ public sealed class ConversationCoordinatorTests
             IReadOnlyList<SessionMessage> messages,
             CancellationToken cancellationToken)
         {
+            if (FailNextAssistantAppend && messages.Any(message => message.Role == "ai"))
+            {
+                FailNextAssistantAppend = false;
+                return Task.FromResult(false);
+            }
+
             foreach (var message in messages)
             {
                 _log.Add($"session.append.{message.Role}");
@@ -420,6 +583,7 @@ public sealed class ConversationCoordinatorTests
         public Exception? RememberError { get; set; }
         public string? RememberedPrompt { get; private set; }
         public string? RememberedResponse { get; private set; }
+        public List<(string Prompt, string Response)> RememberedTurns { get; } = [];
 
         public Task<IReadOnlyList<MemoryRecord>> RetrieveAsync(
             string query,
@@ -437,6 +601,7 @@ public sealed class ConversationCoordinatorTests
             _log.Add("memory.remember");
             RememberedPrompt = prompt;
             RememberedResponse = response;
+            RememberedTurns.Add((prompt, response));
             return RememberError is null
                 ? Task.FromResult<IReadOnlyList<MemoryRecord>>([])
                 : Task.FromException<IReadOnlyList<MemoryRecord>>(RememberError);
@@ -546,10 +711,12 @@ public sealed class ConversationCoordinatorTests
         }
 
         public IReadOnlyList<WorkerEvent> Events { get; init; } = [];
+        public Queue<IReadOnlyList<WorkerEvent>> EventBatches { get; } = new();
         public WorkerToolRequest? ToolRequest { get; init; }
         public bool BlockChat { get; init; }
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public WorkerChatRequest? LastChatRequest { get; private set; }
+        public List<WorkerChatRequest> ChatRequests { get; } = [];
         public IReadOnlyList<string> TriggeredCodes { get; private set; } = [];
         public bool ToolHandlerWasPresent { get; private set; }
         public WorkerToolResult? ToolResult { get; private set; }
@@ -563,6 +730,7 @@ public sealed class ConversationCoordinatorTests
         {
             _log.Add("worker.chat");
             LastChatRequest = request;
+            ChatRequests.Add(request);
             Started.TrySetResult();
             if (BlockChat)
             {
@@ -583,7 +751,8 @@ public sealed class ConversationCoordinatorTests
                 }
             }
 
-            foreach (var item in Events)
+            var events = EventBatches.Count > 0 ? EventBatches.Dequeue() : Events;
+            foreach (var item in events)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 yield return item;

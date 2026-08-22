@@ -768,7 +768,8 @@ class HarnessSession:
         loop_completed = agent_tool_loop_completed(events, expected_status="failed")
         truthful_reply = (
             len(done) == 1
-            and done[0].get("content") == "Không thể thực hiện thay đổi âm lượng."
+            and done[0].get("content")
+            == "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows."
         )
         private_absent = not _contains_private_agent_metadata(events)
         return [

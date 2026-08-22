@@ -68,3 +68,19 @@ stable safe error code, duration, verification state, the fixed endpoint role,
 and an ephemeral per-Broker endpoint hash. Arguments, output values, prompts,
 replies, paths, scripts, stdout/stderr, credentials, device names, and native
 exception text are forbidden.
+
+### Intent-resolution diagnostics
+
+Before dispatch, the Runtime Worker emits exactly one of these bounded event
+codes when explicit volume wording reaches a deterministic terminal decision:
+
+- `tool.intent.resolved`: one valid typed volume intent was created;
+- `tool.intent.clarification`: the wording needs one deterministic
+  clarification before any request is sent;
+- `tool.intent.rejected`: explicit action wording was invalid or unsupported.
+
+These events may carry correlation ID, tool ID/version, status, and a stable
+reason code. They contain no prompt, arguments, level, amount, output, muted
+state, reply, device name, endpoint hash, or exception data. Resolution occurs
+before model selection, and logging failure cannot change the user-visible
+action result.

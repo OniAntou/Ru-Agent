@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the Architecture v2 branch, 2026-08-21.
+Status: operating contract for the Architecture v2 branch, 2026-08-23.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -133,17 +133,36 @@ STT, voice, subtitle, VTS, or memory paths.
 
 ## Action execution kernel v1
 
-Normal-chat and Agent-mode volume requests use the same path: the Worker makes
-one non-visible structured selection, the Public Host opens only the scope in
-the Broker capability, and RuAgentBroker executes and verifies the native
-adapter. The Worker may render success only from a matching `succeeded` receipt
-whose verification state is `verified`. Python does not own desktop side
+Explicit, unambiguous volume commands use a deterministic parser before
+generation in both normal chat and Agent mode. The parser creates one typed
+`system.volume@1.0.0` request and does not call the configured model for action
+selection. Ambiguous volume wording returns a bounded clarification. All
+ordinary normal-chat and Agent-mode turns continue through normal streamed
+generation.
+
+The Public Host opens only the scope in the Broker capability, and
+RuAgentBroker executes and verifies the native adapter. The Worker may render
+success only from a matching `succeeded` receipt whose verification state is
+`verified` and whose readback matches. Python does not own desktop side
 effects.
+
+Non-success outcomes, including failures and clarifications, cross the Worker
+boundary as a bounded `action_outcome`. The Public Host keeps at most one such
+outcome in a one-shot, in-memory, session-isolated store. It is consumed by the
+next turn and cleared on replacement, disconnect, or deletion; it is not
+persisted to history, memory, reviewed examples, TTS, or VTS metadata.
 
 Only `system.volume@1.0.0` is model-enabled in v1. File, terminal, notes, and
 read-only system bindings remain Broker-internal; unbound connectors and
 `app.open` are absent; skills are disabled. The GUI renders the actual
 `agent.session` grant received from the Host.
+
+The Agent activity line maps actual events to fixed copy: toggle-only idle is
+`Agent mode đã bật`; typed request is `Đang chuẩn bị thao tác…`; a matching
+grant is `Đang thực hiện thao tác đã cấp quyền…`; verified completion is
+`Thao tác đã được xác minh`; and failure uses only a bounded safe reason.
+Malformed or stale-session activity is ignored. Toggle-off, disconnect, and
+session replacement clear the visible state and pending approval.
 
 ## Persistence and privacy
 
@@ -170,6 +189,7 @@ ASP.NET ingestion path, with read-time re-sanitization for legacy records.
 
 Automated tests can establish routing, protocol ordering, bounds, cancellation,
 privacy filtering, persistence semantics, non-empty WAV structure, and process
-lifecycle. They cannot establish speaker quality, physical microphone accuracy,
-natural bilingual dialogue, or live VTube Studio behavior. Those remain
-explicit user-run checks and must be reported as pending until performed.
+lifecycle. They cannot establish an audible Windows volume change, speaker
+quality, physical microphone accuracy, natural bilingual dialogue, or live
+VTube Studio behavior. Those remain explicit user-run checks and must be
+reported as pending until performed.

@@ -134,3 +134,40 @@ def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -
     assert "The first usable tool set" not in agent_tools
     assert "Skill packages are declarative" not in agent_tools
     assert "gives Ru bounded workspace" not in root_readme
+
+
+def test_current_docs_describe_deterministic_volume_recovery_truthfully() -> None:
+    agent_tools = _text("docs/operations/agent-tools.md")
+    runtime = _text("docs/operations/runtime-behavior.md")
+    logging = _text("docs/operations/logging.md")
+    verification = _text("docs/operations/verification.md")
+    agent_tools_flat = " ".join(agent_tools.split())
+    runtime_flat = " ".join(runtime.split())
+    verification_flat = " ".join(verification.split())
+
+    assert "deterministic volume parser" in agent_tools_flat
+    assert "does not invoke model selection" in agent_tools_flat
+    assert "ordinary normal-chat and Agent-mode turns" in runtime_flat
+    assert "normal streamed generation" in runtime_flat
+    assert "one-shot" in runtime_flat
+    assert "session-isolated" in runtime_flat
+    assert "consumed by the next turn" in runtime_flat
+
+    for event_code in (
+        "tool.intent.resolved",
+        "tool.intent.clarification",
+        "tool.intent.rejected",
+    ):
+        assert event_code in logging
+
+    for visible_state in (
+        "Agent mode đã bật",
+        "Đang chuẩn bị thao tác…",
+        "Đang thực hiện thao tác đã cấp quyền…",
+        "Thao tác đã được xác minh",
+    ):
+        assert visible_state in runtime_flat
+
+    assert "does not claim an audible Windows volume change" in verification_flat
+    assert "native_volume_acceptance.py" in verification
+    assert "--confirm-native-volume-change" in verification

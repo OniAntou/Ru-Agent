@@ -44,8 +44,11 @@ The Harness owns temporary Worker, Broker, Public Host, credentials, loopback
 ports, data root, and workspace. Its synthetic Worker requests
 `system.volume@1.0.0` with an intentionally out-of-range level. The canonical
 binding must return one outer `failed/invalid_arguments` activity before chat
-completion and must not acquire Core Audio. The visible reply is fixed to a
-truthful failure.
+completion and must not acquire Core Audio. The synthetic Worker completion
+contains the fixed reply `Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi
+tới Windows.` and one bounded failed `action_outcome`. The visible sentence may
+enter chat history; the structured outcome remains in memory only and is absent
+from persisted history, memory extraction, and Harness artifacts.
 
 A separate authenticated private-Broker probe opens only `workspace.write`,
 requests `notes.create` in the temporary workspace, approves once, expects the
@@ -115,16 +118,25 @@ synthetic tool request is still in flight, wait beyond the delayed result, and
 fail if a user/assistant message, private marker, or enabled Agent toggle leaks
 back into the replacement session.
 
+The UI driver also requires the honest idle copy `Agent mode đã bật`; typed
+requested, granted, verified, and failed copy is covered by WinUI contract
+tests. Agent artifacts and event-sink records contain only bounded states,
+counts, tool IDs, durations, and safe reason codes—not arguments, output,
+levels, amounts, mute state, prompts, replies, device identity, endpoint hashes,
+or exception text.
+
 Broker approval dispatch/replay is covered by the private deterministic probe;
 the visible approval card remains covered by `AgentApprovalTests` and
 `AgentApprovalUiContractTests`. GUI Harness scenarios do not claim that
 terminal, files, Web, connectors, or skills are model-usable.
 
-A passing GUI result does not accept live microphone capture, audible
-OmniVoice, subtitles, or VTube Studio. The separate runtime-live voice gate can
-require emitted audio, but physical microphone accuracy, speaker quality,
-natural bilingual conversation, and VTube Studio behavior remain explicit
-user-run checks.
+A passing deterministic GUI result does not claim an audible Windows volume
+change and does not accept live microphone capture, audible OmniVoice,
+subtitles, or VTube Studio. The separate runtime-live voice gate can require
+emitted audio, but physical microphone accuracy, speaker quality, natural
+bilingual conversation, and VTube Studio behavior remain explicit user-run
+checks. Real volume mutation remains the opt-in `native_volume_acceptance.py`
+path with `--confirm-native-volume-change` and separate user confirmation.
 
 See [Agent tools and truthful execution](agent-tools.md) for the current
 capability matrix and ownership boundary.

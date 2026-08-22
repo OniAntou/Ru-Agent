@@ -105,7 +105,18 @@ async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> Async
             result = None
         yield WorkerReply(
             CHAT_DONE,
-            {"raw_reply": "Không thể thực hiện thay đổi âm lượng."},
+            {
+                "raw_reply": (
+                    "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows."
+                ),
+                "action_outcome": {
+                    "schema_version": 1,
+                    "tool_id": "system.volume",
+                    "tool_version": "1.0.0",
+                    "status": "failed",
+                    "reason_code": "invalid_arguments",
+                },
+            },
         )
         return
 

@@ -263,7 +263,8 @@ public sealed class UiAutomationScenario : IDisposable
             bool messages = activity
                 && await WaitUntilAsync(HasUserAndAssistantMessages, timeout);
             bool truthfulVolumeFailure = scenario != "agent-volume-contract"
-                || VisibleMessagesContain("Không thể thực hiện thay đổi âm lượng.");
+                || VisibleMessagesContain(
+                    "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows.");
             bool privateAbsent = !VisibleMessageContainsPrivateMarker()
                 && !AgentSurfaceContainsPrivateMarker();
             bool passed = activity

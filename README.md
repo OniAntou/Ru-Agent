@@ -83,11 +83,13 @@ the Runtime Worker or voice engine as independent public services.
 - VTube Studio actions and lip sync remain private runtime metadata.
   `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
 - Agent mode is an explicit session toggle, but toggling it does not imply a
-  grant. In v1 only `system.volume@1.0.0` is model-enabled; WinUI displays the
-  actual `agent.session` scope received from the Host. File, terminal, notes,
-  and read-only bindings remain Broker-internal; Web/connectors, `app.open`,
-  and skills are unavailable to the model. A volume success is visible only
-  after a matching verified Broker receipt.
+  grant. Explicit volume commands use a deterministic parser before generation
+  and do not ask the model to select an action. In v1 only
+  `system.volume@1.0.0` is exposed for Worker action dispatch; WinUI displays
+  typed activity from actual Host events. File, terminal, notes, and read-only
+  bindings remain Broker-internal; Web/connectors, `app.open`, and skills are
+  unavailable to the model. A volume success is visible only after a matching
+  verified Broker receipt and readback.
 - Screen observation is opt-in from Settings. When a Gemini Vision key and a
   supported hosted generation backend are configured, the private worker
   captures bounded JPEG frames and publishes reaction events. WinUI consumes

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
 import pytest
 
+from harness.deterministic_worker import _chat
 from harness.session import HarnessSession
+from ru_runtime.worker.v1.protocol import CHAT_DONE
+from ru_runtime.worker.v1.server import WorkerReply
 
 
 AGENT_SCENARIOS = (
@@ -14,6 +18,52 @@ AGENT_SCENARIOS = (
     "agent-stale-result",
     "agent-private-metadata",
 )
+
+
+def test_failed_volume_fixture_returns_exact_bounded_action_outcome() -> None:
+    async def collect_replies() -> list[WorkerReply]:
+        tool_results: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+        await tool_results.put(
+            {
+                "request_id": "harness-tool-volume-invalid",
+                "session_id": "session-1",
+                "correlation_id": "correlation-1",
+                "status": "failed",
+            }
+        )
+        return [
+            reply
+            async for reply in _chat(
+                {
+                    "session_id": "session-1",
+                    "settings": {"agent_mode": True},
+                    "__worker_correlation_id": "correlation-1",
+                    "__worker_tool_result_queue": tool_results,
+                },
+                asyncio.Event(),
+            )
+        ]
+
+    replies = asyncio.run(collect_replies())
+    done = next(reply for reply in replies if reply.type == CHAT_DONE)
+
+    assert done.payload == {
+        "raw_reply": "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows.",
+        "action_outcome": {
+            "schema_version": 1,
+            "tool_id": "system.volume",
+            "tool_version": "1.0.0",
+            "status": "failed",
+            "reason_code": "invalid_arguments",
+        },
+    }
+    assert set(done.payload["action_outcome"]) == {
+        "schema_version",
+        "tool_id",
+        "tool_version",
+        "status",
+        "reason_code",
+    }
 
 
 @pytest.mark.parametrize("scenario", AGENT_SCENARIOS)
@@ -61,6 +111,10 @@ def test_backend_agent_probe_covers_broker_approval_and_failed_volume_contract()
     session_source = Path("scripts/harness/session.py").read_text(encoding="utf-8")
     worker_source = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
     broker_probe_source = Path("scripts/harness/broker_probe.py").read_text(encoding="utf-8")
+    ui_driver_source = Path("gui-winui3.Harness/UiAutomationScenario.cs").read_text(
+        encoding="utf-8"
+    )
+    expected_reply = "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows."
 
     assert '"tool_id": "system.volume"' in worker_source
     assert '"operation": "set", "level": 101' in worker_source
@@ -74,6 +128,9 @@ def test_backend_agent_probe_covers_broker_approval_and_failed_volume_contract()
     assert "str(self.project_root)" not in workspace_assignment
     assert "approval_stale" in broker_probe_source
     assert "private_agent_metadata_visible" in session_source
+    assert expected_reply in worker_source
+    assert expected_reply in session_source
+    assert expected_reply in ui_driver_source
 
 
 def test_deterministic_worker_uses_only_the_non_native_volume_contract() -> None:

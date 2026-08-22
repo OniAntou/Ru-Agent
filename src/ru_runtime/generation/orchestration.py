@@ -61,8 +61,7 @@ def _execute_pc_tool_markers(
                     request = volume_module.parse_volume_action(action)
                     if volume_failure_code is not None:
                         continue
-                    controller = volume_module.create_default_volume_controller()
-                    result = volume_module.execute_volume_request(request, controller)
+                    result = volume_module.execute_default_volume_request(request)
                     if not result.succeeded:
                         volume_failure_code = result.error_code or "adapter_error"
                 except ValueError:

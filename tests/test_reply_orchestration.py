@@ -25,6 +25,9 @@ class FakeVolumeController:
         if self.readback:
             self.state = VolumeState(level=self.state.level, muted=muted)
 
+    def close(self) -> None:
+        pass
+
 
 def test_execute_reply_volume_marker_uses_verified_level() -> None:
     controller = FakeVolumeController(level=40)

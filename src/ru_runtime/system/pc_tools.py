@@ -193,8 +193,7 @@ def adjust_system_volume(action: str, steps: int = 2) -> tuple[bool, str]:
 
         from ru_runtime.system.volume import (
             VolumeAdapterError,
-            create_default_volume_controller,
-            execute_volume_request,
+            execute_default_volume_request,
             parse_volume_action,
         )
 
@@ -220,7 +219,7 @@ def adjust_system_volume(action: str, steps: int = 2) -> tuple[bool, str]:
         if platform.system() != "Windows":
             return False, "Tính năng chỉnh âm lượng chỉ khả dụng trên Windows."
 
-        result = execute_volume_request(request, create_default_volume_controller())
+        result = execute_default_volume_request(request)
         if not result.succeeded:
             return False, _volume_failure_message(result.error_code)
         return True, _volume_success_message(request, result.level, result.muted)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import platform
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from ctypes import POINTER, cast
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -79,6 +79,13 @@ class VolumeController(Protocol):
         ...
 
     def set_muted(self, muted: bool) -> None:
+        ...
+
+
+class ManagedVolumeController(VolumeController, Protocol):
+    """A controller whose native resources are owned by one operation."""
+
+    def close(self) -> None:
         ...
 
 
@@ -256,20 +263,37 @@ class WindowsCoreAudioVolumeController:
     """Default-render endpoint controller backed by pycaw and comtypes."""
 
     def __init__(self) -> None:
+        self._endpoint: Any = None
+        self._co_uninitialize: Callable[[], None] | None = None
         if platform.system() != "Windows":
             raise VolumeAdapterError("unsupported_platform")
         try:
-            from comtypes import CLSCTX_ALL
+            from comtypes import CLSCTX_ALL, CoInitialize, CoUninitialize
             from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
         except ImportError as error:
             raise VolumeAdapterError("audio_backend_unavailable") from error
 
         try:
+            CoInitialize()
+            self._co_uninitialize = CoUninitialize
             device = AudioUtilities.GetSpeakers()
-            interface = device.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-            self._endpoint = cast(interface, POINTER(IAudioEndpointVolume))
+            endpoint = getattr(device, "EndpointVolume", None)
+            if endpoint is None:
+                interface = device.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+                endpoint = cast(interface, POINTER(IAudioEndpointVolume))
+            self._endpoint = endpoint
         except Exception as error:
+            self.close()
             raise VolumeAdapterError("default_endpoint_unavailable") from error
+
+    def close(self) -> None:
+        """Release the endpoint before balancing this thread's COM apartment."""
+
+        self._endpoint = None
+        co_uninitialize = self._co_uninitialize
+        self._co_uninitialize = None
+        if co_uninitialize is not None:
+            co_uninitialize()
 
     def get_state(self) -> VolumeState:
         try:
@@ -292,5 +316,15 @@ class WindowsCoreAudioVolumeController:
             raise VolumeAdapterError("write_failed") from error
 
 
-def create_default_volume_controller() -> VolumeController:
+def create_default_volume_controller() -> ManagedVolumeController:
     return WindowsCoreAudioVolumeController()
+
+
+def execute_default_volume_request(request: VolumeRequest) -> VolumeResult:
+    """Execute one request while balancing the native controller lifecycle."""
+
+    controller = create_default_volume_controller()
+    try:
+        return execute_volume_request(request, controller)
+    finally:
+        controller.close()

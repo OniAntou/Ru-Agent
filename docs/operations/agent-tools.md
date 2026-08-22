@@ -98,6 +98,11 @@ can be reached without converting the Agent turn into a protocol error.
 The local reversible `system.volume` result is bounded to `operation`,
 `level`, `muted`, and `verified`; native errors, device names, arguments, and
 model success claims are not forwarded when readback fails.
+The Python normal-chat adapter initializes and releases COM within the worker
+thread that owns each operation. It uses `AudioDevice.EndpointVolume` on
+current `pycaw` releases while retaining the legacy direct-activation fallback;
+tests must cover both the endpoint wrapper contract and balanced worker-thread
+COM lifetime.
 
 ## Verification
 

@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import concurrent.futures
+import sys
+import threading
+from types import ModuleType, SimpleNamespace
+
 import pytest
 
+from ru_runtime.system import volume as volume_module
 from ru_runtime.system.volume import (
     VolumeRequest,
+    VolumeResult,
     VolumeState,
+    WindowsCoreAudioVolumeController,
+    execute_default_volume_request,
     execute_volume_request,
     parse_volume_action,
     parse_volume_request,
@@ -94,3 +103,90 @@ def test_readback_mismatch_is_not_success() -> None:
     assert result.error_code == "readback_mismatch"
     assert result.level == 40
 
+
+def test_windows_controller_uses_current_pycaw_endpoint_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Endpoint:
+        def GetMasterVolumeLevelScalar(self) -> float:
+            return 0.37
+
+        def GetMute(self) -> int:
+            return 1
+
+    endpoint = Endpoint()
+    device = SimpleNamespace(EndpointVolume=endpoint)
+    comtypes = ModuleType("comtypes")
+    comtypes.CLSCTX_ALL = 7  # type: ignore[attr-defined]
+    comtypes.CoInitialize = lambda: None  # type: ignore[attr-defined]
+    comtypes.CoUninitialize = lambda: None  # type: ignore[attr-defined]
+    pycaw_package = ModuleType("pycaw")
+    pycaw_package.__path__ = []  # type: ignore[attr-defined]
+    pycaw_module = ModuleType("pycaw.pycaw")
+    pycaw_module.AudioUtilities = SimpleNamespace(GetSpeakers=lambda: device)  # type: ignore[attr-defined]
+    pycaw_module.IAudioEndpointVolume = SimpleNamespace(_iid_="endpoint-volume")  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(volume_module.platform, "system", lambda: "Windows")
+    monkeypatch.setitem(sys.modules, "comtypes", comtypes)
+    monkeypatch.setitem(sys.modules, "pycaw", pycaw_package)
+    monkeypatch.setitem(sys.modules, "pycaw.pycaw", pycaw_module)
+
+    controller = WindowsCoreAudioVolumeController()
+    try:
+        assert controller.get_state() == VolumeState(level=37, muted=True)
+    finally:
+        controller.close()
+
+
+def test_volume_execution_balances_com_on_worker_thread(monkeypatch: pytest.MonkeyPatch) -> None:
+    apartment = threading.local()
+    events: list[tuple[str, int]] = []
+
+    def co_initialize() -> None:
+        apartment.initialized = True
+        events.append(("initialize", threading.get_ident()))
+
+    def co_uninitialize() -> None:
+        events.append(("uninitialize", threading.get_ident()))
+        apartment.initialized = False
+
+    class Endpoint:
+        def GetMasterVolumeLevelScalar(self) -> float:
+            return 0.42
+
+        def GetMute(self) -> int:
+            return 0
+
+    def get_speakers() -> SimpleNamespace:
+        if not getattr(apartment, "initialized", False):
+            raise OSError("CoInitialize has not been called")
+        events.append(("get_speakers", threading.get_ident()))
+        return SimpleNamespace(EndpointVolume=Endpoint())
+
+    comtypes = ModuleType("comtypes")
+    comtypes.CLSCTX_ALL = 7  # type: ignore[attr-defined]
+    comtypes.CoInitialize = co_initialize  # type: ignore[attr-defined]
+    comtypes.CoUninitialize = co_uninitialize  # type: ignore[attr-defined]
+    pycaw_package = ModuleType("pycaw")
+    pycaw_package.__path__ = []  # type: ignore[attr-defined]
+    pycaw_module = ModuleType("pycaw.pycaw")
+    pycaw_module.AudioUtilities = SimpleNamespace(GetSpeakers=get_speakers)  # type: ignore[attr-defined]
+    pycaw_module.IAudioEndpointVolume = SimpleNamespace(_iid_="endpoint-volume")  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(volume_module.platform, "system", lambda: "Windows")
+    monkeypatch.setitem(sys.modules, "comtypes", comtypes)
+    monkeypatch.setitem(sys.modules, "pycaw", pycaw_package)
+    monkeypatch.setitem(sys.modules, "pycaw.pycaw", pycaw_module)
+
+    def read_volume() -> tuple[VolumeResult, int]:
+        result = execute_default_volume_request(VolumeRequest("get"))
+        return result, threading.get_ident()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        result, worker_thread_id = pool.submit(read_volume).result()
+
+    assert result.succeeded is True
+    assert result.level == 42
+    assert events == [
+        ("initialize", worker_thread_id),
+        ("get_speakers", worker_thread_id),
+        ("uninitialize", worker_thread_id),
+    ]

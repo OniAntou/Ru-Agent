@@ -40,10 +40,11 @@ repository's sequential Windows verification commands.
 - Modify: backend-dotnet/RuAgent.Broker/Runtime/BrokerHost.cs
 - Create: backend-dotnet/RuAgent.Broker.Tests/PendingApprovalStoreTests.cs
 - Modify: backend-dotnet/RuAgent.Broker.Tests/BrokerHostTests.cs
+- Modify: backend-dotnet/RuAgent.Broker.Tests/TerminalAdapterTests.cs
 
 **Interfaces:**
 
-- PendingApprovalStore.Issue(AgentEnvelope request, ToolManifest manifest, JsonObject arguments, string safeAction, DateTimeOffset expiresAt) returns an opaque approval_id and stores cloned arguments in memory.
+- PendingApprovalStore.Issue(AgentEnvelope request, ToolManifest manifest, JsonObject arguments, string safeAction, DateTimeOffset expiresAt, string? terminalApprovalToken) returns an opaque approval_id and stores cloned arguments plus any private terminal approval token in memory.
 - PendingApprovalStore.TryConsume(string approvalId, string sessionId, bool approved, DateTimeOffset now, out PendingApproval? pending) atomically consumes a matching, unexpired record. It returns false for replay, wrong session, expiry, or unknown ID.
 - ToolExecutionService.RespondToApprovalAsync(AgentEnvelope request, CancellationToken cancellationToken) consumes the pending record and either returns denied or dispatches the original typed request once with a private approval bypass.
 - AgentConnection accepts an optional approval handler and routes AgentMessageTypes.ApprovalResponse only for an owned session.
@@ -99,7 +100,14 @@ new JsonObject
 
 Implement RespondToApprovalAsync so rejection consumes and returns denied;
 approval consumes, rechecks the session/policy, and calls the normal dispatcher
-with skipApproval: true. Never put original arguments in the response envelope.
+with skipApproval: true. The dispatcher must receive an explicit approved flag:
+notes.create passes approved: true only on this path, and terminal.shell builds
+a TerminalShellRequest from the private pending arguments/token and calls
+RunApprovedShellAsync. Construct ApprovalTokenService in this service and pass
+it to TerminalAdapter; issue its token only for a terminal.shell pending record.
+Other registered external/connector tools without an adapter remain safely
+tool_not_implemented after approval and perform no side effect. Never put
+original arguments or the private terminal token in the response envelope.
 
 - [ ] **Step 5: Route the private approval_response message**
 
@@ -114,7 +122,7 @@ Run the focused command again and then:
 
 ~~~powershell
 git diff --check -- backend-dotnet/RuAgent.Broker backend-dotnet/RuAgent.Broker.Tests
-git add -- backend-dotnet/RuAgent.Broker/Policy/PendingApprovalStore.cs backend-dotnet/RuAgent.Broker/Tools/ToolExecutionService.cs backend-dotnet/RuAgent.Broker/Transport/AgentConnection.cs backend-dotnet/RuAgent.Broker/Runtime/BrokerHost.cs backend-dotnet/RuAgent.Broker.Tests/PendingApprovalStoreTests.cs backend-dotnet/RuAgent.Broker.Tests/BrokerHostTests.cs
+git add -- backend-dotnet/RuAgent.Broker/Policy/PendingApprovalStore.cs backend-dotnet/RuAgent.Broker/Tools/ToolExecutionService.cs backend-dotnet/RuAgent.Broker/Transport/AgentConnection.cs backend-dotnet/RuAgent.Broker/Runtime/BrokerHost.cs backend-dotnet/RuAgent.Broker.Tests/PendingApprovalStoreTests.cs backend-dotnet/RuAgent.Broker.Tests/BrokerHostTests.cs backend-dotnet/RuAgent.Broker.Tests/TerminalAdapterTests.cs
 git commit -m "feat: add one-time Broker approvals"
 ~~~
 

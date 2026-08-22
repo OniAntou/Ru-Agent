@@ -139,6 +139,7 @@ git commit -m "feat: add one-time Broker approvals"
 - Modify: backend-dotnet/RuBackend/Conversation/ChatEvent.cs
 - Modify: backend-dotnet/RuBackend/Conversation/ChatWebSocketEndpoint.cs
 - Modify: backend-dotnet/RuBackend/Program.cs
+- Modify: backend-dotnet/RuBackend.Tests/BackendWebApplicationFactory.cs
 - Modify: backend-dotnet/RuBackend.Tests/Agent/AgentStoreTests.cs
 - Modify: backend-dotnet/RuBackend.Tests/Agent/AgentBrokerClientTests.cs
 - Modify: backend-dotnet/RuBackend.Tests/Conversation/ChatWebSocketEndpointTests.cs

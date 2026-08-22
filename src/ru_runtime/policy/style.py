@@ -46,12 +46,9 @@ _CLOUD_ADDENDUM = textwrap.dedent("""\
     CRITICAL: YOU MUST STRICTLY FOLLOW THE NO-EMOJI RULE. DO NOT OUTPUT ANY EMOJIS IN YOUR RESPONSE.\
 """)
 
-_PC_TOOLS_INSTRUCTION = textwrap.dedent("""\
-    SYSTEM & PC REALTIME CONTEXT:
-    1. THỜI GIAN & HỆ THỐNG: Bạn luôn được cấp thông tin ngày, giờ, thứ, pin, RAM thực tế từ máy tính của anh trong ngữ cảnh. Khi anh hỏi về thời gian, ngày tháng, pin hay máy tính, hãy dựa vào dữ liệu thực tế này để trả lời chính xác 100%.
-    2. CÔNG CỤ WINDOWS:
-       - Mở ứng dụng hoặc trang web: Phản hồi kèm mã `[APP_OPEN: app_name hoặc url]` (vd: `[APP_OPEN: notepad]`, `[APP_OPEN: calc]`, `[APP_OPEN: https://youtube.com]`).
-       - Chỉnh âm lượng máy tính: Phản hồi kèm đúng một mã `[VOLUME: get]`, `[VOLUME: set 2]`, `[VOLUME: increase 5]`, `[VOLUME: decrease 5]`, `[VOLUME: mute]`, hoặc `[VOLUME: unmute]`. Các mã cũ `[VOLUME: up]` và `[VOLUME: down]` vẫn được chấp nhận và tương ứng với thay đổi 4 điểm phần trăm.\
+_SYSTEM_CONTEXT_INSTRUCTION = textwrap.dedent("""\
+    SYSTEM REALTIME CONTEXT:
+    Bạn có thể được cấp thông tin ngày, giờ, thứ, pin và RAM thực tế trong ngữ cảnh. Khi anh hỏi về dữ liệu đó, chỉ dựa vào context được cung cấp; nếu thiếu dữ liệu thì nói rõ giới hạn và không bịa rằng em đã đọc hoặc thay đổi máy.\
 """)
 
 _VISUAL_APPEARANCE = textwrap.dedent("""\
@@ -74,7 +71,7 @@ def _build_prompt(
     lang_rule: str,
     *,
     include_search_instruction: bool = True,
-    include_pc_tools_instruction: bool = True,
+    include_system_context_instruction: bool = True,
 ) -> str:
     sections = [
         _IDENTITY_AND_CAPABILITIES,
@@ -84,8 +81,8 @@ def _build_prompt(
     ]
     if include_search_instruction:
         sections.append(_SEARCH_INSTRUCTION)
-    if include_pc_tools_instruction:
-        sections.append(_PC_TOOLS_INSTRUCTION)
+    if include_system_context_instruction:
+        sections.append(_SYSTEM_CONTEXT_INSTRUCTION)
     sections.extend((_PROFANITY_POLICY, _CHAT_EMOTION_POLICY, _CONCISENESS_RULE))
     return "\n\n".join(sections)
 
@@ -109,7 +106,7 @@ _AGENT_FOLLOW_UP_INSTRUCTION = textwrap.dedent("""\
 _AGENT_BASE_PROMPT = _build_prompt(
     _LANGUAGE_RULES["vi"],
     include_search_instruction=False,
-    include_pc_tools_instruction=False,
+    include_system_context_instruction=False,
 )
 RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT = (
     _AGENT_BASE_PROMPT + "\n\n" + _CLOUD_ADDENDUM + "\n\n" + _AGENT_FOLLOW_UP_INSTRUCTION

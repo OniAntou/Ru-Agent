@@ -1,8 +1,11 @@
+import pytest
+
 from ru_runtime.policy.style import (
     RU_CLOUD_SYSTEM_PROMPT,
     RU_PROMPTS,
     RU_SCREEN_REACTION_SYSTEM_PROMPT,
     RU_SYSTEM_PROMPT,
+    ru_action_selection_prompt,
 )
 
 
@@ -80,3 +83,24 @@ def test_ru_prompts_describe_connected_avatar_controls_without_mouth_override() 
         assert "VoiceVolume" in prompt
         assert "LLM_MouthOpen" in prompt
         assert "metadata VTS ẩn" in prompt
+
+
+def test_normal_prompts_do_not_advertise_legacy_desktop_markers() -> None:
+    prompts = [RU_SYSTEM_PROMPT, *RU_PROMPTS.values(), RU_CLOUD_SYSTEM_PROMPT]
+
+    assert all("[VOLUME:" not in prompt for prompt in prompts)
+    assert all("[APP_OPEN:" not in prompt for prompt in prompts)
+    assert all("system.volume@1.0.0" not in prompt for prompt in prompts)
+
+
+def test_action_selection_prompt_is_capability_driven_and_receipt_gated() -> None:
+    unavailable = ru_action_selection_prompt(())
+    available = ru_action_selection_prompt((("system.volume", "1.0.0"),))
+
+    assert "system.volume@1.0.0" not in unavailable
+    assert "system.volume@1.0.0" in available
+    assert "Prose is not execution" in available
+    assert "verified receipt" in available
+
+    with pytest.raises(ValueError, match="unsupported_model_capability"):
+        ru_action_selection_prompt((("app.open", "1.0.0"),))

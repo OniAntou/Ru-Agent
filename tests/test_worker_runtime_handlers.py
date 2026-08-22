@@ -839,6 +839,21 @@ def test_two_tool_calls_are_rejected_without_emitting_a_request() -> None:
     assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
 
 
+def test_legacy_volume_marker_is_translated_then_waits_for_verified_receipt() -> None:
+    runner = SequencedRunner(
+        "[VOLUME: set 2] Em đã chỉnh xong.",
+        "Đã đặt âm lượng ở mức 2% cho anh.",
+    )
+
+    replies = asyncio.run(_run_action_turn(runner, _verified_result(), False))
+
+    request = next(reply for reply in replies if reply.type == CHAT_TOOL_REQUEST)
+    assert request.payload["tool_id"] == "system.volume"
+    assert request.payload["arguments"] == {"operation": "set", "level": 2}
+    assert len(runner.calls) == 2
+    assert replies[-1].payload["raw_reply"] == "Đã đặt âm lượng ở mức 2% cho anh."
+
+
 def test_capability_absent_volume_request_fails_without_model_generation() -> None:
     queue: asyncio.Queue = asyncio.Queue()
     runner = SequencedRunner("Đã chỉnh xong")

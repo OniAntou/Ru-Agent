@@ -12,7 +12,7 @@ from .search import perform_web_search
 logger = logging.getLogger(__name__)
 
 _SEARCH_MARKER = re.compile(r"\[SEARCH:\s*(.*?)\]", re.IGNORECASE)
-_APP_OPEN_MARKER = re.compile(r"\[APP_OPEN:\s*(.*?)\]", re.IGNORECASE)
+_APP_OPEN_MARKER = re.compile(r"\[(?:APP|APP_OPEN):\s*(.*?)\]", re.IGNORECASE)
 _VOLUME_MARKER = re.compile(r"\[VOLUME:\s*(.*?)\]", re.IGNORECASE)
 _MAX_SEARCH_RESULT_LENGTH = 2000
 _MAX_SEARCH_CONTENT_LENGTH = 8000
@@ -22,67 +22,8 @@ def _strip_search_marker(text: str) -> str:
     cleaned = _SEARCH_MARKER.sub("", text)
     cleaned = _APP_OPEN_MARKER.sub("", cleaned)
     cleaned = _VOLUME_MARKER.sub("", cleaned)
-    return cleaned.strip()
-
-
-_VOLUME_FAILURE_MESSAGES = {
-    "unsupported_platform": "Tính năng chỉnh âm lượng chỉ khả dụng trên Windows.",
-    "audio_backend_unavailable": "Ru chưa kết nối được bộ điều khiển âm lượng.",
-    "default_endpoint_unavailable": "Không tìm thấy thiết bị phát âm thanh mặc định.",
-    "read_failed": "Ru không đọc được trạng thái âm lượng.",
-    "write_failed": "Ru không ghi được thay đổi âm lượng.",
-    "readback_mismatch": "Không thể xác nhận thay đổi âm lượng.",
-    "adapter_error": "Ru không thể hoàn tất thao tác âm lượng.",
-    "invalid_request": "Ru không nhận diện được yêu cầu âm lượng.",
-}
-
-
-def _execute_pc_tool_markers(
-    text: str,
-    *,
-    on_stream_reset: Callable[[], None] | None = None,
-) -> str:
-    volume_failure_code: str | None = None
-    try:
-        from ru_runtime.system.pc_tools import open_application_or_url
-        from ru_runtime.system import volume as volume_module
-
-        app_matches = _APP_OPEN_MARKER.findall(text)
-        for target in app_matches:
-            target = target.strip()
-            if target:
-                open_application_or_url(target)
-
-        vol_matches = _VOLUME_MARKER.findall(text)
-        for action in vol_matches:
-            action = action.strip()
-            if action:
-                try:
-                    request = volume_module.parse_volume_action(action)
-                    if volume_failure_code is not None:
-                        continue
-                    result = volume_module.execute_default_volume_request(request)
-                    if not result.succeeded:
-                        volume_failure_code = result.error_code or "adapter_error"
-                except ValueError:
-                    volume_failure_code = "invalid_request"
-                except volume_module.VolumeAdapterError as error:
-                    volume_failure_code = error.error_code
-                except Exception:
-                    logger.exception("Failed executing volume marker")
-                    volume_failure_code = "adapter_error"
-    except Exception as exc:
-        logger.warning("Failed executing PC tool markers: %s", exc)
-
-    cleaned = _APP_OPEN_MARKER.sub("", text)
-    cleaned = _VOLUME_MARKER.sub("", cleaned)
-    if volume_failure_code is not None:
-        if on_stream_reset is not None:
-            on_stream_reset()
-        return _VOLUME_FAILURE_MESSAGES.get(
-            volume_failure_code,
-            _VOLUME_FAILURE_MESSAGES["adapter_error"],
-        )
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
 
@@ -91,8 +32,8 @@ def _sanitize_search_results(results: str | None) -> str:
         results = "None"
     text = re.sub(r"<[^>]+>", " ", results)
     text = re.sub(r"\[SEARCH:[^\]]*\]", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\[APP_OPEN:[^\]]*\]", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\[VOLUME:[^\]]*\]", "", text, flags=re.IGNORECASE)
+    text = _APP_OPEN_MARKER.sub("", text)
+    text = _VOLUME_MARKER.sub("", text)
     limited = []
     for block in text.split("\n\n"):
         block = re.sub(r"\s+", " ", block).strip()
@@ -124,7 +65,7 @@ def execute_reply(
     on_stream_reset: Callable[[], None] | None = None,
     on_complete_timing: Callable[[float], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
-    allow_legacy_markers: bool = True,
+    allow_legacy_markers: bool = False,
     agent_follow_up: bool = False,
 ) -> str:
     if agent_follow_up:
@@ -149,11 +90,7 @@ def execute_reply(
     
     search_match = _SEARCH_MARKER.search(response)
     if not allow_web_search or search_match is None:
-        response = (
-            _execute_pc_tool_markers(response, on_stream_reset=on_stream_reset)
-            if allow_legacy_markers
-            else _strip_search_marker(response)
-        )
+        response = response.strip() if allow_legacy_markers else _strip_search_marker(response)
         if not allow_web_search and search_match is not None:
             logger.warning("Model requested a web search but web search is disabled; stripping the marker")
             cleaned = _strip_search_marker(response)
@@ -163,11 +100,7 @@ def execute_reply(
 
     query = search_match.group(1).strip()
     if not query:
-        response = (
-            _execute_pc_tool_markers(response, on_stream_reset=on_stream_reset)
-            if allow_legacy_markers
-            else _strip_search_marker(response)
-        )
+        response = response.strip() if allow_legacy_markers else _strip_search_marker(response)
         cleaned = _strip_search_marker(response)
         return strip_emojis_and_emoticons(cleaned) if cleaned else strip_emojis_and_emoticons(response)
     try:
@@ -191,18 +124,10 @@ def execute_reply(
             on_complete_timing=on_complete_timing,
             is_cancelled=is_cancelled,
         )
-        grounded_response = (
-            _execute_pc_tool_markers(grounded_response, on_stream_reset=on_stream_reset)
-            if allow_legacy_markers
-            else _strip_search_marker(grounded_response)
-        )
+        grounded_response = _strip_search_marker(grounded_response)
         return strip_emojis_and_emoticons(grounded_response)
     except Exception as error:
         logger.warning("Grounded follow-up failed: %s", error)
-        response = (
-            _execute_pc_tool_markers(response, on_stream_reset=on_stream_reset)
-            if allow_legacy_markers
-            else _strip_search_marker(response)
-        )
+        response = _strip_search_marker(response)
         fallback = _strip_search_marker(response)
         return strip_emojis_and_emoticons(fallback) if fallback else strip_emojis_and_emoticons(response)

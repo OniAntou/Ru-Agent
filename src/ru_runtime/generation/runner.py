@@ -180,7 +180,7 @@ class ModelRunner:
             on_stream_reset=on_stream_reset,
             on_complete_timing=on_complete_timing,
             is_cancelled=is_cancelled,
-            allow_legacy_markers=not (structured_tools_only or agent_follow_up),
+            allow_legacy_markers=structured_tools_only,
             agent_follow_up=agent_follow_up,
         )
 

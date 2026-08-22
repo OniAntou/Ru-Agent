@@ -1,97 +1,51 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+import ctypes
+import os
+import subprocess
 
 from ru_runtime.generation.orchestration import execute_reply
-from ru_runtime.system.volume import VolumeState
 
 
-class FakeVolumeController:
-    def __init__(self, *, level: int = 40, muted: bool = False, readback: bool = True) -> None:
-        self.state = VolumeState(level=level, muted=muted)
-        self.readback = readback
-        self.writes: list[tuple[str, int | bool]] = []
+def test_execute_reply_strips_action_markers_without_native_calls(monkeypatch) -> None:
+    def fail(*_args, **_kwargs):
+        raise AssertionError("visible reply rendering must not invoke a native action")
 
-    def get_state(self) -> VolumeState:
-        return self.state
+    class FailingWindll:
+        def __getattr__(self, _name: str):
+            return fail()
 
-    def set_level(self, level: int) -> None:
-        self.writes.append(("level", level))
-        if self.readback:
-            self.state = VolumeState(level=level, muted=self.state.muted)
+    monkeypatch.setattr(os, "startfile", fail)
+    monkeypatch.setattr(subprocess, "Popen", fail)
+    monkeypatch.setattr(ctypes, "windll", FailingWindll())
 
-    def set_muted(self, muted: bool) -> None:
-        self.writes.append(("muted", muted))
-        if self.readback:
-            self.state = VolumeState(level=self.state.level, muted=muted)
+    result = execute_reply(
+        lambda *_args, **_kwargs: "[APP: browser] [VOLUME: set 2] Em đã làm xong.",
+        prompt="test",
+        system_instruction="Ru",
+        max_new_tokens=32,
+        temperature=0.7,
+        top_k=20,
+        allow_web_search=False,
+        allow_legacy_markers=False,
+    )
 
-    def close(self) -> None:
-        pass
-
-
-def test_execute_reply_volume_marker_uses_verified_level() -> None:
-    controller = FakeVolumeController(level=40)
-
-    with (
-        patch("ru_runtime.system.volume.create_default_volume_controller", return_value=controller),
-        patch("ru_runtime.system.pc_tools.adjust_system_volume", return_value=(True, "legacy")),
-    ):
-        result = execute_reply(
-            lambda *_args, **_kwargs: "[VOLUME: set 2] Em đã hạ âm lượng cho anh.",
-            prompt="Hạ âm lượng còn 2",
-            system_instruction="Ru",
-            max_new_tokens=32,
-            temperature=0.7,
-            top_k=20,
-            allow_web_search=False,
-        )
-
-    assert controller.writes == [("level", 2)]
-    assert "[VOLUME:" not in result
-    assert "Em đã hạ âm lượng cho anh." in result
+    assert result == "Em đã làm xong."
 
 
-def test_execute_reply_volume_failure_replaces_model_success_claim() -> None:
-    controller = FakeVolumeController(level=40, readback=False)
+def test_non_visible_selection_may_preserve_one_legacy_marker_for_translation() -> None:
+    result = execute_reply(
+        lambda *_args, **_kwargs: "[VOLUME: set 2] Em đã làm xong.",
+        prompt="test",
+        system_instruction="Ru",
+        max_new_tokens=32,
+        temperature=0.7,
+        top_k=20,
+        allow_web_search=False,
+        allow_legacy_markers=True,
+    )
 
-    with (
-        patch("ru_runtime.system.volume.create_default_volume_controller", return_value=controller),
-        patch("ru_runtime.system.pc_tools.adjust_system_volume", return_value=(True, "legacy")),
-    ):
-        result = execute_reply(
-            lambda *_args, **_kwargs: "[VOLUME: set 2] Đã hạ âm lượng xuống 2% rồi anh.",
-            prompt="Hạ âm lượng còn 2",
-            system_instruction="Ru",
-            max_new_tokens=32,
-            temperature=0.7,
-            top_k=20,
-            allow_web_search=False,
-        )
-
-    assert "[VOLUME:" not in result
-    assert "Đã hạ âm lượng" not in result
-    assert "Không thể" in result
-
-
-def test_execute_reply_legacy_volume_marker_defaults_to_four_points() -> None:
-    controller = FakeVolumeController(level=40)
-
-    with (
-        patch("ru_runtime.system.volume.create_default_volume_controller", return_value=controller),
-        patch("ru_runtime.system.pc_tools.adjust_system_volume", return_value=(True, "legacy")),
-    ):
-        result = execute_reply(
-            lambda *_args, **_kwargs: "[VOLUME: up] Đã tăng âm lượng.",
-            prompt="Tăng âm lượng",
-            system_instruction="Ru",
-            max_new_tokens=32,
-            temperature=0.7,
-            top_k=20,
-            allow_web_search=False,
-        )
-
-    assert controller.writes == [("level", 44)]
-    assert "[VOLUME:" not in result
+    assert result == "[VOLUME: set 2] Em đã làm xong."
 
 
 def test_execute_reply_resets_stream_before_a_grounded_follow_up() -> None:

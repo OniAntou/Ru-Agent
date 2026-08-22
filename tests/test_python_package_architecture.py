@@ -70,3 +70,42 @@ def test_runtime_has_no_generic_dumping_package() -> None:
 
     for name in ("shared", "common", "helpers", "compatibility"):
         assert not (package_root / name).exists()
+
+
+def test_python_runtime_has_no_native_volume_owner() -> None:
+    assert not (ROOT / "src/ru_runtime/system/volume.py").exists()
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert ("py" + "caw") not in pyproject.lower()
+    assert ("com" + "types") not in pyproject.lower()
+    sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (ROOT / "src/ru_runtime").rglob("*.py")
+    )
+    assert ("adjust_system" + "_volume") not in sources
+    assert ("open_application" + "_or_url") not in sources
+
+
+def test_reply_orchestration_has_no_desktop_side_effect_imports() -> None:
+    path = ROOT / "src/ru_runtime/generation/orchestration.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imports.update(item.name for item in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imports.add(node.module or "")
+
+    forbidden = {
+        "ru_runtime.system",
+        "os",
+        "subprocess",
+        "webbrowser",
+        "ctypes",
+        "py" + "caw",
+        "com" + "types",
+    }
+    assert not any(
+        imported == candidate or imported.startswith(candidate + ".")
+        for imported in imports
+        for candidate in forbidden
+    )

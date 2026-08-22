@@ -127,6 +127,16 @@ def test_selection_requires_one_exact_advertised_binding() -> None:
         )
 
 
+def test_legacy_marker_selection_discards_unverified_surrounding_prose() -> None:
+    selection = validate_selection(
+        "[VOLUME: set 2] Em đã chỉnh xong.",
+        parse_model_capabilities(_settings()),
+    )
+
+    assert selection is not None
+    assert selection.arguments == {"operation": "set", "level": 2}
+
+
 @pytest.mark.parametrize(
     "text",
     (

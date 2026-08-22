@@ -191,9 +191,25 @@ def validate_selection(
     try:
         parsed = json.loads(stripped)
     except (json.JSONDecodeError, RecursionError):
-        if not stripped.startswith(("{", "[")):
+        from ru_runtime.generation.tool_calls import (
+            ToolCallParseError,
+            parse_legacy_volume_intent,
+        )
+
+        try:
+            legacy_call = parse_legacy_volume_intent(stripped)
+        except ToolCallParseError:
+            raise ActionProtocolError("invalid_selection") from None
+        if legacy_call is not None:
+            parsed = {
+                "tool_id": legacy_call.tool_id,
+                "tool_version": legacy_call.tool_version,
+                "arguments": dict(legacy_call.arguments),
+            }
+        elif stripped.startswith(("{", "[")):
+            raise ActionProtocolError("invalid_selection") from None
+        else:
             return None
-        raise ActionProtocolError("invalid_selection") from None
     if not isinstance(parsed, Mapping):
         raise ActionProtocolError("invalid_selection")
     if set(parsed) != _SELECTION_FIELDS:

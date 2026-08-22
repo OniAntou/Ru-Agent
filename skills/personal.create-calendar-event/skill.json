@@ -1,0 +1,16 @@
+{
+  "id": "personal.create-calendar-event",
+  "version": "1.0.0",
+  "input_schema": { "type": "object", "required": ["title", "starts_at", "ends_at"] },
+  "output_schema": { "type": "object", "required": ["event_id"] },
+  "required_tools": ["calendar.preview_create", "calendar.create"],
+  "required_scopes": ["calendar.write", "skill.execute"],
+  "steps": [
+    { "kind": "call_tool", "name": "preview", "tool_id": "calendar.preview_create", "arguments": {} },
+    { "kind": "call_tool", "name": "create", "tool_id": "calendar.create", "arguments": {} }
+  ],
+  "requires_approval": true,
+  "max_steps": 4,
+  "timeout_ms": 60000,
+  "trust_class": "builtin"
+}

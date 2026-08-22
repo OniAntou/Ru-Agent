@@ -12,6 +12,7 @@ from native_volume_acceptance import (
     NativeAcceptanceRunner,
     NativeAcceptanceError,
     NativeRunConfig,
+    PublishedBrokerProcess,
     VolumeReceipt,
     build_native_artifact,
     main,
@@ -119,6 +120,50 @@ def test_broker_path_must_be_an_absolute_published_executable(tmp_path: Path, ki
 
     assert exit_code == 2
     assert calls == []
+
+
+def test_native_output_must_be_a_json_file_and_cannot_replace_the_broker(tmp_path: Path) -> None:
+    publish = tmp_path / "publish"
+    publish.mkdir()
+    broker = (publish / "RuAgent.Broker.exe").resolve()
+    broker.write_bytes(b"fixture")
+
+    with pytest.raises(ValueError, match="invalid_output_path"):
+        NativeRunConfig(broker, (tmp_path / "artifact.txt").resolve(), 20)
+    with pytest.raises(ValueError, match="invalid_output_path"):
+        NativeRunConfig(broker, broker, 20)
+
+
+def test_native_paths_must_be_explicitly_absolute(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    publish = tmp_path / "publish"
+    publish.mkdir()
+    broker = publish / "RuAgent.Broker.exe"
+    broker.write_bytes(b"fixture")
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(ValueError, match="paths_must_be_absolute"):
+        NativeRunConfig(Path("publish/RuAgent.Broker.exe"), (tmp_path / "artifact.json").resolve(), 20)
+    with pytest.raises(ValueError, match="paths_must_be_absolute"):
+        NativeRunConfig(broker.resolve(), Path("artifact.json"), 20)
+
+
+def test_published_broker_environment_does_not_inherit_ru_credentials(tmp_path: Path) -> None:
+    environment = PublishedBrokerProcess._child_environment(
+        tmp_path / "broker.json",
+        tmp_path / "workspace",
+        source={
+            "PATH": "safe-path",
+            "SYSTEMROOT": "C:\\Windows",
+            "RU_DESKTOP_TOKEN": "must-not-inherit",
+            "OPENAI_API_KEY": "must-not-inherit",
+        },
+    )
+
+    assert environment["RU_AGENT_BROKER_DESCRIPTOR"].endswith("broker.json")
+    assert environment["RU_WORKSPACE_ROOT"].endswith("workspace")
+    assert environment["PATH"] == "safe-path"
+    assert "RU_DESKTOP_TOKEN" not in environment
+    assert "OPENAI_API_KEY" not in environment
 
 
 def test_bearer_ownership_proves_correct_and_random_wrong_before_ws() -> None:

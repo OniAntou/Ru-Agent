@@ -84,6 +84,11 @@ async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> Async
                 "deadline_ms": 30_000,
             },
         )
+        scenario = os.environ.get("RU_HARNESS_SCENARIO", "")
+        if scenario in {"agent-cancel", "agent-stale-result"}:
+            # Keep the turn in flight long enough for UI session replacement
+            # to prove cancellation and stale-result suppression.
+            await asyncio.sleep(1.5)
         try:
             result = await asyncio.wait_for(tool_queue.get(), timeout=30.0)
         except asyncio.TimeoutError:

@@ -143,7 +143,9 @@ speaker, or VTube Studio devices. The driver accepts `--scenario` values
 `agent-private-metadata` in addition to the voice scenarios. Broker approval
 replay and the production approval-card UI are separate deterministic tests;
 they are not model-visible GUI Harness tools. Deterministic GUI success does
-not replace the separate live hardware acceptance gate.
+not replace the separate live hardware acceptance gate. Cancel and stale-result
+replace an in-flight Agent session and reject any delayed visible update into
+the replacement session.
 
 The production live voice gate is separate and must be run with the real
 runtime/audio path:

@@ -88,6 +88,10 @@ The runner proves the correct bearer and a fresh wrong bearer before opening
 the private WebSocket, captures the original state, changes volume by one
 point, verifies the same endpoint role/hash, and restores level and mute state
 in `finally`. Restoration failure forces exit 1 and a failed native artifact.
+Both CLI paths must be absolute, the output must be a `.json` file distinct
+from the published Broker, and the child Broker receives only the required
+descriptor/workspace variables plus a small Windows process environment
+allowlist; unrelated Ru and provider credentials are not inherited.
 The artifact excludes levels, mute values, credentials, paths, arguments,
 outputs, device names, and native exception text.
 
@@ -105,6 +109,11 @@ RuApp instance exists. The supported Agent scenarios are exactly:
 - `agent-cancel`
 - `agent-stale-result`
 - `agent-private-metadata`
+
+The cancel and stale-result scenarios replace the Agent session while its
+synthetic tool request is still in flight, wait beyond the delayed result, and
+fail if a user/assistant message, private marker, or enabled Agent toggle leaks
+back into the replacement session.
 
 Broker approval dispatch/replay is covered by the private deterministic probe;
 the visible approval card remains covered by `AgentApprovalTests` and

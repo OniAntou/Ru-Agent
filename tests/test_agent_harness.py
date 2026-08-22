@@ -110,6 +110,16 @@ def test_gui_agent_scenario_catalog_is_exact() -> None:
         assert scenario in csharp_cli
 
 
+def test_gui_agent_cancel_and_stale_scenarios_replace_in_flight_session() -> None:
+    worker = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
+    driver = Path("gui-winui3.Harness/UiAutomationScenario.cs").read_text(encoding="utf-8")
+
+    assert 'scenario in {"agent-cancel", "agent-stale-result"}' in worker
+    assert 'scenario is "agent-cancel" or "agent-stale-result"' in driver
+    assert "ReplaceSessionAsync(timeout)" in driver
+    assert "noLateAgentUpdate" in driver
+
+
 def test_deterministic_agent_harness_keeps_volume_metadata_only() -> None:
     catalog = Path("backend-dotnet/RuAgent.Broker/Tools/ToolCatalog.cs").read_text(encoding="utf-8")
     volume_tool = Path(

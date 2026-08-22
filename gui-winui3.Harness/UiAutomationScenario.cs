@@ -235,6 +235,31 @@ public sealed class UiAutomationScenario : IDisposable
             bool activity = await WaitUntilAsync(
                 () => HasAtLeast("agent.activity", 1),
                 timeout);
+            if (activity && scenario is "agent-cancel" or "agent-stale-result")
+            {
+                HarnessGuiCheck replaced = await ReplaceSessionAsync(timeout);
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                bool noLateAgentUpdate = !HasUserAndAssistantMessages()
+                    && !VisibleMessageContainsPrivateMarker()
+                    && !AgentSurfaceContainsPrivateMarker();
+                if (IsToggleOn(mode))
+                {
+                    Invoke(mode);
+                }
+                bool disabledAfterReplacement = await WaitUntilAsync(
+                    () => !IsToggleOn(mode),
+                    timeout);
+                bool lifecyclePassed = replaced.Status == "passed"
+                    && noLateAgentUpdate
+                    && disabledAfterReplacement;
+                return Check(
+                    "gui." + scenario,
+                    lifecyclePassed,
+                    started,
+                    lifecyclePassed
+                        ? null
+                        : "In-flight Agent session produced a late visible update");
+            }
             bool messages = activity
                 && await WaitUntilAsync(HasUserAndAssistantMessages, timeout);
             bool truthfulVolumeFailure = scenario != "agent-volume-contract"
@@ -245,12 +270,6 @@ public sealed class UiAutomationScenario : IDisposable
                 && messages
                 && truthfulVolumeFailure
                 && privateAbsent;
-
-            if (scenario == "agent-stale-result")
-            {
-                HarnessGuiCheck replaced = await ReplaceSessionAsync(timeout);
-                passed &= replaced.Status == "passed";
-            }
 
             Invoke(mode);
             bool disabled = await WaitUntilAsync(() => !IsToggleOn(mode), timeout);

@@ -51,18 +51,22 @@ class NativeRunConfig:
     timeout_seconds: float = 20.0
 
     def __post_init__(self) -> None:
-        broker = self.broker_exe
-        output = self.output
-        if not broker.is_absolute() or not output.is_absolute():
+        broker_input = Path(self.broker_exe)
+        output_input = Path(self.output)
+        if not broker_input.is_absolute() or not output_input.is_absolute():
             raise ValueError("paths_must_be_absolute")
+        broker = broker_input.resolve()
+        output = output_input.resolve()
         if broker.name.casefold() != "ruagent.broker.exe":
             raise ValueError("invalid_broker_executable")
         if "publish" not in {part.casefold() for part in broker.parts} or not broker.is_file():
             raise ValueError("broker_must_be_published")
+        if output.suffix.casefold() != ".json" or output == broker or output.is_dir():
+            raise ValueError("invalid_output_path")
         if not 5 <= self.timeout_seconds <= 60:
             raise ValueError("invalid_timeout")
-        object.__setattr__(self, "broker_exe", broker.resolve())
-        object.__setattr__(self, "output", output.resolve())
+        object.__setattr__(self, "broker_exe", broker)
+        object.__setattr__(self, "output", output)
 
 
 @dataclass(frozen=True, slots=True)
@@ -537,9 +541,7 @@ class PublishedBrokerProcess:
             encoding="utf-8",
         )
         self._descriptor.chmod(0o600)
-        environment = os.environ.copy()
-        environment["RU_AGENT_BROKER_DESCRIPTOR"] = str(self._descriptor)
-        environment["RU_WORKSPACE_ROOT"] = str(workspace_root)
+        environment = self._child_environment(self._descriptor, workspace_root)
         creation_flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         self._process = self._popen(
             [str(self._config.broker_exe)],
@@ -550,6 +552,23 @@ class PublishedBrokerProcess:
             stderr=subprocess.DEVNULL,
             creationflags=creation_flags,
         )
+
+    @staticmethod
+    def _child_environment(
+        descriptor: Path,
+        workspace_root: Path,
+        *,
+        source: Mapping[str, str] | None = None,
+    ) -> dict[str, str]:
+        inherited = os.environ if source is None else source
+        environment = {
+            key: value
+            for key in ("PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "TEMP", "TMP")
+            if isinstance((value := inherited.get(key)), str) and value
+        }
+        environment["RU_AGENT_BROKER_DESCRIPTOR"] = str(descriptor)
+        environment["RU_WORKSPACE_ROOT"] = str(workspace_root)
+        return environment
 
     def wait_ready(self) -> None:
         if self._process is None:

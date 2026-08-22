@@ -23,14 +23,20 @@ public sealed class ToolExecutionService : IToolInvoker
     private readonly FileTools _files;
     private readonly AppTools _apps = new();
     private readonly SystemTools _system = new();
+    private readonly Lazy<VolumeTools> _volume;
     private readonly TerminalAdapter _terminal;
     private readonly NotesAdapter _notes;
 
-    public ToolExecutionService(BrokerSession session, string workspaceRoot)
+    public ToolExecutionService(
+        BrokerSession session,
+        string workspaceRoot,
+        IVolumeController? volumeController = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _registry = new ToolRegistry();
         _ = new ToolCatalog(_registry);
+        _volume = new Lazy<VolumeTools>(
+            () => new VolumeTools(volumeController ?? new WindowsCoreAudioVolumeController()));
         _policy = new ToolPolicyEngine();
         _workspace = new WorkspacePathGuard(workspaceRoot);
         _files = new FileTools(_workspace);
@@ -157,6 +163,10 @@ public sealed class ToolExecutionService : IToolInvoker
         catch (ToolExecutionException error)
         {
             return Result(request, ToolResultStatuses.Failed, new JsonObject(), error.Code, "Tool request was rejected.", started);
+        }
+        catch (VolumeToolException error)
+        {
+            return Result(request, ToolResultStatuses.Failed, new JsonObject(), error.Code, error.SafeSummary, started);
         }
         catch (Exception)
         {
@@ -309,6 +319,7 @@ public sealed class ToolExecutionService : IToolInvoker
         {
             "system.time" => _system.Time(),
             "system.status" => _system.Status(),
+            "system.volume" => _volume.Value.Execute(arguments),
             "app.list" => _apps.List(),
             "app.open" => _apps.Open(ReadString(arguments, "target")),
             "files.list" => _files.List(ReadOptionalString(arguments, "path") ?? "."),
@@ -408,6 +419,7 @@ public sealed class ToolExecutionService : IToolInvoker
     private static string SafeAction(ToolManifest manifest) => manifest.Id switch
     {
         "terminal.shell" => "Run a terminal action in the workspace.",
+        "system.volume" => "Change the local system volume.",
         "notes.create" => "Create a note in the workspace.",
         "web.search" or "web.fetch" => "Use an external web connection.",
         "calendar.create" => "Create a calendar event.",

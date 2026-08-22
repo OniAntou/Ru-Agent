@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebSockets;
 using RuAgent.Broker.Transport;
 using RuAgent.Broker.Tools;
+using RuAgent.Broker.Tools.Desktop;
 
 namespace RuAgent.Broker.Runtime;
 
@@ -16,11 +17,14 @@ public sealed class BrokerHost : IAsyncDisposable
     private readonly ToolExecutionService _tools;
     private bool _disposed;
 
-    private BrokerHost(WebApplication application, BrokerSession session)
+    private BrokerHost(
+        WebApplication application,
+        BrokerSession session,
+        IVolumeController? volumeController)
     {
         _application = application;
         _session = session;
-        _tools = new ToolExecutionService(session, ResolveWorkspaceRoot());
+        _tools = new ToolExecutionService(session, ResolveWorkspaceRoot(), volumeController);
         _cleanup = new BrokerCleanup(
             stopListener: cancellationToken => new ValueTask(_application.StopAsync(cancellationToken)),
             cancelRequests: () => _shutdown.Cancel(),
@@ -37,6 +41,23 @@ public sealed class BrokerHost : IAsyncDisposable
         string descriptorPath,
         CancellationToken cancellationToken = default)
     {
+        return await StartCoreAsync(descriptorPath, null, cancellationToken).ConfigureAwait(false);
+    }
+
+    public static async Task<BrokerHost> StartAsync(
+        string descriptorPath,
+        IVolumeController volumeController,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(volumeController);
+        return await StartCoreAsync(descriptorPath, volumeController, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<BrokerHost> StartCoreAsync(
+        string descriptorPath,
+        IVolumeController? volumeController,
+        CancellationToken cancellationToken)
+    {
         var session = BrokerSession.Load(descriptorPath);
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
@@ -52,7 +73,7 @@ public sealed class BrokerHost : IAsyncDisposable
             KeepAliveInterval = TimeSpan.FromSeconds(20),
         });
 
-        var host = new BrokerHost(application, session);
+        var host = new BrokerHost(application, session, volumeController);
         application.MapGet("/health", host.HandleHealthAsync);
         application.Map("/agent", host.HandleAgentAsync);
         await application.StartAsync(cancellationToken).ConfigureAwait(false);

@@ -19,6 +19,7 @@ public sealed class ToolCatalog
     {
         registry.Register(Manifest("system.time", ToolScope.SystemRead, RiskClass.Read, "builtin"));
         registry.Register(Manifest("system.status", ToolScope.SystemRead, RiskClass.Read, "builtin"));
+        registry.Register(VolumeTools.Manifest);
         registry.Register(Manifest("app.list", ToolScope.SystemRead, RiskClass.Read, "desktop"));
         registry.Register(Manifest("app.open", ToolScope.AppOpen, RiskClass.Reversible, "desktop"));
         registry.Register(Manifest("files.list", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true));

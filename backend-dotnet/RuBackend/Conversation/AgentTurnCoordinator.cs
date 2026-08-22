@@ -131,6 +131,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                     new HashSet<string>(
                     [
                         "system.read",
+                        "system.write",
                         "workspace.read",
                         "terminal.execute",
                         "workspace.write",
@@ -157,6 +158,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
     private static string RequiredScope(string toolId) => toolId switch
     {
         "system.time" or "system.status" or "app.list" => "system.read",
+        "system.volume" => "system.write",
         "files.list" or "files.read" or "workspace.search" => "workspace.read",
         "files.write" or "notes.create" => "workspace.write",
         "terminal.run" or "terminal.shell" => "terminal.execute",

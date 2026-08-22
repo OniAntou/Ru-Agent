@@ -21,6 +21,7 @@ public static class ChatWebSocketEndpoint
         HttpContext context,
         IConversationCoordinator coordinator,
         IAgentApprovalCoordinator approvalCoordinator,
+        IActionOutcomeContextStore actionOutcomes,
         CancellationToken cancellationToken)
     {
         if (!context.WebSockets.IsWebSocketRequest)
@@ -45,6 +46,24 @@ public static class ChatWebSocketEndpoint
             socket,
             inbound.Writer,
             connectionCancellation.Token);
+        string? activeSessionId = null;
+
+        void ObserveSession(string? candidate)
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return;
+            }
+
+            if (activeSessionId is not null
+                && !string.Equals(activeSessionId, candidate, StringComparison.Ordinal))
+            {
+                actionOutcomes.Remove(activeSessionId);
+            }
+
+            activeSessionId = candidate;
+        }
+
         try
         {
             await foreach (var message in inbound.Reader
@@ -127,6 +146,7 @@ public static class ChatWebSocketEndpoint
                     continue;
                 }
 
+                ObserveSession(request.SessionId);
                 var closed = await StreamTurnAsync(
                     socket,
                     sendLock,
@@ -137,6 +157,7 @@ public static class ChatWebSocketEndpoint
                         request.CorrelationId,
                         request.AgentMode),
                     inbound.Reader,
+                    ObserveSession,
                     connectionCancellation.Token).ConfigureAwait(false);
                 if (closed)
                 {
@@ -152,6 +173,11 @@ public static class ChatWebSocketEndpoint
         }
         finally
         {
+            if (activeSessionId is not null)
+            {
+                actionOutcomes.Remove(activeSessionId);
+            }
+
             connectionCancellation.Cancel();
             inbound.Writer.TryComplete();
             try
@@ -224,6 +250,7 @@ public static class ChatWebSocketEndpoint
         IConversationCoordinator coordinator,
         ChatRequest request,
         ChannelReader<InboundMessage> inbound,
+        Action<string?> observeSession,
         CancellationToken connectionCancellation)
     {
         using var correlationScope = CorrelationContext.Push(request.CorrelationId);
@@ -243,6 +270,7 @@ public static class ChatWebSocketEndpoint
             await foreach (var item in coordinator.HandleAsync(request, turnCancellation.Token)
                 .WithCancellation(turnCancellation.Token).ConfigureAwait(false))
             {
+                observeSession(item.SessionId);
                 if (item.Type is "done" or "error")
                 {
                     // Stop the disconnect reader before publishing the terminal

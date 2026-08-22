@@ -25,6 +25,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly IRuntimeSettingsLoader? _runtimeSettingsLoader;
     private readonly ISettingsStore? _settingsStore;
     private readonly IConversationCoordinator? _conversationCoordinator;
+    private readonly IActionOutcomeContextStore? _actionOutcomeContextStore;
     private readonly IAgentApprovalCoordinator? _approvalCoordinator;
     private readonly IVoiceProtocolClient? _voiceProtocolClient;
 
@@ -36,6 +37,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         IRuntimeSettingsLoader? runtimeSettingsLoader = null,
         ISettingsStore? settingsStore = null,
         IConversationCoordinator? conversationCoordinator = null,
+        IActionOutcomeContextStore? actionOutcomeContextStore = null,
         IAgentApprovalCoordinator? approvalCoordinator = null,
         IVoiceProtocolClient? voiceProtocolClient = null)
     {
@@ -49,6 +51,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _runtimeSettingsLoader = runtimeSettingsLoader;
         _settingsStore = settingsStore;
         _conversationCoordinator = conversationCoordinator;
+        _actionOutcomeContextStore = actionOutcomeContextStore;
         _approvalCoordinator = approvalCoordinator;
         _voiceProtocolClient = voiceProtocolClient;
     }
@@ -101,6 +104,12 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             {
                 services.RemoveAll<IConversationCoordinator>();
                 services.AddSingleton(_conversationCoordinator);
+            }
+
+            if (_actionOutcomeContextStore is not null)
+            {
+                services.RemoveAll<IActionOutcomeContextStore>();
+                services.AddSingleton(_actionOutcomeContextStore);
             }
 
             if (_approvalCoordinator is not null)

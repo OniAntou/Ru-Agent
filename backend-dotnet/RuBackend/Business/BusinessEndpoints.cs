@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using RuBackend.Business.Activity;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
+using RuBackend.Conversation;
 
 namespace RuBackend.Business;
 
@@ -202,6 +203,7 @@ public static class BusinessEndpoints
     private static async Task<IResult> DeleteSessionAsync(
         string sessionId,
         ISessionStore sessions,
+        IActionOutcomeContextStore actionOutcomes,
         ILoggerFactory loggers,
         CancellationToken cancellationToken)
     {
@@ -209,6 +211,11 @@ public static class BusinessEndpoints
         {
             var deleted = await sessions.DeleteAsync(sessionId, cancellationToken)
                 .ConfigureAwait(false);
+            if (deleted)
+            {
+                actionOutcomes.Remove(sessionId);
+            }
+
             return deleted
                 ? Results.Ok(new { status = "ok" })
                 : Results.Ok(new { status = "error", message = "Session không tồn tại." });

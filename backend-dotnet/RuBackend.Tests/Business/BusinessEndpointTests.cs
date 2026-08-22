@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuBackend.Business;
 using RuBackend.Business.Settings;
+using RuBackend.Conversation;
+using RuBackend.Worker;
 using Xunit;
 
 namespace RuBackend.Tests.Business;
@@ -257,7 +259,8 @@ public sealed class BusinessEndpointTests
     public async Task Session_routes_create_list_activate_and_delete_the_same_document()
     {
         using var data = TemporaryBusinessData.Create();
-        using var factory = CreateAspNetFactory(data.Paths);
+        var outcomes = new ActionOutcomeContextStore();
+        using var factory = CreateAspNetFactory(data.Paths, outcomes: outcomes);
         using var client = factory.CreateAuthenticatedClient();
 
         using var createdResponse = await client.PostAsync("/sessions/new", null);
@@ -269,6 +272,7 @@ public sealed class BusinessEndpointTests
             $"/sessions/{sessionId}/activate",
             null);
         var activated = await activateResponse.Content.ReadFromJsonAsync<JsonElement>();
+        outcomes.Put(sessionId, Failed("write_failed"));
         using var deleteResponse = await client.DeleteAsync($"/sessions/{sessionId}");
         using var missingResponse = await client.PostAsync(
             $"/sessions/{sessionId}/activate",
@@ -282,6 +286,23 @@ public sealed class BusinessEndpointTests
         Assert.Equal("ok", (await deleteResponse.Content.ReadFromJsonAsync<JsonElement>())
             .GetProperty("status").GetString());
         Assert.Equal("error", missing.GetProperty("status").GetString());
+        Assert.Null(outcomes.Take(sessionId));
+    }
+
+    [Fact]
+    public async Task Missing_session_delete_does_not_clear_its_outcome_context()
+    {
+        using var data = TemporaryBusinessData.Create();
+        var outcomes = new ActionOutcomeContextStore();
+        outcomes.Put("missing-session", Failed("write_failed"));
+        using var factory = CreateAspNetFactory(data.Paths, outcomes: outcomes);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.DeleteAsync("/sessions/missing-session");
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal("error", payload.GetProperty("status").GetString());
+        Assert.Equal("write_failed", outcomes.Take("missing-session")!.ReasonCode);
     }
 
     [Fact]
@@ -314,11 +335,23 @@ public sealed class BusinessEndpointTests
     private static BackendWebApplicationFactory CreateAspNetFactory(
         DataPaths paths,
         ICredentialStore? credentials = null,
-        IRuntimeSettingsLoader? runtimeLoader = null) =>
+        IRuntimeSettingsLoader? runtimeLoader = null,
+        IActionOutcomeContextStore? outcomes = null) =>
         new(
             dataPaths: paths,
             credentialStore: credentials ?? new FakeCredentialStore(),
-            runtimeSettingsLoader: runtimeLoader ?? new FakeRuntimeSettingsLoader());
+            runtimeSettingsLoader: runtimeLoader ?? new FakeRuntimeSettingsLoader(),
+            actionOutcomeContextStore: outcomes);
+
+    private static WorkerActionOutcome Failed(string reasonCode) =>
+        WorkerActionOutcome.Parse(new JsonObject
+        {
+            ["schema_version"] = 1,
+            ["tool_id"] = "system.volume",
+            ["tool_version"] = "1.0.0",
+            ["status"] = "failed",
+            ["reason_code"] = reasonCode,
+        });
 
     private sealed class FakeRuntimeSettingsLoader : IRuntimeSettingsLoader
     {

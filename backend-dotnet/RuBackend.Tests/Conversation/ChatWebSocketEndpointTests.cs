@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.TestHost;
 using RuAgent.Protocol;
 using RuBackend.Agent;
@@ -58,6 +59,62 @@ public sealed class ChatWebSocketEndpointTests
         Assert.Equal(["session", "reset", "chunk", "done"],
             secondTurn.Select(item => item.GetProperty("type").GetString()));
         Assert.Equal(["Lượt một", "Lượt hai"], coordinator.Requests.Select(request => request.Prompt));
+    }
+
+    [Fact]
+    public async Task Switching_sessions_clears_the_previous_session_outcome()
+    {
+        var coordinator = new FakeCoordinator();
+        var outcomes = new ActionOutcomeContextStore();
+        outcomes.Put("session-1", Failed("write_failed"));
+        using var factory = Factory(coordinator, outcomes: outcomes);
+        using var socket = await ConnectAsync(factory, "?token=test-secret");
+
+        await SendTextAsync(
+            socket,
+            "{\"prompt\":\"Lượt một\",\"session_id\":\"session-1\"}");
+        for (var index = 0; index < 4; index++)
+        {
+            await ReceiveTextAsync(socket);
+        }
+        await SendTextAsync(
+            socket,
+            "{\"prompt\":\"Lượt hai\",\"session_id\":\"session-2\"}");
+        for (var index = 0; index < 4; index++)
+        {
+            await ReceiveTextAsync(socket);
+        }
+
+        Assert.Null(outcomes.Take("session-1"));
+    }
+
+    [Fact]
+    public async Task Disconnect_clears_the_active_session_outcome_with_bounded_wait()
+    {
+        var coordinator = new FakeCoordinator();
+        var outcomes = new ActionOutcomeContextStore();
+        outcomes.Put("session-1", Failed("write_failed"));
+        using var factory = Factory(coordinator, outcomes: outcomes);
+        using var socket = await ConnectAsync(factory, "?token=test-secret");
+        await SendTextAsync(
+            socket,
+            "{\"prompt\":\"Xin chào\",\"session_id\":\"session-1\"}");
+        for (var index = 0; index < 4; index++)
+        {
+            await ReceiveTextAsync(socket);
+        }
+        var closeFrame = ReceiveCloseAsync(socket);
+
+        await socket.CloseOutputAsync(
+            WebSocketCloseStatus.NormalClosure,
+            "test disconnect",
+            CancellationToken.None);
+        await WaitUntilAsync(
+            () => closeFrame.IsCompleted,
+            TimeSpan.FromSeconds(2));
+        await closeFrame;
+
+        Assert.Null(outcomes.Take("session-1"));
     }
 
     [Theory]
@@ -180,8 +237,12 @@ public sealed class ChatWebSocketEndpointTests
 
     private static BackendWebApplicationFactory Factory(
         IConversationCoordinator coordinator,
-        IAgentApprovalCoordinator? approvals = null) =>
-        new(conversationCoordinator: coordinator, approvalCoordinator: approvals);
+        IAgentApprovalCoordinator? approvals = null,
+        IActionOutcomeContextStore? outcomes = null) =>
+        new(
+            conversationCoordinator: coordinator,
+            actionOutcomeContextStore: outcomes,
+            approvalCoordinator: approvals);
 
     private static Task<WebSocket> ConnectAsync(
         BackendWebApplicationFactory factory,
@@ -213,6 +274,49 @@ public sealed class ChatWebSocketEndpointTests
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
+    private static async Task ReceiveCloseAsync(WebSocket socket)
+    {
+        try
+        {
+            var result = await socket.ReceiveAsync(new byte[32], CancellationToken.None);
+            Assert.Equal(WebSocketMessageType.Close, result.MessageType);
+        }
+        catch (IOException)
+        {
+            // TestServer reports a completed remote close as an IOException.
+        }
+        catch (ObjectDisposedException)
+        {
+            // A disposed TestWebSocket also means the endpoint completed cleanup.
+        }
+    }
+
+    private static async Task WaitUntilAsync(
+        Func<bool> condition,
+        TimeSpan timeout)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (!condition())
+        {
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                throw new TimeoutException("Condition was not met before the deadline.");
+            }
+
+            await Task.Delay(10);
+        }
+    }
+
+    private static WorkerActionOutcome Failed(string reasonCode) =>
+        WorkerActionOutcome.Parse(new JsonObject
+        {
+            ["schema_version"] = 1,
+            ["tool_id"] = "system.volume",
+            ["tool_version"] = "1.0.0",
+            ["status"] = "failed",
+            ["reason_code"] = reasonCode,
+        });
+
     private sealed class FakeCoordinator : IConversationCoordinator
     {
         public bool Block { get; init; }
@@ -241,10 +345,11 @@ public sealed class ChatWebSocketEndpointTests
                 }
             }
 
-            yield return new ChatEvent("session", SessionId: "session-created");
+            var sessionId = request.SessionId ?? "session-created";
+            yield return new ChatEvent("session", SessionId: sessionId);
             yield return new ChatEvent("reset");
             yield return new ChatEvent("chunk", "Em nghe đây.");
-            yield return new ChatEvent("done", "Em nghe đây.", "session-created");
+            yield return new ChatEvent("done", "Em nghe đây.", sessionId);
         }
     }
 

@@ -220,7 +220,7 @@ public sealed class UiAutomationScenario : IDisposable
                 () => IsToggleOn(mode)
                     && ContainsIgnoreCase(
                         GetName(FindByAutomationId(AgentActivityAutomationId)),
-                        "bounded"),
+                        "Agent mode đã bật"),
                 timeout);
             if (!enabled)
             {

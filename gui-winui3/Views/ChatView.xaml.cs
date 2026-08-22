@@ -213,7 +213,7 @@ namespace RuApp.Views
             if (AgentModeButton.IsChecked == true)
             {
                 _agentSession.BeginRequest(_activeSessionId);
-                AgentActivity.Text = "Đang chờ Host cấp quyền…";
+                AgentActivity.Text = "Agent mode đã bật";
                 AgentActivity.Visibility = Visibility.Visible;
             }
             else
@@ -234,23 +234,25 @@ namespace RuApp.Views
                 }
 
                 _agentSession.ApplyGrant(grant);
-                AgentActivity.Text = $"Quyền đã cấp: {string.Join(", ", grant.Scopes)}";
+                AgentActivity.Text = "Đang thực hiện thao tác đã cấp quyền…";
                 AgentActivity.Visibility = Visibility.Visible;
             });
         }
 
-        private void OnAgentActivityReceived(string content, string sessionId)
+        private void OnAgentActivityReceived(AgentActivityModel activity)
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                if (!string.IsNullOrWhiteSpace(sessionId) && sessionId != _activeSessionId)
+                if (!string.Equals(activity.SessionId, _activeSessionId, StringComparison.Ordinal))
                 {
                     return;
                 }
 
-                AgentActivity.Text = content.Length > 256 ? content[..256] : content;
+                AgentActivity.Text = activity.DisplayText;
                 AgentActivity.Visibility = Visibility.Visible;
-                _harnessEvents?.Write("agent.activity", new { state = "running", tool_id = "registered" });
+                _harnessEvents?.Write(
+                    "agent.activity",
+                    new { state = activity.Status, tool_id = activity.ToolId });
             });
         }
 
@@ -816,6 +818,10 @@ namespace RuApp.Views
                 if (_apiService == null) return;
                 await ReplaceVoiceSessionAsync();
                 _activeSessionId = sessionId;
+                _agentSession.ObserveSession(sessionId);
+                _agentSession.Disable();
+                AgentModeButton.IsChecked = false;
+                AgentActivity.Visibility = Visibility.Collapsed;
                 ClearAgentApproval();
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
                 Messages.Clear();

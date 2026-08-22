@@ -80,4 +80,18 @@ public sealed class AgentSessionContractTests
         Assert.False(service.HasActualGrant);
         Assert.Empty(service.Scopes);
     }
+
+    [Fact]
+    public void Beginning_another_request_clears_the_previous_grant()
+    {
+        var service = new AgentSessionService();
+        service.ObserveSession("session-1");
+        service.ApplyGrant(new AgentSessionGrantModel("session-1", new[] { "system.write" }));
+
+        service.BeginRequest("session-1");
+
+        Assert.True(service.IsEnabled);
+        Assert.False(service.HasActualGrant);
+        Assert.Empty(service.Scopes);
+    }
 }

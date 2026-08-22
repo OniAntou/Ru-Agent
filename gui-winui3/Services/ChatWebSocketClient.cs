@@ -28,7 +28,7 @@ namespace RuApp.Services
         public event Action<string, string>? OnDoneReceived;
         public event Action<string>? OnErrorReceived;
         public event Action<AgentSessionGrantModel>? OnAgentSessionReceived;
-        public event Action<string, string>? OnAgentActivityReceived;
+        public event Action<AgentActivityModel>? OnAgentActivityReceived;
         public event Action<AgentApprovalModel>? OnAgentApprovalRequired;
         public event Action<AgentApprovalResult>? OnAgentApprovalResult;
 
@@ -188,15 +188,10 @@ namespace RuApp.Services
                         OnAgentSessionReceived?.Invoke(grant);
                     }
                 }
-                else if (msgType == "agent.activity")
+                else if (msgType == "agent.activity"
+                    && AgentActivityModel.TryParse(root, out var activity))
                 {
-                    string content = root.TryGetProperty("content", out var activityProp)
-                        ? activityProp.GetString() ?? "Agent activity"
-                        : "Agent activity";
-                    string sessionId = root.TryGetProperty("session_id", out var activitySession)
-                        ? activitySession.GetString() ?? ""
-                        : "";
-                    OnAgentActivityReceived?.Invoke(content, sessionId);
+                    OnAgentActivityReceived?.Invoke(activity);
                 }
                 else if (msgType == "agent.approval_required")
                 {

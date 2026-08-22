@@ -1,7 +1,7 @@
 # Ru Agent Tools and Skills
 
 **Date:** 2026-08-22
-**Status:** Draft — awaiting user spec review
+**Status:** Approved
 **Scope:** A process-isolated agent capability platform for Desktop & files, workspace Terminal, Web & research, and Personal workflow
 
 ## 1. Decision summary
@@ -260,7 +260,7 @@ adapter cannot downgrade its risk at runtime.
 
 Initial scopes are explicit and narrow:
 
-- `system.read`;
+- `system.read` and `system.write`;
 - `app.open`;
 - `clipboard.read` and `clipboard.write`;
 - `workspace.read` and `workspace.write`;

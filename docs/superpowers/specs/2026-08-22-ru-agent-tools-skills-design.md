@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-22
 **Status:** Draft — awaiting user spec review
-**Scope:** A process-isolated agent capability platform for Desktop & files, Web & research, and Personal workflow
+**Scope:** A process-isolated agent capability platform for Desktop & files, workspace Terminal, Web & research, and Personal workflow
 
 ## 1. Decision summary
 
@@ -20,9 +20,10 @@ through the existing typed worker seam. The Public Host forwards that request
 to the private broker protocol. The broker validates the request again,
 executes an allowlisted adapter, and returns a bounded, sanitized result.
 
-The first rollout has three vertical slices in this order:
+The first rollout has three vertical slices in this order, with the workspace
+Terminal included in the first Desktop slice:
 
-1. Desktop & files.
+1. Desktop & files plus workspace Terminal.
 2. Web & research.
 3. Personal workflow and authenticated connectors.
 
@@ -61,7 +62,7 @@ lifecycle.
 ## 3. Goals
 
 - Give Ru bounded, observable, cancellable access to local tools, web research,
-  and authenticated personal workflows.
+  workspace Terminal, and authenticated personal workflows.
 - Isolate tool execution from both the Public Host and Runtime Worker.
 - Make every tool call typed, versioned, policy-checked, and auditable.
 - Make skills declarative and composable without allowing arbitrary code to run
@@ -75,8 +76,8 @@ lifecycle.
 
 ## 4. Non-goals and acceptance boundary
 
-- No arbitrary shell tool, unrestricted PowerShell, registry editor, or delete
-  tool in the first Desktop slice.
+- No unrestricted shell, admin/elevation, registry editor, or arbitrary delete
+  tool in the first Desktop and workspace Terminal slice.
 - No skill may contain executable Python, .NET, PowerShell, JavaScript, or
   native code in v1.
 - No persistent global agent permission in v1. Grants end with the session.
@@ -263,6 +264,7 @@ Initial scopes are explicit and narrow:
 - `app.open`;
 - `clipboard.read` and `clipboard.write`;
 - `workspace.read` and `workspace.write`;
+- `terminal.execute` and `terminal.network`;
 - `network.read` and `network.write`;
 - `calendar.read` and `calendar.write`;
 - `tasks.read` and `tasks.write`;
@@ -287,8 +289,9 @@ Default behavior:
 - `read` tools run automatically inside the matching session scope;
 - `reversible` tools run only with the matching session scope;
 - `external` and `destructive` tools always require a one-time approval;
-- arbitrary shell, unrestricted delete, credential extraction, and privilege
-  escalation are denied by the catalog.
+- `terminal.run` remains workspace-only and non-admin; raw `terminal.shell`,
+  network-enabled commands, credential access, unrestricted delete, and
+  privilege escalation require one-time approval or are denied by the catalog.
 
 An approval response contains a one-time token bound to the exact request hash,
 session ID, tool version, arguments, and expiry. Reusing the token, changing
@@ -373,9 +376,53 @@ The first catalog contains:
 - `clipboard.read` and `clipboard.write`;
 - `system.volume.preview` and `system.volume.set`.
 
+### 9.1.1 Workspace Terminal
+
+Terminal is a broker tool, not direct model access. The session descriptor
+exposes only installed and explicitly selected runtimes: PowerShell, Git Bash,
+or WSL. The selected runtime is never silently replaced by another shell.
+
+The safe typed tool is:
+
+```json
+{
+  "tool": "terminal.run",
+  "shell": "git-bash",
+  "working_directory": "relative/workspace/path",
+  "executable": "git",
+  "arguments": ["status", "--short"],
+  "timeout_ms": 120000
+}
+```
+
+`terminal.run` accepts an executable and argument vector. It runs only below
+the selected workspace root, rejects symlink escapes, uses a sanitized
+environment, has no admin token, does not allocate a TTY, and kills the full
+process tree on cancellation or timeout. Its default timeout is 120 seconds,
+its hard maximum is 5 minutes, and stdout/stderr are bounded before a result
+is returned.
+
+The raw script tool is `terminal.shell`. It accepts a Bash or PowerShell
+script only after explicit user approval for that exact request. It has the
+same workspace, environment, timeout, output, network, and process-tree
+limits as `terminal.run`; the raw script is never an automatically generated
+skill step.
+
+The first command catalog includes `git`, `rg`, `dotnet test`, `dotnet build`,
+`pytest`, and other explicitly registered workspace executables. Package
+restore, clone, fetch, upload, or other network activity requires the separate
+`terminal.network` scope and one-time approval. The broker records only a safe
+execution summary by default: executable, relative working directory, exit
+code, duration, and status. It does not persist raw command text or shell
+output when they may contain secrets.
+
+Named tools such as `git.status`, `workspace.test`, `workspace.build`, and
+`files.search` remain available so skills can use predictable, easily tested
+operations instead of raw shell when possible.
+
 All filesystem tools are scoped to an explicitly resolved workspace/session
 root. The first slice excludes arbitrary delete, registry modification, and
-arbitrary shell execution.
+unrestricted shell execution, and admin/elevation.
 
 The existing `[APP_OPEN: ...]` and `[VOLUME: ...]` marker execution becomes a
 compatibility adapter during migration. The structured path is authoritative;
@@ -422,6 +469,11 @@ The GUI shows bounded activity events such as:
 - `Ru đang tìm trong workspace...`;
 - `Ru đang đọc 2 nguồn web...`;
 - `Ru đang chờ anh duyệt việc lưu ghi chú...`.
+
+Terminal activity shows the selected shell, relative working directory, safe
+executable preview, exit status, duration, and truncated output in an
+expandable diagnostic surface. It does not place an unbounded terminal log in
+the conversation transcript.
 
 An approval card shows the action, tool/skill, target, data leaving the device,
 undo availability, and expiry. It offers `Duyệt lần này`, `Từ chối`, and `Xem
@@ -474,7 +526,11 @@ The implementation must add focused tests for:
 7. Cancellation, stale-result suppression, idempotency, adapter crash, broker
    crash, and cleanup.
 8. Deterministic fake adapters for Desktop, Web, and Personal workflow slices.
-9. Existing chat, voice, VTS, memory, no-emoji, and metadata privacy contracts.
+9. Terminal workspace restriction, shell selection, argument validation,
+   symlink escape rejection, environment sanitization, output limits,
+   cancellation, timeout, process-tree cleanup, and network-scope approval.
+10. Existing chat, voice, VTS, memory, no-emoji, and metadata privacy
+    contracts.
 
 ### 12.2 Harness modes
 
@@ -517,9 +573,10 @@ testable:
    correlation, cancellation, session grants, and safe `/chat` agent events.
 3. **Agent policy and skill core:** manifest schemas, registry, risk matrix,
    approval token, bounded Orchestrator, and deterministic skill fixtures.
-4. **Desktop & files:** core system/app/file/workspace adapters and the first
-   two built-in skills; migrate old PC/search marker execution behind adapter
-   compatibility.
+4. **Desktop & files plus workspace Terminal:** core system/app/file/workspace
+   adapters, `terminal.run`, explicitly approved `terminal.shell`, the first
+   two built-in skills, and migration of old PC/search marker execution behind
+   adapter compatibility.
 5. **Web & research:** search/fetch/extract/download/note adapters, untrusted
    content handling, citations, and research skill.
 6. **Personal workflow:** isolated OAuth connector process, calendar/tasks/mail
@@ -536,8 +593,8 @@ When implementation begins, update these documents in the same contract slice:
 
 - `CONTEXT.md` with the approved terms `Agent Session`, `RuAgentBroker`,
   `Tool Manifest`, `Skill Manifest`, `Session Grant`, and `Approval Token`.
-- `docs/operations/runtime-behavior.md` with agent session, privacy, and
-  cancellation behavior.
+- `docs/operations/runtime-behavior.md` with agent session, terminal policy,
+  privacy, and cancellation behavior.
 - `docs/operations/verification.md` with Broker/Harness commands, artifacts,
   deterministic modes, and the separate live acceptance boundary.
 - `README.md` with supported Agent mode capabilities and the fact that

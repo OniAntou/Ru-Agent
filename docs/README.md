@@ -11,6 +11,7 @@ an operating contract.
 - [Domain language](../CONTEXT.md)
 - [Current runtime behavior](operations/runtime-behavior.md)
 - [Operations and verification](operations/verification.md)
+- [Agent tools and truthful execution](operations/agent-tools.md)
 - [ASP.NET Core public route contract](aspnetcore-route-matrix.md)
 - [Architecture decisions](adr/)
 - [Canonical route data](../backend-dotnet/public-route-contract.json)
@@ -19,6 +20,11 @@ an operating contract.
 ## Historical implementation records
 
 - [FastAPI decommission validation](aspnetcore-cutover-validation.md)
+- [Action execution kernel v1 design](superpowers/specs/2026-08-22-ru-action-execution-kernel-v1-design.md)
+- [Action execution kernel v1 implementation plan](superpowers/plans/2026-08-22-ru-action-execution-kernel-v1.md)
+- [Superseded volume vertical-slice design](superpowers/specs/2026-08-22-ru-volume-tool-vertical-slice-design.md)
+- [Superseded volume vertical-slice plan](superpowers/plans/2026-08-22-ru-volume-tool-vertical-slice.md)
+- [Agent tools and skills roadmap](superpowers/plans/2026-08-22-ru-agent-tools-skills.md)
 
 Superseded local-model, training, and evaluation plans were removed after the
 current decisions were consolidated into the architecture, ADRs, runtime

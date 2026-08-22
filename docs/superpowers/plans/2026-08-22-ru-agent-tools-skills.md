@@ -1,5 +1,7 @@
 # Ru Agent Tools and Skills Implementation Plan
 
+Status: Historical roadmap; the prior broad usable-tool and skill claim is withdrawn. Current operating truth is [Agent tools and truthful execution](../../operations/agent-tools.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
 
 **Goal:** Build a process-isolated RuAgentBroker that lets Ru use bounded Desktop/files, workspace Terminal, Web/research, and Personal workflow tools through declarative skills, session-scoped permissions, explicit approvals, and deterministic Harness coverage.
@@ -12,13 +14,14 @@
 
 ## Execution boundaries
 
-> **Execution status (2026-08-22):** Workstreams 1–6 and the deterministic
-> portion of Workstream 7 are implemented and verified. The GUI now exposes a
-> session-scoped Agent toggle plus bounded activity and approval-required
-> status. One-click approval/rejection is intentionally not wired end-to-end
-> yet; raw shell, web, notes, and connector side effects therefore remain
-> fail-closed behind `approval_required` until that UI/API slice is added.
-> Live GUI, terminal, account, and hardware acceptance remains user-owned.
+> **Current boundary (2026-08-23):** Broker, process, policy, approval, and
+> protocol scaffolding exists, but this roadmap's broad usable-tool/skill claim
+> is withdrawn. Action kernel v1 exposes only `system.volume@1.0.0` to the
+> model. Ten typed bindings are executable only inside the Broker;
+> `app.open`, connectors, and the eight unbound roadmap tools are absent;
+> skills are disabled. Every future vertical slice requires its own
+> authoritative receipt, deterministic contract/adapter evidence, and explicit
+> native or external acceptance before becoming model-enabled.
 
 The approved design is:
 

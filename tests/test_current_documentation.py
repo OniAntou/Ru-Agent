@@ -92,3 +92,45 @@ def test_superseded_dated_records_are_removed() -> None:
         if path.name.startswith(stale_prefixes)
     ]
     assert stale == []
+
+
+def test_action_capability_docs_publish_only_current_truth() -> None:
+    agent_tools = _text("docs/operations/agent-tools.md")
+    verification = _text("docs/operations/verification.md")
+    docs_index = _text("docs/README.md")
+    root_readme = _text("README.md")
+    old_volume_design = _text(
+        "docs/superpowers/specs/2026-08-22-ru-volume-tool-vertical-slice-design.md"
+    )
+
+    assert "| `system.volume@1.0.0` | `native_pending` | yes | `system.write` |" in agent_tools
+    assert "| Skills | `disabled` | no | none |" in agent_tools
+    assert "| `app.open` | `absent` | no | none |" in agent_tools
+    assert "evidence_class: contract" in verification
+    assert "evidence_class: adapter" in verification
+    assert "evidence_class: native" in verification
+    assert "tests/test_volume_control.py" not in verification
+    assert "pycaw" not in agent_tools.casefold()
+    assert "comtypes" not in agent_tools.casefold()
+    assert "Superseded" in old_volume_design
+    assert "operations/agent-tools.md" in docs_index
+    assert "agent-volume-contract" in root_readme
+    assert "agent-terminal-approval" not in root_readme
+
+
+def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -> None:
+    agent_tools = _text("docs/operations/agent-tools.md")
+    root_readme = _text("README.md")
+
+    for row in (
+        "| `files.list@1.0.0` | `executable` | no, Broker-internal | `workspace.read` |",
+        "| `files.write@1.0.0` | `executable` | no, Broker-internal | `workspace.write` |",
+        "| `terminal.run@1.0.0` | `executable` | no, Broker-internal | `terminal.execute` |",
+        "| `terminal.shell@1.0.0` | `executable` | no, Broker-internal | `terminal.execute` |",
+        "| Workspace search, Web, calendar, tasks, mail | `absent` | no | none |",
+    ):
+        assert row in agent_tools
+
+    assert "The first usable tool set" not in agent_tools
+    assert "Skill packages are declarative" not in agent_tools
+    assert "gives Ru bounded workspace" not in root_readme

@@ -55,3 +55,16 @@ ingested by ASP.NET Core.
 Automated tests cover schema/privacy, bounds, retries, and writer counters.
 Desktop, microphone, speaker, and live VTube Studio behavior remain explicit
 user-run acceptance checks rather than automated logging evidence.
+
+## Action receipt diagnostics
+
+The bounded action trail uses `tool.requested`, `tool.policy.denied`,
+`tool.approval.required`, `tool.adapter.started`, `tool.adapter.completed`,
+`tool.verification.succeeded`, `tool.verification.failed`,
+`tool.receipt.delivered`, and `tool.receipt.rejected`.
+
+Allowed action fields are correlation ID, tool ID/version, terminal status,
+stable safe error code, duration, verification state, the fixed endpoint role,
+and an ephemeral per-Broker endpoint hash. Arguments, output values, prompts,
+replies, paths, scripts, stdout/stderr, credentials, device names, and native
+exception text are forbidden.

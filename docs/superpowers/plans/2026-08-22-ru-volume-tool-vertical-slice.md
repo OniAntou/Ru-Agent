@@ -1,5 +1,7 @@
 # Ru Volume Tool Vertical Slice Implementation Plan
 
+Status: Superseded; do not execute. See the approved [Ru Action Execution Kernel v1 design](../specs/2026-08-22-ru-action-execution-kernel-v1-design.md) and its [implementation plan](2026-08-22-ru-action-execution-kernel-v1.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Ru's Windows volume capability truthful and usable in normal chat and Agent mode through one typed, readback-verified contract.

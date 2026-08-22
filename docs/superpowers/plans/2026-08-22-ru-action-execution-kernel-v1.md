@@ -1,5 +1,10 @@
 # Ru Action Execution Kernel v1 Implementation Plan
 
+**Status:** Implemented 2026-08-23; native GUI/audio acceptance remains user-owned.
+The checkboxes below preserve the approved execution sequence; current
+operating truth lives in `docs/operations/agent-tools.md` and
+`docs/operations/verification.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Ru unable to claim a local action succeeded unless the process-isolated Broker returned a typed, verified receipt, with `system.volume@1.0.0` as the first model-enabled native action in both normal chat and Agent mode.

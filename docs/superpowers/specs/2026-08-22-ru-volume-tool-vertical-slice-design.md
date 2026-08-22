@@ -1,7 +1,7 @@
 # Ru volume tool vertical slice
 
 Date: 2026-08-22  
-Status: Proposed — awaiting user review
+Status: Superseded 2026-08-22 by [Ru Action Execution Kernel v1](2026-08-22-ru-action-execution-kernel-v1-design.md). Do not implement this dual Python/C# action path.
 
 ## 1. Context
 

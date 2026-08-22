@@ -1,126 +1,121 @@
 # Verification
 
-Run heavyweight gates sequentially on this Windows workspace. A fresh worktree
-must restore each .NET test project before using `--no-restore`.
+Run heavyweight gates sequentially on Windows. Restore each .NET test project
+before using `--no-restore`; concurrent Python, frontend, and .NET builds can
+exhaust the page file on this workspace.
+
+## Deterministic release matrix
 
 ```powershell
 dotnet restore D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj --nologo
 dotnet restore D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
-```
-
-The canonical automated gates are:
-
-```powershell
+dotnet restore D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
-dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj --no-restore --nologo
-dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj -c Release --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj -c Release --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Release --no-restore --nologo
+dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj -c Release --no-restore --nologo
+dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --no-restore --nologo
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
-dotnet list D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj package --vulnerable --include-transitive
 cmd /c D:\LLM\build.bat
 ```
 
-The volume vertical slice has a separate deterministic gate that must run
-without changing the machine's audio state:
+The route checker must remain at 41 HTTP routes and 2 WebSocket routes. A
+successful build proves only compilation and publish output; it does not prove
+that a GUI, microphone, speaker, VTube Studio model, or Windows audio endpoint
+worked.
+
+## evidence_class: contract
+
+Contract evidence proves protocol shape, lifecycle ordering, authorization,
+privacy, and cleanup without performing a valid native mutation.
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_volume_control.py tests/test_system_pc_tools.py tests/test_reply_orchestration.py tests/test_runner_status.py tests/test_worker_runtime_handlers.py tests/test_tool_calls.py tests/test_agent_harness.py tests/test_harness_session.py
-dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj -c Release --no-restore --nologo --filter "FullyQualifiedName~VolumeTools|FullyQualifiedName~ToolCatalog|FullyQualifiedName~BrokerHostTests"
-dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Release --no-restore --nologo --filter "FullyQualifiedName~AgentTurnCoordinator"
-```
-
-The automated volume checks inject fake controllers. They prove the
-`system.volume@1.0.0` contract, `system.write` reversible policy, bounded
-result shape, normal-chat marker compatibility, Agent tool-request/result
-phase separation, and truthful readback failure. They do not prove a physical
-speaker, the Windows default render endpoint, audible output, or GUI behavior.
-
-Manual live acceptance is user-owned: with Ru running on Windows, verify
-`get`, exact `set`, relative increase/decrease, `mute`, and `unmute` in normal
-chat and Agent mode. Confirm that a readback mismatch or unavailable endpoint
-produces a failure without a success claim. Keep raw device names, native
-errors, arguments, and transcripts out of chat, TTS, memory, and artifacts.
-
-The route checker must report 41 HTTP routes and 2 WebSocket routes. The build
-must produce self-contained `RuBackend.exe` and `RuApp.exe`; verification does
-not launch them.
-
-The backend Harness vNext is the deterministic public-edge and Agent regression
-gate. It owns a temporary worker/Broker/edge session, leases free loopback
-ports, generates memory-only desktop, worker, and Broker bearers, classifies
-every route, exercises one structured `files.list` Agent turn and one
-approval/replay cycle, and always verifies child and port cleanup:
-
-```powershell
-$artifact = Join-Path $env:TEMP 'ru-harness-vnext-backend.json'
+$artifact = Join-Path $env:TEMP 'ru-action-kernel-contract.json'
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output $artifact
+$report = Get-Content -Raw -LiteralPath $artifact | ConvertFrom-Json
+if ($report.evidence_class -ne 'contract') { throw 'wrong evidence class' }
+if ($report.summary.status -ne 'passed') { throw 'contract Harness failed' }
 ```
 
-The artifact uses schema version 2 and records only bounded statuses, reason
-codes, timings, counts, route coverage, and cleanup booleans. The expected
-coverage is 41 HTTP routes and 2 WebSocket routes. The Agent approval probe
-uses a deterministic `web.search` fixture with no adapter, approves it once,
-then replays the same opaque ID and expects `approval_stale`; it never starts
-a shell or external account. Observation routes are
-explicitly `skipped` with `hardware_or_external_observation_required`; all
-other safe routes use isolated fixtures. Auth ownership must show the generated
-bearer succeeding and both wrong/missing bearers receiving 401/403. A child
-that exits after Harness stop is recorded as `expected_stop`, including a
-non-zero shutdown code.
+The Harness owns temporary Worker, Broker, Public Host, credentials, loopback
+ports, data root, and workspace. Its synthetic Worker requests
+`system.volume@1.0.0` with an intentionally out-of-range level. The canonical
+binding must return one outer `failed/invalid_arguments` activity before chat
+completion and must not acquire Core Audio. The visible reply is fixed to a
+truthful failure.
 
-`--deterministic-chat` remains a compatibility alias for
-`--mode backend-deterministic`. The backend mode uses dynamic ports and
-synthetic PCM WAV/STT/TTS; it never requires a model, microphone, speaker, or
-VTube Studio connection.
+A separate authenticated private-Broker probe opens only `workspace.write`,
+requests `notes.create` in the temporary workspace, approves once, expects the
+replay to be denied as `approval_stale`, closes the session, and removes the
+fixture. The schema-v2 artifact contains bounded statuses and cleanup
+booleans, not request arguments, note content, workspace paths, tokens, or
+native output values.
 
-The deterministic GUI voice/Agent Harness is a separate, manual, interactive
-Windows gate. It publishes the real WinUI shell, starts a typed UI Automation
-driver, and replaces only microphone frames and speaker playback with
-deterministic test doubles. It refuses to run when another RuApp instance is
-present and does not request microphone permission, open a MediaPlayer,
-connect to VTube Studio, start a real terminal/web account, or write
-audio/transcript/tool-argument content to the artifact:
+## evidence_class: adapter
 
-~~~powershell
-dotnet publish D:\LLM\gui-winui3\RuApp.csproj -c Release -r win-x64 --self-contained true --nologo
-dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --nologo
-& D:\LLM\scripts\run_gui_voice_harness.ps1 -AppPath D:\LLM\gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe -DriverProject D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -OutputPath D:\LLM\artifacts\gui\ru-harness-vnext-gui.json
-~~~
-
-The wrapper runs fresh turn, stop, cancel, stale-session, and Agent scenarios
-(`agent-read-only`, `agent-terminal-approval`, `agent-terminal-reject`,
-`agent-cancel`, `agent-stale-result`, and `agent-private-metadata`), then
-writes one schema-v2 aggregate only after descriptor, child, port, and
-temporary-root cleanup has been checked. The approval scenarios drive the
-visible Approve/Reject controls, wait for the bounded result event, and verify
-that the card is cleared before checking the conversation. A successful
-deterministic GUI result does not accept live microphone capture, audible OmniVoice, subtitles, or
-VTube Studio; those remain the user-owned hardware gate below.
-
-See [Agent tools and skills](agent-tools.md) for the tool boundary, approval
-invariants, and the separate external-account/manual acceptance gate.
-
-The production live voice gate is separate because it requires OmniVoice and a
-real audio-producing worker:
+Adapter evidence proves result semantics with fake endpoints, temporary files,
+and bounded child processes. It does not open the real Windows audio endpoint.
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode runtime-live --require-voice-audio --benchmark-samples 20
+& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_harness_artifacts.py tests/test_harness_session.py tests/test_agent_harness.py tests/test_native_volume_acceptance.py
+dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj -c Release --no-restore --nologo --filter "FullyQualifiedName~AdapterConformanceTests|FullyQualifiedName~VolumeToolsTests|FullyQualifiedName~TerminalAdapterTests|FullyQualifiedName~ProcessTreeRunnerTests"
+dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj -c Release --no-restore --nologo --filter "FullyQualifiedName~AgentApprovalTests|FullyQualifiedName~AgentApprovalUiContractTests"
 ```
 
-Automated voice tests prove protocol ordering, cancellation, cleanup, metadata
-privacy, non-empty WAV frames, VAD boundaries, capture lifetime, the
-hands-free state machine, stale-transcription suppression, and the Chat
-integration contract. They do not prove that speakers sound correct, a
-physical microphone transcribes correctly, or a live VTube Studio model reacts
-as intended.
+These tests establish file write/readback and cleanup, notes approval,
+terminal zero/non-zero/timeout/start-failure outer statuses, volume argument
+validation before endpoint acquisition, verified fake-endpoint success, and
+readback-mismatch failure. They also establish restoration logic and artifact
+privacy for the opt-in native runner through injected process, HTTP,
+WebSocket, and artifact-writer seams.
 
-The separate hands-free hardware gate is user-run: start the Chat microphone,
-speak two Vietnamese or mixed Vietnamese-English turns, confirm one automatic
-send per turn and one audible reply per turn, confirm the microphone stays
-closed while Ru speaks, then stop during listening/STT/playback and verify no
-late prompt or audio is produced. Repeat once with subtitles and VTube Studio
-enabled. This gate is intentionally not represented as a passing automated
-test.
+## evidence_class: native
+
+Native evidence is an explicit user-owned smoke against a freshly published
+`RuAgent.Broker.exe`. It is not part of CI, the default build, or the
+deterministic Harness. Do not run it without the confirmation flag:
+
+```powershell
+$broker = 'D:\LLM\backend-dotnet\RuAgent.Broker\bin\Release\net10.0\win-x64\publish\RuAgent.Broker.exe'
+$artifact = Join-Path $env:TEMP 'ru-native-volume.json'
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\native_volume_acceptance.py --broker-exe $broker --output $artifact --confirm-native-volume-change
+```
+
+The runner proves the correct bearer and a fresh wrong bearer before opening
+the private WebSocket, captures the original state, changes volume by one
+point, verifies the same endpoint role/hash, and restores level and mute state
+in `finally`. Restoration failure forces exit 1 and a failed native artifact.
+The artifact excludes levels, mute values, credentials, paths, arguments,
+outputs, device names, and native exception text.
+
+Even a passing native artifact does not prove audible quality or that the user
+observed the GUI behave correctly. The user must separately inspect the
+Windows playback level and confirm the restored state.
+
+## Deterministic GUI Harness
+
+The GUI Harness is manual and interactive because it launches WinUI. It uses
+synthetic microphone/speaker boundaries and refuses to start while another
+RuApp instance exists. The supported Agent scenarios are exactly:
+
+- `agent-volume-contract`
+- `agent-cancel`
+- `agent-stale-result`
+- `agent-private-metadata`
+
+Broker approval dispatch/replay is covered by the private deterministic probe;
+the visible approval card remains covered by `AgentApprovalTests` and
+`AgentApprovalUiContractTests`. GUI Harness scenarios do not claim that
+terminal, files, Web, connectors, or skills are model-usable.
+
+A passing GUI result does not accept live microphone capture, audible
+OmniVoice, subtitles, or VTube Studio. The separate runtime-live voice gate can
+require emitted audio, but physical microphone accuracy, speaker quality,
+natural bilingual conversation, and VTube Studio behavior remain explicit
+user-run checks.
+
+See [Agent tools and truthful execution](agent-tools.md) for the current
+capability matrix and ownership boundary.

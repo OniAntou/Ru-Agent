@@ -82,11 +82,12 @@ the Runtime Worker or voice engine as independent public services.
   available when voice mode is idle.
 - VTube Studio actions and lip sync remain private runtime metadata.
   `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
-- Agent mode is an explicit session toggle. It gives Ru bounded workspace,
-  system-read, and allowlisted terminal access through the private Broker;
-  tool activity is exposed as safe status events, never as raw tool arguments
-  or credentials. Raw shell, network, web, and external/destructive actions
-  remain approval-gated or denied by policy.
+- Agent mode is an explicit session toggle, but toggling it does not imply a
+  grant. In v1 only `system.volume@1.0.0` is model-enabled; WinUI displays the
+  actual `agent.session` scope received from the Host. File, terminal, notes,
+  and read-only bindings remain Broker-internal; Web/connectors, `app.open`,
+  and skills are unavailable to the model. A volume success is visible only
+  after a matching verified Broker receipt.
 - Screen observation is opt-in from Settings. When a Gemini Vision key and a
   supported hosted generation backend are configured, the private worker
   captures bounded JPEG frames and publishes reaction events. WinUI consumes
@@ -95,6 +96,8 @@ the Runtime Worker or voice engine as independent public services.
 
 See [runtime behavior](docs/operations/runtime-behavior.md) for invariants and
 manual acceptance boundaries.
+See [Agent tools and truthful execution](docs/operations/agent-tools.md) for
+the exact current capability matrix.
 
 ## Verification
 
@@ -117,8 +120,10 @@ The backend artifact covers 41 HTTP routes and 2 WebSocket routes, requires
 correct-bearer success plus wrong/missing-bearer rejection, and records
 observation routes as explicit hardware/external skips. It uses synthetic
 STT/TTS and records only statuses, timings, counts, event types, and cleanup
-state. In deterministic mode it also exercises the structured Agent loop and
-the Broker `files.list` boundary. `--deterministic-chat` remains an alias for
+state. In deterministic mode it also requires one intentionally invalid
+`system.volume` request to end as `failed/invalid_arguments` before any native
+endpoint is opened. Broker approval/replay is checked separately with a
+temporary `notes.create` fixture. `--deterministic-chat` remains an alias for
 the backend mode.
 
 The deterministic GUI voice Harness is manual and interactive on Windows. It
@@ -134,10 +139,11 @@ dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --nologo
 
 It refuses an existing RuApp instance and never opens physical microphone,
 speaker, or VTube Studio devices. The driver accepts `--scenario` values
-`agent-read-only`, `agent-terminal-approval`, `agent-terminal-reject`,
-`agent-cancel`, `agent-stale-result`, and `agent-private-metadata` in addition
-to the voice scenarios. Deterministic GUI success does not replace the
-separate live hardware acceptance gate.
+`agent-volume-contract`, `agent-cancel`, `agent-stale-result`, and
+`agent-private-metadata` in addition to the voice scenarios. Broker approval
+replay and the production approval-card UI are separate deterministic tests;
+they are not model-visible GUI Harness tools. Deterministic GUI success does
+not replace the separate live hardware acceptance gate.
 
 The production live voice gate is separate and must be run with the real
 runtime/audio path:

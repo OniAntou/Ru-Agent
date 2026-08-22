@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-22
 
-**Status:** Approved for implementation
+**Status:** Implemented 2026-08-23; native GUI/audio acceptance remains user-owned
 
 **Scope:** Truthful action receipts, one Broker-owned execution path, and
 `system.volume@1.0.0` as the reference native tool

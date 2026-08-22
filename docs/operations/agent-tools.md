@@ -1,136 +1,100 @@
-# Agent tools and skills
+# Agent tools and truthful execution
 
-Ru's Agent mode is a session-scoped capability layered on the existing
-Public Host and Runtime Worker. The WinUI toggle sends `agent_mode: true` on
-the authenticated `/chat` connection. The Worker may emit a structured
-`chat.tool.request`; the Host validates the session and forwards the typed
-request to the private `RuAgentBroker`.
+This document is the operating contract for Ru's action execution kernel v1.
+It distinguishes a Broker binding that can execute from a capability the model
+is actually allowed to select. Those states are not interchangeable.
 
-## Runtime boundary
+## Current capability matrix
+
+| Capability | Availability | Model enabled | Scope |
+| --- | --- | --- | --- |
+| `system.volume@1.0.0` | `native_pending` | yes | `system.write` |
+| `system.time@1.0.0` | `executable` | no, Broker-internal | `system.read` |
+| `system.status@1.0.0` | `executable` | no, Broker-internal | `system.read` |
+| `app.list@1.0.0` | `executable` | no, Broker-internal | `system.read` |
+| `files.list@1.0.0` | `executable` | no, Broker-internal | `workspace.read` |
+| `files.read@1.0.0` | `executable` | no, Broker-internal | `workspace.read` |
+| `files.write@1.0.0` | `executable` | no, Broker-internal | `workspace.write` |
+| `terminal.run@1.0.0` | `executable` | no, Broker-internal | `terminal.execute` |
+| `terminal.shell@1.0.0` | `executable` | no, Broker-internal | `terminal.execute` |
+| `notes.create@1.0.0` | `executable` | no, Broker-internal | `workspace.write` |
+| `app.open` | `absent` | no | none |
+| Workspace search, Web, calendar, tasks, mail | `absent` | no | none |
+| Skills | `disabled` | no | none |
+
+`executable` means a typed binding and bounded adapter exist inside
+`RuAgentBroker`. It does not mean the Worker may advertise or select that
+binding. `native_pending` means the volume binding has a native Windows
+adapter and deterministic contract/adapter evidence, but real endpoint and GUI
+acceptance are still pending until the user explicitly runs them.
+
+## One execution path
+
+Normal chat and Agent mode share the same ownership chain:
 
 ```text
-WinUI Agent session
-        -> authenticated Public Host
-        -> private Worker structured tool request
-        -> RuAgentBroker policy + manifest registry
-        -> bounded adapter
-        -> typed result back to Worker
+WinUI authenticated chat
+        -> ASP.NET Core Public Host and session grant
+        -> Runtime Worker structured selection
+        -> private RuAgentBroker policy and canonical binding
+        -> bounded adapter plus readback verification
+        -> typed receipt back to Worker
+        -> visible reply
 ```
 
-The desktop starts the Worker, Broker, and Public Host in one owned process
-group. The Broker uses a loopback-only descriptor with a per-run bearer and a
-short expiry. Its descriptor, session root, grants, and temporary fixtures are
-removed during shutdown.
+The Public Host derives `model_tools` from the Broker's executable bindings,
+opens only the scope needed by the selected capability, and publishes the
+actual resulting grant as `agent.session`. WinUI renders that received grant;
+it does not infer workspace, terminal, Web, connector, or skill access.
 
-The first usable tool set is deliberately small:
+The Worker may select at most one tool in a turn. It receives only the bounded
+model-enabled capability and emits an exact ID/version plus typed arguments.
+No prose is execution. A visible success reply is legal only after a matching
+outer `succeeded` receipt with `verification_state: verified`. Timeout,
+cancellation, policy denial, malformed context, adapter failure, and failed
+readback all terminate the action path with a failure reply.
 
-- `files.list` and `files.read` stay inside the configured workspace and have
-  bounded results.
-- `system.time`, `system.status`, and `app.list` are read-only metadata tools.
-- `system.volume@1.0.0` is the first local reversible write tool. It targets
-  the Windows default render endpoint through Core Audio, requires the
-  session-scoped `system.write` scope, and does not require one-time approval.
-  Its bounded operations are `get`, exact `set` (0–100), relative
-  `increase`/`decrease` (1–50), `mute`, and `unmute`; every write is successful
-  only after readback verification. Normal chat accepts compatibility
-  `[VOLUME: ...]` markers, while Agent mode uses a strict JSON tool request and
-  a separate natural-language result phase.
-- `terminal.run` accepts only the registered non-admin executable allowlist,
-  workspace-relative directories, bounded arguments/output, cancellation, and
-  process-tree cleanup.
-- `terminal.shell`, network-enabled terminal calls, web access, notes, and
-  connector side effects are not silently enabled; policy marks the relevant
-  external/destructive action for approval or denies it.
+Legacy `[VOLUME: ...]` text is accepted only as a compatibility translation to
+the same structured `system.volume@1.0.0` intent. Python strips markers and
+does not execute desktop side effects. It cannot launch an app, mutate Core
+Audio, or turn marker prose into a success claim.
 
-Skill packages are declarative `skill.json` plus `instructions.md` files. The
-registry validates IDs, semver, named tools/scopes, step count, timeout,
-schemas, trust class, and executable-content absence. A skill cannot create a
-tool ID dynamically, change its grant, or start a background task.
+## Volume and adapter boundaries
 
-## Privacy and approval invariants
+The bounded volume operations are `get`, `set` from 0 through 100,
+`increase`/`decrease` from 1 through 50, `mute`, and `unmute`. The Broker owns
+default-render-endpoint acquisition and uses one disposable endpoint per
+operation. A mutation succeeds only when readback matches on the same fixed
+endpoint role and ephemeral endpoint hash.
 
-Agent activity sent to the GUI is a bounded safe summary. Raw arguments,
-credentials, transcripts, audio, bearer values, and tool output do not enter
-visible chat or Harness artifacts. Web content is wrapped as untrusted data so
-instructions inside a fetched page cannot become model instructions.
+File, notes, and terminal bindings exist for policy, protocol, and adapter
+conformance. They are omitted from the model capability list in v1.
+`terminal.run` still enforces its non-admin executable allowlist, bounded
+arguments/output, workspace-relative directory, timeout, and process-tree
+cleanup. A zero exit is `succeeded`; non-zero exit and start failure are
+`failed`; timeout is `timed_out`. `terminal.shell` and `notes.create` retain
+one-time approval policy even though the model cannot select them in v1.
 
-External and destructive operations require a short-lived, one-time approval
-bound to the session, request identity, tool version, and canonical arguments.
-Changing the arguments, using another session, replaying the token, or using
-an expired approval fails closed.
+Skills are disabled at session-open and execution boundaries. No current
+skill package, Web connector, calendar/task/mail connector, workspace search,
+or application launcher is advertised to the model.
 
-## One-time approval UI
+## Approval, privacy, and diagnostics
 
-When a registered Agent operation is classified as external or destructive,
-the Broker keeps the original typed request and its canonical arguments hash
-in memory. The public Host and WinUI receive only bounded metadata:
+External or destructive Broker requests use a short-lived approval bound to
+session, request, tool version, and canonical argument hash. Consumption is
+atomic; replay returns `approval_stale`. The deterministic Broker approval
+probe uses `notes.create` only inside a fresh temporary workspace, approves it
+once, replays once, closes the private session, and removes the workspace.
+Production WinUI approval-card behavior remains covered independently by its
+UI contract tests.
 
-- `approval_id`, tool identity, safe action, scope, and expiry;
-- no arguments, script, credential, bearer, connector body, or raw adapter output.
+Public Agent events and diagnostics may contain correlation ID, tool
+ID/version, terminal status, stable error code, duration, verification state,
+the fixed endpoint role, and an ephemeral endpoint hash. They must not contain
+arguments, output values, prompts, replies, paths, scripts, stdout/stderr,
+credentials, device names, or native exception text.
 
-WinUI renders that metadata in a compact approval card above the composer. The
-card is not a chat message, so it is not written to conversation history or
-memory. `Duyệt một lần` and `Từ chối` disable while the decision is in flight;
-the card is cleared on a terminal result, session change, Agent disable,
-disconnect, expiry, or disposal.
-
-The authenticated `/chat` WebSocket accepts this control envelope and nothing
-else for the approval decision:
-
-```json
-{
-  "type": "agent.approval.response",
-  "session_id": "...",
-  "approval_id": "...",
-  "approved": true
-}
-```
-
-The Host forwards only `approval_id` and `approved` through the private Broker
-WebSocket. The Broker consumes the pending record atomically, rechecks policy,
-and dispatches the original typed request at most once. A second response,
-wrong session, changed request, expired record, or unavailable adapter returns
-a bounded result and performs no uncontrolled side effect. `terminal.run`
-remains the structured, allowlisted, approval-free path; raw shell and
-external connector paths stay gated. The Worker `chat.tool.result` contract
-accepts `approval_required` as a non-terminal tool state so the approval card
-can be reached without converting the Agent turn into a protocol error.
-The local reversible `system.volume` result is bounded to `operation`,
-`level`, `muted`, and `verified`; native errors, device names, arguments, and
-model success claims are not forwarded when readback fails.
-The Python normal-chat adapter initializes and releases COM within the worker
-thread that owns each operation. It uses `AudioDevice.EndpointVolume` on
-current `pycaw` releases while retaining the legacy direct-activation fallback;
-tests must cover both the endpoint wrapper contract and balanced worker-thread
-COM lifetime.
-
-## Verification
-
-Run the heavyweight checks sequentially on Windows:
-
-```powershell
-dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Release --no-restore --nologo
-& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_worker_agent_protocol.py tests/test_tool_calls.py tests/test_agent_harness.py
-& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_volume_control.py tests/test_system_pc_tools.py tests/test_reply_orchestration.py tests/test_runner_status.py tests/test_worker_runtime_handlers.py
-& D:\LLM\.venv\Scripts\python.exe scripts/aspnetcore_compatibility_harness.py --mode backend-deterministic --output D:\LLM\artifacts\aspnetcore\ru-harness-vnext.json
-```
-
-The deterministic backend artifact must include `agent.synthetic_tool_loop`,
-`agent.approval_dispatch`, `agent.approval_replay`, and
-`agent.private_metadata` as passed, and must report Broker startup and cleanup
-as passed. GUI Agent scenarios remain a separate interactive UI gate because
-they require launching the WinUI process; they must not start real shells,
-web accounts, mail, calendar, microphone, speaker, or VTube Studio devices.
-
-Live terminal behavior, external accounts, and hardware remain explicit manual
-acceptance gates after the deterministic checks.
-
-For the volume tool, automated tests use fake Core Audio controllers and a
-fake Broker WebSocket controller; they prove validation, exact/relative
-semantics, mute state, scope policy, and readback mismatch handling without
-changing the machine. Manual Windows acceptance is still required for the
-real default render endpoint: verify `get`, exact `set`, a relative change,
-`mute`, `unmute`, and a forced failure/unchanged-state case in both normal chat
-and Agent mode. Do not report live audio success from deterministic gates.
+See [Verification](verification.md) for the separate contract, adapter, and
+explicit opt-in native evidence classes. Deterministic evidence never proves
+that the user's Windows volume or audible output changed.

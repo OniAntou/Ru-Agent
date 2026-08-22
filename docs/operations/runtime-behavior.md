@@ -131,6 +131,20 @@ welcome rectangle or extra surface layer. These elements do not add Chat content
 VTS/voice metadata, fake status indicators, or calls to the backend, WebSocket,
 STT, voice, subtitle, VTS, or memory paths.
 
+## Action execution kernel v1
+
+Normal-chat and Agent-mode volume requests use the same path: the Worker makes
+one non-visible structured selection, the Public Host opens only the scope in
+the Broker capability, and RuAgentBroker executes and verifies the native
+adapter. The Worker may render success only from a matching `succeeded` receipt
+whose verification state is `verified`. Python does not own desktop side
+effects.
+
+Only `system.volume@1.0.0` is model-enabled in v1. File, terminal, notes, and
+read-only system bindings remain Broker-internal; unbound connectors and
+`app.open` are absent; skills are disabled. The GUI renders the actual
+`agent.session` grant received from the Host.
+
 ## Persistence and privacy
 
 ASP.NET Core owns settings, credentials, sessions/history, activity, structured

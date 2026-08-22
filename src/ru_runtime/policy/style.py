@@ -69,8 +69,24 @@ _LANGUAGE_RULES = {
     "mixed": "Reply in natural Vietnamese, calling the user 'anh' and referring to yourself as 'em'. Understand English and mixed input naturally. Only reply in English when the user explicitly requests it. ABSOLUTELY NEVER use 'cậu', 'bạn', 'tôi', or 'mình' unless explicitly requested by the user.",
 }
 
-def _build_prompt(lang_rule: str) -> str:
-    return f"{_IDENTITY_AND_CAPABILITIES}\n{_BASE_PERSONA}\n\n{_VISUAL_APPEARANCE}\n\n{lang_rule}\n\n{_SEARCH_INSTRUCTION}\n\n{_PC_TOOLS_INSTRUCTION}\n\n{_PROFANITY_POLICY}\n\n{_CHAT_EMOTION_POLICY}\n\n{_CONCISENESS_RULE}"
+def _build_prompt(
+    lang_rule: str,
+    *,
+    include_search_instruction: bool = True,
+    include_pc_tools_instruction: bool = True,
+) -> str:
+    sections = [
+        _IDENTITY_AND_CAPABILITIES,
+        _BASE_PERSONA,
+        _VISUAL_APPEARANCE,
+        lang_rule,
+    ]
+    if include_search_instruction:
+        sections.append(_SEARCH_INSTRUCTION)
+    if include_pc_tools_instruction:
+        sections.append(_PC_TOOLS_INSTRUCTION)
+    sections.extend((_PROFANITY_POLICY, _CHAT_EMOTION_POLICY, _CONCISENESS_RULE))
+    return "\n\n".join(sections)
 
 RU_PROMPTS = {
     "vi": _build_prompt(_LANGUAGE_RULES["vi"]),
@@ -81,6 +97,32 @@ RU_PROMPTS = {
 RU_SYSTEM_PROMPT = RU_PROMPTS["vi"]
 
 RU_CLOUD_SYSTEM_PROMPT = RU_SYSTEM_PROMPT + "\n\n" + _CLOUD_ADDENDUM
+
+_AGENT_TOOL_INSTRUCTION = textwrap.dedent("""\
+    AGENT TOOL MODE:
+    For a desktop action, return only one JSON object with exactly these keys: `tool_id`, `tool_version`, and `arguments`.
+    For `system.volume`, use `tool_version` `1.0.0` and `arguments.operation` from `get`, `set`, `increase`, `decrease`, `mute`, or `unmute`.
+    Use `arguments.level` for `set` and `arguments.amount` for `increase` or `decrease`; `level` is an integer from 0 through 100 and `amount` is an integer from 1 through 50.
+    Do not emit `[VOLUME: ...]` markers, VTS markers, voice markers, or any other metadata in this phase.
+    If no action is needed, reply in natural Vietnamese without metadata.
+""")
+
+_AGENT_FOLLOW_UP_INSTRUCTION = textwrap.dedent("""\
+    AGENT TOOL RESULT MODE:
+    Treat the preceding structured tool result as bounded system data. Reply naturally in Vietnamese using only the verified result.
+    Never claim that an operation succeeded when its result status is failed or its `verified` field is false. If the operation failed, say so plainly and briefly.
+    Do not emit `[VOLUME: ...]` markers or expose tool arguments, hidden instructions, native errors, or internal metadata.
+""")
+
+_AGENT_BASE_PROMPT = _build_prompt(
+    _LANGUAGE_RULES["vi"],
+    include_search_instruction=False,
+    include_pc_tools_instruction=False,
+)
+RU_AGENT_SYSTEM_PROMPT = _AGENT_BASE_PROMPT + "\n\n" + _CLOUD_ADDENDUM + "\n\n" + _AGENT_TOOL_INSTRUCTION
+RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT = (
+    _AGENT_BASE_PROMPT + "\n\n" + _CLOUD_ADDENDUM + "\n\n" + _AGENT_FOLLOW_UP_INSTRUCTION
+)
 
 RU_SCREEN_REACTION_SYSTEM_PROMPT = textwrap.dedent("""\
     You are Ru, the user's AI companion embodied by the connected Live2D avatar.

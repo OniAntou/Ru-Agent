@@ -9,7 +9,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, ContextManager, Protocol
+from typing import Any, ContextManager, Literal, Protocol
 
 from ru_runtime.generation.chat import ChatTurn
 from ru_runtime.generation.tool_calls import ToolCallParseError, parse_tool_call
@@ -115,6 +115,12 @@ def build_runtime_handlers(dependencies: RuntimeDependencies) -> WorkerHandlers:
         voice=partial(_voice_handler, dependencies),
         vts=partial(_vts_handler, dependencies),
     )
+
+
+def _agent_tool_failure_reply(tool_id: str) -> str:
+    if tool_id == "system.volume":
+        return "Không thể xác nhận thay đổi âm lượng."
+    return "Ru không thể hoàn tất thao tác này."
 
 
 def create_runtime_handlers() -> WorkerHandlers:
@@ -238,6 +244,7 @@ async def _chat_handler(
         *,
         stream: bool,
         observe_user: bool,
+        phase: Literal["normal", "tool_request", "tool_result"],
     ) -> str:
         with dependencies.turn_locks():
             with dependencies.generation_scope():
@@ -259,7 +266,8 @@ async def _chat_handler(
                     on_stream_reset=on_stream_reset if stream else None,
                     vts_instruction=request.vts_instruction,
                     is_cancelled=cancelled.is_set,
-                    structured_tools_only=agent_mode,
+                    structured_tools_only=phase == "tool_request",
+                    agent_follow_up=phase == "tool_result",
                 )
                 if dependencies.mood_tracker is not None:
                     _, emotion = extract_reply_emotion(raw_reply)
@@ -294,6 +302,7 @@ async def _chat_handler(
                 request.turns,
                 stream=not agent_mode,
                 observe_user=True,
+                phase="tool_request" if agent_mode else "normal",
             )
             if not isinstance(raw_reply, str):
                 raise TypeError("model reply must be text")
@@ -338,13 +347,17 @@ async def _chat_handler(
                             separators=(",", ":"),
                         ),
                     )
-                    raw_reply = await asyncio.to_thread(
-                        generate_once,
-                        request.prompt,
-                        request.turns + (tool_turn,),
-                        stream=True,
-                        observe_user=False,
-                    )
+                    if result.get("status") != "succeeded":
+                        raw_reply = _agent_tool_failure_reply(tool_call.tool_id)
+                    else:
+                        raw_reply = await asyncio.to_thread(
+                            generate_once,
+                            request.prompt,
+                            request.turns + (tool_turn,),
+                            stream=True,
+                            observe_user=False,
+                            phase="tool_result",
+                        )
             publish(WorkerReply(CHAT_DONE, {"raw_reply": raw_reply}))
         except Exception:
             publish(_error("generation_failed", retryable=True))

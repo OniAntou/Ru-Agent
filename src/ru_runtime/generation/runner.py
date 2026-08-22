@@ -30,6 +30,8 @@ from ru_runtime.generation.openai import (
     LMSTUDIO_BASE_URL,
 )
 from ru_runtime.policy.style import (
+    RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT,
+    RU_AGENT_SYSTEM_PROMPT,
     RU_CLOUD_SYSTEM_PROMPT,
     RU_SCREEN_REACTION_SYSTEM_PROMPT,
 )
@@ -146,12 +148,21 @@ class ModelRunner:
         on_complete_timing=None,
         is_cancelled=None,
         structured_tools_only: bool = False,
+        agent_follow_up: bool = False,
     ) -> str:
-        system_prompt = RU_CLOUD_SYSTEM_PROMPT
+        if agent_follow_up:
+            system_prompt = RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT
+            private_instruction = VTS_ACTION_INSTRUCTION + VOICE_PACE_INSTRUCTION + vts_instruction
+        elif structured_tools_only:
+            system_prompt = RU_AGENT_SYSTEM_PROMPT
+            private_instruction = ""
+        else:
+            system_prompt = RU_CLOUD_SYSTEM_PROMPT
+            private_instruction = VTS_ACTION_INSTRUCTION + VOICE_PACE_INSTRUCTION + vts_instruction
         return execute_reply(
             self._generate,
             prompt=prompt,
-            system_instruction=system_prompt + VTS_ACTION_INSTRUCTION + VOICE_PACE_INSTRUCTION + vts_instruction,
+            system_instruction=system_prompt + private_instruction,
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             top_k=top_k,
@@ -164,7 +175,8 @@ class ModelRunner:
             on_stream_reset=on_stream_reset,
             on_complete_timing=on_complete_timing,
             is_cancelled=is_cancelled,
-            allow_legacy_markers=not structured_tools_only,
+            allow_legacy_markers=not (structured_tools_only or agent_follow_up),
+            agent_follow_up=agent_follow_up,
         )
 
     def generate_screen_reaction(

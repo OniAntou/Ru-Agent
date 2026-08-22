@@ -50,3 +50,25 @@ def test_generate_reply_accepts_structured_tools_only_for_agent_turns(monkeypatc
 
     assert reply == "reply"
     assert captured["allow_legacy_markers"] is False
+
+
+def test_generate_reply_has_a_separate_agent_follow_up_phase(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_execute_reply(_generate, **kwargs):
+        captured.update(kwargs)
+        return "reply"
+
+    monkeypatch.setattr(runner_module, "execute_reply", fake_execute_reply)
+
+    reply = ModelRunner().generate_reply(
+        "ping",
+        128,
+        0.7,
+        40,
+        agent_follow_up=True,
+    )
+
+    assert reply == "reply"
+    assert captured["allow_legacy_markers"] is False
+    assert captured["agent_follow_up"] is True

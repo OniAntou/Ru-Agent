@@ -126,7 +126,10 @@ def execute_reply(
     on_complete_timing: Callable[[float], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     allow_legacy_markers: bool = True,
+    agent_follow_up: bool = False,
 ) -> str:
+    if agent_follow_up:
+        allow_legacy_markers = False
     messages = build_conversation_messages(
         system_instruction,
         prompt,

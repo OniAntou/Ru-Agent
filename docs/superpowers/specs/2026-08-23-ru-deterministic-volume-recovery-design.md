@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-23
 
-**Status:** Proposed; conversational design approved, written review pending
+**Status:** Accepted 2026-08-23
 
 **Scope:** Deterministic volume intent, truthful failure continuity, and honest
 Agent activity copy

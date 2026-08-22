@@ -31,6 +31,7 @@ _UNSAFE_KEY_PARTS = (
 _BEARER_PATTERN = re.compile(r"\bbearer\s+[^\s,;]+", re.IGNORECASE)
 _BASE64_BINARY_PATTERN = re.compile(r"^[A-Za-z0-9+/]{128,}={0,2}$")
 _FAILURE_STATUSES = {"failed", "blocked_by_startup", "cleanup_failure"}
+_EVIDENCE_CLASSES = frozenset({"contract", "adapter", "native"})
 
 
 def _unsafe_detail(message: str) -> ValueError:
@@ -138,6 +139,7 @@ def _safe_check(result: CheckResult, *, secrets: tuple[str, ...], index: int) ->
 
 def build_artifact(
     *,
+    evidence_class: str,
     commit: str,
     mode: str,
     started_at: str,
@@ -151,6 +153,8 @@ def build_artifact(
 ) -> dict[str, object]:
     """Build and validate the only public Harness result representation."""
 
+    if not isinstance(evidence_class, str) or evidence_class not in _EVIDENCE_CLASSES:
+        raise ValueError("invalid evidence class")
     secret_values = tuple(secret for secret in secrets if isinstance(secret, str) and secret)
     if not isinstance(duration_ms, (int, float)) or not math.isfinite(duration_ms) or duration_ms < 0:
         raise ValueError("Harness duration must be finite and non-negative")
@@ -176,6 +180,7 @@ def build_artifact(
         "harness_version": HARNESS_VERSION,
         "commit": safe_commit,
         "mode": safe_mode,
+        "evidence_class": evidence_class,
         "started_at": safe_started_at,
         "duration_ms": round(float(duration_ms), 3),
         "components": _safe_mapping(components, secrets=secret_values, field_name="components"),

@@ -16,9 +16,6 @@ public sealed class UiAutomationScenario : IDisposable
     private const string NewSessionAutomationId = "NewSessionButton";
     private const string AgentModeAutomationId = "AgentModeButton";
     private const string AgentActivityAutomationId = "AgentActivity";
-    private const string AgentApprovalCardAutomationId = "AgentApprovalCard";
-    private const string AgentApproveButtonAutomationId = "AgentApproveButton";
-    private const string AgentRejectButtonAutomationId = "AgentRejectButton";
     private const string ChatInputAutomationId = "ChatInput";
     private const string SendButtonAutomationId = "SendButton";
     private readonly Process _process;
@@ -235,22 +232,19 @@ public sealed class UiAutomationScenario : IDisposable
             AutomationElement send = await WaitForElementAsync(SendButtonAutomationId, timeout);
             Invoke(send);
 
-            bool approvalExpected = scenario is "agent-terminal-approval" or "agent-terminal-reject";
             bool activity = await WaitUntilAsync(
-                () => approvalExpected
-                    ? HasAtLeast("agent.approval.required", 1)
-                    : HasAtLeast("agent.activity", 1),
+                () => HasAtLeast("agent.activity", 1),
                 timeout);
-            bool approvalCompleted = !approvalExpected
-                || (activity && await CompleteAgentApprovalAsync(scenario, timeout));
-            bool messages = approvalCompleted
+            bool messages = activity
                 && await WaitUntilAsync(HasUserAndAssistantMessages, timeout);
+            bool truthfulVolumeFailure = scenario != "agent-volume-contract"
+                || VisibleMessagesContain("Không thể thực hiện thay đổi âm lượng.");
             bool privateAbsent = !VisibleMessageContainsPrivateMarker()
                 && !AgentSurfaceContainsPrivateMarker();
             bool passed = activity
                 && messages
-                && privateAbsent
-                && (!approvalExpected || approvalCompleted);
+                && truthfulVolumeFailure
+                && privateAbsent;
 
             if (scenario == "agent-stale-result")
             {
@@ -265,7 +259,7 @@ public sealed class UiAutomationScenario : IDisposable
                 "gui." + scenario,
                 passed,
                 started,
-                passed ? null : "Agent mode, activity, privacy, or approval assertions did not complete");
+                passed ? null : "Agent mode, failed volume contract, activity, or privacy assertions did not complete");
         }
         catch (Exception ex)
         {
@@ -433,33 +427,20 @@ public sealed class UiAutomationScenario : IDisposable
         return false;
     }
 
+    private bool VisibleMessagesContain(string expected)
+    {
+        AutomationElement? messages = FindByAutomationId(ChatMessagesAutomationId);
+        return messages != null
+            && messages.FindAll(TreeScope.Descendants, Condition.TrueCondition)
+                .Cast<AutomationElement>()
+                .Any(element => GetName(element).Contains(expected, StringComparison.Ordinal));
+    }
+
     private bool AgentSurfaceContainsPrivateMarker()
     {
         string activity = GetName(FindByAutomationId(AgentActivityAutomationId));
         string[] forbidden = ["token", "secret", "arguments", "request_body", "transcript"];
         return forbidden.Any(marker => activity.Contains(marker, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private async Task<bool> CompleteAgentApprovalAsync(string scenario, TimeSpan timeout)
-    {
-        string approvalButtonId = scenario == "agent-terminal-approval"
-            ? AgentApproveButtonAutomationId
-            : AgentRejectButtonAutomationId;
-        bool ready = await WaitUntilAsync(
-            () => IsVisible(FindByAutomationId(AgentApprovalCardAutomationId))
-                && IsEnabled(FindByAutomationId(approvalButtonId)),
-            timeout);
-        if (!ready)
-        {
-            return false;
-        }
-
-        AutomationElement approvalButton = await WaitForElementAsync(approvalButtonId, timeout);
-        Invoke(approvalButton);
-        return await WaitUntilAsync(
-            () => ReadEventCounts().GetValueOrDefault("agent.approval.result") == 1
-                && !IsVisible(FindByAutomationId(AgentApprovalCardAutomationId)),
-            timeout);
     }
 
     private static bool IsToggleOn(AutomationElement element)
@@ -493,30 +474,6 @@ public sealed class UiAutomationScenario : IDisposable
 
     private static string GetName(AutomationElement? element)
         => element?.Current.Name ?? string.Empty;
-
-    private static bool IsVisible(AutomationElement? element)
-    {
-        try
-        {
-            return element != null && !element.Current.IsOffscreen;
-        }
-        catch (ElementNotAvailableException)
-        {
-            return false;
-        }
-    }
-
-    private static bool IsEnabled(AutomationElement? element)
-    {
-        try
-        {
-            return element != null && element.Current.IsEnabled && !element.Current.IsOffscreen;
-        }
-        catch (ElementNotAvailableException)
-        {
-            return false;
-        }
-    }
 
     private static bool ContainsIgnoreCase(string value, string expected)
         => value.Contains(expected, StringComparison.OrdinalIgnoreCase);

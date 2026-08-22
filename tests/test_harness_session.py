@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from harness.session import HarnessSession, agent_tool_loop_completed
+from harness.session import (
+    HarnessSession,
+    _contains_private_agent_metadata,
+    agent_tool_loop_completed,
+    broker_approval_lifecycle_completed,
+)
 
 
 def test_session_cleanup_runs_after_readiness_failure() -> None:
@@ -19,6 +24,7 @@ def test_session_cleanup_runs_after_readiness_failure() -> None:
         "ports_closed": True,
         "session_descriptor_removed": True,
         "fixture_root_removed": True,
+        "workspace_root_removed": True,
         "temporary_root_removed": True,
     }
 
@@ -35,24 +41,87 @@ def test_deterministic_chat_requires_order_privacy_and_one_terminal_event() -> N
     assert statuses["voice.synthetic_tts"] == "passed"
 
 
-def test_agent_tool_loop_allows_approval_results_after_done() -> None:
+def test_agent_tool_loop_requires_one_matching_terminal_activity_before_done() -> None:
     events = [
-        {"type": "agent.activity"},
+        {"type": "agent.activity", "tool_id": "system.volume", "status": "requested"},
         {
-            "type": "agent.approval_required",
-            "content": "Approval required.",
-            "session_id": "session-1",
-            "approval_id": "approval-1",
-            "tool_id": "web.search",
-            "scope": "web.search",
-            "expires_at": "2099-01-01T00:00:00+00:00",
+            "type": "agent.activity",
+            "tool_id": "system.volume",
+            "status": "failed",
+            "error_code": "invalid_arguments",
         },
         {"type": "done"},
-        {"type": "agent.approval_result", "status": "failed"},
-        {"type": "agent.approval_result", "error_code": "approval_stale"},
     ]
 
-    assert agent_tool_loop_completed(events)
+    assert agent_tool_loop_completed(events, expected_status="failed")
+    assert not agent_tool_loop_completed(events, expected_status="succeeded")
+
+
+@pytest.mark.parametrize(
+    "events",
+    [
+        [
+            {"type": "agent.activity", "tool_id": "system.volume", "status": "requested"},
+            {"type": "done"},
+        ],
+        [
+            {"type": "agent.activity", "tool_id": "system.volume", "status": "requested"},
+            {"type": "agent.activity", "tool_id": "system.volume", "status": "mystery"},
+            {"type": "done"},
+        ],
+        [
+            {"type": "agent.activity", "content": "failed"},
+            {"type": "done"},
+        ],
+        [
+            {"type": "done"},
+            {"type": "agent.activity", "tool_id": "system.volume", "status": "failed"},
+        ],
+        [
+            {"type": "agent.activity", "tool_id": "system.volume", "status": "failed"},
+            {"type": "agent.activity", "tool_id": "system.volume", "status": "failed"},
+            {"type": "done"},
+        ],
+        [
+            {"type": "agent.activity", "tool_id": "files.list", "status": "failed"},
+            {"type": "done"},
+        ],
+    ],
+)
+def test_agent_tool_loop_rejects_ambiguous_or_mismatched_sequences(
+    events: list[dict[str, object]],
+) -> None:
+    assert not agent_tool_loop_completed(events, expected_status="failed")
+
+
+def test_broker_approval_lifecycle_is_separate_from_chat_completion() -> None:
+    lifecycle = {
+        "approval_required": True,
+        "approval_dispatch": True,
+        "approval_replay": True,
+        "session_closed": True,
+        "terminal_status": "succeeded",
+        "replay_status": "denied",
+    }
+
+    assert broker_approval_lifecycle_completed(lifecycle)
+    assert not agent_tool_loop_completed(
+        [
+            {"type": "agent.approval_required"},
+            {"type": "agent.approval_result", "status": "succeeded"},
+            {"type": "done"},
+        ],
+        expected_status="succeeded",
+    )
+
+
+def test_agent_privacy_check_allows_stable_invalid_arguments_error_code() -> None:
+    assert not _contains_private_agent_metadata(
+        [{"type": "agent.activity", "error_code": "invalid_arguments"}]
+    )
+    assert _contains_private_agent_metadata(
+        [{"type": "agent.activity", "arguments": {"level": 101}}]
+    )
 
 
 def test_gui_driver_output_is_converted_to_safe_checks(tmp_path: Path) -> None:
@@ -130,3 +199,16 @@ def test_verified_volume_fixture_is_bounded_and_has_no_private_metadata() -> Non
     assert "device_name" not in result
     assert "native_error" not in result
     assert "arguments" not in result
+
+
+def test_session_owns_and_removes_a_temporary_workspace() -> None:
+    session = HarnessSession.for_test(readiness=True)
+    workspace = session._workspace_root
+    fixture = workspace / "notes" / "approval-fixture.md"
+    fixture.parent.mkdir(parents=True, exist_ok=True)
+    fixture.write_text("bounded fixture", encoding="utf-8")
+
+    cleanup = session.close()
+
+    assert cleanup["workspace_root_removed"] is True
+    assert not workspace.exists()

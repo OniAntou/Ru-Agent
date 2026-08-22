@@ -22,6 +22,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from .artifacts import build_artifact
+from .broker_probe import probe_approval_lifecycle
 from .deterministic_worker import collect_deterministic_stream
 from .model import CheckResult
 from .ports import PortLease, wait_for_ports_closed
@@ -36,72 +37,89 @@ GuiScenario = Literal[
     "stop",
     "cancel",
     "stale-session",
-    "agent-read-only",
-    "agent-terminal-approval",
-    "agent-terminal-reject",
+    "agent-volume-contract",
     "agent-cancel",
     "agent-stale-result",
     "agent-private-metadata",
 ]
 
 
-def summarize_agent_approval_events(events: list[dict[str, Any]]) -> dict[str, object]:
-    """Summarize only safe approval lifecycle facts for the public artifact."""
+def agent_tool_loop_completed(
+    events: list[dict[str, Any]],
+    *,
+    expected_status: str,
+) -> bool:
+    """Require one unambiguous volume receipt before one chat completion."""
 
-    required = [event for event in events if event.get("type") == "agent.approval_required"]
-    results = [event for event in events if event.get("type") == "agent.approval_result"]
-    non_stale_results = [
-        event for event in results if event.get("error_code") != "approval_stale"
+    terminal_statuses = {
+        "succeeded",
+        "failed",
+        "denied",
+        "approval_required",
+        "cancelled",
+        "timed_out",
+    }
+    if expected_status not in terminal_statuses:
+        return False
+    activities: list[tuple[int, dict[str, Any]]] = [
+        (index, event)
+        for index, event in enumerate(events)
+        if event.get("type") == "agent.activity"
     ]
-    replay_observed = any(event.get("error_code") == "approval_stale" for event in results)
-    safe_required_shape = bool(required) and all(
-        set(event).issubset(
-            {
-                "type",
-                "content",
-                "session_id",
-                "error_code",
-                "status",
-                "approval_id",
-                "tool_id",
-                "scope",
-                "expires_at",
-            }
-        )
-        for event in required
+    if not activities or any(
+        event.get("tool_id") != "system.volume"
+        or event.get("status") not in terminal_statuses | {"requested"}
+        for _, event in activities
+    ):
+        return False
+    terminals = [
+        (index, event)
+        for index, event in activities
+        if event.get("status") in terminal_statuses
+    ]
+    done_indexes = [
+        index for index, event in enumerate(events) if event.get("type") == "done"
+    ]
+    return (
+        any(event.get("status") == "requested" for _, event in activities)
+        and len(terminals) == 1
+        and terminals[0][1].get("status") == expected_status
+        and len(done_indexes) == 1
+        and terminals[0][0] < done_indexes[0]
     )
-    serialized = json.dumps(events, ensure_ascii=False).casefold()
-    private_absent = not any(
-        marker in serialized
-        for marker in (
+
+
+def broker_approval_lifecycle_completed(summary: dict[str, object]) -> bool:
+    """Validate the private Broker approval fixture independently of chat."""
+
+    return (
+        summary.get("approval_required") is True
+        and summary.get("approval_dispatch") is True
+        and summary.get("approval_replay") is True
+        and summary.get("session_closed") is True
+        and summary.get("terminal_status") == "succeeded"
+        and summary.get("replay_status") == "denied"
+    )
+
+
+def _contains_private_agent_metadata(value: object) -> bool:
+    if isinstance(value, dict):
+        forbidden_keys = {
+            "authorization",
             "bearer",
             "token",
             "secret",
             "arguments",
             "request_body",
             "transcript",
-            "script",
             "credential",
+        }
+        return any(str(key).casefold() in forbidden_keys for key in value) or any(
+            _contains_private_agent_metadata(item) for item in value.values()
         )
-    )
-    return {
-        "approval_required": len(required) == 1 and safe_required_shape,
-        "approval_dispatch": len(non_stale_results) == 1,
-        "approval_replay": replay_observed,
-        "private_absent": private_absent,
-    }
-
-
-def agent_tool_loop_completed(events: list[dict[str, Any]]) -> bool:
-    """Return whether the safe synthetic Agent turn reached done."""
-
-    event_types = [str(event.get("type") or "") for event in events]
-    approval_summary = summarize_agent_approval_events(events)
-    return (
-        "agent.activity" in event_types
-        and "done" in event_types
-        and bool(approval_summary["approval_required"])
-    )
+    if isinstance(value, list):
+        return any(_contains_private_agent_metadata(item) for item in value)
+    return isinstance(value, str) and "bearer " in value.casefold()
 
 
 class HarnessSession:
@@ -130,6 +148,8 @@ class HarnessSession:
         self._temporary_root = Path(self._temporary.name)
         self._fixture_root = self._temporary_root / "data"
         self._log_root = self._temporary_root / "logs"
+        self._workspace_root = self._temporary_root / "workspace"
+        self._workspace_root.mkdir(parents=True, exist_ok=True)
         self._desktop_token = secrets.token_hex(24)
         self._worker_token = secrets.token_hex(24)
         self._broker_token = secrets.token_hex(32)
@@ -223,6 +243,7 @@ class HarnessSession:
                 )
             )
         return build_artifact(
+            evidence_class="contract",
             commit=self._commit_for_artifact(),
             mode=mode,
             started_at=started_at,
@@ -231,6 +252,7 @@ class HarnessSession:
                 "edge": {"status": "passed" if self._edge_ready() else "not_ready"},
                 "worker": {"status": "passed" if self._worker_ready() else "not_ready"},
                 "broker": {"status": "passed" if self._broker_ready() else "not_ready"},
+                "workspace_fixture": "temporary",
                 **({"gui": self._gui_components} if mode == "gui-deterministic" else {}),
             },
             checks=checks,
@@ -254,9 +276,7 @@ class HarnessSession:
             "stop",
             "cancel",
             "stale-session",
-            "agent-read-only",
-            "agent-terminal-approval",
-            "agent-terminal-reject",
+            "agent-volume-contract",
             "agent-cancel",
             "agent-stale-result",
             "agent-private-metadata",
@@ -567,6 +587,12 @@ class HarnessSession:
                 shutil.rmtree(self._fixture_root)
             except OSError:
                 fixture_root_removed = False
+        workspace_root_removed = True
+        if self._workspace_root.exists():
+            try:
+                shutil.rmtree(self._workspace_root)
+            except OSError:
+                workspace_root_removed = False
         try:
             self._temporary.cleanup()
         except OSError:
@@ -578,6 +604,7 @@ class HarnessSession:
             "ports_closed": ports_closed,
             "session_descriptor_removed": session_descriptor_removed,
             "fixture_root_removed": fixture_root_removed,
+            "workspace_root_removed": workspace_root_removed,
             "temporary_root_removed": temporary_root_removed,
         }
         return dict(self._cleanup_result)
@@ -663,6 +690,8 @@ class HarnessSession:
             )
             checks.extend(probe_http_routes(self.edge_base_url, self._desktop_token, self._registry, client=client))
             checks.extend(self._probe_voice_http(client))
+        if deterministic:
+            checks.extend(asyncio.run(self._probe_broker_approval_lifecycle()))
         chat_checks = asyncio.run(self._probe_chat_websocket())
         if deterministic:
             chat_checks.extend(asyncio.run(self._probe_agent_websocket()))
@@ -704,78 +733,10 @@ class HarnessSession:
                         if isinstance(payload, dict) and payload.get("type") in {"done", "error"}:
                             break
 
-                approval = next(
-                    (
-                        event
-                        for event in events
-                        if event.get("type") == "agent.approval_required"
-                    ),
-                    None,
-                )
-                if isinstance(approval, dict):
-                    await socket.send(
-                        json.dumps(
-                            {
-                                "type": "agent.approval.response",
-                                "session_id": approval.get("session_id"),
-                                "approval_id": approval.get("approval_id"),
-                                "approved": True,
-                            }
-                        )
-                    )
-                    while time.monotonic() < deadline:
-                        message = await asyncio.wait_for(
-                            socket.recv(), timeout=max(0.1, deadline - time.monotonic())
-                        )
-                        if isinstance(message, str):
-                            payload = json.loads(message)
-                            if isinstance(payload, dict):
-                                events.append(payload)
-                            if isinstance(payload, dict) and payload.get("type") == "agent.approval_result":
-                                break
-
-                    await socket.send(
-                        json.dumps(
-                            {
-                                "type": "agent.approval.response",
-                                "session_id": approval.get("session_id"),
-                                "approval_id": approval.get("approval_id"),
-                                "approved": True,
-                            }
-                        )
-                    )
-                    while time.monotonic() < deadline:
-                        message = await asyncio.wait_for(
-                            socket.recv(), timeout=max(0.1, deadline - time.monotonic())
-                        )
-                        if isinstance(message, str):
-                            payload = json.loads(message)
-                            if isinstance(payload, dict):
-                                events.append(payload)
-                            if (
-                                isinstance(payload, dict)
-                                and payload.get("type") == "agent.approval_result"
-                                and payload.get("error_code") == "approval_stale"
-                            ):
-                                break
         except Exception as error:
             return [
                 CheckResult(
                     "agent.synthetic_tool_loop",
-                    "failed",
-                    0.0,
-                    reason="request_error",
-                    details={"error_type": type(error).__name__},
-                ),
-                CheckResult(
-                    "agent.approval_dispatch",
-                    "failed",
-                    0.0,
-                    reason="request_error",
-                    details={"error_type": type(error).__name__},
-                ),
-                CheckResult(
-                    "agent.approval_replay",
                     "failed",
                     0.0,
                     reason="request_error",
@@ -790,60 +751,96 @@ class HarnessSession:
                 ),
             ]
 
-        event_types = [str(event.get("type") or "") for event in events]
-        approval_summary = summarize_agent_approval_events(events)
-        loop_completed = agent_tool_loop_completed(events)
+        terminal = [
+            event
+            for event in events
+            if event.get("type") == "agent.activity"
+            and event.get("status") in {
+                "succeeded",
+                "failed",
+                "denied",
+                "approval_required",
+                "cancelled",
+                "timed_out",
+            }
+        ]
+        done = [event for event in events if event.get("type") == "done"]
+        loop_completed = agent_tool_loop_completed(events, expected_status="failed")
+        truthful_reply = (
+            len(done) == 1
+            and done[0].get("content") == "Không thể thực hiện thay đổi âm lượng."
+        )
+        private_absent = not _contains_private_agent_metadata(events)
         return [
             CheckResult(
                 "agent.synthetic_tool_loop",
-                "passed"
-                if loop_completed
-                else "failed",
+                "passed" if loop_completed and truthful_reply else "failed",
                 0.0,
                 reason=(
                     None
-                    if loop_completed
+                    if loop_completed and truthful_reply
                     else "agent_tool_loop_not_completed"
                 ),
                 details={
-                    "event_types": event_types,
-                    "error_codes": [
-                        str(event.get("error_code"))
-                        for event in events
-                        if event.get("type") == "error"
-                    ],
+                    "expected_status": "failed",
+                    "terminal_count": len(terminal),
+                    "truthful_reply": truthful_reply,
                 },
-            ),
-            CheckResult(
-                "agent.approval_dispatch",
-                "passed" if approval_summary["approval_dispatch"] else "failed",
-                0.0,
-                reason=(
-                    None
-                    if approval_summary["approval_dispatch"]
-                    else "approved_action_not_dispatched_once"
-                ),
-                details={
-                    "result_count": sum(
-                        event.get("type") == "agent.approval_result" for event in events
-                    )
-                },
-            ),
-            CheckResult(
-                "agent.approval_replay",
-                "passed" if approval_summary["approval_replay"] else "failed",
-                0.0,
-                reason=None
-                if approval_summary["approval_replay"]
-                else "approval_replay_not_rejected",
             ),
             CheckResult(
                 "agent.private_metadata",
-                "passed" if approval_summary["private_absent"] else "failed",
+                "passed" if private_absent else "failed",
                 0.0,
                 reason=None
-                if approval_summary["private_absent"]
+                if private_absent
                 else "private_agent_metadata_visible",
+            ),
+        ]
+
+    async def _probe_broker_approval_lifecycle(self) -> list[CheckResult]:
+        """Exercise approval once and replay it over the private Broker protocol."""
+        summary = await probe_approval_lifecycle(
+            base_url=self.broker_base_url,
+            token=self._broker_token,
+            tool_id="notes.create",
+            tool_version="1.0.0",
+            arguments={
+                "path": "notes/harness-approval.md",
+                "title": "Harness approval fixture",
+                "content": "bounded deterministic fixture",
+            },
+        )
+
+        complete = broker_approval_lifecycle_completed(summary)
+        details = {
+            "approval_required": summary["approval_required"],
+            "terminal_status": summary["terminal_status"],
+            "replay_status": summary["replay_status"],
+            "session_closed": summary["session_closed"],
+        }
+        if "error_type" in summary:
+            details["error_type"] = summary["error_type"]
+        return [
+            CheckResult(
+                "agent.approval_dispatch",
+                "passed" if summary["approval_dispatch"] else "failed",
+                0.0,
+                reason=None if summary["approval_dispatch"] else "approved_action_not_dispatched_once",
+                details=details,
+            ),
+            CheckResult(
+                "agent.approval_replay",
+                "passed" if summary["approval_replay"] else "failed",
+                0.0,
+                reason=None if summary["approval_replay"] else "approval_replay_not_rejected",
+                details={"replay_status": summary["replay_status"]},
+            ),
+            CheckResult(
+                "agent.broker_session_close",
+                "passed" if summary["session_closed"] else "failed",
+                0.0,
+                reason=None if summary["session_closed"] else "broker_session_not_closed",
+                details={"lifecycle_complete": complete},
             ),
         ]
 
@@ -858,6 +855,8 @@ class HarnessSession:
             and self.edge_lease is not None
             and self.broker_lease is not None
         )
+        workspace_root = self._workspace_root
+        workspace_root.mkdir(parents=True, exist_ok=True)
         self.worker_lease.handoff()
         self.edge_lease.handoff()
         self.broker_lease.handoff()
@@ -881,15 +880,12 @@ class HarnessSession:
                 "RU_DATA_ROOT": str(self._fixture_root),
                 "RU_LOG_ROOT": str(self._log_root),
                 "RU_AGENT_BROKER_DESCRIPTOR": str(self._broker_descriptor_path),
-                "RU_WORKSPACE_ROOT": str(self.project_root),
+                "RU_WORKSPACE_ROOT": str(workspace_root),
                 "RuBackend__BindUrl": self.edge_base_url,
                 "RuBackend__WorkerUrl": f"ws://127.0.0.1:{self.worker_port}/worker/v1",
                 "NO_PROXY": "127.0.0.1,localhost",
                 "no_proxy": "127.0.0.1,localhost",
                 "PYTHONPATH": os.pathsep.join(python_paths),
-                "RU_HARNESS_AGENT_APPROVAL": (
-                    "1" if deterministic and harness_scenario is None else "0"
-                ),
             }
         )
         if deterministic and harness_scenario is not None:

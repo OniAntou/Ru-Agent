@@ -9,9 +9,7 @@ from harness.session import HarnessSession
 
 
 AGENT_SCENARIOS = (
-    "agent-read-only",
-    "agent-terminal-approval",
-    "agent-terminal-reject",
+    "agent-volume-contract",
     "agent-cancel",
     "agent-stale-result",
     "agent-private-metadata",
@@ -59,34 +57,57 @@ def test_agent_driver_payload_rejects_private_fields() -> None:
         HarnessSession._convert_gui_checks(payload)
 
 
-def test_backend_agent_probe_covers_approval_dispatch_replay_and_privacy() -> None:
-    source = Path("scripts/harness/session.py").read_text(encoding="utf-8")
+def test_backend_agent_probe_covers_broker_approval_and_failed_volume_contract() -> None:
+    session_source = Path("scripts/harness/session.py").read_text(encoding="utf-8")
+    worker_source = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
+    broker_probe_source = Path("scripts/harness/broker_probe.py").read_text(encoding="utf-8")
 
-    assert "agent.approval_required" in source
-    assert "agent.approval_result" in source
-    assert "approval_stale" in source
-    assert "agent.approval_dispatch" in source
-    assert "agent.approval_replay" in source
-    assert "private_agent_metadata_visible" in source
+    assert '"tool_id": "system.volume"' in worker_source
+    assert '"operation": "set", "level": 101' in worker_source
+    assert '"expected_status": "failed"' in session_source
+    assert '"notes.create"' in session_source
+    assert '"web.search"' not in worker_source
+    assert '"RU_WORKSPACE_ROOT": str(workspace_root)' in session_source
+    workspace_assignment = next(
+        line for line in session_source.splitlines() if '"RU_WORKSPACE_ROOT"' in line
+    )
+    assert "str(self.project_root)" not in workspace_assignment
+    assert "approval_stale" in broker_probe_source
+    assert "private_agent_metadata_visible" in session_source
 
 
-def test_deterministic_approval_fixture_never_uses_a_real_shell() -> None:
+def test_deterministic_worker_uses_only_the_non_native_volume_contract() -> None:
     source = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
 
-    assert "RU_HARNESS_AGENT_APPROVAL" in source
-    assert '"web.search"' in source
+    assert '"system.volume"' in source
+    assert '"capability_class": "native_mutation"' in source
+    assert '"web.search"' not in source
+    assert '"files.list"' not in source
     assert "Get-Date" not in source
     assert '"terminal.shell"' not in source
 
 
-def test_gui_agent_approval_scenarios_click_and_clear_the_approval_card() -> None:
-    source = Path("gui-winui3.Harness/UiAutomationScenario.cs").read_text(encoding="utf-8")
+def test_retired_gui_agent_scenarios_are_absent_from_all_harness_entrypoints() -> None:
+    sources = [
+        Path("scripts/aspnetcore_compatibility_harness.py").read_text(encoding="utf-8"),
+        Path("scripts/harness/session.py").read_text(encoding="utf-8"),
+        Path("gui-winui3.Harness/Program.cs").read_text(encoding="utf-8"),
+        Path("gui-winui3.Harness/UiAutomationScenario.cs").read_text(encoding="utf-8"),
+    ]
 
-    assert '"AgentApprovalCard"' in source
-    assert '"AgentApproveButton"' in source
-    assert '"AgentRejectButton"' in source
-    assert '"agent.approval.result"' in source
-    assert "Invoke(approvalButton)" in source
+    for source in sources:
+        assert "agent-read-only" not in source
+        assert "agent-terminal-approval" not in source
+        assert "agent-terminal-reject" not in source
+
+
+def test_gui_agent_scenario_catalog_is_exact() -> None:
+    python_cli = Path("scripts/aspnetcore_compatibility_harness.py").read_text(encoding="utf-8")
+    csharp_cli = Path("gui-winui3.Harness/Program.cs").read_text(encoding="utf-8")
+
+    for scenario in AGENT_SCENARIOS:
+        assert scenario in python_cli
+        assert scenario in csharp_cli
 
 
 def test_deterministic_agent_harness_keeps_volume_metadata_only() -> None:
@@ -96,8 +117,9 @@ def test_deterministic_agent_harness_keeps_volume_metadata_only() -> None:
     ).read_text(encoding="utf-8")
     deterministic_worker = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
 
-    assert 'registry.Register(VolumeTools.Manifest)' in catalog
+    assert "yield return VolumeTools.Manifest;" in catalog
+    assert 'var modelEnabled = manifest.Id == "system.volume";' in catalog
     assert 'new HashSet<string>([ToolScope.SystemWrite]' in volume_tool
     assert 'RiskClass.Reversible' in volume_tool
-    assert '"system.volume"' not in deterministic_worker
+    assert '"system.volume"' in deterministic_worker
     assert "keybd_event" not in deterministic_worker

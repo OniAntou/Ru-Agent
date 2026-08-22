@@ -69,10 +69,7 @@ async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> Async
         correlation_id = str(
             _payload.get("__worker_correlation_id") or "harness-agent-correlation"
         )
-        scenario = os.environ.get("RU_HARNESS_SCENARIO", "")
-        approval_probe = scenario in {"agent-terminal-approval", "agent-terminal-reject"} \
-            or os.environ.get("RU_HARNESS_AGENT_APPROVAL") == "1"
-        tool_request_id = "harness-tool-approval" if approval_probe else "harness-tool-read"
+        tool_request_id = "harness-tool-volume-invalid"
         yield WorkerReply(CHAT_RESET, {})
         yield WorkerReply(
             CHAT_TOOL_REQUEST,
@@ -80,13 +77,10 @@ async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> Async
                 "request_id": tool_request_id,
                 "session_id": session_id,
                 "correlation_id": correlation_id,
-                "tool_id": "web.search" if approval_probe else "files.list",
+                "tool_id": "system.volume",
                 "tool_version": "1.0.0",
-                "arguments": (
-                    {"query": "deterministic approval fixture"}
-                    if approval_probe
-                    else {"path": "src"}
-                ),
+                "capability_class": "native_mutation",
+                "arguments": {"operation": "set", "level": 101},
                 "deadline_ms": 30_000,
             },
         )
@@ -94,13 +88,19 @@ async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> Async
             result = await asyncio.wait_for(tool_queue.get(), timeout=30.0)
         except asyncio.TimeoutError:
             result = {"status": "timed_out", "safe_summary": "Tool timed out."}
-        if not isinstance(result, Mapping) or result.get("request_id") != tool_request_id:
-            result = {"status": "failed", "safe_summary": "Tool context was rejected."}
-        status = str(result.get("status") or "failed")
-        summary = str(result.get("safe_summary") or "Agent tool completed.")
+        valid_result = (
+            isinstance(result, Mapping)
+            and result.get("request_id") == tool_request_id
+            and result.get("session_id") == session_id
+            and result.get("correlation_id") == correlation_id
+            and result.get("status") == "failed"
+        )
+        if not valid_result:
+            # The visible fixture remains truthful even if the private receipt is malformed.
+            result = None
         yield WorkerReply(
             CHAT_DONE,
-            {"raw_reply": f"Em đã kiểm tra workspace ({status}). {summary}"},
+            {"raw_reply": "Không thể thực hiện thay đổi âm lượng."},
         )
         return
 

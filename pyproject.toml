@@ -16,6 +16,8 @@ dependencies = [
     "pygame>=2.6",
     "psutil>=5.9",
     "websockets>=16,<17",
+    "pycaw>=20230407; platform_system == 'Windows'",
+    "comtypes>=1.4; platform_system == 'Windows'",
 ]
 
 [project.optional-dependencies]

@@ -145,6 +145,7 @@ class ModelRunner:
         on_stream_reset=None,
         on_complete_timing=None,
         is_cancelled=None,
+        structured_tools_only: bool = False,
     ) -> str:
         system_prompt = RU_CLOUD_SYSTEM_PROMPT
         return execute_reply(

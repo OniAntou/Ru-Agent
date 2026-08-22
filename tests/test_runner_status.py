@@ -29,3 +29,24 @@ def test_load_clears_load_error_on_success() -> None:
     assert model.load_error is None
     assert model.openai_runtime is not None
     assert model.openai_runtime.model_name == "qwen2.5:latest"
+
+
+def test_generate_reply_accepts_structured_tools_only_for_agent_turns(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_execute_reply(_generate, **kwargs):
+        captured.update(kwargs)
+        return "reply"
+
+    monkeypatch.setattr(runner_module, "execute_reply", fake_execute_reply)
+
+    reply = ModelRunner().generate_reply(
+        "ping",
+        128,
+        0.7,
+        40,
+        structured_tools_only=True,
+    )
+
+    assert reply == "reply"
+    assert captured["allow_legacy_markers"] is False

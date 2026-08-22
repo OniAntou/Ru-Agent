@@ -62,6 +62,9 @@ namespace RuApp.Views
         private bool _typingPushed;
         private bool _voiceTurnPending;
         private readonly AgentSessionService _agentSession = new();
+        private AgentApprovalModel? _pendingAgentApproval;
+        private bool _approvalResponsePending;
+        private readonly DispatcherTimer _approvalExpiryTimer;
 
         public ChatView()
         {
@@ -70,6 +73,16 @@ namespace RuApp.Views
             Messages.CollectionChanged += (s, e) => UpdateViewMode();
             RootGrid.SizeChanged += OnRootGridSizeChanged;
             this.Loaded += (s, e) => ApplyInputWidth();
+            _approvalExpiryTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _approvalExpiryTimer.Tick += (_, __) =>
+            {
+                if (_pendingAgentApproval?.IsExpired() == true)
+                {
+                    ClearAgentApproval();
+                    AgentActivity.Text = "Yêu cầu duyệt đã hết hạn.";
+                    AgentActivity.Visibility = Visibility.Visible;
+                }
+            };
             UpdateViewMode();
         }
 
@@ -124,8 +137,10 @@ namespace RuApp.Views
             _wsClient.OnSessionReceived += OnWsSessionReceived;
             _wsClient.OnResetReceived += OnWsResetReceived;
             _wsClient.OnConnected += OnWsConnected;
+            _wsClient.OnDisconnected += OnWsDisconnected;
             _wsClient.OnAgentActivityReceived += OnAgentActivityReceived;
             _wsClient.OnAgentApprovalRequired += OnAgentApprovalRequired;
+            _wsClient.OnAgentApprovalResult += OnAgentApprovalResult;
 
             ChatInputTextBox.TextChanged += OnChatInputTyping;
             _typingDebounce = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
@@ -163,6 +178,11 @@ namespace RuApp.Views
             });
         }
 
+        private void OnWsDisconnected()
+        {
+            DispatcherQueue.TryEnqueue(() => ClearAgentApproval());
+        }
+
         private void OnWsSessionReceived(string sessionId)
         {
             DispatcherQueue.TryEnqueue(() =>
@@ -171,6 +191,7 @@ namespace RuApp.Views
                 _agentSession.Disable();
                 AgentModeButton.IsChecked = false;
                 AgentActivity.Visibility = Visibility.Collapsed;
+                ClearAgentApproval();
             });
         }
 
@@ -186,6 +207,7 @@ namespace RuApp.Views
             {
                 _agentSession.Disable();
                 AgentActivity.Visibility = Visibility.Collapsed;
+                ClearAgentApproval();
             }
         }
 
@@ -204,14 +226,123 @@ namespace RuApp.Views
             });
         }
 
-        private void OnAgentApprovalRequired(string content, string sessionId)
+        private void OnAgentApprovalRequired(AgentApprovalModel approval)
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                AgentActivity.Text = content.Length > 256 ? content[..256] : content;
+                if (approval.SessionId != _activeSessionId || approval.IsExpired())
+                {
+                    return;
+                }
+
+                _pendingAgentApproval = approval;
+                _approvalResponsePending = false;
+                AgentApprovalActionText.Text = approval.SafeAction;
+                AgentApprovalScopeText.Text = $"Phạm vi: {approval.Scope}";
+                AgentApprovalExpiryText.Text = $"Hết hạn lúc {approval.ExpiresAt.ToLocalTime():HH:mm}";
+                AgentApprovalCard.Visibility = Visibility.Visible;
+                SetApprovalButtonsState(true);
+                _approvalExpiryTimer.Start();
+                AgentActivity.Text = "Đang chờ anh xác nhận hành động của Agent.";
                 AgentActivity.Visibility = Visibility.Visible;
                 _harnessEvents?.Write("agent.approval.required", new { state = "required" });
             });
+        }
+
+        private void OnAgentApprovalResult(AgentApprovalResult result)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (result.SessionId != _activeSessionId
+                    || _pendingAgentApproval?.ApprovalId != result.ApprovalId)
+                {
+                    return;
+                }
+
+                ClearAgentApproval();
+                AgentActivity.Text = result.SafeSummary.Length > 256
+                    ? result.SafeSummary[..256]
+                    : result.SafeSummary;
+                AgentActivity.Visibility = Visibility.Visible;
+                _harnessEvents?.Write("agent.approval.result", new { state = result.Status });
+            });
+        }
+
+        private async void OnAgentApproveClick(object sender, RoutedEventArgs e)
+        {
+            await SendAgentApprovalDecisionAsync(approved: true);
+        }
+
+        private async void OnAgentRejectClick(object sender, RoutedEventArgs e)
+        {
+            await SendAgentApprovalDecisionAsync(approved: false);
+        }
+
+        private async Task SendAgentApprovalDecisionAsync(bool approved)
+        {
+            var approval = _pendingAgentApproval;
+            if (approval == null || _approvalResponsePending)
+            {
+                return;
+            }
+
+            if (approval.SessionId != _activeSessionId || approval.IsExpired())
+            {
+                ClearAgentApproval();
+                AgentActivity.Text = "Yêu cầu duyệt đã hết hạn.";
+                AgentActivity.Visibility = Visibility.Visible;
+                return;
+            }
+
+            if (_wsClient == null)
+            {
+                AgentActivity.Text = "Chưa kết nối được với backend.";
+                AgentActivity.Visibility = Visibility.Visible;
+                return;
+            }
+
+            _approvalResponsePending = true;
+            SetApprovalButtonsState(false);
+            AgentActivity.Text = "Đang gửi quyết định của anh...";
+            AgentActivity.Visibility = Visibility.Visible;
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await _wsClient.SendAgentApprovalAsync(
+                    approval.SessionId,
+                    approval.ApprovalId,
+                    approved,
+                    timeout.Token);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error sending Agent approval: {ex.Message}");
+                _approvalResponsePending = false;
+                if (_pendingAgentApproval?.ApprovalId == approval.ApprovalId)
+                {
+                    SetApprovalButtonsState(true);
+                    AgentActivity.Text = "Không gửi được quyết định. Anh có thể thử lại.";
+                    AgentActivity.Visibility = Visibility.Visible;
+                }
+            }
+        }
+
+        private void SetApprovalButtonsState(bool enabled)
+        {
+            AgentApproveButton.IsEnabled = enabled;
+            AgentRejectButton.IsEnabled = enabled;
+        }
+
+        private void ClearAgentApproval()
+        {
+            _pendingAgentApproval = null;
+            _approvalResponsePending = false;
+            _approvalExpiryTimer.Stop();
+            AgentApprovalCard.Visibility = Visibility.Collapsed;
+            SetApprovalButtonsState(true);
+            AgentApprovalActionText.Text = string.Empty;
+            AgentApprovalScopeText.Text = string.Empty;
+            AgentApprovalExpiryText.Text = string.Empty;
         }
 
         private void OnWsResetReceived()
@@ -222,6 +353,7 @@ namespace RuApp.Views
             }
             DispatcherQueue.TryEnqueue(() =>
             {
+                ClearAgentApproval();
                 var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
                 if (last != null)
                 {
@@ -656,6 +788,7 @@ namespace RuApp.Views
                 if (_apiService == null) return;
                 await ReplaceVoiceSessionAsync();
                 _activeSessionId = sessionId;
+                ClearAgentApproval();
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
                 Messages.Clear();
                 var history = await _apiService.GetSessionMessagesAsync(_activeSessionId);
@@ -832,13 +965,16 @@ namespace RuApp.Views
                 _wsClient.OnDoneReceived -= OnWsDoneReceived;
                 _wsClient.OnErrorReceived -= OnWsErrorReceived;
                 _wsClient.OnSessionReceived -= OnWsSessionReceived;
-            _wsClient.OnResetReceived -= OnWsResetReceived;
-            _wsClient.OnAgentActivityReceived -= OnAgentActivityReceived;
-            _wsClient.OnAgentApprovalRequired -= OnAgentApprovalRequired;
+                _wsClient.OnResetReceived -= OnWsResetReceived;
+                _wsClient.OnDisconnected -= OnWsDisconnected;
+                _wsClient.OnAgentActivityReceived -= OnAgentActivityReceived;
+                _wsClient.OnAgentApprovalRequired -= OnAgentApprovalRequired;
+                _wsClient.OnAgentApprovalResult -= OnAgentApprovalResult;
                 _wsClient.OnConnected -= OnWsConnected;
             }
             _typingDebounce?.Stop();
             _typingDebounce = null;
+            _approvalExpiryTimer.Stop();
             MeteorShowerField?.Dispose();
             _voicePlayback?.StopVoice();
             if (_voiceConversation != null)

@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -27,7 +28,8 @@ namespace RuApp.Services
         public event Action<string, string>? OnDoneReceived;
         public event Action<string>? OnErrorReceived;
         public event Action<string, string>? OnAgentActivityReceived;
-        public event Action<string, string>? OnAgentApprovalRequired;
+        public event Action<AgentApprovalModel>? OnAgentApprovalRequired;
+        public event Action<AgentApprovalResult>? OnAgentApprovalResult;
 
         public bool IsConnected => _webSocket != null && _webSocket.State == WebSocketState.Open;
 
@@ -190,13 +192,17 @@ namespace RuApp.Services
                 }
                 else if (msgType == "agent.approval_required")
                 {
-                    string content = root.TryGetProperty("content", out var approvalProp)
-                        ? approvalProp.GetString() ?? "Approval required"
-                        : "Approval required";
-                    string sessionId = root.TryGetProperty("session_id", out var approvalSession)
-                        ? approvalSession.GetString() ?? ""
-                        : "";
-                    OnAgentApprovalRequired?.Invoke(content, sessionId);
+                    if (TryReadApproval(root, out var approval))
+                    {
+                        OnAgentApprovalRequired?.Invoke(approval);
+                    }
+                }
+                else if (msgType == "agent.approval_result")
+                {
+                    if (TryReadApprovalResult(root, out var result))
+                    {
+                        OnAgentApprovalResult?.Invoke(result);
+                    }
                 }
             }
             catch (JsonException ex)
@@ -204,6 +210,73 @@ namespace RuApp.Services
                 System.Diagnostics.Debug.WriteLine($"JSON parse error: {ex.Message}");
                 // Ignore malformed frames.
             }
+        }
+
+        private static bool TryReadApproval(JsonElement root, out AgentApprovalModel approval)
+        {
+            approval = default!;
+            string approvalId = ReadBoundedString(root, "approval_id", 128);
+            string sessionId = ReadBoundedString(root, "session_id", 128);
+            string toolId = ReadBoundedString(root, "tool_id", 128);
+            string safeAction = ReadBoundedString(root, "content", 256);
+            string scope = ReadBoundedString(root, "scope", 256);
+            string expiresText = ReadBoundedString(root, "expires_at", 64);
+
+            if (string.IsNullOrWhiteSpace(approvalId)
+                || string.IsNullOrWhiteSpace(sessionId)
+                || string.IsNullOrWhiteSpace(toolId)
+                || string.IsNullOrWhiteSpace(safeAction)
+                || string.IsNullOrWhiteSpace(scope)
+                || !DateTimeOffset.TryParse(
+                    expiresText,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind,
+                    out var expiresAt)
+                || expiresAt <= DateTimeOffset.UtcNow)
+            {
+                return false;
+            }
+
+            approval = new AgentApprovalModel(
+                approvalId,
+                sessionId,
+                toolId,
+                safeAction,
+                scope,
+                expiresAt);
+            return true;
+        }
+
+        private static bool TryReadApprovalResult(JsonElement root, out AgentApprovalResult result)
+        {
+            result = default!;
+            string approvalId = ReadBoundedString(root, "approval_id", 128);
+            string sessionId = ReadBoundedString(root, "session_id", 128);
+            string status = ReadBoundedString(root, "status", 64);
+            string safeSummary = ReadBoundedString(root, "content", 256);
+            if (string.IsNullOrWhiteSpace(approvalId) || string.IsNullOrWhiteSpace(sessionId))
+            {
+                return false;
+            }
+
+            result = new AgentApprovalResult(
+                approvalId,
+                sessionId,
+                string.IsNullOrWhiteSpace(status) ? "unknown" : status,
+                string.IsNullOrWhiteSpace(safeSummary) ? "Approval updated." : safeSummary);
+            return true;
+        }
+
+        private static string ReadBoundedString(JsonElement root, string propertyName, int maxLength)
+        {
+            if (!root.TryGetProperty(propertyName, out var property)
+                || property.ValueKind != JsonValueKind.String)
+            {
+                return string.Empty;
+            }
+
+            string value = property.GetString() ?? string.Empty;
+            return value.Length <= maxLength ? value : string.Empty;
         }
 
         public async Task SendMessageAsync(string messageText, string sessionId)
@@ -217,27 +290,7 @@ namespace RuApp.Services
             CancellationToken cancellationToken,
             bool agentMode = false)
         {
-            const int connectTimeoutMs = 10000;
-            var startTime = DateTime.UtcNow;
-            while (!IsConnected && !_disposed)
-            {
-                await Task.Delay(250, cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-                if ((DateTime.UtcNow - startTime).TotalMilliseconds > connectTimeoutMs)
-                {
-                    throw new InvalidOperationException("WebSocket chưa kết nối trong vòng 10 giây.");
-                }
-                if (_disposed)
-                {
-                    throw new ObjectDisposedException(nameof(ChatWebSocketClient));
-                }
-            }
-
-            var socket = _webSocket;
-            if (socket == null || _disposed)
-            {
-                throw new InvalidOperationException("WebSocket không khả dụng.");
-            }
+            var socket = await WaitForSocketAsync(cancellationToken);
 
             var correlationId = $"c_{Guid.NewGuid():N}";
             var payload = new
@@ -250,6 +303,52 @@ namespace RuApp.Services
             string json = JsonSerializer.Serialize(payload);
             byte[] bytes = Encoding.UTF8.GetBytes(json);
             await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
+        }
+
+        public async Task SendAgentApprovalAsync(
+            string sessionId,
+            string approvalId,
+            bool approved,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(approvalId))
+            {
+                throw new ArgumentException("Approval session and ID are required.");
+            }
+
+            var socket = await WaitForSocketAsync(cancellationToken);
+            var payload = new
+            {
+                type = "agent.approval.response",
+                session_id = sessionId,
+                approval_id = approvalId,
+                approved,
+            };
+            string json = JsonSerializer.Serialize(payload);
+            byte[] bytes = Encoding.UTF8.GetBytes(json);
+            await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
+        }
+
+        private async Task<ClientWebSocket> WaitForSocketAsync(CancellationToken cancellationToken)
+        {
+            const int connectTimeoutMs = 10000;
+            var startTime = DateTime.UtcNow;
+            while (!IsConnected && !_disposed)
+            {
+                await Task.Delay(250, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if ((DateTime.UtcNow - startTime).TotalMilliseconds > connectTimeoutMs)
+                {
+                    throw new InvalidOperationException("WebSocket chưa kết nối trong vòng 10 giây.");
+                }
+            }
+
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(ChatWebSocketClient));
+            }
+
+            return _webSocket ?? throw new InvalidOperationException("WebSocket không khả dụng.");
         }
 
         public void Disconnect()

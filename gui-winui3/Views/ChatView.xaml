@@ -207,7 +207,7 @@
 
         <Grid x:Name="InputContainer"
               Grid.Row="1"
-              RowDefinitions="Auto,Auto,Auto"
+              RowDefinitions="Auto,Auto,Auto,Auto"
               Width="820"
               MaxWidth="820"
               Background="Transparent"
@@ -241,8 +241,69 @@
                        AutomationProperties.LiveSetting="Polite"
                        Foreground="{StaticResource RuMutedBrush}"
                        Margin="8,0,8,6" />
-            <Border x:Name="InputBorder"
+            <Border x:Name="AgentApprovalCard"
                     Grid.Row="2"
+                    Visibility="Collapsed"
+                    Background="{StaticResource RuSurfaceBrush}"
+                    BorderBrush="{StaticResource RuAccentBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource RuControlCornerRadius}"
+                    Padding="12,10"
+                    Margin="8,0,8,8"
+                    AutomationProperties.AutomationId="AgentApprovalCard"
+                    AutomationProperties.Name="Yêu cầu phê duyệt một lần cho hành động của Agent"
+                    AutomationProperties.LiveSetting="Polite">
+                <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+                    <TextBlock Text="Ru cần anh duyệt một hành động"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource RuAccentBrush}" />
+                    <TextBlock x:Name="AgentApprovalActionText"
+                               Grid.Row="1"
+                               TextWrapping="Wrap"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontSize="14"
+                               Foreground="{StaticResource RuInkBrush}" />
+                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                            <TextBlock x:Name="AgentApprovalScopeText"
+                                       TextWrapping="Wrap"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource RuMutedBrush}" />
+                            <TextBlock x:Name="AgentApprovalExpiryText"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource RuMutedBrush}" />
+                        </StackPanel>
+                        <Button x:Name="AgentRejectButton"
+                                Grid.Column="1"
+                                Content="Từ chối"
+                                Click="OnAgentRejectClick"
+                                Padding="12,6"
+                                CornerRadius="{StaticResource RuControlCornerRadius}"
+                                Background="Transparent"
+                                BorderBrush="{StaticResource RuLineBrush}"
+                                Foreground="{StaticResource RuMutedBrush}"
+                                AutomationProperties.AutomationId="AgentRejectButton"
+                                AutomationProperties.Name="Từ chối hành động này một lần" />
+                        <Button x:Name="AgentApproveButton"
+                                Grid.Column="2"
+                                Content="Duyệt một lần"
+                                Click="OnAgentApproveClick"
+                                Padding="12,6"
+                                CornerRadius="{StaticResource RuControlCornerRadius}"
+                                Background="{StaticResource RuAccentBrush}"
+                                BorderThickness="0"
+                                Foreground="White"
+                                AutomationProperties.AutomationId="AgentApproveButton"
+                                AutomationProperties.Name="Duyệt hành động này một lần" />
+                    </Grid>
+                </Grid>
+            </Border>
+            <Border x:Name="InputBorder"
+                    Grid.Row="3"
                     Background="{StaticResource RuSurfaceBrush}"
                     BorderBrush="{StaticResource RuLineBrush}"
                     BorderThickness="0,1,0,0"

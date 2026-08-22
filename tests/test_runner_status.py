@@ -50,6 +50,9 @@ def test_generate_reply_accepts_structured_tools_only_for_agent_turns(monkeypatc
 
     assert reply == "reply"
     assert captured["allow_legacy_markers"] is False
+    assert "system.volume@1.0.0" in str(captured["system_instruction"])
+    assert "[VOLUME: up]" not in str(captured["system_instruction"])
+    assert "[VOLUME: set 2]" not in str(captured["system_instruction"])
 
 
 def test_generate_reply_has_a_separate_agent_follow_up_phase(monkeypatch) -> None:
@@ -72,3 +75,5 @@ def test_generate_reply_has_a_separate_agent_follow_up_phase(monkeypatch) -> Non
     assert reply == "reply"
     assert captured["allow_legacy_markers"] is False
     assert captured["agent_follow_up"] is True
+    assert "[VOLUME: up]" not in str(captured["system_instruction"])
+    assert "[VOLUME: set 2]" not in str(captured["system_instruction"])

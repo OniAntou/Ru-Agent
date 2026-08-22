@@ -101,7 +101,7 @@ RU_CLOUD_SYSTEM_PROMPT = RU_SYSTEM_PROMPT + "\n\n" + _CLOUD_ADDENDUM
 _AGENT_TOOL_INSTRUCTION = textwrap.dedent("""\
     AGENT TOOL MODE:
     For a desktop action, return only one JSON object with exactly these keys: `tool_id`, `tool_version`, and `arguments`.
-    For `system.volume`, use `tool_version` `1.0.0` and `arguments.operation` from `get`, `set`, `increase`, `decrease`, `mute`, or `unmute`.
+    For the `system.volume@1.0.0` tool, use `arguments.operation` from `get`, `set`, `increase`, `decrease`, `mute`, or `unmute`.
     Use `arguments.level` for `set` and `arguments.amount` for `increase` or `decrease`; `level` is an integer from 0 through 100 and `amount` is an integer from 1 through 50.
     Do not emit `[VOLUME: ...]` markers, VTS markers, voice markers, or any other metadata in this phase.
     If no action is needed, reply in natural Vietnamese without metadata.

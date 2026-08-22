@@ -382,7 +382,7 @@ git commit -m "test: cover Agent approval Harness flow"
 
 - No new production files. Inspect all feature commits and the existing dirty worktree.
 
-- [ ] **Step 1: Run focused verification in dependency order**
+- [x] **Step 1: Run focused verification in dependency order**
 
 Run one command at a time:
 
@@ -403,7 +403,7 @@ deterministic artifact reports approval/replay/privacy/cleanup success, no
 vulnerable packages are reported, and self-contained Broker/Backend/GUI
 outputs exist.
 
-- [ ] **Step 2: Run privacy and stale-reference scans**
+- [x] **Step 2: Run privacy and stale-reference scans**
 
 Review every match, with feature-focused scans first:
 

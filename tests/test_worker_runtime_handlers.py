@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 import ru_runtime.memory.store
+import ru_runtime.worker.v1.handlers as handlers_module
 from ru_runtime.vts.catalog import VtsCatalog, VtsCatalogEntry
 from ru_runtime.voice.stream import VoiceStreamEvent
 from ru_runtime.worker.v1.protocol import (
@@ -46,6 +47,7 @@ def test_chat_uses_only_explicit_prompt_history_memory_and_settings() -> None:
             "temperature": 0.4,
             "top_k": 32,
             "allow_web_search": False,
+            "model_tools": [],
         },
     }
 
@@ -92,7 +94,7 @@ def test_chat_never_opens_the_python_memory_store(monkeypatch) -> None:
                     "turns": [],
                     "memory_context": "explicit ASP.NET memory",
                     "vts_instruction": "",
-                    "settings": {},
+                    "settings": {"model_tools": []},
                 },
                 asyncio.Event(),
             )
@@ -271,7 +273,7 @@ def test_runtime_failures_emit_only_stable_codes(caplog) -> None:
                     "turns": [],
                     "memory_context": "",
                     "vts_instruction": "",
-                    "settings": {},
+                    "settings": {"model_tools": []},
                 },
                 asyncio.Event(),
             )
@@ -597,27 +599,74 @@ class SequencedRunner:
 
     def generate_reply(self, **kwargs) -> str:
         self.calls.append(kwargs)
-        return self.results.pop(0)
+        result = self.results.pop(0)
+        callback = kwargs.get("on_stream_delta")
+        if callback is not None:
+            callback(result)
+        return result
 
 
-def _agent_payload(tool_result_queue: asyncio.Queue) -> dict:
+def _model_tools() -> list[dict[str, object]]:
+    return [
+        {
+            "tool_id": "system.volume",
+            "tool_version": "1.0.0",
+            "scopes": ["system.write"],
+            "availability": "native_pending",
+            "model_enabled": True,
+            "capability_class": "native_mutation",
+        }
+    ]
+
+
+def _action_payload(
+    tool_result_queue: asyncio.Queue,
+    agent_mode: bool,
+    *,
+    prompt: str = "Hạ âm lượng còn 2%",
+    model_tools: list[dict[str, object]] | None = None,
+) -> dict:
     return {
-        "prompt": "Hạ âm lượng còn 2%",
+        "prompt": prompt,
         "session_id": "session-1",
         "turns": [],
         "memory_context": None,
         "vts_instruction": "",
-        "settings": {"agent_mode": True, "allow_web_search": False},
+        "settings": {
+            "agent_mode": agent_mode,
+            "allow_web_search": False,
+            "model_tools": _model_tools() if model_tools is None else model_tools,
+        },
         "__worker_tool_result_queue": tool_result_queue,
         "__worker_correlation_id": "correlation-1",
     }
 
 
-async def _run_agent_turn(runner: SequencedRunner, result: dict) -> list[WorkerReply]:
+def _verified_result() -> dict[str, object]:
+    return {
+        "status": "succeeded",
+        "output": {"operation": "set", "level": 2, "muted": False},
+        "safe_summary": "Đã xác minh âm lượng ở mức 2%.",
+        "error_code": None,
+        "duration_ms": 12,
+        "verification_state": "verified",
+        "endpoint_role": "default_render_multimedia",
+        "endpoint_hash": "0123456789abcdef",
+    }
+
+
+async def _run_action_turn(
+    runner: SequencedRunner,
+    result: dict[str, object],
+    agent_mode: bool,
+) -> list[WorkerReply]:
     tool_result_queue: asyncio.Queue = asyncio.Queue()
     handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
     replies = []
-    stream = handlers.chat(_agent_payload(tool_result_queue), asyncio.Event())
+    stream = handlers.chat(
+        _action_payload(tool_result_queue, agent_mode),
+        asyncio.Event(),
+    )
     replies.append(await anext(stream))
     request = await anext(stream)
     assert request.type == CHAT_TOOL_REQUEST
@@ -634,54 +683,175 @@ async def _run_agent_turn(runner: SequencedRunner, result: dict) -> list[WorkerR
     return replies
 
 
-def test_agent_volume_success_uses_tool_request_then_result_phases() -> None:
+@pytest.mark.parametrize("agent_mode", (False, True))
+def test_volume_request_uses_selection_then_verified_receipt(agent_mode: bool) -> None:
     runner = SequencedRunner(
         '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"set","level":2}}',
         "Đã đặt âm lượng ở mức 2% cho anh.",
     )
 
     replies = asyncio.run(
-        _run_agent_turn(
+        _run_action_turn(
             runner,
-            {
-                "status": "succeeded",
-                "output": {"operation": "set", "level": 2, "muted": False, "verified": True},
-                "safe_summary": "Đã đặt âm lượng ở mức 2%.",
-                "error_code": None,
-            },
+            _verified_result(),
+            agent_mode,
         )
     )
 
-    assert runner.calls[0]["structured_tools_only"] is True
-    assert runner.calls[0]["agent_follow_up"] is False
-    assert runner.calls[1]["structured_tools_only"] is False
-    assert runner.calls[1]["agent_follow_up"] is True
+    assert [call["structured_tools_only"] for call in runner.calls] == [True, False]
+    assert [call["agent_follow_up"] for call in runner.calls] == [False, True]
+    assert runner.calls[0]["action_capabilities"]
+    assert runner.calls[1]["action_capabilities"] == ()
     assert replies[-1].type == CHAT_DONE
     assert replies[-1].payload["raw_reply"] == "Đã đặt âm lượng ở mức 2% cho anh."
 
 
-def test_agent_volume_failure_is_truthful_without_success_continuation() -> None:
+@pytest.mark.parametrize("agent_mode", (False, True))
+def test_volume_model_prose_cannot_claim_success_without_a_request(agent_mode: bool) -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner("Đã chỉnh xong")
+    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+
+    replies = asyncio.run(collect(handlers.chat(
+        _action_payload(queue, agent_mode),
+        asyncio.Event(),
+    )))
+
+    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
+    assert replies[-1].type == CHAT_DONE
+    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
+    assert len(runner.calls) == 1
+
+
+def test_ordinary_normal_chat_streams_without_entering_selection() -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner("Em nghe đây.")
+    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+
+    replies = asyncio.run(collect(handlers.chat(
+        _action_payload(queue, False, prompt="Kể em nghe chuyện hôm nay", model_tools=[]),
+        asyncio.Event(),
+    )))
+
+    assert len(runner.calls) == 1
+    assert runner.calls[0]["structured_tools_only"] is False
+    assert [reply.type for reply in replies] == [CHAT_RESET, CHAT_CHUNK, CHAT_DONE]
+
+
+def test_ordinary_agent_chat_may_finish_with_plain_selection_prose() -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner("Em đang nghe anh đây.")
+    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+
+    replies = asyncio.run(collect(handlers.chat(
+        _action_payload(queue, True, prompt="Hôm nay em thế nào?"),
+        asyncio.Event(),
+    )))
+
+    assert len(runner.calls) == 1
+    assert runner.calls[0]["structured_tools_only"] is True
+    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
+    assert replies[-1].payload["raw_reply"] == "Em đang nghe anh đây."
+
+
+@pytest.mark.parametrize("verification_state", ("pending", "failed", "not_required"))
+def test_unverified_success_never_runs_follow_up(verification_state: str) -> None:
     runner = SequencedRunner(
         '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"set","level":2}}',
         "Đã hạ âm lượng xuống 2% rồi anh.",
     )
+    result = _verified_result()
+    result["verification_state"] = verification_state
 
-    replies = asyncio.run(
-        _run_agent_turn(
-            runner,
-            {
-                "status": "failed",
-                "output": {"operation": "set", "level": 40, "muted": False, "verified": False},
-                "safe_summary": "Không thể xác nhận thay đổi âm lượng.",
-                "error_code": "readback_mismatch",
-            },
-        )
-    )
+    replies = asyncio.run(_run_action_turn(runner, result, True))
 
     assert len(runner.calls) == 1
     assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == "Không thể xác nhận thay đổi âm lượng."
+    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
     assert "Đã hạ âm lượng" not in replies[-1].payload["raw_reply"]
+
+
+def test_failed_receipt_is_truthful_without_success_continuation() -> None:
+    runner = SequencedRunner(
+        '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"set","level":2}}',
+        "Đã hạ âm lượng xuống 2% rồi anh.",
+    )
+    result = _verified_result()
+    result.update(
+        status="failed",
+        error_code="readback_mismatch",
+        safe_summary="Volume change could not be verified.",
+        verification_state="failed",
+    )
+
+    replies = asyncio.run(_run_action_turn(runner, result, True))
+
+    assert len(runner.calls) == 1
+    assert replies[-1].type == CHAT_DONE
+    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
+
+
+def test_mismatched_receipt_is_an_action_failure_not_generation_failure() -> None:
+    runner = SequencedRunner(
+        '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"mute"}}'
+    )
+    result = _verified_result()
+    result["request_id"] = "stale-request"
+
+    replies = asyncio.run(_run_action_turn(runner, result, True))
+
+    assert all(reply.type != ERROR for reply in replies)
+    assert replies[-1].type == CHAT_DONE
+    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
+
+
+def test_late_receipt_timeout_is_an_action_failure(monkeypatch) -> None:
+    monkeypatch.setattr(handlers_module, "_ACTION_DEADLINE_MS", 1)
+
+    async def run() -> list[WorkerReply]:
+        queue: asyncio.Queue = asyncio.Queue()
+        runner = SequencedRunner(
+            '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"mute"}}'
+        )
+        handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+        return await collect(handlers.chat(_action_payload(queue, True), asyncio.Event()))
+
+    replies = asyncio.run(run())
+
+    assert all(reply.type != ERROR for reply in replies)
+    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
+
+
+def test_two_tool_calls_are_rejected_without_emitting_a_request() -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner(
+        '[{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"mute"}},'
+        '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"unmute"}}]'
+    )
+    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+
+    replies = asyncio.run(collect(handlers.chat(
+        _action_payload(queue, True),
+        asyncio.Event(),
+    )))
+
+    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
+    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
+
+
+def test_capability_absent_volume_request_fails_without_model_generation() -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner("Đã chỉnh xong")
+    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+
+    replies = asyncio.run(collect(handlers.chat(
+        _action_payload(queue, False, model_tools=[]),
+        asyncio.Event(),
+    )))
+
+    assert runner.calls == []
+    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
+    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
 
 
 class FakeVtsManager:

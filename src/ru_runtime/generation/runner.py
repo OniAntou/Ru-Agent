@@ -31,9 +31,9 @@ from ru_runtime.generation.openai import (
 )
 from ru_runtime.policy.style import (
     RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT,
-    RU_AGENT_SYSTEM_PROMPT,
     RU_CLOUD_SYSTEM_PROMPT,
     RU_SCREEN_REACTION_SYSTEM_PROMPT,
+    ru_action_selection_prompt,
 )
 from ru_runtime.generation.orchestration import execute_reply
 from ru_runtime.generation.search import perform_web_search
@@ -149,12 +149,17 @@ class ModelRunner:
         is_cancelled=None,
         structured_tools_only: bool = False,
         agent_follow_up: bool = False,
+        action_capabilities=(),
     ) -> str:
         if agent_follow_up:
             system_prompt = RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT
             private_instruction = VTS_ACTION_INSTRUCTION + VOICE_PACE_INSTRUCTION + vts_instruction
         elif structured_tools_only:
-            system_prompt = RU_AGENT_SYSTEM_PROMPT
+            descriptors = tuple(
+                (capability.tool_id, capability.tool_version)
+                for capability in action_capabilities
+            )
+            system_prompt = ru_action_selection_prompt(descriptors)
             private_instruction = ""
         else:
             system_prompt = RU_CLOUD_SYSTEM_PROMPT

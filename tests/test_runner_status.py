@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from ru_runtime.generation import runner as runner_module
@@ -46,6 +48,9 @@ def test_generate_reply_accepts_structured_tools_only_for_agent_turns(monkeypatc
         0.7,
         40,
         structured_tools_only=True,
+        action_capabilities=(
+            SimpleNamespace(tool_id="system.volume", tool_version="1.0.0"),
+        ),
     )
 
     assert reply == "reply"
@@ -53,6 +58,27 @@ def test_generate_reply_accepts_structured_tools_only_for_agent_turns(monkeypatc
     assert "system.volume@1.0.0" in str(captured["system_instruction"])
     assert "[VOLUME: up]" not in str(captured["system_instruction"])
     assert "[VOLUME: set 2]" not in str(captured["system_instruction"])
+
+
+def test_empty_structured_capabilities_never_advertise_volume(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_execute_reply(_generate, **kwargs):
+        captured.update(kwargs)
+        return "reply"
+
+    monkeypatch.setattr(runner_module, "execute_reply", fake_execute_reply)
+
+    ModelRunner().generate_reply(
+        "ping",
+        128,
+        0.7,
+        40,
+        structured_tools_only=True,
+        action_capabilities=(),
+    )
+
+    assert "system.volume@1.0.0" not in str(captured["system_instruction"])
 
 
 def test_generate_reply_has_a_separate_agent_follow_up_phase(monkeypatch) -> None:
@@ -77,3 +103,30 @@ def test_generate_reply_has_a_separate_agent_follow_up_phase(monkeypatch) -> Non
     assert captured["agent_follow_up"] is True
     assert "[VOLUME: up]" not in str(captured["system_instruction"])
     assert "[VOLUME: set 2]" not in str(captured["system_instruction"])
+
+
+@pytest.mark.parametrize("phase", ("normal", "follow_up"))
+def test_non_selection_prompts_do_not_advertise_structured_capabilities(
+    monkeypatch,
+    phase: str,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_execute_reply(_generate, **kwargs):
+        captured.update(kwargs)
+        return "reply"
+
+    monkeypatch.setattr(runner_module, "execute_reply", fake_execute_reply)
+
+    ModelRunner().generate_reply(
+        "ping",
+        128,
+        0.7,
+        40,
+        agent_follow_up=phase == "follow_up",
+        action_capabilities=(
+            SimpleNamespace(tool_id="system.volume", tool_version="1.0.0"),
+        ),
+    )
+
+    assert "system.volume@1.0.0" not in str(captured["system_instruction"])

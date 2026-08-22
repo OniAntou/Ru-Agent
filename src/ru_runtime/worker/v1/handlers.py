@@ -5,6 +5,7 @@ import contextlib
 import json
 import math
 import threading
+import time
 import uuid
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
@@ -12,8 +13,16 @@ from functools import partial
 from typing import Any, ContextManager, Literal, Protocol
 
 from ru_runtime.generation.chat import ChatTurn
-from ru_runtime.generation.tool_calls import ToolCallParseError, parse_tool_call
 from ru_runtime.memory.learning import extract_facts_with_llm
+from ru_runtime.worker.v1.action_loop import (
+    ActionProtocolError,
+    ModelCapability,
+    detect_volume_intent,
+    failure_reply,
+    parse_model_capabilities,
+    validate_receipt,
+    validate_selection,
+)
 from ru_runtime.worker.v1.http import RuntimeHttpResponse
 from ru_runtime.voice.stream import VoiceStreamEvent
 from ru_runtime.worker.v1.protocol import (
@@ -49,6 +58,7 @@ RuntimeLoader = Callable[[dict[str, Any]], Mapping[str, Any]]
 
 RuntimeRequest = Callable[[str, str, str | None, str], RuntimeHttpResponse]
 _RUNTIME_TRANSITION_LOCK = threading.RLock()
+_ACTION_DEADLINE_MS = 30_000
 
 _RUNTIME_BACKENDS = (
     "OpenCode Zen",
@@ -115,12 +125,6 @@ def build_runtime_handlers(dependencies: RuntimeDependencies) -> WorkerHandlers:
         voice=partial(_voice_handler, dependencies),
         vts=partial(_vts_handler, dependencies),
     )
-
-
-def _agent_tool_failure_reply(tool_id: str) -> str:
-    if tool_id == "system.volume":
-        return "Không thể xác nhận thay đổi âm lượng."
-    return "Ru không thể hoàn tất thao tác này."
 
 
 def create_runtime_handlers() -> WorkerHandlers:
@@ -221,7 +225,6 @@ async def _chat_handler(
     queue: asyncio.Queue[WorkerReply | object] = asyncio.Queue()
     complete = object()
     tool_result_queue = payload.get("__worker_tool_result_queue")
-    agent_mode = request.agent_mode and isinstance(tool_result_queue, asyncio.Queue)
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id.strip():
         session_id = str(payload.get("__worker_session_id") or "")
@@ -258,7 +261,7 @@ async def _chat_handler(
                     max_new_tokens=request.max_tokens,
                     temperature=request.temperature,
                     top_k=request.top_k,
-                    allow_web_search=request.allow_web_search and not agent_mode,
+                    allow_web_search=request.allow_web_search and phase == "normal",
                     turns_history=turns,
                     memory_context=request.memory_context,
                     mood_context=mood_context,
@@ -268,6 +271,9 @@ async def _chat_handler(
                     is_cancelled=cancelled.is_set,
                     structured_tools_only=phase == "tool_request",
                     agent_follow_up=phase == "tool_result",
+                    action_capabilities=(
+                        request.model_tools if phase == "tool_request" else ()
+                    ),
                 )
                 if dependencies.mood_tracker is not None:
                     _, emotion = extract_reply_emotion(raw_reply)
@@ -275,90 +281,110 @@ async def _chat_handler(
                 return raw_reply
 
     async def wait_for_tool_result(
-        tool_request_id: str,
-        deadline_ms: int,
-        expected_correlation_id: str,
+        deadline_at: float,
     ) -> Mapping[str, Any]:
         if not isinstance(tool_result_queue, asyncio.Queue):
-            raise RuntimeError("agent_unavailable")
+            raise ActionProtocolError("capability_unavailable")
         try:
             result = await asyncio.wait_for(
                 tool_result_queue.get(),
-                timeout=deadline_ms / 1000.0,
+                timeout=max(0.0, deadline_at - time.monotonic()),
             )
-        except asyncio.TimeoutError as error:
-            raise RuntimeError("tool_timeout") from error
-        if result.get("request_id") != tool_request_id:
-            raise RuntimeError("tool_request_mismatch")
-        if result.get("session_id") != session_id or result.get("correlation_id") != expected_correlation_id:
-            raise RuntimeError("tool_context_mismatch")
+        except asyncio.TimeoutError:
+            raise ActionProtocolError("receipt_late") from None
+        if not isinstance(result, Mapping):
+            raise ActionProtocolError("invalid_receipt")
         return result
 
     async def run_generation() -> None:
         try:
+            capabilities = request.model_tools
+            volume_intent = detect_volume_intent(request.prompt)
+            volume_capability = next(
+                (item for item in capabilities if item.tool_id == "system.volume"),
+                None,
+            )
+            if volume_intent and volume_capability is None:
+                raise ActionProtocolError("capability_unavailable")
+            if volume_intent and not isinstance(tool_result_queue, asyncio.Queue):
+                raise ActionProtocolError("capability_unavailable")
+            selection_required = (
+                isinstance(tool_result_queue, asyncio.Queue)
+                and bool(capabilities)
+                and (request.agent_mode or volume_intent)
+            )
             raw_reply = await asyncio.to_thread(
                 generate_once,
                 request.prompt,
                 request.turns,
-                stream=not agent_mode,
+                stream=not selection_required,
                 observe_user=True,
-                phase="tool_request" if agent_mode else "normal",
+                phase="tool_request" if selection_required else "normal",
             )
             if not isinstance(raw_reply, str):
                 raise TypeError("model reply must be text")
-            if agent_mode:
-                try:
-                    tool_call = parse_tool_call(raw_reply)
-                except ToolCallParseError as error:
-                    raise RuntimeError("invalid_tool_call") from error
-                if tool_call is not None:
-                    tool_request_id = f"tool-{uuid.uuid4().hex}"
-                    tool_correlation_id = correlation_id or f"corr-{uuid.uuid4().hex}"
-                    deadline_ms = 30_000
-                    publish(
-                        WorkerReply(
-                            CHAT_TOOL_REQUEST,
-                            {
-                                "request_id": tool_request_id,
-                                "session_id": session_id,
-                                "correlation_id": tool_correlation_id,
-                                "tool_id": tool_call.tool_id,
-                                "tool_version": tool_call.tool_version,
-                                "arguments": tool_call.arguments,
-                                "deadline_ms": deadline_ms,
-                            },
-                        )
+            if selection_required:
+                selection = validate_selection(raw_reply, capabilities)
+                if selection is None:
+                    if volume_intent:
+                        raise ActionProtocolError("invalid_selection")
+                    publish(WorkerReply(CHAT_DONE, {"raw_reply": raw_reply}))
+                    return
+
+                tool_request_id = f"tool-{uuid.uuid4().hex}"
+                tool_correlation_id = correlation_id or f"corr-{uuid.uuid4().hex}"
+                deadline_at = time.monotonic() + (_ACTION_DEADLINE_MS / 1000.0)
+                publish(
+                    WorkerReply(
+                        CHAT_TOOL_REQUEST,
+                        {
+                            "request_id": tool_request_id,
+                            "session_id": session_id,
+                            "correlation_id": tool_correlation_id,
+                            "tool_id": selection.tool_id,
+                            "tool_version": selection.tool_version,
+                            "capability_class": selection.capability_class,
+                            "arguments": dict(selection.arguments),
+                            "deadline_ms": _ACTION_DEADLINE_MS,
+                        },
                     )
-                    result = await wait_for_tool_result(
-                        tool_request_id,
-                        deadline_ms,
-                        tool_correlation_id,
-                    )
-                    tool_turn = ChatTurn(
-                        "[structured tool result]",
-                        json.dumps(
-                            {
-                                "status": result["status"],
-                                "output": result["output"],
-                                "safe_summary": result["safe_summary"],
-                                "error_code": result.get("error_code"),
-                            },
-                            ensure_ascii=False,
-                            separators=(",", ":"),
-                        ),
-                    )
-                    if result.get("status") != "succeeded":
-                        raw_reply = _agent_tool_failure_reply(tool_call.tool_id)
-                    else:
-                        raw_reply = await asyncio.to_thread(
-                            generate_once,
-                            request.prompt,
-                            request.turns + (tool_turn,),
-                            stream=True,
-                            observe_user=False,
-                            phase="tool_result",
-                        )
+                )
+                result = await wait_for_tool_result(deadline_at)
+                receipt = validate_receipt(
+                    selection,
+                    result,
+                    expected_request_id=tool_request_id,
+                    expected_session_id=session_id,
+                    expected_correlation_id=tool_correlation_id,
+                    deadline_at=deadline_at,
+                )
+                if receipt.status != "succeeded":
+                    raise ActionProtocolError(receipt.error_code or "action_failed")
+                tool_turn = ChatTurn(
+                    "[verified action receipt]",
+                    json.dumps(
+                        {
+                            "status": receipt.status,
+                            "safe_summary": receipt.safe_summary,
+                            "error_code": receipt.error_code,
+                            "duration_ms": receipt.duration_ms,
+                            "verification_state": receipt.verification_state,
+                        },
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
+                )
+                raw_reply = await asyncio.to_thread(
+                    generate_once,
+                    request.prompt,
+                    request.turns + (tool_turn,),
+                    stream=True,
+                    observe_user=False,
+                    phase="tool_result",
+                )
             publish(WorkerReply(CHAT_DONE, {"raw_reply": raw_reply}))
+        except ActionProtocolError as error:
+            publish(WorkerReply(CHAT_DONE, {"raw_reply": failure_reply(error.code)}))
         except Exception:
             publish(_error("generation_failed", retryable=True))
         finally:
@@ -727,6 +753,7 @@ class _ChatRequest:
     top_k: int
     allow_web_search: bool
     agent_mode: bool
+    model_tools: tuple[ModelCapability, ...]
 
 
 def _parse_chat_request(payload: Mapping[str, Any]) -> _ChatRequest:
@@ -769,6 +796,7 @@ def _parse_chat_request(payload: Mapping[str, Any]) -> _ChatRequest:
             settings.get("allow_web_search", True)
         ),
         agent_mode=_required_bool(settings.get("agent_mode", False)),
+        model_tools=parse_model_capabilities(settings),
     )
 
 

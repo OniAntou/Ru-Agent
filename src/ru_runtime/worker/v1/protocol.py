@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -36,9 +37,28 @@ ERROR = "error"
 TOOL_RESULT_STATUSES = frozenset(
     {"succeeded", "failed", "denied", "approval_required", "cancelled", "timed_out"}
 )
+TOOL_VERIFICATION_STATES = frozenset(
+    {"not_required", "pending", "verified", "failed"}
+)
 MAX_TOOL_SUMMARY_CHARS = 4096
 MAX_TOOL_ARGUMENTS_BYTES = 64 * 1024
 MAX_TOOL_OUTPUT_BYTES = 256 * 1024
+_TOOL_RESULT_FIELDS = frozenset(
+    {
+        "request_id",
+        "session_id",
+        "correlation_id",
+        "status",
+        "output",
+        "error_code",
+        "safe_summary",
+        "duration_ms",
+        "verification_state",
+        "endpoint_role",
+        "endpoint_hash",
+    }
+)
+_ENDPOINT_HASH = re.compile(r"^[0-9a-f]{16}$")
 
 KNOWN_TYPES = frozenset(
     {
@@ -159,9 +179,13 @@ def encode_envelope(value: object) -> str:
 def _validate_tool_request_payload(payload: Mapping[str, Any]) -> None:
     _validate_tool_context_payload(payload, "invalid_tool_request")
     _validate_tool_request_id(payload, "invalid_tool_request")
-    for key in ("tool_id", "tool_version"):
+    for key, maximum in (
+        ("tool_id", 128),
+        ("tool_version", 64),
+        ("capability_class", 64),
+    ):
         value = payload.get(key)
-        if not isinstance(value, str) or not value.strip() or len(value) > 128:
+        if not isinstance(value, str) or not value.strip() or len(value) > maximum:
             raise ProtocolError("invalid_tool_request")
 
     arguments = payload.get("arguments")
@@ -180,10 +204,15 @@ def _validate_tool_request_payload(payload: Mapping[str, Any]) -> None:
 
 
 def _validate_tool_result_payload(payload: Mapping[str, Any]) -> None:
+    if set(payload) != _TOOL_RESULT_FIELDS:
+        raise ProtocolError("invalid_tool_result")
+    _validate_tool_context_payload(payload, "invalid_tool_result")
     _validate_tool_request_id(payload, "invalid_tool_result")
     status = payload.get("status")
     output = payload.get("output")
     safe_summary = payload.get("safe_summary")
+    duration_ms = payload.get("duration_ms")
+    verification_state = payload.get("verification_state")
     if status not in TOOL_RESULT_STATUSES or not isinstance(output, Mapping):
         raise ProtocolError("invalid_tool_result")
     try:
@@ -196,9 +225,31 @@ def _validate_tool_result_payload(payload: Mapping[str, Any]) -> None:
         raise ProtocolError("invalid_tool_result")
     if not isinstance(safe_summary, str) or len(safe_summary) > MAX_TOOL_SUMMARY_CHARS:
         raise ProtocolError("invalid_tool_result")
+    if (
+        isinstance(duration_ms, bool)
+        or not isinstance(duration_ms, int)
+        or duration_ms < 0
+        or duration_ms > 300_000
+        or verification_state not in TOOL_VERIFICATION_STATES
+    ):
+        raise ProtocolError("invalid_tool_result")
     error_code = payload.get("error_code")
     if error_code is not None and (
         not isinstance(error_code, str) or not error_code.strip() or len(error_code) > 128
+    ):
+        raise ProtocolError("invalid_tool_result")
+    endpoint_role = payload.get("endpoint_role")
+    endpoint_hash = payload.get("endpoint_hash")
+    if (
+        (endpoint_role is None) != (endpoint_hash is None)
+        or endpoint_role not in (None, "default_render_multimedia")
+        or (
+            endpoint_hash is not None
+            and (
+                not isinstance(endpoint_hash, str)
+                or _ENDPOINT_HASH.fullmatch(endpoint_hash) is None
+            )
+        )
     ):
         raise ProtocolError("invalid_tool_result")
 

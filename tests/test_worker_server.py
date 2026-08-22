@@ -106,9 +106,10 @@ def test_chat_tool_result_is_routed_to_the_pending_chat_turn() -> None:
                 "request_id": "tool-request-1",
                 "session_id": payload["session_id"],
                 "correlation_id": "corr-1",
-                "tool_id": "files.list",
-                "tool_version": "1.0.0",
-                "arguments": {"path": "src"},
+                    "tool_id": "files.list",
+                    "tool_version": "1.0.0",
+                    "capability_class": "internal",
+                    "arguments": {"path": "src"},
                 "deadline_ms": 30_000,
             },
         )
@@ -147,7 +148,12 @@ def test_chat_tool_result_is_routed_to_the_pending_chat_turn() -> None:
                                 "correlation_id": "corr-1",
                                 "status": "succeeded",
                                 "output": {"entries": []},
+                                "error_code": None,
                                 "safe_summary": "Tool result received.",
+                                "duration_ms": 4,
+                                "verification_state": "not_required",
+                                "endpoint_role": None,
+                                "endpoint_hash": None,
                             },
                         }
                     )

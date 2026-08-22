@@ -167,7 +167,13 @@ public sealed class BrokerHostTests
 
         Assert.Equal("succeeded", result.Payload["status"]!.GetValue<string>());
         Assert.Equal(2, result.Payload["output"]!["level"]!.GetValue<int>());
-        Assert.True(result.Payload["output"]!["verified"]!.GetValue<bool>());
+        Assert.False(result.Payload["output"]!.AsObject().ContainsKey("verified"));
+        Assert.Equal("verified", result.Payload["verification_state"]!.GetValue<string>());
+        Assert.Equal("default_render_multimedia", result.Payload["endpoint_role"]!.GetValue<string>());
+        Assert.Matches("^[0-9a-f]{16}$", result.Payload["endpoint_hash"]!.GetValue<string>());
+        Assert.True(result.Payload["adapter_invoked"]!.GetValue<bool>());
+        Assert.Equal(1, controller.OpenCount);
+        Assert.Equal(1, controller.DisposeCount);
         Assert.Equal([("level", 2)], controller.Writes);
     }
 
@@ -437,16 +443,43 @@ public sealed class BrokerHostTests
     {
         public VolumeState State { get; private set; } = new(level, muted);
         public List<(string Kind, int Value)> Writes { get; } = [];
+        public int OpenCount { get; private set; }
+        public int DisposeCount { get; private set; }
 
-        public VolumeState GetState() => State;
-
-        public void SetLevel(int value)
+        public IVolumeEndpoint OpenDefaultRenderEndpoint()
         {
-            Writes.Add(("level", value));
-            State = State with { Level = value };
+            OpenCount++;
+            return new FakeEndpoint(this);
         }
 
-        public void SetMuted(bool value) => State = State with { Muted = value };
+        private sealed class FakeEndpoint(FakeVolumeController owner) : IVolumeEndpoint
+        {
+            private bool _disposed;
+
+            public string EndpointRole => "default_render_multimedia";
+            public string EndpointHash => "0123456789abcdef";
+
+            public VolumeState GetState() => owner.State;
+
+            public void SetLevel(int value)
+            {
+                owner.Writes.Add(("level", value));
+                owner.State = owner.State with { Level = value };
+            }
+
+            public void SetMuted(bool value) => owner.State = owner.State with { Muted = value };
+
+            public void Dispose()
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                owner.DisposeCount++;
+            }
+        }
     }
 
     private static async Task SendAsync(ClientWebSocket socket, AgentEnvelope envelope, CancellationToken cancellationToken)

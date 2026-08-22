@@ -534,14 +534,7 @@ public sealed class ToolExecutionService : IToolInvoker
         ToolExecutionContext context,
         JsonObject arguments,
         CancellationToken cancellationToken)
-    {
-        var output = _volume.Value.Execute(arguments);
-        var operation = output["operation"]?.GetValue<string>();
-        return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
-            output,
-            ToolVerificationStates.Verified,
-            operation == "get" ? "Volume state verified." : "Volume change verified."));
-    }
+        => ValueTask.FromResult(_volume.Value.Execute(arguments));
 
     private async ValueTask<ToolExecutionOutcome> ExecuteTerminalRunAsync(
         ToolExecutionContext context,

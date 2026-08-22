@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
-using RuAgent.Broker.Tools;
+using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools.Desktop;
 
@@ -8,6 +8,13 @@ public sealed record VolumeState(int Level, bool Muted);
 
 public interface IVolumeController
 {
+    IVolumeEndpoint OpenDefaultRenderEndpoint();
+}
+
+public interface IVolumeEndpoint : IDisposable
+{
+    string EndpointRole { get; }
+    string EndpointHash { get; }
     VolumeState GetState();
     void SetLevel(int level);
     void SetMuted(bool muted);
@@ -71,77 +78,120 @@ public sealed class VolumeTools
         new JsonObject
         {
             ["type"] = "object",
-            ["required"] = new JsonArray("operation", "level", "muted", "verified"),
+            ["additionalProperties"] = false,
+            ["required"] = new JsonArray("operation", "level", "muted"),
             ["properties"] = new JsonObject
             {
                 ["operation"] = new JsonObject { ["type"] = "string" },
                 ["level"] = new JsonObject { ["type"] = "integer", ["minimum"] = 0, ["maximum"] = 100 },
                 ["muted"] = new JsonObject { ["type"] = "boolean" },
-                ["verified"] = new JsonObject { ["const"] = true },
             },
         },
         10_000,
         16 * 1024,
         "builtin");
 
-    public JsonObject Execute(JsonObject arguments)
+    public ToolExecutionOutcome Execute(JsonObject arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        var request = Parse(arguments);
-        VolumeState? before = null;
+        VolumeRequest request;
         try
         {
-            before = _controller.GetState();
+            request = Parse(arguments);
+        }
+        catch (VolumeToolException error)
+        {
+            return ToolExecutionOutcome.Failed(error.Code, error.SafeSummary);
+        }
+
+        string? endpointRole = null;
+        string? endpointHash = null;
+        try
+        {
+            using var endpoint = _controller.OpenDefaultRenderEndpoint();
+            endpointRole = endpoint.EndpointRole;
+            endpointHash = endpoint.EndpointHash;
+            var before = endpoint.GetState();
             if (request.Operation == "get")
             {
-                return Output(request.Operation, before);
+                return ToolExecutionOutcome.Succeeded(
+                    Output(request.Operation, before),
+                    ToolVerificationStates.Verified,
+                    "Volume state verified.",
+                    endpointRole,
+                    endpointHash);
             }
 
-            var expectedLevel = before.Level;
-            var expectedMuted = before.Muted;
-            switch (request.Operation)
-            {
-                case "set":
-                    expectedLevel = request.Level!.Value;
-                    _controller.SetLevel(expectedLevel);
-                    break;
-                case "increase":
-                    expectedLevel = Math.Min(100, before.Level + request.Amount!.Value);
-                    _controller.SetLevel(expectedLevel);
-                    break;
-                case "decrease":
-                    expectedLevel = Math.Max(0, before.Level - request.Amount!.Value);
-                    _controller.SetLevel(expectedLevel);
-                    break;
-                case "mute":
-                    expectedMuted = true;
-                    _controller.SetMuted(true);
-                    break;
-                case "unmute":
-                    expectedMuted = false;
-                    _controller.SetMuted(false);
-                    break;
-            }
-
-            var after = _controller.GetState();
+            Apply(request, before, endpoint, out var expectedLevel, out var expectedMuted);
+            var after = endpoint.GetState();
             if (after.Level != expectedLevel || after.Muted != expectedMuted)
             {
-                throw new VolumeToolException("readback_mismatch", "Volume change could not be verified.");
+                return ToolExecutionOutcome.Failed(
+                    "readback_mismatch",
+                    "Volume change could not be verified.",
+                    ToolVerificationStates.Failed,
+                    endpointRole,
+                    endpointHash);
             }
 
-            return Output(request.Operation, after);
-        }
-        catch (VolumeToolException)
-        {
-            throw;
+            return ToolExecutionOutcome.Succeeded(
+                Output(request.Operation, after),
+                ToolVerificationStates.Verified,
+                "Volume change verified.",
+                endpointRole,
+                endpointHash);
         }
         catch (VolumeControllerException error)
         {
-            throw new VolumeToolException(error.Code, SafeSummary(error.Code));
+            return ToolExecutionOutcome.Failed(
+                error.Code,
+                SafeSummary(error.Code),
+                ToolVerificationStates.Failed,
+                endpointRole,
+                endpointHash);
         }
         catch (Exception)
         {
-            throw new VolumeToolException("adapter_error", SafeSummary("adapter_error"));
+            return ToolExecutionOutcome.Failed(
+                "adapter_error",
+                SafeSummary("adapter_error"),
+                ToolVerificationStates.Failed,
+                endpointRole,
+                endpointHash);
+        }
+    }
+
+    private static void Apply(
+        VolumeRequest request,
+        VolumeState before,
+        IVolumeEndpoint endpoint,
+        out int expectedLevel,
+        out bool expectedMuted)
+    {
+        expectedLevel = before.Level;
+        expectedMuted = before.Muted;
+        switch (request.Operation)
+        {
+            case "set":
+                expectedLevel = request.Level!.Value;
+                endpoint.SetLevel(expectedLevel);
+                break;
+            case "increase":
+                expectedLevel = Math.Min(100, before.Level + request.Amount!.Value);
+                endpoint.SetLevel(expectedLevel);
+                break;
+            case "decrease":
+                expectedLevel = Math.Max(0, before.Level - request.Amount!.Value);
+                endpoint.SetLevel(expectedLevel);
+                break;
+            case "mute":
+                expectedMuted = true;
+                endpoint.SetMuted(true);
+                break;
+            case "unmute":
+                expectedMuted = false;
+                endpoint.SetMuted(false);
+                break;
         }
     }
 
@@ -149,23 +199,23 @@ public sealed class VolumeTools
     {
         if (arguments.Any(item => item.Key is not ("operation" or "level" or "amount")))
         {
-            throw new VolumeToolException("invalid_arguments", "Invalid volume request.");
+            throw InvalidArguments();
         }
 
         var operation = arguments["operation"] is JsonValue operationValue
             && operationValue.TryGetValue<string>(out var operationText)
             ? operationText.Trim().ToLowerInvariant()
-            : throw new VolumeToolException("invalid_arguments", "Invalid volume request.");
+            : throw InvalidArguments();
         if (!Operations.Contains(operation))
         {
-            throw new VolumeToolException("invalid_arguments", "Invalid volume request.");
+            throw InvalidArguments();
         }
 
         if (operation == "set")
         {
             if (arguments.ContainsKey("amount") || !ReadInt(arguments, "level", 0, 100, out var level))
             {
-                throw new VolumeToolException("invalid_arguments", "Invalid volume request.");
+                throw InvalidArguments();
             }
 
             return new VolumeRequest(operation, level, null);
@@ -175,18 +225,20 @@ public sealed class VolumeTools
         {
             if (arguments.ContainsKey("level"))
             {
-                throw new VolumeToolException("invalid_arguments", "Invalid volume request.");
+                throw InvalidArguments();
             }
 
             var amount = arguments.ContainsKey("amount")
-                ? ReadInt(arguments, "amount", 1, 50, out var parsedAmount) ? parsedAmount : throw new VolumeToolException("invalid_arguments", "Invalid volume request.")
+                ? ReadInt(arguments, "amount", 1, 50, out var parsedAmount)
+                    ? parsedAmount
+                    : throw InvalidArguments()
                 : LegacyRelativeAmount;
             return new VolumeRequest(operation, null, amount);
         }
 
         if (arguments.ContainsKey("level") || arguments.ContainsKey("amount"))
         {
-            throw new VolumeToolException("invalid_arguments", "Invalid volume request.");
+            throw InvalidArguments();
         }
 
         return new VolumeRequest(operation, null, null);
@@ -208,8 +260,10 @@ public sealed class VolumeTools
         ["operation"] = operation,
         ["level"] = state.Level,
         ["muted"] = state.Muted,
-        ["verified"] = true,
     };
+
+    private static VolumeToolException InvalidArguments() =>
+        new("invalid_arguments", "Invalid volume request.");
 
     private static string SafeSummary(string code) => code switch
     {

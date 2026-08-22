@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
+using RuAgent.Protocol;
 using RuBackend.Business.Activity;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
@@ -133,6 +134,13 @@ public sealed class ConversationCoordinator : IConversationCoordinator
             }
 
             var settings = await _settings.ReadAsync(cancellationToken).ConfigureAwait(false);
+            var modelTools = _agent is null
+                ? Array.Empty<AgentToolCapability>()
+                : (await _agent.GetModelCapabilitiesAsync(cancellationToken).ConfigureAwait(false))
+                    .Where(tool => tool.ModelEnabled)
+                    .OrderBy(tool => tool.ToolId, StringComparer.Ordinal)
+                    .ThenBy(tool => tool.ToolVersion, StringComparer.Ordinal)
+                    .ToArray();
             var turns = await _sessions.GetContextTurnsAsync(
                 sessionId,
                 MaximumContextTurns,
@@ -159,14 +167,9 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                 turns.Select(turn => new WorkerTurn(turn.Prompt, turn.Response)).ToArray(),
                 ShouldShareMemory(settings) ? RenderMemory(memories) : string.Empty,
                 BuildVtsInstruction(catalog),
-                BuildWorkerSettings(settings, request.AgentMode));
-            if (request.AgentMode)
+                BuildWorkerSettings(settings, request.AgentMode, modelTools));
+            if (_agent is not null && modelTools.Length > 0)
             {
-                if (_agent is null)
-                {
-                    throw new ConversationException("agent_unavailable");
-                }
-
                 workerRequest = workerRequest with
                 {
                     ToolHandler = (tool, toolCancellation) =>
@@ -250,14 +253,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                             status: "succeeded");
                         return;
                     case WorkerMessageTypes.ChatToolRequest:
-                        // The LoopbackWorkerClient completes the private tool
-                        // exchange before yielding this event. Keep metadata
-                        // out of visible chat while preserving a safe activity
-                        // notification if a different WorkerClient is used.
-                        await WriteAsync(
-                            writer,
-                            new ChatEvent("agent.activity", "Agent is using a tool.", sessionId),
-                            cancellationToken).ConfigureAwait(false);
+                        // AgentTurnCoordinator owns requested and terminal activity.
                         break;
                     case WorkerMessageTypes.Error:
                         throw new ConversationException(ReadWorkerErrorCode(item.Payload));
@@ -545,14 +541,34 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         }
     }
 
-    private static JsonObject BuildWorkerSettings(SettingsSnapshot settings, bool agentMode) => new()
-    {
-        ["max_tokens"] = settings.MaxTokens,
-        ["temperature"] = settings.Temperature,
-        ["top_k"] = settings.TopK,
-        ["allow_web_search"] = settings.AllowWebSearch,
-        ["agent_mode"] = agentMode,
-    };
+    private static JsonObject BuildWorkerSettings(
+        SettingsSnapshot settings,
+        bool agentMode,
+        IReadOnlyList<AgentToolCapability> modelTools) => new()
+        {
+            ["max_tokens"] = settings.MaxTokens,
+            ["temperature"] = settings.Temperature,
+            ["top_k"] = settings.TopK,
+            ["allow_web_search"] = settings.AllowWebSearch,
+            ["agent_mode"] = agentMode,
+            ["model_tools"] = new JsonArray(modelTools.Select(tool => new JsonObject
+            {
+                ["tool_id"] = tool.ToolId,
+                ["tool_version"] = tool.ToolVersion,
+                ["scopes"] = new JsonArray(tool.Scopes
+                    .Order(StringComparer.Ordinal)
+                    .Select(scope => (JsonNode?)scope)
+                    .ToArray()),
+                ["availability"] = tool.Availability,
+                ["model_enabled"] = tool.ModelEnabled,
+                ["capability_class"] = string.Equals(
+                    tool.ToolId,
+                    "system.volume",
+                    StringComparison.Ordinal)
+                        ? "native_mutation"
+                        : "internal",
+            }).ToArray()),
+        };
 
     private static bool ShouldShareMemory(SettingsSnapshot settings) =>
         string.Equals(settings.Backend, "llama.cpp", StringComparison.Ordinal)

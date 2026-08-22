@@ -2,30 +2,87 @@ using System.Text.Json.Serialization;
 
 namespace RuBackend.Conversation;
 
-public sealed record ChatEvent(
-    [property: JsonPropertyName("type")]
-    string Type,
-    [property: JsonPropertyName("content")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? Content = null,
-    [property: JsonPropertyName("session_id")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? SessionId = null,
-    [property: JsonPropertyName("error_code")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? ErrorCode = null,
-    [property: JsonPropertyName("status")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? Status = null,
-    [property: JsonPropertyName("approval_id")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? ApprovalId = null,
-    [property: JsonPropertyName("tool_id")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? ToolId = null,
-    [property: JsonPropertyName("scope")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? Scope = null,
-    [property: JsonPropertyName("expires_at")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    DateTimeOffset? ExpiresAt = null);
+public sealed record ChatEvent
+{
+    private const int MaximumScopes = 16;
+    private const int MaximumScopeLength = 64;
+
+    public ChatEvent(
+        string Type,
+        string? Content = null,
+        string? SessionId = null,
+        string? ErrorCode = null,
+        string? Status = null,
+        string? ApprovalId = null,
+        string? ToolId = null,
+        string? Scope = null,
+        DateTimeOffset? ExpiresAt = null,
+        IReadOnlyList<string>? Scopes = null)
+    {
+        this.Type = Type;
+        this.Content = Content;
+        this.SessionId = SessionId;
+        this.ErrorCode = ErrorCode;
+        this.Status = Status;
+        this.ApprovalId = ApprovalId;
+        this.ToolId = ToolId;
+        this.Scope = Scope;
+        this.ExpiresAt = ExpiresAt;
+        this.Scopes = ValidateScopes(Scopes);
+    }
+
+    [JsonPropertyName("type")]
+    public string Type { get; init; }
+
+    [JsonPropertyName("content")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Content { get; init; }
+
+    [JsonPropertyName("session_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SessionId { get; init; }
+
+    [JsonPropertyName("error_code")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ErrorCode { get; init; }
+
+    [JsonPropertyName("status")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Status { get; init; }
+
+    [JsonPropertyName("approval_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ApprovalId { get; init; }
+
+    [JsonPropertyName("tool_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ToolId { get; init; }
+
+    [JsonPropertyName("scope")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Scope { get; init; }
+
+    [JsonPropertyName("expires_at")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? ExpiresAt { get; init; }
+
+    [JsonPropertyName("scopes")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Scopes { get; init; }
+
+    private static IReadOnlyList<string>? ValidateScopes(IReadOnlyList<string>? scopes)
+    {
+        if (scopes is null)
+        {
+            return null;
+        }
+
+        if (scopes.Count > MaximumScopes
+            || scopes.Any(scope => string.IsNullOrWhiteSpace(scope) || scope.Length > MaximumScopeLength))
+        {
+            throw new ArgumentException("Agent session scopes are invalid.", nameof(scopes));
+        }
+
+        return Array.AsReadOnly(scopes.ToArray());
+    }
+}

@@ -12,6 +12,9 @@ public sealed record AgentTurnRequest(
 
 public interface IAgentTurnCoordinator
 {
+    Task<IReadOnlyList<AgentToolCapability>> GetModelCapabilitiesAsync(
+        CancellationToken cancellationToken);
+
     IAsyncEnumerable<ChatEvent> HandleToolTurnAsync(
         AgentTurnRequest request,
         CancellationToken cancellationToken);
@@ -23,10 +26,14 @@ public interface IAgentTurnCoordinator
 
 public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
 {
+    private static readonly IReadOnlyList<AgentToolCapability> NoCapabilities =
+        Array.AsReadOnly(Array.Empty<AgentToolCapability>());
+
     private readonly IAgentBrokerClient? _broker;
     private readonly IAgentApprovalCoordinator? _approvals;
     private readonly SemaphoreSlim _sessionLock = new(1, 1);
-    private readonly HashSet<string> _openedSessions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, AgentSessionGrant> _openedSessions =
+        new(StringComparer.Ordinal);
 
     public AgentTurnCoordinator(
         IAgentBrokerClient? broker = null,
@@ -36,14 +43,35 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
         _approvals = approvals;
     }
 
+    public Task<IReadOnlyList<AgentToolCapability>> GetModelCapabilitiesAsync(
+        CancellationToken cancellationToken) => _broker is null
+        ? Task.FromResult(NoCapabilities)
+        : _broker.GetCapabilitiesAsync(cancellationToken);
+
     public async IAsyncEnumerable<ChatEvent> HandleToolTurnAsync(
         AgentTurnRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        yield return Activity(request.ToolRequest, request.ToolRequest.ToolId);
-        var result = await ExecuteToolAsync(request, cancellationToken).ConfigureAwait(false);
-        yield return Activity(request.ToolRequest, result.Status);
+        var events = new List<ChatEvent>();
+        var originalPublisher = request.PublishAsync;
+        var collectingRequest = request with
+        {
+            PublishAsync = async value =>
+            {
+                events.Add(value);
+                if (originalPublisher is not null)
+                {
+                    await originalPublisher(value).ConfigureAwait(false);
+                }
+            },
+        };
+        _ = await ExecuteToolAsync(collectingRequest, cancellationToken).ConfigureAwait(false);
+        foreach (var item in events)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return item;
+        }
     }
 
     public async Task<WorkerToolResult> ExecuteToolAsync(
@@ -52,27 +80,68 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
     {
         ArgumentNullException.ThrowIfNull(request);
         var tool = request.ToolRequest;
+        await PublishAsync(request, Activity(tool, "requested"), cancellationToken)
+            .ConfigureAwait(false);
+
         if (_broker is null)
         {
-            return new WorkerToolResult(
-                tool.RequestId,
-                "failed",
-                new JsonObject(),
+            return await FailAsync(
+                request,
                 "agent_unavailable",
                 "Agent tools are unavailable.",
-                0,
-                ToolVerificationStates.Failed,
-                null,
-                null);
+                cancellationToken).ConfigureAwait(false);
         }
 
-        await PublishAsync(
-            request,
-            Activity(tool, "running"),
-            cancellationToken).ConfigureAwait(false);
         try
         {
-            await EnsureSessionAsync(tool, cancellationToken).ConfigureAwait(false);
+            var capabilities = await GetModelCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+            var capability = capabilities.FirstOrDefault(item =>
+                item.ModelEnabled
+                && string.Equals(item.ToolId, tool.ToolId, StringComparison.Ordinal)
+                && string.Equals(item.ToolVersion, tool.ToolVersion, StringComparison.Ordinal));
+            if (capability is null)
+            {
+                return await FailAsync(
+                    request,
+                    "capability_unavailable",
+                    "Tool capability is unavailable.",
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            var capabilityClass = CapabilityClass(capability);
+            if (!string.Equals(tool.CapabilityClass, capabilityClass, StringComparison.Ordinal))
+            {
+                return await FailAsync(
+                    request,
+                    "capability_mismatch",
+                    "Tool capability does not match the request.",
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            var (grant, opened) = await EnsureSessionAsync(
+                tool,
+                capability,
+                cancellationToken).ConfigureAwait(false);
+            if (opened)
+            {
+                await PublishAsync(
+                    request,
+                    new ChatEvent(
+                        "agent.session",
+                        SessionId: grant.SessionId,
+                        Scopes: grant.Scopes.Order(StringComparer.Ordinal).ToArray()),
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            if (!capability.Scopes.All(grant.Scopes.Contains))
+            {
+                return await FailAsync(
+                    request,
+                    "scope_not_granted",
+                    "Tool scope is not granted.",
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             var result = await _broker.ExecuteToolAsync(
                 new AgentToolCall(
                     tool.RequestId,
@@ -80,95 +149,84 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                     tool.CorrelationId,
                     tool.ToolId,
                     tool.ToolVersion,
-                    tool.CapabilityClass,
+                    capabilityClass,
                     tool.Arguments.ToDictionary(
                         pair => pair.Key,
                         pair => (object?)pair.Value?.DeepClone(),
                         StringComparer.Ordinal),
                     tool.DeadlineMs),
                 cancellationToken).ConfigureAwait(false);
-            var statusEvent = result.Status == ToolResultStatuses.ApprovalRequired
-                ? _approvals?.Register(tool, result)
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!string.Equals(result.RequestId, tool.RequestId, StringComparison.Ordinal))
+            {
+                return await FailAsync(
+                    request,
+                    "receipt_mismatch",
+                    "Tool receipt did not match the request.",
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            if (string.Equals(result.Status, ToolResultStatuses.ApprovalRequired, StringComparison.Ordinal))
+            {
+                var approval = _approvals?.Register(tool, result)
                     ?? new ChatEvent(
                         "agent.approval_required",
                         "Agent is waiting for approval.",
                         tool.SessionId,
-                        Status: ToolResultStatuses.ApprovalRequired)
-                : Activity(tool, result.Status);
-            await PublishAsync(request, statusEvent, cancellationToken).ConfigureAwait(false);
-            return new WorkerToolResult(
-                tool.RequestId,
-                result.Status,
-                result.Output.DeepClone().AsObject(),
-                result.ErrorCode,
-                BoundedSummary(result.SafeSummary),
-                result.DurationMs,
-                result.VerificationState,
-                result.EndpointRole,
-                result.EndpointHash);
+                        Status: ToolResultStatuses.ApprovalRequired);
+                await PublishAsync(request, approval, cancellationToken).ConfigureAwait(false);
+            }
+
+            var workerResult = MapResult(result);
+            if (!string.Equals(workerResult.Status, ToolResultStatuses.Cancelled, StringComparison.Ordinal))
+            {
+                await PublishAsync(
+                    request,
+                    Activity(tool, workerResult.Status, workerResult.ErrorCode),
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            return workerResult;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return new WorkerToolResult(
-                tool.RequestId,
-                "cancelled",
-                new JsonObject(),
-                "cancelled",
-                "Tool cancelled.",
-                0,
-                ToolVerificationStates.Failed,
-                null,
-                null);
+            return Cancelled(request.ToolRequest.RequestId);
         }
         catch (AgentBrokerException error)
         {
-            return new WorkerToolResult(
-                tool.RequestId,
-                "failed",
-                new JsonObject(),
+            return await FailAsync(
+                request,
                 error.Code,
                 "Agent tool failed.",
-                0,
-                ToolVerificationStates.Failed,
-                null,
-                null);
+                cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private async Task EnsureSessionAsync(
+    private async Task<(AgentSessionGrant Grant, bool Opened)> EnsureSessionAsync(
         WorkerToolRequest tool,
+        AgentToolCapability capability,
         CancellationToken cancellationToken)
     {
         await _sessionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_openedSessions.Contains(tool.SessionId))
+            if (_openedSessions.TryGetValue(tool.SessionId, out var existing)
+                && existing.ExpiresAt > DateTimeOffset.UtcNow)
             {
-                return;
+                return (existing, false);
             }
 
-            await _broker!.OpenSessionAsync(
+            _openedSessions.Remove(tool.SessionId);
+            var grant = await _broker!.OpenSessionAsync(
                 tool.SessionId,
-                    new HashSet<string>(
-                    [
-                        "system.read",
-                        "system.write",
-                        "workspace.read",
-                        "terminal.execute",
-                        "workspace.write",
-                        "web.search",
-                        "web.fetch",
-                        "calendar.write",
-                        "tasks.write",
-                        "mail.send",
-                        "skill.execute",
-                    ],
-                    StringComparer.Ordinal),
+                capability.Scopes.ToHashSet(StringComparer.Ordinal),
                 new HashSet<string>(StringComparer.Ordinal),
                 tool.CorrelationId,
                 tool.DeadlineMs,
                 cancellationToken).ConfigureAwait(false);
-            _openedSessions.Add(tool.SessionId);
+            _openedSessions[tool.SessionId] = grant;
+            return (grant, true);
         }
         finally
         {
@@ -176,26 +234,69 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
         }
     }
 
-    private static string RequiredScope(string toolId) => toolId switch
+    private async Task<WorkerToolResult> FailAsync(
+        AgentTurnRequest request,
+        string errorCode,
+        string safeSummary,
+        CancellationToken cancellationToken)
     {
-        "system.time" or "system.status" or "app.list" => "system.read",
-        "system.volume" => "system.write",
-        "files.list" or "files.read" or "workspace.search" => "workspace.read",
-        "files.write" or "notes.create" => "workspace.write",
-        "terminal.run" or "terminal.shell" => "terminal.execute",
-        "web.search" => "web.search",
-        "web.fetch" => "web.fetch",
-        "calendar.create" => "calendar.write",
-        "tasks.create" or "tasks.complete" => "tasks.write",
-        "mail.send" => "mail.send",
-        _ => "agent.tool.unknown",
-    };
+        var result = Failed(request.ToolRequest.RequestId, errorCode, safeSummary);
+        await PublishAsync(
+            request,
+            Activity(request.ToolRequest, result.Status, result.ErrorCode),
+            cancellationToken).ConfigureAwait(false);
+        return result;
+    }
 
-    private static ChatEvent Activity(WorkerToolRequest tool, string state) =>
+    private static WorkerToolResult MapResult(AgentToolResult result) => new(
+        result.RequestId,
+        result.Status,
+        result.Output.DeepClone().AsObject(),
+        result.ErrorCode,
+        BoundedSummary(result.SafeSummary),
+        result.DurationMs,
+        result.VerificationState,
+        result.EndpointRole,
+        result.EndpointHash);
+
+    private static WorkerToolResult Failed(string requestId, string errorCode, string safeSummary) =>
         new(
+            requestId,
+            ToolResultStatuses.Failed,
+            new JsonObject(),
+            errorCode,
+            BoundedSummary(safeSummary),
+            0,
+            ToolVerificationStates.Failed,
+            null,
+            null);
+
+    private static WorkerToolResult Cancelled(string requestId) => new(
+        requestId,
+        ToolResultStatuses.Cancelled,
+        new JsonObject(),
+        "cancelled",
+        "Tool cancelled.",
+        0,
+        ToolVerificationStates.Failed,
+        null,
+        null);
+
+    private static string CapabilityClass(AgentToolCapability capability) =>
+        string.Equals(capability.ToolId, "system.volume", StringComparison.Ordinal)
+        && string.Equals(capability.ToolVersion, "1.0.0", StringComparison.Ordinal)
+            ? "native_mutation"
+            : "internal";
+
+    private static ChatEvent Activity(
+        WorkerToolRequest tool,
+        string status,
+        string? errorCode = null) => new(
             "agent.activity",
-            $"Agent {state}.",
-            tool.SessionId);
+            SessionId: tool.SessionId,
+            ErrorCode: errorCode,
+            Status: status,
+            ToolId: tool.ToolId);
 
     private static string BoundedSummary(string summary) =>
         string.IsNullOrWhiteSpace(summary)

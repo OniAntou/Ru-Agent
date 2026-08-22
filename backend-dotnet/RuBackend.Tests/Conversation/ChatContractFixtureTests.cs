@@ -58,6 +58,41 @@ public sealed class ChatContractFixtureTests
         Assert.Equal(3, root.EnumerateObject().Count());
     }
 
+    [Fact]
+    public void Agent_session_serializes_only_the_bounded_actual_scopes()
+    {
+        var json = JsonSerializer.Serialize(new ChatEvent(
+            "agent.session",
+            SessionId: "session-1",
+            Scopes: ["system.write"]));
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        Assert.Equal("agent.session", root.GetProperty("type").GetString());
+        Assert.Equal("session-1", root.GetProperty("session_id").GetString());
+        Assert.Equal(
+            ["system.write"],
+            root.GetProperty("scopes").EnumerateArray().Select(item => item.GetString()));
+        Assert.Equal(3, root.EnumerateObject().Count());
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidScopes))]
+    public void Agent_session_rejects_invalid_scope_lists(IReadOnlyList<string> scopes)
+    {
+        Assert.Throws<ArgumentException>(() => new ChatEvent(
+            "agent.session",
+            SessionId: "session-1",
+            Scopes: scopes));
+    }
+
+    public static IEnumerable<object[]> InvalidScopes()
+    {
+        yield return new object[] { Enumerable.Repeat("scope", 17).ToArray() };
+        yield return new object[] { new[] { string.Empty } };
+        yield return new object[] { new[] { new string('s', 65) } };
+    }
+
     private static string FindFixturePath()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

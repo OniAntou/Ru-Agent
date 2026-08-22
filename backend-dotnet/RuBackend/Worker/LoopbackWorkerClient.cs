@@ -93,6 +93,7 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
                     await connection.SendEnvelopeAsync(
                         ToolResultEnvelope(request.RequestId, toolRequest, result),
                         cancellationToken);
+                    ReceiptDelivered(result);
                 }
 
                 yield return item;
@@ -536,6 +537,10 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
                 ["output"] = result.Output.DeepClone(),
                 ["error_code"] = result.ErrorCode,
                 ["safe_summary"] = result.SafeSummary,
+                ["duration_ms"] = result.DurationMs,
+                ["verification_state"] = result.VerificationState,
+                ["endpoint_role"] = result.EndpointRole,
+                ["endpoint_hash"] = result.EndpointHash,
             });
 
     private static WorkerToolRequest ParseToolRequest(JsonObject payload)
@@ -551,8 +556,14 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
             ReadString(payload["correlation_id"], "invalid_tool_request"),
             ReadString(payload["tool_id"], "invalid_tool_request"),
             ReadString(payload["tool_version"], "invalid_tool_request"),
+            ReadString(payload["capability_class"], "invalid_tool_request"),
             arguments.DeepClone().AsObject(),
             ReadInt32(payload["deadline_ms"], "invalid_tool_request"));
+    }
+
+    private static void ReceiptDelivered(WorkerToolResult result)
+    {
+        // Task 9 replaces this ordering seam with a privacy-safe diagnostic event.
     }
 
     private static async Task TrySendCancellationAsync(

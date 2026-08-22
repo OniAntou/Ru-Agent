@@ -22,6 +22,7 @@ public sealed record WorkerToolRequest(
     string CorrelationId,
     string ToolId,
     string ToolVersion,
+    string CapabilityClass,
     JsonObject Arguments,
     int DeadlineMs);
 
@@ -30,7 +31,11 @@ public sealed record WorkerToolResult(
     string Status,
     JsonObject Output,
     string? ErrorCode,
-    string SafeSummary);
+    string SafeSummary,
+    int DurationMs,
+    string VerificationState,
+    string? EndpointRole,
+    string? EndpointHash);
 
 public sealed record WorkerEvent(
     string RequestId,

@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using RuAgent.Protocol;
 using RuBackend.Agent;
 using RuBackend.Conversation;
 using RuBackend.Worker;
@@ -42,6 +43,7 @@ public sealed class AgentTurnCoordinatorTests
             "correlation-1",
             "system.volume",
             "1.0.0",
+            "native_mutation",
             new JsonObject
             {
                 ["operation"] = "set",
@@ -60,6 +62,16 @@ public sealed class AgentTurnCoordinatorTests
 
         public IReadOnlySet<string> OpenedScopes { get; private set; } = new HashSet<string>(StringComparer.Ordinal);
         public string? LastRequiredScope { get; private set; }
+
+        public Task<IReadOnlyList<AgentToolCapability>> GetCapabilitiesAsync(
+            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<AgentToolCapability>>(
+            [new AgentToolCapability(
+                "system.volume",
+                "1.0.0",
+                new HashSet<string>(["system.write"], StringComparer.Ordinal),
+                "reversible",
+                "native_pending",
+                true)]);
 
         public Task<AgentSessionGrant> OpenSessionAsync(
             string sessionId,
@@ -81,15 +93,10 @@ public sealed class AgentTurnCoordinatorTests
         }
 
         public Task<AgentToolResult> ExecuteToolAsync(
-            string sessionId,
-            string toolId,
-            string toolVersion,
-            JsonObject arguments,
-            string requiredScope,
-            string? correlationId,
-            int deadlineMs,
+            AgentToolCall call,
             CancellationToken cancellationToken)
         {
+            const string requiredScope = "system.write";
             LastRequiredScope = requiredScope;
             if (!OpenedScopes.Contains(requiredScope))
             {
@@ -98,7 +105,12 @@ public sealed class AgentTurnCoordinatorTests
                     "denied",
                     new JsonObject(),
                     "scope_missing",
-                    "Tool scope is not granted."));
+                    "Tool scope is not granted.",
+                    0,
+                    ToolVerificationStates.Failed,
+                    null,
+                    null,
+                    false));
             }
 
             return Task.FromResult(new AgentToolResult(
@@ -112,16 +124,13 @@ public sealed class AgentTurnCoordinatorTests
                     ["verified"] = true,
                 },
                 null,
-                "Volume set verified."));
+                "Volume set verified.",
+                1,
+                ToolVerificationStates.Verified,
+                "default_render_multimedia",
+                "0123456789abcdef",
+                true));
         }
-
-        public Task<AgentToolResult> RunSkillAsync(
-            string sessionId,
-            string skillId,
-            JsonObject input,
-            string? correlationId,
-            int deadlineMs,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<AgentToolResult> RespondToApprovalAsync(
             AgentApprovalResponse response,

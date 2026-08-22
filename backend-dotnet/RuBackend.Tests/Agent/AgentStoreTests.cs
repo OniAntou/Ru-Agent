@@ -23,6 +23,32 @@ public sealed class AgentStoreTests
     }
 
     [Fact]
+    public void Grant_store_requires_every_scope_and_exposes_immutable_copies()
+    {
+        var scopes = new HashSet<string>(["workspace.read", "system.write"], StringComparer.Ordinal);
+        var store = new AgentSessionGrantStore();
+        store.Put(new AgentSessionGrant(
+            "session-all",
+            scopes,
+            new HashSet<string>(StringComparer.Ordinal),
+            DateTimeOffset.UtcNow.AddMinutes(1)));
+        scopes.Clear();
+
+        Assert.True(store.TryGet(
+            "session-all",
+            new HashSet<string>(["workspace.read", "system.write"], StringComparer.Ordinal),
+            out var grant));
+        Assert.False(store.TryGet(
+            "session-all",
+            new HashSet<string>(["workspace.read", "terminal.execute"], StringComparer.Ordinal),
+            out _));
+        Assert.Equal(new[] { "system.write", "workspace.read" }, grant!.Scopes.Order(StringComparer.Ordinal));
+        Assert.False(grant.Scopes is HashSet<string>);
+        Assert.True(store.Remove("session-all"));
+        Assert.False(store.TryGet("session-all", "workspace.read", out _));
+    }
+
+    [Fact]
     public void Approval_store_rejects_wrong_session_and_consumes_once()
     {
         var store = new AgentApprovalStore();

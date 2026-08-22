@@ -95,6 +95,7 @@ public sealed class LoopbackWorkerClientTests
                         ["correlation_id"] = "corr-1",
                         ["tool_id"] = "files.list",
                         ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
                         ["arguments"] = new JsonObject { ["path"] = "src" },
                         ["deadline_ms"] = 30_000,
                     }));
@@ -117,7 +118,11 @@ public sealed class LoopbackWorkerClientTests
                     "succeeded",
                     new JsonObject { ["entries"] = new JsonArray() },
                     null,
-                    "Listed 0 entries."))
+                    "Listed 0 entries.",
+                    12,
+                    "not_required",
+                    null,
+                    null))
         };
 
         var events = await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None));
@@ -129,6 +134,10 @@ public sealed class LoopbackWorkerClientTests
         Assert.Equal("session", observedResult.Payload["session_id"]!.GetValue<string>());
         Assert.Equal("corr-1", observedResult.Payload["correlation_id"]!.GetValue<string>());
         Assert.Equal("succeeded", observedResult.Payload["status"]!.GetValue<string>());
+        Assert.Equal(12, observedResult.Payload["duration_ms"]!.GetValue<int>());
+        Assert.Equal("not_required", observedResult.Payload["verification_state"]!.GetValue<string>());
+        Assert.Null(observedResult.Payload["endpoint_role"]);
+        Assert.Null(observedResult.Payload["endpoint_hash"]);
     }
 
     [Fact]
@@ -152,6 +161,7 @@ public sealed class LoopbackWorkerClientTests
                         ["correlation_id"] = "corr-approval",
                         ["tool_id"] = "web.search",
                         ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
                         ["arguments"] = new JsonObject { ["query"] = "Ru" },
                         ["deadline_ms"] = 30_000,
                     }));
@@ -174,7 +184,11 @@ public sealed class LoopbackWorkerClientTests
                     "approval_required",
                     new JsonObject { ["approval_id"] = "approval-1" },
                     "approval_required",
-                    "Approval required."))
+                    "Approval required.",
+                    0,
+                    "pending",
+                    null,
+                    null))
         };
 
         var events = await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None));

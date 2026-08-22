@@ -4,6 +4,9 @@ namespace RuBackend.Agent;
 
 public interface IAgentBrokerClient : IAsyncDisposable
 {
+    Task<IReadOnlyList<RuAgent.Protocol.AgentToolCapability>> GetCapabilitiesAsync(
+        CancellationToken cancellationToken);
+
     Task<AgentSessionGrant> OpenSessionAsync(
         string sessionId,
         IReadOnlySet<string> scopes,
@@ -12,22 +15,8 @@ public interface IAgentBrokerClient : IAsyncDisposable
         int deadlineMs,
         CancellationToken cancellationToken);
 
-    Task<AgentToolResult> RunSkillAsync(
-        string sessionId,
-        string skillId,
-        JsonObject input,
-        string? correlationId,
-        int deadlineMs,
-        CancellationToken cancellationToken);
-
     Task<AgentToolResult> ExecuteToolAsync(
-        string sessionId,
-        string toolId,
-        string toolVersion,
-        JsonObject arguments,
-        string requiredScope,
-        string? correlationId,
-        int deadlineMs,
+        AgentToolCall call,
         CancellationToken cancellationToken);
 
     Task<AgentToolResult> RespondToApprovalAsync(

@@ -114,4 +114,64 @@ public sealed class WorkerEnvelopeTests
         var parsed = WorkerEnvelopeCodec.Parse(json);
         Assert.Equal("c_1234567890abcdef", parsed.CorrelationId);
     }
+
+    [Fact]
+    public void Tool_request_requires_a_bounded_capability_class()
+    {
+        var envelope = new WorkerEnvelope(
+            1,
+            "chat-1",
+            WorkerMessageTypes.ChatToolRequest,
+            0,
+            new JsonObject
+            {
+                ["request_id"] = "tool-1",
+                ["session_id"] = "session-1",
+                ["correlation_id"] = "corr-1",
+                ["tool_id"] = "system.volume",
+                ["tool_version"] = "1.0.0",
+                ["capability_class"] = "native_mutation",
+                ["arguments"] = new JsonObject { ["operation"] = "mute" },
+                ["deadline_ms"] = 30_000,
+            });
+
+        WorkerEnvelopeCodec.Validate(envelope);
+        envelope.Payload.Remove("capability_class");
+
+        var error = Assert.Throws<WorkerProtocolException>(() => WorkerEnvelopeCodec.Validate(envelope));
+        Assert.Equal("invalid_tool_request", error.Code);
+    }
+
+    [Theory]
+    [InlineData(-1, "verified", "0123456789abcdef")]
+    [InlineData(300001, "verified", "0123456789abcdef")]
+    [InlineData(12, "unknown", "0123456789abcdef")]
+    [InlineData(12, "verified", "ABCDEF0123456789")]
+    public void Tool_result_rejects_invalid_receipt_metadata(
+        int durationMs,
+        string verificationState,
+        string endpointHash)
+    {
+        var envelope = new WorkerEnvelope(
+            1,
+            "chat-1",
+            WorkerMessageTypes.ChatToolResult,
+            null,
+            new JsonObject
+            {
+                ["request_id"] = "tool-1",
+                ["status"] = "succeeded",
+                ["output"] = new JsonObject(),
+                ["error_code"] = null,
+                ["safe_summary"] = "completed",
+                ["duration_ms"] = durationMs,
+                ["verification_state"] = verificationState,
+                ["endpoint_role"] = "default_render_multimedia",
+                ["endpoint_hash"] = endpointHash,
+            });
+
+        var error = Assert.Throws<WorkerProtocolException>(() => WorkerEnvelopeCodec.Validate(envelope));
+
+        Assert.Equal("invalid_tool_result", error.Code);
+    }
 }

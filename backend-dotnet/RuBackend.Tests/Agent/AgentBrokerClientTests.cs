@@ -17,122 +17,285 @@ namespace RuBackend.Tests.Agent;
 public sealed class AgentBrokerClientTests
 {
     [Fact]
-    public async Task Client_proves_descriptor_protocol_and_session_before_tool_call()
+    public async Task Client_parses_capabilities_actual_grant_and_verified_receipt()
     {
-        await using var server = await FakeBrokerServer.StartAsync();
-        var root = Path.Combine(Path.GetTempPath(), "ru-agent-client-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        try
-        {
-            var descriptorPath = Path.Combine(root, "broker.json");
-            File.WriteAllText(
-                descriptorPath,
-                JsonSerializer.Serialize(
-                    new BrokerSessionDescriptor(
-                        server.BaseUrl,
-                        "secret-token",
-                        1,
-                        Path.Combine(root, "session"),
-                        DateTimeOffset.UtcNow.AddMinutes(5)),
-                    BrokerSessionDescriptor.JsonOptions));
+        await using var fixture = await ClientFixture.StartAsync();
+        await using var client = fixture.Client;
 
-            await using var client = new AgentBrokerClient(descriptorPath);
-            var grant = await client.OpenSessionAsync(
+        var capabilities = await client.GetCapabilitiesAsync(CancellationToken.None);
+        var volume = Assert.Single(capabilities);
+        Assert.Equal("system.volume", volume.ToolId);
+        Assert.Equal("1.0.0", volume.ToolVersion);
+        Assert.Equal(new[] { "system.write" }, volume.Scopes);
+        Assert.True(volume.ModelEnabled);
+
+        var grant = await client.OpenSessionAsync(
+            "session-1",
+            new HashSet<string>(StringComparer.Ordinal) { "system.write", "workspace.read" },
+            new HashSet<string>(StringComparer.Ordinal),
+            "corr-1",
+            2_000,
+            CancellationToken.None);
+        Assert.Equal(new[] { "system.write" }, grant.Scopes);
+        Assert.Empty(grant.SkillIds);
+
+        var result = await client.ExecuteToolAsync(
+            new AgentToolCall(
+                "request-1",
                 "session-1",
-                new HashSet<string>(["workspace.read"], StringComparer.Ordinal),
-                new HashSet<string>(["skill-1"], StringComparer.Ordinal),
                 "corr-1",
-                10_000,
-                CancellationToken.None);
-
-            Assert.Equal("session-1", grant.SessionId);
-            var result = await client.ExecuteToolAsync(
-                "session-1",
-                "files.list",
+                "system.volume",
                 "1.0.0",
-                new JsonObject { ["path"] = "src" },
-                "workspace.read",
-                "corr-1",
-                10_000,
-                CancellationToken.None);
+                "native_mutation",
+                new Dictionary<string, object?> { ["operation"] = "mute" },
+                2_000),
+            CancellationToken.None);
 
-            Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
-            Assert.Equal("src", result.Output["path"]!.GetValue<string>());
-            Assert.Contains(
-                server.Requests,
-                request => request.MessageType == AgentMessageTypes.ToolRequest
-                    && request.SessionId == "session-1"
-                    && request.CorrelationId == "corr-1");
-        }
-        finally
-        {
-            if (Directory.Exists(root))
-            {
-                Directory.Delete(root, recursive: true);
-            }
-        }
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+        Assert.Equal("verified", result.VerificationState);
+        Assert.Equal("default_render_multimedia", result.EndpointRole);
+        Assert.Matches("^[0-9a-f]{16}$", result.EndpointHash);
+        Assert.Equal(12, result.DurationMs);
+        Assert.True(result.AdapterInvoked);
+        var request = Assert.Single(fixture.Server.Requests, item => item.MessageType == AgentMessageTypes.ToolRequest);
+        Assert.Equal("native_mutation", request.Payload["capability_class"]!.GetValue<string>());
     }
 
     [Fact]
-    public async Task Client_rejects_tool_without_granted_scope_without_contacting_broker()
+    public async Task Client_rejects_an_unknown_exact_binding_without_a_tool_request()
     {
-        await using var server = await FakeBrokerServer.StartAsync();
-        var root = Path.Combine(Path.GetTempPath(), "ru-agent-client-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        try
-        {
-            var descriptorPath = Path.Combine(root, "broker.json");
-            File.WriteAllText(
-                descriptorPath,
-                JsonSerializer.Serialize(
-                    new BrokerSessionDescriptor(
-                        server.BaseUrl,
-                        "secret-token",
-                        1,
-                        Path.Combine(root, "session"),
-                        DateTimeOffset.UtcNow.AddMinutes(5)),
-                    BrokerSessionDescriptor.JsonOptions));
+        await using var fixture = await ClientFixture.StartAsync();
+        await using var client = fixture.Client;
+        _ = await client.GetCapabilitiesAsync(CancellationToken.None);
+        _ = await client.OpenSessionAsync(
+            "session-1",
+            new HashSet<string>(["system.write"], StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal),
+            "corr-1",
+            2_000,
+            CancellationToken.None);
+        var before = fixture.Server.Requests.Count;
 
-            await using var client = new AgentBrokerClient(descriptorPath);
-            await client.OpenSessionAsync(
+        var result = await client.ExecuteToolAsync(
+            new AgentToolCall(
+                "request-missing",
                 "session-1",
-                new HashSet<string>(["workspace.read"], StringComparer.Ordinal),
-                new HashSet<string>(),
                 "corr-1",
-                10_000,
-                CancellationToken.None);
-            var before = server.Requests.Count;
+                "system.volume",
+                "2.0.0",
+                "native_mutation",
+                new Dictionary<string, object?> { ["operation"] = "mute" },
+                2_000),
+            CancellationToken.None);
 
-            var result = await client.ExecuteToolAsync(
+        Assert.Equal(ToolResultStatuses.Failed, result.Status);
+        Assert.Equal("capability_unavailable", result.ErrorCode);
+        Assert.False(result.AdapterInvoked);
+        Assert.Equal(before, fixture.Server.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Client_requires_every_scope_from_the_actual_grant()
+    {
+        await using var fixture = await ClientFixture.StartAsync(
+            new FakeBrokerOptions { SessionScopes = new JsonArray() });
+        await using var client = fixture.Client;
+        _ = await client.OpenSessionAsync(
+            "session-1",
+            new HashSet<string>(["system.write"], StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal),
+            "corr-1",
+            2_000,
+            CancellationToken.None);
+        var before = fixture.Server.Requests.Count;
+
+        var result = await client.ExecuteToolAsync(
+            new AgentToolCall(
+                "request-scope",
                 "session-1",
-                "files.write",
+                "corr-1",
+                "system.volume",
                 "1.0.0",
-                new JsonObject { ["path"] = "out.txt" },
-                "workspace.write",
-                "corr-1",
-                10_000,
-                CancellationToken.None);
+                "native_mutation",
+                new Dictionary<string, object?> { ["operation"] = "mute" },
+                2_000),
+            CancellationToken.None);
 
-            Assert.Equal(ToolResultStatuses.Denied, result.Status);
-            Assert.Equal(before, server.Requests.Count);
-        }
-        finally
+        Assert.Equal(ToolResultStatuses.Failed, result.Status);
+        Assert.Equal("scope_not_granted", result.ErrorCode);
+        Assert.False(result.AdapterInvoked);
+        Assert.Equal(before, fixture.Server.Requests.Count);
+    }
+
+    [Theory]
+    [InlineData("duplicate")]
+    [InlineData("risk")]
+    [InlineData("availability")]
+    public async Task Client_rejects_malformed_capability_snapshots(string mutation)
+    {
+        var tools = DefaultTools();
+        switch (mutation)
         {
-            if (Directory.Exists(root))
-            {
-                Directory.Delete(root, recursive: true);
-            }
+            case "duplicate":
+                tools.Add(tools[0]!.DeepClone());
+                break;
+            case "risk":
+                tools[0]!["risk"] = "unknown";
+                break;
+            case "availability":
+                tools[0]!["availability"] = "imaginary";
+                break;
         }
+
+        await using var fixture = await ClientFixture.StartAsync(
+            new FakeBrokerOptions { Tools = tools });
+        await using var client = fixture.Client;
+
+        var error = await Assert.ThrowsAsync<AgentBrokerException>(() =>
+            client.GetCapabilitiesAsync(CancellationToken.None));
+
+        Assert.Equal("invalid_capabilities", error.Code);
+    }
+
+    [Theory]
+    [InlineData("duration")]
+    [InlineData("endpoint_hash")]
+    [InlineData("provenance")]
+    public async Task Client_rejects_malformed_receipt_proof(string mutation)
+    {
+        var receipt = DefaultToolResult();
+        switch (mutation)
+        {
+            case "duration":
+                receipt["duration_ms"] = -1;
+                break;
+            case "endpoint_hash":
+                receipt["endpoint_hash"] = "ABCDEF0123456789";
+                break;
+            case "provenance":
+                receipt.Remove("adapter_invoked");
+                break;
+        }
+
+        await using var fixture = await ClientFixture.StartAsync(
+            new FakeBrokerOptions { ToolResult = receipt });
+        await using var client = fixture.Client;
+        _ = await client.OpenSessionAsync(
+            "session-1",
+            new HashSet<string>(["system.write"], StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal),
+            "corr-1",
+            2_000,
+            CancellationToken.None);
+
+        var error = await Assert.ThrowsAsync<AgentBrokerException>(() =>
+            client.ExecuteToolAsync(
+                new AgentToolCall(
+                    "request-invalid",
+                    "session-1",
+                    "corr-1",
+                    "system.volume",
+                    "1.0.0",
+                    "native_mutation",
+                    new Dictionary<string, object?> { ["operation"] = "mute" },
+                    2_000),
+                CancellationToken.None));
+
+        Assert.Equal("invalid_tool_result", error.Code);
     }
 
     [Fact]
     public async Task Client_sends_approval_decision_without_raw_tool_arguments()
     {
-        await using var server = await FakeBrokerServer.StartAsync();
-        var root = Path.Combine(Path.GetTempPath(), "ru-agent-client-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        try
+        await using var fixture = await ClientFixture.StartAsync();
+        await using var client = fixture.Client;
+
+        var result = await client.RespondToApprovalAsync(
+            new AgentApprovalResponse("approval-1", "session-1", true),
+            "corr-approval",
+            10_000,
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+        var approval = Assert.Single(fixture.Server.Requests, request => request.MessageType == AgentMessageTypes.ApprovalResponse);
+        Assert.Equal("approval-1", approval.Payload["approval_id"]!.GetValue<string>());
+        Assert.True(approval.Payload["approved"]!.GetValue<bool>());
+        Assert.DoesNotContain("arguments", approval.Payload.ToJsonString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("script", approval.Payload.ToJsonString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Client_source_has_no_skill_execution_path()
+    {
+        var source = File.ReadAllText(FindSource("AgentBrokerClient.cs"));
+
+        Assert.DoesNotContain("RunSkillAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("RunSkillCoreAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("skill_start", source, StringComparison.Ordinal);
+    }
+
+    private static JsonArray DefaultTools() => new()
+    {
+        new JsonObject
         {
+            ["tool_id"] = "system.volume",
+            ["tool_version"] = "1.0.0",
+            ["scopes"] = new JsonArray("system.write"),
+            ["risk"] = "reversible",
+            ["availability"] = "native_pending",
+            ["model_enabled"] = true,
+        },
+    };
+
+    private static JsonObject DefaultToolResult() => new()
+    {
+        ["status"] = ToolResultStatuses.Succeeded,
+        ["output"] = new JsonObject { ["operation"] = "mute" },
+        ["error_code"] = null,
+        ["safe_summary"] = "Volume change verified.",
+        ["duration_ms"] = 12,
+        ["verification_state"] = "verified",
+        ["endpoint_role"] = "default_render_multimedia",
+        ["endpoint_hash"] = "0123456789abcdef",
+        ["adapter_invoked"] = true,
+    };
+
+    private static string FindSource(string fileName)
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            var path = Path.Combine(directory.FullName, "backend-dotnet", "RuBackend", "Agent", fileName);
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        throw new FileNotFoundException(fileName);
+    }
+
+    private sealed class ClientFixture : IAsyncDisposable
+    {
+        private ClientFixture(string root, FakeBrokerServer server, AgentBrokerClient client)
+        {
+            Root = root;
+            Server = server;
+            Client = client;
+        }
+
+        public string Root { get; }
+        public FakeBrokerServer Server { get; }
+        public AgentBrokerClient Client { get; }
+
+        public static async Task<ClientFixture> StartAsync(FakeBrokerOptions? options = null)
+        {
+            var server = await FakeBrokerServer.StartAsync(options ?? new FakeBrokerOptions());
+            var root = Path.Combine(Path.GetTempPath(), "ru-agent-client-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            var sessionRoot = Path.Combine(root, "session");
+            Directory.CreateDirectory(sessionRoot);
             var descriptorPath = Path.Combine(root, "broker.json");
             File.WriteAllText(
                 descriptorPath,
@@ -141,37 +304,33 @@ public sealed class AgentBrokerClientTests
                         server.BaseUrl,
                         "secret-token",
                         1,
-                        Path.Combine(root, "session"),
+                        sessionRoot,
                         DateTimeOffset.UtcNow.AddMinutes(5)),
                     BrokerSessionDescriptor.JsonOptions));
-
-            await using var client = new AgentBrokerClient(descriptorPath);
-            var result = await client.RespondToApprovalAsync(
-                new AgentApprovalResponse("approval-1", "session-1", true),
-                "corr-approval",
-                10_000,
-                CancellationToken.None);
-
-            Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
-            var approval = Assert.Single(server.Requests, request => request.MessageType == AgentMessageTypes.ApprovalResponse);
-            Assert.Equal("approval-1", approval.Payload["approval_id"]!.GetValue<string>());
-            Assert.True(approval.Payload["approved"]!.GetValue<bool>());
-            Assert.DoesNotContain("arguments", approval.Payload.ToJsonString(), StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("script", approval.Payload.ToJsonString(), StringComparison.OrdinalIgnoreCase);
+            return new ClientFixture(root, server, new AgentBrokerClient(descriptorPath));
         }
-        finally
+
+        public async ValueTask DisposeAsync()
         {
-            if (Directory.Exists(root))
+            await Server.DisposeAsync();
+            if (Directory.Exists(Root))
             {
-                Directory.Delete(root, recursive: true);
+                Directory.Delete(Root, recursive: true);
             }
         }
+    }
+
+    private sealed record FakeBrokerOptions
+    {
+        public JsonArray Tools { get; init; } = DefaultTools();
+        public JsonArray SessionScopes { get; init; } = new("system.write");
+        public JsonObject ToolResult { get; init; } = DefaultToolResult();
     }
 
     private sealed class FakeBrokerServer : IAsyncDisposable
     {
         private readonly WebApplication _application;
-        private readonly List<AgentEnvelope> _requests = [];
+        private readonly List<AgentEnvelope> _requests;
 
         private FakeBrokerServer(WebApplication application, string baseUrl, List<AgentEnvelope> requests)
         {
@@ -183,7 +342,7 @@ public sealed class AgentBrokerClientTests
         public string BaseUrl { get; }
         public IReadOnlyList<AgentEnvelope> Requests => _requests;
 
-        public static async Task<FakeBrokerServer> StartAsync()
+        public static async Task<FakeBrokerServer> StartAsync(FakeBrokerOptions options)
         {
             var builder = WebApplication.CreateBuilder();
             builder.Logging.ClearProviders();
@@ -204,39 +363,52 @@ public sealed class AgentBrokerClientTests
                         hello.SessionId,
                         hello.CorrelationId,
                         hello.DeadlineMs,
-                        new JsonObject { ["protocol_version"] = 1 }));
+                        new JsonObject
+                        {
+                            ["protocol_version"] = 1,
+                            ["tools"] = options.Tools.DeepClone(),
+                            ["skills"] = new JsonArray(),
+                        }));
                 var request = await ReceiveAsync(socket);
                 lock (requests)
                 {
                     requests.Add(request);
                 }
 
-                var output = request.MessageType == AgentMessageTypes.ToolRequest
-                    ? new JsonObject { ["path"] = request.Payload["arguments"]?["path"]?.GetValue<string>() }
-                    : new JsonObject();
+                var (messageType, payload) = request.MessageType switch
+                {
+                    AgentMessageTypes.Health => (
+                        AgentMessageTypes.HealthOk,
+                        new JsonObject { ["status"] = "ready" }),
+                    AgentMessageTypes.SessionOpen => (
+                        AgentMessageTypes.SessionOpened,
+                        new JsonObject
+                        {
+                            ["status"] = ToolResultStatuses.Succeeded,
+                            ["scopes"] = options.SessionScopes.DeepClone(),
+                            ["skill_ids"] = new JsonArray(),
+                            ["safe_summary"] = "session opened",
+                        }),
+                    AgentMessageTypes.SessionClose => (
+                        AgentMessageTypes.SkillResult,
+                        new JsonObject { ["status"] = ToolResultStatuses.Succeeded }),
+                    _ => (AgentMessageTypes.ToolResult, options.ToolResult.DeepClone().AsObject()),
+                };
                 await SendAsync(
                     socket,
                     new AgentEnvelope(
                         1,
                         request.RequestId,
-                        request.MessageType == AgentMessageTypes.SessionOpen
-                            ? AgentMessageTypes.SkillResult
-                            : AgentMessageTypes.ToolResult,
+                        messageType,
                         request.SessionId,
                         request.CorrelationId,
                         request.DeadlineMs,
-                        new JsonObject
-                        {
-                            ["status"] = ToolResultStatuses.Succeeded,
-                            ["output"] = output,
-                            ["safe_summary"] = "Fake broker completed the request.",
-                        }));
+                        payload));
             });
             await application.StartAsync();
             var addresses = application.Services.GetRequiredService<IServer>()
                 .Features.Get<IServerAddressesFeature>()!.Addresses;
-            var baseUrl = addresses.Single().TrimEnd('/');
-            return new FakeBrokerServer(application, baseUrl, requests);
+            return new FakeBrokerServer(application, addresses.Single().TrimEnd('/'), requests);
         }
 
         public async ValueTask DisposeAsync() => await _application.DisposeAsync();

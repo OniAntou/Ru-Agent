@@ -19,6 +19,7 @@ public sealed class AgentApprovalCoordinatorTests
             "corr-1",
             "terminal.shell",
             "1.0.0",
+            "command_execution",
             new JsonObject { ["script"] = "Get-Content secret.txt" },
             10_000);
         var result = new AgentToolResult(
@@ -34,7 +35,12 @@ public sealed class AgentApprovalCoordinatorTests
                 ["expires_at"] = DateTimeOffset.UtcNow.AddMinutes(1).ToString("O"),
             },
             "approval_required",
-            "Approval is required.");
+            "Approval is required.",
+            0,
+            ToolVerificationStates.Pending,
+            null,
+            null,
+            false);
 
         var approval = coordinator.Register(tool, result);
         var json = JsonSerializer.Serialize(approval);

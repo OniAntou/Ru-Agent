@@ -59,7 +59,11 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                 "failed",
                 new JsonObject(),
                 "agent_unavailable",
-                "Agent tools are unavailable.");
+                "Agent tools are unavailable.",
+                0,
+                ToolVerificationStates.Failed,
+                null,
+                null);
         }
 
         await PublishAsync(
@@ -70,13 +74,18 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
         {
             await EnsureSessionAsync(tool, cancellationToken).ConfigureAwait(false);
             var result = await _broker.ExecuteToolAsync(
-                tool.SessionId,
-                tool.ToolId,
-                tool.ToolVersion,
-                tool.Arguments,
-                RequiredScope(tool.ToolId),
-                tool.CorrelationId,
-                tool.DeadlineMs,
+                new AgentToolCall(
+                    tool.RequestId,
+                    tool.SessionId,
+                    tool.CorrelationId,
+                    tool.ToolId,
+                    tool.ToolVersion,
+                    tool.CapabilityClass,
+                    tool.Arguments.ToDictionary(
+                        pair => pair.Key,
+                        pair => (object?)pair.Value?.DeepClone(),
+                        StringComparer.Ordinal),
+                    tool.DeadlineMs),
                 cancellationToken).ConfigureAwait(false);
             var statusEvent = result.Status == ToolResultStatuses.ApprovalRequired
                 ? _approvals?.Register(tool, result)
@@ -92,7 +101,11 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                 result.Status,
                 result.Output.DeepClone().AsObject(),
                 result.ErrorCode,
-                BoundedSummary(result.SafeSummary));
+                BoundedSummary(result.SafeSummary),
+                result.DurationMs,
+                result.VerificationState,
+                result.EndpointRole,
+                result.EndpointHash);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -101,7 +114,11 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                 "cancelled",
                 new JsonObject(),
                 "cancelled",
-                "Tool cancelled.");
+                "Tool cancelled.",
+                0,
+                ToolVerificationStates.Failed,
+                null,
+                null);
         }
         catch (AgentBrokerException error)
         {
@@ -110,7 +127,11 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                 "failed",
                 new JsonObject(),
                 error.Code,
-                "Agent tool failed.");
+                "Agent tool failed.",
+                0,
+                ToolVerificationStates.Failed,
+                null,
+                null);
         }
     }
 

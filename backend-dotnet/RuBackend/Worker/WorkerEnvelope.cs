@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace RuBackend.Worker;
 
@@ -42,6 +43,13 @@ public sealed class WorkerProtocolException : Exception
 
 public static class WorkerEnvelopeCodec
 {
+    private static readonly IReadOnlySet<string> ToolStatuses = new HashSet<string>(
+        ["succeeded", "failed", "denied", "approval_required", "cancelled", "timed_out"],
+        StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> VerificationStates = new HashSet<string>(
+        ["not_required", "pending", "verified", "failed"],
+        StringComparer.Ordinal);
+    private static readonly Regex EndpointHashPattern = new("^[0-9a-f]{16}$", RegexOptions.Compiled);
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -197,6 +205,7 @@ public static class WorkerEnvelopeCodec
         ValidateToolRequestId(payload, "invalid_tool_request");
         ValidateString(payload["tool_id"], 128, "invalid_tool_request");
         ValidateString(payload["tool_version"], 64, "invalid_tool_request");
+        ValidateString(payload["capability_class"], 64, "invalid_tool_request");
         if (payload["arguments"] is not JsonObject)
         {
             throw new WorkerProtocolException("invalid_tool_request");
@@ -213,13 +222,28 @@ public static class WorkerEnvelopeCodec
     {
         ValidateToolRequestId(payload, "invalid_tool_result");
         var status = ReadString(payload["status"], "invalid_tool_result");
-        if (!new HashSet<string>(["succeeded", "failed", "denied", "approval_required", "cancelled", "timed_out"], StringComparer.Ordinal).Contains(status)
+        var durationMs = ReadInt32(payload["duration_ms"], "invalid_tool_result");
+        var verificationState = ReadString(payload["verification_state"], "invalid_tool_result");
+        var endpointRole = ReadOptionalBoundedString(payload["endpoint_role"], 64, "invalid_tool_result");
+        var endpointHash = ReadOptionalBoundedString(payload["endpoint_hash"], 16, "invalid_tool_result");
+        if (!ToolStatuses.Contains(status)
             || payload["output"] is not JsonObject
             || payload["safe_summary"] is not JsonValue safeSummary
             || !safeSummary.TryGetValue<string>(out var summary)
-            || summary.Length > 4096)
+            || summary.Length > 4096
+            || durationMs is < 0 or > 300_000
+            || !VerificationStates.Contains(verificationState)
+            || endpointRole is not (null or "default_render_multimedia")
+            || endpointHash is not null && !EndpointHashPattern.IsMatch(endpointHash)
+            || (endpointRole is null) != (endpointHash is null))
         {
             throw new WorkerProtocolException("invalid_tool_result");
+        }
+
+        if (payload.TryGetPropertyValue("error_code", out var errorCode)
+            && errorCode is not null)
+        {
+            ValidateString(errorCode, 128, "invalid_tool_result");
         }
     }
 
@@ -241,6 +265,24 @@ public static class WorkerEnvelopeCodec
         {
             throw new WorkerProtocolException(code);
         }
+    }
+
+    private static string? ReadOptionalBoundedString(JsonNode? node, int maxLength, string code)
+    {
+        if (node is null)
+        {
+            return null;
+        }
+
+        if (node is JsonValue value
+            && value.TryGetValue<string>(out var text)
+            && !string.IsNullOrWhiteSpace(text)
+            && text.Length <= maxLength)
+        {
+            return text;
+        }
+
+        throw new WorkerProtocolException(code);
     }
 }
 

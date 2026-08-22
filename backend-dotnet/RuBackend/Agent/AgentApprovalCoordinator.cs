@@ -86,7 +86,12 @@ public sealed class AgentApprovalCoordinator : IAgentApprovalCoordinator
                 ToolResultStatuses.Failed,
                 new JsonObject(),
                 "agent_unavailable",
-                "Agent tools are unavailable.");
+                "Agent tools are unavailable.",
+                0,
+                ToolVerificationStates.Failed,
+                null,
+                null,
+                false);
         }
 
         try
@@ -104,7 +109,12 @@ public sealed class AgentApprovalCoordinator : IAgentApprovalCoordinator
                 ToolResultStatuses.Cancelled,
                 new JsonObject(),
                 "cancelled",
-                "Approval response cancelled.");
+                "Approval response cancelled.",
+                0,
+                ToolVerificationStates.Failed,
+                null,
+                null,
+                false);
         }
         catch (AgentBrokerException error)
         {
@@ -113,12 +123,27 @@ public sealed class AgentApprovalCoordinator : IAgentApprovalCoordinator
                 ToolResultStatuses.Failed,
                 new JsonObject(),
                 error.Code,
-                "Approval response failed.");
+                "Approval response failed.",
+                0,
+                ToolVerificationStates.Failed,
+                null,
+                null,
+                false);
         }
     }
 
     private static AgentToolResult Denied(string requestId, string code, string summary) =>
-        new(requestId, ToolResultStatuses.Denied, new JsonObject(), code, summary);
+        new(
+            requestId,
+            ToolResultStatuses.Denied,
+            new JsonObject(),
+            code,
+            summary,
+            0,
+            ToolVerificationStates.Failed,
+            null,
+            null,
+            false);
 
     private static string ReadString(JsonObject payload, string key, int maxLength) =>
         payload[key] is JsonValue value

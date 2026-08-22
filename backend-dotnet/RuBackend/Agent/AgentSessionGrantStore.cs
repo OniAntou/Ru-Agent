@@ -21,10 +21,24 @@ public sealed class AgentSessionGrantStore
         string sessionId,
         string requiredScope,
         out AgentSessionGrant? grant,
+        DateTimeOffset? now = null) =>
+        TryGet(
+            sessionId,
+            new HashSet<string>([requiredScope], StringComparer.Ordinal),
+            out grant,
+            now);
+
+    public bool TryGet(
+        string sessionId,
+        IReadOnlySet<string> requiredScopes,
+        out AgentSessionGrant? grant,
         DateTimeOffset? now = null)
     {
         grant = null;
-        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(requiredScope))
+        if (string.IsNullOrWhiteSpace(sessionId)
+            || requiredScopes is null
+            || requiredScopes.Count == 0
+            || requiredScopes.Any(string.IsNullOrWhiteSpace))
         {
             return false;
         }
@@ -41,7 +55,7 @@ public sealed class AgentSessionGrantStore
             return false;
         }
 
-        if (!candidate.Scopes.Contains(requiredScope))
+        if (!requiredScopes.All(candidate.Scopes.Contains))
         {
             return false;
         }
@@ -52,4 +66,6 @@ public sealed class AgentSessionGrantStore
 
     public bool Remove(string sessionId) =>
         !string.IsNullOrWhiteSpace(sessionId) && _grants.TryRemove(sessionId, out _);
+
+    public void Clear() => _grants.Clear();
 }

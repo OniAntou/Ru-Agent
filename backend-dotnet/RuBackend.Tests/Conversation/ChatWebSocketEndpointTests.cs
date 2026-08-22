@@ -265,7 +265,12 @@ public sealed class ChatWebSocketEndpointTests
                 response.Approved ? ToolResultStatuses.Succeeded : ToolResultStatuses.Denied,
                 new System.Text.Json.Nodes.JsonObject(),
                 response.Approved ? null : "approval_rejected",
-                response.Approved ? "Approved action completed." : "Approval was rejected."));
+                response.Approved ? "Approved action completed." : "Approval was rejected.",
+                1,
+                response.Approved ? ToolVerificationStates.Verified : ToolVerificationStates.Failed,
+                null,
+                null,
+                response.Approved));
         }
     }
 }

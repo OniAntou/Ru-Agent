@@ -18,6 +18,8 @@ public sealed class BrokerSession
 {
     private readonly object _gate = new();
     private string? _activeSessionId;
+    private IReadOnlySet<string> _activeScopes = new HashSet<string>(StringComparer.Ordinal);
+    private IReadOnlySet<string> _activeSkillIds = new HashSet<string>(StringComparer.Ordinal);
 
     private BrokerSession(string descriptorPath, BrokerSessionDescriptor descriptor)
     {
@@ -39,7 +41,10 @@ public sealed class BrokerSession
         }
     }
 
-    public bool Open(string sessionId)
+    public bool Open(
+        string sessionId,
+        IReadOnlySet<string>? scopes = null,
+        IReadOnlySet<string>? skillIds = null)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
         {
@@ -51,6 +56,12 @@ public sealed class BrokerSession
             if (_activeSessionId is null)
             {
                 _activeSessionId = sessionId;
+                _activeScopes = scopes is null
+                    ? new HashSet<string>(StringComparer.Ordinal)
+                    : new HashSet<string>(scopes, StringComparer.Ordinal);
+                _activeSkillIds = skillIds is null
+                    ? new HashSet<string>(StringComparer.Ordinal)
+                    : new HashSet<string>(skillIds, StringComparer.Ordinal);
                 return true;
             }
 
@@ -66,6 +77,28 @@ public sealed class BrokerSession
         }
     }
 
+    public IReadOnlySet<string> Scopes
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return new HashSet<string>(_activeScopes, StringComparer.Ordinal);
+            }
+        }
+    }
+
+    public IReadOnlySet<string> SkillIds
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return new HashSet<string>(_activeSkillIds, StringComparer.Ordinal);
+            }
+        }
+    }
+
     public void Close(string sessionId)
     {
         lock (_gate)
@@ -73,6 +106,8 @@ public sealed class BrokerSession
             if (string.Equals(_activeSessionId, sessionId, StringComparison.Ordinal))
             {
                 _activeSessionId = null;
+                _activeScopes = new HashSet<string>(StringComparer.Ordinal);
+                _activeSkillIds = new HashSet<string>(StringComparer.Ordinal);
             }
         }
     }

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebSockets;
 using RuAgent.Broker.Transport;
+using RuAgent.Broker.Tools;
 
 namespace RuAgent.Broker.Runtime;
 
@@ -12,12 +13,14 @@ public sealed class BrokerHost : IAsyncDisposable
     private readonly BrokerSession _session;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly BrokerCleanup _cleanup;
+    private readonly ToolExecutionService _tools;
     private bool _disposed;
 
     private BrokerHost(WebApplication application, BrokerSession session)
     {
         _application = application;
         _session = session;
+        _tools = new ToolExecutionService(session, ResolveWorkspaceRoot());
         _cleanup = new BrokerCleanup(
             stopListener: cancellationToken => new ValueTask(_application.StopAsync(cancellationToken)),
             cancelRequests: () => _shutdown.Cancel(),
@@ -105,7 +108,55 @@ public sealed class BrokerHost : IAsyncDisposable
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             context.RequestAborted,
             _shutdown.Token);
-        await new AgentConnection(_session).RunAsync(socket, linkedCancellation.Token).ConfigureAwait(false);
+        await new AgentConnection(
+            _session,
+            (request, token) => ExecuteToolAsync(request, token),
+            (request, token) => ExecuteSkillAsync(request, token))
+            .RunAsync(socket, linkedCancellation.Token).ConfigureAwait(false);
+    }
+
+    private async Task<RuAgent.Protocol.AgentEnvelope> ExecuteToolAsync(
+        RuAgent.Protocol.AgentEnvelope request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _tools.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+        return new RuAgent.Protocol.AgentEnvelope(
+            RuAgent.Protocol.AgentEnvelopeCodec.ProtocolVersion,
+            request.RequestId,
+            RuAgent.Protocol.AgentMessageTypes.ToolResult,
+            request.SessionId,
+            request.CorrelationId,
+            request.DeadlineMs,
+            new System.Text.Json.Nodes.JsonObject
+            {
+                ["status"] = result.Status,
+                ["output"] = result.Output.DeepClone(),
+                ["error_code"] = result.ErrorCode,
+                ["safe_summary"] = result.SafeSummary,
+                ["duration_ms"] = result.DurationMs,
+            });
+    }
+
+    private async Task<RuAgent.Protocol.AgentEnvelope> ExecuteSkillAsync(
+        RuAgent.Protocol.AgentEnvelope request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _tools.ExecuteSkillAsync(request, cancellationToken).ConfigureAwait(false);
+        return new RuAgent.Protocol.AgentEnvelope(
+            RuAgent.Protocol.AgentEnvelopeCodec.ProtocolVersion,
+            request.RequestId,
+            RuAgent.Protocol.AgentMessageTypes.SkillResult,
+            request.SessionId,
+            request.CorrelationId,
+            request.DeadlineMs,
+            new System.Text.Json.Nodes.JsonObject
+            {
+                ["status"] = result.Status,
+                ["output"] = result.Output.DeepClone(),
+                ["error_code"] = result.ErrorCode,
+                ["safe_summary"] = result.SafeSummary,
+                ["duration_ms"] = result.DurationMs,
+            });
     }
 
     private bool IsAuthorized(HttpContext context)
@@ -122,5 +173,28 @@ public sealed class BrokerHost : IAsyncDisposable
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         context.Response.Headers.WWWAuthenticate = "Bearer";
         await context.Response.CompleteAsync().ConfigureAwait(false);
+    }
+
+    private static string ResolveWorkspaceRoot()
+    {
+        var configured = Environment.GetEnvironmentVariable("RU_WORKSPACE_ROOT");
+        if (!string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured))
+        {
+            return Path.GetFullPath(configured);
+        }
+
+        var current = new DirectoryInfo(Environment.CurrentDirectory);
+        while (current is not null)
+        {
+            if (Directory.Exists(Path.Combine(current.FullName, "src"))
+                && Directory.Exists(Path.Combine(current.FullName, "backend-dotnet")))
+            {
+                return current.FullName;
+            }
+
+            current = current.Parent;
+        }
+
+        return Environment.CurrentDirectory;
     }
 }

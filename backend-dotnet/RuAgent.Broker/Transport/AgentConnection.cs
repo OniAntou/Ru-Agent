@@ -12,10 +12,17 @@ public sealed class AgentConnection
     public const int MaxFrameBytes = 64 * 1024;
 
     private readonly BrokerSession _session;
+    private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _toolHandler;
+    private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _skillHandler;
 
-    public AgentConnection(BrokerSession session)
+    public AgentConnection(
+        BrokerSession session,
+        Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? toolHandler = null,
+        Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? skillHandler = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
+        _toolHandler = toolHandler;
+        _skillHandler = skillHandler;
     }
 
     public async Task RunAsync(WebSocket socket, CancellationToken cancellationToken)
@@ -58,7 +65,7 @@ public sealed class AgentConnection
                     continue;
                 }
 
-                var reply = Handle(request);
+                var reply = await HandleAsync(request, cancellationToken).ConfigureAwait(false);
                 await SendAsync(socket, reply, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -68,38 +75,61 @@ public sealed class AgentConnection
         }
     }
 
-    private AgentEnvelope Handle(AgentEnvelope request)
+    private async Task<AgentEnvelope> HandleAsync(AgentEnvelope request, CancellationToken cancellationToken)
     {
-        return request.MessageType switch
+        switch (request.MessageType)
         {
-            AgentMessageTypes.Hello => Reply(request, AgentMessageTypes.HelloOk, new JsonObject
+            case AgentMessageTypes.Hello:
+                return Reply(request, AgentMessageTypes.HelloOk, new JsonObject
             {
                 ["status"] = "ready",
                 ["protocol_version"] = AgentEnvelopeCodec.ProtocolVersion,
-            }),
-            AgentMessageTypes.Health => Reply(request, AgentMessageTypes.HealthOk, new JsonObject
+            });
+            case AgentMessageTypes.Health:
+                return Reply(request, AgentMessageTypes.HealthOk, new JsonObject
             {
                 ["status"] = "ready",
-            }),
-            AgentMessageTypes.SessionOpen => _session.Open(request.SessionId)
-                ? Reply(request, AgentMessageTypes.SkillResult, new JsonObject
+            });
+            case AgentMessageTypes.SessionOpen:
+                return _session.Open(
+                        request.SessionId,
+                        ReadScopes(request.Payload),
+                        ReadSkillIds(request.Payload))
+                    ? Reply(request, AgentMessageTypes.SkillResult, new JsonObject
                 {
                     ["status"] = "succeeded",
                     ["safe_summary"] = "session opened",
                 })
-                : ToolError(request, "session_conflict", "session is already owned"),
-            AgentMessageTypes.SessionClose => CloseSession(request),
-            AgentMessageTypes.ToolRequest or AgentMessageTypes.SkillStart =>
-                _session.Owns(request.SessionId)
-                    ? ToolError(request, "not_implemented", "tool execution is not registered")
-                    : ToolError(request, "broker_not_ready", "session is not open"),
-            AgentMessageTypes.Cancel => Reply(request, AgentMessageTypes.ToolResult, new JsonObject
+                    : ToolError(request, "session_conflict", "session is already owned");
+            case AgentMessageTypes.SessionClose:
+                return CloseSession(request);
+            case AgentMessageTypes.ToolRequest:
+                if (!_session.Owns(request.SessionId))
+                {
+                    return ToolError(request, "broker_not_ready", "session is not open");
+                }
+
+                return _toolHandler is null
+                    ? ToolError(request, "broker_not_ready", "tool execution is not registered")
+                    : await _toolHandler(request, cancellationToken).ConfigureAwait(false);
+            case AgentMessageTypes.SkillStart:
+                if (!_session.Owns(request.SessionId))
+                {
+                    return ToolError(request, "broker_not_ready", "session is not open");
+                }
+
+                return _skillHandler is null
+                    ? ToolError(request, "skill_not_ready", "skill execution is not registered")
+                    : await _skillHandler(request, cancellationToken).ConfigureAwait(false);
+            case AgentMessageTypes.Cancel:
+                return Reply(request, AgentMessageTypes.ToolResult, new JsonObject
             {
                 ["status"] = ToolResultStatuses.Cancelled,
                 ["safe_summary"] = "request cancelled",
-            }),
-            _ => ToolError(request, "unsupported_message", "message type is not supported"),
-        };
+            });
+            default:
+                return ToolError(request, "unsupported_message", "message type is not supported");
+        }
     }
 
     private AgentEnvelope CloseSession(AgentEnvelope request)
@@ -119,6 +149,47 @@ public sealed class AgentConnection
             ["error_code"] = errorCode,
             ["safe_summary"] = summary,
         });
+
+    private static IReadOnlySet<string> ReadScopes(JsonObject payload)
+    {
+        if (payload["scopes"] is not JsonArray values)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var value in values)
+        {
+            if (value is JsonValue item && item.TryGetValue<string>(out var scope) && !string.IsNullOrWhiteSpace(scope))
+            {
+                result.Add(scope);
+            }
+        }
+
+        return result;
+    }
+
+    private static IReadOnlySet<string> ReadSkillIds(JsonObject payload)
+    {
+        if (payload["skill_ids"] is not JsonArray values)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var value in values)
+        {
+            if (value is JsonValue item
+                && item.TryGetValue<string>(out var skillId)
+                && !string.IsNullOrWhiteSpace(skillId)
+                && skillId.Length <= 128)
+            {
+                result.Add(skillId);
+            }
+        }
+
+        return result;
+    }
 
     private static AgentEnvelope Reply(AgentEnvelope request, string type, JsonObject payload)
         => new(

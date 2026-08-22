@@ -60,6 +60,113 @@ public sealed class BrokerHostTests
         Assert.Equal(request.CorrelationId, reply.CorrelationId);
     }
 
+    [Fact]
+    public async Task Authenticated_session_can_use_a_registered_read_tool()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(
+            new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
+            cancellation.Token);
+
+        await SendAsync(socket, new AgentEnvelope(1, "hello-1", AgentMessageTypes.Hello, "session-1", "corr-1", 10_000, new System.Text.Json.Nodes.JsonObject()), cancellation.Token);
+        _ = await ReceiveAsync(socket, cancellation.Token);
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "session-1",
+                AgentMessageTypes.SessionOpen,
+                "session-1",
+                "corr-1",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("workspace.read"),
+                }), cancellation.Token);
+        var opened = await ReceiveAsync(socket, cancellation.Token);
+        Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "tool-1",
+                AgentMessageTypes.ToolRequest,
+                "session-1",
+                "corr-1",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["tool_id"] = "files.list",
+                    ["tool_version"] = "1.0.0",
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "src" },
+                }), cancellation.Token);
+        var result = await ReceiveAsync(socket, cancellation.Token);
+
+        Assert.Equal(AgentMessageTypes.ToolResult, result.MessageType);
+        Assert.Equal("succeeded", result.Payload["status"]!.GetValue<string>());
+        Assert.NotNull(result.Payload["output"]!["entries"]);
+    }
+
+    [Fact]
+    public async Task Authenticated_session_can_run_an_allowlisted_terminal_command()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await socket.ConnectAsync(
+            new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
+            cancellation.Token);
+
+        await SendAsync(socket, new AgentEnvelope(1, "hello-terminal", AgentMessageTypes.Hello, "session-terminal", "corr-terminal", 10_000, new System.Text.Json.Nodes.JsonObject()), cancellation.Token);
+        _ = await ReceiveAsync(socket, cancellation.Token);
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "session-terminal",
+                AgentMessageTypes.SessionOpen,
+                "session-terminal",
+                "corr-terminal",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("terminal.execute"),
+                }),
+            cancellation.Token);
+        _ = await ReceiveAsync(socket, cancellation.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "terminal-1",
+                AgentMessageTypes.ToolRequest,
+                "session-terminal",
+                "corr-terminal",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["tool_id"] = "terminal.run",
+                    ["tool_version"] = "1.0.0",
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["executable"] = "dotnet",
+                        ["arguments"] = new System.Text.Json.Nodes.JsonArray("--version"),
+                        ["working_directory"] = ".",
+                    },
+                }),
+            cancellation.Token);
+        var result = await ReceiveAsync(socket, cancellation.Token);
+
+        Assert.Equal("succeeded", result.Payload["status"]!.GetValue<string>());
+        Assert.Contains("10.", result.Payload["output"]!["stdout"]!.GetValue<string>(), StringComparison.Ordinal);
+    }
+
     private sealed class HostFixture : IAsyncDisposable
     {
         private HostFixture(string root, string token, BrokerHost host)
@@ -110,5 +217,18 @@ public sealed class BrokerHostTests
             listener.Start();
             return ((IPEndPoint)listener.LocalEndpoint).Port;
         }
+    }
+
+    private static async Task SendAsync(ClientWebSocket socket, AgentEnvelope envelope, CancellationToken cancellationToken)
+    {
+        var bytes = Encoding.UTF8.GetBytes(AgentEnvelopeCodec.Serialize(envelope));
+        await socket.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken);
+    }
+
+    private static async Task<AgentEnvelope> ReceiveAsync(ClientWebSocket socket, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[64 * 1024];
+        var result = await socket.ReceiveAsync(buffer, cancellationToken);
+        return AgentEnvelopeCodec.Parse(Encoding.UTF8.GetString(buffer, 0, result.Count));
     }
 }

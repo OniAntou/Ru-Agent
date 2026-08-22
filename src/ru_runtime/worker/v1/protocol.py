@@ -34,7 +34,7 @@ WORKER_HEALTH_OK = "worker.health.ok"
 ERROR = "error"
 
 TOOL_RESULT_STATUSES = frozenset(
-    {"succeeded", "failed", "denied", "cancelled", "timed_out"}
+    {"succeeded", "failed", "denied", "approval_required", "cancelled", "timed_out"}
 )
 MAX_TOOL_SUMMARY_CHARS = 4096
 MAX_TOOL_ARGUMENTS_BYTES = 64 * 1024

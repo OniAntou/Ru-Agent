@@ -30,8 +30,8 @@ not launch them.
 The backend Harness vNext is the deterministic public-edge and Agent regression
 gate. It owns a temporary worker/Broker/edge session, leases free loopback
 ports, generates memory-only desktop, worker, and Broker bearers, classifies
-every route, exercises one structured `files.list` Agent turn, and always
-verifies child and port cleanup:
+every route, exercises one structured `files.list` Agent turn and one
+approval/replay cycle, and always verifies child and port cleanup:
 
 ```powershell
 $artifact = Join-Path $env:TEMP 'ru-harness-vnext-backend.json'
@@ -40,7 +40,10 @@ $artifact = Join-Path $env:TEMP 'ru-harness-vnext-backend.json'
 
 The artifact uses schema version 2 and records only bounded statuses, reason
 codes, timings, counts, route coverage, and cleanup booleans. The expected
-coverage is 41 HTTP routes and 2 WebSocket routes. Observation routes are
+coverage is 41 HTTP routes and 2 WebSocket routes. The Agent approval probe
+uses a deterministic `web.search` fixture with no adapter, approves it once,
+then replays the same opaque ID and expects `approval_stale`; it never starts
+a shell or external account. Observation routes are
 explicitly `skipped` with `hardware_or_external_observation_required`; all
 other safe routes use isolated fixtures. Auth ownership must show the generated
 bearer succeeding and both wrong/missing bearers receiving 401/403. A child
@@ -70,8 +73,10 @@ The wrapper runs fresh turn, stop, cancel, stale-session, and Agent scenarios
 (`agent-read-only`, `agent-terminal-approval`, `agent-terminal-reject`,
 `agent-cancel`, `agent-stale-result`, and `agent-private-metadata`), then
 writes one schema-v2 aggregate only after descriptor, child, port, and
-temporary-root cleanup has been checked. A successful deterministic GUI result
-does not accept live microphone capture, audible OmniVoice, subtitles, or
+temporary-root cleanup has been checked. The approval scenarios drive the
+visible Approve/Reject controls, wait for the bounded result event, and verify
+that the card is cleared before checking the conversation. A successful
+deterministic GUI result does not accept live microphone capture, audible OmniVoice, subtitles, or
 VTube Studio; those remain the user-owned hardware gate below.
 
 See [Agent tools and skills](agent-tools.md) for the tool boundary, approval

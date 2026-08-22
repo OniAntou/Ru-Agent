@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from harness.session import HarnessSession
+from harness.session import HarnessSession, agent_tool_loop_completed
 
 
 def test_session_cleanup_runs_after_readiness_failure() -> None:
@@ -33,6 +33,26 @@ def test_deterministic_chat_requires_order_privacy_and_one_terminal_event() -> N
     assert statuses["chat.private_metadata"] == "passed"
     assert statuses["voice.synthetic_stt"] == "passed"
     assert statuses["voice.synthetic_tts"] == "passed"
+
+
+def test_agent_tool_loop_allows_approval_results_after_done() -> None:
+    events = [
+        {"type": "agent.activity"},
+        {
+            "type": "agent.approval_required",
+            "content": "Approval required.",
+            "session_id": "session-1",
+            "approval_id": "approval-1",
+            "tool_id": "web.search",
+            "scope": "web.search",
+            "expires_at": "2099-01-01T00:00:00+00:00",
+        },
+        {"type": "done"},
+        {"type": "agent.approval_result", "status": "failed"},
+        {"type": "agent.approval_result", "error_code": "approval_stale"},
+    ]
+
+    assert agent_tool_loop_completed(events)
 
 
 def test_gui_driver_output_is_converted_to_safe_checks(tmp_path: Path) -> None:

@@ -45,6 +45,65 @@ GuiScenario = Literal[
 ]
 
 
+def summarize_agent_approval_events(events: list[dict[str, Any]]) -> dict[str, object]:
+    """Summarize only safe approval lifecycle facts for the public artifact."""
+
+    required = [event for event in events if event.get("type") == "agent.approval_required"]
+    results = [event for event in events if event.get("type") == "agent.approval_result"]
+    non_stale_results = [
+        event for event in results if event.get("error_code") != "approval_stale"
+    ]
+    replay_observed = any(event.get("error_code") == "approval_stale" for event in results)
+    safe_required_shape = bool(required) and all(
+        set(event).issubset(
+            {
+                "type",
+                "content",
+                "session_id",
+                "error_code",
+                "status",
+                "approval_id",
+                "tool_id",
+                "scope",
+                "expires_at",
+            }
+        )
+        for event in required
+    )
+    serialized = json.dumps(events, ensure_ascii=False).casefold()
+    private_absent = not any(
+        marker in serialized
+        for marker in (
+            "bearer",
+            "token",
+            "secret",
+            "arguments",
+            "request_body",
+            "transcript",
+            "script",
+            "credential",
+        )
+    )
+    return {
+        "approval_required": len(required) == 1 and safe_required_shape,
+        "approval_dispatch": len(non_stale_results) == 1,
+        "approval_replay": replay_observed,
+        "private_absent": private_absent,
+    }
+
+
+def agent_tool_loop_completed(events: list[dict[str, Any]]) -> bool:
+    """Return whether the safe synthetic Agent turn reached done."""
+
+    event_types = [str(event.get("type") or "") for event in events]
+    approval_summary = summarize_agent_approval_events(events)
+    return (
+        "agent.activity" in event_types
+        and "done" in event_types
+        and bool(approval_summary["approval_required"])
+    )
+
+
 class HarnessSession:
     """Own every temporary credential, port, child, and fixture used by a run."""
 
@@ -644,10 +703,79 @@ class HarnessSession:
                             events.append(payload)
                         if isinstance(payload, dict) and payload.get("type") in {"done", "error"}:
                             break
+
+                approval = next(
+                    (
+                        event
+                        for event in events
+                        if event.get("type") == "agent.approval_required"
+                    ),
+                    None,
+                )
+                if isinstance(approval, dict):
+                    await socket.send(
+                        json.dumps(
+                            {
+                                "type": "agent.approval.response",
+                                "session_id": approval.get("session_id"),
+                                "approval_id": approval.get("approval_id"),
+                                "approved": True,
+                            }
+                        )
+                    )
+                    while time.monotonic() < deadline:
+                        message = await asyncio.wait_for(
+                            socket.recv(), timeout=max(0.1, deadline - time.monotonic())
+                        )
+                        if isinstance(message, str):
+                            payload = json.loads(message)
+                            if isinstance(payload, dict):
+                                events.append(payload)
+                            if isinstance(payload, dict) and payload.get("type") == "agent.approval_result":
+                                break
+
+                    await socket.send(
+                        json.dumps(
+                            {
+                                "type": "agent.approval.response",
+                                "session_id": approval.get("session_id"),
+                                "approval_id": approval.get("approval_id"),
+                                "approved": True,
+                            }
+                        )
+                    )
+                    while time.monotonic() < deadline:
+                        message = await asyncio.wait_for(
+                            socket.recv(), timeout=max(0.1, deadline - time.monotonic())
+                        )
+                        if isinstance(message, str):
+                            payload = json.loads(message)
+                            if isinstance(payload, dict):
+                                events.append(payload)
+                            if (
+                                isinstance(payload, dict)
+                                and payload.get("type") == "agent.approval_result"
+                                and payload.get("error_code") == "approval_stale"
+                            ):
+                                break
         except Exception as error:
             return [
                 CheckResult(
                     "agent.synthetic_tool_loop",
+                    "failed",
+                    0.0,
+                    reason="request_error",
+                    details={"error_type": type(error).__name__},
+                ),
+                CheckResult(
+                    "agent.approval_dispatch",
+                    "failed",
+                    0.0,
+                    reason="request_error",
+                    details={"error_type": type(error).__name__},
+                ),
+                CheckResult(
+                    "agent.approval_replay",
                     "failed",
                     0.0,
                     reason="request_error",
@@ -663,33 +791,59 @@ class HarnessSession:
             ]
 
         event_types = [str(event.get("type") or "") for event in events]
-        serialized = json.dumps(events, ensure_ascii=False).casefold()
-        has_activity = "agent.activity" in event_types
-        has_done = event_types[-1:] == ["done"]
-        private_absent = not any(
-            marker in serialized
-            for marker in (
-                "bearer",
-                "token",
-                "secret",
-                "arguments",
-                "request_body",
-                "transcript",
-            )
-        )
+        approval_summary = summarize_agent_approval_events(events)
+        loop_completed = agent_tool_loop_completed(events)
         return [
             CheckResult(
                 "agent.synthetic_tool_loop",
-                "passed" if has_activity and has_done else "failed",
+                "passed"
+                if loop_completed
+                else "failed",
                 0.0,
-                reason=None if has_activity and has_done else "agent_tool_loop_not_completed",
-                details={"event_types": event_types},
+                reason=(
+                    None
+                    if loop_completed
+                    else "agent_tool_loop_not_completed"
+                ),
+                details={
+                    "event_types": event_types,
+                    "error_codes": [
+                        str(event.get("error_code"))
+                        for event in events
+                        if event.get("type") == "error"
+                    ],
+                },
+            ),
+            CheckResult(
+                "agent.approval_dispatch",
+                "passed" if approval_summary["approval_dispatch"] else "failed",
+                0.0,
+                reason=(
+                    None
+                    if approval_summary["approval_dispatch"]
+                    else "approved_action_not_dispatched_once"
+                ),
+                details={
+                    "result_count": sum(
+                        event.get("type") == "agent.approval_result" for event in events
+                    )
+                },
+            ),
+            CheckResult(
+                "agent.approval_replay",
+                "passed" if approval_summary["approval_replay"] else "failed",
+                0.0,
+                reason=None
+                if approval_summary["approval_replay"]
+                else "approval_replay_not_rejected",
             ),
             CheckResult(
                 "agent.private_metadata",
-                "passed" if private_absent else "failed",
+                "passed" if approval_summary["private_absent"] else "failed",
                 0.0,
-                reason=None if private_absent else "private_agent_metadata_visible",
+                reason=None
+                if approval_summary["private_absent"]
+                else "private_agent_metadata_visible",
             ),
         ]
 
@@ -733,6 +887,9 @@ class HarnessSession:
                 "NO_PROXY": "127.0.0.1,localhost",
                 "no_proxy": "127.0.0.1,localhost",
                 "PYTHONPATH": os.pathsep.join(python_paths),
+                "RU_HARNESS_AGENT_APPROVAL": (
+                    "1" if deterministic and harness_scenario is None else "0"
+                ),
             }
         )
         if deterministic and harness_scenario is not None:

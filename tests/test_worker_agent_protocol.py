@@ -81,6 +81,23 @@ def test_tool_result_requires_bounded_status_and_safe_summary() -> None:
         )
 
 
+def test_tool_result_accepts_approval_required_status() -> None:
+    envelope = {
+        "v": 1,
+        "id": "tool-1",
+        "type": CHAT_TOOL_RESULT,
+        "payload": {
+            "request_id": "tool-request-1",
+            "status": "approval_required",
+            "output": {"approval_id": "approval-1"},
+            "safe_summary": "Approval required.",
+            "error_code": "approval_required",
+        },
+    }
+
+    assert validate_envelope(envelope)["type"] == CHAT_TOOL_RESULT
+
+
 def test_tool_result_rejects_oversized_output() -> None:
     with pytest.raises(ProtocolError, match="invalid_tool_result"):
         validate_envelope(

@@ -16,6 +16,9 @@ public sealed class UiAutomationScenario : IDisposable
     private const string NewSessionAutomationId = "NewSessionButton";
     private const string AgentModeAutomationId = "AgentModeButton";
     private const string AgentActivityAutomationId = "AgentActivity";
+    private const string AgentApprovalCardAutomationId = "AgentApprovalCard";
+    private const string AgentApproveButtonAutomationId = "AgentApproveButton";
+    private const string AgentRejectButtonAutomationId = "AgentRejectButton";
     private const string ChatInputAutomationId = "ChatInput";
     private const string SendButtonAutomationId = "SendButton";
     private readonly Process _process;
@@ -232,19 +235,22 @@ public sealed class UiAutomationScenario : IDisposable
             AutomationElement send = await WaitForElementAsync(SendButtonAutomationId, timeout);
             Invoke(send);
 
-            bool activity = await WaitUntilAsync(
-                () => HasAtLeast("agent.activity", 1)
-                    || HasAtLeast("agent.approval.required", 1),
-                timeout);
-            bool messages = await WaitUntilAsync(HasUserAndAssistantMessages, timeout);
             bool approvalExpected = scenario is "agent-terminal-approval" or "agent-terminal-reject";
-            bool approvalObserved = HasAtLeast("agent.approval.required", 1);
+            bool activity = await WaitUntilAsync(
+                () => approvalExpected
+                    ? HasAtLeast("agent.approval.required", 1)
+                    : HasAtLeast("agent.activity", 1),
+                timeout);
+            bool approvalCompleted = !approvalExpected
+                || (activity && await CompleteAgentApprovalAsync(scenario, timeout));
+            bool messages = approvalCompleted
+                && await WaitUntilAsync(HasUserAndAssistantMessages, timeout);
             bool privateAbsent = !VisibleMessageContainsPrivateMarker()
                 && !AgentSurfaceContainsPrivateMarker();
             bool passed = activity
                 && messages
                 && privateAbsent
-                && (!approvalExpected || approvalObserved);
+                && (!approvalExpected || approvalCompleted);
 
             if (scenario == "agent-stale-result")
             {
@@ -434,6 +440,28 @@ public sealed class UiAutomationScenario : IDisposable
         return forbidden.Any(marker => activity.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
+    private async Task<bool> CompleteAgentApprovalAsync(string scenario, TimeSpan timeout)
+    {
+        string approvalButtonId = scenario == "agent-terminal-approval"
+            ? AgentApproveButtonAutomationId
+            : AgentRejectButtonAutomationId;
+        bool ready = await WaitUntilAsync(
+            () => IsVisible(FindByAutomationId(AgentApprovalCardAutomationId))
+                && IsEnabled(FindByAutomationId(approvalButtonId)),
+            timeout);
+        if (!ready)
+        {
+            return false;
+        }
+
+        AutomationElement approvalButton = await WaitForElementAsync(approvalButtonId, timeout);
+        Invoke(approvalButton);
+        return await WaitUntilAsync(
+            () => ReadEventCounts().GetValueOrDefault("agent.approval.result") == 1
+                && !IsVisible(FindByAutomationId(AgentApprovalCardAutomationId)),
+            timeout);
+    }
+
     private static bool IsToggleOn(AutomationElement element)
     {
         return element.TryGetCurrentPattern(TogglePattern.Pattern, out object pattern)
@@ -465,6 +493,30 @@ public sealed class UiAutomationScenario : IDisposable
 
     private static string GetName(AutomationElement? element)
         => element?.Current.Name ?? string.Empty;
+
+    private static bool IsVisible(AutomationElement? element)
+    {
+        try
+        {
+            return element != null && !element.Current.IsOffscreen;
+        }
+        catch (ElementNotAvailableException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsEnabled(AutomationElement? element)
+    {
+        try
+        {
+            return element != null && element.Current.IsEnabled && !element.Current.IsOffscreen;
+        }
+        catch (ElementNotAvailableException)
+        {
+            return false;
+        }
+    }
 
     private static bool ContainsIgnoreCase(string value, string expected)
         => value.Contains(expected, StringComparison.OrdinalIgnoreCase);

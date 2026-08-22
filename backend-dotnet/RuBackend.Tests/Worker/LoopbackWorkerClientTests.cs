@@ -132,6 +132,61 @@ public sealed class LoopbackWorkerClientTests
     }
 
     [Fact]
+    public async Task GenerateChat_sends_approval_required_tool_result()
+    {
+        WorkerEnvelope? observedResult = null;
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            await CompleteHandshakeAsync(socket);
+            var request = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(
+                socket,
+                Event(
+                    request.Id,
+                    WorkerMessageTypes.ChatToolRequest,
+                    0,
+                    new JsonObject
+                    {
+                        ["request_id"] = "tool-request-approval",
+                        ["session_id"] = "session",
+                        ["correlation_id"] = "corr-approval",
+                        ["tool_id"] = "web.search",
+                        ["tool_version"] = "1.0.0",
+                        ["arguments"] = new JsonObject { ["query"] = "Ru" },
+                        ["deadline_ms"] = 30_000,
+                    }));
+            observedResult = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(
+                socket,
+                Event(
+                    request.Id,
+                    WorkerMessageTypes.ChatDone,
+                    1,
+                    new JsonObject { ["raw_reply"] = "Đang chờ duyệt." }));
+        });
+
+        await using var client = CreateClient(server.Uri);
+        var request = EmptyChatRequest("chat-tool-approval") with
+        {
+            ToolHandler = (tool, _) => Task.FromResult(
+                new WorkerToolResult(
+                    tool.RequestId,
+                    "approval_required",
+                    new JsonObject { ["approval_id"] = "approval-1" },
+                    "approval_required",
+                    "Approval required."))
+        };
+
+        var events = await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None));
+
+        Assert.Equal(WorkerMessageTypes.ChatToolRequest, events[0].Type);
+        Assert.Equal(WorkerMessageTypes.ChatDone, events[1].Type);
+        Assert.NotNull(observedResult);
+        Assert.Equal("approval_required", observedResult!.Payload["status"]!.GetValue<string>());
+        Assert.Equal("approval-1", observedResult.Payload["output"]!["approval_id"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task GenerateChat_rejects_non_monotonic_sequences()
     {
         await using var server = await FakeWorkerServer.StartAsync(async socket =>

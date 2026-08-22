@@ -129,7 +129,18 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
             await _broker!.OpenSessionAsync(
                 tool.SessionId,
                     new HashSet<string>(
-                    ["system.read", "workspace.read", "terminal.execute", "skill.execute"],
+                    [
+                        "system.read",
+                        "workspace.read",
+                        "terminal.execute",
+                        "workspace.write",
+                        "web.search",
+                        "web.fetch",
+                        "calendar.write",
+                        "tasks.write",
+                        "mail.send",
+                        "skill.execute",
+                    ],
                     StringComparer.Ordinal),
                 new HashSet<string>(StringComparer.Ordinal),
                 tool.CorrelationId,
@@ -147,7 +158,13 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
     {
         "system.time" or "system.status" or "app.list" => "system.read",
         "files.list" or "files.read" or "workspace.search" => "workspace.read",
+        "files.write" or "notes.create" => "workspace.write",
         "terminal.run" or "terminal.shell" => "terminal.execute",
+        "web.search" => "web.search",
+        "web.fetch" => "web.fetch",
+        "calendar.create" => "calendar.write",
+        "tasks.create" or "tasks.complete" => "tasks.write",
+        "mail.send" => "mail.send",
         _ => "agent.tool.unknown",
     };
 

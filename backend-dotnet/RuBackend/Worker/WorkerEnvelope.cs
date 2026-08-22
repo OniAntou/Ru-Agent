@@ -213,7 +213,7 @@ public static class WorkerEnvelopeCodec
     {
         ValidateToolRequestId(payload, "invalid_tool_result");
         var status = ReadString(payload["status"], "invalid_tool_result");
-        if (!new HashSet<string>(["succeeded", "failed", "denied", "cancelled", "timed_out"], StringComparer.Ordinal).Contains(status)
+        if (!new HashSet<string>(["succeeded", "failed", "denied", "approval_required", "cancelled", "timed_out"], StringComparer.Ordinal).Contains(status)
             || payload["output"] is not JsonObject
             || payload["safe_summary"] is not JsonValue safeSummary
             || !safeSummary.TryGetValue<string>(out var summary)

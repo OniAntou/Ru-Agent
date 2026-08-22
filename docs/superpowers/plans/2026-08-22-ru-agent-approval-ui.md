@@ -49,7 +49,7 @@ repository's sequential Windows verification commands.
 - ToolExecutionService.RespondToApprovalAsync(AgentEnvelope request, CancellationToken cancellationToken) consumes the pending record and either returns denied or dispatches the original typed request once with a private approval bypass.
 - AgentConnection accepts an optional approval handler and routes AgentMessageTypes.ApprovalResponse only for an owned session.
 
-- [ ] **Step 1: Write the failing store and protocol tests**
+- [x] **Step 1: Write the failing store and protocol tests**
 
 Add tests that create a real PendingApprovalStore and assert that an issued
 record returns only bounded metadata, that approval consumes it once, and that
@@ -62,7 +62,7 @@ Broker WebSocket test that sends approval_response with only:
 
 and currently fails because the Broker does not route that message.
 
-- [ ] **Step 2: Run the focused tests and verify the expected RED failure**
+- [x] **Step 2: Run the focused tests and verify the expected RED failure**
 
 Run:
 
@@ -73,7 +73,7 @@ dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.cspr
 Expected: compilation or assertion failures specifically for the missing
 pending store/approval handler, not restore or unrelated worktree failures.
 
-- [ ] **Step 3: Implement the bounded in-memory pending store**
+- [x] **Step 3: Implement the bounded in-memory pending store**
 
 Use a ConcurrentDictionary<string, PendingApproval> and an atomic
 TryRemove(KeyValuePair<...>). Clone the request arguments on issue and on
@@ -81,7 +81,7 @@ consume. Compute the canonical arguments hash inside the Broker from sorted
 object keys and ordered arrays; do not accept a hash supplied by the GUI.
 Expire records after 60 seconds and expose RemoveSession for Broker cleanup.
 
-- [ ] **Step 4: Add approval-required metadata and one-time dispatch**
+- [x] **Step 4: Add approval-required metadata and one-time dispatch**
 
 In ToolExecutionService, when policy returns RequiresApproval, issue a pending
 record and return a result whose output is exactly the safe shape:
@@ -109,14 +109,14 @@ Other registered external/connector tools without an adapter remain safely
 tool_not_implemented after approval and perform no side effect. Never put
 original arguments or the private terminal token in the response envelope.
 
-- [ ] **Step 5: Route the private approval_response message**
+- [x] **Step 5: Route the private approval_response message**
 
 Extend AgentConnection and BrokerHost with an approval handler. Validate that
 the session owns the request before calling it, return ToolResult with
 approval_stale on mismatch/replay, and preserve request/session/correlation
 identity in the response envelope.
 
-- [ ] **Step 6: Run the focused tests and commit the Broker slice**
+- [x] **Step 6: Run the focused tests and commit the Broker slice**
 
 Run the focused command again and then:
 
@@ -153,7 +153,7 @@ git commit -m "feat: add one-time Broker approvals"
 - IAgentApprovalCoordinator.Register(WorkerToolRequest tool, AgentToolResult result) stores safe metadata only and returns a ChatEvent for the GUI.
 - IAgentApprovalCoordinator.RespondAsync(AgentApprovalResponse response, CancellationToken cancellationToken) validates the Host-side session record and forwards the decision to the Broker.
 
-- [ ] **Step 1: Write failing Host model and control-message tests**
+- [x] **Step 1: Write failing Host model and control-message tests**
 
 Add tests for the safe approval model, one-time Host consumption, malformed
 control messages, wrong session, oversized IDs, and the absence of arguments,
@@ -167,7 +167,7 @@ WebSocket endpoint test that sends:
 and expects a safe agent.approval_result event after the coordinator is wired.
 Keep ordinary prompt parsing and history behavior unchanged.
 
-- [ ] **Step 2: Run the Host tests and verify RED**
+- [x] **Step 2: Run the Host tests and verify RED**
 
 Run:
 
@@ -178,7 +178,7 @@ dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Rele
 Expected: failures for the missing control-message branch and approval event
 fields only.
 
-- [ ] **Step 3: Refactor the Host approval models and client call**
+- [x] **Step 3: Refactor the Host approval models and client call**
 
 Remove raw-argument approval inputs from IAgentBrokerClient. Keep the Host store
 as bounded safe metadata for session validation; the Broker remains the
@@ -194,7 +194,7 @@ new JsonObject
 
 and accepts only a known ToolResultStatuses value plus a bounded summary.
 
-- [ ] **Step 4: Register pending metadata from the agent tool turn**
+- [x] **Step 4: Register pending metadata from the agent tool turn**
 
 When AgentTurnCoordinator receives approval_required, require the Broker output
 to contain bounded approval_id, tool_id, tool_version, scope, safe_action, and
@@ -203,7 +203,7 @@ agent.approval_required with the safe action as content and the remaining fields
 as explicit JSON properties. If metadata is missing or oversized, return
 approval_invalid and do not show a card.
 
-- [ ] **Step 5: Add the authenticated chat control branch**
+- [x] **Step 5: Add the authenticated chat control branch**
 
 Extend ChatEvent with optional approval_id, tool_id, scope, and expires_at
 properties. In ChatWebSocketEndpoint, parse control messages before prompt
@@ -212,7 +212,7 @@ fields, and call IAgentApprovalCoordinator. Send only agent.approval_result
 with approval_id, status, and bounded safe summary. If a turn is active, return
 busy without queuing the action.
 
-- [ ] **Step 6: Run the Host tests and commit the bridge slice**
+- [x] **Step 6: Run the Host tests and commit the bridge slice**
 
 Run the focused Host command again, then:
 
@@ -242,7 +242,7 @@ git commit -m "feat: bridge Agent approvals through chat"
 - ChatWebSocketClient.SendAgentApprovalAsync(string sessionId, string approvalId, bool approved, CancellationToken cancellationToken) sends only the control envelope.
 - ChatView owns one nullable _pendingAgentApproval, three automation IDs, and no tool arguments.
 
-- [ ] **Step 1: Write failing model/client/UI contract tests**
+- [x] **Step 1: Write failing model/client/UI contract tests**
 
 Extend the model test for empty/oversized IDs, expired approvals, and a safe
 action containing Vietnamese text. Add source contract assertions for:
@@ -257,7 +257,7 @@ agent.approval.response
 Assert that the XAML does not bind an arguments, script, token, or credential
 property and that the client serializer does not emit them.
 
-- [ ] **Step 2: Run the GUI tests and verify RED**
+- [x] **Step 2: Run the GUI tests and verify RED**
 
 Run:
 
@@ -268,7 +268,7 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj -c Release --no-rest
 Expected: failures for the missing approval card IDs/client method, not XAML
 restore failures.
 
-- [ ] **Step 3: Implement bounded WebSocket parsing and sending**
+- [x] **Step 3: Implement bounded WebSocket parsing and sending**
 
 Parse agent.approval_required only when all safe fields are present and within
 the existing 256-character UI bound. Ignore malformed frames without throwing.
@@ -286,7 +286,7 @@ new
 
 Parse agent.approval_result and never pass its content into Messages.
 
-- [ ] **Step 4: Implement the compact WinUI card**
+- [x] **Step 4: Implement the compact WinUI card**
 
 Place a Border between AgentActivity and InputBorder, using the existing
 surface/line/muted/ink resources, a subtle pending amber line, wrapping safe
@@ -294,7 +294,7 @@ action text, and two native Button controls. Add the three stable automation
 IDs, accessible names, and a polite live region. Keep it collapsed until a
 valid approval arrives; disable both buttons while sending.
 
-- [ ] **Step 5: Wire state transitions and cleanup**
+- [x] **Step 5: Wire state transitions and cleanup**
 
 On a valid request, replace any previous pending record only if it belongs to
 the current session. On approve/reject, set a short processing status, send
@@ -303,7 +303,7 @@ session reset, Agent toggle off, disconnect, expiry, and disposal. Do not add
 an assistant/user chat message or Harness payload containing action arguments.
 Keep existing voice/meteor controls untouched.
 
-- [ ] **Step 6: Run GUI tests and commit the UI slice**
+- [x] **Step 6: Run GUI tests and commit the UI slice**
 
 Run the focused GUI command again, then:
 
@@ -332,14 +332,14 @@ git commit -m "feat: add Ru Agent approval card"
 - Deterministic backend probe sends a safe approval-required result, then a valid approval and replay; it asserts one adapter execution and no secrets in the artifact.
 - GUI Harness scenarios agent-terminal-approval and agent-terminal-reject click the named buttons only against fake adapters; they never run a real shell/account/device.
 
-- [ ] **Step 1: Write failing Harness privacy and replay assertions**
+- [x] **Step 1: Write failing Harness privacy and replay assertions**
 
 Extend tests/test_agent_harness.py to require approval_required, an approval
 result, exactly one approved side-effect marker, and absence of arguments,
 script, token, secret, and credential from emitted safe events/artifacts. Add a
 replay assertion that produces approval_stale.
 
-- [ ] **Step 2: Run the focused Harness tests and verify RED**
+- [x] **Step 2: Run the focused Harness tests and verify RED**
 
 Run:
 
@@ -349,21 +349,21 @@ Run:
 
 Expected: failures only for the new approval/replay assertions.
 
-- [ ] **Step 3: Extend the deterministic fake Broker flow**
+- [x] **Step 3: Extend the deterministic fake Broker flow**
 
 Make the fake approval probe emit safe metadata, accept one approval response,
 and record only a bounded safe result. Keep raw command fixtures inside the
 fake Broker process and out of JSON artifacts. Ensure cleanup removes pending
 approval state and the descriptor/ports as before.
 
-- [ ] **Step 4: Extend GUI Harness click scenarios**
+- [x] **Step 4: Extend GUI Harness click scenarios**
 
 Use existing UI Automation IDs to click approve/reject, wait for the terminal
 status, then assert the card is hidden and the activity text is bounded. Test
 session reset and stale-result behavior without launching PowerShell, Bash, WSL,
 web accounts, mail, calendar, microphone, speaker, or VTS.
 
-- [ ] **Step 5: Update operational docs and commit the Harness slice**
+- [x] **Step 5: Update operational docs and commit the Harness slice**
 
 Document the control message, one-time expiry/replay guarantees, safe card
 fields, and the remaining live acceptance gate in agent-tools.md and

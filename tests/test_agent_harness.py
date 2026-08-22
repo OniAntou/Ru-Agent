@@ -57,3 +57,33 @@ def test_agent_driver_payload_rejects_private_fields() -> None:
     ]
     with pytest.raises(ValueError, match="unsupported"):
         HarnessSession._convert_gui_checks(payload)
+
+
+def test_backend_agent_probe_covers_approval_dispatch_replay_and_privacy() -> None:
+    source = Path("scripts/harness/session.py").read_text(encoding="utf-8")
+
+    assert "agent.approval_required" in source
+    assert "agent.approval_result" in source
+    assert "approval_stale" in source
+    assert "agent.approval_dispatch" in source
+    assert "agent.approval_replay" in source
+    assert "private_agent_metadata_visible" in source
+
+
+def test_deterministic_approval_fixture_never_uses_a_real_shell() -> None:
+    source = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
+
+    assert "RU_HARNESS_AGENT_APPROVAL" in source
+    assert '"web.search"' in source
+    assert "Get-Date" not in source
+    assert '"terminal.shell"' not in source
+
+
+def test_gui_agent_approval_scenarios_click_and_clear_the_approval_card() -> None:
+    source = Path("gui-winui3.Harness/UiAutomationScenario.cs").read_text(encoding="utf-8")
+
+    assert '"AgentApprovalCard"' in source
+    assert '"AgentApproveButton"' in source
+    assert '"AgentRejectButton"' in source
+    assert '"agent.approval.result"' in source
+    assert "Invoke(approvalButton)" in source

@@ -51,6 +51,43 @@ bound to the session, request identity, tool version, and canonical arguments.
 Changing the arguments, using another session, replaying the token, or using
 an expired approval fails closed.
 
+## One-time approval UI
+
+When a registered Agent operation is classified as external or destructive,
+the Broker keeps the original typed request and its canonical arguments hash
+in memory. The public Host and WinUI receive only bounded metadata:
+
+- `approval_id`, tool identity, safe action, scope, and expiry;
+- no arguments, script, credential, bearer, connector body, or raw adapter output.
+
+WinUI renders that metadata in a compact approval card above the composer. The
+card is not a chat message, so it is not written to conversation history or
+memory. `Duyệt một lần` and `Từ chối` disable while the decision is in flight;
+the card is cleared on a terminal result, session change, Agent disable,
+disconnect, expiry, or disposal.
+
+The authenticated `/chat` WebSocket accepts this control envelope and nothing
+else for the approval decision:
+
+```json
+{
+  "type": "agent.approval.response",
+  "session_id": "...",
+  "approval_id": "...",
+  "approved": true
+}
+```
+
+The Host forwards only `approval_id` and `approved` through the private Broker
+WebSocket. The Broker consumes the pending record atomically, rechecks policy,
+and dispatches the original typed request at most once. A second response,
+wrong session, changed request, expired record, or unavailable adapter returns
+a bounded result and performs no uncontrolled side effect. `terminal.run`
+remains the structured, allowlisted, approval-free path; raw shell and
+external connector paths stay gated. The Worker `chat.tool.result` contract
+accepts `approval_required` as a non-terminal tool state so the approval card
+can be reached without converting the Agent turn into a protocol error.
+
 ## Verification
 
 Run the heavyweight checks sequentially on Windows:
@@ -63,7 +100,8 @@ dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Rele
 & D:\LLM\.venv\Scripts\python.exe scripts/aspnetcore_compatibility_harness.py --mode backend-deterministic --output D:\LLM\artifacts\aspnetcore\ru-harness-vnext.json
 ```
 
-The deterministic backend artifact must include `agent.synthetic_tool_loop` and
+The deterministic backend artifact must include `agent.synthetic_tool_loop`,
+`agent.approval_dispatch`, `agent.approval_replay`, and
 `agent.private_metadata` as passed, and must report Broker startup and cleanup
 as passed. GUI Agent scenarios remain a separate interactive UI gate because
 they require launching the WinUI process; they must not start real shells,

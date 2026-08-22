@@ -70,7 +70,8 @@ async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> Async
             _payload.get("__worker_correlation_id") or "harness-agent-correlation"
         )
         scenario = os.environ.get("RU_HARNESS_SCENARIO", "")
-        approval_probe = scenario in {"agent-terminal-approval", "agent-terminal-reject"}
+        approval_probe = scenario in {"agent-terminal-approval", "agent-terminal-reject"} \
+            or os.environ.get("RU_HARNESS_AGENT_APPROVAL") == "1"
         tool_request_id = "harness-tool-approval" if approval_probe else "harness-tool-read"
         yield WorkerReply(CHAT_RESET, {})
         yield WorkerReply(
@@ -79,14 +80,10 @@ async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> Async
                 "request_id": tool_request_id,
                 "session_id": session_id,
                 "correlation_id": correlation_id,
-                "tool_id": "terminal.shell" if approval_probe else "files.list",
+                "tool_id": "web.search" if approval_probe else "files.list",
                 "tool_version": "1.0.0",
                 "arguments": (
-                    {
-                        "shell": "powershell",
-                        "working_directory": ".",
-                        "script": "Get-Date",
-                    }
+                    {"query": "deterministic approval fixture"}
                     if approval_probe
                     else {"path": "src"}
                 ),

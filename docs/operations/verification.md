@@ -23,6 +23,27 @@ dotnet list D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj package
 cmd /c D:\LLM\build.bat
 ```
 
+The volume vertical slice has a separate deterministic gate that must run
+without changing the machine's audio state:
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_volume_control.py tests/test_system_pc_tools.py tests/test_reply_orchestration.py tests/test_runner_status.py tests/test_worker_runtime_handlers.py tests/test_tool_calls.py tests/test_agent_harness.py tests/test_harness_session.py
+dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj -c Release --no-restore --nologo --filter "FullyQualifiedName~VolumeTools|FullyQualifiedName~ToolCatalog|FullyQualifiedName~BrokerHostTests"
+dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Release --no-restore --nologo --filter "FullyQualifiedName~AgentTurnCoordinator"
+```
+
+The automated volume checks inject fake controllers. They prove the
+`system.volume@1.0.0` contract, `system.write` reversible policy, bounded
+result shape, normal-chat marker compatibility, Agent tool-request/result
+phase separation, and truthful readback failure. They do not prove a physical
+speaker, the Windows default render endpoint, audible output, or GUI behavior.
+
+Manual live acceptance is user-owned: with Ru running on Windows, verify
+`get`, exact `set`, relative increase/decrease, `mute`, and `unmute` in normal
+chat and Agent mode. Confirm that a readback mismatch or unavailable endpoint
+produces a failure without a success claim. Keep raw device names, native
+errors, arguments, and transcripts out of chat, TTS, memory, and artifacts.
+
 The route checker must report 41 HTTP routes and 2 WebSocket routes. The build
 must produce self-contained `RuBackend.exe` and `RuApp.exe`; verification does
 not launch them.

@@ -27,6 +27,14 @@ The first usable tool set is deliberately small:
 - `files.list` and `files.read` stay inside the configured workspace and have
   bounded results.
 - `system.time`, `system.status`, and `app.list` are read-only metadata tools.
+- `system.volume@1.0.0` is the first local reversible write tool. It targets
+  the Windows default render endpoint through Core Audio, requires the
+  session-scoped `system.write` scope, and does not require one-time approval.
+  Its bounded operations are `get`, exact `set` (0–100), relative
+  `increase`/`decrease` (1–50), `mute`, and `unmute`; every write is successful
+  only after readback verification. Normal chat accepts compatibility
+  `[VOLUME: ...]` markers, while Agent mode uses a strict JSON tool request and
+  a separate natural-language result phase.
 - `terminal.run` accepts only the registered non-admin executable allowlist,
   workspace-relative directories, bounded arguments/output, cancellation, and
   process-tree cleanup.
@@ -87,6 +95,9 @@ remains the structured, allowlisted, approval-free path; raw shell and
 external connector paths stay gated. The Worker `chat.tool.result` contract
 accepts `approval_required` as a non-terminal tool state so the approval card
 can be reached without converting the Agent turn into a protocol error.
+The local reversible `system.volume` result is bounded to `operation`,
+`level`, `muted`, and `verified`; native errors, device names, arguments, and
+model success claims are not forwarded when readback fails.
 
 ## Verification
 
@@ -97,6 +108,7 @@ dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.cspr
 dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Release --no-restore --nologo
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_worker_agent_protocol.py tests/test_tool_calls.py tests/test_agent_harness.py
+& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_volume_control.py tests/test_system_pc_tools.py tests/test_reply_orchestration.py tests/test_runner_status.py tests/test_worker_runtime_handlers.py
 & D:\LLM\.venv\Scripts\python.exe scripts/aspnetcore_compatibility_harness.py --mode backend-deterministic --output D:\LLM\artifacts\aspnetcore\ru-harness-vnext.json
 ```
 
@@ -109,3 +121,11 @@ web accounts, mail, calendar, microphone, speaker, or VTube Studio devices.
 
 Live terminal behavior, external accounts, and hardware remain explicit manual
 acceptance gates after the deterministic checks.
+
+For the volume tool, automated tests use fake Core Audio controllers and a
+fake Broker WebSocket controller; they prove validation, exact/relative
+semantics, mute state, scope policy, and readback mismatch handling without
+changing the machine. Manual Windows acceptance is still required for the
+real default render endpoint: verify `get`, exact `set`, a relative change,
+`mute`, `unmute`, and a forced failure/unchanged-state case in both normal chat
+and Agent mode. Do not report live audio success from deterministic gates.

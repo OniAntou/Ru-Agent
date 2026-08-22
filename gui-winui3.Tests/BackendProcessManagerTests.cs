@@ -22,9 +22,9 @@ public sealed class BackendProcessManagerTests
 
         Assert.True(started);
         Assert.True(manager.IsRunning);
-        Assert.Equal(new[] { "python-runtime-worker", "aspnetcore-edge" }, launcher.Specs.Select(spec => spec.Role));
+        Assert.Equal(new[] { "python-runtime-worker", "ru-agent-broker", "aspnetcore-edge" }, launcher.Specs.Select(spec => spec.Role));
         Assert.Single(jobs.Created);
-        Assert.Equal(2, jobs.Created[0].Assigned.Count);
+        Assert.Equal(3, jobs.Created[0].Assigned.Count);
         Assert.Equal(8000, readiness.Port);
         Assert.Equal(manager.AuthSecret, readiness.Token);
     }
@@ -209,7 +209,21 @@ public sealed class BackendProcessManagerTests
                     "RuBackend.exe");
                 Directory.CreateDirectory(Path.GetDirectoryName(edgePath)!);
                 File.WriteAllText(edgePath, "test");
+
             }
+
+            var brokerPath = Path.Combine(
+                root,
+                "backend-dotnet",
+                "RuAgent.Broker",
+                "bin",
+                "Release",
+                "net10.0",
+                "win-x64",
+                "publish",
+                "RuAgent.Broker.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(brokerPath)!);
+            File.WriteAllText(brokerPath, "test");
 
             return new TemporaryProject(root);
         }

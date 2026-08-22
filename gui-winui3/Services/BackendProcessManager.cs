@@ -12,18 +12,22 @@ public class BackendProcessManager : IDisposable
     private readonly HttpClient _httpClient;
     private List<IBackendProcessHandle> _children = new();
     private IBackendJob? _job;
+    private string? _brokerDescriptorPath;
+    private string? _brokerSessionRoot;
     private bool _disposed;
 
     public event EventHandler? BackendExited;
 
     public BackendProcessManager(
         int? workerPort = null,
+        int? brokerPort = null,
         IBackendProcessFactory? processFactory = null,
         IBackendJobFactory? jobFactory = null,
         IBackendReadinessProbe? readinessProbe = null)
     {
         Port = 8000;
         WorkerPort = workerPort ?? ParseWorkerPort();
+        BrokerPort = brokerPort ?? ParseBrokerPort();
         AuthSecret = GenerateSecret();
         WorkerSecret = GenerateSecret();
         _processFactory = processFactory ?? new WindowsBackendProcessFactory();
@@ -36,7 +40,10 @@ public class BackendProcessManager : IDisposable
     public string WorkerSecret { get; }
     public int Port { get; }
     public int WorkerPort { get; }
-    public string DisplayName => "ASP.NET Core";
+    public int BrokerPort { get; private set; }
+    public string? BrokerDescriptorPath { get; private set; }
+    public string? BrokerSessionRoot { get; private set; }
+    public string DisplayName => "ASP.NET Core + RuAgentBroker";
     public string? LastError { get; private set; }
 
     public bool IsRunning
@@ -67,14 +74,17 @@ public class BackendProcessManager : IDisposable
 
         var startedChildren = new List<IBackendProcessHandle>();
         IBackendJob? job = null;
+        BackendLaunchPlan? plan = null;
         try
         {
-            var plan = BackendLaunchPlan.Create(
+            plan = BackendLaunchPlan.Create(
                 projectRoot,
                 AuthSecret,
                 WorkerSecret,
                 WorkerPort,
-                Environment.GetEnvironmentVariable("RU_RUBACKEND_EXE"));
+                edgeExecutable: Environment.GetEnvironmentVariable("RU_RUBACKEND_EXE"),
+                brokerPort: BrokerPort == 0 ? null : BrokerPort,
+                brokerExecutable: Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE"));
             job = _jobFactory.Create();
             foreach (var spec in plan.Children)
             {
@@ -97,12 +107,17 @@ public class BackendProcessManager : IDisposable
             {
                 if (_disposed)
                 {
-                    Cleanup(startedChildren, job);
+                    Cleanup(startedChildren, job, plan);
                     return false;
                 }
 
                 _children = startedChildren;
                 _job = job;
+                _brokerDescriptorPath = plan.BrokerDescriptorPath;
+                _brokerSessionRoot = plan.BrokerSessionRoot;
+                BrokerPort = plan.BrokerPort;
+                BrokerDescriptorPath = plan.BrokerDescriptorPath;
+                BrokerSessionRoot = plan.BrokerSessionRoot;
                 job = null;
             }
             _ = WatchForExitAsync(startedChildren);
@@ -111,7 +126,7 @@ public class BackendProcessManager : IDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             LastError = "Backend startup was canceled.";
-            Cleanup(startedChildren, job);
+            Cleanup(startedChildren, job, plan);
             return false;
         }
         catch (Exception error)
@@ -121,7 +136,7 @@ public class BackendProcessManager : IDisposable
                 : $"Could not start {DisplayName} backend: {error.Message}";
             Debug.WriteLine(
                 $"[BackendProcessManager] Startup failed: {error.GetType().Name}: {error.Message}");
-            Cleanup(startedChildren, job);
+            Cleanup(startedChildren, job, plan);
             return false;
         }
     }
@@ -161,6 +176,8 @@ public class BackendProcessManager : IDisposable
     {
         List<IBackendProcessHandle> children;
         IBackendJob? job;
+        string? descriptorPath;
+        string? sessionRoot;
         lock (_gate)
         {
             if (_disposed)
@@ -173,9 +190,15 @@ public class BackendProcessManager : IDisposable
             _children = new List<IBackendProcessHandle>();
             job = _job;
             _job = null;
+            descriptorPath = _brokerDescriptorPath;
+            sessionRoot = _brokerSessionRoot;
+            _brokerDescriptorPath = null;
+            _brokerSessionRoot = null;
         }
 
-        Cleanup(children, job);
+        Cleanup(children, job, descriptorPath, sessionRoot);
+        BrokerDescriptorPath = null;
+        BrokerSessionRoot = null;
         _httpClient.Dispose();
     }
 
@@ -202,9 +225,42 @@ public class BackendProcessManager : IDisposable
         return workerPort;
     }
 
+    private static int ParseBrokerPort()
+    {
+        var raw = Environment.GetEnvironmentVariable("RU_BACKEND_BROKER_PORT");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return 0;
+        }
+
+        if (!int.TryParse(raw, out var brokerPort))
+        {
+            throw new ArgumentException("RU_BACKEND_BROKER_PORT must be an integer.", nameof(raw));
+        }
+
+        if (brokerPort is < 1024 or > 65535 || brokerPort == 8000 || brokerPort == 8001)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(raw),
+                "RU_BACKEND_BROKER_PORT must be 0 or between 1024 and 65535 and cannot be 8000 (public host) or 8001 (VTube Studio).");
+        }
+
+        return brokerPort;
+    }
+
     private static void Cleanup(
         IEnumerable<IBackendProcessHandle> children,
-        IBackendJob? job)
+        IBackendJob? job,
+        BackendLaunchPlan? plan = null)
+    {
+        Cleanup(children, job, plan?.BrokerDescriptorPath, plan?.BrokerSessionRoot);
+    }
+
+    private static void Cleanup(
+        IEnumerable<IBackendProcessHandle> children,
+        IBackendJob? job,
+        string? descriptorPath,
+        string? sessionRoot)
     {
         var childList = children.Reverse().ToList();
         foreach (var child in childList)
@@ -244,6 +300,28 @@ public class BackendProcessManager : IDisposable
         catch (Exception error)
         {
             Debug.WriteLine($"[BackendProcessManager] Job dispose failed: {error.GetType().Name}");
+        }
+
+        DeleteOwnedArtifacts(descriptorPath, sessionRoot);
+    }
+
+    private static void DeleteOwnedArtifacts(string? descriptorPath, string? sessionRoot)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(descriptorPath) && File.Exists(descriptorPath))
+            {
+                File.Delete(descriptorPath);
+            }
+
+            if (!string.IsNullOrWhiteSpace(sessionRoot) && Directory.Exists(sessionRoot))
+            {
+                Directory.Delete(sessionRoot, recursive: true);
+            }
+        }
+        catch (Exception error)
+        {
+            Debug.WriteLine($"[BackendProcessManager] Broker artifact cleanup failed: {error.GetType().Name}");
         }
     }
 

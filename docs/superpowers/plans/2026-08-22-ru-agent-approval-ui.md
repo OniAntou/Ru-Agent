@@ -423,7 +423,7 @@ reset, one-time replay rejection, safe terminal.run, and absence of raw
 arguments in chat/history. Real shells, web accounts, connectors, microphone,
 speaker, OmniVoice, and VTS remain separate manual gates.
 
-- [ ] **Step 4: Verify scope, commit plan/spec if needed, and push**
+- [x] **Step 4: Verify scope, commit plan/spec if needed, and push**
 
 Run:
 

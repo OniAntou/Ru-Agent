@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-22
 
-**Status:** Proposed — awaiting user review
+**Status:** Approved for implementation
 
 **Scope:** Truthful action receipts, one Broker-owned execution path, and
 `system.volume@1.0.0` as the reference native tool

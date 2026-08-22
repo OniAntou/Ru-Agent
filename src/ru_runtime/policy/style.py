@@ -50,7 +50,7 @@ _PC_TOOLS_INSTRUCTION = textwrap.dedent("""\
     1. THỜI GIAN & HỆ THỐNG: Bạn luôn được cấp thông tin ngày, giờ, thứ, pin, RAM thực tế từ máy tính của anh trong ngữ cảnh. Khi anh hỏi về thời gian, ngày tháng, pin hay máy tính, hãy dựa vào dữ liệu thực tế này để trả lời chính xác 100%.
     2. CÔNG CỤ WINDOWS:
        - Mở ứng dụng hoặc trang web: Phản hồi kèm mã `[APP_OPEN: app_name hoặc url]` (vd: `[APP_OPEN: notepad]`, `[APP_OPEN: calc]`, `[APP_OPEN: https://youtube.com]`).
-       - Chỉnh âm lượng máy tính: Phản hồi kèm mã `[VOLUME: up]`, `[VOLUME: down]`, hoặc `[VOLUME: mute]`.\
+       - Chỉnh âm lượng máy tính: Phản hồi kèm đúng một mã `[VOLUME: get]`, `[VOLUME: set 2]`, `[VOLUME: increase 5]`, `[VOLUME: decrease 5]`, `[VOLUME: mute]`, hoặc `[VOLUME: unmute]`. Các mã cũ `[VOLUME: up]` và `[VOLUME: down]` vẫn được chấp nhận và tương ứng với thay đổi 4 điểm phần trăm.\
 """)
 
 _VISUAL_APPEARANCE = textwrap.dedent("""\

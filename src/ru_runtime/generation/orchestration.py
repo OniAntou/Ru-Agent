@@ -25,9 +25,27 @@ def _strip_search_marker(text: str) -> str:
     return cleaned.strip()
 
 
-def _execute_pc_tool_markers(text: str) -> str:
+_VOLUME_FAILURE_MESSAGES = {
+    "unsupported_platform": "Tính năng chỉnh âm lượng chỉ khả dụng trên Windows.",
+    "audio_backend_unavailable": "Ru chưa kết nối được bộ điều khiển âm lượng.",
+    "default_endpoint_unavailable": "Không tìm thấy thiết bị phát âm thanh mặc định.",
+    "read_failed": "Ru không đọc được trạng thái âm lượng.",
+    "write_failed": "Ru không ghi được thay đổi âm lượng.",
+    "readback_mismatch": "Không thể xác nhận thay đổi âm lượng.",
+    "adapter_error": "Ru không thể hoàn tất thao tác âm lượng.",
+    "invalid_request": "Ru không nhận diện được yêu cầu âm lượng.",
+}
+
+
+def _execute_pc_tool_markers(
+    text: str,
+    *,
+    on_stream_reset: Callable[[], None] | None = None,
+) -> str:
+    volume_failure_code: str | None = None
     try:
-        from ru_runtime.system.pc_tools import open_application_or_url, adjust_system_volume
+        from ru_runtime.system.pc_tools import open_application_or_url
+        from ru_runtime.system import volume as volume_module
 
         app_matches = _APP_OPEN_MARKER.findall(text)
         for target in app_matches:
@@ -39,12 +57,33 @@ def _execute_pc_tool_markers(text: str) -> str:
         for action in vol_matches:
             action = action.strip()
             if action:
-                adjust_system_volume(action)
+                try:
+                    request = volume_module.parse_volume_action(action)
+                    if volume_failure_code is not None:
+                        continue
+                    controller = volume_module.create_default_volume_controller()
+                    result = volume_module.execute_volume_request(request, controller)
+                    if not result.succeeded:
+                        volume_failure_code = result.error_code or "adapter_error"
+                except ValueError:
+                    volume_failure_code = "invalid_request"
+                except volume_module.VolumeAdapterError as error:
+                    volume_failure_code = error.error_code
+                except Exception:
+                    logger.exception("Failed executing volume marker")
+                    volume_failure_code = "adapter_error"
     except Exception as exc:
         logger.warning("Failed executing PC tool markers: %s", exc)
 
     cleaned = _APP_OPEN_MARKER.sub("", text)
     cleaned = _VOLUME_MARKER.sub("", cleaned)
+    if volume_failure_code is not None:
+        if on_stream_reset is not None:
+            on_stream_reset()
+        return _VOLUME_FAILURE_MESSAGES.get(
+            volume_failure_code,
+            _VOLUME_FAILURE_MESSAGES["adapter_error"],
+        )
     return cleaned.strip()
 
 
@@ -108,7 +147,11 @@ def execute_reply(
     
     search_match = _SEARCH_MARKER.search(response)
     if not allow_web_search or search_match is None:
-        response = _execute_pc_tool_markers(response) if allow_legacy_markers else _strip_search_marker(response)
+        response = (
+            _execute_pc_tool_markers(response, on_stream_reset=on_stream_reset)
+            if allow_legacy_markers
+            else _strip_search_marker(response)
+        )
         if not allow_web_search and search_match is not None:
             logger.warning("Model requested a web search but web search is disabled; stripping the marker")
             cleaned = _strip_search_marker(response)
@@ -118,7 +161,11 @@ def execute_reply(
 
     query = search_match.group(1).strip()
     if not query:
-        response = _execute_pc_tool_markers(response)
+        response = (
+            _execute_pc_tool_markers(response, on_stream_reset=on_stream_reset)
+            if allow_legacy_markers
+            else _strip_search_marker(response)
+        )
         cleaned = _strip_search_marker(response)
         return strip_emojis_and_emoticons(cleaned) if cleaned else strip_emojis_and_emoticons(response)
     try:
@@ -143,13 +190,17 @@ def execute_reply(
             is_cancelled=is_cancelled,
         )
         grounded_response = (
-            _execute_pc_tool_markers(grounded_response)
+            _execute_pc_tool_markers(grounded_response, on_stream_reset=on_stream_reset)
             if allow_legacy_markers
             else _strip_search_marker(grounded_response)
         )
         return strip_emojis_and_emoticons(grounded_response)
     except Exception as error:
         logger.warning("Grounded follow-up failed: %s", error)
-        response = _execute_pc_tool_markers(response) if allow_legacy_markers else _strip_search_marker(response)
+        response = (
+            _execute_pc_tool_markers(response, on_stream_reset=on_stream_reset)
+            if allow_legacy_markers
+            else _strip_search_marker(response)
+        )
         fallback = _strip_search_marker(response)
         return strip_emojis_and_emoticons(fallback) if fallback else strip_emojis_and_emoticons(response)

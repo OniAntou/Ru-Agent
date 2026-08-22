@@ -187,38 +187,77 @@ def open_application_or_url(target: str) -> tuple[bool, str]:
 
 
 def adjust_system_volume(action: str, steps: int = 2) -> tuple[bool, str]:
-    """Adjusts Windows system volume: 'up', 'down', 'mute', 'unmute'."""
-    action_clean = action.strip().lower()
-    if platform.system() != "Windows":
-        return False, "Tính năng chỉnh âm lượng chỉ khả dụng trên Windows."
-
-    VK_VOLUME_MUTE = 0xAD
-    VK_VOLUME_DOWN = 0xAE
-    VK_VOLUME_UP = 0xAF
-
+    """Compatibility wrapper around the typed, readback-verified volume contract."""
     try:
-        user32 = ctypes.windll.user32
-        steps = max(1, min(steps, 25))
+        from dataclasses import replace
 
-        if action_clean in ["up", "tăng", "tang", "tăng âm lượng", "louder"]:
-            for _ in range(steps):
-                user32.keybd_event(VK_VOLUME_UP, 0, 0, 0)
-                user32.keybd_event(VK_VOLUME_UP, 0, 2, 0)
-            return True, f"Đã tăng âm lượng máy tính lên {steps * 2}%."
+        from ru_runtime.system.volume import (
+            VolumeAdapterError,
+            create_default_volume_controller,
+            execute_volume_request,
+            parse_volume_action,
+        )
 
-        elif action_clean in ["down", "giảm", "giam", "giảm âm lượng", "quieter"]:
-            for _ in range(steps):
-                user32.keybd_event(VK_VOLUME_DOWN, 0, 0, 0)
-                user32.keybd_event(VK_VOLUME_DOWN, 0, 2, 0)
-            return True, f"Đã giảm âm lượng máy tính xuống {steps * 2}%."
+        request = parse_volume_action(action)
+        action_clean = " ".join(action.strip().lower().split())
+        legacy_actions = {
+            "up",
+            "tăng",
+            "tang",
+            "tăng âm lượng",
+            "tang am luong",
+            "louder",
+            "down",
+            "giảm",
+            "giam",
+            "giảm âm lượng",
+            "giam am luong",
+            "quieter",
+        }
+        if action_clean in legacy_actions and request.operation in {"increase", "decrease"}:
+            compatibility_steps = max(1, min(int(steps), 25)) * 2
+            request = replace(request, amount=compatibility_steps)
+        if platform.system() != "Windows":
+            return False, "Tính năng chỉnh âm lượng chỉ khả dụng trên Windows."
 
-        elif action_clean in ["mute", "tắt tiếng", "tat tieng", "im lặng"]:
-            user32.keybd_event(VK_VOLUME_MUTE, 0, 0, 0)
-            user32.keybd_event(VK_VOLUME_MUTE, 0, 2, 0)
-            return True, "Đã tắt/bật tiếng âm lượng máy tính."
+        result = execute_volume_request(request, create_default_volume_controller())
+        if not result.succeeded:
+            return False, _volume_failure_message(result.error_code)
+        return True, _volume_success_message(request, result.level, result.muted)
+    except ValueError:
+        return False, "Hành động âm lượng không hợp lệ."
+    except VolumeAdapterError as error:
+        logger.warning("Volume adapter unavailable: %s", error.error_code)
+        return False, _volume_failure_message(error.error_code)
+    except Exception:
+        logger.exception("Failed to adjust volume")
+        return False, _volume_failure_message("adapter_error")
 
-        else:
-            return False, f"Hành động âm lượng không hợp lệ: '{action}'"
-    except Exception as exc:
-        logger.warning("Failed to adjust volume: %s", exc)
-        return False, f"Lỗi điều chỉnh âm lượng: {exc}"
+
+def _volume_success_message(request, level: int | None, muted: bool | None) -> str:
+    operation = str(request.operation)
+    if operation == "get":
+        state = f"Âm lượng hiện tại là {level}%."
+        return f"{state} Máy đang tắt tiếng." if muted else state
+    if operation == "set":
+        return f"Đã đặt âm lượng ở mức {level}%."
+    if operation == "increase":
+        return f"Đã tăng âm lượng lên {level}%."
+    if operation == "decrease":
+        return f"Đã giảm âm lượng xuống {level}%."
+    if operation == "mute":
+        return "Đã tắt tiếng máy."
+    return "Đã bật tiếng máy."
+
+
+def _volume_failure_message(error_code: str | None) -> str:
+    messages = {
+        "unsupported_platform": "Tính năng chỉnh âm lượng chỉ khả dụng trên Windows.",
+        "audio_backend_unavailable": "Ru chưa kết nối được bộ điều khiển âm lượng.",
+        "default_endpoint_unavailable": "Không tìm thấy thiết bị phát âm thanh mặc định.",
+        "read_failed": "Ru không đọc được trạng thái âm lượng.",
+        "write_failed": "Ru không ghi được thay đổi âm lượng.",
+        "readback_mismatch": "Không thể xác nhận thay đổi âm lượng.",
+        "adapter_error": "Ru không thể hoàn tất thao tác âm lượng.",
+    }
+    return messages.get(error_code or "", messages["adapter_error"])

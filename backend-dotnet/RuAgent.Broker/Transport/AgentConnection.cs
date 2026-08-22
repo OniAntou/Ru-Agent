@@ -14,15 +14,21 @@ public sealed class AgentConnection
     private readonly BrokerSession _session;
     private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _toolHandler;
     private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _skillHandler;
+    private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _approvalHandler;
+    private readonly Action<string>? _sessionClosedHandler;
 
     public AgentConnection(
         BrokerSession session,
         Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? toolHandler = null,
-        Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? skillHandler = null)
+        Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? skillHandler = null,
+        Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? approvalHandler = null,
+        Action<string>? sessionClosedHandler = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _toolHandler = toolHandler;
         _skillHandler = skillHandler;
+        _approvalHandler = approvalHandler;
+        _sessionClosedHandler = sessionClosedHandler;
     }
 
     public async Task RunAsync(WebSocket socket, CancellationToken cancellationToken)
@@ -121,6 +127,15 @@ public sealed class AgentConnection
                 return _skillHandler is null
                     ? ToolError(request, "skill_not_ready", "skill execution is not registered")
                     : await _skillHandler(request, cancellationToken).ConfigureAwait(false);
+            case AgentMessageTypes.ApprovalResponse:
+                if (!_session.Owns(request.SessionId))
+                {
+                    return ToolError(request, "broker_not_ready", "session is not open");
+                }
+
+                return _approvalHandler is null
+                    ? ToolError(request, "broker_not_ready", "approval handling is not registered")
+                    : await _approvalHandler(request, cancellationToken).ConfigureAwait(false);
             case AgentMessageTypes.Cancel:
                 return Reply(request, AgentMessageTypes.ToolResult, new JsonObject
             {
@@ -135,6 +150,7 @@ public sealed class AgentConnection
     private AgentEnvelope CloseSession(AgentEnvelope request)
     {
         _session.Close(request.SessionId);
+        _sessionClosedHandler?.Invoke(request.SessionId);
         return Reply(request, AgentMessageTypes.SkillResult, new JsonObject
         {
             ["status"] = "succeeded",

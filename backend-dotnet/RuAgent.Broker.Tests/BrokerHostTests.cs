@@ -167,6 +167,101 @@ public sealed class BrokerHostTests
         Assert.Contains("10.", result.Payload["output"]!["stdout"]!.GetValue<string>(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Approval_response_runs_the_original_shell_request_once()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await socket.ConnectAsync(
+            new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
+            cancellation.Token);
+
+        await SendAsync(socket, new AgentEnvelope(1, "hello-shell", AgentMessageTypes.Hello, "session-shell", "corr-shell", 10_000, new System.Text.Json.Nodes.JsonObject()), cancellation.Token);
+        _ = await ReceiveAsync(socket, cancellation.Token);
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "session-shell",
+                AgentMessageTypes.SessionOpen,
+                "session-shell",
+                "corr-shell",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("terminal.execute"),
+                }),
+            cancellation.Token);
+        _ = await ReceiveAsync(socket, cancellation.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "shell-request-1",
+                AgentMessageTypes.ToolRequest,
+                "session-shell",
+                "corr-shell",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["tool_id"] = "terminal.shell",
+                    ["tool_version"] = "1.0.0",
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["shell"] = "powershell",
+                        ["working_directory"] = ".",
+                        ["script"] = "Get-Date",
+                    },
+                }),
+            cancellation.Token);
+        var pending = await ReceiveAsync(socket, cancellation.Token);
+
+        Assert.Equal("approval_required", pending.Payload["status"]!.GetValue<string>());
+        var approvalId = pending.Payload["output"]!["approval_id"]!.GetValue<string>();
+        Assert.DoesNotContain("Get-Date", pending.Payload.ToJsonString(), StringComparison.Ordinal);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "approval-response-1",
+                AgentMessageTypes.ApprovalResponse,
+                "session-shell",
+                "corr-shell",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["approval_id"] = approvalId,
+                    ["approved"] = true,
+                }),
+            cancellation.Token);
+        var approved = await ReceiveAsync(socket, cancellation.Token);
+
+        Assert.Equal("succeeded", approved.Payload["status"]!.GetValue<string>());
+        Assert.Contains("", approved.Payload["output"]!["stdout"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "approval-response-2",
+                AgentMessageTypes.ApprovalResponse,
+                "session-shell",
+                "corr-shell",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["approval_id"] = approvalId,
+                    ["approved"] = true,
+                }),
+            cancellation.Token);
+        var replay = await ReceiveAsync(socket, cancellation.Token);
+        Assert.Equal("approval_stale", replay.Payload["error_code"]!.GetValue<string>());
+    }
+
     private sealed class HostFixture : IAsyncDisposable
     {
         private HostFixture(string root, string token, BrokerHost host)

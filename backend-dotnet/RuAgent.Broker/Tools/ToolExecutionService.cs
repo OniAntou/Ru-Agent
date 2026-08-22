@@ -17,6 +17,8 @@ public sealed class ToolExecutionService : IToolInvoker
     private readonly SkillRegistry _skills;
     private readonly SkillOrchestrator _skillOrchestrator;
     private readonly ToolPolicyEngine _policy;
+    private readonly ApprovalTokenService _approvalTokens = new();
+    private readonly PendingApprovalStore _approvals = new();
     private readonly WorkspacePathGuard _workspace;
     private readonly FileTools _files;
     private readonly AppTools _apps = new();
@@ -33,7 +35,11 @@ public sealed class ToolExecutionService : IToolInvoker
         _workspace = new WorkspacePathGuard(workspaceRoot);
         _files = new FileTools(_workspace);
         _notes = new NotesAdapter(_workspace);
-        _terminal = new TerminalAdapter(_workspace, new ProcessTreeRunner(), new ShellRuntimeResolver());
+        _terminal = new TerminalAdapter(
+            _workspace,
+            new ProcessTreeRunner(),
+            new ShellRuntimeResolver(),
+            _approvalTokens);
         _skills = new SkillRegistry();
         LoadSkills(workspaceRoot);
         _skillOrchestrator = new SkillOrchestrator(_registry, _policy, this);
@@ -42,6 +48,10 @@ public sealed class ToolExecutionService : IToolInvoker
     public IReadOnlyList<ToolManifest> ListTools() => _registry.List();
 
     public IReadOnlyList<SkillManifest> ListSkills() => _skills.List();
+
+    public void RemoveSession(string sessionId) => _approvals.RemoveSession(sessionId);
+
+    public void ClearPendingApprovals() => _approvals.Clear();
 
     public Task<ToolResult> ExecuteAsync(
         string sessionId,
@@ -96,10 +106,48 @@ public sealed class ToolExecutionService : IToolInvoker
 
             if (decision.RequiresApproval)
             {
-                return Result(request, ToolResultStatuses.ApprovalRequired, new JsonObject(), "approval_required", "Approval is required.", started);
+                var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);
+                var argumentsHash = PendingApprovalStore.ComputeArgumentsHash(toolId, toolVersion, arguments);
+                var terminalApprovalToken = toolId == "terminal.shell"
+                    ? _approvalTokens.Issue(
+                        request.RequestId,
+                        request.SessionId,
+                        toolId,
+                        toolVersion,
+                        argumentsHash,
+                        TimeSpan.FromSeconds(60))
+                    : null;
+                var approvalId = _approvals.Issue(
+                    request,
+                    manifest,
+                    arguments,
+                    SafeAction(manifest),
+                    expiresAt,
+                    terminalApprovalToken);
+                return Result(
+                    request,
+                    ToolResultStatuses.ApprovalRequired,
+                    new JsonObject
+                    {
+                        ["approval_id"] = approvalId,
+                        ["tool_id"] = manifest.Id,
+                        ["tool_version"] = manifest.Version,
+                        ["scope"] = string.Join(", ", manifest.Scopes.OrderBy(value => value, StringComparer.Ordinal)),
+                        ["safe_action"] = SafeAction(manifest),
+                        ["expires_at"] = expiresAt.ToString("O"),
+                    },
+                    "approval_required",
+                    "Approval is required.",
+                    started);
             }
 
-            var output = await DispatchAsync(toolId, arguments, request.DeadlineMs, cancellationToken).ConfigureAwait(false);
+            var output = await DispatchAsync(
+                toolId,
+                arguments,
+                request.DeadlineMs,
+                cancellationToken,
+                approved: false,
+                pending: null).ConfigureAwait(false);
             return Result(request, ToolResultStatuses.Succeeded, output, null, "Tool completed.", started);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -113,6 +161,82 @@ public sealed class ToolExecutionService : IToolInvoker
         catch (Exception)
         {
             return Result(request, ToolResultStatuses.Failed, new JsonObject(), "tool_failed", "Tool failed.", started);
+        }
+    }
+
+    public async Task<ToolResult> RespondToApprovalAsync(
+        AgentEnvelope request,
+        CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.StartNew();
+        try
+        {
+            var approvalId = ReadString(request.Payload, "approval_id");
+            var approved = ReadBool(request.Payload, "approved");
+            if (!_approvals.TryConsume(
+                    approvalId,
+                    request.SessionId,
+                    approved,
+                    DateTimeOffset.UtcNow,
+                    out var pending))
+            {
+                return Result(
+                    request,
+                    ToolResultStatuses.Denied,
+                    new JsonObject(),
+                    "approval_stale",
+                    "Approval is missing, expired, or already used.",
+                    started);
+            }
+
+            if (!pending!.Approved)
+            {
+                return Result(
+                    request,
+                    ToolResultStatuses.Denied,
+                    new JsonObject(),
+                    "approval_rejected",
+                    "Approval was rejected.",
+                    started);
+            }
+
+            var decision = _policy.Evaluate(
+                new PolicyGrant(
+                    pending.Request.SessionId,
+                    _session.Scopes,
+                    _session.Descriptor.ExpiresAt),
+                pending.Manifest);
+            if (!decision.Allowed)
+            {
+                return Result(
+                    request,
+                    ToolResultStatuses.Denied,
+                    new JsonObject(),
+                    decision.Code,
+                    "Tool scope is no longer granted.",
+                    started);
+            }
+
+            var output = await DispatchAsync(
+                pending.Manifest.Id,
+                pending.Arguments,
+                pending.Request.DeadlineMs,
+                cancellationToken,
+                approved: true,
+                pending).ConfigureAwait(false);
+            return Result(request, ToolResultStatuses.Succeeded, output, null, "Approved action completed.", started);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return Result(request, ToolResultStatuses.Cancelled, new JsonObject(), "cancelled", "Approved action cancelled.", started);
+        }
+        catch (ToolExecutionException error)
+        {
+            return Result(request, ToolResultStatuses.Failed, new JsonObject(), error.Code, "Approved action was rejected.", started);
+        }
+        catch (Exception)
+        {
+            return Result(request, ToolResultStatuses.Failed, new JsonObject(), "tool_failed", "Approved action failed.", started);
         }
     }
 
@@ -177,7 +301,9 @@ public sealed class ToolExecutionService : IToolInvoker
         string toolId,
         JsonObject arguments,
         int deadlineMs,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool approved,
+        PendingApproval? pending)
     {
         return toolId switch
         {
@@ -192,13 +318,39 @@ public sealed class ToolExecutionService : IToolInvoker
                 ReadString(arguments, "content"),
                 arguments["overwrite"]?.GetValue<bool>() ?? false),
             "terminal.run" => await RunTerminalAsync(arguments, deadlineMs, cancellationToken).ConfigureAwait(false),
+            "terminal.shell" => await RunApprovedShellAsync(arguments, deadlineMs, cancellationToken, pending).ConfigureAwait(false),
             "notes.create" => _notes.Create(
                 ReadString(arguments, "path"),
                 ReadString(arguments, "title"),
                 ReadString(arguments, "content"),
-                approved: false),
+                approved),
             _ => throw new ToolExecutionException("tool_not_implemented"),
         };
+    }
+
+    private async Task<JsonObject> RunApprovedShellAsync(
+        JsonObject arguments,
+        int deadlineMs,
+        CancellationToken cancellationToken,
+        PendingApproval? pending)
+    {
+        if (pending?.TerminalApprovalToken is null)
+        {
+            throw new ToolExecutionException("terminal_shell_approval_invalid");
+        }
+
+        var result = await _terminal.RunApprovedShellAsync(
+            new TerminalShellRequest(
+                ReadOptionalString(arguments, "shell") ?? "powershell",
+                ReadOptionalString(arguments, "working_directory") ?? ".",
+                ReadString(arguments, "script"),
+                Math.Min(deadlineMs, 120_000),
+                pending.TerminalApprovalToken,
+                pending.Request.RequestId,
+                pending.Request.SessionId,
+                pending.ArgumentsHash),
+            cancellationToken).ConfigureAwait(false);
+        return ProcessOutput(result);
     }
 
     private void LoadSkills(string workspaceRoot)
@@ -242,6 +394,28 @@ public sealed class ToolExecutionService : IToolInvoker
         };
     }
 
+    private JsonObject ProcessOutput(ProcessRunResult result) => new()
+    {
+        ["status"] = result.Status,
+        ["exit_code"] = result.ExitCode,
+        ["duration_ms"] = result.DurationMs,
+        ["stdout"] = result.Stdout,
+        ["stderr"] = result.Stderr,
+        ["output_truncated"] = result.OutputTruncated,
+        ["working_directory"] = _workspace.ToRelative(result.WorkingDirectory),
+    };
+
+    private static string SafeAction(ToolManifest manifest) => manifest.Id switch
+    {
+        "terminal.shell" => "Run a terminal action in the workspace.",
+        "notes.create" => "Create a note in the workspace.",
+        "web.search" or "web.fetch" => "Use an external web connection.",
+        "calendar.create" => "Create a calendar event.",
+        "tasks.create" or "tasks.complete" => "Change a task in an external service.",
+        "mail.send" => "Send an email through an external service.",
+        _ => "Run an external or destructive Agent action.",
+    };
+
     private static ToolResult Result(
         AgentEnvelope request,
         string status,
@@ -261,6 +435,12 @@ public sealed class ToolExecutionService : IToolInvoker
         payload[key] is JsonValue value
         && value.TryGetValue<string>(out var result)
         && !string.IsNullOrWhiteSpace(result)
+            ? result
+            : throw new ToolExecutionException("invalid_arguments");
+
+    private static bool ReadBool(JsonObject payload, string key) =>
+        payload[key] is JsonValue value
+        && value.TryGetValue<bool>(out var result)
             ? result
             : throw new ToolExecutionException("invalid_arguments");
 

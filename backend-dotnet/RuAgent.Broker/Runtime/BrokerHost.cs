@@ -69,6 +69,7 @@ public sealed class BrokerHost : IAsyncDisposable
 
         _disposed = true;
         IsReady = false;
+        _tools.ClearPendingApprovals();
         await _cleanup.RunAsync().ConfigureAwait(false);
         await _application.DisposeAsync().ConfigureAwait(false);
         _shutdown.Dispose();
@@ -111,7 +112,9 @@ public sealed class BrokerHost : IAsyncDisposable
         await new AgentConnection(
             _session,
             (request, token) => ExecuteToolAsync(request, token),
-            (request, token) => ExecuteSkillAsync(request, token))
+            (request, token) => ExecuteSkillAsync(request, token),
+            (request, token) => ExecuteApprovalAsync(request, token),
+            sessionId => _tools.RemoveSession(sessionId))
             .RunAsync(socket, linkedCancellation.Token).ConfigureAwait(false);
     }
 
@@ -146,6 +149,28 @@ public sealed class BrokerHost : IAsyncDisposable
             RuAgent.Protocol.AgentEnvelopeCodec.ProtocolVersion,
             request.RequestId,
             RuAgent.Protocol.AgentMessageTypes.SkillResult,
+            request.SessionId,
+            request.CorrelationId,
+            request.DeadlineMs,
+            new System.Text.Json.Nodes.JsonObject
+            {
+                ["status"] = result.Status,
+                ["output"] = result.Output.DeepClone(),
+                ["error_code"] = result.ErrorCode,
+                ["safe_summary"] = result.SafeSummary,
+                ["duration_ms"] = result.DurationMs,
+            });
+    }
+
+    private async Task<RuAgent.Protocol.AgentEnvelope> ExecuteApprovalAsync(
+        RuAgent.Protocol.AgentEnvelope request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _tools.RespondToApprovalAsync(request, cancellationToken).ConfigureAwait(false);
+        return new RuAgent.Protocol.AgentEnvelope(
+            RuAgent.Protocol.AgentEnvelopeCodec.ProtocolVersion,
+            request.RequestId,
+            RuAgent.Protocol.AgentMessageTypes.ToolResult,
             request.SessionId,
             request.CorrelationId,
             request.DeadlineMs,

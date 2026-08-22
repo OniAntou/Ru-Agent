@@ -100,14 +100,17 @@
             </VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
 
+        <controls:MeteorShowerField x:Name="MeteorShowerField"
+                                    Grid.Row="0"
+                                    Grid.RowSpan="2"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Stretch"
+                                    IsHitTestVisible="False" />
+
         <Grid x:Name="ReadingColumn"
               Grid.Row="0"
               HorizontalAlignment="Center"
               Background="Transparent">
-            <controls:MeteorShowerField x:Name="MeteorShowerField"
-                                        HorizontalAlignment="Stretch"
-                                        VerticalAlignment="Stretch"
-                                        IsHitTestVisible="False" />
             <StackPanel x:Name="WelcomeHeroPanel"
                         MaxWidth="820"
                         HorizontalAlignment="Stretch"

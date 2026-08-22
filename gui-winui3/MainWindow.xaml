@@ -300,7 +300,7 @@
             </Border>
 
             <!-- Sidebar Divider / Resizer -->
-            <Border x:Name="SidebarResizer" Grid.Column="1" Background="{StaticResource RuLineBrush}"
+            <Border x:Name="SidebarResizer" Grid.Column="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"
                     PointerPressed="Resizer_PointerPressed" PointerMoved="Resizer_PointerMoved" PointerReleased="Resizer_PointerReleased" />
 
             <!-- Content Frame with Smooth Native Transition -->

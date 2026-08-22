@@ -20,30 +20,31 @@ public sealed class MeteorShowerFieldContractTests
     }
 
     [Fact]
-    public void Meteor_shower_is_vector_native_fixed_and_disposable()
+    public void Meteor_shower_is_composition_gpu_native_fixed_and_disposable()
     {
         var source = File.ReadAllText(FindSource("Controls", "MeteorShowerField.cs"));
 
         Assert.Contains("class MeteorShowerField : Canvas, IDisposable", source, StringComparison.Ordinal);
-        Assert.Contains("private const int MaxMeteorCount = 5", source, StringComparison.Ordinal);
+        Assert.Contains("private const int MaxMeteorCount = 8", source, StringComparison.Ordinal);
+        Assert.Contains("private static readonly StarSpec[] Stars", source, StringComparison.Ordinal);
         Assert.Contains("private static readonly MeteorSpec[] Burst", source, StringComparison.Ordinal);
+        Assert.Contains("private sealed class StarVisual", source, StringComparison.Ordinal);
         Assert.Contains("private sealed class MeteorVisual", source, StringComparison.Ordinal);
         Assert.Contains("DispatcherTimer", source, StringComparison.Ordinal);
         Assert.Contains("Stopwatch", source, StringComparison.Ordinal);
-        Assert.Contains("Polygon", source, StringComparison.Ordinal);
-        Assert.Contains("Line", source, StringComparison.Ordinal);
-        Assert.Contains("CompositeTransform", source, StringComparison.Ordinal);
+        Assert.Contains("ElementCompositionPreview", source, StringComparison.Ordinal);
+        Assert.Contains("ContainerVisual", source, StringComparison.Ordinal);
+        Assert.Contains("SpriteVisual", source, StringComparison.Ordinal);
+        Assert.Contains("CompositionLinearGradientBrush", source, StringComparison.Ordinal);
         Assert.Contains("Idle", source, StringComparison.Ordinal);
         Assert.Contains("Burst", source, StringComparison.Ordinal);
         Assert.Contains("Rest", source, StringComparison.Ordinal);
         Assert.Contains("private void StopAndClear()", source, StringComparison.Ordinal);
         Assert.Contains("_timer.Stop()", source, StringComparison.Ordinal);
-        Assert.Contains("Children.Remove", source, StringComparison.Ordinal);
         Assert.Contains("RectangleGeometry", source, StringComparison.Ordinal);
         Assert.DoesNotContain("TextBlock", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Ascii", source, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("new Random", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("Gradient", source, StringComparison.Ordinal);
         Assert.DoesNotContain("particle", source, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("emoji", source, StringComparison.OrdinalIgnoreCase);
     }

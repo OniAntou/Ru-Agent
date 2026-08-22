@@ -45,7 +45,7 @@
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
 
             <SolidColorBrush x:Key="RuCanvasBrush" Color="{ThemeResource RuCanvasColor}" />
-            <SolidColorBrush x:Key="RuSidebarBrush" Color="{ThemeResource RuSidebarColor}" />
+            <SolidColorBrush x:Key="RuSidebarBrush" Color="{ThemeResource RuSidebarColor}" Opacity="0.90" />
             <SolidColorBrush x:Key="RuSurfaceBrush" Color="{ThemeResource RuSurfaceColor}" />
             <SolidColorBrush x:Key="RuInkBrush" Color="{ThemeResource RuInkColor}" />
             <SolidColorBrush x:Key="RuMutedBrush" Color="{ThemeResource RuMutedColor}" />

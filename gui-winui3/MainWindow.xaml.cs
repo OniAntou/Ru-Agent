@@ -279,6 +279,7 @@ namespace RuApp
             var muted = (SolidColorBrush)Application.Current.Resources["RuMutedBrush"];
             var ink = (SolidColorBrush)Application.Current.Resources["RuInkBrush"];
             var accent = (SolidColorBrush)Application.Current.Resources["RuAccentBrush"];
+            var surface = (SolidColorBrush)Application.Current.Resources["RuSurfaceBrush"];
 
             foreach (var button in new[] { NavChat, NavVoice, NavLog, NavDiagnostics, NavSettings })
             {
@@ -286,12 +287,14 @@ namespace RuApp
                 button.Foreground = muted;
                 button.BorderBrush = transparent;
                 button.BorderThickness = new Thickness(0);
+                button.CornerRadius = new CornerRadius(0, 4, 4, 0);
             }
 
-            activeBtn.Background = transparent;
+            activeBtn.Background = surface;
             activeBtn.Foreground = ink;
             activeBtn.BorderBrush = accent;
             activeBtn.BorderThickness = new Thickness(2, 0, 0, 0);
+            activeBtn.CornerRadius = new CornerRadius(0, 4, 4, 0);
         }
 
         private void UpdateShellStatusTooltip()

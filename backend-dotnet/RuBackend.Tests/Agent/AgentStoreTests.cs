@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using RuBackend.Agent;
 using Xunit;
 
@@ -24,45 +23,39 @@ public sealed class AgentStoreTests
     }
 
     [Fact]
-    public void Approval_store_binds_arguments_and_consumes_once()
+    public void Approval_store_rejects_wrong_session_and_consumes_once()
     {
-        var arguments = new JsonObject
-        {
-            ["path"] = "src",
-            ["options"] = new JsonObject { ["recursive"] = true },
-        };
-        var hash = AgentApprovalStore.ComputeArgumentsHash("files.write", "1.0.0", arguments);
         var store = new AgentApprovalStore();
         store.Put(new AgentApprovalRequest(
             "approval-1",
             "session-1",
             "files.write",
             "1.0.0",
-            hash,
             "Write one file.",
+            "workspace.write",
             DateTimeOffset.UtcNow.AddMinutes(1)));
 
-        Assert.False(store.TryConsume(
-            "approval-1",
+        Assert.False(store.TryTake("approval-1", "other-session", out _));
+        Assert.True(store.TryTake("approval-1", "session-1", out var consumed));
+        Assert.Equal("approval-1", consumed!.ApprovalId);
+        Assert.False(store.TryTake("approval-1", "session-1", out _));
+    }
+
+    [Fact]
+    public void Approval_store_keeps_only_safe_metadata_for_the_public_host()
+    {
+        var store = new AgentApprovalStore();
+        store.Put(new AgentApprovalRequest(
+            "approval-safe-1",
             "session-1",
-            "files.write",
+            "terminal.shell",
             "1.0.0",
-            new JsonObject { ["path"] = "other" },
-            out _));
-        Assert.True(store.TryConsume(
-            "approval-1",
-            "session-1",
-            "files.write",
-            "1.0.0",
-            arguments,
-            out var consumed));
-        Assert.Equal("approval-1", consumed!.RequestId);
-        Assert.False(store.TryConsume(
-            "approval-1",
-            "session-1",
-            "files.write",
-            "1.0.0",
-            arguments,
-            out _));
+            "Run a terminal action in the workspace.",
+            "terminal.execute",
+            DateTimeOffset.UtcNow.AddMinutes(1)));
+
+        Assert.True(store.TryTake("approval-safe-1", "session-1", out var request));
+        Assert.Equal("Run a terminal action in the workspace.", request!.SafeAction);
+        Assert.False(store.TryTake("approval-safe-1", "session-1", out _));
     }
 }

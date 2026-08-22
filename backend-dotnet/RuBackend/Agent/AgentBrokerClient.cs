@@ -11,18 +11,15 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
     private const int MaxFrameBytes = 64 * 1024;
     private readonly BrokerSessionDescriptor _descriptor;
     private readonly AgentSessionGrantStore _grants;
-    private readonly AgentApprovalStore _approvals;
     private int _disposed;
 
     public AgentBrokerClient(
         string descriptorPath,
-        AgentSessionGrantStore? grants = null,
-        AgentApprovalStore? approvals = null)
+        AgentSessionGrantStore? grants = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(descriptorPath);
         _descriptor = LoadDescriptor(descriptorPath);
         _grants = grants ?? new AgentSessionGrantStore();
-        _approvals = approvals ?? new AgentApprovalStore();
     }
 
     public async Task<AgentSessionGrant> OpenSessionAsync(
@@ -118,27 +115,13 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
 
     public Task<AgentToolResult> RespondToApprovalAsync(
         AgentApprovalResponse response,
-        string toolId,
-        string toolVersion,
-        JsonObject arguments,
         string? correlationId,
         int deadlineMs,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(response);
-        ArgumentException.ThrowIfNullOrWhiteSpace(toolId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(toolVersion);
-        ArgumentNullException.ThrowIfNull(arguments);
-        if (!_approvals.TryConsume(
-                response.RequestId,
-                response.SessionId,
-                toolId,
-                toolVersion,
-                arguments,
-                out _))
-        {
-            return Task.FromResult(Denied("approval_stale", "Approval is missing or expired."));
-        }
+        ValidateSessionId(response.SessionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(response.ApprovalId);
 
         return RespondToApprovalCoreAsync(response, correlationId, deadlineMs, cancellationToken);
     }
@@ -242,15 +225,15 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
     {
         var response = await RoundTripAsync(
             CreateRequest(
-                approval.RequestId,
+                approval.ApprovalId,
                 AgentMessageTypes.ApprovalResponse,
                 approval.SessionId,
                 correlationId,
                 deadlineMs,
                 new JsonObject
                 {
+                    ["approval_id"] = approval.ApprovalId,
                     ["approved"] = approval.Approved,
-                    ["arguments_hash"] = approval.ArgumentsHash,
                 }),
             cancellationToken).ConfigureAwait(false);
         return ReadResult(response, approval.SessionId);

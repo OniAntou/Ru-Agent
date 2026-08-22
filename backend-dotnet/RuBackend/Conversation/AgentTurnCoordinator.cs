@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
+using RuAgent.Protocol;
 using RuBackend.Agent;
 using RuBackend.Worker;
 
@@ -23,12 +24,16 @@ public interface IAgentTurnCoordinator
 public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
 {
     private readonly IAgentBrokerClient? _broker;
+    private readonly IAgentApprovalCoordinator? _approvals;
     private readonly SemaphoreSlim _sessionLock = new(1, 1);
     private readonly HashSet<string> _openedSessions = new(StringComparer.Ordinal);
 
-    public AgentTurnCoordinator(IAgentBrokerClient? broker = null)
+    public AgentTurnCoordinator(
+        IAgentBrokerClient? broker = null,
+        IAgentApprovalCoordinator? approvals = null)
     {
         _broker = broker;
+        _approvals = approvals;
     }
 
     public async IAsyncEnumerable<ChatEvent> HandleToolTurnAsync(
@@ -73,15 +78,15 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                 tool.CorrelationId,
                 tool.DeadlineMs,
                 cancellationToken).ConfigureAwait(false);
-            await PublishAsync(
-                request,
-                result.Status == "approval_required"
-                    ? new ChatEvent(
+            var statusEvent = result.Status == ToolResultStatuses.ApprovalRequired
+                ? _approvals?.Register(tool, result)
+                    ?? new ChatEvent(
                         "agent.approval_required",
                         "Agent is waiting for approval.",
-                        tool.SessionId)
-                    : Activity(tool, result.Status),
-                cancellationToken).ConfigureAwait(false);
+                        tool.SessionId,
+                        Status: ToolResultStatuses.ApprovalRequired)
+                : Activity(tool, result.Status);
+            await PublishAsync(request, statusEvent, cancellationToken).ConfigureAwait(false);
             return new WorkerToolResult(
                 tool.RequestId,
                 result.Status,

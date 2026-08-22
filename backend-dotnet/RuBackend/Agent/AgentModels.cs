@@ -9,18 +9,17 @@ public sealed record AgentSessionGrant(
     DateTimeOffset ExpiresAt);
 
 public sealed record AgentApprovalRequest(
-    string RequestId,
+    string ApprovalId,
     string SessionId,
     string ToolId,
     string ToolVersion,
-    string ArgumentsHash,
-    string SafeSummary,
+    string SafeAction,
+    string Scope,
     DateTimeOffset ExpiresAt);
 
 public sealed record AgentApprovalResponse(
-    string RequestId,
+    string ApprovalId,
     string SessionId,
-    string ArgumentsHash,
     bool Approved);
 
 public sealed record AgentToolCall(

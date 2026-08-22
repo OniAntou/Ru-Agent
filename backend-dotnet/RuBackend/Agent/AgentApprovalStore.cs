@@ -1,7 +1,4 @@
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json.Nodes;
 
 namespace RuBackend.Agent;
 
@@ -9,64 +6,40 @@ public sealed class AgentApprovalStore
 {
     private readonly ConcurrentDictionary<string, AgentApprovalRequest> _requests = new(StringComparer.Ordinal);
 
-    public static string ComputeArgumentsHash(
-        string toolId,
-        string toolVersion,
-        JsonObject arguments)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(toolId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(toolVersion);
-        ArgumentNullException.ThrowIfNull(arguments);
-        var canonical = new JsonObject
-        {
-            ["tool_id"] = toolId,
-            ["tool_version"] = toolVersion,
-            ["arguments"] = Canonicalize(arguments),
-        };
-        var bytes = Encoding.UTF8.GetBytes(canonical.ToJsonString());
-        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-    }
-
     public void Put(AgentApprovalRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (string.IsNullOrWhiteSpace(request.RequestId)
+        if (string.IsNullOrWhiteSpace(request.ApprovalId)
             || string.IsNullOrWhiteSpace(request.SessionId)
-            || string.IsNullOrWhiteSpace(request.ArgumentsHash))
+            || string.IsNullOrWhiteSpace(request.ToolId)
+            || string.IsNullOrWhiteSpace(request.SafeAction)
+            || request.ApprovalId.Length > 128
+            || request.SafeAction.Length > 256
+            || request.ExpiresAt <= DateTimeOffset.UtcNow)
         {
-            throw new ArgumentException("Approval identity is incomplete.", nameof(request));
+            throw new ArgumentException("Approval metadata is invalid.", nameof(request));
         }
 
-        _requests[request.RequestId] = request;
+        _requests[request.ApprovalId] = request;
     }
 
-    public bool TryConsume(
-        string requestId,
+    public bool TryTake(
+        string approvalId,
         string sessionId,
-        string toolId,
-        string toolVersion,
-        JsonObject arguments,
         out AgentApprovalRequest? request,
         DateTimeOffset? now = null)
     {
         request = null;
-        if (!_requests.TryGetValue(requestId, out var candidate))
+        if (string.IsNullOrWhiteSpace(approvalId)
+            || string.IsNullOrWhiteSpace(sessionId)
+            || !_requests.TryGetValue(approvalId, out var candidate)
+            || candidate.ExpiresAt <= (now ?? DateTimeOffset.UtcNow)
+            || !string.Equals(candidate.SessionId, sessionId, StringComparison.Ordinal))
         {
             return false;
         }
 
-        if (candidate.ExpiresAt <= (now ?? DateTimeOffset.UtcNow)
-            || !string.Equals(candidate.SessionId, sessionId, StringComparison.Ordinal)
-            || !string.Equals(candidate.ToolId, toolId, StringComparison.Ordinal)
-            || !string.Equals(candidate.ToolVersion, toolVersion, StringComparison.Ordinal)
-            || !CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(candidate.ArgumentsHash),
-                Encoding.UTF8.GetBytes(ComputeArgumentsHash(toolId, toolVersion, arguments))))
-        {
-            return false;
-        }
-
-        if (!_requests.TryRemove(new KeyValuePair<string, AgentApprovalRequest>(requestId, candidate)))
+        if (!_requests.TryRemove(new KeyValuePair<string, AgentApprovalRequest>(approvalId, candidate)))
         {
             return false;
         }
@@ -75,30 +48,21 @@ public sealed class AgentApprovalStore
         return true;
     }
 
-    private static JsonNode? Canonicalize(JsonNode? node)
+    public void RemoveSession(string sessionId)
     {
-        if (node is JsonObject objectNode)
+        if (string.IsNullOrWhiteSpace(sessionId))
         {
-            var result = new JsonObject();
-            foreach (var pair in objectNode.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-            {
-                result[pair.Key] = Canonicalize(pair.Value);
-            }
-
-            return result;
+            return;
         }
 
-        if (node is JsonArray array)
+        foreach (var pair in _requests)
         {
-            var result = new JsonArray();
-            foreach (var item in array)
+            if (string.Equals(pair.Value.SessionId, sessionId, StringComparison.Ordinal))
             {
-                result.Add(Canonicalize(item));
+                _requests.TryRemove(pair.Key, out _);
             }
-
-            return result;
         }
-
-        return node?.DeepClone();
     }
+
+    public void Clear() => _requests.Clear();
 }

@@ -59,13 +59,13 @@ public sealed class WorkerAgentProtocolContractTests
             grant.SessionId,
             "files.write",
             "1.0.0",
-            "arguments-hash",
             "Write one bounded file.",
+            "workspace.write",
             expiresAt);
 
         Assert.Contains("workspace.read", grant.Scopes);
         Assert.Contains("research.and_note", grant.SkillIds);
         Assert.Equal(grant.SessionId, approval.SessionId);
-        Assert.Equal("arguments-hash", approval.ArgumentsHash);
+        Assert.Equal("Write one bounded file.", approval.SafeAction);
     }
 }

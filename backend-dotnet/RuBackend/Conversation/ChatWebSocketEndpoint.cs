@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
+using RuBackend.Agent;
 using RuBackend.Diagnostics;
 namespace RuBackend.Conversation;
 
@@ -19,6 +20,7 @@ public static class ChatWebSocketEndpoint
     private static async Task HandleAsync(
         HttpContext context,
         IConversationCoordinator coordinator,
+        IAgentApprovalCoordinator approvalCoordinator,
         CancellationToken cancellationToken)
     {
         if (!context.WebSockets.IsWebSocketRequest)
@@ -60,6 +62,36 @@ public static class ChatWebSocketEndpoint
                         socket,
                         sendLock,
                         Error("message_too_large", "Message too large."),
+                        connectionCancellation.Token).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (message.MessageType == WebSocketMessageType.Text
+                    && TryParseApprovalResponse(message.Bytes, out var approvalResponse, out var approvalError))
+                {
+                    if (approvalError is not null)
+                    {
+                        await SendAsync(
+                            socket,
+                            sendLock,
+                            approvalError,
+                            connectionCancellation.Token).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    var approvalResult = await approvalCoordinator.RespondAsync(
+                        approvalResponse!,
+                        connectionCancellation.Token).ConfigureAwait(false);
+                    await SendAsync(
+                        socket,
+                        sendLock,
+                        new ChatEvent(
+                            "agent.approval_result",
+                            approvalResult.SafeSummary,
+                            approvalResponse!.SessionId,
+                            approvalResult.ErrorCode,
+                            approvalResult.Status,
+                            approvalResponse.ApprovalId),
                         connectionCancellation.Token).ConfigureAwait(false);
                     continue;
                 }
@@ -395,6 +427,70 @@ public static class ChatWebSocketEndpoint
             error = Error("malformed_message", "Malformed message.");
             return false;
         }
+    }
+
+    private static bool TryParseApprovalResponse(
+        byte[] bytes,
+        out AgentApprovalResponse? response,
+        out ChatEvent? error)
+    {
+        response = null;
+        error = null;
+        try
+        {
+            if (JsonNode.Parse(StrictUtf8.GetString(bytes)) is not JsonObject root
+                || root["type"] is not JsonValue typeValue
+                || !typeValue.TryGetValue<string>(out var type)
+                || !string.Equals(type, "agent.approval.response", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var allowed = new HashSet<string>(
+                ["type", "session_id", "approval_id", "approved"],
+                StringComparer.Ordinal);
+            var sessionId = string.Empty;
+            var approvalId = string.Empty;
+            if (root.Any(pair => !allowed.Contains(pair.Key))
+                || !ReadBoundedString(root, "session_id", 128, out sessionId)
+                || !ReadBoundedString(root, "approval_id", 128, out approvalId)
+                || root["approved"] is not JsonValue approvedValue
+                || !approvedValue.TryGetValue<bool>(out var approved))
+            {
+                error = new ChatEvent(
+                    "agent.approval_result",
+                    "Approval request is invalid.",
+                    sessionId,
+                    "invalid_approval");
+                return true;
+            }
+
+            response = new AgentApprovalResponse(approvalId, sessionId, approved);
+            return true;
+        }
+        catch (Exception parseError) when (parseError is JsonException or DecoderFallbackException)
+        {
+            return false;
+        }
+    }
+
+    private static bool ReadBoundedString(
+        JsonObject root,
+        string key,
+        int maxLength,
+        out string value)
+    {
+        value = string.Empty;
+        if (root[key] is not JsonValue node
+            || !node.TryGetValue<string>(out var parsed)
+            || string.IsNullOrWhiteSpace(parsed)
+            || parsed.Length > maxLength)
+        {
+            return false;
+        }
+
+        value = parsed;
+        return true;
     }
 
     private static async Task SendAsync(

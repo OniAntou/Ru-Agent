@@ -125,6 +125,49 @@ public sealed class AgentBrokerClientTests
         }
     }
 
+    [Fact]
+    public async Task Client_sends_approval_decision_without_raw_tool_arguments()
+    {
+        await using var server = await FakeBrokerServer.StartAsync();
+        var root = Path.Combine(Path.GetTempPath(), "ru-agent-client-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var descriptorPath = Path.Combine(root, "broker.json");
+            File.WriteAllText(
+                descriptorPath,
+                JsonSerializer.Serialize(
+                    new BrokerSessionDescriptor(
+                        server.BaseUrl,
+                        "secret-token",
+                        1,
+                        Path.Combine(root, "session"),
+                        DateTimeOffset.UtcNow.AddMinutes(5)),
+                    BrokerSessionDescriptor.JsonOptions));
+
+            await using var client = new AgentBrokerClient(descriptorPath);
+            var result = await client.RespondToApprovalAsync(
+                new AgentApprovalResponse("approval-1", "session-1", true),
+                "corr-approval",
+                10_000,
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+            var approval = Assert.Single(server.Requests, request => request.MessageType == AgentMessageTypes.ApprovalResponse);
+            Assert.Equal("approval-1", approval.Payload["approval_id"]!.GetValue<string>());
+            Assert.True(approval.Payload["approved"]!.GetValue<bool>());
+            Assert.DoesNotContain("arguments", approval.Payload.ToJsonString(), StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("script", approval.Payload.ToJsonString(), StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     private sealed class FakeBrokerServer : IAsyncDisposable
     {
         private readonly WebApplication _application;

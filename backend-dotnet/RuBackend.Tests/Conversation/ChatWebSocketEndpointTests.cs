@@ -3,7 +3,10 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.TestHost;
+using RuAgent.Protocol;
+using RuBackend.Agent;
 using RuBackend.Conversation;
+using RuBackend.Worker;
 using Xunit;
 
 namespace RuBackend.Tests.Conversation;
@@ -155,8 +158,30 @@ public sealed class ChatWebSocketEndpointTests
         await coordinator.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
     }
 
-    private static BackendWebApplicationFactory Factory(IConversationCoordinator coordinator) =>
-        new(conversationCoordinator: coordinator);
+    [Fact]
+    public async Task Approval_control_message_reaches_the_approval_coordinator()
+    {
+        var coordinator = new FakeCoordinator();
+        var approvals = new FakeApprovalCoordinator();
+        using var factory = Factory(coordinator, approvals);
+        using var socket = await ConnectAsync(factory, "?token=test-secret");
+
+        await SendTextAsync(
+            socket,
+            "{\"type\":\"agent.approval.response\",\"session_id\":\"session-1\",\"approval_id\":\"approval-1\",\"approved\":false}");
+        using var response = JsonDocument.Parse(await ReceiveTextAsync(socket));
+
+        Assert.Equal("agent.approval_result", response.RootElement.GetProperty("type").GetString());
+        Assert.Equal("approval-1", response.RootElement.GetProperty("approval_id").GetString());
+        Assert.Equal("denied", response.RootElement.GetProperty("status").GetString());
+        Assert.Equal("approval-1", approvals.LastResponse!.ApprovalId);
+        Assert.False(approvals.LastResponse.Approved);
+    }
+
+    private static BackendWebApplicationFactory Factory(
+        IConversationCoordinator coordinator,
+        IAgentApprovalCoordinator? approvals = null) =>
+        new(conversationCoordinator: coordinator, approvalCoordinator: approvals);
 
     private static Task<WebSocket> ConnectAsync(
         BackendWebApplicationFactory factory,
@@ -220,6 +245,27 @@ public sealed class ChatWebSocketEndpointTests
             yield return new ChatEvent("reset");
             yield return new ChatEvent("chunk", "Em nghe đây.");
             yield return new ChatEvent("done", "Em nghe đây.", "session-created");
+        }
+    }
+
+    private sealed class FakeApprovalCoordinator : IAgentApprovalCoordinator
+    {
+        public AgentApprovalResponse? LastResponse { get; private set; }
+
+        public ChatEvent Register(WorkerToolRequest tool, AgentToolResult result) =>
+            new("agent.approval_required", "Approval required.", tool.SessionId);
+
+        public Task<AgentToolResult> RespondAsync(
+            AgentApprovalResponse response,
+            CancellationToken cancellationToken)
+        {
+            LastResponse = response;
+            return Task.FromResult(new AgentToolResult(
+                response.ApprovalId,
+                response.Approved ? ToolResultStatuses.Succeeded : ToolResultStatuses.Denied,
+                new System.Text.Json.Nodes.JsonObject(),
+                response.Approved ? null : "approval_rejected",
+                response.Approved ? "Approved action completed." : "Approval was rejected."));
         }
     }
 }

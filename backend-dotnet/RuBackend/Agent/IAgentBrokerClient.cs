@@ -32,9 +32,6 @@ public interface IAgentBrokerClient : IAsyncDisposable
 
     Task<AgentToolResult> RespondToApprovalAsync(
         AgentApprovalResponse response,
-        string toolId,
-        string toolVersion,
-        JsonObject arguments,
         string? correlationId,
         int deadlineMs,
         CancellationToken cancellationToken);

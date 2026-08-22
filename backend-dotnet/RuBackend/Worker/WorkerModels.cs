@@ -12,6 +12,8 @@ public sealed record WorkerChatRequest(
     JsonObject Settings)
 {
     public Func<WorkerToolRequest, CancellationToken, Task<WorkerToolResult>>? ToolHandler { get; init; }
+
+    public WorkerActionOutcome? LastActionOutcome { get; init; }
 }
 
 public sealed record WorkerTurn(string Prompt, string Response);

@@ -496,7 +496,7 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
             });
         }
 
-        return new JsonObject
+        var payload = new JsonObject
         {
             ["prompt"] = request.Prompt,
             ["session_id"] = request.SessionId,
@@ -505,6 +505,12 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
             ["vts_instruction"] = request.VtsInstruction,
             ["settings"] = request.Settings.DeepClone(),
         };
+        if (request.LastActionOutcome is not null)
+        {
+            payload["last_action_outcome"] = request.LastActionOutcome.ToJson();
+        }
+
+        return payload;
     }
 
     private static IReadOnlyList<WorkerFact> ParseFacts(JsonObject payload)

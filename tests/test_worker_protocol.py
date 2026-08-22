@@ -71,8 +71,125 @@ def test_request_id_is_bounded() -> None:
     ],
 )
 def test_ordered_response_types_require_sequence(message_type: str) -> None:
+    payload = {"raw_reply": "Em nghe đây."} if message_type == "chat.done" else {}
     with pytest.raises(ProtocolError, match="missing_sequence"):
-        validate_envelope({"v": 1, "id": "req-1", "type": message_type, "payload": {}})
+        validate_envelope(
+            {
+                "v": 1,
+                "id": "req-1",
+                "type": message_type,
+                "payload": payload,
+            }
+        )
+
+
+def test_chat_done_accepts_one_bounded_action_outcome() -> None:
+    envelope = validate_envelope(
+        {
+            "v": 1,
+            "id": "chat-1",
+            "type": "chat.done",
+            "seq": 2,
+            "payload": {
+                "raw_reply": "Windows không chấp nhận thay đổi âm lượng.",
+                "action_outcome": {
+                    "schema_version": 1,
+                    "tool_id": "system.volume",
+                    "tool_version": "1.0.0",
+                    "status": "failed",
+                    "reason_code": "write_failed",
+                },
+            },
+        }
+    )
+
+    assert envelope["payload"]["action_outcome"]["reason_code"] == "write_failed"
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    (
+        {
+            "schema_version": 1,
+            "tool_id": "system.volume",
+            "tool_version": "1.0.0",
+            "status": "failed",
+            "reason_code": "write_failed",
+            "output": {"level": 2},
+        },
+        {
+            "schema_version": 1,
+            "tool_id": "system.volume",
+            "tool_version": "1.0.0",
+            "status": "failed",
+            "reason_code": None,
+        },
+        {
+            "schema_version": 1,
+            "tool_id": "system.volume",
+            "tool_version": "1.0.0",
+            "status": "failed",
+            "reason_code": "a" * 65,
+        },
+        {
+            "schema_version": 1,
+            "tool_id": "system.volume",
+            "tool_version": "1.0.0",
+            "status": "succeeded",
+            "reason_code": "write_failed",
+        },
+        {
+            "schema_version": 1,
+            "tool_id": "system.volume",
+            "tool_version": "1.0.0",
+            "status": "unknown",
+            "reason_code": "write_failed",
+        },
+        {
+            "schema_version": 1,
+            "tool_id": "app.open",
+            "tool_version": "1.0.0",
+            "status": "failed",
+            "reason_code": "write_failed",
+        },
+    ),
+)
+def test_chat_done_rejects_malformed_action_outcomes(outcome: object) -> None:
+    with pytest.raises(ProtocolError, match="invalid_action_outcome"):
+        validate_envelope(
+            {
+                "v": 1,
+                "id": "chat-1",
+                "type": "chat.done",
+                "seq": 2,
+                "payload": {
+                    "raw_reply": "bounded reply",
+                    "action_outcome": outcome,
+                },
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {},
+        {"raw_reply": ""},
+        {"raw_reply": "x" * 32_001},
+        {"raw_reply": "bounded", "extra": True},
+    ),
+)
+def test_chat_done_rejects_unbounded_or_unknown_payload_fields(payload: dict) -> None:
+    with pytest.raises(ProtocolError, match="invalid_chat_done"):
+        validate_envelope(
+            {
+                "v": 1,
+                "id": "chat-1",
+                "type": "chat.done",
+                "seq": 2,
+                "payload": payload,
+            }
+        )
 
 
 def test_redacted_summary_omits_id_token_and_payload() -> None:

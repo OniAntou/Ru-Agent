@@ -6,6 +6,11 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from ru_runtime.worker.v1.action_outcome import (
+    ActionOutcomeError,
+    parse_action_outcome,
+)
+
 PROTOCOL_VERSION = 1
 MAX_REQUEST_ID_CHARS = 128
 
@@ -144,6 +149,8 @@ def validate_envelope(value: object) -> dict[str, Any]:
     elif message_type == CHAT_TOOL_CANCEL:
         _validate_tool_context_payload(payload, "invalid_tool_cancel")
         _validate_tool_request_id(payload, "invalid_tool_cancel")
+    elif message_type == CHAT_DONE:
+        _validate_chat_done_payload(payload)
 
     sequence = value.get("seq")
     if sequence is not None and (
@@ -174,6 +181,23 @@ def validate_envelope(value: object) -> dict[str, Any]:
 def encode_envelope(value: object) -> str:
     envelope = validate_envelope(value)
     return json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+
+
+def _validate_chat_done_payload(payload: Mapping[str, Any]) -> None:
+    if set(payload) not in ({"raw_reply"}, {"raw_reply", "action_outcome"}):
+        raise ProtocolError("invalid_chat_done")
+    raw_reply = payload.get("raw_reply")
+    if (
+        not isinstance(raw_reply, str)
+        or not raw_reply.strip()
+        or len(raw_reply) > 32_000
+    ):
+        raise ProtocolError("invalid_chat_done")
+    if "action_outcome" in payload:
+        try:
+            parse_action_outcome(payload["action_outcome"])
+        except ActionOutcomeError:
+            raise ProtocolError("invalid_action_outcome") from None
 
 
 def _validate_tool_request_payload(payload: Mapping[str, Any]) -> None:

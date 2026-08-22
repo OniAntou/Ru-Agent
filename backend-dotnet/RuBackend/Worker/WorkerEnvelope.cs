@@ -43,6 +43,9 @@ public sealed class WorkerProtocolException : Exception
 
 public static class WorkerEnvelopeCodec
 {
+    private static readonly IReadOnlySet<string> ChatDoneFields = new HashSet<string>(
+        ["raw_reply", "action_outcome"],
+        StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ToolStatuses = new HashSet<string>(
         ["succeeded", "failed", "denied", "approval_required", "cancelled", "timed_out"],
         StringComparer.Ordinal);
@@ -143,6 +146,9 @@ public static class WorkerEnvelopeCodec
 
         switch (envelope.Type)
         {
+            case WorkerMessageTypes.ChatDone:
+                ValidateChatDone(envelope.Payload);
+                break;
             case WorkerMessageTypes.ChatToolRequest:
                 ValidateToolRequest(envelope.Payload);
                 break;
@@ -153,6 +159,26 @@ public static class WorkerEnvelopeCodec
                 ValidateToolContext(envelope.Payload, "invalid_tool_cancel");
                 ValidateToolRequestId(envelope.Payload, "invalid_tool_cancel");
                 break;
+        }
+    }
+
+    private static void ValidateChatDone(JsonObject payload)
+    {
+        if (payload.Count is < 1 or > 2
+            || payload.Any(pair => !ChatDoneFields.Contains(pair.Key)))
+        {
+            throw new WorkerProtocolException("invalid_chat_done");
+        }
+
+        ValidateString(payload["raw_reply"], 32_000, "invalid_chat_done");
+        if (payload.TryGetPropertyValue("action_outcome", out var actionOutcome))
+        {
+            if (actionOutcome is null)
+            {
+                throw new WorkerProtocolException("invalid_action_outcome");
+            }
+
+            WorkerActionOutcome.Parse(actionOutcome);
         }
     }
 

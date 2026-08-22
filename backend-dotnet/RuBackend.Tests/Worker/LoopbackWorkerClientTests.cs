@@ -69,11 +69,53 @@ public sealed class LoopbackWorkerClientTests
 
         Assert.Equal(WorkerMessageTypes.ChatStart, observedStart!.Type);
         Assert.Equal("synthetic prompt", observedStart.Payload["prompt"]!.GetValue<string>());
+        Assert.False(observedStart.Payload.ContainsKey("last_action_outcome"));
         Assert.Equal(
             [WorkerMessageTypes.ChatReset, WorkerMessageTypes.ChatChunk, WorkerMessageTypes.ChatDone],
             events.Select(item => item.Type));
         Assert.Equal([0L, 1L, 2L], events.Select(item => item.Sequence));
         Assert.Equal("Em nghe đây.", events[1].Payload["text"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task GenerateChat_sends_one_bounded_last_action_outcome_when_present()
+    {
+        WorkerEnvelope? observedStart = null;
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            await CompleteHandshakeAsync(socket);
+            observedStart = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(
+                socket,
+                Event(observedStart.Id, WorkerMessageTypes.ChatReset, 0, []));
+            await SendEnvelopeAsync(
+                socket,
+                Event(
+                    observedStart.Id,
+                    WorkerMessageTypes.ChatDone,
+                    1,
+                    new JsonObject { ["raw_reply"] = "Vì thao tác thất bại." }));
+        });
+        await using var client = CreateClient(server.Uri);
+        var request = EmptyChatRequest("chat-outcome") with
+        {
+            LastActionOutcome = WorkerActionOutcome.Parse(new JsonObject
+            {
+                ["schema_version"] = 1,
+                ["tool_id"] = "system.volume",
+                ["tool_version"] = "1.0.0",
+                ["status"] = "failed",
+                ["reason_code"] = "write_failed",
+            }),
+        };
+
+        await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None));
+
+        var outcome = observedStart!.Payload["last_action_outcome"]!.AsObject();
+        Assert.Equal(
+            ["reason_code", "schema_version", "status", "tool_id", "tool_version"],
+            outcome.Select(pair => pair.Key).Order(StringComparer.Ordinal));
+        Assert.Equal("write_failed", outcome["reason_code"]!.GetValue<string>());
     }
 
     [Fact]

@@ -71,12 +71,95 @@ public sealed class WorkerEnvelopeTests
     [InlineData("worker.health.ok")]
     public void Ordered_response_types_require_a_sequence(string messageType)
     {
+        var payload = messageType == WorkerMessageTypes.ChatDone
+            ? "{\"raw_reply\":\"Em nghe đây.\"}"
+            : "{}";
         var json =
-            $"{{\"v\":1,\"id\":\"req-1\",\"type\":\"{messageType}\",\"payload\":{{}}}}";
+            $"{{\"v\":1,\"id\":\"req-1\",\"type\":\"{messageType}\",\"payload\":{payload}}}";
 
         var error = Assert.Throws<WorkerProtocolException>(() => WorkerEnvelopeCodec.Parse(json));
 
         Assert.Equal("missing_sequence", error.Code);
+    }
+
+    [Fact]
+    public void Chat_done_accepts_one_bounded_action_outcome()
+    {
+        var envelope = new WorkerEnvelope(
+            1,
+            "chat-1",
+            WorkerMessageTypes.ChatDone,
+            2,
+            new JsonObject
+            {
+                ["raw_reply"] = "Windows không chấp nhận thay đổi âm lượng.",
+                ["action_outcome"] = new JsonObject
+                {
+                    ["schema_version"] = 1,
+                    ["tool_id"] = "system.volume",
+                    ["tool_version"] = "1.0.0",
+                    ["status"] = "failed",
+                    ["reason_code"] = "write_failed",
+                },
+            });
+
+        WorkerEnvelopeCodec.Validate(envelope);
+
+        Assert.Equal(
+            "write_failed",
+            envelope.Payload["action_outcome"]!["reason_code"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Chat_done_rejects_a_malformed_action_outcome()
+    {
+        var envelope = new WorkerEnvelope(
+            1,
+            "chat-1",
+            WorkerMessageTypes.ChatDone,
+            2,
+            new JsonObject
+            {
+                ["raw_reply"] = "bounded reply",
+                ["action_outcome"] = new JsonObject
+                {
+                    ["schema_version"] = 1,
+                    ["tool_id"] = "system.volume",
+                    ["tool_version"] = "1.0.0",
+                    ["status"] = "failed",
+                    ["reason_code"] = null,
+                },
+            });
+
+        var error = Assert.Throws<WorkerProtocolException>(() =>
+            WorkerEnvelopeCodec.Validate(envelope));
+
+        Assert.Equal("invalid_action_outcome", error.Code);
+    }
+
+    [Theory]
+    [InlineData("", false)]
+    [InlineData("bounded", true)]
+    public void Chat_done_rejects_unbounded_or_unknown_payload(
+        string rawReply,
+        bool addUnknownField)
+    {
+        var payload = new JsonObject { ["raw_reply"] = rawReply };
+        if (addUnknownField)
+        {
+            payload["output"] = new JsonObject { ["level"] = 2 };
+        }
+        var envelope = new WorkerEnvelope(
+            1,
+            "chat-1",
+            WorkerMessageTypes.ChatDone,
+            2,
+            payload);
+
+        var error = Assert.Throws<WorkerProtocolException>(() =>
+            WorkerEnvelopeCodec.Validate(envelope));
+
+        Assert.Equal("invalid_chat_done", error.Code);
     }
 
     [Fact]

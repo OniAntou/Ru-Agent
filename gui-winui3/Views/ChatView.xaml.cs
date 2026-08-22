@@ -138,6 +138,7 @@ namespace RuApp.Views
             _wsClient.OnResetReceived += OnWsResetReceived;
             _wsClient.OnConnected += OnWsConnected;
             _wsClient.OnDisconnected += OnWsDisconnected;
+            _wsClient.OnAgentSessionReceived += OnAgentSessionReceived;
             _wsClient.OnAgentActivityReceived += OnAgentActivityReceived;
             _wsClient.OnAgentApprovalRequired += OnAgentApprovalRequired;
             _wsClient.OnAgentApprovalResult += OnAgentApprovalResult;
@@ -180,14 +181,26 @@ namespace RuApp.Views
 
         private void OnWsDisconnected()
         {
-            DispatcherQueue.TryEnqueue(() => ClearAgentApproval());
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                _agentSession.Disable();
+                AgentModeButton.IsChecked = false;
+                AgentActivity.Visibility = Visibility.Collapsed;
+                ClearAgentApproval();
+            });
         }
 
         private void OnWsSessionReceived(string sessionId)
         {
             DispatcherQueue.TryEnqueue(() =>
             {
+                if (string.IsNullOrWhiteSpace(sessionId))
+                {
+                    return;
+                }
+
                 _activeSessionId = sessionId;
+                _agentSession.ObserveSession(sessionId);
                 _agentSession.Disable();
                 AgentModeButton.IsChecked = false;
                 AgentActivity.Visibility = Visibility.Collapsed;
@@ -199,8 +212,8 @@ namespace RuApp.Views
         {
             if (AgentModeButton.IsChecked == true)
             {
-                _agentSession.Enable(_activeSessionId);
-                AgentActivity.Text = "Agent session enabled for bounded workspace and terminal tools.";
+                _agentSession.BeginRequest(_activeSessionId);
+                AgentActivity.Text = "Đang chờ Host cấp quyền…";
                 AgentActivity.Visibility = Visibility.Visible;
             }
             else
@@ -209,6 +222,21 @@ namespace RuApp.Views
                 AgentActivity.Visibility = Visibility.Collapsed;
                 ClearAgentApproval();
             }
+        }
+
+        private void OnAgentSessionReceived(AgentSessionGrantModel grant)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (!string.Equals(grant.SessionId, _activeSessionId, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                _agentSession.ApplyGrant(grant);
+                AgentActivity.Text = $"Quyền đã cấp: {string.Join(", ", grant.Scopes)}";
+                AgentActivity.Visibility = Visibility.Visible;
+            });
         }
 
         private void OnAgentActivityReceived(string content, string sessionId)
@@ -967,6 +995,7 @@ namespace RuApp.Views
                 _wsClient.OnSessionReceived -= OnWsSessionReceived;
                 _wsClient.OnResetReceived -= OnWsResetReceived;
                 _wsClient.OnDisconnected -= OnWsDisconnected;
+                _wsClient.OnAgentSessionReceived -= OnAgentSessionReceived;
                 _wsClient.OnAgentActivityReceived -= OnAgentActivityReceived;
                 _wsClient.OnAgentApprovalRequired -= OnAgentApprovalRequired;
                 _wsClient.OnAgentApprovalResult -= OnAgentApprovalResult;

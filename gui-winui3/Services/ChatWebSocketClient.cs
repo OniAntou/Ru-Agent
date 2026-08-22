@@ -27,6 +27,7 @@ namespace RuApp.Services
         public event Action? OnResetReceived;
         public event Action<string, string>? OnDoneReceived;
         public event Action<string>? OnErrorReceived;
+        public event Action<AgentSessionGrantModel>? OnAgentSessionReceived;
         public event Action<string, string>? OnAgentActivityReceived;
         public event Action<AgentApprovalModel>? OnAgentApprovalRequired;
         public event Action<AgentApprovalResult>? OnAgentApprovalResult;
@@ -179,6 +180,13 @@ namespace RuApp.Services
                         : "Lỗi không xác định";
                     System.Diagnostics.Debug.WriteLine($"Error message: {content}");
                     OnErrorReceived?.Invoke(content);
+                }
+                else if (msgType == "agent.session")
+                {
+                    if (AgentSessionGrantModel.TryParse(root, out var grant))
+                    {
+                        OnAgentSessionReceived?.Invoke(grant);
+                    }
                 }
                 else if (msgType == "agent.activity")
                 {

@@ -177,6 +177,18 @@ def test_action_and_legacy_terminal_statuses_are_preserved(status: str):
     assert sanitize_diagnostic_event(event).status == status
 
 
+@pytest.mark.parametrize(
+    "event_code",
+    (
+        "tool.intent.resolved",
+        "tool.intent.clarification",
+        "tool.intent.rejected",
+    ),
+)
+def test_deterministic_intent_event_codes_are_allowlisted(event_code: str) -> None:
+    assert event_code in ALLOWED_EVENT_CODES
+
+
 def test_sanitize_diagnostic_event_redacts_dangerous_or_unapproved_values():
     event = DiagnosticEvent(
         event_id="",

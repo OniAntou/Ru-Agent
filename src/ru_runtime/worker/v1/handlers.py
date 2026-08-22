@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import math
 import threading
 import time
@@ -14,17 +13,25 @@ from functools import partial
 from typing import Any, ContextManager, Literal, Protocol
 
 from ru_runtime.generation.chat import ChatTurn
+from ru_runtime.generation.volume_intent import resolve_volume_intent
 from ru_runtime.memory.learning import extract_facts_with_llm
 from ru_runtime.persistence.diagnostic_log import get_diagnostic_log_writer
 from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
 from ru_runtime.worker.v1.action_loop import (
     ActionProtocolError,
+    ActionSelection,
     ModelCapability,
-    detect_volume_intent,
-    failure_reply,
     parse_model_capabilities,
     validate_receipt,
-    validate_selection,
+)
+from ru_runtime.worker.v1.action_outcome import (
+    ActionOutcome,
+    is_causal_follow_up,
+    parse_optional_action_outcome,
+    render_action_explanation,
+    render_volume_clarification,
+    render_volume_failure,
+    render_volume_success,
 )
 from ru_runtime.worker.v1.http import RuntimeHttpResponse
 from ru_runtime.voice.stream import VoiceStreamEvent
@@ -301,39 +308,114 @@ async def _chat_handler(
 
     async def run_generation() -> None:
         try:
-            capabilities = request.model_tools
-            volume_intent = detect_volume_intent(request.prompt)
-            volume_capability = next(
-                (item for item in capabilities if item.tool_id == "system.volume"),
-                None,
-            )
-            if volume_intent and volume_capability is None:
-                raise ActionProtocolError("capability_unavailable")
-            if volume_intent and not isinstance(tool_result_queue, asyncio.Queue):
-                raise ActionProtocolError("capability_unavailable")
-            selection_required = (
-                isinstance(tool_result_queue, asyncio.Queue)
-                and bool(capabilities)
-                and (request.agent_mode or volume_intent)
-            )
-            raw_reply = await asyncio.to_thread(
-                generate_once,
-                request.prompt,
-                request.turns,
-                stream=not selection_required,
-                observe_user=True,
-                phase="tool_request" if selection_required else "normal",
-            )
-            if not isinstance(raw_reply, str):
-                raise TypeError("model reply must be text")
-            if selection_required:
-                selection = validate_selection(raw_reply, capabilities)
-                if selection is None:
-                    if volume_intent:
-                        raise ActionProtocolError("invalid_selection")
-                    publish(WorkerReply(CHAT_DONE, {"raw_reply": raw_reply}))
+            if (
+                request.last_action_outcome is not None
+                and is_causal_follow_up(request.prompt)
+            ):
+                publish(
+                    WorkerReply(
+                        CHAT_DONE,
+                        {
+                            "raw_reply": render_action_explanation(
+                                request.last_action_outcome
+                            )
+                        },
+                    )
+                )
+                return
+
+            decision = resolve_volume_intent(request.prompt)
+            if decision.kind == "clarification_required":
+                event_code = (
+                    "tool.intent.rejected"
+                    if decision.reason_code == "volume_value_out_of_range"
+                    else "tool.intent.clarification"
+                )
+                _record_intent(
+                    event_code,
+                    correlation_id=correlation_id,
+                    status=(
+                        "failed" if event_code.endswith("rejected") else "skipped"
+                    ),
+                    error_code=decision.reason_code,
+                )
+                outcome = ActionOutcome(
+                    1,
+                    "system.volume",
+                    "1.0.0",
+                    "clarification_required",
+                    decision.reason_code,
+                )
+                publish(
+                    WorkerReply(
+                        CHAT_DONE,
+                        {
+                            "raw_reply": render_volume_clarification(
+                                decision.reason_code or "volume_command_ambiguous"
+                            ),
+                            "action_outcome": outcome.to_payload(),
+                        },
+                    )
+                )
+                return
+
+            if decision.kind == "execute":
+                call = decision.tool_call
+                assert call is not None
+                capability = next(
+                    (
+                        item
+                        for item in request.model_tools
+                        if item.tool_id == call.tool_id
+                        and item.tool_version == call.tool_version
+                    ),
+                    None,
+                )
+                if capability is None or not isinstance(
+                    tool_result_queue,
+                    asyncio.Queue,
+                ):
+                    reason_code = (
+                        "capability_unavailable"
+                        if capability is None
+                        else "agent_unavailable"
+                    )
+                    _record_intent(
+                        "tool.intent.rejected",
+                        correlation_id=correlation_id,
+                        status="failed",
+                        error_code=reason_code,
+                    )
+                    outcome = ActionOutcome(
+                        1,
+                        call.tool_id,
+                        call.tool_version,
+                        "failed",
+                        reason_code,
+                    )
+                    publish(
+                        WorkerReply(
+                            CHAT_DONE,
+                            {
+                                "raw_reply": render_volume_failure(reason_code),
+                                "action_outcome": outcome.to_payload(),
+                            },
+                        )
+                    )
                     return
 
+                selection = ActionSelection(
+                    call.tool_id,
+                    call.tool_version,
+                    capability.capability_class,
+                    dict(call.arguments),
+                )
+                _record_intent(
+                    "tool.intent.resolved",
+                    correlation_id=correlation_id,
+                    status="succeeded",
+                    error_code=None,
+                )
                 tool_request_id = f"tool-{uuid.uuid4().hex}"
                 tool_correlation_id = correlation_id or f"corr-{uuid.uuid4().hex}"
                 deadline_at = time.monotonic() + (_ACTION_DEADLINE_MS / 1000.0)
@@ -352,8 +434,8 @@ async def _chat_handler(
                         },
                     )
                 )
-                result = await wait_for_tool_result(deadline_at)
                 try:
+                    result = await wait_for_tool_result(deadline_at)
                     receipt = validate_receipt(
                         selection,
                         result,
@@ -369,34 +451,73 @@ async def _chat_handler(
                         tool_id=selection.tool_id,
                         tool_version=selection.tool_version,
                     )
-                    raise
-                if receipt.status != "succeeded":
-                    raise ActionProtocolError(receipt.error_code or "action_failed")
-                tool_turn = ChatTurn(
-                    "[verified action receipt]",
-                    json.dumps(
+                    outcome = ActionOutcome(
+                        1,
+                        selection.tool_id,
+                        selection.tool_version,
+                        "failed",
+                        error.code,
+                    )
+                    publish(
+                        WorkerReply(
+                            CHAT_DONE,
+                            {
+                                "raw_reply": render_volume_failure(error.code),
+                                "action_outcome": outcome.to_payload(),
+                            },
+                        )
+                    )
+                    return
+
+                if receipt.status != "succeeded" or receipt.readback is None:
+                    reason_code = receipt.error_code or receipt.status
+                    outcome = ActionOutcome(
+                        1,
+                        selection.tool_id,
+                        selection.tool_version,
+                        receipt.status,
+                        reason_code,
+                    )
+                    publish(
+                        WorkerReply(
+                            CHAT_DONE,
+                            {
+                                "raw_reply": render_volume_failure(reason_code),
+                                "action_outcome": outcome.to_payload(),
+                            },
+                        )
+                    )
+                    return
+
+                outcome = ActionOutcome(
+                    1,
+                    selection.tool_id,
+                    selection.tool_version,
+                    "succeeded",
+                    None,
+                )
+                publish(
+                    WorkerReply(
+                        CHAT_DONE,
                         {
-                            "status": receipt.status,
-                            "safe_summary": receipt.safe_summary,
-                            "error_code": receipt.error_code,
-                            "duration_ms": receipt.duration_ms,
-                            "verification_state": receipt.verification_state,
+                            "raw_reply": render_volume_success(receipt.readback),
+                            "action_outcome": outcome.to_payload(),
                         },
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                    ),
+                    )
                 )
-                raw_reply = await asyncio.to_thread(
-                    generate_once,
-                    request.prompt,
-                    request.turns + (tool_turn,),
-                    stream=True,
-                    observe_user=False,
-                    phase="tool_result",
-                )
+                return
+
+            raw_reply = await asyncio.to_thread(
+                generate_once,
+                request.prompt,
+                request.turns,
+                stream=True,
+                observe_user=True,
+                phase="normal",
+            )
+            if not isinstance(raw_reply, str):
+                raise TypeError("model reply must be text")
             publish(WorkerReply(CHAT_DONE, {"raw_reply": raw_reply}))
-        except ActionProtocolError as error:
-            publish(WorkerReply(CHAT_DONE, {"raw_reply": failure_reply(error.code)}))
         except Exception:
             publish(_error("generation_failed", retryable=True))
         finally:
@@ -416,6 +537,33 @@ async def _chat_handler(
     finally:
         if not task.done():
             task.add_done_callback(_consume_task_result)
+
+
+def _record_intent(
+    event_code: str,
+    *,
+    correlation_id: str,
+    status: str,
+    error_code: str | None,
+) -> None:
+    try:
+        get_diagnostic_log_writer().try_enqueue(
+            DiagnosticEvent(
+                event_id=f"evt_{uuid.uuid4().hex}",
+                ts=time.time(),
+                iso=datetime.now(timezone.utc).isoformat(),
+                level="warning" if status == "failed" else "info",
+                component="worker.runtime",
+                event_code=event_code,
+                correlation_id=correlation_id or None,
+                status=status,
+                error_code=error_code,
+                tool_id="system.volume",
+                tool_version="1.0.0",
+            )
+        )
+    except Exception:
+        return
 
 
 def _record_receipt_rejection(
@@ -794,6 +942,7 @@ class _ChatRequest:
     allow_web_search: bool
     agent_mode: bool
     model_tools: tuple[ModelCapability, ...]
+    last_action_outcome: ActionOutcome | None
 
 
 def _parse_chat_request(payload: Mapping[str, Any]) -> _ChatRequest:
@@ -837,6 +986,9 @@ def _parse_chat_request(payload: Mapping[str, Any]) -> _ChatRequest:
         ),
         agent_mode=_required_bool(settings.get("agent_mode", False)),
         model_tools=parse_model_capabilities(settings),
+        last_action_outcome=parse_optional_action_outcome(
+            payload.get("last_action_outcome")
+        ),
     )
 
 

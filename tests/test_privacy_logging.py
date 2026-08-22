@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from ru_runtime.persistence.diagnostic_schema import (
+    ALLOWED_EVENT_CODES,
     DiagnosticEvent,
     serialize_diagnostic_event,
     sanitize_diagnostic_event,
@@ -70,6 +71,57 @@ def test_privacy_scan_injected_action_values_never_survive_deserialization():
     assert forbidden_keys.isdisjoint(parsed)
     assert "bearer" not in serialized.casefold()
     assert "secret" not in serialized.casefold()
+
+
+@pytest.mark.parametrize(
+    "event_code",
+    (
+        "tool.intent.resolved",
+        "tool.intent.clarification",
+        "tool.intent.rejected",
+    ),
+)
+def test_privacy_scan_intent_events_have_only_bounded_metadata(event_code: str) -> None:
+    assert event_code in ALLOWED_EVENT_CODES
+    event = DiagnosticEvent(
+        event_id="evt_intent_12345678",
+        ts=1000.0,
+        iso="2026-08-23T00:00:00Z",
+        level="info",
+        component="worker.runtime",
+        event_code=event_code,
+        correlation_id="correlation-1",
+        status="succeeded",
+        tool_id="system.volume",
+        tool_version="1.0.0",
+    )
+
+    data = json.loads(serialize_diagnostic_event(event))
+
+    assert set(data) == {
+        "event_id",
+        "ts",
+        "iso",
+        "level",
+        "component",
+        "event_code",
+        "correlation_id",
+        "status",
+        "tool_id",
+        "tool_version",
+    }
+    assert {
+        "prompt",
+        "arguments",
+        "operation",
+        "level_value",
+        "amount",
+        "output",
+        "muted",
+        "reply",
+        "device",
+        "exception",
+    }.isdisjoint(data)
 
 
 def test_privacy_scan_activity_preview_masks_secrets_urls_paths():

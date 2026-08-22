@@ -4,9 +4,14 @@ import json
 import re
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
+from ru_runtime.worker.v1.action_outcome import (
+    ActionOutcomeError,
+    VolumeReadback,
+    parse_volume_readback,
+)
 from ru_runtime.worker.v1.protocol import (
     MAX_TOOL_ARGUMENTS_BYTES,
     MAX_TOOL_OUTPUT_BYTES,
@@ -23,7 +28,6 @@ _MAX_AVAILABILITY_CHARS = 32
 _MAX_SCOPE_CHARS = 64
 _MAX_DURATION_MS = 300_000
 _MAX_ERROR_CODE_CHARS = 128
-_MAX_PROMPT_CHARS = 16_000
 _KNOWN_AVAILABILITY = frozenset(("executable", "native_pending"))
 _KNOWN_VERIFICATION_STATES = frozenset(("not_required", "pending", "verified", "failed"))
 _CAPABILITY_FIELDS = frozenset(
@@ -54,39 +58,6 @@ _RECEIPT_FIELDS = frozenset(
 )
 _ENDPOINT_HASH = re.compile(r"^[0-9a-f]{16}$")
 _ERROR_CODE = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
-_AUDIO_NOUNS = (
-    "âm lượng",
-    "tiếng máy",
-    "loa",
-    "volume",
-    "sound",
-    "mute",
-    "unmute",
-)
-_ACTION_VERBS = (
-    "tăng",
-    "giảm",
-    "hạ",
-    "đặt",
-    "tắt",
-    "bật",
-    "increase",
-    "decrease",
-    "set",
-    "turn",
-    "mute",
-    "unmute",
-)
-_DIRECT_AUDIO_PHRASES = (
-    "tăng tiếng",
-    "giảm tiếng",
-    "hạ tiếng",
-    "đặt tiếng",
-    "tắt tiếng",
-    "bật tiếng",
-)
-
-
 class ActionProtocolError(ValueError):
     def __init__(self, code: str) -> None:
         self.code = code
@@ -118,6 +89,7 @@ class ActionReceipt:
     safe_summary: str
     duration_ms: int
     verification_state: str
+    readback: VolumeReadback | None = field(default=None, repr=False)
 
 
 def parse_model_capabilities(settings: Mapping[str, object]) -> tuple[ModelCapability, ...]:
@@ -165,16 +137,6 @@ def parse_model_capabilities(settings: Mapping[str, object]) -> tuple[ModelCapab
             )
         )
     return tuple(capabilities)
-
-
-def detect_volume_intent(prompt: str) -> bool:
-    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > _MAX_PROMPT_CHARS:
-        return False
-    normalized = " ".join(prompt.casefold().split())
-    return any(_contains_term(normalized, phrase) for phrase in _DIRECT_AUDIO_PHRASES) or (
-        any(_contains_term(normalized, term) for term in _AUDIO_NOUNS)
-        and any(_contains_term(normalized, term) for term in _ACTION_VERBS)
-    )
 
 
 def validate_selection(
@@ -321,17 +283,24 @@ def validate_receipt(
     ):
         raise ActionProtocolError("invalid_receipt")
 
+    readback = None
+    if status == "succeeded":
+        try:
+            readback = parse_volume_readback(
+                str(selection.arguments["operation"]),
+                output,
+            )
+        except (ActionOutcomeError, KeyError):
+            raise ActionProtocolError("invalid_receipt") from None
+
     return ActionReceipt(
         status=status,
         error_code=error_code,
         safe_summary=safe_summary.strip(),
         duration_ms=duration_ms,
         verification_state=verification_state,
+        readback=readback,
     )
-
-
-def failure_reply(_error_code: str) -> str:
-    return "Không thể thực hiện thay đổi âm lượng."
 
 
 def _validate_volume_arguments(arguments: dict[str, object]) -> None:
@@ -364,10 +333,6 @@ def _bounded_text(value: object, maximum: int) -> str | None:
     if not isinstance(value, str) or not value.strip() or len(value) > maximum:
         return None
     return value.strip()
-
-
-def _contains_term(text: str, term: str) -> bool:
-    return re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text) is not None
 
 
 def _json_size(value: object, code: str) -> int:

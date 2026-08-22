@@ -6,7 +6,6 @@ import pytest
 
 from ru_runtime.worker.v1.action_loop import (
     ActionProtocolError,
-    detect_volume_intent,
     parse_model_capabilities,
     validate_receipt,
     validate_selection,
@@ -26,35 +25,6 @@ def _settings() -> dict[str, object]:
             }
         ]
     }
-
-
-@pytest.mark.parametrize(
-    "prompt",
-    (
-        "Hạ âm lượng xuống 20%",
-        "Tăng tiếng lên một chút",
-        "Tắt loa giúp anh",
-        "Set the volume to 30 percent",
-        "Please unmute my computer",
-        "Mute this computer",
-    ),
-)
-def test_detects_explicit_volume_intent(prompt: str) -> None:
-    assert detect_volume_intent(prompt) is True
-
-
-@pytest.mark.parametrize(
-    "prompt",
-    (
-        "Nói nhỏ hơn một chút",
-        "Bài hát này có âm lượng cảm xúc lớn",
-        "Giải thích volume trong Docker",
-        "Giải thích headset volume là gì",
-        "Anh nghe chưa rõ câu trả lời",
-    ),
-)
-def test_does_not_route_ambiguous_prose(prompt: str) -> None:
-    assert detect_volume_intent(prompt) is False
 
 
 def test_model_capabilities_are_strict_bounded_and_immutable() -> None:
@@ -195,8 +165,33 @@ def test_verified_success_receipt_is_accepted_without_exposing_endpoint_proof() 
     assert receipt.status == "succeeded"
     assert receipt.verification_state == "verified"
     assert receipt.duration_ms == 12
+    assert receipt.readback is not None
+    assert receipt.readback.operation == "set"
+    assert receipt.readback.level == 20
+    assert receipt.readback.muted is False
     assert "endpoint" not in repr(receipt).lower()
     assert "0123456789abcdef" not in repr(receipt)
+    assert "level" not in repr(receipt).lower()
+
+
+@pytest.mark.parametrize(
+    "output",
+    (
+        {"operation": "increase", "level": 20, "muted": False},
+        {"operation": "set", "level": 20, "muted": False, "extra": True},
+        {"operation": "set", "level": True, "muted": False},
+        {"operation": "set", "level": 101, "muted": False},
+        {"operation": "set", "level": 20, "muted": 0},
+    ),
+)
+def test_success_receipt_requires_exact_volume_readback(
+    output: dict[str, object],
+) -> None:
+    payload = _receipt()
+    payload["output"] = output
+
+    with pytest.raises(ActionProtocolError, match="invalid_receipt"):
+        _validate(payload)
 
 
 @pytest.mark.parametrize("verification", ("pending", "failed", None))
@@ -223,6 +218,7 @@ def test_terminal_failure_preserves_only_safe_error_metadata() -> None:
 
     assert receipt.status == "failed"
     assert receipt.error_code == "readback_mismatch"
+    assert receipt.readback is None
     assert not hasattr(receipt, "output")
 
 

@@ -684,43 +684,27 @@ async def _run_action_turn(
 
 
 @pytest.mark.parametrize("agent_mode", (False, True))
-def test_volume_request_uses_selection_then_verified_receipt(agent_mode: bool) -> None:
-    runner = SequencedRunner(
-        '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"set","level":2}}',
-        "Đã đặt âm lượng ở mức 2% cho anh.",
-    )
+def test_explicit_volume_command_emits_one_request_without_model_generation(
+    agent_mode: bool,
+) -> None:
+    runner = SequencedRunner("model must not be called")
 
-    replies = asyncio.run(
-        _run_action_turn(
-            runner,
-            _verified_result(),
-            agent_mode,
-        )
-    )
+    replies = asyncio.run(_run_action_turn(runner, _verified_result(), agent_mode))
 
-    assert [call["structured_tools_only"] for call in runner.calls] == [True, False]
-    assert [call["agent_follow_up"] for call in runner.calls] == [False, True]
-    assert runner.calls[0]["action_capabilities"]
-    assert runner.calls[1]["action_capabilities"] == ()
-    assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == "Đã đặt âm lượng ở mức 2% cho anh."
-
-
-@pytest.mark.parametrize("agent_mode", (False, True))
-def test_volume_model_prose_cannot_claim_success_without_a_request(agent_mode: bool) -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner("Đã chỉnh xong")
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-
-    replies = asyncio.run(collect(handlers.chat(
-        _action_payload(queue, agent_mode),
-        asyncio.Event(),
-    )))
-
-    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
-    assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
-    assert len(runner.calls) == 1
+    requests = [reply for reply in replies if reply.type == CHAT_TOOL_REQUEST]
+    assert len(requests) == 1
+    assert requests[0].payload["arguments"] == {"operation": "set", "level": 2}
+    assert runner.calls == []
+    assert replies[-1].payload == {
+        "raw_reply": "Em đã đặt âm lượng về 2% rồi anh.",
+        "action_outcome": {
+            "schema_version": 1,
+            "tool_id": "system.volume",
+            "tool_version": "1.0.0",
+            "status": "succeeded",
+            "reason_code": None,
+        },
+    }
 
 
 def test_ordinary_normal_chat_streams_without_entering_selection() -> None:
@@ -738,7 +722,7 @@ def test_ordinary_normal_chat_streams_without_entering_selection() -> None:
     assert [reply.type for reply in replies] == [CHAT_RESET, CHAT_CHUNK, CHAT_DONE]
 
 
-def test_ordinary_agent_chat_may_finish_with_plain_selection_prose() -> None:
+def test_ordinary_agent_chat_uses_normal_streaming_generation() -> None:
     queue: asyncio.Queue = asyncio.Queue()
     runner = SequencedRunner("Em đang nghe anh đây.")
     handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
@@ -749,46 +733,64 @@ def test_ordinary_agent_chat_may_finish_with_plain_selection_prose() -> None:
     )))
 
     assert len(runner.calls) == 1
-    assert runner.calls[0]["structured_tools_only"] is True
+    assert runner.calls[0]["structured_tools_only"] is False
+    assert runner.calls[0]["agent_follow_up"] is False
     assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
+    assert [reply.type for reply in replies] == [CHAT_RESET, CHAT_CHUNK, CHAT_DONE]
     assert replies[-1].payload["raw_reply"] == "Em đang nghe anh đây."
 
 
 @pytest.mark.parametrize("verification_state", ("pending", "failed", "not_required"))
 def test_unverified_success_never_runs_follow_up(verification_state: str) -> None:
-    runner = SequencedRunner(
-        '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"set","level":2}}',
-        "Đã hạ âm lượng xuống 2% rồi anh.",
-    )
+    runner = SequencedRunner("model must not be called")
     result = _verified_result()
     result["verification_state"] = verification_state
 
     replies = asyncio.run(_run_action_turn(runner, result, True))
 
-    assert len(runner.calls) == 1
+    assert runner.calls == []
     assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
-    assert "Đã hạ âm lượng" not in replies[-1].payload["raw_reply"]
-
-
-def test_failed_receipt_is_truthful_without_success_continuation() -> None:
-    runner = SequencedRunner(
-        '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"set","level":2}}',
-        "Đã hạ âm lượng xuống 2% rồi anh.",
+    assert replies[-1].payload["raw_reply"] == (
+        "Kết quả thay đổi chưa được xác minh nên em không coi thao tác là thành công."
     )
+    assert replies[-1].payload["action_outcome"]["reason_code"] == (
+        "receipt_unverified"
+    )
+
+
+@pytest.mark.parametrize(
+    ("error_code", "expected_reply"),
+    (
+        (
+            "default_endpoint_unavailable",
+            "Windows chưa có thiết bị phát mặc định mà em có thể truy cập.",
+        ),
+        ("write_failed", "Windows không chấp nhận thay đổi âm lượng."),
+        (
+            "readback_mismatch",
+            "Windows không xác nhận mức âm lượng sau khi thay đổi.",
+        ),
+    ),
+)
+def test_failed_receipt_has_typed_reason_and_no_model_continuation(
+    error_code: str,
+    expected_reply: str,
+) -> None:
+    runner = SequencedRunner("model must not be called")
     result = _verified_result()
     result.update(
         status="failed",
-        error_code="readback_mismatch",
+        error_code=error_code,
         safe_summary="Volume change could not be verified.",
         verification_state="failed",
     )
 
     replies = asyncio.run(_run_action_turn(runner, result, True))
 
-    assert len(runner.calls) == 1
+    assert runner.calls == []
     assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
+    assert replies[-1].payload["raw_reply"] == expected_reply
+    assert replies[-1].payload["action_outcome"]["reason_code"] == error_code
 
 
 def test_mismatched_receipt_is_logged_without_output_values(monkeypatch) -> None:
@@ -798,9 +800,7 @@ def test_mismatched_receipt_is_logged_without_output_values(monkeypatch) -> None
         "get_diagnostic_log_writer",
         lambda: diagnostic_writer,
     )
-    runner = SequencedRunner(
-        '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"mute"}}'
-    )
+    runner = SequencedRunner("model must not be called")
     result = _verified_result()
     result["request_id"] = "stale-request"
 
@@ -808,9 +808,17 @@ def test_mismatched_receipt_is_logged_without_output_values(monkeypatch) -> None
 
     assert all(reply.type != ERROR for reply in replies)
     assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
-    event = diagnostic_writer.events[0]
-    assert len(diagnostic_writer.events) == 1
+    assert replies[-1].payload["action_outcome"]["reason_code"] == "receipt_mismatch"
+    assert runner.calls == []
+    event = next(
+        item
+        for item in diagnostic_writer.events
+        if item.event_code == "tool.receipt.rejected"
+    )
+    assert {item.event_code for item in diagnostic_writer.events} == {
+        "tool.intent.resolved",
+        "tool.receipt.rejected",
+    }
     assert event.event_code == "tool.receipt.rejected"
     assert event.error_code == "receipt_mismatch"
     assert event.correlation_id == "correlation-1"
@@ -838,53 +846,47 @@ def test_late_receipt_timeout_is_an_action_failure(monkeypatch) -> None:
 
     async def run() -> list[WorkerReply]:
         queue: asyncio.Queue = asyncio.Queue()
-        runner = SequencedRunner(
-            '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"mute"}}'
-        )
+        runner = SequencedRunner("model must not be called")
         handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
         return await collect(handlers.chat(_action_payload(queue, True), asyncio.Event()))
 
     replies = asyncio.run(run())
 
     assert all(reply.type != ERROR for reply in replies)
-    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
-
-
-def test_two_tool_calls_are_rejected_without_emitting_a_request() -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner(
-        '[{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"mute"}},'
-        '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"unmute"}}]'
+    assert replies[-1].payload["raw_reply"] == (
+        "Thao tác âm lượng đã hết thời gian chờ."
     )
+    assert replies[-1].payload["action_outcome"]["reason_code"] == "receipt_late"
+
+
+@pytest.mark.parametrize(
+    ("prompt", "reason_code"),
+    (
+        ("Giảm âm lượng 2%", "volume_command_ambiguous"),
+        ("Đặt âm lượng về 101", "volume_value_out_of_range"),
+    ),
+)
+def test_unclear_volume_command_stops_before_model_and_tool(
+    prompt: str,
+    reason_code: str,
+) -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner("model must not be called")
     handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
 
     replies = asyncio.run(collect(handlers.chat(
-        _action_payload(queue, True),
+        _action_payload(queue, False, prompt=prompt),
         asyncio.Event(),
     )))
 
+    assert runner.calls == []
     assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
-    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
+    assert replies[-1].payload["action_outcome"]["reason_code"] == reason_code
 
 
-def test_legacy_volume_marker_is_translated_then_waits_for_verified_receipt() -> None:
-    runner = SequencedRunner(
-        "[VOLUME: set 2] Em đã chỉnh xong.",
-        "Đã đặt âm lượng ở mức 2% cho anh.",
-    )
-
-    replies = asyncio.run(_run_action_turn(runner, _verified_result(), False))
-
-    request = next(reply for reply in replies if reply.type == CHAT_TOOL_REQUEST)
-    assert request.payload["tool_id"] == "system.volume"
-    assert request.payload["arguments"] == {"operation": "set", "level": 2}
-    assert len(runner.calls) == 2
-    assert replies[-1].payload["raw_reply"] == "Đã đặt âm lượng ở mức 2% cho anh."
-
-
-def test_capability_absent_volume_request_fails_without_model_generation() -> None:
+def test_capability_absent_volume_request_has_typed_failure_without_model() -> None:
     queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner("Đã chỉnh xong")
+    runner = SequencedRunner("model must not be called")
     handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
 
     replies = asyncio.run(collect(handlers.chat(
@@ -894,7 +896,145 @@ def test_capability_absent_volume_request_fails_without_model_generation() -> No
 
     assert runner.calls == []
     assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
-    assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
+    assert replies[-1].payload["raw_reply"] == (
+        "Tính năng điều khiển âm lượng chưa sẵn sàng trong phiên này."
+    )
+    assert replies[-1].payload["action_outcome"]["reason_code"] == (
+        "capability_unavailable"
+    )
+
+
+def test_missing_agent_channel_has_typed_failure_without_model() -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner("model must not be called")
+    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+    payload = _action_payload(queue, True)
+    payload.pop("__worker_tool_result_queue")
+
+    replies = asyncio.run(collect(handlers.chat(payload, asyncio.Event())))
+
+    assert runner.calls == []
+    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
+    assert replies[-1].payload["action_outcome"]["reason_code"] == "agent_unavailable"
+
+
+def test_immediate_causal_follow_up_uses_bounded_outcome_without_model() -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner("model must not be called")
+    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+    payload = _action_payload(queue, False, prompt="sao vậy?")
+    payload["last_action_outcome"] = {
+        "schema_version": 1,
+        "tool_id": "system.volume",
+        "tool_version": "1.0.0",
+        "status": "failed",
+        "reason_code": "write_failed",
+    }
+
+    replies = asyncio.run(collect(handlers.chat(payload, asyncio.Event())))
+
+    assert runner.calls == []
+    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
+    assert replies[-1].payload == {
+        "raw_reply": "Vì Windows không chấp nhận thay đổi âm lượng."
+    }
+
+
+def test_unrelated_follow_up_ignores_bounded_outcome_and_uses_normal_model() -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner("Em nghe đây.")
+    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+    payload = _action_payload(queue, True, prompt="Kể em nghe chuyện khác")
+    payload["last_action_outcome"] = {
+        "schema_version": 1,
+        "tool_id": "system.volume",
+        "tool_version": "1.0.0",
+        "status": "failed",
+        "reason_code": "write_failed",
+    }
+
+    replies = asyncio.run(collect(handlers.chat(payload, asyncio.Event())))
+
+    assert len(runner.calls) == 1
+    assert runner.calls[0]["structured_tools_only"] is False
+    assert replies[-1].payload == {"raw_reply": "Em nghe đây."}
+
+
+@pytest.mark.parametrize(
+    ("prompt", "event_code", "status", "reason_code"),
+    (
+        (
+            "Giảm âm lượng 2%",
+            "tool.intent.clarification",
+            "skipped",
+            "volume_command_ambiguous",
+        ),
+        (
+            "Đặt âm lượng về 101",
+            "tool.intent.rejected",
+            "failed",
+            "volume_value_out_of_range",
+        ),
+    ),
+)
+def test_intent_diagnostics_are_bounded_and_never_include_command_values(
+    monkeypatch,
+    prompt: str,
+    event_code: str,
+    status: str,
+    reason_code: str,
+) -> None:
+    diagnostic_writer = _RecordingDiagnosticWriter()
+    monkeypatch.setattr(
+        handlers_module,
+        "get_diagnostic_log_writer",
+        lambda: diagnostic_writer,
+    )
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner("model must not be called")
+    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+
+    asyncio.run(collect(handlers.chat(
+        _action_payload(queue, False, prompt=prompt),
+        asyncio.Event(),
+    )))
+
+    assert len(diagnostic_writer.events) == 1
+    event = diagnostic_writer.events[0]
+    assert event.event_code == event_code
+    assert event.status == status
+    assert event.error_code == reason_code
+    assert event.tool_id == "system.volume"
+    assert event.tool_version == "1.0.0"
+    from ru_runtime.persistence.diagnostic_schema import serialize_diagnostic_event
+
+    serialized = serialize_diagnostic_event(event)
+    data = json.loads(serialized)
+    assert set(data) == {
+        "event_id",
+        "ts",
+        "iso",
+        "level",
+        "component",
+        "event_code",
+        "correlation_id",
+        "status",
+        "error_code",
+        "tool_id",
+        "tool_version",
+    }
+    assert {
+        "prompt",
+        "arguments",
+        "operation",
+        "level_value",
+        "amount",
+        "output",
+        "muted",
+        "reply",
+        "device",
+        "exception",
+    }.isdisjoint(data)
 
 
 class FakeVtsManager:

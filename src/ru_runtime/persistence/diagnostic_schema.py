@@ -32,6 +32,7 @@ ALLOWED_EVENT_CODES = {
     "tool.adapter.started", "tool.adapter.completed",
     "tool.verification.succeeded", "tool.verification.failed",
     "tool.receipt.delivered", "tool.receipt.rejected",
+    "tool.intent.resolved", "tool.intent.clarification", "tool.intent.rejected",
 }
 
 SAFE_CODE_PATTERN = re.compile(r"^[a-z0-9_.-]{1,64}$")

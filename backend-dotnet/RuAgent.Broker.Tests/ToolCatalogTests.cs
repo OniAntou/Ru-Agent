@@ -9,8 +9,9 @@ public sealed class ToolCatalogTests
     [Fact]
     public void Volume_tool_is_reversible_local_system_write()
     {
-        var catalog = new ToolCatalog(new ToolRegistry());
-        var manifest = catalog.Registry.Get("system.volume", "1.0.0");
+        var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
+        var binding = catalog.Registry.Get("system.volume", "1.0.0");
+        var manifest = binding.Manifest;
 
         Assert.Equal(RiskClass.Reversible, manifest.Risk);
         Assert.Contains(ToolScope.SystemWrite, manifest.Scopes);
@@ -19,6 +20,9 @@ public sealed class ToolCatalogTests
         Assert.Equal("desktop", manifest.Adapter);
         Assert.InRange(manifest.TimeoutMs, 1, 30_000);
         Assert.InRange(manifest.MaxOutputBytes, 1, 256 * 1024);
+        Assert.True(binding.ModelEnabled);
+        Assert.True(binding.VerificationRequired);
+        Assert.Equal("native_pending", binding.Availability);
     }
 
     [Theory]
@@ -35,8 +39,8 @@ public sealed class ToolCatalogTests
         bool networkAllowed,
         bool workspaceRequired)
     {
-        var catalog = new ToolCatalog(new ToolRegistry());
-        var manifest = catalog.Registry.Get(toolId, "1.0.0");
+        var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
+        var manifest = catalog.Registry.Get(toolId, "1.0.0").Manifest;
 
         Assert.Equal(risk, manifest.Risk);
         Assert.Contains(scope, manifest.Scopes);
@@ -46,14 +50,15 @@ public sealed class ToolCatalogTests
         Assert.InRange(manifest.MaxOutputBytes, 1, 256 * 1024);
     }
 
-    [Theory]
-    [InlineData("web.search", RiskClass.External)]
-    [InlineData("terminal.shell", RiskClass.Destructive)]
-    public void External_and_destructive_tools_stay_outside_the_local_reversible_set(
-        string toolId,
-        RiskClass risk)
+    [Fact]
+    public void Internal_terminal_binding_is_executable_but_not_model_enabled()
     {
-        var catalog = new ToolCatalog(new ToolRegistry());
-        Assert.Equal(risk, catalog.Registry.Get(toolId, "1.0.0").Risk);
+        var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
+        var binding = catalog.Registry.Get("terminal.shell", "1.0.0");
+
+        Assert.Equal(RiskClass.Destructive, binding.Manifest.Risk);
+        Assert.False(binding.ModelEnabled);
+        Assert.False(binding.VerificationRequired);
+        Assert.Equal("executable", binding.Availability);
     }
 }

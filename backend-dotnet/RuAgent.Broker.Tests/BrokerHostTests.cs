@@ -228,6 +228,63 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
+    public async Task Nonzero_terminal_exit_is_an_outer_failed_receipt()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await socket.ConnectAsync(
+            new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
+            cancellation.Token);
+
+        await SendAsync(socket, new AgentEnvelope(1, "hello-terminal-failed", AgentMessageTypes.Hello, "session-terminal-failed", "corr-terminal-failed", 10_000, new System.Text.Json.Nodes.JsonObject()), cancellation.Token);
+        _ = await ReceiveAsync(socket, cancellation.Token);
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "session-terminal-failed",
+                AgentMessageTypes.SessionOpen,
+                "session-terminal-failed",
+                "corr-terminal-failed",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("terminal.execute"),
+                }),
+            cancellation.Token);
+        _ = await ReceiveAsync(socket, cancellation.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "terminal-failed-1",
+                AgentMessageTypes.ToolRequest,
+                "session-terminal-failed",
+                "corr-terminal-failed",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["tool_id"] = "terminal.run",
+                    ["tool_version"] = "1.0.0",
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["executable"] = "python",
+                        ["arguments"] = new System.Text.Json.Nodes.JsonArray("-c", "raise SystemExit(7)"),
+                        ["working_directory"] = ".",
+                    },
+                }),
+            cancellation.Token);
+        var result = await ReceiveAsync(socket, cancellation.Token);
+
+        Assert.Equal(ToolResultStatuses.Failed, result.Payload["status"]!.GetValue<string>());
+        Assert.Equal("process_exit_nonzero", result.Payload["error_code"]!.GetValue<string>());
+        Assert.False(result.Payload["output"]!.AsObject().ContainsKey("status"));
+    }
+
+    [Fact]
     public async Task Approval_response_runs_the_original_shell_request_once()
     {
         await using var fixture = await HostFixture.StartAsync();

@@ -16,6 +16,18 @@ public static class ToolResultStatuses
         StringComparer.Ordinal);
 }
 
+public static class ToolVerificationStates
+{
+    public const string NotRequired = "not_required";
+    public const string Pending = "pending";
+    public const string Verified = "verified";
+    public const string Failed = "failed";
+
+    public static IReadOnlySet<string> Known { get; } = new HashSet<string>(
+        [NotRequired, Pending, Verified, Failed],
+        StringComparer.Ordinal);
+}
+
 public sealed record ToolRequest(
     string RequestId,
     string SessionId,
@@ -33,7 +45,11 @@ public sealed record ToolResult(
     JsonObject Output,
     string? ErrorCode,
     string SafeSummary,
-    int DurationMs);
+    int DurationMs,
+    string VerificationState = ToolVerificationStates.NotRequired,
+    string? EndpointRole = null,
+    string? EndpointHash = null,
+    bool AdapterInvoked = false);
 
 public sealed record AgentStatusEvent(
     string SessionId,

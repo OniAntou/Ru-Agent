@@ -158,6 +158,10 @@ public sealed class BrokerHost : IAsyncDisposable
                 ["error_code"] = result.ErrorCode,
                 ["safe_summary"] = result.SafeSummary,
                 ["duration_ms"] = result.DurationMs,
+                ["verification_state"] = result.VerificationState,
+                ["endpoint_role"] = result.EndpointRole,
+                ["endpoint_hash"] = result.EndpointHash,
+                ["adapter_invoked"] = result.AdapterInvoked,
             });
     }
 
@@ -180,6 +184,10 @@ public sealed class BrokerHost : IAsyncDisposable
                 ["error_code"] = result.ErrorCode,
                 ["safe_summary"] = result.SafeSummary,
                 ["duration_ms"] = result.DurationMs,
+                ["verification_state"] = result.VerificationState,
+                ["endpoint_role"] = result.EndpointRole,
+                ["endpoint_hash"] = result.EndpointHash,
+                ["adapter_invoked"] = result.AdapterInvoked,
             });
     }
 
@@ -202,6 +210,10 @@ public sealed class BrokerHost : IAsyncDisposable
                 ["error_code"] = result.ErrorCode,
                 ["safe_summary"] = result.SafeSummary,
                 ["duration_ms"] = result.DurationMs,
+                ["verification_state"] = result.VerificationState,
+                ["endpoint_role"] = result.EndpointRole,
+                ["endpoint_hash"] = result.EndpointHash,
+                ["adapter_invoked"] = result.AdapterInvoked,
             });
     }
 

@@ -7,35 +7,61 @@ namespace RuAgent.Broker.Tools;
 
 public sealed class ToolCatalog
 {
-    public ToolCatalog(ToolRegistry registry)
+    private static readonly string[] BoundIds =
+    [
+        "system.time",
+        "system.status",
+        "system.volume",
+        "app.list",
+        "files.list",
+        "files.read",
+        "files.write",
+        "terminal.run",
+        "terminal.shell",
+        "notes.create",
+    ];
+
+    public ToolCatalog(IReadOnlyDictionary<string, ToolExecutor> executors)
     {
-        Registry = registry ?? throw new ArgumentNullException(nameof(registry));
-        RegisterBuiltIns(registry);
+        ArgumentNullException.ThrowIfNull(executors);
+        var known = BoundIds.ToHashSet(StringComparer.Ordinal);
+        if (executors.Keys.Any(id => !known.Contains(id)))
+        {
+            throw new InvalidOperationException("unknown_tool_executor");
+        }
+
+        if (BoundIds.Any(id => !executors.TryGetValue(id, out var executor) || executor is null))
+        {
+            throw new InvalidOperationException("incomplete_tool_binding");
+        }
+
+        Registry = new ToolBindingRegistry();
+        foreach (var manifest in Manifests())
+        {
+            var modelEnabled = manifest.Id == "system.volume";
+            Registry.Register(new ToolBinding(
+                manifest,
+                executors[manifest.Id],
+                modelEnabled,
+                modelEnabled ? "native_pending" : "executable",
+                VerificationRequired: modelEnabled));
+        }
     }
 
-    public ToolRegistry Registry { get; }
+    public ToolBindingRegistry Registry { get; }
 
-    private static void RegisterBuiltIns(ToolRegistry registry)
+    private static IEnumerable<ToolManifest> Manifests()
     {
-        registry.Register(Manifest("system.time", ToolScope.SystemRead, RiskClass.Read, "builtin"));
-        registry.Register(Manifest("system.status", ToolScope.SystemRead, RiskClass.Read, "builtin"));
-        registry.Register(VolumeTools.Manifest);
-        registry.Register(Manifest("app.list", ToolScope.SystemRead, RiskClass.Read, "desktop"));
-        registry.Register(Manifest("app.open", ToolScope.AppOpen, RiskClass.Reversible, "desktop"));
-        registry.Register(Manifest("files.list", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true));
-        registry.Register(Manifest("files.read", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true));
-        registry.Register(Manifest("files.write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true));
-        registry.Register(Manifest("workspace.search", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true));
-        registry.Register(TerminalManifests.Run);
-        registry.Register(TerminalManifests.Shell);
-        registry.Register(Manifest("web.search", ToolScope.WebSearch, RiskClass.External, "web"));
-        registry.Register(Manifest("web.fetch", ToolScope.WebFetch, RiskClass.External, "web"));
-        registry.Register(Manifest("notes.create", ToolScope.WorkspaceWrite, RiskClass.External, "builtin", workspace: true));
-        registry.Register(Manifest("calendar.preview_create", ToolScope.CalendarWrite, RiskClass.Read, "connector"));
-        registry.Register(Manifest("calendar.create", ToolScope.CalendarWrite, RiskClass.External, "connector"));
-        registry.Register(Manifest("tasks.create", ToolScope.TasksWrite, RiskClass.External, "connector"));
-        registry.Register(Manifest("tasks.complete", ToolScope.TasksWrite, RiskClass.External, "connector"));
-        registry.Register(Manifest("mail.send", ToolScope.MailSend, RiskClass.External, "connector"));
+        yield return Manifest("system.time", ToolScope.SystemRead, RiskClass.Read, "builtin");
+        yield return Manifest("system.status", ToolScope.SystemRead, RiskClass.Read, "builtin");
+        yield return VolumeTools.Manifest;
+        yield return Manifest("app.list", ToolScope.SystemRead, RiskClass.Read, "desktop");
+        yield return Manifest("files.list", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
+        yield return Manifest("files.read", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
+        yield return Manifest("files.write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true);
+        yield return TerminalManifests.Run;
+        yield return TerminalManifests.Shell;
+        yield return Manifest("notes.create", ToolScope.WorkspaceWrite, RiskClass.External, "builtin", workspace: true);
     }
 
     private static ToolManifest Manifest(

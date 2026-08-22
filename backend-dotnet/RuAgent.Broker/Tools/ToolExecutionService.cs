@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Skills;
@@ -12,11 +14,13 @@ namespace RuAgent.Broker.Tools;
 
 public sealed class ToolExecutionService : IToolInvoker
 {
+    private static readonly Regex StableCodePattern = new("^[a-z][a-z0-9_]{0,63}$", RegexOptions.Compiled);
+
     private readonly BrokerSession _session;
-    private readonly ToolRegistry _registry;
-    private readonly SkillRegistry _skills;
+    private readonly ToolCatalog _catalog;
+    private readonly SkillRegistry _skills = new();
     private readonly SkillOrchestrator _skillOrchestrator;
-    private readonly ToolPolicyEngine _policy;
+    private readonly ToolPolicyEngine _policy = new();
     private readonly ApprovalTokenService _approvalTokens = new();
     private readonly PendingApprovalStore _approvals = new();
     private readonly WorkspacePathGuard _workspace;
@@ -33,11 +37,6 @@ public sealed class ToolExecutionService : IToolInvoker
         IVolumeController? volumeController = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
-        _registry = new ToolRegistry();
-        _ = new ToolCatalog(_registry);
-        _volume = new Lazy<VolumeTools>(
-            () => new VolumeTools(volumeController ?? new WindowsCoreAudioVolumeController()));
-        _policy = new ToolPolicyEngine();
         _workspace = new WorkspacePathGuard(workspaceRoot);
         _files = new FileTools(_workspace);
         _notes = new NotesAdapter(_workspace);
@@ -46,12 +45,14 @@ public sealed class ToolExecutionService : IToolInvoker
             new ProcessTreeRunner(),
             new ShellRuntimeResolver(),
             _approvalTokens);
-        _skills = new SkillRegistry();
-        LoadSkills(workspaceRoot);
-        _skillOrchestrator = new SkillOrchestrator(_registry, _policy, this);
+        _volume = new Lazy<VolumeTools>(
+            () => new VolumeTools(volumeController ?? new WindowsCoreAudioVolumeController()));
+        _catalog = new ToolCatalog(BuildExecutors());
+        _skillOrchestrator = new SkillOrchestrator(_catalog.Registry.Manifests, _policy, this);
     }
 
-    public IReadOnlyList<ToolManifest> ListTools() => _registry.List();
+    public IReadOnlyList<ToolManifest> ListTools() =>
+        _catalog.Registry.List().Select(binding => binding.Manifest).ToArray();
 
     public IReadOnlyList<SkillManifest> ListSkills() => _skills.List();
 
@@ -82,6 +83,7 @@ public sealed class ToolExecutionService : IToolInvoker
                     ["tool_id"] = manifest.Id,
                     ["tool_version"] = manifest.Version,
                     ["arguments"] = arguments.DeepClone(),
+                    ["capability_class"] = "internal",
                 }),
             cancellationToken);
     }
@@ -98,16 +100,24 @@ public sealed class ToolExecutionService : IToolInvoker
             var arguments = request.Payload["arguments"] is JsonObject objectNode
                 ? objectNode
                 : throw new ToolExecutionException("invalid_arguments");
-            var manifest = _registry.Get(toolId, toolVersion);
+            var binding = _catalog.Registry.Get(toolId, toolVersion);
             var decision = _policy.Evaluate(
                 new PolicyGrant(
                     request.SessionId,
                     _session.Scopes,
                     _session.Descriptor.ExpiresAt),
-                manifest);
+                binding.Manifest);
             if (!decision.Allowed)
             {
-                return Result(request, ToolResultStatuses.Denied, new JsonObject(), decision.Code, "Tool scope is not granted.", started);
+                return Result(
+                    request,
+                    ToolResultStatuses.Denied,
+                    new JsonObject(),
+                    decision.Code,
+                    "Tool scope is not granted.",
+                    started,
+                    ToolVerificationStates.NotRequired,
+                    adapterInvoked: false);
             }
 
             if (decision.RequiresApproval)
@@ -125,9 +135,9 @@ public sealed class ToolExecutionService : IToolInvoker
                     : null;
                 var approvalId = _approvals.Issue(
                     request,
-                    manifest,
+                    binding.Manifest,
                     arguments,
-                    SafeAction(manifest),
+                    SafeAction(binding.Manifest),
                     expiresAt,
                     terminalApprovalToken);
                 return Result(
@@ -136,41 +146,75 @@ public sealed class ToolExecutionService : IToolInvoker
                     new JsonObject
                     {
                         ["approval_id"] = approvalId,
-                        ["tool_id"] = manifest.Id,
-                        ["tool_version"] = manifest.Version,
-                        ["scope"] = string.Join(", ", manifest.Scopes.OrderBy(value => value, StringComparer.Ordinal)),
-                        ["safe_action"] = SafeAction(manifest),
+                        ["tool_id"] = binding.Manifest.Id,
+                        ["tool_version"] = binding.Manifest.Version,
+                        ["scope"] = string.Join(", ", binding.Manifest.Scopes.OrderBy(value => value, StringComparer.Ordinal)),
+                        ["safe_action"] = SafeAction(binding.Manifest),
                         ["expires_at"] = expiresAt.ToString("O"),
                     },
                     "approval_required",
                     "Approval is required.",
-                    started);
+                    started,
+                    ToolVerificationStates.Pending,
+                    adapterInvoked: false);
             }
 
-            var output = await DispatchAsync(
-                toolId,
+            return await ExecuteBindingAsync(
+                receiptRequest: request,
+                contextRequest: request,
+                binding,
                 arguments,
-                request.DeadlineMs,
-                cancellationToken,
                 approved: false,
-                pending: null).ConfigureAwait(false);
-            return Result(request, ToolResultStatuses.Succeeded, output, null, "Tool completed.", started);
+                approvalToken: null,
+                cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return Result(request, ToolResultStatuses.Cancelled, new JsonObject(), "cancelled", "Tool cancelled.", started);
+            return Result(
+                request,
+                ToolResultStatuses.Cancelled,
+                new JsonObject(),
+                "cancelled",
+                "Tool cancelled.",
+                started,
+                ToolVerificationStates.NotRequired,
+                adapterInvoked: false);
+        }
+        catch (KeyNotFoundException)
+        {
+            return Result(
+                request,
+                ToolResultStatuses.Failed,
+                new JsonObject(),
+                "tool_not_found",
+                "Tool is not available.",
+                started,
+                ToolVerificationStates.NotRequired,
+                adapterInvoked: false);
         }
         catch (ToolExecutionException error)
         {
-            return Result(request, ToolResultStatuses.Failed, new JsonObject(), error.Code, "Tool request was rejected.", started);
-        }
-        catch (VolumeToolException error)
-        {
-            return Result(request, ToolResultStatuses.Failed, new JsonObject(), error.Code, error.SafeSummary, started);
+            return Result(
+                request,
+                ToolResultStatuses.Failed,
+                new JsonObject(),
+                error.Code,
+                "Tool request was rejected.",
+                started,
+                ToolVerificationStates.NotRequired,
+                adapterInvoked: false);
         }
         catch (Exception)
         {
-            return Result(request, ToolResultStatuses.Failed, new JsonObject(), "tool_failed", "Tool failed.", started);
+            return Result(
+                request,
+                ToolResultStatuses.Failed,
+                new JsonObject(),
+                "tool_failed",
+                "Tool failed.",
+                started,
+                ToolVerificationStates.NotRequired,
+                adapterInvoked: false);
         }
     }
 
@@ -196,7 +240,9 @@ public sealed class ToolExecutionService : IToolInvoker
                     new JsonObject(),
                     "approval_stale",
                     "Approval is missing, expired, or already used.",
-                    started);
+                    started,
+                    ToolVerificationStates.NotRequired,
+                    adapterInvoked: false);
             }
 
             if (!pending!.Approved)
@@ -207,15 +253,18 @@ public sealed class ToolExecutionService : IToolInvoker
                     new JsonObject(),
                     "approval_rejected",
                     "Approval was rejected.",
-                    started);
+                    started,
+                    ToolVerificationStates.NotRequired,
+                    adapterInvoked: false);
             }
 
+            var binding = _catalog.Registry.Get(pending.Manifest.Id, pending.Manifest.Version);
             var decision = _policy.Evaluate(
                 new PolicyGrant(
                     pending.Request.SessionId,
                     _session.Scopes,
                     _session.Descriptor.ExpiresAt),
-                pending.Manifest);
+                binding.Manifest);
             if (!decision.Allowed)
             {
                 return Result(
@@ -224,29 +273,55 @@ public sealed class ToolExecutionService : IToolInvoker
                     new JsonObject(),
                     decision.Code,
                     "Tool scope is no longer granted.",
-                    started);
+                    started,
+                    ToolVerificationStates.NotRequired,
+                    adapterInvoked: false);
             }
 
-            var output = await DispatchAsync(
-                pending.Manifest.Id,
+            return await ExecuteBindingAsync(
+                receiptRequest: request,
+                contextRequest: pending.Request,
+                binding,
                 pending.Arguments,
-                pending.Request.DeadlineMs,
-                cancellationToken,
                 approved: true,
-                pending).ConfigureAwait(false);
-            return Result(request, ToolResultStatuses.Succeeded, output, null, "Approved action completed.", started);
+                pending.TerminalApprovalToken,
+                cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return Result(request, ToolResultStatuses.Cancelled, new JsonObject(), "cancelled", "Approved action cancelled.", started);
+            return Result(
+                request,
+                ToolResultStatuses.Cancelled,
+                new JsonObject(),
+                "cancelled",
+                "Approved action cancelled.",
+                started,
+                ToolVerificationStates.NotRequired,
+                adapterInvoked: false);
         }
         catch (ToolExecutionException error)
         {
-            return Result(request, ToolResultStatuses.Failed, new JsonObject(), error.Code, "Approved action was rejected.", started);
+            return Result(
+                request,
+                ToolResultStatuses.Failed,
+                new JsonObject(),
+                error.Code,
+                "Approved action was rejected.",
+                started,
+                ToolVerificationStates.NotRequired,
+                adapterInvoked: false);
         }
         catch (Exception)
         {
-            return Result(request, ToolResultStatuses.Failed, new JsonObject(), "tool_failed", "Approved action failed.", started);
+            return Result(
+                request,
+                ToolResultStatuses.Failed,
+                new JsonObject(),
+                "tool_failed",
+                "Approved action failed.",
+                started,
+                ToolVerificationStates.NotRequired,
+                adapterInvoked: false);
         }
     }
 
@@ -307,81 +382,170 @@ public sealed class ToolExecutionService : IToolInvoker
         }
     }
 
-    private async Task<JsonObject> DispatchAsync(
-        string toolId,
-        JsonObject arguments,
-        int deadlineMs,
-        CancellationToken cancellationToken,
-        bool approved,
-        PendingApproval? pending)
-    {
-        return toolId switch
+    private IReadOnlyDictionary<string, ToolExecutor> BuildExecutors() =>
+        new Dictionary<string, ToolExecutor>(StringComparer.Ordinal)
         {
-            "system.time" => _system.Time(),
-            "system.status" => _system.Status(),
-            "system.volume" => _volume.Value.Execute(arguments),
-            "app.list" => _apps.List(),
-            "app.open" => _apps.Open(ReadString(arguments, "target")),
-            "files.list" => _files.List(ReadOptionalString(arguments, "path") ?? "."),
-            "files.read" => _files.Read(ReadString(arguments, "path")),
-            "files.write" => _files.Write(
-                ReadString(arguments, "path"),
-                ReadString(arguments, "content"),
-                arguments["overwrite"]?.GetValue<bool>() ?? false),
-            "terminal.run" => await RunTerminalAsync(arguments, deadlineMs, cancellationToken).ConfigureAwait(false),
-            "terminal.shell" => await RunApprovedShellAsync(arguments, deadlineMs, cancellationToken, pending).ConfigureAwait(false),
-            "notes.create" => _notes.Create(
-                ReadString(arguments, "path"),
-                ReadString(arguments, "title"),
-                ReadString(arguments, "content"),
-                approved),
-            _ => throw new ToolExecutionException("tool_not_implemented"),
+            ["system.time"] = (_, _, _) => Succeeded(_system.Time(), "System time read."),
+            ["system.status"] = (_, _, _) => Succeeded(_system.Status(), "System status read."),
+            ["system.volume"] = ExecuteVolumeAsync,
+            ["app.list"] = (_, _, _) => Succeeded(_apps.List(), "Application list read."),
+            ["files.list"] = (_, arguments, _) => Succeeded(
+                _files.List(ReadOptionalString(arguments, "path") ?? "."),
+                "Workspace entries listed."),
+            ["files.read"] = (_, arguments, _) => Succeeded(
+                _files.Read(ReadString(arguments, "path")),
+                "Workspace file read."),
+            ["files.write"] = (_, arguments, _) => Succeeded(
+                _files.Write(
+                    ReadString(arguments, "path"),
+                    ReadString(arguments, "content"),
+                    arguments["overwrite"]?.GetValue<bool>() ?? false),
+                "Workspace file written."),
+            ["terminal.run"] = ExecuteTerminalRunAsync,
+            ["terminal.shell"] = ExecuteTerminalShellAsync,
+            ["notes.create"] = (context, arguments, _) => Succeeded(
+                _notes.Create(
+                    ReadString(arguments, "path"),
+                    ReadString(arguments, "title"),
+                    ReadString(arguments, "content"),
+                    context.Approved),
+                "Workspace note created."),
         };
-    }
 
-    private async Task<JsonObject> RunApprovedShellAsync(
+    private async Task<ToolResult> ExecuteBindingAsync(
+        AgentEnvelope receiptRequest,
+        AgentEnvelope contextRequest,
+        ToolBinding binding,
         JsonObject arguments,
-        int deadlineMs,
-        CancellationToken cancellationToken,
-        PendingApproval? pending)
+        bool approved,
+        string? approvalToken,
+        CancellationToken cancellationToken)
     {
-        if (pending?.TerminalApprovalToken is null)
+        var started = Stopwatch.StartNew();
+        try
         {
-            throw new ToolExecutionException("terminal_shell_approval_invalid");
+            ToolSchemaValidator.Validate(binding.Manifest.InputSchema, arguments);
+        }
+        catch (ToolSchemaException error)
+        {
+            return Result(
+                receiptRequest,
+                ToolResultStatuses.Failed,
+                new JsonObject(),
+                error.Code,
+                "Tool arguments were rejected.",
+                started,
+                ToolVerificationStates.NotRequired,
+                adapterInvoked: false);
         }
 
-        var result = await _terminal.RunApprovedShellAsync(
-            new TerminalShellRequest(
-                ReadOptionalString(arguments, "shell") ?? "powershell",
-                ReadOptionalString(arguments, "working_directory") ?? ".",
-                ReadString(arguments, "script"),
-                Math.Min(deadlineMs, 120_000),
-                pending.TerminalApprovalToken,
-                pending.Request.RequestId,
-                pending.Request.SessionId,
-                pending.ArgumentsHash),
-            cancellationToken).ConfigureAwait(false);
-        return ProcessOutput(result);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Result(
+                receiptRequest,
+                ToolResultStatuses.Cancelled,
+                new JsonObject(),
+                "cancelled",
+                "Tool cancelled.",
+                started,
+                ToolVerificationStates.NotRequired,
+                adapterInvoked: false);
+        }
+
+        var context = new ToolExecutionContext(
+            contextRequest.RequestId,
+            contextRequest.SessionId,
+            contextRequest.CorrelationId,
+            ReadCapabilityClass(contextRequest.Payload),
+            contextRequest.DeadlineMs,
+            approved,
+            approvalToken);
+        ToolExecutionOutcome outcome;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(Math.Clamp(context.DeadlineMs, 1, 300_000));
+        try
+        {
+            outcome = await binding.Executor(context, arguments, deadline.Token).ConfigureAwait(false);
+            outcome = Normalize(binding, outcome);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            outcome = new ToolExecutionOutcome(
+                ToolResultStatuses.Cancelled,
+                new JsonObject(),
+                "process_cancelled",
+                "Tool cancelled.",
+                ToolVerificationStates.NotRequired);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        {
+            outcome = new ToolExecutionOutcome(
+                ToolResultStatuses.TimedOut,
+                new JsonObject(),
+                "process_timed_out",
+                "Tool timed out.",
+                ToolVerificationStates.NotRequired);
+        }
+        catch (VolumeToolException error)
+        {
+            outcome = ToolExecutionOutcome.Failed(error.Code, error.SafeSummary);
+        }
+        catch (ToolSchemaException error)
+        {
+            outcome = ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", VerificationFailure(binding));
+        }
+        catch (UnauthorizedAccessException error)
+        {
+            outcome = ToolExecutionOutcome.Failed(
+                StableCode(error.Message, "access_denied"),
+                "Tool access was denied.",
+                VerificationFailure(binding));
+        }
+        catch (ArgumentException error)
+        {
+            outcome = ToolExecutionOutcome.Failed(
+                StableCode(error.Message, "invalid_arguments"),
+                "Tool arguments were rejected.",
+                VerificationFailure(binding));
+        }
+        catch (IOException error)
+        {
+            outcome = ToolExecutionOutcome.Failed(
+                StableCode(error.Message, "io_error"),
+                "Tool input or output failed.",
+                VerificationFailure(binding));
+        }
+        catch (Exception)
+        {
+            outcome = ToolExecutionOutcome.Failed(
+                "adapter_error",
+                "Tool adapter failed.",
+                VerificationFailure(binding));
+        }
+
+        outcome = outcome with
+        {
+            DurationMs = checked((int)Math.Min(int.MaxValue, started.ElapsedMilliseconds)),
+        };
+        return Receipt(receiptRequest, outcome, adapterInvoked: true);
     }
 
-    private void LoadSkills(string workspaceRoot)
-    {
-        var skillRoot = Path.Combine(workspaceRoot, "skills");
-        if (!Directory.Exists(skillRoot))
-        {
-            return;
-        }
-
-        var loader = new SkillPackageLoader();
-        foreach (var package in Directory.EnumerateDirectories(skillRoot))
-        {
-            _skills.Register(loader.Load(package), _registry);
-        }
-    }
-
-    private async Task<JsonObject> RunTerminalAsync(
+    private ValueTask<ToolExecutionOutcome> ExecuteVolumeAsync(
+        ToolExecutionContext context,
         JsonObject arguments,
-        int deadlineMs,
+        CancellationToken cancellationToken)
+    {
+        var output = _volume.Value.Execute(arguments);
+        var operation = output["operation"]?.GetValue<string>();
+        return ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+            output,
+            ToolVerificationStates.Verified,
+            operation == "get" ? "Volume state verified." : "Volume change verified."));
+    }
+
+    private async ValueTask<ToolExecutionOutcome> ExecuteTerminalRunAsync(
+        ToolExecutionContext context,
+        JsonObject arguments,
         CancellationToken cancellationToken)
     {
         var result = await _terminal.RunAsync(
@@ -390,12 +554,44 @@ public sealed class ToolExecutionService : IToolInvoker
                 ReadOptionalString(arguments, "working_directory") ?? ".",
                 ReadString(arguments, "executable"),
                 ReadArguments(arguments["arguments"]),
-                Math.Min(deadlineMs, 120_000),
+                Math.Min(context.DeadlineMs, 120_000),
                 arguments["network"]?.GetValue<bool>() ?? false),
             cancellationToken).ConfigureAwait(false);
-        return new JsonObject
+        return ProcessOutcome(result);
+    }
+
+    private async ValueTask<ToolExecutionOutcome> ExecuteTerminalShellAsync(
+        ToolExecutionContext context,
+        JsonObject arguments,
+        CancellationToken cancellationToken)
+    {
+        if (context.ApprovalToken is null)
         {
-            ["status"] = result.Status,
+            throw new UnauthorizedAccessException("terminal_shell_approval_invalid");
+        }
+
+        var argumentsHash = PendingApprovalStore.ComputeArgumentsHash(
+            "terminal.shell",
+            "1.0.0",
+            arguments);
+        var result = await _terminal.RunApprovedShellAsync(
+            new TerminalShellRequest(
+                ReadOptionalString(arguments, "shell") ?? "powershell",
+                ReadOptionalString(arguments, "working_directory") ?? ".",
+                ReadString(arguments, "script"),
+                Math.Min(context.DeadlineMs, 120_000),
+                context.ApprovalToken,
+                context.RequestId,
+                context.SessionId,
+                argumentsHash),
+            cancellationToken).ConfigureAwait(false);
+        return ProcessOutcome(result);
+    }
+
+    private ToolExecutionOutcome ProcessOutcome(ProcessRunResult result)
+    {
+        var output = new JsonObject
+        {
             ["exit_code"] = result.ExitCode,
             ["duration_ms"] = result.DurationMs,
             ["stdout"] = result.Stdout,
@@ -403,30 +599,110 @@ public sealed class ToolExecutionService : IToolInvoker
             ["output_truncated"] = result.OutputTruncated,
             ["working_directory"] = _workspace.ToRelative(result.WorkingDirectory),
         };
+        return result.Status switch
+        {
+            ToolResultStatuses.Succeeded => ToolExecutionOutcome.Succeeded(
+                output,
+                ToolVerificationStates.NotRequired,
+                "Terminal process completed."),
+            ToolResultStatuses.Failed => new ToolExecutionOutcome(
+                ToolResultStatuses.Failed,
+                output,
+                result.ExitCode is null ? "process_start_failed" : "process_exit_nonzero",
+                "Terminal process failed.",
+                ToolVerificationStates.NotRequired),
+            ToolResultStatuses.TimedOut => new ToolExecutionOutcome(
+                ToolResultStatuses.TimedOut,
+                output,
+                "process_timed_out",
+                "Terminal process timed out.",
+                ToolVerificationStates.NotRequired),
+            ToolResultStatuses.Cancelled => new ToolExecutionOutcome(
+                ToolResultStatuses.Cancelled,
+                output,
+                "process_cancelled",
+                "Terminal process was cancelled.",
+                ToolVerificationStates.NotRequired),
+            _ => ToolExecutionOutcome.Failed(
+                "invalid_executor_status",
+                "Terminal process returned an invalid status.",
+                ToolVerificationStates.NotRequired),
+        };
     }
 
-    private JsonObject ProcessOutput(ProcessRunResult result) => new()
+    private static ToolExecutionOutcome Normalize(ToolBinding binding, ToolExecutionOutcome outcome)
     {
-        ["status"] = result.Status,
-        ["exit_code"] = result.ExitCode,
-        ["duration_ms"] = result.DurationMs,
-        ["stdout"] = result.Stdout,
-        ["stderr"] = result.Stderr,
-        ["output_truncated"] = result.OutputTruncated,
-        ["working_directory"] = _workspace.ToRelative(result.WorkingDirectory),
-    };
+        if (!ToolResultStatuses.Known.Contains(outcome.Status))
+        {
+            return ToolExecutionOutcome.Failed("invalid_executor_status", "Tool returned an invalid status.");
+        }
+
+        if (!ToolVerificationStates.Known.Contains(outcome.VerificationState))
+        {
+            return ToolExecutionOutcome.Failed("invalid_verification_state", "Tool verification was invalid.");
+        }
+
+        if (outcome.Output.ContainsKey("status"))
+        {
+            return ToolExecutionOutcome.Failed("conflicting_output_status", "Tool returned a conflicting status.");
+        }
+
+        if (binding.VerificationRequired
+            && outcome.Status == ToolResultStatuses.Succeeded
+            && outcome.VerificationState != ToolVerificationStates.Verified)
+        {
+            return ToolExecutionOutcome.Failed("verification_required", "Tool success was not verified.");
+        }
+
+        if (outcome.SafeSummary.Length > 4096)
+        {
+            return ToolExecutionOutcome.Failed("invalid_safe_summary", "Tool summary was invalid.");
+        }
+
+        try
+        {
+            if (outcome.Status == ToolResultStatuses.Succeeded || outcome.Output.Count > 0)
+            {
+                ToolSchemaValidator.Validate(binding.Manifest.OutputSchema, outcome.Output, "invalid_tool_output");
+            }
+        }
+        catch (ToolSchemaException error)
+        {
+            return ToolExecutionOutcome.Failed(error.Code, "Tool output was rejected.", VerificationFailure(binding));
+        }
+
+        var outputBytes = Encoding.UTF8.GetByteCount(outcome.Output.ToJsonString());
+        if (outputBytes > binding.Manifest.MaxOutputBytes)
+        {
+            return ToolExecutionOutcome.Failed("output_too_large", "Tool output exceeded its limit.", VerificationFailure(binding));
+        }
+
+        return outcome;
+    }
 
     private static string SafeAction(ToolManifest manifest) => manifest.Id switch
     {
         "terminal.shell" => "Run a terminal action in the workspace.",
         "system.volume" => "Change the local system volume.",
         "notes.create" => "Create a note in the workspace.",
-        "web.search" or "web.fetch" => "Use an external web connection.",
-        "calendar.create" => "Create a calendar event.",
-        "tasks.create" or "tasks.complete" => "Change a task in an external service.",
-        "mail.send" => "Send an email through an external service.",
         _ => "Run an external or destructive Agent action.",
     };
+
+    private static ToolResult Receipt(
+        AgentEnvelope request,
+        ToolExecutionOutcome outcome,
+        bool adapterInvoked) => new(
+        request.RequestId,
+        request.SessionId,
+        outcome.Status,
+        outcome.Output,
+        outcome.ErrorCode,
+        outcome.SafeSummary,
+        outcome.DurationMs,
+        outcome.VerificationState,
+        outcome.EndpointRole,
+        outcome.EndpointHash,
+        adapterInvoked);
 
     private static ToolResult Result(
         AgentEnvelope request,
@@ -434,14 +710,53 @@ public sealed class ToolExecutionService : IToolInvoker
         JsonObject output,
         string? errorCode,
         string summary,
-        Stopwatch stopwatch) => new(
+        Stopwatch stopwatch,
+        string verificationState = ToolVerificationStates.NotRequired,
+        string? endpointRole = null,
+        string? endpointHash = null,
+        bool adapterInvoked = false) => new(
         request.RequestId,
         request.SessionId,
         status,
         output,
         errorCode,
         summary,
-        (int)stopwatch.Elapsed.TotalMilliseconds);
+        checked((int)Math.Min(int.MaxValue, stopwatch.ElapsedMilliseconds)),
+        verificationState,
+        endpointRole,
+        endpointHash,
+        adapterInvoked);
+
+    private static ValueTask<ToolExecutionOutcome> Succeeded(JsonObject output, string summary) =>
+        ValueTask.FromResult(ToolExecutionOutcome.Succeeded(
+            output,
+            ToolVerificationStates.NotRequired,
+            summary));
+
+    private static string VerificationFailure(ToolBinding binding) =>
+        binding.VerificationRequired
+            ? ToolVerificationStates.Failed
+            : ToolVerificationStates.NotRequired;
+
+    private static string StableCode(string? candidate, string fallback) =>
+        candidate is not null && StableCodePattern.IsMatch(candidate)
+            ? candidate
+            : fallback;
+
+    private static string ReadCapabilityClass(JsonObject payload)
+    {
+        if (!payload.TryGetPropertyValue("capability_class", out var node) || node is null)
+        {
+            return "internal";
+        }
+
+        return node is JsonValue value
+            && value.TryGetValue<string>(out var result)
+            && !string.IsNullOrWhiteSpace(result)
+            && result.Length <= 64
+                ? result
+                : throw new ToolExecutionException("invalid_capability_class");
+    }
 
     private static string ReadString(JsonObject payload, string key) =>
         payload[key] is JsonValue value

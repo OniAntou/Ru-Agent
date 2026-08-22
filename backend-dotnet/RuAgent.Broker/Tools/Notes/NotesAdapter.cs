@@ -24,6 +24,6 @@ public sealed class NotesAdapter
         var path = _workspace.Resolve(relativePath, allowMissing: true);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, $"# {title.Trim()}\n\n{content.Trim()}\n", new UTF8Encoding(false));
-        return new JsonObject { ["path"] = _workspace.ToRelative(path), ["status"] = "created" };
+        return new JsonObject { ["path"] = _workspace.ToRelative(path), ["created"] = true };
     }
 }

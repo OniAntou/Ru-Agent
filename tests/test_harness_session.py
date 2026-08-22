@@ -114,3 +114,19 @@ def test_gui_driver_output_rejects_private_or_unknown_fields() -> None:
                 "app_closed": True,
             }
         )
+
+
+def test_verified_volume_fixture_is_bounded_and_has_no_private_metadata() -> None:
+    result = {
+        "operation": "set",
+        "level": 2,
+        "muted": False,
+        "verified": True,
+    }
+
+    assert set(result) == {"operation", "level", "muted", "verified"}
+    assert result["level"] == 2
+    assert result["verified"] is True
+    assert "device_name" not in result
+    assert "native_error" not in result
+    assert "arguments" not in result

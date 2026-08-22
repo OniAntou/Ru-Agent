@@ -87,3 +87,17 @@ def test_gui_agent_approval_scenarios_click_and_clear_the_approval_card() -> Non
     assert '"AgentRejectButton"' in source
     assert '"agent.approval.result"' in source
     assert "Invoke(approvalButton)" in source
+
+
+def test_deterministic_agent_harness_keeps_volume_metadata_only() -> None:
+    catalog = Path("backend-dotnet/RuAgent.Broker/Tools/ToolCatalog.cs").read_text(encoding="utf-8")
+    volume_tool = Path(
+        "backend-dotnet/RuAgent.Broker/Tools/Desktop/VolumeTools.cs"
+    ).read_text(encoding="utf-8")
+    deterministic_worker = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
+
+    assert 'registry.Register(VolumeTools.Manifest)' in catalog
+    assert 'new HashSet<string>([ToolScope.SystemWrite]' in volume_tool
+    assert 'RiskClass.Reversible' in volume_tool
+    assert '"system.volume"' not in deterministic_worker
+    assert "keybd_event" not in deterministic_worker

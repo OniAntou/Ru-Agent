@@ -76,6 +76,105 @@ def test_serialize_diagnostic_event_omits_none_fields():
     assert "status" not in data
     assert "error_code" not in data
     assert "exception_kind" not in data
+    assert "tool_id" not in data
+    assert "tool_version" not in data
+    assert "verification_state" not in data
+    assert "endpoint_role" not in data
+    assert "endpoint_hash" not in data
+
+
+def test_serialize_diagnostic_event_emits_exact_bounded_action_proof_shape():
+    event = DiagnosticEvent(
+        event_id="evt_action_1",
+        ts=1720000000.0,
+        iso="2026-08-22T00:00:00.000Z",
+        level="info",
+        component="host.agent",
+        event_code="tool.verification.succeeded",
+        correlation_id="c_abcdef1234567890",
+        duration_ms=12.0,
+        status="succeeded",
+        tool_id="system.volume",
+        tool_version="1.0.0",
+        verification_state="verified",
+        endpoint_role="default_render_multimedia",
+        endpoint_hash="0123456789abcdef",
+    )
+
+    data = json.loads(serialize_diagnostic_event(event))
+
+    assert set(data) == {
+        "event_id", "ts", "iso", "level", "component", "event_code",
+        "correlation_id", "duration_ms", "status", "tool_id", "tool_version",
+        "verification_state", "endpoint_role", "endpoint_hash",
+    }
+    assert data["tool_id"] == "system.volume"
+    assert data["tool_version"] == "1.0.0"
+    assert data["verification_state"] == "verified"
+    assert data["endpoint_role"] == "default_render_multimedia"
+    assert data["endpoint_hash"] == "0123456789abcdef"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("tool_id", "x" * 129),
+        ("tool_id", "system volume"),
+        ("tool_id", "system/volume"),
+        ("tool_id", "Bearer_secret"),
+        ("tool_id", "https://example.com"),
+        ("tool_id", r"C:\Windows\audio"),
+        ("tool_id", "system@volume"),
+        ("tool_version", "1.0"),
+        ("tool_version", "01.0.0"),
+        ("tool_version", "1.0.0-beta"),
+        ("verification_state", "unknown"),
+        ("verification_state", "verified now"),
+        ("endpoint_role", "communications"),
+        ("endpoint_role", "default_render_console"),
+        ("endpoint_hash", "0123456789ABCDEf"),
+        ("endpoint_hash", "0123456789abcdeg"),
+        ("endpoint_hash", "0123456789abcde"),
+        ("endpoint_hash", "0123456789abcdef0"),
+    ),
+)
+def test_sanitize_diagnostic_event_drops_invalid_action_proof(field: str, value: str):
+    values = {
+        "tool_id": "system.volume",
+        "tool_version": "1.0.0",
+        "verification_state": "verified",
+        "endpoint_role": "default_render_multimedia",
+        "endpoint_hash": "0123456789abcdef",
+    }
+    values[field] = value
+    event = DiagnosticEvent(
+        event_id="evt_action_invalid",
+        ts=1720000000.0,
+        iso="2026-08-22T00:00:00.000Z",
+        level="info",
+        component="worker.runtime",
+        event_code="tool.receipt.rejected",
+        **values,
+    )
+
+    sanitized = sanitize_diagnostic_event(event)
+
+    assert getattr(sanitized, field) is None
+
+
+@pytest.mark.parametrize("status", ("denied", "approval_required", "timed_out", "timeout"))
+def test_action_and_legacy_terminal_statuses_are_preserved(status: str):
+    event = DiagnosticEvent(
+        event_id="evt_status",
+        ts=1720000000.0,
+        iso="2026-08-22T00:00:00.000Z",
+        level="info",
+        component="worker.runtime",
+        event_code="tool.receipt.rejected",
+        status=status,
+    )
+
+    assert sanitize_diagnostic_event(event).status == status
 
 
 def test_sanitize_diagnostic_event_redacts_dangerous_or_unapproved_values():
@@ -139,6 +238,31 @@ def test_deserialize_filters_unknown_fields_and_messages():
     assert "secret_token" not in re_serialized
     assert "session_id" not in re_serialized
     assert "Dangerous" not in re_serialized
+
+
+def test_deserialize_drops_every_private_action_field():
+    forbidden = {
+        "arguments", "output", "muted", "prompt", "reply", "path", "script",
+        "stdout", "stderr", "device_name", "exception_message",
+    }
+    raw = {
+        "event_id": "evt_private",
+        "ts": 1720000000.0,
+        "iso": "2026-08-22T00:00:00.000Z",
+        "level": "info",
+        "component": "worker.runtime",
+        "event_code": "tool.receipt.rejected",
+        **{name: r"Bearer C:\secret https://example.com" for name in forbidden},
+    }
+
+    event = deserialize_diagnostic_event(json.dumps(raw))
+    assert event is not None
+    serialized = serialize_diagnostic_event(event)
+    data = json.loads(serialized)
+
+    assert forbidden.isdisjoint(data)
+    assert "bearer" not in serialized.casefold()
+    assert "secret" not in serialized.casefold()
 
 
 def test_dotted_event_codes_accepted():

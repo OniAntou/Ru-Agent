@@ -3,6 +3,8 @@ using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using RuBackend.Diagnostics;
 
+[assembly: InternalsVisibleTo("RuBackend.Tests")]
+
 namespace RuBackend.Worker;
 
 public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient, IVoiceProtocolClient
@@ -10,13 +12,32 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
     private readonly WorkerClientOptions _options;
     private readonly ConcurrentDictionary<string, WorkerConnection> _activeRequests =
         new(StringComparer.Ordinal);
+    private readonly IDiagnosticEmitter? _diagnostics;
+    private readonly Func<WorkerConnection, WorkerEnvelope, CancellationToken, Task> _sendToolResultAsync;
     private int _disposed;
 
-    public LoopbackWorkerClient(WorkerClientOptions options)
+    public LoopbackWorkerClient(
+        WorkerClientOptions options,
+        IDiagnosticEmitter? diagnostics = null)
+        : this(
+            options,
+            diagnostics,
+            static (connection, envelope, cancellationToken) =>
+                connection.SendEnvelopeAsync(envelope, cancellationToken))
+    {
+    }
+
+    internal LoopbackWorkerClient(
+        WorkerClientOptions options,
+        IDiagnosticEmitter? diagnostics,
+        Func<WorkerConnection, WorkerEnvelope, CancellationToken, Task> sendToolResultAsync)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(sendToolResultAsync);
         options.Validate();
         _options = options;
+        _diagnostics = diagnostics;
+        _sendToolResultAsync = sendToolResultAsync;
     }
 
     public async Task<WorkerHello> ConnectAsync(CancellationToken cancellationToken)
@@ -90,10 +111,11 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
                 {
                     var toolRequest = ParseToolRequest(item.Payload);
                     var result = await request.ToolHandler(toolRequest, cancellationToken);
-                    await connection.SendEnvelopeAsync(
+                    await _sendToolResultAsync(
+                        connection,
                         ToolResultEnvelope(request.RequestId, toolRequest, result),
                         cancellationToken);
-                    ReceiptDelivered(result);
+                    ReceiptDelivered(toolRequest, result);
                 }
 
                 yield return item;
@@ -561,9 +583,28 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
             ReadInt32(payload["deadline_ms"], "invalid_tool_request"));
     }
 
-    private static void ReceiptDelivered(WorkerToolResult result)
+    private void ReceiptDelivered(WorkerToolRequest request, WorkerToolResult result)
     {
-        // Task 9 replaces this ordering seam with a privacy-safe diagnostic event.
+        try
+        {
+            _diagnostics?.TryEmit(
+                "info",
+                "host.worker",
+                DiagnosticCodes.ToolReceiptDelivered,
+                request.CorrelationId,
+                result.DurationMs,
+                result.Status,
+                result.ErrorCode,
+                toolId: request.ToolId,
+                toolVersion: request.ToolVersion,
+                verificationState: result.VerificationState,
+                endpointRole: result.EndpointRole,
+                endpointHash: result.EndpointHash);
+        }
+        catch
+        {
+            // Receipt delivery remains authoritative even if diagnostics fail.
+        }
     }
 
     private static async Task TrySendCancellationAsync(

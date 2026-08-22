@@ -9,11 +9,14 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import partial
 from typing import Any, ContextManager, Literal, Protocol
 
 from ru_runtime.generation.chat import ChatTurn
 from ru_runtime.memory.learning import extract_facts_with_llm
+from ru_runtime.persistence.diagnostic_log import get_diagnostic_log_writer
+from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
 from ru_runtime.worker.v1.action_loop import (
     ActionProtocolError,
     ModelCapability,
@@ -350,14 +353,23 @@ async def _chat_handler(
                     )
                 )
                 result = await wait_for_tool_result(deadline_at)
-                receipt = validate_receipt(
-                    selection,
-                    result,
-                    expected_request_id=tool_request_id,
-                    expected_session_id=session_id,
-                    expected_correlation_id=tool_correlation_id,
-                    deadline_at=deadline_at,
-                )
+                try:
+                    receipt = validate_receipt(
+                        selection,
+                        result,
+                        expected_request_id=tool_request_id,
+                        expected_session_id=session_id,
+                        expected_correlation_id=tool_correlation_id,
+                        deadline_at=deadline_at,
+                    )
+                except ActionProtocolError as error:
+                    _record_receipt_rejection(
+                        error,
+                        correlation_id=tool_correlation_id,
+                        tool_id=selection.tool_id,
+                        tool_version=selection.tool_version,
+                    )
+                    raise
                 if receipt.status != "succeeded":
                     raise ActionProtocolError(receipt.error_code or "action_failed")
                 tool_turn = ChatTurn(
@@ -404,6 +416,34 @@ async def _chat_handler(
     finally:
         if not task.done():
             task.add_done_callback(_consume_task_result)
+
+
+def _record_receipt_rejection(
+    error: ActionProtocolError,
+    *,
+    correlation_id: str,
+    tool_id: str,
+    tool_version: str,
+) -> None:
+    try:
+        get_diagnostic_log_writer().try_enqueue(
+            DiagnosticEvent(
+                event_id=f"evt_{uuid.uuid4().hex}",
+                ts=time.time(),
+                iso=datetime.now(timezone.utc).isoformat(),
+                level="warning",
+                component="worker.runtime",
+                event_code="tool.receipt.rejected",
+                correlation_id=correlation_id,
+                status="failed",
+                error_code=error.code,
+                tool_id=tool_id,
+                tool_version=tool_version,
+            )
+        )
+    except Exception:
+        # Diagnostics must never replace the stable user-visible action failure.
+        return
 
 
 async def _memory_handler(

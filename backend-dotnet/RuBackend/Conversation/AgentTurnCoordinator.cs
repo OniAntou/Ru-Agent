@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using RuAgent.Protocol;
 using RuBackend.Agent;
+using RuBackend.Diagnostics;
 using RuBackend.Worker;
 
 namespace RuBackend.Conversation;
@@ -31,16 +32,19 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
 
     private readonly IAgentBrokerClient? _broker;
     private readonly IAgentApprovalCoordinator? _approvals;
+    private readonly IDiagnosticEmitter? _diagnostics;
     private readonly SemaphoreSlim _sessionLock = new(1, 1);
     private readonly Dictionary<string, AgentSessionGrant> _openedSessions =
         new(StringComparer.Ordinal);
 
     public AgentTurnCoordinator(
         IAgentBrokerClient? broker = null,
-        IAgentApprovalCoordinator? approvals = null)
+        IAgentApprovalCoordinator? approvals = null,
+        IDiagnosticEmitter? diagnostics = null)
     {
         _broker = broker;
         _approvals = approvals;
+        _diagnostics = diagnostics;
     }
 
     public Task<IReadOnlyList<AgentToolCapability>> GetModelCapabilitiesAsync(
@@ -80,6 +84,21 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
     {
         ArgumentNullException.ThrowIfNull(request);
         var tool = request.ToolRequest;
+        var correlationId = ResolveCorrelationId(tool.CorrelationId);
+        if (correlationId is null)
+        {
+            return await FailAsync(
+                request,
+                "invalid_correlation",
+                "Tool request correlation is invalid.",
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        EmitAction(
+            DiagnosticCodes.ToolRequested,
+            tool,
+            correlationId,
+            status: "started");
         await PublishAsync(request, Activity(tool, "requested"), cancellationToken)
             .ConfigureAwait(false);
 
@@ -121,6 +140,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
             var (grant, opened) = await EnsureSessionAsync(
                 tool,
                 capability,
+                correlationId,
                 cancellationToken).ConfigureAwait(false);
             if (opened)
             {
@@ -146,7 +166,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                 new AgentToolCall(
                     tool.RequestId,
                     tool.SessionId,
-                    tool.CorrelationId,
+                    correlationId,
                     tool.ToolId,
                     tool.ToolVersion,
                     capabilityClass,
@@ -166,6 +186,17 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                     "Tool receipt did not match the request.",
                     cancellationToken).ConfigureAwait(false);
             }
+
+            if (!IsConsistentReceipt(result))
+            {
+                return await FailAsync(
+                    request,
+                    "invalid_tool_receipt",
+                    "Tool receipt was invalid.",
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            EmitReceiptTrail(tool, correlationId, result);
 
             if (string.Equals(result.Status, ToolResultStatuses.ApprovalRequired, StringComparison.Ordinal))
             {
@@ -206,6 +237,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
     private async Task<(AgentSessionGrant Grant, bool Opened)> EnsureSessionAsync(
         WorkerToolRequest tool,
         AgentToolCapability capability,
+        string correlationId,
         CancellationToken cancellationToken)
     {
         await _sessionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -222,7 +254,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                 tool.SessionId,
                 capability.Scopes.ToHashSet(StringComparer.Ordinal),
                 new HashSet<string>(StringComparer.Ordinal),
-                tool.CorrelationId,
+                correlationId,
                 tool.DeadlineMs,
                 cancellationToken).ConfigureAwait(false);
             _openedSessions[tool.SessionId] = grant;
@@ -287,6 +319,157 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
         && string.Equals(capability.ToolVersion, "1.0.0", StringComparison.Ordinal)
             ? "native_mutation"
             : "internal";
+
+    private static string? ResolveCorrelationId(string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return CorrelationContext.GenerateId();
+        }
+
+        return CorrelationContext.IsValid(candidate) ? candidate : null;
+    }
+
+    private static bool IsConsistentReceipt(AgentToolResult result)
+    {
+        if (!result.AdapterInvoked
+            && string.Equals(result.Status, ToolResultStatuses.Succeeded, StringComparison.Ordinal)
+            && string.Equals(result.VerificationState, ToolVerificationStates.Verified, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (result.AdapterInvoked
+            && result.Status is ToolResultStatuses.Denied or ToolResultStatuses.ApprovalRequired)
+        {
+            return false;
+        }
+
+        if (string.Equals(result.VerificationState, ToolVerificationStates.Verified, StringComparison.Ordinal)
+            && !string.Equals(result.Status, ToolResultStatuses.Succeeded, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (string.Equals(result.VerificationState, ToolVerificationStates.Pending, StringComparison.Ordinal)
+            && (!string.Equals(result.Status, ToolResultStatuses.ApprovalRequired, StringComparison.Ordinal)
+                || result.AdapterInvoked))
+        {
+            return false;
+        }
+
+        return !string.Equals(result.Status, ToolResultStatuses.ApprovalRequired, StringComparison.Ordinal)
+            || string.Equals(result.VerificationState, ToolVerificationStates.Pending, StringComparison.Ordinal);
+    }
+
+    private void EmitReceiptTrail(
+        WorkerToolRequest tool,
+        string correlationId,
+        AgentToolResult result)
+    {
+        if (!result.AdapterInvoked)
+        {
+            if (string.Equals(result.Status, ToolResultStatuses.Denied, StringComparison.Ordinal))
+            {
+                EmitAction(
+                    DiagnosticCodes.ToolPolicyDenied,
+                    tool,
+                    correlationId,
+                    status: result.Status,
+                    errorCode: result.ErrorCode,
+                    verificationState: result.VerificationState);
+            }
+            else if (string.Equals(
+                result.Status,
+                ToolResultStatuses.ApprovalRequired,
+                StringComparison.Ordinal))
+            {
+                EmitAction(
+                    DiagnosticCodes.ToolApprovalRequired,
+                    tool,
+                    correlationId,
+                    status: result.Status,
+                    errorCode: result.ErrorCode,
+                    verificationState: result.VerificationState);
+            }
+            return;
+        }
+
+        EmitAction(
+            DiagnosticCodes.ToolAdapterStarted,
+            tool,
+            correlationId,
+            status: "started");
+        EmitAction(
+            DiagnosticCodes.ToolAdapterCompleted,
+            tool,
+            correlationId,
+            durationMs: result.DurationMs,
+            status: result.Status,
+            errorCode: result.ErrorCode,
+            verificationState: result.VerificationState,
+            endpointRole: result.EndpointRole,
+            endpointHash: result.EndpointHash);
+
+        if (string.Equals(result.VerificationState, ToolVerificationStates.Verified, StringComparison.Ordinal))
+        {
+            EmitAction(
+                DiagnosticCodes.ToolVerificationSucceeded,
+                tool,
+                correlationId,
+                durationMs: result.DurationMs,
+                status: ToolResultStatuses.Succeeded,
+                verificationState: result.VerificationState,
+                endpointRole: result.EndpointRole,
+                endpointHash: result.EndpointHash);
+        }
+        else if (string.Equals(result.VerificationState, ToolVerificationStates.Failed, StringComparison.Ordinal))
+        {
+            EmitAction(
+                DiagnosticCodes.ToolVerificationFailed,
+                tool,
+                correlationId,
+                durationMs: result.DurationMs,
+                status: ToolResultStatuses.Failed,
+                errorCode: result.ErrorCode,
+                verificationState: result.VerificationState,
+                endpointRole: result.EndpointRole,
+                endpointHash: result.EndpointHash);
+        }
+    }
+
+    private void EmitAction(
+        string eventCode,
+        WorkerToolRequest tool,
+        string correlationId,
+        double? durationMs = null,
+        string? status = null,
+        string? errorCode = null,
+        string? verificationState = null,
+        string? endpointRole = null,
+        string? endpointHash = null)
+    {
+        try
+        {
+            _diagnostics?.TryEmit(
+                "info",
+                "host.agent",
+                eventCode,
+                correlationId,
+                durationMs,
+                status,
+                errorCode,
+                toolId: tool.ToolId,
+                toolVersion: tool.ToolVersion,
+                verificationState: verificationState,
+                endpointRole: endpointRole,
+                endpointHash: endpointHash);
+        }
+        catch
+        {
+            // Diagnostics must never change the action result.
+        }
+    }
 
     private static ChatEvent Activity(
         WorkerToolRequest tool,

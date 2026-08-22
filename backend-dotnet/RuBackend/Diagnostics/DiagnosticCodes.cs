@@ -39,6 +39,16 @@ public static class DiagnosticCodes
     public const string SettingsRead = "settings.read";
     public const string SettingsSaved = "settings.saved";
 
+    public const string ToolRequested = "tool.requested";
+    public const string ToolPolicyDenied = "tool.policy.denied";
+    public const string ToolApprovalRequired = "tool.approval.required";
+    public const string ToolAdapterStarted = "tool.adapter.started";
+    public const string ToolAdapterCompleted = "tool.adapter.completed";
+    public const string ToolVerificationSucceeded = "tool.verification.succeeded";
+    public const string ToolVerificationFailed = "tool.verification.failed";
+    public const string ToolReceiptDelivered = "tool.receipt.delivered";
+    public const string ToolReceiptRejected = "tool.receipt.rejected";
+
     public const string GenericError = "error";
     public const string Unclassified = "diagnostic_unclassified";
 }

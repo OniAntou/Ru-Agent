@@ -64,4 +64,38 @@ public sealed class DiagnosticEmitterTests : IDisposable
         Assert.Null(parsed.ErrorCode);
         Assert.Equal("unknown", parsed.ExceptionKind);
     }
+
+    [Fact]
+    public async Task TryEmit_carries_only_bounded_action_proof_fields()
+    {
+        using var writer = new StructuredDiagnosticLogWriter(
+            _logDirectory,
+            prefix: "action-",
+            flushInterval: TimeSpan.FromSeconds(10));
+        var emitter = new DiagnosticEmitter(writer, TimeProvider.System);
+
+        Assert.True(emitter.TryEmit(
+            "info",
+            "host.agent",
+            DiagnosticCodes.ToolVerificationSucceeded,
+            "c_abcdef1234567890",
+            durationMs: 12,
+            status: "succeeded",
+            toolId: "system.volume",
+            toolVersion: "1.0.0",
+            verificationState: "verified",
+            endpointRole: "default_render_multimedia",
+            endpointHash: "0123456789abcdef"));
+
+        await writer.FlushAsync(TimeSpan.FromSeconds(2));
+        var file = Assert.Single(Directory.GetFiles(_logDirectory, "action-*.jsonl"));
+        var parsed = DiagnosticEventPolicy.Deserialize((await File.ReadAllLinesAsync(file))[0]);
+
+        Assert.NotNull(parsed);
+        Assert.Equal("system.volume", parsed.ToolId);
+        Assert.Equal("1.0.0", parsed.ToolVersion);
+        Assert.Equal("verified", parsed.VerificationState);
+        Assert.Equal("default_render_multimedia", parsed.EndpointRole);
+        Assert.Equal("0123456789abcdef", parsed.EndpointHash);
+    }
 }

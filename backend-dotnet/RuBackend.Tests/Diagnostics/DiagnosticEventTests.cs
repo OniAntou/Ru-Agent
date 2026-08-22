@@ -75,6 +75,130 @@ public sealed class DiagnosticEventTests
         Assert.False(root.TryGetProperty("status", out _));
         Assert.False(root.TryGetProperty("error_code", out _));
         Assert.False(root.TryGetProperty("exception_kind", out _));
+        Assert.False(root.TryGetProperty("tool_id", out _));
+        Assert.False(root.TryGetProperty("tool_version", out _));
+        Assert.False(root.TryGetProperty("verification_state", out _));
+        Assert.False(root.TryGetProperty("endpoint_role", out _));
+        Assert.False(root.TryGetProperty("endpoint_hash", out _));
+    }
+
+    [Fact]
+    public void Serializer_emits_the_exact_bounded_action_proof_shape()
+    {
+        var evt = new DiagnosticEvent(
+            EventId: "evt_action_1",
+            Ts: 1720000000.0,
+            Iso: "2026-08-22T00:00:00.000Z",
+            Level: "info",
+            Component: "host.agent",
+            EventCode: DiagnosticCodes.ToolVerificationSucceeded,
+            CorrelationId: "c_abcdef1234567890",
+            DurationMs: 12.0,
+            Status: "succeeded",
+            ToolId: "system.volume",
+            ToolVersion: "1.0.0",
+            VerificationState: "verified",
+            EndpointRole: "default_render_multimedia",
+            EndpointHash: "0123456789abcdef");
+
+        using var document = JsonDocument.Parse(DiagnosticEventPolicy.Serialize(evt));
+        var root = document.RootElement;
+        var names = root.EnumerateObject().Select(property => property.Name).ToHashSet();
+
+        Assert.Equal(
+            new HashSet<string>
+            {
+                "event_id", "ts", "iso", "level", "component", "event_code",
+                "correlation_id", "duration_ms", "status", "tool_id", "tool_version",
+                "verification_state", "endpoint_role", "endpoint_hash",
+            },
+            names);
+        Assert.Equal("system.volume", root.GetProperty("tool_id").GetString());
+        Assert.Equal("1.0.0", root.GetProperty("tool_version").GetString());
+        Assert.Equal("verified", root.GetProperty("verification_state").GetString());
+        Assert.Equal("default_render_multimedia", root.GetProperty("endpoint_role").GetString());
+        Assert.Equal("0123456789abcdef", root.GetProperty("endpoint_hash").GetString());
+    }
+
+    [Theory]
+    [InlineData("system volume")]
+    [InlineData("system/volume")]
+    [InlineData("Bearer_secret")]
+    [InlineData("https://example.com")]
+    [InlineData("C:\\Windows\\audio")]
+    [InlineData("system@volume")]
+    public void Sanitizer_drops_invalid_tool_ids(string value)
+    {
+        var sanitized = DiagnosticEventPolicy.Sanitize(ActionEvent(ToolId: value));
+
+        Assert.Null(sanitized.ToolId);
+    }
+
+    [Fact]
+    public void Sanitizer_drops_overlong_tool_id()
+    {
+        var sanitized = DiagnosticEventPolicy.Sanitize(ActionEvent(ToolId: new string('x', 129)));
+
+        Assert.Null(sanitized.ToolId);
+    }
+
+    [Theory]
+    [InlineData("1.0")]
+    [InlineData("01.0.0")]
+    [InlineData("1.0.0-beta")]
+    [InlineData("Bearer")]
+    public void Sanitizer_drops_invalid_tool_versions(string value)
+    {
+        var sanitized = DiagnosticEventPolicy.Sanitize(ActionEvent(ToolVersion: value));
+
+        Assert.Null(sanitized.ToolVersion);
+    }
+
+    [Theory]
+    [InlineData("UNKNOWN")]
+    [InlineData("verified now")]
+    [InlineData("Bearer")]
+    public void Sanitizer_drops_unknown_verification_states(string value)
+    {
+        var sanitized = DiagnosticEventPolicy.Sanitize(ActionEvent(VerificationState: value));
+
+        Assert.Null(sanitized.VerificationState);
+    }
+
+    [Theory]
+    [InlineData("communications")]
+    [InlineData("default_render_console")]
+    [InlineData("default render multimedia")]
+    public void Sanitizer_drops_unknown_endpoint_roles(string value)
+    {
+        var sanitized = DiagnosticEventPolicy.Sanitize(ActionEvent(EndpointRole: value));
+
+        Assert.Null(sanitized.EndpointRole);
+    }
+
+    [Theory]
+    [InlineData("0123456789ABCDEf")]
+    [InlineData("0123456789abcdeg")]
+    [InlineData("0123456789abcde")]
+    [InlineData("0123456789abcdef0")]
+    [InlineData("Bearer0123456789")]
+    public void Sanitizer_drops_invalid_endpoint_hashes(string value)
+    {
+        var sanitized = DiagnosticEventPolicy.Sanitize(ActionEvent(EndpointHash: value));
+
+        Assert.Null(sanitized.EndpointHash);
+    }
+
+    [Theory]
+    [InlineData("denied")]
+    [InlineData("approval_required")]
+    [InlineData("timed_out")]
+    [InlineData("timeout")]
+    public void Action_and_legacy_terminal_statuses_are_preserved(string status)
+    {
+        var sanitized = DiagnosticEventPolicy.Sanitize(ActionEvent(Status: status));
+
+        Assert.Equal(status, sanitized.Status);
     }
 
     [Fact]
@@ -146,6 +270,63 @@ public sealed class DiagnosticEventTests
     }
 
     [Fact]
+    public void Deserializer_drops_every_private_action_field()
+    {
+        var forbidden = new[]
+        {
+            "arguments", "output", "muted", "prompt", "reply", "path", "script",
+            "stdout", "stderr", "device_name", "exception_message",
+        };
+        var injected = string.Join(",", forbidden.Select(name => $"\"{name}\":\"Bearer C:\\\\secret https://example.com\""));
+        var raw = $$"""
+        {
+          "event_id":"evt_private",
+          "ts":1720000000.0,
+          "iso":"2026-08-22T00:00:00.000Z",
+          "level":"info",
+          "component":"host.agent",
+          "event_code":"tool.requested",
+          {{injected}}
+        }
+        """;
+
+        var parsed = Assert.IsType<DiagnosticEvent>(DiagnosticEventPolicy.Deserialize(raw));
+        using var document = JsonDocument.Parse(DiagnosticEventPolicy.Serialize(parsed));
+
+        Assert.All(forbidden, name => Assert.False(document.RootElement.TryGetProperty(name, out _)));
+        Assert.DoesNotContain("Bearer", document.RootElement.GetRawText(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("secret", document.RootElement.GetRawText(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Deserializer_keeps_the_event_but_drops_non_string_action_proof_values()
+    {
+        var raw = """
+        {
+          "event_id":"evt_invalid_types",
+          "ts":1720000000.0,
+          "iso":"2026-08-22T00:00:00.000Z",
+          "level":"info",
+          "component":"host.agent",
+          "event_code":"tool.receipt.rejected",
+          "tool_id":42,
+          "tool_version":true,
+          "verification_state":[],
+          "endpoint_role":{},
+          "endpoint_hash":42
+        }
+        """;
+
+        var parsed = Assert.IsType<DiagnosticEvent>(DiagnosticEventPolicy.Deserialize(raw));
+
+        Assert.Null(parsed.ToolId);
+        Assert.Null(parsed.ToolVersion);
+        Assert.Null(parsed.VerificationState);
+        Assert.Null(parsed.EndpointRole);
+        Assert.Null(parsed.EndpointHash);
+    }
+
+    [Fact]
     public void Standard_diagnostic_event_codes_are_accepted_by_policy()
     {
         var evt = new DiagnosticEvent(
@@ -163,4 +344,25 @@ public sealed class DiagnosticEventTests
         Assert.Equal("host.conversation", sanitized.Component);
         Assert.Equal("started", sanitized.Status);
     }
+
+    private static DiagnosticEvent ActionEvent(
+        string ToolId = "system.volume",
+        string ToolVersion = "1.0.0",
+        string VerificationState = "verified",
+        string EndpointRole = "default_render_multimedia",
+        string EndpointHash = "0123456789abcdef",
+        string Status = "succeeded") => new(
+            EventId: "evt_action_test",
+            Ts: 1720000000.0,
+            Iso: "2026-08-22T00:00:00.000Z",
+            Level: "info",
+            Component: "host.agent",
+            EventCode: "tool.verification.succeeded",
+            CorrelationId: "c_abcdef1234567890",
+            Status: Status,
+            ToolId: ToolId,
+            ToolVersion: ToolVersion,
+            VerificationState: VerificationState,
+            EndpointRole: EndpointRole,
+            EndpointHash: EndpointHash);
 }

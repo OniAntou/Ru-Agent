@@ -13,4 +13,9 @@ public sealed record DiagnosticEvent(
     [property: JsonPropertyName("duration_ms")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? DurationMs = null,
     [property: JsonPropertyName("status")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Status = null,
     [property: JsonPropertyName("error_code")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ErrorCode = null,
-    [property: JsonPropertyName("exception_kind")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExceptionKind = null);
+    [property: JsonPropertyName("exception_kind")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExceptionKind = null,
+    [property: JsonPropertyName("tool_id")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ToolId = null,
+    [property: JsonPropertyName("tool_version")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ToolVersion = null,
+    [property: JsonPropertyName("verification_state")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? VerificationState = null,
+    [property: JsonPropertyName("endpoint_role")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? EndpointRole = null,
+    [property: JsonPropertyName("endpoint_hash")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? EndpointHash = null);

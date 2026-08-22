@@ -13,7 +13,13 @@ public static class DiagnosticEventPolicy
 
     private static readonly HashSet<string> AllowedStatuses = new(StringComparer.OrdinalIgnoreCase)
     {
-        "started", "succeeded", "failed", "skipped", "timeout", "cancelled", "dropped"
+        "started", "succeeded", "failed", "skipped", "timeout", "cancelled", "dropped",
+        "denied", "approval_required", "timed_out"
+    };
+
+    private static readonly HashSet<string> AllowedVerificationStates = new(StringComparer.Ordinal)
+    {
+        "not_required", "pending", "verified", "failed"
     };
 
     private static readonly HashSet<string> AllowedExceptionKinds = new(StringComparer.OrdinalIgnoreCase)
@@ -23,6 +29,11 @@ public static class DiagnosticEventPolicy
 
     private static readonly Regex SafeCodePattern = new("^[a-z0-9_.-]{1,64}$", RegexOptions.Compiled);
     private static readonly Regex SafeComponentPattern = new("^[a-z0-9_.-]{1,64}$", RegexOptions.Compiled);
+    private static readonly Regex SafeToolIdPattern = new("^[a-z0-9_.-]{1,128}$", RegexOptions.Compiled);
+    private static readonly Regex SemanticVersionPattern = new(
+        "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+        RegexOptions.Compiled);
+    private static readonly Regex EndpointHashPattern = new("^[0-9a-f]{16}$", RegexOptions.Compiled);
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -52,17 +63,26 @@ public static class DiagnosticEventPolicy
                 return null;
             }
 
-            var eventId = root.TryGetProperty("event_id", out var pEventId) ? pEventId.GetString() : null;
-            var ts = root.TryGetProperty("ts", out var pTs) && pTs.TryGetDouble(out var vTs) ? vTs : 0;
-            var iso = root.TryGetProperty("iso", out var pIso) ? pIso.GetString() : null;
-            var level = root.TryGetProperty("level", out var pLevel) ? pLevel.GetString() : null;
-            var component = root.TryGetProperty("component", out var pComponent) ? pComponent.GetString() : null;
-            var eventCode = root.TryGetProperty("event_code", out var pEventCode) ? pEventCode.GetString() : null;
-            var correlationId = root.TryGetProperty("correlation_id", out var pCorr) ? pCorr.GetString() : null;
-            var durationMs = root.TryGetProperty("duration_ms", out var pDur) && pDur.TryGetDouble(out var vDur) ? (double?)vDur : null;
-            var status = root.TryGetProperty("status", out var pStat) ? pStat.GetString() : null;
-            var errorCode = root.TryGetProperty("error_code", out var pErr) ? pErr.GetString() : null;
-            var exceptionKind = root.TryGetProperty("exception_kind", out var pExc) ? pExc.GetString() : null;
+            var eventId = ReadOptionalString(root, "event_id");
+            var ts = root.TryGetProperty("ts", out var pTs)
+                && pTs.ValueKind == JsonValueKind.Number
+                && pTs.TryGetDouble(out var vTs) ? vTs : 0;
+            var iso = ReadOptionalString(root, "iso");
+            var level = ReadOptionalString(root, "level");
+            var component = ReadOptionalString(root, "component");
+            var eventCode = ReadOptionalString(root, "event_code");
+            var correlationId = ReadOptionalString(root, "correlation_id");
+            var durationMs = root.TryGetProperty("duration_ms", out var pDur)
+                && pDur.ValueKind == JsonValueKind.Number
+                && pDur.TryGetDouble(out var vDur) ? (double?)vDur : null;
+            var status = ReadOptionalString(root, "status");
+            var errorCode = ReadOptionalString(root, "error_code");
+            var exceptionKind = ReadOptionalString(root, "exception_kind");
+            var toolId = ReadOptionalString(root, "tool_id");
+            var toolVersion = ReadOptionalString(root, "tool_version");
+            var verificationState = ReadOptionalString(root, "verification_state");
+            var endpointRole = ReadOptionalString(root, "endpoint_role");
+            var endpointHash = ReadOptionalString(root, "endpoint_hash");
 
             var raw = new DiagnosticEvent(
                 eventId ?? string.Empty,
@@ -75,11 +95,20 @@ public static class DiagnosticEventPolicy
                 durationMs,
                 status,
                 errorCode,
-                exceptionKind);
+                exceptionKind,
+                toolId,
+                toolVersion,
+                verificationState,
+                endpointRole,
+                endpointHash);
 
             return Sanitize(raw);
         }
         catch (JsonException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
         {
             return null;
         }
@@ -142,6 +171,40 @@ public static class DiagnosticEventPolicy
             exceptionKind = AllowedExceptionKinds.Contains(cleanedKind) ? cleanedKind : "unknown";
         }
 
+        string? toolId = null;
+        if (!string.IsNullOrEmpty(evt.ToolId)
+            && SafeToolIdPattern.IsMatch(evt.ToolId)
+            && !evt.ToolId.Contains("bearer", StringComparison.OrdinalIgnoreCase))
+        {
+            toolId = evt.ToolId;
+        }
+
+        string? toolVersion = null;
+        if (!string.IsNullOrEmpty(evt.ToolVersion) && SemanticVersionPattern.IsMatch(evt.ToolVersion))
+        {
+            toolVersion = evt.ToolVersion;
+        }
+
+        string? verificationState = null;
+        if (!string.IsNullOrEmpty(evt.VerificationState)
+            && AllowedVerificationStates.Contains(evt.VerificationState))
+        {
+            verificationState = evt.VerificationState;
+        }
+
+        var endpointRole = string.Equals(
+            evt.EndpointRole,
+            "default_render_multimedia",
+            StringComparison.Ordinal)
+                ? evt.EndpointRole
+                : null;
+
+        string? endpointHash = null;
+        if (!string.IsNullOrEmpty(evt.EndpointHash) && EndpointHashPattern.IsMatch(evt.EndpointHash))
+        {
+            endpointHash = evt.EndpointHash;
+        }
+
         return new DiagnosticEvent(
             eventId,
             ts,
@@ -153,6 +216,16 @@ public static class DiagnosticEventPolicy
             durationMs,
             status,
             errorCode,
-            exceptionKind);
+            exceptionKind,
+            toolId,
+            toolVersion,
+            verificationState,
+            endpointRole,
+            endpointHash);
     }
+
+    private static string? ReadOptionalString(JsonElement root, string name) =>
+        root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 }

@@ -21,7 +21,12 @@ public sealed class DiagnosticEmitter : IDiagnosticEmitter
         double? durationMs = null,
         string? status = null,
         string? errorCode = null,
-        string? exceptionKind = null)
+        string? exceptionKind = null,
+        string? toolId = null,
+        string? toolVersion = null,
+        string? verificationState = null,
+        string? endpointRole = null,
+        string? endpointHash = null)
     {
         try
         {
@@ -37,7 +42,12 @@ public sealed class DiagnosticEmitter : IDiagnosticEmitter
                 durationMs,
                 status,
                 errorCode,
-                exceptionKind));
+                exceptionKind,
+                toolId,
+                toolVersion,
+                verificationState,
+                endpointRole,
+                endpointHash));
             return _writer.TryEnqueue(evt);
         }
         catch

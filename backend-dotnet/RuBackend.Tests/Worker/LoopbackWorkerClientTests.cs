@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using RuAgent.Protocol;
+using RuBackend.Diagnostics;
 using RuBackend.Worker;
 using Xunit;
 
@@ -198,6 +200,85 @@ public sealed class LoopbackWorkerClientTests
         Assert.NotNull(observedResult);
         Assert.Equal("approval_required", observedResult!.Payload["status"]!.GetValue<string>());
         Assert.Equal("approval-1", observedResult.Payload["output"]!["approval_id"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Receipt_delivery_is_emitted_once_only_after_result_send_returns()
+    {
+        var sendEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSend = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var diagnostics = new RecordingEmitter();
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            await CompleteHandshakeAsync(socket);
+            var request = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, VolumeToolRequest(request.Id));
+            _ = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(
+                socket,
+                Event(
+                    request.Id,
+                    WorkerMessageTypes.ChatDone,
+                    1,
+                    new JsonObject { ["raw_reply"] = "Đã xong." }));
+        });
+        await using var client = new LoopbackWorkerClient(
+            new WorkerClientOptions { Uri = server.Uri, Token = "worker-secret" },
+            diagnostics,
+            async (connection, envelope, cancellationToken) =>
+            {
+                sendEntered.TrySetResult();
+                await releaseSend.Task.WaitAsync(cancellationToken);
+                await connection.SendEnvelopeAsync(envelope, cancellationToken);
+            });
+        var request = EmptyChatRequest("chat-delivery-order") with
+        {
+            ToolHandler = SuccessfulVolumeResult,
+        };
+
+        var collection = CollectAsync(client.GenerateChatAsync(request, CancellationToken.None));
+        await sendEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.DoesNotContain(
+            diagnostics.Events,
+            item => item.EventCode == DiagnosticCodes.ToolReceiptDelivered);
+
+        releaseSend.TrySetResult();
+        _ = await collection;
+
+        var delivered = Assert.Single(
+            diagnostics.Events,
+            item => item.EventCode == DiagnosticCodes.ToolReceiptDelivered);
+        Assert.Equal("corr-volume", delivered.CorrelationId);
+        Assert.Equal("system.volume", delivered.ToolId);
+        Assert.Equal("1.0.0", delivered.ToolVersion);
+        Assert.Equal("succeeded", delivered.Status);
+    }
+
+    [Fact]
+    public async Task Throwing_result_send_never_emits_receipt_delivery()
+    {
+        var diagnostics = new RecordingEmitter();
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            await CompleteHandshakeAsync(socket);
+            var request = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, VolumeToolRequest(request.Id));
+        });
+        await using var client = new LoopbackWorkerClient(
+            new WorkerClientOptions { Uri = server.Uri, Token = "worker-secret" },
+            diagnostics,
+            (_, _, _) => Task.FromException(new InvalidOperationException("synthetic send failure")));
+        var request = EmptyChatRequest("chat-delivery-failure") with
+        {
+            ToolHandler = SuccessfulVolumeResult,
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None)));
+
+        Assert.DoesNotContain(
+            diagnostics.Events,
+            item => item.EventCode == DiagnosticCodes.ToolReceiptDelivered);
     }
 
     [Fact]
@@ -572,6 +653,35 @@ public sealed class LoopbackWorkerClientTests
     private static WorkerChatRequest EmptyChatRequest(string requestId) =>
         new(requestId, "prompt", "session", [], string.Empty, string.Empty, []);
 
+    private static Task<WorkerToolResult> SuccessfulVolumeResult(
+        WorkerToolRequest tool,
+        CancellationToken cancellationToken) => Task.FromResult(new WorkerToolResult(
+            tool.RequestId,
+            ToolResultStatuses.Succeeded,
+            new JsonObject(),
+            null,
+            "Volume change verified.",
+            12,
+            ToolVerificationStates.Verified,
+            "default_render_multimedia",
+            "0123456789abcdef"));
+
+    private static WorkerEnvelope VolumeToolRequest(string parentRequestId) => Event(
+        parentRequestId,
+        WorkerMessageTypes.ChatToolRequest,
+        0,
+        new JsonObject
+        {
+            ["request_id"] = "tool-volume-1",
+            ["session_id"] = "session",
+            ["correlation_id"] = "corr-volume",
+            ["tool_id"] = "system.volume",
+            ["tool_version"] = "1.0.0",
+            ["capability_class"] = "native_mutation",
+            ["arguments"] = new JsonObject { ["operation"] = "set", ["level"] = 2 },
+            ["deadline_ms"] = 30_000,
+        });
+
     private static WorkerEnvelope HelloOk(string requestId, params string[] capabilities) =>
         Event(
             requestId,
@@ -680,4 +790,35 @@ public sealed class LoopbackWorkerClientTests
             await _application.DisposeAsync();
         }
     }
+
+    private sealed class RecordingEmitter : IDiagnosticEmitter
+    {
+        public List<EmittedEvent> Events { get; } = [];
+
+        public bool TryEmit(
+            string level,
+            string component,
+            string eventCode,
+            string? correlationId = null,
+            double? durationMs = null,
+            string? status = null,
+            string? errorCode = null,
+            string? exceptionKind = null,
+            string? toolId = null,
+            string? toolVersion = null,
+            string? verificationState = null,
+            string? endpointRole = null,
+            string? endpointHash = null)
+        {
+            Events.Add(new EmittedEvent(eventCode, correlationId, status, toolId, toolVersion));
+            return true;
+        }
+    }
+
+    private sealed record EmittedEvent(
+        string EventCode,
+        string? CorrelationId,
+        string? Status,
+        string? ToolId,
+        string? ToolVersion);
 }

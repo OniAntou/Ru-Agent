@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Protocol;
 using RuBackend.Agent;
 using RuBackend.Conversation;
+using RuBackend.Diagnostics;
 using RuBackend.Worker;
 using Xunit;
 
@@ -24,6 +25,125 @@ public sealed class AgentTurnCoordinatorTests
         Assert.Equal(ToolVerificationStates.Verified, result.VerificationState);
         Assert.Equal("default_render_multimedia", result.EndpointRole);
         Assert.Equal("0123456789abcdef", result.EndpointHash);
+    }
+
+    [Fact]
+    public async Task Verified_adapter_receipt_emits_one_correlated_truthful_sequence()
+    {
+        var diagnostics = new RecordingEmitter();
+        var result = await new AgentTurnCoordinator(
+            new FakeBroker(),
+            diagnostics: diagnostics).ExecuteToolAsync(Request(), CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+        Assert.Equal(
+            new[]
+            {
+                DiagnosticCodes.ToolRequested,
+                DiagnosticCodes.ToolAdapterStarted,
+                DiagnosticCodes.ToolAdapterCompleted,
+                DiagnosticCodes.ToolVerificationSucceeded,
+            },
+            diagnostics.Events.Select(item => item.EventCode));
+        Assert.Single(diagnostics.Events.Select(item => item.CorrelationId).Distinct());
+        Assert.All(diagnostics.Events, item =>
+        {
+            Assert.Equal("correlation-1", item.CorrelationId);
+            Assert.Equal("system.volume", item.ToolId);
+            Assert.Equal("1.0.0", item.ToolVersion);
+        });
+        var verified = diagnostics.Events[^1];
+        Assert.Equal("verified", verified.VerificationState);
+        Assert.Equal("default_render_multimedia", verified.EndpointRole);
+        Assert.Equal("0123456789abcdef", verified.EndpointHash);
+    }
+
+    [Fact]
+    public async Task Failed_readback_ends_in_verification_failed()
+    {
+        var diagnostics = new RecordingEmitter();
+        var broker = new FakeBroker
+        {
+            ResultStatus = ToolResultStatuses.Failed,
+            ResultErrorCode = "readback_mismatch",
+            ResultSafeSummary = "Volume change could not be verified.",
+            ResultVerificationState = ToolVerificationStates.Failed,
+        };
+
+        var result = await new AgentTurnCoordinator(
+            broker,
+            diagnostics: diagnostics).ExecuteToolAsync(Request(), CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Failed, result.Status);
+        Assert.Equal(
+            new[]
+            {
+                DiagnosticCodes.ToolRequested,
+                DiagnosticCodes.ToolAdapterStarted,
+                DiagnosticCodes.ToolAdapterCompleted,
+                DiagnosticCodes.ToolVerificationFailed,
+            },
+            diagnostics.Events.Select(item => item.EventCode));
+        Assert.Equal("readback_mismatch", diagnostics.Events[^1].ErrorCode);
+        Assert.Equal("failed", diagnostics.Events[^1].VerificationState);
+    }
+
+    [Theory]
+    [InlineData(ToolResultStatuses.Denied, ToolVerificationStates.Failed, DiagnosticCodes.ToolPolicyDenied)]
+    [InlineData(ToolResultStatuses.ApprovalRequired, ToolVerificationStates.Pending, DiagnosticCodes.ToolApprovalRequired)]
+    public async Task Predispatch_receipt_never_claims_adapter_execution(
+        string status,
+        string verificationState,
+        string expectedEventCode)
+    {
+        var diagnostics = new RecordingEmitter();
+        var broker = new FakeBroker
+        {
+            ResultStatus = status,
+            ResultErrorCode = status,
+            ResultSafeSummary = "Action did not dispatch.",
+            ResultVerificationState = verificationState,
+            ResultEndpointRole = null,
+            ResultEndpointHash = null,
+            AdapterInvoked = false,
+        };
+
+        _ = await new AgentTurnCoordinator(
+            broker,
+            diagnostics: diagnostics).ExecuteToolAsync(Request(), CancellationToken.None);
+
+        Assert.Equal(
+            new[] { DiagnosticCodes.ToolRequested, expectedEventCode },
+            diagnostics.Events.Select(item => item.EventCode));
+        Assert.DoesNotContain(diagnostics.Events, item =>
+            item.EventCode is DiagnosticCodes.ToolAdapterStarted or DiagnosticCodes.ToolAdapterCompleted);
+    }
+
+    [Theory]
+    [InlineData(ToolResultStatuses.Succeeded, ToolVerificationStates.Verified, false)]
+    [InlineData(ToolResultStatuses.Denied, ToolVerificationStates.Failed, true)]
+    [InlineData(ToolResultStatuses.ApprovalRequired, ToolVerificationStates.Pending, true)]
+    public async Task Impossible_adapter_receipt_is_rejected(
+        string status,
+        string verificationState,
+        bool adapterInvoked)
+    {
+        var diagnostics = new RecordingEmitter();
+        var broker = new FakeBroker
+        {
+            ResultStatus = status,
+            ResultErrorCode = status == ToolResultStatuses.Succeeded ? null : status,
+            ResultVerificationState = verificationState,
+            AdapterInvoked = adapterInvoked,
+        };
+
+        var result = await new AgentTurnCoordinator(
+            broker,
+            diagnostics: diagnostics).ExecuteToolAsync(Request(), CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Failed, result.Status);
+        Assert.Equal("invalid_tool_receipt", result.ErrorCode);
+        Assert.Equal(new[] { DiagnosticCodes.ToolRequested }, diagnostics.Events.Select(item => item.EventCode));
     }
 
     [Theory]
@@ -165,6 +285,13 @@ public sealed class AgentTurnCoordinatorTests
         public IReadOnlySet<string> ActualScopes { get; init; } =
             new HashSet<string>(["system.write"], StringComparer.Ordinal);
         public string ResultRequestId { get; init; } = "tool-request-1";
+        public string ResultStatus { get; init; } = ToolResultStatuses.Succeeded;
+        public string? ResultErrorCode { get; init; }
+        public string ResultSafeSummary { get; init; } = "Volume set verified.";
+        public string ResultVerificationState { get; init; } = ToolVerificationStates.Verified;
+        public string? ResultEndpointRole { get; init; } = "default_render_multimedia";
+        public string? ResultEndpointHash { get; init; } = "0123456789abcdef";
+        public bool AdapterInvoked { get; init; } = true;
         public bool BlockExecution { get; init; }
         public TaskCompletionSource ExecutionStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -220,15 +347,15 @@ public sealed class AgentTurnCoordinatorTests
 
             return new AgentToolResult(
                 ResultRequestId,
-                ToolResultStatuses.Succeeded,
+                ResultStatus,
                 new JsonObject { ["operation"] = "set", ["level"] = 2 },
-                null,
-                "Volume set verified.",
+                ResultErrorCode,
+                ResultSafeSummary,
                 12,
-                ToolVerificationStates.Verified,
-                "default_render_multimedia",
-                "0123456789abcdef",
-                true);
+                ResultVerificationState,
+                ResultEndpointRole,
+                ResultEndpointHash,
+                AdapterInvoked);
         }
 
         public Task<AgentToolResult> RespondToApprovalAsync(
@@ -250,4 +377,50 @@ public sealed class AgentTurnCoordinatorTests
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
+
+    private sealed class RecordingEmitter : IDiagnosticEmitter
+    {
+        public List<EmittedEvent> Events { get; } = [];
+
+        public bool TryEmit(
+            string level,
+            string component,
+            string eventCode,
+            string? correlationId = null,
+            double? durationMs = null,
+            string? status = null,
+            string? errorCode = null,
+            string? exceptionKind = null,
+            string? toolId = null,
+            string? toolVersion = null,
+            string? verificationState = null,
+            string? endpointRole = null,
+            string? endpointHash = null)
+        {
+            Events.Add(new EmittedEvent(
+                eventCode,
+                correlationId,
+                durationMs,
+                status,
+                errorCode,
+                toolId,
+                toolVersion,
+                verificationState,
+                endpointRole,
+                endpointHash));
+            return true;
+        }
+    }
+
+    private sealed record EmittedEvent(
+        string EventCode,
+        string? CorrelationId,
+        double? DurationMs,
+        string? Status,
+        string? ErrorCode,
+        string? ToolId,
+        string? ToolVersion,
+        string? VerificationState,
+        string? EndpointRole,
+        string? EndpointHash);
 }

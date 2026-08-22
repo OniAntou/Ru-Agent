@@ -37,9 +37,39 @@ def test_privacy_scan_diagnostic_events_never_contain_freeform_message_or_trace(
     serialized = serialize_diagnostic_event(evt)
     parsed = json.loads(serialized)
 
-    forbidden_keys = {"message", "msg", "prompt", "response", "content", "stack_trace", "traceback", "args"}
+    forbidden_keys = {
+        "message", "msg", "arguments", "output", "level_value", "muted", "prompt",
+        "reply", "response", "content", "path", "script", "stdout", "stderr",
+        "device_name", "exception_message", "stack_trace", "traceback", "args",
+    }
     for key in forbidden_keys:
         assert key not in parsed
+
+
+def test_privacy_scan_injected_action_values_never_survive_deserialization():
+    forbidden_keys = {
+        "arguments", "output", "muted", "prompt", "reply", "path", "script",
+        "stdout", "stderr", "device_name", "exception_message",
+    }
+    raw = {
+        "event_id": "evt_injected",
+        "ts": 1000.0,
+        "iso": "2026-08-20T00:00:00Z",
+        "level": "error",
+        "component": "worker.runtime",
+        "event_code": "tool.receipt.rejected",
+        **{key: r"Bearer C:\secret https://example.com" for key in forbidden_keys},
+    }
+    from ru_runtime.persistence.diagnostic_schema import deserialize_diagnostic_event
+
+    event = deserialize_diagnostic_event(json.dumps(raw))
+    assert event is not None
+    serialized = serialize_diagnostic_event(event)
+    parsed = json.loads(serialized)
+
+    assert forbidden_keys.isdisjoint(parsed)
+    assert "bearer" not in serialized.casefold()
+    assert "secret" not in serialized.casefold()
 
 
 def test_privacy_scan_activity_preview_masks_secrets_urls_paths():

@@ -791,7 +791,13 @@ def test_failed_receipt_is_truthful_without_success_continuation() -> None:
     assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
 
 
-def test_mismatched_receipt_is_an_action_failure_not_generation_failure() -> None:
+def test_mismatched_receipt_is_logged_without_output_values(monkeypatch) -> None:
+    diagnostic_writer = _RecordingDiagnosticWriter()
+    monkeypatch.setattr(
+        handlers_module,
+        "get_diagnostic_log_writer",
+        lambda: diagnostic_writer,
+    )
     runner = SequencedRunner(
         '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"mute"}}'
     )
@@ -803,6 +809,28 @@ def test_mismatched_receipt_is_an_action_failure_not_generation_failure() -> Non
     assert all(reply.type != ERROR for reply in replies)
     assert replies[-1].type == CHAT_DONE
     assert replies[-1].payload["raw_reply"] == "Không thể thực hiện thay đổi âm lượng."
+    event = diagnostic_writer.events[0]
+    assert len(diagnostic_writer.events) == 1
+    assert event.event_code == "tool.receipt.rejected"
+    assert event.error_code == "receipt_mismatch"
+    assert event.correlation_id == "correlation-1"
+    assert event.tool_id == "system.volume"
+    assert event.tool_version == "1.0.0"
+    from ru_runtime.persistence.diagnostic_schema import serialize_diagnostic_event
+
+    serialized = serialize_diagnostic_event(event)
+    assert "operation" not in serialized
+    assert "output" not in serialized
+    assert "muted" not in serialized
+
+
+class _RecordingDiagnosticWriter:
+    def __init__(self) -> None:
+        self.events = []
+
+    def try_enqueue(self, event) -> bool:
+        self.events.append(event)
+        return True
 
 
 def test_late_receipt_timeout_is_an_action_failure(monkeypatch) -> None:

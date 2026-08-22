@@ -67,6 +67,30 @@ public sealed class AgentEnvelopeTests
         Assert.Equal("changed", parsed.Payload["status"]!.GetValue<string>());
     }
 
+    [Fact]
+    public void Session_opened_round_trips_as_a_known_private_message()
+    {
+        var envelope = new AgentEnvelope(
+            1,
+            "session-opened-1",
+            AgentMessageTypes.SessionOpened,
+            "session-1",
+            "corr-1",
+            1_000,
+            new JsonObject
+            {
+                ["status"] = "succeeded",
+                ["scopes"] = new JsonArray("system.write"),
+                ["skill_ids"] = new JsonArray(),
+            });
+
+        var parsed = AgentEnvelopeCodec.Parse(AgentEnvelopeCodec.Serialize(envelope));
+
+        Assert.Equal(AgentMessageTypes.SessionOpened, parsed.MessageType);
+        Assert.Equal(new[] { "system.write" }, parsed.Payload["scopes"]!.AsArray()
+            .Select(item => item!.GetValue<string>()));
+    }
+
     [Theory]
     [InlineData("unsupported_version")]
     [InlineData("invalid_id")]

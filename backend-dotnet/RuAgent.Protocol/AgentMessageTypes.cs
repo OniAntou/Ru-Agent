@@ -5,6 +5,7 @@ public static class AgentMessageTypes
     public const string Hello = "hello";
     public const string HelloOk = "hello_ok";
     public const string SessionOpen = "session_open";
+    public const string SessionOpened = "session_opened";
     public const string SessionClose = "session_close";
     public const string SkillStart = "skill_start";
     public const string SkillEvent = "skill_event";
@@ -22,6 +23,7 @@ public static class AgentMessageTypes
             Hello,
             HelloOk,
             SessionOpen,
+            SessionOpened,
             SessionClose,
             SkillStart,
             SkillEvent,

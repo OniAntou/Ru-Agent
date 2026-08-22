@@ -51,6 +51,14 @@ public sealed record ToolResult(
     string? EndpointHash = null,
     bool AdapterInvoked = false);
 
+public sealed record AgentToolCapability(
+    string ToolId,
+    string ToolVersion,
+    IReadOnlySet<string> Scopes,
+    string Risk,
+    string Availability,
+    bool ModelEnabled);
+
 public sealed record AgentStatusEvent(
     string SessionId,
     string RequestId,

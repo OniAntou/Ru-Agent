@@ -18,8 +18,6 @@ public sealed class ToolExecutionService : IToolInvoker
 
     private readonly BrokerSession _session;
     private readonly ToolCatalog _catalog;
-    private readonly SkillRegistry _skills = new();
-    private readonly SkillOrchestrator _skillOrchestrator;
     private readonly ToolPolicyEngine _policy = new();
     private readonly ApprovalTokenService _approvalTokens = new();
     private readonly PendingApprovalStore _approvals = new();
@@ -48,13 +46,15 @@ public sealed class ToolExecutionService : IToolInvoker
         _volume = new Lazy<VolumeTools>(
             () => new VolumeTools(volumeController ?? new WindowsCoreAudioVolumeController()));
         _catalog = new ToolCatalog(BuildExecutors());
-        _skillOrchestrator = new SkillOrchestrator(_catalog.Registry.Manifests, _policy, this);
     }
 
     public IReadOnlyList<ToolManifest> ListTools() =>
         _catalog.Registry.List().Select(binding => binding.Manifest).ToArray();
 
-    public IReadOnlyList<SkillManifest> ListSkills() => _skills.List();
+    public IReadOnlyList<AgentToolCapability> ListCapabilities() =>
+        _catalog.Registry.ListCapabilities();
+
+    public IReadOnlyList<SkillManifest> ListSkills() => Array.Empty<SkillManifest>();
 
     public void RemoveSession(string sessionId) => _approvals.RemoveSession(sessionId);
 
@@ -325,61 +325,18 @@ public sealed class ToolExecutionService : IToolInvoker
         }
     }
 
-    public async Task<ToolResult> ExecuteSkillAsync(
+    public Task<ToolResult> ExecuteSkillAsync(
         AgentEnvelope request,
         CancellationToken cancellationToken)
     {
         var started = Stopwatch.StartNew();
-        try
-        {
-            var skillId = ReadString(request.Payload, "skill_id");
-            var skillVersion = ReadOptionalString(request.Payload, "skill_version") ?? "1.0.0";
-            var input = request.Payload["input"] is JsonObject inputObject
-                ? inputObject
-                : throw new ToolExecutionException("invalid_skill_input");
-            if (!_session.SkillIds.Contains(skillId))
-            {
-                return Result(request, ToolResultStatuses.Denied, new JsonObject(), "skill_scope_missing", "Skill is not granted.", started);
-            }
-
-            var skill = _skills.Get(skillId, skillVersion);
-            var run = await _skillOrchestrator.RunAsync(
-                request.SessionId,
-                skill,
-                new PolicyGrant(request.SessionId, _session.Scopes, _session.Descriptor.ExpiresAt),
-                input,
-                cancellationToken).ConfigureAwait(false);
-            var status = run.State switch
-            {
-                SkillRunState.Completed => ToolResultStatuses.Succeeded,
-                SkillRunState.ApprovalRequired => ToolResultStatuses.ApprovalRequired,
-                SkillRunState.Cancelled => ToolResultStatuses.Cancelled,
-                _ => ToolResultStatuses.Failed,
-            };
-            return Result(
+        return Task.FromResult(Result(
                 request,
-                status,
-                new JsonObject
-                {
-                    ["skill_id"] = run.SkillId,
-                    ["step_index"] = run.StepIndex,
-                },
-                status == ToolResultStatuses.Succeeded ? null : status,
-                run.SafeSummary,
-                started);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            return Result(request, ToolResultStatuses.Cancelled, new JsonObject(), "cancelled", "Skill cancelled.", started);
-        }
-        catch (KeyNotFoundException)
-        {
-            return Result(request, ToolResultStatuses.Denied, new JsonObject(), "skill_not_found", "Skill is not registered.", started);
-        }
-        catch (ToolExecutionException error)
-        {
-            return Result(request, ToolResultStatuses.Failed, new JsonObject(), error.Code, "Skill request was rejected.", started);
-        }
+                ToolResultStatuses.Denied,
+                new JsonObject(),
+                "skills_disabled",
+                "Skills are disabled.",
+                started));
     }
 
     private IReadOnlyDictionary<string, ToolExecutor> BuildExecutors() =>

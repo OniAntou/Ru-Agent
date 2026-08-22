@@ -132,8 +132,11 @@ public sealed class BrokerHost : IAsyncDisposable
             _shutdown.Token);
         await new AgentConnection(
             _session,
+            _tools.ListCapabilities,
+            _tools.ListCapabilities()
+                .SelectMany(capability => capability.Scopes)
+                .ToHashSet(StringComparer.Ordinal),
             (request, token) => ExecuteToolAsync(request, token),
-            (request, token) => ExecuteSkillAsync(request, token),
             (request, token) => ExecuteApprovalAsync(request, token),
             sessionId => _tools.RemoveSession(sessionId))
             .RunAsync(socket, linkedCancellation.Token).ConfigureAwait(false);
@@ -148,32 +151,6 @@ public sealed class BrokerHost : IAsyncDisposable
             RuAgent.Protocol.AgentEnvelopeCodec.ProtocolVersion,
             request.RequestId,
             RuAgent.Protocol.AgentMessageTypes.ToolResult,
-            request.SessionId,
-            request.CorrelationId,
-            request.DeadlineMs,
-            new System.Text.Json.Nodes.JsonObject
-            {
-                ["status"] = result.Status,
-                ["output"] = result.Output.DeepClone(),
-                ["error_code"] = result.ErrorCode,
-                ["safe_summary"] = result.SafeSummary,
-                ["duration_ms"] = result.DurationMs,
-                ["verification_state"] = result.VerificationState,
-                ["endpoint_role"] = result.EndpointRole,
-                ["endpoint_hash"] = result.EndpointHash,
-                ["adapter_invoked"] = result.AdapterInvoked,
-            });
-    }
-
-    private async Task<RuAgent.Protocol.AgentEnvelope> ExecuteSkillAsync(
-        RuAgent.Protocol.AgentEnvelope request,
-        CancellationToken cancellationToken)
-    {
-        var result = await _tools.ExecuteSkillAsync(request, cancellationToken).ConfigureAwait(false);
-        return new RuAgent.Protocol.AgentEnvelope(
-            RuAgent.Protocol.AgentEnvelopeCodec.ProtocolVersion,
-            request.RequestId,
-            RuAgent.Protocol.AgentMessageTypes.SkillResult,
             request.SessionId,
             request.CorrelationId,
             request.DeadlineMs,

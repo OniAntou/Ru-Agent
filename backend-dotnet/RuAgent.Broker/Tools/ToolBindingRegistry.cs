@@ -1,5 +1,7 @@
 namespace RuAgent.Broker.Tools;
 
+using RuAgent.Protocol;
+
 public sealed class ToolBindingRegistry
 {
     private readonly object _gate = new();
@@ -47,6 +49,24 @@ public sealed class ToolBindingRegistry
             return _bindings.Values
                 .OrderBy(item => item.Manifest.Id, StringComparer.Ordinal)
                 .ThenBy(item => item.Manifest.Version, StringComparer.Ordinal)
+                .ToArray();
+        }
+    }
+
+    public IReadOnlyList<AgentToolCapability> ListCapabilities()
+    {
+        lock (_gate)
+        {
+            return _bindings.Values
+                .OrderBy(item => item.Manifest.Id, StringComparer.Ordinal)
+                .ThenBy(item => item.Manifest.Version, StringComparer.Ordinal)
+                .Select(binding => new AgentToolCapability(
+                    binding.Manifest.Id,
+                    binding.Manifest.Version,
+                    new HashSet<string>(binding.Manifest.Scopes, StringComparer.Ordinal),
+                    binding.Manifest.Risk.ToString().ToLowerInvariant(),
+                    binding.Availability,
+                    binding.ModelEnabled))
                 .ToArray();
         }
     }

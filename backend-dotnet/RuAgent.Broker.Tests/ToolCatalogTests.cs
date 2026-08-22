@@ -61,4 +61,20 @@ public sealed class ToolCatalogTests
         Assert.False(binding.VerificationRequired);
         Assert.Equal("executable", binding.Availability);
     }
+
+    [Fact]
+    public void Capability_projection_is_derived_from_complete_bindings()
+    {
+        var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
+
+        var capabilities = catalog.Registry.ListCapabilities();
+        var volume = Assert.Single(capabilities, item => item.ToolId == "system.volume");
+
+        Assert.Equal("1.0.0", volume.ToolVersion);
+        Assert.Equal(new[] { "system.write" }, volume.Scopes);
+        Assert.Equal("reversible", volume.Risk);
+        Assert.Equal("native_pending", volume.Availability);
+        Assert.True(volume.ModelEnabled);
+        Assert.DoesNotContain(capabilities, item => item.ToolId == "app.open");
+    }
 }

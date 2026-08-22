@@ -62,6 +62,130 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
+    public async Task Authenticated_hello_advertises_only_safe_executable_capabilities()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(
+            new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
+            cancellation.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(1, "hello-capabilities", AgentMessageTypes.Hello, "session-capabilities", "corr-capabilities", 10_000, new System.Text.Json.Nodes.JsonObject()),
+            cancellation.Token);
+        var hello = await ReceiveAsync(socket, cancellation.Token);
+
+        var tools = hello.Payload["tools"]!.AsArray();
+        var volume = Assert.Single(tools, node =>
+            node!["tool_id"]!.GetValue<string>() == "system.volume");
+        Assert.Equal("1.0.0", volume!["tool_version"]!.GetValue<string>());
+        Assert.Equal("native_pending", volume["availability"]!.GetValue<string>());
+        Assert.True(volume["model_enabled"]!.GetValue<bool>());
+        Assert.Equal("system.write", Assert.Single(volume["scopes"]!.AsArray())!.GetValue<string>());
+        Assert.Empty(hello.Payload["skills"]!.AsArray());
+
+        var ids = tools.Select(node => node!["tool_id"]!.GetValue<string>()).ToArray();
+        Assert.DoesNotContain("app.open", ids);
+        Assert.DoesNotContain("web.search", ids);
+        Assert.DoesNotContain("calendar.create", ids);
+        Assert.DoesNotContain("mail.send", ids);
+    }
+
+    [Fact]
+    public async Task Session_open_rejects_skill_ids_without_opening_them()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(
+            new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
+            cancellation.Token);
+        await SendAsync(socket, new AgentEnvelope(1, "hello-skills", AgentMessageTypes.Hello, "session-skills", "corr-skills", 10_000, new System.Text.Json.Nodes.JsonObject()), cancellation.Token);
+        _ = await ReceiveAsync(socket, cancellation.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "open-skills",
+                AgentMessageTypes.SessionOpen,
+                "session-skills",
+                "corr-skills",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("system.write"),
+                    ["skill_ids"] = new System.Text.Json.Nodes.JsonArray("research-note"),
+                }),
+            cancellation.Token);
+        var reply = await ReceiveAsync(socket, cancellation.Token);
+
+        Assert.Equal(ToolResultStatuses.Denied, reply.Payload["status"]!.GetValue<string>());
+        Assert.Equal("skills_disabled", reply.Payload["error_code"]!.GetValue<string>());
+        Assert.Empty(fixture.Host.Session.SkillIds);
+        Assert.False(fixture.Host.Session.IsReady);
+    }
+
+    [Fact]
+    public async Task Session_opened_returns_the_actual_validated_grant()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(
+            new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
+            cancellation.Token);
+        await SendAsync(socket, new AgentEnvelope(1, "hello-grant", AgentMessageTypes.Hello, "session-grant", "corr-grant", 10_000, new System.Text.Json.Nodes.JsonObject()), cancellation.Token);
+        _ = await ReceiveAsync(socket, cancellation.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "open-grant",
+                AgentMessageTypes.SessionOpen,
+                "session-grant",
+                "corr-grant",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["scopes"] = new System.Text.Json.Nodes.JsonArray("system.write"),
+                    ["skill_ids"] = new System.Text.Json.Nodes.JsonArray(),
+                }),
+            cancellation.Token);
+        var reply = await ReceiveAsync(socket, cancellation.Token);
+
+        Assert.Equal(AgentMessageTypes.SessionOpened, reply.MessageType);
+        Assert.Equal(new[] { "system.write" }, reply.Payload["scopes"]!.AsArray()
+            .Select(item => item!.GetValue<string>()));
+        Assert.Empty(reply.Payload["skill_ids"]!.AsArray());
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "skill-disabled",
+                AgentMessageTypes.SkillStart,
+                "session-grant",
+                "corr-grant",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["skill_id"] = "research-note",
+                    ["input"] = new System.Text.Json.Nodes.JsonObject(),
+                }),
+            cancellation.Token);
+        var skillReply = await ReceiveAsync(socket, cancellation.Token);
+        Assert.Equal(ToolResultStatuses.Denied, skillReply.Payload["status"]!.GetValue<string>());
+        Assert.Equal("skills_disabled", skillReply.Payload["error_code"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task Authenticated_session_can_use_a_registered_read_tool()
     {
         await using var fixture = await HostFixture.StartAsync();

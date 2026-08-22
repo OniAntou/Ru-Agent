@@ -26,6 +26,8 @@ namespace RuApp.Services
         public event Action? OnResetReceived;
         public event Action<string, string>? OnDoneReceived;
         public event Action<string>? OnErrorReceived;
+        public event Action<string, string>? OnAgentActivityReceived;
+        public event Action<string, string>? OnAgentApprovalRequired;
 
         public bool IsConnected => _webSocket != null && _webSocket.State == WebSocketState.Open;
 
@@ -176,6 +178,26 @@ namespace RuApp.Services
                     System.Diagnostics.Debug.WriteLine($"Error message: {content}");
                     OnErrorReceived?.Invoke(content);
                 }
+                else if (msgType == "agent.activity")
+                {
+                    string content = root.TryGetProperty("content", out var activityProp)
+                        ? activityProp.GetString() ?? "Agent activity"
+                        : "Agent activity";
+                    string sessionId = root.TryGetProperty("session_id", out var activitySession)
+                        ? activitySession.GetString() ?? ""
+                        : "";
+                    OnAgentActivityReceived?.Invoke(content, sessionId);
+                }
+                else if (msgType == "agent.approval_required")
+                {
+                    string content = root.TryGetProperty("content", out var approvalProp)
+                        ? approvalProp.GetString() ?? "Approval required"
+                        : "Approval required";
+                    string sessionId = root.TryGetProperty("session_id", out var approvalSession)
+                        ? approvalSession.GetString() ?? ""
+                        : "";
+                    OnAgentApprovalRequired?.Invoke(content, sessionId);
+                }
             }
             catch (JsonException ex)
             {
@@ -192,7 +214,8 @@ namespace RuApp.Services
         public async Task SendMessageAsync(
             string messageText,
             string sessionId,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool agentMode = false)
         {
             const int connectTimeoutMs = 10000;
             var startTime = DateTime.UtcNow;
@@ -217,7 +240,13 @@ namespace RuApp.Services
             }
 
             var correlationId = $"c_{Guid.NewGuid():N}";
-            var payload = new { prompt = messageText, session_id = sessionId, correlation_id = correlationId };
+            var payload = new
+            {
+                prompt = messageText,
+                session_id = sessionId,
+                correlation_id = correlationId,
+                agent_mode = agentMode,
+            };
             string json = JsonSerializer.Serialize(payload);
             byte[] bytes = Encoding.UTF8.GetBytes(json);
             await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);

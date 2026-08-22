@@ -14,6 +14,10 @@ public sealed class UiAutomationScenario : IDisposable
     private const string VoiceStatusAutomationId = "VoiceConversationStatus";
     private const string ChatMessagesAutomationId = "ChatMessages";
     private const string NewSessionAutomationId = "NewSessionButton";
+    private const string AgentModeAutomationId = "AgentModeButton";
+    private const string AgentActivityAutomationId = "AgentActivity";
+    private const string ChatInputAutomationId = "ChatInput";
+    private const string SendButtonAutomationId = "SendButton";
     private readonly Process _process;
     private readonly string _eventsPath;
     private AutomationElement? _window;
@@ -203,6 +207,66 @@ public sealed class UiAutomationScenario : IDisposable
             absent ? null : "private voice metadata is visible in chat"));
     }
 
+    public async Task<HarnessGuiCheck> RunAgentScenarioAsync(
+        string scenario,
+        TimeSpan timeout)
+    {
+        DateTimeOffset started = DateTimeOffset.UtcNow;
+        try
+        {
+            AutomationElement mode = await WaitForElementAsync(AgentModeAutomationId, timeout);
+            Invoke(mode);
+            bool enabled = await WaitUntilAsync(
+                () => IsToggleOn(mode)
+                    && ContainsIgnoreCase(
+                        GetName(FindByAutomationId(AgentActivityAutomationId)),
+                        "bounded"),
+                timeout);
+            if (!enabled)
+            {
+                return Check("gui.agent_enable", false, started, "Agent mode did not enable for the session");
+            }
+
+            AutomationElement input = await WaitForElementAsync(ChatInputAutomationId, timeout);
+            SetValue(input, "Harness agent turn");
+            AutomationElement send = await WaitForElementAsync(SendButtonAutomationId, timeout);
+            Invoke(send);
+
+            bool activity = await WaitUntilAsync(
+                () => HasAtLeast("agent.activity", 1)
+                    || HasAtLeast("agent.approval.required", 1),
+                timeout);
+            bool messages = await WaitUntilAsync(HasUserAndAssistantMessages, timeout);
+            bool approvalExpected = scenario is "agent-terminal-approval" or "agent-terminal-reject";
+            bool approvalObserved = HasAtLeast("agent.approval.required", 1);
+            bool privateAbsent = !VisibleMessageContainsPrivateMarker()
+                && !AgentSurfaceContainsPrivateMarker();
+            bool passed = activity
+                && messages
+                && privateAbsent
+                && (!approvalExpected || approvalObserved);
+
+            if (scenario == "agent-stale-result")
+            {
+                HarnessGuiCheck replaced = await ReplaceSessionAsync(timeout);
+                passed &= replaced.Status == "passed";
+            }
+
+            Invoke(mode);
+            bool disabled = await WaitUntilAsync(() => !IsToggleOn(mode), timeout);
+            passed &= disabled;
+            return Check(
+                "gui." + scenario,
+                passed,
+                started,
+                passed ? null : "Agent mode, activity, privacy, or approval assertions did not complete");
+        }
+        catch (Exception ex)
+        {
+            return Failure("gui." + scenario, started, ex);
+        }
+    }
+
     public IReadOnlyDictionary<string, int> ReadEventCounts()
     {
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -361,6 +425,31 @@ public sealed class UiAutomationScenario : IDisposable
         }
 
         return false;
+    }
+
+    private bool AgentSurfaceContainsPrivateMarker()
+    {
+        string activity = GetName(FindByAutomationId(AgentActivityAutomationId));
+        string[] forbidden = ["token", "secret", "arguments", "request_body", "transcript"];
+        return forbidden.Any(marker => activity.Contains(marker, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsToggleOn(AutomationElement element)
+    {
+        return element.TryGetCurrentPattern(TogglePattern.Pattern, out object pattern)
+            && pattern is TogglePattern toggle
+            && toggle.Current.ToggleState == ToggleState.On;
+    }
+
+    private static void SetValue(AutomationElement element, string value)
+    {
+        if (!element.TryGetCurrentPattern(ValuePattern.Pattern, out object pattern)
+            || pattern is not ValuePattern valuePattern)
+        {
+            throw new InvalidOperationException("Automation control does not support ValuePattern.");
+        }
+
+        valuePattern.SetValue(value);
     }
 
     private static void Invoke(AutomationElement element)

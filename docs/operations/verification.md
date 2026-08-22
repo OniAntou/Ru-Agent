@@ -5,6 +5,8 @@ must restore each .NET test project before using `--no-restore`.
 
 ```powershell
 dotnet restore D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --nologo
+dotnet restore D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --nologo
+dotnet restore D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj --nologo
 dotnet restore D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 ```
 
@@ -13,6 +15,8 @@ The canonical automated gates are:
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
 dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj --no-restore --nologo
 dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore --nologo
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
 dotnet list D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj package --vulnerable --include-transitive
@@ -23,9 +27,10 @@ The route checker must report 41 HTTP routes and 2 WebSocket routes. The build
 must produce self-contained `RuBackend.exe` and `RuApp.exe`; verification does
 not launch them.
 
-The backend Harness vNext is the deterministic public-edge regression gate. It
-owns a temporary worker/edge session, leases free loopback ports, generates
-memory-only desktop and worker bearers, classifies every route, and always
+The backend Harness vNext is the deterministic public-edge and Agent regression
+gate. It owns a temporary worker/Broker/edge session, leases free loopback
+ports, generates memory-only desktop, worker, and Broker bearers, classifies
+every route, exercises one structured `files.list` Agent turn, and always
 verifies child and port cleanup:
 
 ```powershell
@@ -47,12 +52,13 @@ non-zero shutdown code.
 synthetic PCM WAV/STT/TTS; it never requires a model, microphone, speaker, or
 VTube Studio connection.
 
-The deterministic GUI voice Harness is a separate, manual, interactive Windows
-gate. It publishes the real WinUI shell, starts a typed UI Automation driver,
-and replaces only microphone frames and speaker playback with deterministic
-test doubles. It refuses to run when another RuApp instance is present and
-does not request microphone permission, open a MediaPlayer, connect to VTube
-Studio, or write audio/transcript content to the artifact:
+The deterministic GUI voice/Agent Harness is a separate, manual, interactive
+Windows gate. It publishes the real WinUI shell, starts a typed UI Automation
+driver, and replaces only microphone frames and speaker playback with
+deterministic test doubles. It refuses to run when another RuApp instance is
+present and does not request microphone permission, open a MediaPlayer,
+connect to VTube Studio, start a real terminal/web account, or write
+audio/transcript/tool-argument content to the artifact:
 
 ~~~powershell
 dotnet publish D:\LLM\gui-winui3\RuApp.csproj -c Release -r win-x64 --self-contained true --nologo
@@ -60,11 +66,16 @@ dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --nologo
 & D:\LLM\scripts\run_gui_voice_harness.ps1 -AppPath D:\LLM\gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe -DriverProject D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -OutputPath D:\LLM\artifacts\gui\ru-harness-vnext-gui.json
 ~~~
 
-The wrapper runs fresh turn, stop, cancel, and stale-session sessions, then
+The wrapper runs fresh turn, stop, cancel, stale-session, and Agent scenarios
+(`agent-read-only`, `agent-terminal-approval`, `agent-terminal-reject`,
+`agent-cancel`, `agent-stale-result`, and `agent-private-metadata`), then
 writes one schema-v2 aggregate only after descriptor, child, port, and
 temporary-root cleanup has been checked. A successful deterministic GUI result
 does not accept live microphone capture, audible OmniVoice, subtitles, or
 VTube Studio; those remain the user-owned hardware gate below.
+
+See [Agent tools and skills](agent-tools.md) for the tool boundary, approval
+invariants, and the separate external-account/manual acceptance gate.
 
 The production live voice gate is separate because it requires OmniVoice and a
 real audio-producing worker:

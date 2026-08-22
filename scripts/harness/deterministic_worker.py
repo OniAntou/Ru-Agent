@@ -19,6 +19,7 @@ from ru_runtime.worker.v1.protocol import (
     CHAT_CHUNK,
     CHAT_DONE,
     CHAT_RESET,
+    CHAT_TOOL_REQUEST,
     ERROR,
     MEMORY_FACTS,
     RUNTIME_RESPONSE,
@@ -60,6 +61,52 @@ def _harness_delay_seconds(name: str) -> float:
 
 
 async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
+    settings = _payload.get("settings")
+    tool_queue = _payload.get("__worker_tool_result_queue")
+    agent_mode = isinstance(settings, Mapping) and settings.get("agent_mode") is True
+    if agent_mode and isinstance(tool_queue, asyncio.Queue):
+        session_id = str(_payload.get("session_id") or "harness-agent-session")
+        correlation_id = str(
+            _payload.get("__worker_correlation_id") or "harness-agent-correlation"
+        )
+        scenario = os.environ.get("RU_HARNESS_SCENARIO", "")
+        approval_probe = scenario in {"agent-terminal-approval", "agent-terminal-reject"}
+        tool_request_id = "harness-tool-approval" if approval_probe else "harness-tool-read"
+        yield WorkerReply(CHAT_RESET, {})
+        yield WorkerReply(
+            CHAT_TOOL_REQUEST,
+            {
+                "request_id": tool_request_id,
+                "session_id": session_id,
+                "correlation_id": correlation_id,
+                "tool_id": "terminal.shell" if approval_probe else "files.list",
+                "tool_version": "1.0.0",
+                "arguments": (
+                    {
+                        "shell": "powershell",
+                        "working_directory": ".",
+                        "script": "Get-Date",
+                    }
+                    if approval_probe
+                    else {"path": "src"}
+                ),
+                "deadline_ms": 30_000,
+            },
+        )
+        try:
+            result = await asyncio.wait_for(tool_queue.get(), timeout=30.0)
+        except asyncio.TimeoutError:
+            result = {"status": "timed_out", "safe_summary": "Tool timed out."}
+        if not isinstance(result, Mapping) or result.get("request_id") != tool_request_id:
+            result = {"status": "failed", "safe_summary": "Tool context was rejected."}
+        status = str(result.get("status") or "failed")
+        summary = str(result.get("safe_summary") or "Agent tool completed.")
+        yield WorkerReply(
+            CHAT_DONE,
+            {"raw_reply": f"Em đã kiểm tra workspace ({status}). {summary}"},
+        )
+        return
+
     yield WorkerReply(CHAT_RESET, {})
     yield WorkerReply(CHAT_CHUNK, {"text": "Em nghe đây. [[VT"})
     yield WorkerReply(

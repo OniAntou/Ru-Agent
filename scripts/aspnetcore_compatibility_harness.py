@@ -192,7 +192,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--driver-project", type=Path)
     parser.add_argument(
         "--scenario",
-        choices=("turn", "stop", "cancel", "stale-session"),
+        choices=(
+            "turn",
+            "stop",
+            "cancel",
+            "stale-session",
+            "agent-read-only",
+            "agent-terminal-approval",
+            "agent-terminal-reject",
+            "agent-cancel",
+            "agent-stale-result",
+            "agent-private-metadata",
+        ),
         default="turn",
     )
     parser.add_argument("--timeout-seconds", type=float, default=180.0)

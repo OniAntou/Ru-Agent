@@ -37,6 +37,47 @@ The versioned typed commands, events, ordering, cancellation, limits, errors,
 and capabilities exchanged with the Runtime Worker.
 _Avoid_: Runtime HTTP relay
 
+**Agent Session**:
+An explicit, in-memory user session in which Ru may request bounded tools and
+skills. It expires with the session and never becomes a global permission.
+_Avoid_: permanent Agent mode permission
+
+**RuAgentBroker**:
+The private, process-isolated .NET service that validates tool manifests,
+session scopes, approval state, and adapter execution before a local action.
+_Avoid_: public API route, unrestricted shell
+
+**Tool Manifest**:
+The versioned declaration of a tool's identity, adapter, risk class, scopes,
+schemas, timeout, output limit, and trust class.
+_Avoid_: dynamically constructed tool ID
+
+**Skill Manifest**:
+The declarative, bounded description of an allowed workflow, its named tools,
+scopes, ordered steps, schemas, and approval policy.
+_Avoid_: executable plugin or self-modifying workflow
+
+**Session Grant**:
+The Broker-checked set of scopes and skill IDs attached to one Agent Session.
+It does not grant arbitrary filesystem paths, domains, credentials, or apps.
+_Avoid_: global allowlist
+
+**Approval Token**:
+A short-lived, one-time value bound to the exact request identity and
+canonical arguments for an external or destructive action.
+_Avoid_: reusable confirmation flag
+
+**Workspace Terminal**:
+The non-admin terminal adapter constrained to the configured workspace,
+allowlisted executables, bounded output, cancellation, and process-tree
+cleanup. Raw shell and network use require a separate approval path.
+_Avoid_: unrestricted Bash/PowerShell access
+
+**Connector Adapter**:
+An isolated calendar, task, or mail integration that separates preview from
+side effect and requires one-time approval for writes or sends.
+_Avoid_: ambient account access
+
 **Protected User Data**:
 Settings, sessions, history, activity, structured memory, credentials, and
 reviewed examples used by the active product. Business records live under

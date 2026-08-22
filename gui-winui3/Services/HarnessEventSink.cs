@@ -23,6 +23,9 @@ public class HarnessEventSink : IDisposable
         "voice.conversation.stopped",
         "voice.conversation.cancelled",
         "voice.session.replaced",
+        "agent.activity",
+        "agent.approval.required",
+        "agent.cancelled",
     };
     private static readonly string[] ForbiddenKeyParts =
     {
@@ -34,6 +37,7 @@ public class HarnessEventSink : IDisposable
         "response",
         "session_id",
         "request_body",
+        "argument",
     };
 
     private readonly object _gate = new();

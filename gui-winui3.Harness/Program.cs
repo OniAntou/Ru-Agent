@@ -10,7 +10,19 @@ namespace RuApp.Harness;
 
 internal static class Program
 {
-    private static readonly string[] Scenarios = ["turn", "stop", "cancel", "stale-session"];
+    private static readonly string[] Scenarios =
+    [
+        "turn",
+        "stop",
+        "cancel",
+        "stale-session",
+        "agent-read-only",
+        "agent-terminal-approval",
+        "agent-terminal-reject",
+        "agent-cancel",
+        "agent-stale-result",
+        "agent-private-metadata",
+    ];
 
     public static async Task<int> Main(string[] args)
     {
@@ -87,6 +99,11 @@ internal static class Program
         UiAutomationScenario scenario,
         HarnessOptions options)
     {
+        if (options.Scenario.StartsWith("agent-", StringComparison.Ordinal))
+        {
+            return await scenario.RunAgentScenarioAsync(options.Scenario, options.Timeout);
+        }
+
         HarnessGuiCheck start = await scenario.StartVoiceAsync(options.Timeout);
         if (start.Status != "passed")
         {

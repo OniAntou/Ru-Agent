@@ -16,9 +16,11 @@ Current maintainer documentation:
 ## Runtime topology
 
 `RuApp.exe` owns the process lifecycle. It creates per-run secrets, starts the
-private Runtime Worker on loopback port 8005, starts the ASP.NET Core Public
-Host on port 8000, waits for public readiness, and places all owned children in
-a Windows kill-on-close Job Object.
+private Runtime Worker on loopback port 8005, starts the isolated
+`RuAgentBroker` on a dynamic loopback port, starts the ASP.NET Core Public Host
+on port 8000, waits for public readiness, and places all owned children in a
+Windows kill-on-close Job Object. The Broker descriptor and grants are
+session-scoped and are removed during shutdown.
 
 ASP.NET Core is the only public backend. It owns authentication, validation,
 settings and credentials, sessions/history, activity, structured memory, chat
@@ -80,6 +82,11 @@ the Runtime Worker or voice engine as independent public services.
   available when voice mode is idle.
 - VTube Studio actions and lip sync remain private runtime metadata.
   `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
+- Agent mode is an explicit session toggle. It gives Ru bounded workspace,
+  system-read, and allowlisted terminal access through the private Broker;
+  tool activity is exposed as safe status events, never as raw tool arguments
+  or credentials. Raw shell, network, web, and external/destructive actions
+  remain approval-gated or denied by policy.
 - Screen observation is opt-in from Settings. When a Gemini Vision key and a
   supported hosted generation backend are configured, the private worker
   captures bounded JPEG frames and publishes reaction events. WinUI consumes
@@ -92,12 +99,14 @@ manual acceptance boundaries.
 ## Verification
 
 Run heavyweight gates sequentially. The deterministic backend Harness owns a
-temporary worker/edge session with dynamic loopback ports and emits a safe
+temporary worker/Broker/edge session with dynamic loopback ports and emits a safe
 schema-v2 artifact:
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
 dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj --nologo
 dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output D:\LLM\artifacts\aspnetcore\ru-harness-vnext.json
@@ -108,7 +117,9 @@ The backend artifact covers 41 HTTP routes and 2 WebSocket routes, requires
 correct-bearer success plus wrong/missing-bearer rejection, and records
 observation routes as explicit hardware/external skips. It uses synthetic
 STT/TTS and records only statuses, timings, counts, event types, and cleanup
-state. `--deterministic-chat` remains an alias for the backend mode.
+state. In deterministic mode it also exercises the structured Agent loop and
+the Broker `files.list` boundary. `--deterministic-chat` remains an alias for
+the backend mode.
 
 The deterministic GUI voice Harness is manual and interactive on Windows. It
 publishes the real WinUI shell, injects deterministic capture/playback at the
@@ -122,8 +133,11 @@ dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --nologo
 ~~~
 
 It refuses an existing RuApp instance and never opens physical microphone,
-speaker, or VTube Studio devices. Deterministic GUI success does not replace
-the separate live hardware acceptance gate.
+speaker, or VTube Studio devices. The driver accepts `--scenario` values
+`agent-read-only`, `agent-terminal-approval`, `agent-terminal-reject`,
+`agent-cancel`, `agent-stale-result`, and `agent-private-metadata` in addition
+to the voice scenarios. Deterministic GUI success does not replace the
+separate live hardware acceptance gate.
 
 The production live voice gate is separate and must be run with the real
 runtime/audio path:

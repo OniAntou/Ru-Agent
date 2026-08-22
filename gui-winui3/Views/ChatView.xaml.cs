@@ -61,6 +61,7 @@ namespace RuApp.Views
         private DispatcherTimer? _typingDebounce;
         private bool _typingPushed;
         private bool _voiceTurnPending;
+        private readonly AgentSessionService _agentSession = new();
 
         public ChatView()
         {
@@ -123,6 +124,8 @@ namespace RuApp.Views
             _wsClient.OnSessionReceived += OnWsSessionReceived;
             _wsClient.OnResetReceived += OnWsResetReceived;
             _wsClient.OnConnected += OnWsConnected;
+            _wsClient.OnAgentActivityReceived += OnAgentActivityReceived;
+            _wsClient.OnAgentApprovalRequired += OnAgentApprovalRequired;
 
             ChatInputTextBox.TextChanged += OnChatInputTyping;
             _typingDebounce = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
@@ -165,6 +168,49 @@ namespace RuApp.Views
             DispatcherQueue.TryEnqueue(() =>
             {
                 _activeSessionId = sessionId;
+                _agentSession.Disable();
+                AgentModeButton.IsChecked = false;
+                AgentActivity.Visibility = Visibility.Collapsed;
+            });
+        }
+
+        private void OnAgentModeClick(object sender, RoutedEventArgs e)
+        {
+            if (AgentModeButton.IsChecked == true)
+            {
+                _agentSession.Enable(_activeSessionId);
+                AgentActivity.Text = "Agent session enabled for bounded workspace and terminal tools.";
+                AgentActivity.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                _agentSession.Disable();
+                AgentActivity.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void OnAgentActivityReceived(string content, string sessionId)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (!string.IsNullOrWhiteSpace(sessionId) && sessionId != _activeSessionId)
+                {
+                    return;
+                }
+
+                AgentActivity.Text = content.Length > 256 ? content[..256] : content;
+                AgentActivity.Visibility = Visibility.Visible;
+                _harnessEvents?.Write("agent.activity", new { state = "running", tool_id = "registered" });
+            });
+        }
+
+        private void OnAgentApprovalRequired(string content, string sessionId)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                AgentActivity.Text = content.Length > 256 ? content[..256] : content;
+                AgentActivity.Visibility = Visibility.Visible;
+                _harnessEvents?.Write("agent.approval.required", new { state = "required" });
             });
         }
 
@@ -330,7 +376,7 @@ namespace RuApp.Views
 
             ScrollChatToBottom();
             cancellationToken.ThrowIfCancellationRequested();
-            await _wsClient.SendMessageAsync(text, _activeSessionId, cancellationToken);
+            await _wsClient.SendMessageAsync(text, _activeSessionId, cancellationToken, _agentSession.IsEnabled);
         }
 
         private void HandleSendError(Exception exception, string operation)
@@ -786,7 +832,9 @@ namespace RuApp.Views
                 _wsClient.OnDoneReceived -= OnWsDoneReceived;
                 _wsClient.OnErrorReceived -= OnWsErrorReceived;
                 _wsClient.OnSessionReceived -= OnWsSessionReceived;
-                _wsClient.OnResetReceived -= OnWsResetReceived;
+            _wsClient.OnResetReceived -= OnWsResetReceived;
+            _wsClient.OnAgentActivityReceived -= OnAgentActivityReceived;
+            _wsClient.OnAgentApprovalRequired -= OnAgentApprovalRequired;
                 _wsClient.OnConnected -= OnWsConnected;
             }
             _typingDebounce?.Stop();

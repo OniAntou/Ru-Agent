@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote
@@ -31,7 +31,18 @@ from .routes import RouteSafety, build_route_registry, load_contract
 from .voice_fixtures import build_synthetic_wav, is_valid_wav
 
 HarnessMode = Literal["backend-deterministic", "gui-deterministic", "runtime-live"]
-GuiScenario = Literal["turn", "stop", "cancel", "stale-session"]
+GuiScenario = Literal[
+    "turn",
+    "stop",
+    "cancel",
+    "stale-session",
+    "agent-read-only",
+    "agent-terminal-approval",
+    "agent-terminal-reject",
+    "agent-cancel",
+    "agent-stale-result",
+    "agent-private-metadata",
+]
 
 
 class HarnessSession:
@@ -52,6 +63,7 @@ class HarnessSession:
         self._closed = False
         self._children: list[ChildLifecycle] = []
         self._descriptor_path: Path | None = None
+        self._broker_descriptor_path: Path | None = None
         self._temporary = tempfile.TemporaryDirectory(
             prefix="ru-harness-vnext-",
             ignore_cleanup_errors=True,
@@ -61,6 +73,7 @@ class HarnessSession:
         self._log_root = self._temporary_root / "logs"
         self._desktop_token = secrets.token_hex(24)
         self._worker_token = secrets.token_hex(24)
+        self._broker_token = secrets.token_hex(32)
         self._gui_components: dict[str, object] = {
             "status": "not_run",
             "launched": False,
@@ -68,17 +81,25 @@ class HarnessSession:
         }
         self.worker_lease: PortLease | None = None
         self.edge_lease: PortLease | None = None
+        self.broker_lease: PortLease | None = None
         try:
             self.worker_lease = PortLease.acquire(port=worker_port or 0)
             self.edge_lease = PortLease.acquire(port=edge_port or 0)
+            self.broker_lease = PortLease.acquire(port=0)
         except Exception:
             if self.worker_lease is not None:
                 self.worker_lease.close()
+            if self.edge_lease is not None:
+                self.edge_lease.close()
+            if self.broker_lease is not None:
+                self.broker_lease.close()
             self._temporary.cleanup()
             raise
         self.worker_port = self.worker_lease.port
         self.edge_port = self.edge_lease.port
+        self.broker_port = self.broker_lease.port
         self.edge_base_url = f"http://127.0.0.1:{self.edge_port}"
+        self.broker_base_url = f"http://127.0.0.1:{self.broker_port}"
         self._registry = build_route_registry(load_contract(self.project_root))
         self._cleanup_result: dict[str, bool] | None = None
 
@@ -150,13 +171,14 @@ class HarnessSession:
             components={
                 "edge": {"status": "passed" if self._edge_ready() else "not_ready"},
                 "worker": {"status": "passed" if self._worker_ready() else "not_ready"},
+                "broker": {"status": "passed" if self._broker_ready() else "not_ready"},
                 **({"gui": self._gui_components} if mode == "gui-deterministic" else {}),
             },
             checks=checks,
             coverage=self._coverage(checks),
             cleanup=cleanup,
             errors=errors,
-            secrets=(self._desktop_token, self._worker_token),
+            secrets=(self._desktop_token, self._worker_token, self._broker_token),
         )
 
     def run_gui(
@@ -168,7 +190,18 @@ class HarnessSession:
         timeout_seconds: float,
     ) -> list[CheckResult]:
         started = time.perf_counter()
-        if scenario not in {"turn", "stop", "cancel", "stale-session"}:
+        if scenario not in {
+            "turn",
+            "stop",
+            "cancel",
+            "stale-session",
+            "agent-read-only",
+            "agent-terminal-approval",
+            "agent-terminal-reject",
+            "agent-cancel",
+            "agent-stale-result",
+            "agent-private-metadata",
+        }:
             raise ValueError("GUI Harness scenario is not allowed")
         if timeout_seconds <= 0 or timeout_seconds > 300:
             raise ValueError("GUI Harness timeout must be between 0 and 300 seconds")
@@ -455,14 +488,19 @@ class HarnessSession:
             self.worker_lease.close()
         if self.edge_lease is not None:
             self.edge_lease.close()
-        ports_closed = wait_for_ports_closed([self.worker_port, self.edge_port])
+        if self.broker_lease is not None:
+            self.broker_lease.close()
+        ports_closed = wait_for_ports_closed(
+            [self.worker_port, self.edge_port, self.broker_port]
+        )
 
         session_descriptor_removed = True
-        if self._descriptor_path is not None and self._descriptor_path.exists():
-            try:
-                self._descriptor_path.unlink()
-            except OSError:
-                session_descriptor_removed = False
+        for descriptor in (self._descriptor_path, self._broker_descriptor_path):
+            if descriptor is not None and descriptor.exists():
+                try:
+                    descriptor.unlink()
+                except OSError:
+                    session_descriptor_removed = False
 
         fixture_root_removed = True
         if self._fixture_root.exists():
@@ -567,6 +605,8 @@ class HarnessSession:
             checks.extend(probe_http_routes(self.edge_base_url, self._desktop_token, self._registry, client=client))
             checks.extend(self._probe_voice_http(client))
         chat_checks = asyncio.run(self._probe_chat_websocket())
+        if deterministic:
+            chat_checks.extend(asyncio.run(self._probe_agent_websocket()))
         voice_checks = asyncio.run(self._probe_voice_websocket())
         checks.extend(chat_checks)
         checks.extend(voice_checks)
@@ -578,17 +618,101 @@ class HarnessSession:
         )
         return checks
 
+    async def _probe_agent_websocket(self) -> list[CheckResult]:
+        uri = self._websocket_url("/chat", self._desktop_token)
+        events: list[dict[str, Any]] = []
+        try:
+            async with connect(uri, proxy=None, open_timeout=10, close_timeout=2) as socket:
+                await socket.send(
+                    json.dumps(
+                        {
+                            "prompt": "Harness agent tool turn",
+                            "session_id": "harness-agent-session",
+                            "correlation_id": "harness-agent-correlation",
+                            "agent_mode": True,
+                        }
+                    )
+                )
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline:
+                    message = await asyncio.wait_for(
+                        socket.recv(), timeout=max(0.1, deadline - time.monotonic())
+                    )
+                    if isinstance(message, str):
+                        payload = json.loads(message)
+                        if isinstance(payload, dict):
+                            events.append(payload)
+                        if isinstance(payload, dict) and payload.get("type") in {"done", "error"}:
+                            break
+        except Exception as error:
+            return [
+                CheckResult(
+                    "agent.synthetic_tool_loop",
+                    "failed",
+                    0.0,
+                    reason="request_error",
+                    details={"error_type": type(error).__name__},
+                ),
+                CheckResult(
+                    "agent.private_metadata",
+                    "failed",
+                    0.0,
+                    reason="request_error",
+                    details={"error_type": type(error).__name__},
+                ),
+            ]
+
+        event_types = [str(event.get("type") or "") for event in events]
+        serialized = json.dumps(events, ensure_ascii=False).casefold()
+        has_activity = "agent.activity" in event_types
+        has_done = event_types[-1:] == ["done"]
+        private_absent = not any(
+            marker in serialized
+            for marker in (
+                "bearer",
+                "token",
+                "secret",
+                "arguments",
+                "request_body",
+                "transcript",
+            )
+        )
+        return [
+            CheckResult(
+                "agent.synthetic_tool_loop",
+                "passed" if has_activity and has_done else "failed",
+                0.0,
+                reason=None if has_activity and has_done else "agent_tool_loop_not_completed",
+                details={"event_types": event_types},
+            ),
+            CheckResult(
+                "agent.private_metadata",
+                "passed" if private_absent else "failed",
+                0.0,
+                reason=None if private_absent else "private_agent_metadata_visible",
+            ),
+        ]
+
     def _start_children(
         self,
         *,
         deterministic: bool,
         harness_scenario: GuiScenario | None = None,
     ) -> None:
-        assert self.worker_lease is not None and self.edge_lease is not None
+        assert (
+            self.worker_lease is not None
+            and self.edge_lease is not None
+            and self.broker_lease is not None
+        )
         self.worker_lease.handoff()
         self.edge_lease.handoff()
+        self.broker_lease.handoff()
         self._fixture_root.mkdir(parents=True, exist_ok=True)
         self._log_root.mkdir(parents=True, exist_ok=True)
+        broker_root = self._temporary_root / "agent"
+        broker_root.mkdir(parents=True, exist_ok=True)
+        self._broker_descriptor_path = broker_root / "broker.json"
+        self._write_broker_descriptor(self._broker_descriptor_path, broker_root)
         python_executable = self.project_root / ".venv" / "Scripts" / "python.exe"
         if not python_executable.is_file():
             python_executable = Path(sys.executable)
@@ -602,6 +726,8 @@ class HarnessSession:
                 "RU_WORKER_TOKEN": self._worker_token,
                 "RU_DATA_ROOT": str(self._fixture_root),
                 "RU_LOG_ROOT": str(self._log_root),
+                "RU_AGENT_BROKER_DESCRIPTOR": str(self._broker_descriptor_path),
+                "RU_WORKSPACE_ROOT": str(self.project_root),
                 "RuBackend__BindUrl": self.edge_base_url,
                 "RuBackend__WorkerUrl": f"ws://127.0.0.1:{self.worker_port}/worker/v1",
                 "NO_PROXY": "127.0.0.1,localhost",
@@ -649,6 +775,23 @@ class HarnessSession:
                 secrets=(self._desktop_token, self._worker_token),
             )
         )
+        broker_command = [
+            "dotnet",
+            "run",
+            "--project",
+            str(self.project_root / "backend-dotnet" / "RuAgent.Broker" / "RuAgent.Broker.csproj"),
+            "--no-launch-profile",
+        ]
+        self._children.append(
+            start_owned_child(
+                broker_command,
+                repo_root=self.project_root,
+                environment=environment,
+                role="broker",
+                log_path=self._log_root / "broker.log",
+                secrets=(self._desktop_token, self._worker_token, self._broker_token),
+            )
+        )
         edge_command = [
             "dotnet",
             "run",
@@ -666,25 +809,54 @@ class HarnessSession:
                 environment=environment,
                 role="edge",
                 log_path=self._log_root / "edge.log",
-                secrets=(self._desktop_token, self._worker_token),
+                secrets=(self._desktop_token, self._worker_token, self._broker_token),
             )
+        )
+
+    def _write_broker_descriptor(self, descriptor_path: Path, session_root: Path) -> None:
+        descriptor_path.write_text(
+            json.dumps(
+                {
+                    "base_url": self.broker_base_url,
+                    "auth_token": self._broker_token,
+                    "protocol_version": 1,
+                    "session_root": str(session_root.resolve()),
+                    "expires_at": (
+                        datetime.now(timezone.utc) + timedelta(minutes=30)
+                    ).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
         )
 
     def _wait_for_readiness(self, timeout_seconds: float = 60.0) -> bool:
         deadline = time.monotonic() + timeout_seconds
-        headers = {"Authorization": f"Bearer {self._desktop_token}"}
+        edge_headers = {"Authorization": f"Bearer {self._desktop_token}"}
+        broker_headers = {"Authorization": f"Bearer {self._broker_token}"}
         while time.monotonic() < deadline:
             if any(child.process.poll() is not None for child in self._children):
                 return False
             try:
                 response = httpx.get(
                     self.edge_base_url + "/settings",
-                    headers=headers,
+                    headers=edge_headers,
                     timeout=2.0,
                 )
-                status = response.status_code
+                edge_status = response.status_code
                 response.close()
-                if 200 <= status < 300 and all(child.process.poll() is None for child in self._children):
+                broker_response = httpx.get(
+                    self.broker_base_url + "/health",
+                    headers=broker_headers,
+                    timeout=2.0,
+                )
+                broker_status = broker_response.status_code
+                broker_response.close()
+                if (
+                    200 <= edge_status < 300
+                    and 200 <= broker_status < 300
+                    and all(child.process.poll() is None for child in self._children)
+                ):
                     for child in self._children:
                         child.mark_ready()
                     return True
@@ -878,6 +1050,9 @@ class HarnessSession:
 
     def _worker_ready(self) -> bool:
         return bool(self._children and self._children[0].ready) or self._test_mode and bool(self._readiness_override)
+
+    def _broker_ready(self) -> bool:
+        return bool(len(self._children) > 1 and self._children[1].ready) or self._test_mode and bool(self._readiness_override)
 
     def _commit_for_artifact(self) -> str:
         if self._test_mode:

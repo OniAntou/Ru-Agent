@@ -62,6 +62,12 @@ The Broker-checked set of scopes and skill IDs attached to one Agent Session.
 It does not grant arbitrary filesystem paths, domains, credentials, or apps.
 _Avoid_: global allowlist
 
+**Capability Profile**:
+The Chat, Agent, or Full Access session-scoped advertisement of
+model-visible tool bindings; Chat is read-only, Full Access only loosens
+execution policy, and every launch resets to Chat.
+_Avoid_: permanent permission
+
 **Approval Token**:
 A short-lived, one-time value bound to the exact request identity and
 canonical arguments for an external or destructive action.

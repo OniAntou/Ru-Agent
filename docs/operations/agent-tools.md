@@ -6,27 +6,29 @@ is actually allowed to select. Those states are not interchangeable.
 
 ## Current capability matrix
 
-| Capability | Availability | Model enabled | Scope |
-| --- | --- | --- | --- |
-| `system.volume@1.0.0` | `native_pending` | yes | `system.write` |
-| `system.time@1.0.0` | `executable` | no, Broker-internal | `system.read` |
-| `system.status@1.0.0` | `executable` | no, Broker-internal | `system.read` |
-| `app.list@1.0.0` | `executable` | no, Broker-internal | `system.read` |
-| `files.list@1.0.0` | `executable` | no, Broker-internal | `workspace.read` |
-| `files.read@1.0.0` | `executable` | no, Broker-internal | `workspace.read` |
-| `files.write@1.0.0` | `executable` | no, Broker-internal | `workspace.write` |
-| `terminal.run@1.0.0` | `executable` | no, Broker-internal | `terminal.execute` |
-| `terminal.shell@1.0.0` | `executable` | no, Broker-internal | `terminal.execute` |
-| `notes.create@1.0.0` | `executable` | no, Broker-internal | `workspace.write` |
-| `app.open` | `absent` | no | none |
-| Workspace search, Web, calendar, tasks, mail | `absent` | no | none |
-| Skills | `disabled` | no | none |
+Model advertisement derives from the session capability profile: a binding is
+visible to the model exactly when its manifest scopes fit the active profile's
+scope set. Chat grants `{workspace.read}`; Agent adds `{workspace.write}`,
+`terminal.execute`, and `system.write`; Full Access adds only
+`terminal.network`.
 
-`executable` means a typed binding and bounded adapter exist inside
-`RuAgentBroker`. It does not mean the Worker may advertise or select that
-binding. `native_pending` means the volume binding has a native Windows
-adapter and deterministic contract/adapter evidence, but real endpoint and GUI
-acceptance are still pending until the user explicitly runs them.
+| Capability | Chat | Agent | Full Access |
+| --- | --- | --- | --- |
+| `files.list@1.0.0`, `files.read@1.0.0` (`workspace.read`) | automatic | automatic | automatic |
+| `files.write@1.0.0`, `files.edit@1.0.0` new binding (`workspace.write`) | — | approval card with preview | approval card with preview (unchanged) |
+| `notes.create@1.0.0` (`workspace.write`) | — | approval card + one-time token | approval card + one-time token |
+| `terminal.run@1.0.0` (`terminal.execute`) | — | allowlisted executables, workspace-confined, no network | no workspace confinement, network allowed, no card |
+| `terminal.shell@1.0.0` (`terminal.execute`) | — | approval card + one-time token | no card, system-wide, network allowed |
+| `system.volume@1.0.0` (`system.write`) | — | yes, verified readback required | yes, verified readback required |
+| `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` (`system.read`) | Broker-internal | Broker-internal | Broker-internal |
+| Web search/fetch, connectors, workspace search, `app.open` | absent | absent | absent |
+| Skills | disabled | disabled | disabled |
+
+Full Access advertises the same tool ids as Agent; only the execution policy
+loosens. Filesystem mutations stay manually approved in every profile.
+`native_pending` means the volume binding has a native Windows adapter and
+deterministic contract/adapter evidence, but real endpoint and GUI acceptance
+are still pending until the user explicitly runs them.
 
 ## One execution path
 
@@ -55,10 +57,10 @@ streamed generation. Ambiguous volume wording produces deterministic
 clarification instead of an inferred action; unrelated conversation is never
 forced through the action parser.
 
-The Public Host derives `model_tools` from the Broker's executable bindings,
-opens only the scope needed by the selected capability, and publishes the
-actual resulting grant as `agent.session`. WinUI renders that received grant;
-it does not infer workspace, terminal, Web, connector, or skill access.
+The Public Host derives `model_tools` from the active capability profile,
+requests one session grant covering that profile's scope set, and publishes
+the actual resulting grant as `agent.session`. WinUI renders that received
+grant; it does not infer workspace, terminal, Web, connector, or skill access.
 
 The Worker emits at most one tool request in a turn. It receives only the
 bounded enabled capability and emits an exact ID/version plus typed arguments.
@@ -75,10 +77,10 @@ never written to chat history, memory extraction, reviewed examples, TTS, or
 VTS metadata. This lets Ru answer an immediate “why?” from the verified reason
 without asking the model to reconstruct or invent the previous action state.
 
-Legacy `[VOLUME: ...]` text is accepted only as a compatibility translation to
-the same structured `system.volume@1.0.0` intent. Python strips markers and
-does not execute desktop side effects. It cannot launch an app, mutate Core
-Audio, or turn marker prose into a success claim.
+Legacy `[VOLUME: ...]`, `[SEARCH: ...]`, and app-open markers are stripped
+from visible output and never translated into desktop side effects; structured
+selection is the only action channel. Marker prose cannot launch an app,
+mutate Core Audio, or become a success claim.
 
 ## Volume and adapter boundaries
 
@@ -92,13 +94,14 @@ For deterministic Vietnamese commands, `tăng âm lượng lên N` is an absolut
 `set` target, while `tăng âm lượng thêm N` is a relative `increase`. Topic-free
 shorthand is not promoted into an action from conversation history.
 
-File, notes, and terminal bindings exist for policy, protocol, and adapter
-conformance. They are omitted from the model capability list in v1.
-`terminal.run` still enforces its non-admin executable allowlist, bounded
-arguments/output, workspace-relative directory, timeout, and process-tree
-cleanup. A zero exit is `succeeded`; non-zero exit and start failure are
-`failed`; timeout is `timed_out`. `terminal.shell` and `notes.create` retain
-one-time approval policy even though the model cannot select them in v1.
+File, notes, and terminal bindings are advertised by capability profile as the
+matrix above shows. In Agent mode `terminal.run` still enforces its non-admin
+executable allowlist, bounded arguments/output, workspace-relative directory,
+timeout, and process-tree cleanup; Full Access removes only the workspace
+confinement and network ban through the `terminal.network` scope. A zero exit
+is `succeeded`; non-zero exit and start failure are `failed`; timeout is
+`timed_out`. `files.write`, `files.edit`, `terminal.shell`, and `notes.create`
+retain their approval cards in every profile.
 
 Skills are disabled at session-open and execution boundaries. No current
 skill package, Web connector, calendar/task/mail connector, workspace search,

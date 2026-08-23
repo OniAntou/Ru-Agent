@@ -22,6 +22,7 @@ def test_current_architecture_spine_exists_and_is_linked() -> None:
         "docs/adr/0003-omnivoice-process-isolation.md",
         "docs/adr/0004-canonical-ru-data-location.md",
         "docs/adr/0005-retire-legacy-llama-line.md",
+        "docs/adr/0007-mode-capability-profiles.md",
     )
     assert all((ROOT / relative).is_file() for relative in required)
 
@@ -40,6 +41,7 @@ def test_context_uses_approved_ru_domain_language() -> None:
         "**Voice Engine**:",
         "**Public Contract**:",
         "**Worker Contract**:",
+        "**Capability Profile**:",
         "**Protected User Data**:",
         "**Retired Local Model Assets**:",
     ):
@@ -48,7 +50,15 @@ def test_context_uses_approved_ru_domain_language() -> None:
 
 def test_adrs_are_accepted_and_concise() -> None:
     adrs = sorted((ROOT / "docs" / "adr").glob("*.md"))
-    assert [path.name[:4] for path in adrs] == ["0001", "0002", "0003", "0004", "0005", "0006"]
+    assert [path.name[:4] for path in adrs] == [
+        "0001",
+        "0002",
+        "0003",
+        "0004",
+        "0005",
+        "0006",
+        "0007",
+    ]
     for path in adrs:
         text = path.read_text(encoding="utf-8")
         assert "status: accepted" in text.casefold()
@@ -103,9 +113,21 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
         "docs/superpowers/specs/2026-08-22-ru-volume-tool-vertical-slice-design.md"
     )
 
-    assert "| `system.volume@1.0.0` | `native_pending` | yes | `system.write` |" in agent_tools
-    assert "| Skills | `disabled` | no | none |" in agent_tools
-    assert "| `app.open` | `absent` | no | none |" in agent_tools
+    assert (
+        "| `files.list@1.0.0`, `files.read@1.0.0` (`workspace.read`) "
+        "| automatic | automatic | automatic |"
+    ) in agent_tools
+    assert (
+        "| `system.volume@1.0.0` (`system.write`) | — | "
+        "yes, verified readback required | yes, verified readback required |"
+    ) in agent_tools
+    assert "| Skills | disabled | disabled | disabled |" in agent_tools
+    assert (
+        "| Web search/fetch, connectors, workspace search, `app.open` "
+        "| absent | absent | absent |"
+    ) in agent_tools
+    assert "Full Access advertises the same tool ids as Agent" in agent_tools
+    assert "files.edit@1.0.0" in agent_tools
     assert "evidence_class: contract" in verification
     assert "evidence_class: adapter" in verification
     assert "evidence_class: native" in verification
@@ -123,14 +145,17 @@ def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -
     root_readme = _text("README.md")
 
     for row in (
-        "| `files.list@1.0.0` | `executable` | no, Broker-internal | `workspace.read` |",
-        "| `files.write@1.0.0` | `executable` | no, Broker-internal | `workspace.write` |",
-        "| `terminal.run@1.0.0` | `executable` | no, Broker-internal | `terminal.execute` |",
-        "| `terminal.shell@1.0.0` | `executable` | no, Broker-internal | `terminal.execute` |",
-        "| Workspace search, Web, calendar, tasks, mail | `absent` | no | none |",
+        "| `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` "
+        "(`system.read`) | Broker-internal | Broker-internal | Broker-internal |",
+        "| `terminal.shell@1.0.0` (`terminal.execute`) | — | "
+        "approval card + one-time token | no card, system-wide, network allowed |",
+        "| `terminal.run@1.0.0` (`terminal.execute`) | — | "
+        "allowlisted executables, workspace-confined, no network | "
+        "no workspace confinement, network allowed, no card |",
     ):
         assert row in agent_tools
 
+    assert "tri-state selector" in root_readme
     assert "The first usable tool set" not in agent_tools
     assert "Skill packages are declarative" not in agent_tools
     assert "gives Ru bounded workspace" not in root_readme

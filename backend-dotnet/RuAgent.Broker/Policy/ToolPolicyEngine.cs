@@ -30,10 +30,6 @@ public sealed class ToolPolicyEngine
 
         var approval = manifest.Risk is RiskClass.External or RiskClass.Destructive
             || manifest.RequiresApproval;
-        if (manifest.Id == "terminal.shell" && grant.Scopes.Contains(ToolScope.TerminalNetwork))
-        {
-            approval = false;
-        }
 
         return new(true, approval, "allowed");
     }

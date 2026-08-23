@@ -51,24 +51,27 @@ public sealed class ToolCatalogTests
     }
 
     [Fact]
-    public void Internal_terminal_binding_is_executable_and_profile_gated()
+    public void Internal_terminal_bindings_are_approval_required_and_full_only()
     {
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
-        var binding = catalog.Registry.Get("terminal.shell", "1.0.0");
+        var run = catalog.Registry.Get("terminal.run", "1.0.0");
+        var shell = catalog.Registry.Get("terminal.shell", "1.0.0");
 
-        Assert.Equal(RiskClass.Destructive, binding.Manifest.Risk);
-        Assert.False(binding.VerificationRequired);
-        Assert.Equal("executable", binding.Availability);
+        Assert.True(run.Manifest.RequiresApproval);
+        Assert.True(shell.Manifest.RequiresApproval);
+        Assert.Equal(RiskClass.Destructive, shell.Manifest.Risk);
+        Assert.False(shell.VerificationRequired);
+        Assert.Equal("executable", shell.Availability);
 
         // Advertisement is derived from profile scopes; the destructive shell
-        // never surfaces in Chat but is offered in Agent and Full Access.
+        // never surfaces in Chat or Agent and is offered only in Full Access.
         var advertised = Enum.GetValues<CapabilityProfile>()
             .Where(profile => catalog.Registry.ModelCapabilities(profile)
                 .Any(item => item.Manifest.Id == "terminal.shell"))
             .ToArray();
         Assert.DoesNotContain(CapabilityProfile.Chat, advertised);
-        Assert.Contains(CapabilityProfile.Agent, advertised);
-        Assert.Contains(CapabilityProfile.Full, advertised);
+        Assert.DoesNotContain(CapabilityProfile.Agent, advertised);
+        Assert.Equal([CapabilityProfile.Full], advertised);
     }
 
     [Fact]

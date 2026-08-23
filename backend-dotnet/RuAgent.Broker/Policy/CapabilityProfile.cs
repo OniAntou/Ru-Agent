@@ -9,7 +9,7 @@ public static class CapabilityProfileExtensions
         {
             CapabilityProfile.Agent => new HashSet<string>(
                 [ToolScope.WorkspaceRead, ToolScope.WorkspaceWrite,
-                 ToolScope.TerminalExecute, ToolScope.SystemWrite], StringComparer.Ordinal),
+                 ToolScope.SystemWrite], StringComparer.Ordinal),
             CapabilityProfile.Full => new HashSet<string>(
                 [ToolScope.WorkspaceRead, ToolScope.WorkspaceWrite,
                  ToolScope.TerminalExecute, ToolScope.SystemWrite,

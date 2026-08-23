@@ -120,13 +120,44 @@ public sealed class BrokerHostTests
 
         var ids = tools.Select(node => node!["tool_id"]!.GetValue<string>()).ToArray();
         Assert.Contains("files.write", ids);
-        Assert.Contains("terminal.run", ids);
-        Assert.Contains("terminal.shell", ids);
+        Assert.DoesNotContain("terminal.run", ids);
+        Assert.DoesNotContain("terminal.shell", ids);
         Assert.DoesNotContain("app.list", ids);
         Assert.DoesNotContain("app.open", ids);
         Assert.DoesNotContain("web.search", ids);
         Assert.DoesNotContain("calendar.create", ids);
         Assert.DoesNotContain("mail.send", ids);
+    }
+
+    [Fact]
+    public async Task Hello_with_full_profile_adds_terminal_capabilities()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(
+            new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
+            cancellation.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "hello-full",
+                AgentMessageTypes.Hello,
+                "session-full",
+                "corr-full",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject { ["profile"] = "full" }),
+            cancellation.Token);
+        var hello = await ReceiveAsync(socket, cancellation.Token);
+
+        var ids = hello.Payload["tools"]!.AsArray()
+            .Select(node => node!["tool_id"]!.GetValue<string>())
+            .ToArray();
+        Assert.Contains("terminal.run", ids);
+        Assert.Contains("terminal.shell", ids);
     }
 
     [Fact]
@@ -367,7 +398,7 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
-    public async Task Authenticated_session_can_run_an_allowlisted_terminal_command()
+    public async Task Authenticated_terminal_run_requires_approval_then_executes()
     {
         await using var fixture = await HostFixture.StartAsync();
         using var socket = new ClientWebSocket();
@@ -416,9 +447,31 @@ public sealed class BrokerHostTests
                     },
                 }),
             cancellation.Token);
+        var pending = await ReceiveAsync(socket, cancellation.Token);
+
+        Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Payload["status"]!.GetValue<string>());
+        Assert.False(pending.Payload["adapter_invoked"]!.GetValue<bool>());
+        var approvalId = pending.Payload["output"]!["approval_id"]!.GetValue<string>();
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "terminal-approval-1",
+                AgentMessageTypes.ApprovalResponse,
+                "session-terminal",
+                "corr-terminal",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["approval_id"] = approvalId,
+                    ["approved"] = true,
+                }),
+            cancellation.Token);
         var result = await ReceiveAsync(socket, cancellation.Token);
 
-        Assert.Equal("succeeded", result.Payload["status"]!.GetValue<string>());
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Payload["status"]!.GetValue<string>());
+        Assert.True(result.Payload["adapter_invoked"]!.GetValue<bool>());
         Assert.Contains("10.", result.Payload["output"]!["stdout"]!.GetValue<string>(), StringComparison.Ordinal);
     }
 
@@ -470,6 +523,27 @@ public sealed class BrokerHostTests
                         ["arguments"] = new System.Text.Json.Nodes.JsonArray("-c", "raise SystemExit(7)"),
                         ["working_directory"] = ".",
                     },
+                }),
+            cancellation.Token);
+        var pending = await ReceiveAsync(socket, cancellation.Token);
+
+        Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Payload["status"]!.GetValue<string>());
+        Assert.False(pending.Payload["adapter_invoked"]!.GetValue<bool>());
+        var approvalId = pending.Payload["output"]!["approval_id"]!.GetValue<string>();
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "terminal-failed-approval-1",
+                AgentMessageTypes.ApprovalResponse,
+                "session-terminal-failed",
+                "corr-terminal-failed",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["approval_id"] = approvalId,
+                    ["approved"] = true,
                 }),
             cancellation.Token);
         var result = await ReceiveAsync(socket, cancellation.Token);

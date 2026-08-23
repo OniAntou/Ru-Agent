@@ -32,7 +32,8 @@ public static class TerminalManifests
         new System.Text.Json.Nodes.JsonObject { ["type"] = "object" },
         120_000,
         256 * 1024,
-        "builtin");
+        "builtin",
+        RequiresApproval: true);
 
     public static ToolManifest Shell { get; } = Run with
     {

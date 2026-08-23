@@ -10,7 +10,7 @@ namespace RuAgent.Broker.Tests;
 public sealed class ToolExecutionServiceTests
 {
     [Fact]
-    public async Task Unrestricted_terminal_runs_report_outside_root_working_directories()
+    public async Task Approved_full_terminal_run_can_use_an_outside_working_directory()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-terminal-service-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -61,10 +61,28 @@ public sealed class ToolExecutionServiceTests
                     },
                 });
 
-            var result = await service.ExecuteAsync(envelope, CancellationToken.None);
+            var pending = await service.ExecuteAsync(envelope, CancellationToken.None);
 
-            Assert.Equal("succeeded", result.Status);
-            Assert.Null(result.ErrorCode);
+            Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Status);
+            Assert.False(pending.AdapterInvoked);
+            var approvalId = pending.Output["approval_id"]!.GetValue<string>();
+            var result = await service.RespondToApprovalAsync(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "approval-" + Guid.NewGuid().ToString("N"),
+                    AgentMessageTypes.ApprovalResponse,
+                    "session-terminal-unrestricted",
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["approval_id"] = approvalId,
+                        ["approved"] = true,
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+            Assert.True(result.AdapterInvoked);
             Assert.Equal(
                 Path.GetFullPath(outsideDirectory),
                 result.Output["working_directory"]!.GetValue<string>());
@@ -76,7 +94,7 @@ public sealed class ToolExecutionServiceTests
     }
 
     [Fact]
-    public async Task Full_access_shell_executes_without_approval_or_token()
+    public async Task Full_access_shell_requires_approval_before_execution()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-shell-full-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -127,11 +145,9 @@ public sealed class ToolExecutionServiceTests
 
             var result = await service.ExecuteAsync(envelope, CancellationToken.None);
 
-            Assert.Equal("succeeded", result.Status);
-            Assert.Null(result.ErrorCode);
-            Assert.Equal(
-                Path.GetFullPath(outsideDirectory),
-                result.Output["working_directory"]!.GetValue<string>());
+            Assert.Equal(ToolResultStatuses.ApprovalRequired, result.Status);
+            Assert.False(result.AdapterInvoked);
+            Assert.NotNull(result.Output["approval_id"]);
         }
         finally
         {

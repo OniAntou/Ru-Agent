@@ -232,14 +232,111 @@ public sealed class AgentTurnCoordinatorTests
             item => item.Type == "agent.activity" && item.Status == ToolResultStatuses.Succeeded);
     }
 
+    [Fact]
+    public async Task A_new_chat_session_closes_the_old_lease_before_opening()
+    {
+        var broker = new FakeBroker();
+        var coordinator = new AgentTurnCoordinator(broker);
+
+        var first = await coordinator.ExecuteToolAsync(
+            Request(
+                requestId: "tool-1",
+                sessionId: "session-1",
+                correlationId: "correlation-1"),
+            CancellationToken.None);
+        var second = await coordinator.ExecuteToolAsync(
+            Request(
+                requestId: "tool-2",
+                sessionId: "session-2",
+                correlationId: "correlation-2"),
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Succeeded, first.Status);
+        Assert.Equal(ToolResultStatuses.Succeeded, second.Status);
+        Assert.Equal(
+            new[]
+            {
+                "open:session-1",
+                "execute:session-1",
+                "close:session-1",
+                "open:session-2",
+                "execute:session-2",
+            },
+            broker.Calls);
+    }
+
+    [Fact]
+    public async Task Repeated_tools_in_one_session_reuse_the_valid_lease()
+    {
+        var broker = new FakeBroker();
+        var coordinator = new AgentTurnCoordinator(broker);
+
+        _ = await coordinator.ExecuteToolAsync(
+            Request(requestId: "tool-1", correlationId: "correlation-1"),
+            CancellationToken.None);
+        _ = await coordinator.ExecuteToolAsync(
+            Request(requestId: "tool-2", correlationId: "correlation-2"),
+            CancellationToken.None);
+
+        Assert.Equal(1, broker.OpenCount);
+        Assert.Equal(0, broker.CloseCount);
+        Assert.Equal(
+            new[] { "open:session-1", "execute:session-1", "execute:session-1" },
+            broker.Calls);
+    }
+
+    [Fact]
+    public async Task Failed_close_blocks_the_replacement_session_and_adapter()
+    {
+        var broker = new FakeBroker();
+        var coordinator = new AgentTurnCoordinator(broker);
+        _ = await coordinator.ExecuteToolAsync(Request(), CancellationToken.None);
+        broker.CloseErrorCode = "broker_unavailable";
+
+        var result = await coordinator.ExecuteToolAsync(
+            Request(
+                requestId: "tool-2",
+                sessionId: "session-2",
+                correlationId: "correlation-2"),
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Failed, result.Status);
+        Assert.Equal("broker_unavailable", result.ErrorCode);
+        Assert.Equal("session-1", broker.ActiveSessionId);
+        Assert.Equal(1, broker.OpenCount);
+        Assert.Equal(1, broker.ExecuteCount);
+    }
+
+    [Fact]
+    public async Task Incomplete_new_grant_is_closed_without_adapter_execution()
+    {
+        var broker = new FakeBroker
+        {
+            ActualScopes = new HashSet<string>(StringComparer.Ordinal),
+        };
+
+        var result = await new AgentTurnCoordinator(broker).ExecuteToolAsync(
+            Request(),
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Failed, result.Status);
+        Assert.Equal("scope_not_granted", result.ErrorCode);
+        Assert.Null(broker.ActiveSessionId);
+        Assert.Equal(0, broker.ExecuteCount);
+        Assert.Equal(new[] { "open:session-1", "close:session-1" }, broker.Calls);
+    }
+
     private static AgentTurnRequest Request(
         string toolId = "system.volume",
         string toolVersion = "1.0.0",
-        string capabilityClass = "native_mutation") => new(
+        string capabilityClass = "native_mutation",
+        string requestId = "tool-request-1",
+        string sessionId = "session-1",
+        string correlationId = "correlation-1") => new(
         new WorkerToolRequest(
-            "tool-request-1",
-            "session-1",
-            "correlation-1",
+            requestId,
+            sessionId,
+            correlationId,
             toolId,
             toolVersion,
             capabilityClass,
@@ -284,7 +381,7 @@ public sealed class AgentTurnCoordinatorTests
     {
         public IReadOnlySet<string> ActualScopes { get; init; } =
             new HashSet<string>(["system.write"], StringComparer.Ordinal);
-        public string ResultRequestId { get; init; } = "tool-request-1";
+        public string? ResultRequestId { get; init; }
         public string ResultStatus { get; init; } = ToolResultStatuses.Succeeded;
         public string? ResultErrorCode { get; init; }
         public string ResultSafeSummary { get; init; } = "Volume set verified.";
@@ -293,12 +390,16 @@ public sealed class AgentTurnCoordinatorTests
         public string? ResultEndpointHash { get; init; } = "0123456789abcdef";
         public bool AdapterInvoked { get; init; } = true;
         public bool BlockExecution { get; init; }
+        public string? CloseErrorCode { get; set; }
+        public string? ActiveSessionId { get; private set; }
         public TaskCompletionSource ExecutionStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ReleaseExecution { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int OpenCount { get; private set; }
         public int ExecuteCount { get; private set; }
+        public int CloseCount { get; private set; }
+        public List<string> Calls { get; } = [];
         public IReadOnlySet<string> LastRequestedScopes { get; private set; } =
             new HashSet<string>(StringComparer.Ordinal);
         public IReadOnlySet<string> LastRequestedSkillIds { get; private set; } =
@@ -323,6 +424,14 @@ public sealed class AgentTurnCoordinatorTests
             int deadlineMs,
             CancellationToken cancellationToken)
         {
+            Calls.Add($"open:{sessionId}");
+            if (ActiveSessionId is not null
+                && !string.Equals(ActiveSessionId, sessionId, StringComparison.Ordinal))
+            {
+                throw new AgentBrokerException("session_conflict");
+            }
+
+            ActiveSessionId = sessionId;
             OpenCount++;
             LastRequestedScopes = scopes;
             LastRequestedSkillIds = skillIds;
@@ -337,6 +446,12 @@ public sealed class AgentTurnCoordinatorTests
             AgentToolCall call,
             CancellationToken cancellationToken)
         {
+            Calls.Add($"execute:{call.SessionId}");
+            if (!string.Equals(ActiveSessionId, call.SessionId, StringComparison.Ordinal))
+            {
+                throw new AgentBrokerException("broker_not_ready");
+            }
+
             ExecuteCount++;
             LastCall = call;
             ExecutionStarted.TrySetResult();
@@ -346,7 +461,7 @@ public sealed class AgentTurnCoordinatorTests
             }
 
             return new AgentToolResult(
-                ResultRequestId,
+                ResultRequestId ?? call.RequestId,
                 ResultStatus,
                 new JsonObject { ["operation"] = "set", ["level"] = 2 },
                 ResultErrorCode,
@@ -373,7 +488,22 @@ public sealed class AgentTurnCoordinatorTests
         public Task CloseSessionAsync(
             string sessionId,
             string? correlationId,
-            CancellationToken cancellationToken) => Task.CompletedTask;
+            CancellationToken cancellationToken)
+        {
+            Calls.Add($"close:{sessionId}");
+            CloseCount++;
+            if (CloseErrorCode is not null)
+            {
+                throw new AgentBrokerException(CloseErrorCode);
+            }
+
+            if (string.Equals(ActiveSessionId, sessionId, StringComparison.Ordinal))
+            {
+                ActiveSessionId = null;
+            }
+
+            return Task.CompletedTask;
+        }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

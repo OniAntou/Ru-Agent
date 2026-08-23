@@ -34,8 +34,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
     private readonly IAgentApprovalCoordinator? _approvals;
     private readonly IDiagnosticEmitter? _diagnostics;
     private readonly SemaphoreSlim _sessionLock = new(1, 1);
-    private readonly Dictionary<string, AgentSessionGrant> _openedSessions =
-        new(StringComparer.Ordinal);
+    private AgentSessionGrant? _activeSession;
 
     public AgentTurnCoordinator(
         IAgentBrokerClient? broker = null,
@@ -243,13 +242,24 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
         await _sessionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_openedSessions.TryGetValue(tool.SessionId, out var existing)
-                && existing.ExpiresAt > DateTimeOffset.UtcNow)
+            var existing = _activeSession;
+            if (existing is not null
+                && string.Equals(existing.SessionId, tool.SessionId, StringComparison.Ordinal)
+                && existing.ExpiresAt > DateTimeOffset.UtcNow
+                && capability.Scopes.All(existing.Scopes.Contains))
             {
                 return (existing, false);
             }
 
-            _openedSessions.Remove(tool.SessionId);
+            if (existing is not null)
+            {
+                await _broker!.CloseSessionAsync(
+                    existing.SessionId,
+                    correlationId,
+                    cancellationToken).ConfigureAwait(false);
+                _activeSession = null;
+            }
+
             var grant = await _broker!.OpenSessionAsync(
                 tool.SessionId,
                 capability.Scopes.ToHashSet(StringComparer.Ordinal),
@@ -257,7 +267,20 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                 correlationId,
                 tool.DeadlineMs,
                 cancellationToken).ConfigureAwait(false);
-            _openedSessions[tool.SessionId] = grant;
+            if (!capability.Scopes.All(grant.Scopes.Contains))
+            {
+                // Retain ownership until defensive close succeeds so cleanup
+                // can be retried without forgetting the Broker's active owner.
+                _activeSession = grant;
+                await _broker.CloseSessionAsync(
+                    grant.SessionId,
+                    correlationId,
+                    cancellationToken).ConfigureAwait(false);
+                _activeSession = null;
+                throw new AgentBrokerException("scope_not_granted");
+            }
+
+            _activeSession = grant;
             return (grant, true);
         }
         finally

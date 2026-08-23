@@ -33,6 +33,22 @@ public sealed class BrokerSessionTests
         Assert.Equal(scenario, error.Code);
     }
 
+    [Fact]
+    public void A_different_owner_must_wait_until_the_active_session_closes()
+    {
+        using var fixture = DescriptorFixture.Create();
+        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        var scopes = new HashSet<string>(["system.write"], StringComparer.Ordinal);
+        var skills = new HashSet<string>(StringComparer.Ordinal);
+
+        Assert.True(session.Open("session-1", scopes, skills));
+        Assert.False(session.Open("session-2", scopes, skills));
+
+        session.Close("session-1");
+
+        Assert.True(session.Open("session-2", scopes, skills));
+    }
+
     private sealed class DescriptorFixture : IDisposable
     {
         private DescriptorFixture(

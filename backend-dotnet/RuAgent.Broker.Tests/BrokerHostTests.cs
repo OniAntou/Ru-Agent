@@ -62,7 +62,7 @@ public sealed class BrokerHostTests
     }
 
     [Fact]
-    public async Task Authenticated_hello_advertises_only_safe_executable_capabilities()
+    public async Task Hello_defaults_to_chat_and_advertises_only_workspace_read_tools()
     {
         await using var fixture = await HostFixture.StartAsync();
         using var socket = new ClientWebSocket();
@@ -74,7 +74,39 @@ public sealed class BrokerHostTests
 
         await SendAsync(
             socket,
-            new AgentEnvelope(1, "hello-capabilities", AgentMessageTypes.Hello, "session-capabilities", "corr-capabilities", 10_000, new System.Text.Json.Nodes.JsonObject()),
+            new AgentEnvelope(1, "hello-chat", AgentMessageTypes.Hello, "session-chat", "corr-chat", 10_000, new System.Text.Json.Nodes.JsonObject()),
+            cancellation.Token);
+        var hello = await ReceiveAsync(socket, cancellation.Token);
+
+        var ids = hello.Payload["tools"]!.AsArray()
+            .Select(node => node!["tool_id"]!.GetValue<string>())
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(new[] { "files.list", "files.read" }, ids);
+        Assert.Empty(hello.Payload["skills"]!.AsArray());
+    }
+
+    [Fact]
+    public async Task Hello_with_agent_profile_advertises_mutating_capabilities()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(
+            new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
+            cancellation.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "hello-agent",
+                AgentMessageTypes.Hello,
+                "session-agent",
+                "corr-agent",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject { ["profile"] = "agent" }),
             cancellation.Token);
         var hello = await ReceiveAsync(socket, cancellation.Token);
 
@@ -85,13 +117,46 @@ public sealed class BrokerHostTests
         Assert.Equal("native_pending", volume["availability"]!.GetValue<string>());
         Assert.True(volume["model_enabled"]!.GetValue<bool>());
         Assert.Equal("system.write", Assert.Single(volume["scopes"]!.AsArray())!.GetValue<string>());
-        Assert.Empty(hello.Payload["skills"]!.AsArray());
 
         var ids = tools.Select(node => node!["tool_id"]!.GetValue<string>()).ToArray();
+        Assert.Contains("files.write", ids);
+        Assert.Contains("terminal.run", ids);
+        Assert.Contains("terminal.shell", ids);
+        Assert.DoesNotContain("app.list", ids);
         Assert.DoesNotContain("app.open", ids);
         Assert.DoesNotContain("web.search", ids);
         Assert.DoesNotContain("calendar.create", ids);
         Assert.DoesNotContain("mail.send", ids);
+    }
+
+    [Fact]
+    public async Task Hello_with_an_unknown_profile_is_rejected()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(
+            new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"),
+            cancellation.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(
+                1,
+                "hello-bad-profile",
+                AgentMessageTypes.Hello,
+                "session-bad-profile",
+                "corr-bad-profile",
+                10_000,
+                new System.Text.Json.Nodes.JsonObject { ["profile"] = "hyperdrive" }),
+            cancellation.Token);
+        var reply = await ReceiveAsync(socket, cancellation.Token);
+
+        Assert.Equal(AgentMessageTypes.ToolResult, reply.MessageType);
+        Assert.Equal("hello-bad-profile", reply.RequestId);
+        Assert.Equal(ToolResultStatuses.Failed, reply.Payload["status"]!.GetValue<string>());
+        Assert.Equal("invalid_profile", reply.Payload["error_code"]!.GetValue<string>());
     }
 
     [Fact]

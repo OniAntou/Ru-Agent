@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
 using RuAgent.Protocol;
 using Xunit;
@@ -7,6 +8,39 @@ namespace RuAgent.Broker.Tests;
 
 public sealed class ToolBindingRegistryTests
 {
+    [Fact]
+    public void Chat_profile_advertises_only_workspace_read()
+    {
+        var ids = CatalogForTests().ModelCapabilities(CapabilityProfile.Chat)
+            .Select(binding => binding.Manifest.Id).ToHashSet();
+
+        Assert.Equal(new HashSet<string> { "files.list", "files.read" }, ids);
+    }
+
+    [Fact]
+    public void Agent_profile_adds_mutating_terminal_bindings()
+    {
+        var ids = CatalogForTests().ModelCapabilities(CapabilityProfile.Agent)
+            .Select(binding => binding.Manifest.Id).ToHashSet();
+
+        Assert.Contains("files.write", ids);
+        Assert.Contains("terminal.run", ids);
+        Assert.Contains("terminal.shell", ids);
+        Assert.Contains("system.volume", ids);
+        Assert.DoesNotContain("app.list", ids);
+    }
+
+    [Fact]
+    public void Full_profile_matches_agent_advertisement()
+    {
+        var agent = CatalogForTests().ModelCapabilities(CapabilityProfile.Agent)
+            .Select(binding => binding.Manifest.Id).ToHashSet();
+        var full = CatalogForTests().ModelCapabilities(CapabilityProfile.Full)
+            .Select(binding => binding.Manifest.Id).ToHashSet();
+
+        Assert.Equal(agent, full); // policy differs, ids identical
+    }
+
     [Fact]
     public void Catalog_fails_when_a_manifest_has_no_executor()
     {
@@ -46,6 +80,9 @@ public sealed class ToolBindingRegistryTests
         Assert.DoesNotContain("web.search", ids);
         Assert.DoesNotContain("mail.send", ids);
     }
+
+    internal static ToolBindingRegistry CatalogForTests() =>
+        new ToolCatalog(ExecutableStubs()).Registry;
 
     internal static Dictionary<string, ToolExecutor> ExecutableStubs() => new(StringComparer.Ordinal)
     {

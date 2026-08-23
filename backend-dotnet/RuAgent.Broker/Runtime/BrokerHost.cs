@@ -132,7 +132,7 @@ public sealed class BrokerHost : IAsyncDisposable
             _shutdown.Token);
         await new AgentConnection(
             _session,
-            _tools.ListCapabilities,
+            profile => _tools.ListCapabilities(profile),
             _tools.ListCapabilities()
                 .SelectMany(capability => capability.Scopes)
                 .ToHashSet(StringComparer.Ordinal),

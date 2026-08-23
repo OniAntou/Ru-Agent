@@ -1,5 +1,6 @@
 namespace RuAgent.Broker.Tools;
 
+using RuAgent.Broker.Policy;
 using RuAgent.Protocol;
 
 public sealed class ToolBindingRegistry
@@ -46,9 +47,17 @@ public sealed class ToolBindingRegistry
     {
         lock (_gate)
         {
-            return _bindings.Values
-                .OrderBy(item => item.Manifest.Id, StringComparer.Ordinal)
-                .ThenBy(item => item.Manifest.Version, StringComparer.Ordinal)
+            return OrderedBindings().ToArray();
+        }
+    }
+
+    public IEnumerable<ToolBinding> ModelCapabilities(CapabilityProfile profile)
+    {
+        var scopes = profile.Scopes();
+        lock (_gate)
+        {
+            return OrderedBindings()
+                .Where(binding => binding.Manifest.Scopes.All(scopes.Contains))
                 .ToArray();
         }
     }
@@ -57,17 +66,33 @@ public sealed class ToolBindingRegistry
     {
         lock (_gate)
         {
-            return _bindings.Values
-                .OrderBy(item => item.Manifest.Id, StringComparer.Ordinal)
-                .ThenBy(item => item.Manifest.Version, StringComparer.Ordinal)
-                .Select(binding => new AgentToolCapability(
-                    binding.Manifest.Id,
-                    binding.Manifest.Version,
-                    new HashSet<string>(binding.Manifest.Scopes, StringComparer.Ordinal),
-                    binding.Manifest.Risk.ToString().ToLowerInvariant(),
-                    binding.Availability,
-                    binding.ModelEnabled))
+            return OrderedBindings().Select(ToCapability).ToArray();
+        }
+    }
+
+    public IReadOnlyList<AgentToolCapability> ListCapabilities(CapabilityProfile profile)
+    {
+        lock (_gate)
+        {
+            var scopes = profile.Scopes();
+            return OrderedBindings()
+                .Where(binding => binding.Manifest.Scopes.All(scopes.Contains))
+                .Select(ToCapability)
                 .ToArray();
         }
     }
+
+    private IEnumerable<ToolBinding> OrderedBindings() =>
+        _bindings.Values
+            .OrderBy(item => item.Manifest.Id, StringComparer.Ordinal)
+            .ThenBy(item => item.Manifest.Version, StringComparer.Ordinal);
+
+    private static AgentToolCapability ToCapability(ToolBinding binding) =>
+        new(
+            binding.Manifest.Id,
+            binding.Manifest.Version,
+            new HashSet<string>(binding.Manifest.Scopes, StringComparer.Ordinal),
+            binding.Manifest.Risk.ToString().ToLowerInvariant(),
+            binding.Availability,
+            binding.ModelEnabled);
 }

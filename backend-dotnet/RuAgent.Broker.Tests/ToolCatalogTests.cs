@@ -51,15 +51,24 @@ public sealed class ToolCatalogTests
     }
 
     [Fact]
-    public void Internal_terminal_binding_is_executable_but_not_model_enabled()
+    public void Internal_terminal_binding_is_executable_and_profile_gated()
     {
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
         var binding = catalog.Registry.Get("terminal.shell", "1.0.0");
 
         Assert.Equal(RiskClass.Destructive, binding.Manifest.Risk);
-        Assert.False(binding.ModelEnabled);
         Assert.False(binding.VerificationRequired);
         Assert.Equal("executable", binding.Availability);
+
+        // Advertisement is derived from profile scopes; the destructive shell
+        // never surfaces in Chat but is offered in Agent and Full Access.
+        var advertised = Enum.GetValues<CapabilityProfile>()
+            .Where(profile => catalog.Registry.ModelCapabilities(profile)
+                .Any(item => item.Manifest.Id == "terminal.shell"))
+            .ToArray();
+        Assert.DoesNotContain(CapabilityProfile.Chat, advertised);
+        Assert.Contains(CapabilityProfile.Agent, advertised);
+        Assert.Contains(CapabilityProfile.Full, advertised);
     }
 
     [Fact]

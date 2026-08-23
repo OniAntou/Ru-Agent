@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json.Nodes;
+using RuAgent.Broker.Policy;
 using RuAgent.Broker.Runtime;
 using RuAgent.Protocol;
 
@@ -12,7 +13,7 @@ public sealed class AgentConnection
     public const int MaxFrameBytes = 64 * 1024;
 
     private readonly BrokerSession _session;
-    private readonly Func<IReadOnlyList<AgentToolCapability>> _capabilityProvider;
+    private readonly Func<CapabilityProfile, IReadOnlyList<AgentToolCapability>> _capabilityProvider;
     private readonly IReadOnlySet<string> _executableScopes;
     private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _toolHandler;
     private readonly Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? _approvalHandler;
@@ -20,7 +21,7 @@ public sealed class AgentConnection
 
     public AgentConnection(
         BrokerSession session,
-        Func<IReadOnlyList<AgentToolCapability>> capabilityProvider,
+        Func<CapabilityProfile, IReadOnlyList<AgentToolCapability>> capabilityProvider,
         IReadOnlySet<string> executableScopes,
         Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? toolHandler = null,
         Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? approvalHandler = null,
@@ -91,14 +92,7 @@ public sealed class AgentConnection
         switch (request.MessageType)
         {
             case AgentMessageTypes.Hello:
-                return Reply(request, AgentMessageTypes.HelloOk, new JsonObject
-            {
-                ["status"] = "ready",
-                ["protocol_version"] = AgentEnvelopeCodec.ProtocolVersion,
-                ["tools"] = new JsonArray(_capabilityProvider()
-                    .Select(capability => (JsonNode?)ToJson(capability)).ToArray()),
-                ["skills"] = new JsonArray(),
-            });
+                return HandleHello(request);
             case AgentMessageTypes.Health:
                 return Reply(request, AgentMessageTypes.HealthOk, new JsonObject
             {
@@ -232,6 +226,67 @@ public sealed class AgentConnection
         }
 
         return result;
+    }
+
+    private AgentEnvelope HandleHello(AgentEnvelope request)
+    {
+        CapabilityProfile profile;
+        try
+        {
+            profile = ReadProfile(request.Payload);
+        }
+        catch (AgentProtocolException error)
+        {
+            return new AgentEnvelope(
+                AgentEnvelopeCodec.ProtocolVersion,
+                request.RequestId,
+                AgentMessageTypes.ToolResult,
+                request.SessionId,
+                request.CorrelationId,
+                request.DeadlineMs,
+                new JsonObject
+                {
+                    ["status"] = ToolResultStatuses.Failed,
+                    ["error_code"] = error.Code,
+                    ["safe_summary"] = "invalid capability profile",
+                });
+        }
+
+        return Reply(request, AgentMessageTypes.HelloOk, new JsonObject
+        {
+            ["status"] = "ready",
+            ["protocol_version"] = AgentEnvelopeCodec.ProtocolVersion,
+            ["tools"] = new JsonArray(_capabilityProvider(profile)
+                .Select(capability => (JsonNode?)ToJson(capability)).ToArray()),
+            ["skills"] = new JsonArray(),
+        });
+    }
+
+    private static CapabilityProfile ReadProfile(JsonObject payload)
+    {
+        var value = payload["profile"];
+        if (value is null)
+        {
+            return CapabilityProfile.Chat;
+        }
+
+        if (value is not JsonValue item || !item.TryGetValue<string>(out var profile))
+        {
+            throw new AgentProtocolException("invalid_profile");
+        }
+
+        if (string.IsNullOrWhiteSpace(profile) || profile.Length > 32)
+        {
+            throw new AgentProtocolException("invalid_profile");
+        }
+
+        return profile switch
+        {
+            "chat" => CapabilityProfile.Chat,
+            "agent" => CapabilityProfile.Agent,
+            "full" => CapabilityProfile.Full,
+            _ => throw new AgentProtocolException("invalid_profile"),
+        };
     }
 
     private static JsonObject ToJson(AgentToolCapability capability) => new()

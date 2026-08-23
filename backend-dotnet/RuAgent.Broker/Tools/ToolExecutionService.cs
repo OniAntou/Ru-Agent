@@ -54,6 +54,9 @@ public sealed class ToolExecutionService : IToolInvoker
     public IReadOnlyList<AgentToolCapability> ListCapabilities() =>
         _catalog.Registry.ListCapabilities();
 
+    public IReadOnlyList<AgentToolCapability> ListCapabilities(CapabilityProfile profile) =>
+        _catalog.Registry.ListCapabilities(profile);
+
     public IReadOnlyList<SkillManifest> ListSkills() => Array.Empty<SkillManifest>();
 
     public void RemoveSession(string sessionId) => _approvals.RemoveSession(sessionId);

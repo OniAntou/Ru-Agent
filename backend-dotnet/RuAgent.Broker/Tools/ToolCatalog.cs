@@ -38,13 +38,13 @@ public sealed class ToolCatalog
         Registry = new ToolBindingRegistry();
         foreach (var manifest in Manifests())
         {
-            var modelEnabled = manifest.Id == "system.volume";
+            var nativePending = manifest.Id == "system.volume";
             Registry.Register(new ToolBinding(
                 manifest,
                 executors[manifest.Id],
-                modelEnabled,
-                modelEnabled ? "native_pending" : "executable",
-                VerificationRequired: modelEnabled));
+                ModelEnabled: true,
+                nativePending ? "native_pending" : "executable",
+                VerificationRequired: nativePending));
         }
     }
 

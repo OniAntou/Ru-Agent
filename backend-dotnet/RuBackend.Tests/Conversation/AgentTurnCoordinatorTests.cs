@@ -254,6 +254,32 @@ public sealed class AgentTurnCoordinatorTests
         Assert.Equal("Anh đã từ chối thao tác này.", denial.Content);
     }
 
+    [Theory]
+    [InlineData("approval_rejected", "Anh đã từ chối thao tác này.")]
+    [InlineData("approval_stale", "Thẻ duyệt đã hết hạn.")]
+    public async Task Broker_approval_rejection_codes_surface_their_allowlisted_copy(
+        string errorCode,
+        string expectedCopy)
+    {
+        var broker = new FakeBroker
+        {
+            ResultStatus = ToolResultStatuses.Denied,
+            ResultErrorCode = errorCode,
+            ResultSafeSummary = "Action was rejected.",
+            ResultVerificationState = ToolVerificationStates.Failed,
+            AdapterInvoked = false,
+        };
+        var events = await CollectAsync(
+            new AgentTurnCoordinator(broker).HandleToolTurnAsync(
+                Request(),
+                CancellationToken.None));
+
+        var rejection = Assert.Single(
+            events,
+            item => item.Type == "agent.activity" && item.ErrorCode == errorCode);
+        Assert.Equal(expectedCopy, rejection.Content);
+    }
+
     [Fact]
     public async Task Newly_opened_session_emits_only_the_actual_grant()
     {

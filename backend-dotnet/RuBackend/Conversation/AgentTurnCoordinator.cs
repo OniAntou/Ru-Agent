@@ -585,6 +585,8 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
         {
             ["edit_not_unique"] = "Đoạn cần sửa không xác định được trong file.",
             ["approval_denied"] = "Anh đã từ chối thao tác này.",
+            ["approval_rejected"] = "Anh đã từ chối thao tác này.",
+            ["approval_stale"] = "Thẻ duyệt đã hết hạn.",
         };
 
     private static ChatEvent Activity(

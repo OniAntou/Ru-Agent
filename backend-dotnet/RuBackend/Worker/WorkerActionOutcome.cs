@@ -3,6 +3,13 @@ using System.Text.RegularExpressions;
 
 namespace RuBackend.Worker;
 
+public sealed record WorkerAdvertisedTools(
+    IReadOnlySet<(string ToolId, string ToolVersion)> Entries)
+{
+    public bool Contains(string toolId, string toolVersion) =>
+        Entries.Contains((toolId, toolVersion));
+}
+
 public sealed record WorkerActionOutcome(
     int SchemaVersion,
     string ToolId,
@@ -10,6 +17,9 @@ public sealed record WorkerActionOutcome(
     string Status,
     string? ReasonCode)
 {
+    private const int MaximumToolIdLength = 128;
+    private const int MaximumToolVersionLength = 64;
+
     private static readonly HashSet<string> AllowedStatuses = new(StringComparer.Ordinal)
     {
         "succeeded",
@@ -48,14 +58,18 @@ public sealed record WorkerActionOutcome(
         ["reason_code"] = ReasonCode,
     };
 
-    public static WorkerActionOutcome? ParseOptional(JsonNode? node) =>
-        node is null ? null : Parse(node);
+    public static WorkerActionOutcome? ParseOptional(
+        JsonNode? node,
+        WorkerAdvertisedTools? advertisedTools) =>
+        node is null ? null : Parse(node, advertisedTools);
 
-    public static WorkerActionOutcome Parse(JsonNode node)
+    public static WorkerActionOutcome Parse(
+        JsonNode node,
+        WorkerAdvertisedTools? advertisedTools)
     {
         try
         {
-            return ParseCore(node);
+            return ParseCore(node, advertisedTools);
         }
         catch (WorkerProtocolException)
         {
@@ -68,14 +82,21 @@ public sealed record WorkerActionOutcome(
         }
     }
 
-    private static WorkerActionOutcome ParseCore(JsonNode node)
+    private static WorkerActionOutcome ParseCore(
+        JsonNode node,
+        WorkerAdvertisedTools? advertisedTools)
     {
         if (node is not JsonObject root
             || root.Count != Fields.Count
             || root.Any(pair => !Fields.Contains(pair.Key))
-            || root["schema_version"]?.GetValue<int>() != 1
-            || root["tool_id"]?.GetValue<string>() != "system.volume"
-            || root["tool_version"]?.GetValue<string>() != "1.0.0")
+            || root["schema_version"]?.GetValue<int>() != 1)
+        {
+            throw new WorkerProtocolException("invalid_action_outcome");
+        }
+
+        var toolId = ReadToolIdentity(root["tool_id"], MaximumToolIdLength);
+        var toolVersion = ReadToolIdentity(root["tool_version"], MaximumToolVersionLength);
+        if (advertisedTools is not null && !advertisedTools.Contains(toolId, toolVersion))
         {
             throw new WorkerProtocolException("invalid_action_outcome");
         }
@@ -92,9 +113,21 @@ public sealed record WorkerActionOutcome(
 
         return new WorkerActionOutcome(
             1,
-            "system.volume",
-            "1.0.0",
+            toolId,
+            toolVersion,
             status,
             reason);
+    }
+
+    private static string ReadToolIdentity(JsonNode? node, int maxLength)
+    {
+        if (node?.GetValue<string>() is not { } value
+            || string.IsNullOrWhiteSpace(value)
+            || value.Length > maxLength)
+        {
+            throw new WorkerProtocolException("invalid_action_outcome");
+        }
+
+        return value;
     }
 }

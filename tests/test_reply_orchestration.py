@@ -27,25 +27,9 @@ def test_execute_reply_strips_action_markers_without_native_calls(monkeypatch) -
         temperature=0.7,
         top_k=20,
         allow_web_search=False,
-        allow_legacy_markers=False,
     )
 
     assert result == "Em đã làm xong."
-
-
-def test_non_visible_selection_may_preserve_one_legacy_marker_for_translation() -> None:
-    result = execute_reply(
-        lambda *_args, **_kwargs: "[VOLUME: set 2] Em đã làm xong.",
-        prompt="test",
-        system_instruction="Ru",
-        max_new_tokens=32,
-        temperature=0.7,
-        top_k=20,
-        allow_web_search=False,
-        allow_legacy_markers=True,
-    )
-
-    assert result == "[VOLUME: set 2] Em đã làm xong."
 
 
 def test_execute_reply_resets_stream_before_a_grounded_follow_up() -> None:

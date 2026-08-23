@@ -63,6 +63,9 @@ public sealed class ActionOutcomeContextStoreTests
         Assert.Equal("write_failed", Assert.Single(results).ReasonCode);
     }
 
+    private static readonly WorkerAdvertisedTools AdvertisedVolume =
+        new(new HashSet<(string ToolId, string ToolVersion)> { ("system.volume", "1.0.0") });
+
     private static WorkerActionOutcome Failed(string reasonCode) =>
         WorkerActionOutcome.Parse(new JsonObject
         {
@@ -71,7 +74,7 @@ public sealed class ActionOutcomeContextStoreTests
             ["tool_version"] = "1.0.0",
             ["status"] = "failed",
             ["reason_code"] = reasonCode,
-        });
+        }, AdvertisedVolume);
 
     private static WorkerActionOutcome Succeeded() =>
         WorkerActionOutcome.Parse(new JsonObject
@@ -81,5 +84,5 @@ public sealed class ActionOutcomeContextStoreTests
             ["tool_version"] = "1.0.0",
             ["status"] = "succeeded",
             ["reason_code"] = null,
-        });
+        }, AdvertisedVolume);
 }

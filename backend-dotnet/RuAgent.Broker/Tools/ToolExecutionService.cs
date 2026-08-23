@@ -690,6 +690,7 @@ public sealed class ToolExecutionService : IToolInvoker
         "terminal.shell" => "Run a terminal action in the workspace.",
         "system.volume" => "Change the local system volume.",
         "notes.create" => "Create a note in the workspace.",
+        "files.edit" => "Chỉnh sửa file.",
         _ => "Run an external or destructive Agent action.",
     };
 

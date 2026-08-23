@@ -257,16 +257,17 @@ public sealed class ConversationCoordinatorTests
             sessions,
             memory,
             worker,
+            agent: new FakeAgentTurnCoordinator(ModelCapabilities()),
             outcomes: outcomes);
 
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Đặt âm lượng về 2", "session-1"),
+            new ChatRequest("Đặt âm lượng về 2", "session-1", Profile: CapabilityProfile.Agent),
             CancellationToken.None));
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Kể em nghe chuyện khác", "session-1"),
+            new ChatRequest("Kể em nghe chuyện khác", "session-1", Profile: CapabilityProfile.Agent),
             CancellationToken.None));
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Tiếp đi em", "session-1"),
+            new ChatRequest("Tiếp đi em", "session-1", Profile: CapabilityProfile.Agent),
             CancellationToken.None));
 
         Assert.Equal(3, worker.ChatRequests.Count);
@@ -317,13 +318,14 @@ public sealed class ConversationCoordinatorTests
             new FakeSessionStore(log),
             new FakeMemoryService(log),
             worker,
+            agent: new FakeAgentTurnCoordinator(ModelCapabilities()),
             outcomes: new ActionOutcomeContextStore());
 
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Đặt âm lượng về 2", "session-1"),
+            new ChatRequest("Đặt âm lượng về 2", "session-1", Profile: CapabilityProfile.Agent),
             CancellationToken.None));
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("sao vậy?", "session-1"),
+            new ChatRequest("sao vậy?", "session-1", Profile: CapabilityProfile.Agent),
             CancellationToken.None));
 
         Assert.Equal(2, worker.ChatRequests.Count);
@@ -355,10 +357,11 @@ public sealed class ConversationCoordinatorTests
             sessions,
             new FakeMemoryService(log),
             worker,
+            agent: new FakeAgentTurnCoordinator(ModelCapabilities()),
             outcomes: outcomes);
 
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Đặt âm lượng về 2", "session-1"),
+            new ChatRequest("Đặt âm lượng về 2", "session-1", Profile: CapabilityProfile.Agent),
             CancellationToken.None));
 
         Assert.Null(outcomes.Take("session-1"));
@@ -411,7 +414,7 @@ public sealed class ConversationCoordinatorTests
         Assert.Equal("native_mutation", volume["capability_class"]!.GetValue<string>());
         Assert.True(volume["verification_required"]!.GetValue<bool>());
         var readTool = tools.Single(item => item!["tool_id"]!.GetValue<string>() == "files.read")!;
-        Assert.Equal("internal", readTool["capability_class"]!.GetValue<string>());
+        Assert.Equal("tool", readTool["capability_class"]!.GetValue<string>());
         Assert.False(readTool["verification_required"]!.GetValue<bool>());
     }
 

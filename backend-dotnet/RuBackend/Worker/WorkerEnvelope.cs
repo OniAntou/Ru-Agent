@@ -178,7 +178,7 @@ public static class WorkerEnvelopeCodec
                 throw new WorkerProtocolException("invalid_action_outcome");
             }
 
-            WorkerActionOutcome.Parse(actionOutcome);
+            WorkerActionOutcome.Parse(actionOutcome, advertisedTools: null);
         }
     }
 

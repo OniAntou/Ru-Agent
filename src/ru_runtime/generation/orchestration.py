@@ -65,11 +65,8 @@ def execute_reply(
     on_stream_reset: Callable[[], None] | None = None,
     on_complete_timing: Callable[[float], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
-    allow_legacy_markers: bool = False,
     agent_follow_up: bool = False,
 ) -> str:
-    if agent_follow_up:
-        allow_legacy_markers = False
     messages = build_conversation_messages(
         system_instruction,
         prompt,
@@ -90,7 +87,7 @@ def execute_reply(
     
     search_match = _SEARCH_MARKER.search(response)
     if not allow_web_search or search_match is None:
-        response = response.strip() if allow_legacy_markers else _strip_search_marker(response)
+        response = _strip_search_marker(response)
         if not allow_web_search and search_match is not None:
             logger.warning("Model requested a web search but web search is disabled; stripping the marker")
             cleaned = _strip_search_marker(response)
@@ -100,7 +97,7 @@ def execute_reply(
 
     query = search_match.group(1).strip()
     if not query:
-        response = response.strip() if allow_legacy_markers else _strip_search_marker(response)
+        response = _strip_search_marker(response)
         cleaned = _strip_search_marker(response)
         return strip_emojis_and_emoticons(cleaned) if cleaned else strip_emojis_and_emoticons(response)
     try:

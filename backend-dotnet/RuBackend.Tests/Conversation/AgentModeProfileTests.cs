@@ -61,6 +61,11 @@ public sealed class AgentModeProfileTests
             Assert.Equal(
                 string.Equals(toolId, "system.volume", StringComparison.Ordinal),
                 entry["verification_required"]!.GetValue<bool>());
+            Assert.Equal(
+                string.Equals(toolId, "system.volume", StringComparison.Ordinal)
+                    ? "native_mutation"
+                    : "tool",
+                entry["capability_class"]!.GetValue<string>());
         }
 
         await CloseAsync(socket);
@@ -142,7 +147,7 @@ public sealed class AgentModeProfileTests
     {
         var broker = new FakeBroker();
         var worker = new FakeWorker();
-        worker.ToolScripts.Enqueue(ToolRequest("tool-1", "session-1", "files.write", "internal"));
+        worker.ToolScripts.Enqueue(ToolRequest("tool-1", "session-1", "files.write", "tool"));
         worker.ToolScripts.Enqueue(ToolRequest("tool-2", "session-1", "system.volume", "native_mutation"));
         using var factory = Factory(worker, broker);
         using var socket = await ConnectAsync(factory);
@@ -170,7 +175,7 @@ public sealed class AgentModeProfileTests
     {
         var broker = new FakeBroker();
         var worker = new FakeWorker();
-        worker.ToolScripts.Enqueue(ToolRequest("tool-1", "session-1", "files.write", "internal"));
+        worker.ToolScripts.Enqueue(ToolRequest("tool-1", "session-1", "files.write", "tool"));
         using var factory = Factory(worker, broker);
         using var socket = await ConnectAsync(factory);
         await SendTextAsync(
@@ -202,7 +207,7 @@ public sealed class AgentModeProfileTests
     {
         var broker = new FakeBroker { BlockExecution = true };
         var worker = new FakeWorker();
-        worker.ToolScripts.Enqueue(ToolRequest("tool-1", "session-1", "files.write", "internal"));
+        worker.ToolScripts.Enqueue(ToolRequest("tool-1", "session-1", "files.write", "tool"));
         using var factory = Factory(worker, broker);
         using var socket = await ConnectAsync(factory);
         await SendTextAsync(

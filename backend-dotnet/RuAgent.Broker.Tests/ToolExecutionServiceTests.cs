@@ -76,6 +76,68 @@ public sealed class ToolExecutionServiceTests
     }
 
     [Fact]
+    public async Task Files_edit_approval_advertises_its_safe_action()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-edit-safe-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(
+            descriptorPath,
+            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        session.Open(
+            "session-edit-safe",
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.WorkspaceWrite],
+                StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            File.WriteAllText(Path.Combine(workspaceRoot, "a.txt"), "hello world");
+            var envelope = new AgentEnvelope(
+                AgentEnvelopeCodec.ProtocolVersion,
+                "req-" + Guid.NewGuid().ToString("N"),
+                AgentMessageTypes.ToolRequest,
+                "session-edit-safe",
+                null,
+                30_000,
+                new JsonObject
+                {
+                    ["tool_id"] = "files.edit",
+                    ["tool_version"] = "1.0.0",
+                    ["capability_class"] = "tool",
+                    ["arguments"] = new JsonObject
+                    {
+                        ["path"] = "a.txt",
+                        ["old_string"] = "world",
+                        ["new_string"] = "Ru",
+                    },
+                });
+
+            var result = await service.ExecuteAsync(envelope, CancellationToken.None);
+
+            Assert.Equal("approval_required", result.Status);
+            Assert.Equal(
+                "Chỉnh sửa file.",
+                result.Output["safe_action"]!.GetValue<string>());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Schema_validator_rejects_missing_required_property()
     {
         var schema = new JsonObject

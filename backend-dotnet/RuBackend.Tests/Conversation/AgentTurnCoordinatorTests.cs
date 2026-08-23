@@ -179,6 +179,82 @@ public sealed class AgentTurnCoordinatorTests
     }
 
     [Fact]
+    public async Task Generic_tool_advertised_as_tool_class_executes_end_to_end()
+    {
+        var broker = new FakeBroker
+        {
+            ExtraCapabilities =
+            [
+                new AgentToolCapability(
+                    "files.write",
+                    "1.0.0",
+                    new HashSet<string>(["workspace.write"], StringComparer.Ordinal),
+                    "reversible",
+                    "executable",
+                    true),
+            ],
+            ActualScopes = new HashSet<string>(
+                ["system.write", "workspace.write"],
+                StringComparer.Ordinal),
+        };
+
+        var result = await new AgentTurnCoordinator(broker).ExecuteToolAsync(
+            Request(toolId: "files.write", capabilityClass: "tool"),
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+        Assert.Equal("tool", broker.LastCall!.CapabilityClass);
+    }
+
+    [Fact]
+    public async Task Edit_not_unique_failure_surfaces_its_allowlisted_copy()
+    {
+        var broker = new FakeBroker
+        {
+            ResultStatus = ToolResultStatuses.Failed,
+            ResultErrorCode = "edit_not_unique",
+            ResultSafeSummary = "Edit target was ambiguous.",
+            ResultVerificationState = ToolVerificationStates.Failed,
+        };
+        var events = await CollectAsync(
+            new AgentTurnCoordinator(broker).HandleToolTurnAsync(
+                Request(),
+                CancellationToken.None));
+
+        var failure = Assert.Single(
+            events,
+            item => item.Type == "agent.activity" && item.ErrorCode == "edit_not_unique");
+        Assert.Equal(
+            "Đoạn cần sửa không xác định được trong file.",
+            failure.Content);
+        Assert.All(
+            events.Where(item => item.Type == "agent.activity" && item.ErrorCode is null),
+            item => Assert.Null(item.Content));
+    }
+
+    [Fact]
+    public async Task Approval_denial_surfaces_its_allowlisted_copy()
+    {
+        var broker = new FakeBroker
+        {
+            ResultStatus = ToolResultStatuses.Denied,
+            ResultErrorCode = "approval_denied",
+            ResultSafeSummary = "Action was denied.",
+            ResultVerificationState = ToolVerificationStates.Failed,
+            AdapterInvoked = false,
+        };
+        var events = await CollectAsync(
+            new AgentTurnCoordinator(broker).HandleToolTurnAsync(
+                Request(),
+                CancellationToken.None));
+
+        var denial = Assert.Single(
+            events,
+            item => item.Type == "agent.activity" && item.ErrorCode == "approval_denied");
+        Assert.Equal("Anh đã từ chối thao tác này.", denial.Content);
+    }
+
+    [Fact]
     public async Task Newly_opened_session_emits_only_the_actual_grant()
     {
         var broker = new FakeBroker

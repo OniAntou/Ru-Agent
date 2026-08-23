@@ -337,6 +337,9 @@ public sealed class ChatWebSocketEndpointTests
         }
     }
 
+    private static readonly WorkerAdvertisedTools AdvertisedVolume =
+        new(new HashSet<(string ToolId, string ToolVersion)> { ("system.volume", "1.0.0") });
+
     private static WorkerActionOutcome Failed(string reasonCode) =>
         WorkerActionOutcome.Parse(new JsonObject
         {
@@ -345,7 +348,7 @@ public sealed class ChatWebSocketEndpointTests
             ["tool_version"] = "1.0.0",
             ["status"] = "failed",
             ["reason_code"] = reasonCode,
-        });
+        }, AdvertisedVolume);
 
     private static ChatEvent ApprovalEvent(string? preview) => new(
         "agent.approval_required",

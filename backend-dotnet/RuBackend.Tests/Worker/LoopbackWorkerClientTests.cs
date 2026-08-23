@@ -106,7 +106,11 @@ public sealed class LoopbackWorkerClientTests
                 ["tool_version"] = "1.0.0",
                 ["status"] = "failed",
                 ["reason_code"] = "write_failed",
-            }),
+            }, new WorkerAdvertisedTools(
+                new HashSet<(string ToolId, string ToolVersion)>
+                {
+                    ("system.volume", "1.0.0"),
+                })),
         };
 
         await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None));

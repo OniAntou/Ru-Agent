@@ -427,7 +427,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
         string.Equals(capability.ToolId, "system.volume", StringComparison.Ordinal)
         && string.Equals(capability.ToolVersion, "1.0.0", StringComparison.Ordinal)
             ? "native_mutation"
-            : "internal";
+            : "tool";
 
     private static string? ResolveCorrelationId(string? candidate)
     {
@@ -580,15 +580,28 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
         }
     }
 
+    private static readonly IReadOnlyDictionary<string, string> ActivityCopy =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["edit_not_unique"] = "Đoạn cần sửa không xác định được trong file.",
+            ["approval_denied"] = "Anh đã từ chối thao tác này.",
+        };
+
     private static ChatEvent Activity(
         WorkerToolRequest tool,
         string status,
         string? errorCode = null) => new(
             "agent.activity",
+            Copy(errorCode),
             SessionId: tool.SessionId,
             ErrorCode: errorCode,
             Status: status,
             ToolId: tool.ToolId);
+
+    private static string? Copy(string? errorCode) =>
+        errorCode is not null && ActivityCopy.TryGetValue(errorCode, out var copy)
+            ? copy
+            : null;
 
     private static string BoundedSummary(string summary) =>
         string.IsNullOrWhiteSpace(summary)

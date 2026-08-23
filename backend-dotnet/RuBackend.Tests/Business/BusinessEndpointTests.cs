@@ -343,6 +343,9 @@ public sealed class BusinessEndpointTests
             runtimeSettingsLoader: runtimeLoader ?? new FakeRuntimeSettingsLoader(),
             actionOutcomeContextStore: outcomes);
 
+    private static readonly WorkerAdvertisedTools AdvertisedVolume =
+        new(new HashSet<(string ToolId, string ToolVersion)> { ("system.volume", "1.0.0") });
+
     private static WorkerActionOutcome Failed(string reasonCode) =>
         WorkerActionOutcome.Parse(new JsonObject
         {
@@ -351,7 +354,7 @@ public sealed class BusinessEndpointTests
             ["tool_version"] = "1.0.0",
             ["status"] = "failed",
             ["reason_code"] = reasonCode,
-        });
+        }, AdvertisedVolume);
 
     private sealed class FakeRuntimeSettingsLoader : IRuntimeSettingsLoader
     {

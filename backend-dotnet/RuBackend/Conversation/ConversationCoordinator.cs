@@ -146,6 +146,10 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                     .OrderBy(tool => tool.ToolId, StringComparer.Ordinal)
                     .ThenBy(tool => tool.ToolVersion, StringComparer.Ordinal)
                     .ToArray();
+            var advertisedTools = new WorkerAdvertisedTools(
+                modelTools
+                    .Select(tool => (tool.ToolId, tool.ToolVersion))
+                    .ToHashSet());
             var turns = await _sessions.GetContextTurnsAsync(
                 sessionId,
                 MaximumContextTurns,
@@ -222,7 +226,8 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                             "raw_reply",
                             "invalid_worker_response");
                         var actionOutcome = WorkerActionOutcome.ParseOptional(
-                            item.Payload["action_outcome"]);
+                            item.Payload["action_outcome"],
+                            advertisedTools);
                         var (splitVisible, codes, emotion) = _metadata.SplitReply(rawReply, catalog);
                         var fullReply = _metadata.StripVoiceMarkers(splitVisible);
                         await ReconcileFinalVisibleAsync(
@@ -578,7 +583,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                     "system.volume",
                     StringComparison.Ordinal)
                         ? "native_mutation"
-                        : "internal";
+                        : "tool";
                 return new JsonObject
                 {
                     ["tool_id"] = tool.ToolId,

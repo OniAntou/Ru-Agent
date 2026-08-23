@@ -510,6 +510,10 @@ def main(argv: list[str] | None = None) -> int:
     token = os.environ.get("RU_WORKER_TOKEN", "").strip()
     if not token:
         parser.error("RU_WORKER_TOKEN is required")
+    install_diagnostic_logging_handler(
+        get_diagnostic_log_writer(),
+        replace_existing=True,
+    )
     try:
         asyncio.run(serve_runtime_worker(args.host, args.port, token))
     except KeyboardInterrupt:

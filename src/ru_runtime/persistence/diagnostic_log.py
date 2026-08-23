@@ -231,14 +231,22 @@ class DiagnosticLoggingHandler(logging.Handler):
 
 def install_diagnostic_logging_handler(
     writer: Optional[DiagnosticLogWriter] = None,
+    *,
+    replace_existing: bool = False,
 ) -> DiagnosticLoggingHandler:
     root = logging.getLogger()
-    for handler in root.handlers:
-        if isinstance(handler, DiagnosticLoggingHandler):
-            return handler
+    if replace_existing:
+        for handler in list(root.handlers):
+            root.removeHandler(handler)
+            handler.close()
+    else:
+        for handler in root.handlers:
+            if isinstance(handler, DiagnosticLoggingHandler):
+                return handler
 
     handler = DiagnosticLoggingHandler(writer)
     root.addHandler(handler)
+    root.setLevel(logging.INFO)
     return handler
 
 

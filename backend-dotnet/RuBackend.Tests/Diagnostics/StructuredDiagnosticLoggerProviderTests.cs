@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using RuBackend.Diagnostics;
 using Xunit;
 
@@ -6,6 +7,17 @@ namespace RuBackend.Tests.Diagnostics;
 
 public sealed class StructuredDiagnosticLoggerProviderTests
 {
+    [Fact]
+    public void Production_host_owns_only_the_structured_logger_provider()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        _ = factory.CreateClient();
+
+        var providers = factory.Services.GetServices<ILoggerProvider>().ToArray();
+
+        Assert.IsType<StructuredDiagnosticLoggerProvider>(Assert.Single(providers));
+    }
+
     [Fact]
     public void Logger_persists_metadata_without_formatting_message_or_exception_text()
     {

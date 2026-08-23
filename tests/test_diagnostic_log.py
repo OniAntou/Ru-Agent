@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import importlib
 import logging
 import os
 import shutil
 import tempfile
 import time
+import ru_runtime
 from ru_runtime.persistence.diagnostic_log import (
     DiagnosticLogWriter,
     BoundedDiagnosticQueue,
     DiagnosticLoggingHandler,
+    install_diagnostic_logging_handler,
 )
 from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
 
@@ -144,3 +147,45 @@ def test_python_diagnostic_writer_requeues_failed_batches():
         writer.close()
     finally:
         os.unlink(temp_file.name)
+
+
+def test_importing_ru_runtime_never_installs_a_root_console_handler():
+    root = logging.getLogger()
+    package_logger = logging.getLogger("ru_runtime")
+    original_handlers = list(root.handlers)
+    original_level = root.level
+    root.handlers.clear()
+    try:
+        importlib.reload(ru_runtime)
+
+        assert root.handlers == []
+        assert package_logger.handlers
+        assert all(isinstance(handler, logging.NullHandler) for handler in package_logger.handlers)
+    finally:
+        root.handlers[:] = original_handlers
+        root.setLevel(original_level)
+
+
+def test_worker_handler_registration_replaces_freeform_root_handlers():
+    temp_dir = tempfile.mkdtemp(prefix="ru_diag_owner_")
+    writer = DiagnosticLogWriter(log_dir=temp_dir, prefix="worker-")
+    root = logging.getLogger()
+    original_handlers = list(root.handlers)
+    original_level = root.level
+    freeform = logging.StreamHandler()
+    root.handlers[:] = [freeform]
+    try:
+        structured = install_diagnostic_logging_handler(
+            writer,
+            replace_existing=True,
+        )
+
+        assert root.handlers == [structured]
+        assert isinstance(structured, DiagnosticLoggingHandler)
+        assert freeform not in root.handlers
+    finally:
+        root.handlers.clear()
+        root.handlers.extend(original_handlers)
+        root.setLevel(original_level)
+        writer.close()
+        shutil.rmtree(temp_dir, ignore_errors=True)

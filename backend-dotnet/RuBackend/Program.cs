@@ -14,6 +14,7 @@ using RuBackend.Vts;
 using RuBackend.Worker;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Routing.EndpointMiddleware", LogLevel.Warning);
 builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);

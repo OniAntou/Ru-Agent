@@ -919,7 +919,7 @@ def test_capability_absent_volume_request_has_typed_failure_without_model() -> N
     assert runner.calls == []
     assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
     assert replies[-1].payload["raw_reply"] == (
-        "Tính năng điều khiển âm lượng chưa sẵn sàng trong phiên này."
+        "Chế độ Chat chỉ đọc dữ liệu. Bật Agent mode để em điều khiển âm lượng nha."
     )
     assert replies[-1].payload["action_outcome"]["reason_code"] == (
         "capability_unavailable"

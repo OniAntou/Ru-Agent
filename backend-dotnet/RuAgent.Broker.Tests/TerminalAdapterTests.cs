@@ -256,6 +256,7 @@ public sealed class TerminalAdapterTests
                         "request-1",
                         "session-1",
                         "different-hash"),
+                    confineWorkspace: true,
                     CancellationToken.None));
 
             var result = await adapter.RunApprovedShellAsync(
@@ -268,6 +269,7 @@ public sealed class TerminalAdapterTests
                     "request-1",
                     "session-1",
                     argumentsHash),
+                confineWorkspace: true,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
 
@@ -282,11 +284,49 @@ public sealed class TerminalAdapterTests
                         "request-1",
                         "session-1",
                         argumentsHash),
+                    confineWorkspace: true,
                     CancellationToken.None));
         }
         finally
         {
             Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Unrestricted_shell_skips_token_and_honors_cwd_denylist()
+    {
+        var parent = CreateTemporaryRoot("ru-terminal-shell-unconfined-");
+        var workspaceRoot = Path.Combine(parent, "workspace");
+        var outsideDirectory = Path.Combine(parent, "outside");
+        Directory.CreateDirectory(workspaceRoot);
+        Directory.CreateDirectory(outsideDirectory);
+        try
+        {
+            var adapter = CreateAdapter(workspaceRoot);
+            var request = new Func<string, TerminalShellRequest>(workingDirectory => new(
+                "powershell",
+                workingDirectory,
+                "Get-Date",
+                30_000,
+                string.Empty));
+
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                adapter.RunApprovedShellAsync(
+                    request(Environment.GetFolderPath(Environment.SpecialFolder.Windows)),
+                    confineWorkspace: false,
+                    CancellationToken.None));
+
+            var result = await adapter.RunApprovedShellAsync(
+                request(Path.Combine("..", "outside")),
+                confineWorkspace: false,
+                CancellationToken.None);
+            Assert.Equal("succeeded", result.Status);
+            Assert.Equal(Path.GetFullPath(outsideDirectory), result.WorkingDirectory);
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
         }
     }
 

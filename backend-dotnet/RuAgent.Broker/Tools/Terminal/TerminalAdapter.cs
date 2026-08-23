@@ -85,6 +85,7 @@ public sealed class TerminalAdapter
 
     public Task<ProcessRunResult> RunApprovedShellAsync(
         TerminalShellRequest request,
+        bool confineWorkspace,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -93,6 +94,30 @@ public sealed class TerminalAdapter
             throw new ArgumentException("terminal_script_invalid", nameof(request));
         }
 
+        if (confineWorkspace)
+        {
+            EnsureShellApprovalTokenValid(request);
+        }
+
+        var workingDirectory = ResolveWorkingDirectory(request.RelativeWorkingDirectory, confineWorkspace);
+        var shell = _shells.Resolve(request.Shell);
+        var args = shell.PrefixArguments.Concat(
+            request.Shell.Equals("wsl", StringComparison.OrdinalIgnoreCase)
+                ? [workingDirectory, "--", request.Script]
+                : [request.Script]).ToArray();
+        return _runner.RunAsync(
+            new ProcessRunSpec(
+                shell.Executable,
+                args,
+                workingDirectory,
+                SafeEnvironment(),
+                request.TimeoutMs,
+                256 * 1024),
+            cancellationToken);
+    }
+
+    private void EnsureShellApprovalTokenValid(TerminalShellRequest request)
+    {
         if (_approvalTokens is null
             || string.IsNullOrWhiteSpace(request.RequestId)
             || string.IsNullOrWhiteSpace(request.SessionId)
@@ -110,22 +135,6 @@ public sealed class TerminalAdapter
         {
             throw new UnauthorizedAccessException("terminal_shell_approval_invalid");
         }
-
-        var workingDirectory = _workspace.Resolve(request.RelativeWorkingDirectory);
-        var shell = _shells.Resolve(request.Shell);
-        var args = shell.PrefixArguments.Concat(
-            request.Shell.Equals("wsl", StringComparison.OrdinalIgnoreCase)
-                ? [workingDirectory, "--", request.Script]
-                : [request.Script]).ToArray();
-        return _runner.RunAsync(
-            new ProcessRunSpec(
-                shell.Executable,
-                args,
-                workingDirectory,
-                SafeEnvironment(),
-                request.TimeoutMs,
-                256 * 1024),
-            cancellationToken);
     }
 
     private string ResolveWorkingDirectory(string relativeWorkingDirectory, bool confineWorkspace)

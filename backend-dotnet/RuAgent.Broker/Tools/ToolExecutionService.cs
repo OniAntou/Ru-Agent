@@ -558,7 +558,8 @@ public sealed class ToolExecutionService : IToolInvoker
         JsonObject arguments,
         CancellationToken cancellationToken)
     {
-        if (context.ApprovalToken is null)
+        var confineWorkspace = context.ConfinementRequired;
+        if (confineWorkspace && context.ApprovalToken is null)
         {
             throw new UnauthorizedAccessException("terminal_shell_approval_invalid");
         }
@@ -573,12 +574,13 @@ public sealed class ToolExecutionService : IToolInvoker
                 ReadOptionalString(arguments, "working_directory") ?? ".",
                 ReadString(arguments, "script"),
                 Math.Min(context.DeadlineMs, 120_000),
-                context.ApprovalToken,
+                context.ApprovalToken ?? string.Empty,
                 context.RequestId,
                 context.SessionId,
                     argumentsHash),
+            confineWorkspace,
             cancellationToken).ConfigureAwait(false);
-        return ProcessOutcome(result, confineWorkspace: true);
+        return ProcessOutcome(result, confineWorkspace);
     }
 
     private ToolExecutionOutcome ProcessOutcome(ProcessRunResult result, bool confineWorkspace)

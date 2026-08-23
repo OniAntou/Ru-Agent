@@ -59,22 +59,7 @@ public sealed class VolumeTools
         "desktop",
         RiskClass.Reversible,
         new HashSet<string>([ToolScope.SystemWrite], StringComparer.Ordinal),
-        new JsonObject
-        {
-            ["type"] = "object",
-            ["additionalProperties"] = false,
-            ["required"] = new JsonArray("operation"),
-            ["properties"] = new JsonObject
-            {
-                ["operation"] = new JsonObject
-                {
-                    ["type"] = "string",
-                    ["enum"] = new JsonArray("get", "set", "increase", "decrease", "mute", "unmute"),
-                },
-                ["level"] = new JsonObject { ["type"] = "integer", ["minimum"] = 0, ["maximum"] = 100 },
-                ["amount"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = 50 },
-            },
-        },
+        AgentModelToolContractCatalog.Get("system.volume", "1.0.0").InputSchema,
         new JsonObject
         {
             ["type"] = "object",

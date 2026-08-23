@@ -566,19 +566,6 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         }
     }
 
-    private const int HintMaxLength = 200;
-
-    private static readonly Dictionary<string, string> ToolHints = new()
-    {
-        ["files.list"] = """{"path":"thu-muc-trong-workspace"}""",
-        ["files.read"] = """{"path":"ten-file-trong-workspace"}""",
-        ["files.write"] = """{"path":"...","content":"noi-dung-moi"}""",
-        ["files.edit"] = """{"path":"...","old_string":"...","new_string":"..."}""",
-        ["terminal.run"] = """{"command":"git","args":["status"]}""",
-        ["terminal.shell"] = """{"script":"lenh-shell","network":false}""",
-        ["system.volume"] = """{"operation":"set","level":30}""",
-    };
-
     private static JsonObject BuildWorkerSettings(
         SettingsSnapshot settings,
         CapabilityProfile profile,
@@ -613,11 +600,11 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                         "native_mutation",
                         StringComparison.Ordinal),
                 };
-                if (ToolHints.TryGetValue(tool.ToolId, out var hint))
+                var hint = AgentModelToolContractCatalog
+                    .Find(tool.ToolId, tool.ToolVersion)?.Hint;
+                if (hint is not null)
                 {
-                    entry["hint"] = hint.Length > HintMaxLength
-                        ? hint[..HintMaxLength]
-                        : hint;
+                    entry["hint"] = hint;
                 }
 
                 return entry;

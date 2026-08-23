@@ -81,6 +81,30 @@ public sealed class AgentModeProfileTests
     }
 
     [Fact]
+    public async Task Full_frame_uses_the_broker_terminal_run_argument_contract()
+    {
+        var broker = new FakeBroker();
+        var worker = new FakeWorker();
+        using var factory = Factory(worker, broker);
+        using var socket = await ConnectAsync(factory);
+        await SendTextAsync(
+            socket,
+            "{\"prompt\":\"Kiểm tra\",\"session_id\":\"session-full\",\"mode\":\"full\"}");
+        await worker.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await WaitUntilAsync(() => worker.Done.Task.IsCompleted, TimeSpan.FromSeconds(5));
+
+        var tools = Assert.Single(worker.Requests).Settings["model_tools"]!.AsArray();
+        var terminal = tools.Single(
+            item => item!["tool_id"]!.GetValue<string>() == "terminal.run")!;
+        Assert.Equal(
+            """{"executable":"git","arguments":["status"],"working_directory":".","network":false}""",
+            terminal["hint"]!.GetValue<string>());
+
+        await CloseAsync(socket);
+    }
+
+    [Fact]
     public async Task Chat_frame_never_advertises_write_tools()
     {
         var broker = new FakeBroker();
@@ -341,6 +365,13 @@ public sealed class AgentModeProfileTests
             Capability("system.volume", "system.write"),
         ];
 
+        private static readonly IReadOnlyList<AgentToolCapability> FullTools =
+        [
+            .. AgentTools,
+            Capability("terminal.run", "terminal.execute"),
+            Capability("terminal.shell", "terminal.execute"),
+        ];
+
         public bool BlockExecution { get; init; }
         public bool BlockedReached { get; private set; }
         public string? ActiveSessionId { get; private set; }
@@ -358,7 +389,12 @@ public sealed class AgentModeProfileTests
         public Task<IReadOnlyList<AgentToolCapability>> GetCapabilitiesAsync(
             CapabilityProfile profile,
             CancellationToken cancellationToken) => Task.FromResult(
-            profile == CapabilityProfile.Chat ? ChatTools : AgentTools);
+            profile switch
+            {
+                CapabilityProfile.Chat => ChatTools,
+                CapabilityProfile.Agent => AgentTools,
+                _ => FullTools,
+            });
 
         public Task<AgentSessionGrant> OpenSessionAsync(
             string sessionId,

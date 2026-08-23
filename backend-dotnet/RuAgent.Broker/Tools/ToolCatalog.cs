@@ -2,25 +2,14 @@ using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Terminal;
+using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools;
 
 public sealed class ToolCatalog
 {
-    private static readonly string[] BoundIds =
-    [
-        "system.time",
-        "system.status",
-        "system.volume",
-        "app.list",
-        "files.edit",
-        "files.list",
-        "files.read",
-        "files.write",
-        "terminal.run",
-        "terminal.shell",
-        "notes.create",
-    ];
+    private static readonly IReadOnlyList<string> BoundIds =
+        AgentModelToolContractCatalog.ToolIds;
 
     public ToolCatalog(IReadOnlyDictionary<string, ToolExecutor> executors)
     {
@@ -86,7 +75,7 @@ public sealed class ToolCatalog
         adapter,
         risk,
         new HashSet<string>([scope], StringComparer.Ordinal),
-        new JsonObject { ["type"] = "object" },
+        AgentModelToolContractCatalog.Get(id, AgentModelToolContractCatalog.CurrentVersion).InputSchema,
         new JsonObject { ["type"] = "object" },
         30_000,
         256 * 1024,

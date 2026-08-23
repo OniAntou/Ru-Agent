@@ -123,6 +123,23 @@ public sealed class ToolExecutionService : IToolInvoker
                     adapterInvoked: false);
             }
 
+            try
+            {
+                ToolSchemaValidator.Validate(binding.Manifest.InputSchema, arguments);
+            }
+            catch (ToolSchemaException error)
+            {
+                return Result(
+                    request,
+                    ToolResultStatuses.Failed,
+                    new JsonObject(),
+                    error.Code,
+                    "Tool arguments were rejected.",
+                    started,
+                    ToolVerificationStates.NotRequired,
+                    adapterInvoked: false);
+            }
+
             if (decision.RequiresApproval)
             {
                 var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);

@@ -1,5 +1,7 @@
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
+using RuAgent.Protocol;
+using System.Text.Json.Nodes;
 using Xunit;
 
 namespace RuAgent.Broker.Tests;
@@ -88,5 +90,51 @@ public sealed class ToolCatalogTests
         Assert.Equal("native_pending", volume.Availability);
         Assert.True(volume.ModelEnabled);
         Assert.DoesNotContain(capabilities, item => item.ToolId == "app.open");
+    }
+
+    [Fact]
+    public void Terminal_run_schema_requires_the_executor_contract_fields()
+    {
+        var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
+        var schema = catalog.Registry.Get("terminal.run", "1.0.0").Manifest.InputSchema;
+        var valid = new JsonObject
+        {
+            ["executable"] = "git",
+            ["arguments"] = new JsonArray("status"),
+            ["working_directory"] = ".",
+            ["network"] = false,
+        };
+
+        ToolSchemaValidator.Validate(schema, valid);
+        Assert.Equal(
+            "invalid_arguments",
+            Assert.Throws<ToolSchemaException>(() =>
+                ToolSchemaValidator.Validate(schema, new JsonObject())).Code);
+        Assert.Equal(
+            "invalid_arguments",
+            Assert.Throws<ToolSchemaException>(() =>
+                ToolSchemaValidator.Validate(
+                    schema,
+                    new JsonObject
+                    {
+                        ["executable"] = "git",
+                        ["arguments"] = "status",
+                        ["working_directory"] = ".",
+                        ["network"] = false,
+                    })).Code);
+    }
+
+    [Fact]
+    public void Canonical_contract_returns_fresh_schema_and_example_nodes()
+    {
+        var first = AgentModelToolContractCatalog.Get("terminal.run", "1.0.0");
+        var second = AgentModelToolContractCatalog.Get("terminal.run", "1.0.0");
+
+        first.InputSchema.Clear();
+        first.ExampleArguments!["executable"] = "python";
+
+        Assert.Equal("object", second.InputSchema["type"]!.GetValue<string>());
+        Assert.Equal("git", second.ExampleArguments!["executable"]!.GetValue<string>());
+        ToolSchemaValidator.Validate(second.InputSchema, second.ExampleArguments);
     }
 }

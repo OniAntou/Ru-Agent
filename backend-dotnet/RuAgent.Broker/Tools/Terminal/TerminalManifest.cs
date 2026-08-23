@@ -1,4 +1,5 @@
 using RuAgent.Broker.Policy;
+using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools.Terminal;
 
@@ -28,7 +29,7 @@ public static class TerminalManifests
         "terminal",
         RiskClass.Reversible,
         new HashSet<string>([ToolScope.TerminalExecute], StringComparer.Ordinal),
-        new System.Text.Json.Nodes.JsonObject { ["type"] = "object" },
+        AgentModelToolContractCatalog.Get("terminal.run", "1.0.0").InputSchema,
         new System.Text.Json.Nodes.JsonObject { ["type"] = "object" },
         120_000,
         256 * 1024,
@@ -40,6 +41,7 @@ public static class TerminalManifests
         Id = "terminal.shell",
         Risk = RiskClass.Destructive,
         Scopes = new HashSet<string>([ToolScope.TerminalExecute], StringComparer.Ordinal),
+        InputSchema = AgentModelToolContractCatalog.Get("terminal.shell", "1.0.0").InputSchema,
         RequiresApproval = true,
     };
 }

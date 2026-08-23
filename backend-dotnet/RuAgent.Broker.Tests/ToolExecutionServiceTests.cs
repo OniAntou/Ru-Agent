@@ -40,6 +40,27 @@ public sealed class ToolExecutionServiceTests
         var service = new ToolExecutionService(session, workspaceRoot);
         try
         {
+            var malformed = await service.ExecuteAsync(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "malformed-" + Guid.NewGuid().ToString("N"),
+                    AgentMessageTypes.ToolRequest,
+                    "session-terminal-unrestricted",
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "terminal.run",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["arguments"] = new JsonObject { ["network"] = true },
+                    }),
+                CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.Failed, malformed.Status);
+            Assert.Equal("invalid_arguments", malformed.ErrorCode);
+            Assert.False(malformed.AdapterInvoked);
+            Assert.False(malformed.Output.ContainsKey("approval_id"));
+
             var envelope = new AgentEnvelope(
                 AgentEnvelopeCodec.ProtocolVersion,
                 "req-" + Guid.NewGuid().ToString("N"),

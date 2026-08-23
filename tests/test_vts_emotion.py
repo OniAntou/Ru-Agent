@@ -48,7 +48,7 @@ def test_nuanced_vietnamese_emotions():
 
 
 def test_mood_tracker_lifecycle_and_comfort():
-    from ru_runtime.vts.emotion import MoodTracker, MoodTag
+    from ru_runtime.vts.emotion import MoodTag, MoodTracker
 
     tracker = MoodTracker()
     assert tracker.state.current_mood == MoodTag.NEUTRAL
@@ -73,7 +73,7 @@ def test_mood_tracker_lifecycle_and_comfort():
 
 
 def test_mood_tracker_vulnerable_user():
-    from ru_runtime.vts.emotion import MoodTracker, MoodTag
+    from ru_runtime.vts.emotion import MoodTag, MoodTracker
 
     tracker = MoodTracker()
     tracker.observe_user_input("Hôm nay anh mệt mỏi và áp lực quá em ơi")

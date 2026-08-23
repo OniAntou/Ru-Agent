@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from harness.routes import RouteSafety
 from aspnetcore_compatibility_harness import (
     build_runtime_environment,
     classify_route_for_safe_probe,
@@ -14,6 +13,7 @@ from aspnetcore_compatibility_harness import (
     summarize_chat_events,
 )
 from benchmark_aspnetcore_compat import percentile, summarize_samples
+from harness.routes import RouteSafety
 
 
 def test_percentile_uses_linear_interpolation() -> None:

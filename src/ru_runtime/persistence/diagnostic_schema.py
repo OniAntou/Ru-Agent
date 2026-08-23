@@ -5,8 +5,8 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 ALLOWED_LEVELS = {"trace", "debug", "info", "warning", "error", "critical"}
 ALLOWED_STATUSES = {
@@ -53,20 +53,20 @@ class DiagnosticEvent:
     level: str
     component: str
     event_code: str
-    correlation_id: Optional[str] = None
-    duration_ms: Optional[float] = None
-    status: Optional[str] = None
-    error_code: Optional[str] = None
-    exception_kind: Optional[str] = None
-    tool_id: Optional[str] = None
-    tool_version: Optional[str] = None
-    verification_state: Optional[str] = None
-    endpoint_role: Optional[str] = None
-    endpoint_hash: Optional[str] = None
+    correlation_id: str | None = None
+    duration_ms: float | None = None
+    status: str | None = None
+    error_code: str | None = None
+    exception_kind: str | None = None
+    tool_id: str | None = None
+    tool_version: str | None = None
+    verification_state: str | None = None
+    endpoint_role: str | None = None
+    endpoint_hash: str | None = None
 
 
 def sanitize_diagnostic_event(event: DiagnosticEvent) -> DiagnosticEvent:
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     raw_event_id = (event.event_id or "").strip().lower()
     event_id = raw_event_id if SAFE_CODE_PATTERN.match(raw_event_id) else f"evt_{uuid.uuid4().hex}"
 
@@ -84,7 +84,7 @@ def sanitize_diagnostic_event(event: DiagnosticEvent) -> DiagnosticEvent:
     raw_code = (event.event_code or "").strip().lower()
     event_code = raw_code if SAFE_CODE_PATTERN.match(raw_code) else "diagnostic_unclassified"
 
-    correlation_id: Optional[str] = None
+    correlation_id: str | None = None
     if event.correlation_id:
         raw_cid = event.correlation_id.strip()
         if VALID_CORRELATION_PATTERN.match(raw_cid):
@@ -92,28 +92,28 @@ def sanitize_diagnostic_event(event: DiagnosticEvent) -> DiagnosticEvent:
         else:
             correlation_id = f"c_{uuid.uuid4().hex}"
 
-    duration_ms: Optional[float] = None
+    duration_ms: float | None = None
     if event.duration_ms is not None and 0 <= event.duration_ms <= 86400000:
         duration_ms = round(float(event.duration_ms), 2)
 
-    status: Optional[str] = None
+    status: str | None = None
     if event.status:
         raw_status = event.status.strip().lower()
         if raw_status in ALLOWED_STATUSES:
             status = raw_status
 
-    error_code: Optional[str] = None
+    error_code: str | None = None
     if event.error_code:
         raw_err = event.error_code.strip().lower()
         if SAFE_CODE_PATTERN.match(raw_err):
             error_code = raw_err
 
-    exception_kind: Optional[str] = None
+    exception_kind: str | None = None
     if event.exception_kind:
         raw_exc = event.exception_kind.strip().lower()
         exception_kind = raw_exc if raw_exc in ALLOWED_EXCEPTION_KINDS else "unknown"
 
-    tool_id: Optional[str] = None
+    tool_id: str | None = None
     if (
         isinstance(event.tool_id, str)
         and SAFE_TOOL_ID_PATTERN.fullmatch(event.tool_id)
@@ -121,11 +121,11 @@ def sanitize_diagnostic_event(event: DiagnosticEvent) -> DiagnosticEvent:
     ):
         tool_id = event.tool_id
 
-    tool_version: Optional[str] = None
+    tool_version: str | None = None
     if isinstance(event.tool_version, str) and SEMANTIC_VERSION_PATTERN.fullmatch(event.tool_version):
         tool_version = event.tool_version
 
-    verification_state: Optional[str] = None
+    verification_state: str | None = None
     if (
         isinstance(event.verification_state, str)
         and event.verification_state in ALLOWED_VERIFICATION_STATES
@@ -138,7 +138,7 @@ def sanitize_diagnostic_event(event: DiagnosticEvent) -> DiagnosticEvent:
         else None
     )
 
-    endpoint_hash: Optional[str] = None
+    endpoint_hash: str | None = None
     if isinstance(event.endpoint_hash, str) and ENDPOINT_HASH_PATTERN.fullmatch(event.endpoint_hash):
         endpoint_hash = event.endpoint_hash
 
@@ -196,7 +196,7 @@ def serialize_diagnostic_event(event: DiagnosticEvent) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
 
-def deserialize_diagnostic_event(raw_json: str) -> Optional[DiagnosticEvent]:
+def deserialize_diagnostic_event(raw_json: str) -> DiagnosticEvent | None:
     if not raw_json or not raw_json.strip():
         return None
     try:

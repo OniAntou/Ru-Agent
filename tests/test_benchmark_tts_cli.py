@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
 import json
 import os
 import wave
+from pathlib import Path
 
 import pytest
 
-from ru_runtime.voice.omnivoice_tuning import TEXT_AWARE_20_SETTINGS
 from ru_runtime.voice.benchmark import BenchmarkUtterance
+from ru_runtime.voice.omnivoice_tuning import TEXT_AWARE_20_SETTINGS
 from scripts.benchmark_tts import (
     GwenHttpBenchmarkEngine,
     OmniVoiceBenchmarkEngine,

@@ -31,14 +31,14 @@ class MotionConfig:
     breath_rate: float = 0.15
 
     @classmethod
-    def defaults(cls) -> "MotionConfig":
+    def defaults(cls) -> MotionConfig:
         return cls()
 
     def to_dict(self) -> dict[str, float]:
         return {name: getattr(self, name) for name in FLOAT_FIELDS}
 
     @classmethod
-    def from_dict(cls, data: dict) -> "MotionConfig":
+    def from_dict(cls, data: dict) -> MotionConfig:
         values: dict[str, float] = {}
         for name, (minimum, maximum, _default) in FLOAT_FIELDS.items():
             if name not in data:

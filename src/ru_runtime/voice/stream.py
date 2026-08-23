@@ -10,8 +10,8 @@ from time import perf_counter
 from typing import Literal
 
 from .chunks import split_tts_chunks
-from .pacing import parse_voice_pace
 from .observability import VoiceTiming
+from .pacing import parse_voice_pace
 from .runtime import VoiceSelection, voice_selection_by_label
 from .style import ORIGINAL_STYLE_ID, VoiceStyleId
 
@@ -125,19 +125,11 @@ class VoiceStreamCoordinator:
             try:
                 result = function(*args)
             except BaseException as error:
-                try:
-                    loop.call_soon_threadsafe(
-                        self._complete_worker, completion, None, error
-                    )
-                except RuntimeError:
-                    pass
+                with contextlib.suppress(RuntimeError):
+                    loop.call_soon_threadsafe(self._complete_worker, completion, None, error)
                 raise
-            try:
-                loop.call_soon_threadsafe(
-                    self._complete_worker, completion, result, None
-                )
-            except RuntimeError:
-                pass
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(self._complete_worker, completion, result, None)
             return result
 
         task = asyncio.create_task(asyncio.to_thread(run))
@@ -152,7 +144,7 @@ class VoiceStreamCoordinator:
     ) -> None:
         """Release request resources only after an uninterruptible worker ends."""
 
-        def cleanup(completed_worker: asyncio.Task[object]) -> None:
+        def cleanup(completed_worker: asyncio.Future[object]) -> None:
             self._consume_background_worker_result(completed_worker)
             if release_memory_lock and self._memory_lock is not None:
                 with contextlib.suppress(RuntimeError):
@@ -216,14 +208,14 @@ class VoiceStreamCoordinator:
             self._timings.clear()
             self._timing_started.clear()
             self._current_request_id = request_id
-            self._timings[request_id] = VoiceTiming(request_id, selection.profile_id, "vi-normalized-16")
+            self._timings[request_id] = VoiceTiming(
+                request_id, selection.profile_id, "vi-normalized-16"
+            )
             self._timing_started[request_id] = perf_counter()
         worker_task: asyncio.Task[object] | None = None
         worker_completion: asyncio.Future[object] | None = None
         try:
-            worker_task, worker_completion = self._start_worker(
-                self._prepare_speech, selection
-            )
+            worker_task, worker_completion = self._start_worker(self._prepare_speech, selection)
             await asyncio.wait_for(
                 asyncio.shield(worker_task),
                 timeout=self._request_timeout,
@@ -245,10 +237,12 @@ class VoiceStreamCoordinator:
                     speed,
                     voice_style_id,
                 )
-                audio = await asyncio.wait_for(
+                audio_result = await asyncio.wait_for(
                     asyncio.shield(worker_task),
                     timeout=self._request_timeout,
                 )
+                if not isinstance(audio_result, bytes):
+                    raise TypeError("voice worker must return bytes")
                 worker_task = None
                 worker_completion = None
                 if self._is_cancelled(request_id):
@@ -258,12 +252,12 @@ class VoiceStreamCoordinator:
                     "audio",
                     request_id,
                     sequence,
-                    audio=audio,
+                    audio=audio_result,
                     sample_rate=24_000,
                     audio_format="wav",
                 )
             yield VoiceStreamEvent("ended", request_id, len(chunks))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             yield VoiceStreamEvent("failed", request_id, 0, error_code="synthesis_timeout")
         except Exception:
             yield VoiceStreamEvent("failed", request_id, 0, error_code="synthesis_failed")
@@ -272,9 +266,7 @@ class VoiceStreamCoordinator:
                 # A timed-out or externally cancelled await does not terminate
                 # the to_thread operation. Holding the lock prevents a second
                 # local model request from overlapping its GPU work.
-                self._defer_request_cleanup(
-                    worker_completion, request_id, lock_acquired
-                )
+                self._defer_request_cleanup(worker_completion, request_id, lock_acquired)
             else:
                 if worker_completion is not None:
                     self._consume_background_worker_result(worker_completion)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 VTS_ACTION_INSTRUCTION = (
     " You control a connected Live2D avatar. Comply with safe avatar-motion "
     "requests naturally; never claim you cannot move, wave, or gesture. Use "

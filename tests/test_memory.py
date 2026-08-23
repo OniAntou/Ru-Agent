@@ -1,6 +1,6 @@
-from datetime import UTC, datetime, timedelta
 import json
 import threading
+from datetime import UTC, datetime, timedelta
 
 import pytest
 

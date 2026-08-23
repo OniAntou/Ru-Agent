@@ -1,8 +1,9 @@
 from ru_runtime.vts.motion import (
     IDLE_SWAY_AMPLITUDE,
     SPEAKING_SWAY_AMPLITUDE,
-    OrganicSwayController,
     MicroActionScheduler,
+    MouseEyeTracker,
+    OrganicSwayController,
     is_safe_micro_action,
     safe_micro_action_entries,
     sway_value,
@@ -148,9 +149,6 @@ def test_controller_adds_bounded_direction_drift_after_a_short_hold():
         abs(value - sway_value(index * 0.05, speaking=True)) > 0.05
         for index, value in enumerate(values[20:], start=20)
     )
-
-from ru_runtime.vts.motion import MouseEyeTracker
-
 
 def _converged(tracker, x, y, steps=400):
     for _ in range(steps):

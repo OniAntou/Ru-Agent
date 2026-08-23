@@ -1,9 +1,23 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 from ru_runtime.voice import omnivoice_server as server
+
+
+class FakeTemporaryOutput:
+    def __init__(self, path: Path) -> None:
+        self.name = str(path)
+
+    def __enter__(self) -> FakeTemporaryOutput:
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
+
+    def close(self) -> None:
+        return None
 
 
 def test_run_server_refuses_a_second_heavy_instance(monkeypatch) -> None:
@@ -66,11 +80,7 @@ def test_profile_validation_and_release_clear_runtime() -> None:
 
 def test_ai_vy_profile_uses_the_repository_voice_asset(monkeypatch) -> None:
     expected = (
-        Path(server.__file__).resolve().parents[3]
-        / "data"
-        / "voices"
-        / "omnivoice"
-        / "ai_vy.wav"
+        Path(server.__file__).resolve().parents[3] / "data" / "voices" / "omnivoice" / "ai_vy.wav"
     )
     monkeypatch.setattr(Path, "is_file", lambda path: path == expected)
 
@@ -84,9 +94,7 @@ def test_http_contract_does_not_load_for_status_and_validates_tts(tmp_path, monk
     server.release_model()
     audio = tmp_path / "speech.wav"
     audio.write_bytes(b"RIFF")
-    app = server.create_app(
-        synthesize=lambda text, profile, speed, voice_style_id: str(audio)
-    )
+    app = server.create_app(synthesize=lambda text, profile, speed, voice_style_id: str(audio))
     client = app.test_client()
 
     assert client.get("/status").get_json() == {"model_loaded": False}
@@ -103,9 +111,9 @@ def test_http_contract_does_not_load_for_status_and_validates_tts(tmp_path, monk
 
 def test_http_reports_synthesis_error() -> None:
     app = server.create_app(
-        synthesize=lambda text, profile, speed, voice_style_id: (
-            _ for _ in ()
-        ).throw(RuntimeError("broken"))
+        synthesize=lambda text, profile, speed, voice_style_id: (_ for _ in ()).throw(
+            RuntimeError("broken")
+        )
     )
     response = app.test_client().post("/tts", json={"text": "xin chào", "voice_profile": "ru"})
 
@@ -204,9 +212,11 @@ def test_synthesis_uses_native_speed_without_local_waveform_effects(tmp_path, mo
         ),
         raising=False,
     )
-    monkeypatch.setattr(server.tempfile, "NamedTemporaryFile", lambda **kwargs: type("Output", (), {
-        "name": str(tmp_path / "speech.wav"), "close": lambda self: None,
-    })())
+    monkeypatch.setattr(
+        server.tempfile,
+        "NamedTemporaryFile",
+        lambda **kwargs: FakeTemporaryOutput(tmp_path / "speech.wav"),
+    )
     server._voice_clone_prompts.clear()
     server._voice_clone_prompts.update({"ru": "ru-prompt", "ai_vy": "ai-vy-prompt"})
 
@@ -250,8 +260,8 @@ def test_synthesize_fast_bytes_returns_wav_bytes_without_temp_file(monkeypatch) 
     monkeypatch.setattr(server.tempfile, "NamedTemporaryFile", fail_tempfile)
     monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
 
-    import wave as wave_module
     import io
+    import wave as wave_module
 
     buffer = server.synthesize_fast_bytes("Chào anh.", "ru", speed=1.08)
     with wave_module.open(io.BytesIO(buffer), "rb") as output:
@@ -286,9 +296,10 @@ def test_tts_route_returns_bytes_without_temp_file(tmp_path, monkeypatch) -> Non
 
 
 def test_tts_stream_route_uses_bytes_without_temp_files(tmp_path, monkeypatch) -> None:
-    import numpy as np
-    import wave as wave_module
     import io
+    import wave as wave_module
+
+    import numpy as np
 
     def fake_generate(*args, **kwargs):
         return np.zeros((1, 2400), dtype=np.float32)
@@ -328,6 +339,18 @@ def test_omnivoice_server_exposes_no_local_waveform_effects() -> None:
 def test_synthesize_fast_writes_1d_waveform(tmp_path, monkeypatch) -> None:
     import numpy as np
 
+    class FakeInferenceMode:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback) -> None:
+            return None
+
+    class FakeTorch:
+        @staticmethod
+        def inference_mode() -> FakeInferenceMode:
+            return FakeInferenceMode()
+
     class FakeModel:
         def create_voice_clone_prompt(self, **kwargs: str) -> str:
             return "prompt"
@@ -346,11 +369,12 @@ def test_synthesize_fast_writes_1d_waveform(tmp_path, monkeypatch) -> None:
         Path(name).write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
 
     monkeypatch.setattr(server, "warm_model", lambda profile: {"ready": True})
+    monkeypatch.setitem(sys.modules, "torch", FakeTorch())
     monkeypatch.setattr("soundfile.write", fake_write)
     monkeypatch.setattr(
-        server.tempfile, "NamedTemporaryFile", lambda **kwargs: type(
-            "Output", (), {"name": str(tmp_path / "speech.wav"), "close": lambda self: None}
-        )()
+        server.tempfile,
+        "NamedTemporaryFile",
+        lambda **kwargs: FakeTemporaryOutput(tmp_path / "speech.wav"),
     )
 
     path = server.synthesize_fast("Chào anh.", "ru", speed=1.0)
@@ -391,9 +415,7 @@ def test_synthesize_fast_reports_privacy_safe_timing(tmp_path, monkeypatch) -> N
     monkeypatch.setattr(
         server.tempfile,
         "NamedTemporaryFile",
-        lambda **kwargs: type(
-            "Output", (), {"name": str(tmp_path / "speech.wav"), "close": lambda self: None}
-        )(),
+        lambda **kwargs: FakeTemporaryOutput(tmp_path / "speech.wav"),
     )
     server._voice_clone_prompts.clear()
     server._voice_clone_prompts.update({"ru": "ru-prompt"})

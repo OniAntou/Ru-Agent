@@ -9,7 +9,6 @@ from ru_runtime.worker.v1.http import (
     dispatch_runtime_request,
 )
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -22,7 +21,7 @@ def test_runtime_route_table_matches_the_frozen_contract() -> None:
 
     expected = {(route["method"], route["path"]) for route in contract["routes"]}
 
-    assert RUNTIME_ROUTE_KEYS == expected
+    assert expected == RUNTIME_ROUTE_KEYS
     assert len(expected) == 27
 
 

@@ -4,7 +4,6 @@ import socket
 from pathlib import Path
 from urllib.request import urlopen, urlretrieve
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TARGET = PROJECT_ROOT / "data" / "voices" / "omnivoice" / "ai_vy.wav"
 SOURCE = "https://huggingface.co/g-group-ai-lab/gwen-tts-0.6B/resolve/main/data/ref_audio/ai_vy.wav"

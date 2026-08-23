@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import contextlib
-from contextlib import asynccontextmanager
 import hmac
 import json
 import logging
@@ -13,16 +11,13 @@ import socket
 import subprocess
 import threading
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import Request as UrlRequest, urlopen
+from urllib.request import Request as UrlRequest
+from urllib.request import urlopen
 
-from ru_runtime.persistence.atomic_write import atomic_write_json
-from ru_runtime.persistence.canonical import canonical_data_root
-from ru_runtime.worker.v1.core import RuRuntimeCore
-from ru_runtime.generation.chat import ChatTurn
-from ru_runtime.voice.gpu_lifecycle import GpuLifecycle, VoiceServiceController
 from ru_runtime.generation.runner import (
     ALL_BACKENDS,
     BACKEND_CUSTOM,
@@ -30,40 +25,23 @@ from ru_runtime.generation.runner import (
     BACKEND_LMSTUDIO,
     BACKEND_OLLAMA,
     BACKEND_OPENCODE,
-    OPENAI_COMPATIBLE_BACKENDS,
 )
-from ru_runtime.memory.store import MemoryKind
 from ru_runtime.memory.extraction import is_sensitive_or_unsafe
-from ru_runtime.memory.learning import ExtractFact, extract_facts_with_llm
-from ru_runtime.generation.openai import OpenAIGenerationCancelled
+from ru_runtime.memory.learning import extract_facts_with_llm
 from ru_runtime.observation.screen_reaction import (
     ReactionCoordinator,
-    ReactionRequest,
-    VisionObservation,
-    format_observation_prompt,
 )
-from ru_runtime.speech.runtime import (
-    CapturedAudio,
-    SpeechEngineConfig,
-    SpeechRecognitionError,
-    build_speech_recognizer,
-)
-from ru_runtime.vts.overlay import start_overlay
-from ru_runtime.vts.actions import VtsActions
-from ru_runtime.vts.catalog import (
-    VtsCatalog,
-    catalog_instruction,
-    split_reply_metadata,
-)
-from ru_runtime.vts.config import MotionConfig
-from ru_runtime.vts.manager import VTSManager
-from ru_runtime.voice.pacing import effective_voice_speed, voice_pace_for
+from ru_runtime.persistence.atomic_write import atomic_write_json
+from ru_runtime.persistence.canonical import canonical_data_root
+from ru_runtime.voice.gpu_lifecycle import GpuLifecycle, VoiceServiceController
 from ru_runtime.voice.runtime import (
     VOICE_SELECTIONS,
+    VoiceSelection,
+    VoiceServiceConfig,
+    validate_voice_environment,
     voice_selection_by_label,
     voice_selection_from_saved,
     voice_service_config,
-    validate_voice_environment,
 )
 from ru_runtime.voice.style import (
     ORIGINAL_STYLE_ID,
@@ -71,8 +49,16 @@ from ru_runtime.voice.style import (
     voice_style_by_id,
     voice_style_from_saved,
 )
+from ru_runtime.vts.catalog import (
+    VtsCatalog,
+)
+from ru_runtime.vts.config import MotionConfig
+from ru_runtime.vts.manager import VTSManager
+from ru_runtime.vts.overlay import start_overlay
+from ru_runtime.worker.v1.core import RuRuntimeCore
 
 logger = logging.getLogger(__name__)
+
 
 def _valid_desktop_token(candidate: str) -> bool:
     # Read the token on every call because local harnesses may populate the
@@ -83,9 +69,7 @@ def _valid_desktop_token(candidate: str) -> bool:
         # Fail closed: an unconfigured backend must not answer local callers
         # without credentials (any local process could otherwise drive the
         # model, TTS, or screen observations).
-        logger.warning(
-            "API auth is disabled: RU_DESKTOP_TOKEN is not set; refusing requests"
-        )
+        logger.warning("API auth is disabled: RU_DESKTOP_TOKEN is not set; refusing requests")
         return False
     return hmac.compare_digest(candidate, token)
 
@@ -93,11 +77,7 @@ def _valid_desktop_token(candidate: str) -> bool:
 # ── paths / files ─────────────────────────────────────────────────────
 
 _configured_data_root = os.environ.get("RU_DATA_ROOT", "").strip()
-DATA_ROOT = (
-    Path(_configured_data_root)
-    if _configured_data_root
-    else canonical_data_root()
-)
+DATA_ROOT = Path(_configured_data_root) if _configured_data_root else canonical_data_root()
 SETTINGS_FILE = DATA_ROOT / "settings.json"
 HISTORY_FILE = DATA_ROOT / "history.json"
 SESSION_DIR = DATA_ROOT / "sessions"
@@ -194,13 +174,17 @@ _SCREEN_REACTIONS = ReactionCoordinator()
 _PENDING_REACTION_TEXT: dict[str, tuple[str, float]] = {}
 _SCREEN_OBSERVER_LOOP = None
 
+
 def get_screen_observer_loop():
     global _SCREEN_OBSERVER_LOOP
     if _SCREEN_OBSERVER_LOOP is None:
         import sys
+
         from ru_runtime.observation.observer_loop import ScreenObserverLoop
+
         _SCREEN_OBSERVER_LOOP = ScreenObserverLoop(sys.modules[__name__])
     return _SCREEN_OBSERVER_LOOP
+
 
 _VTS_MANAGER: VTSManager | None = None
 _VTS_THREAD: threading.Thread | None = None
@@ -211,8 +195,9 @@ core = RuRuntimeCore()
 
 # ── helpers ───────────────────────────────────────────────────────────
 
+
 @contextlib.contextmanager
-def _chat_turn_locks() -> contextlib.AbstractContextManager[None]:
+def _chat_turn_locks() -> Iterator[None]:
     """Hold both turn locks for the full duration of a chat generation.
 
     Observations and voice streams check these locks to decide whether a
@@ -229,14 +214,25 @@ def _chat_turn_locks() -> contextlib.AbstractContextManager[None]:
         for lock in reversed(acquired):
             lock.release()
 
+
 def _resolve_backend(value: str | None) -> str | None:
     if value is None:
         return None
     return _BACKEND_ALIASES.get(value, value)
 
 
+def _text_setting(settings: dict, key: str) -> str:
+    value = settings.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    default = _DEFAULT_SETTINGS.get(key)
+    if not isinstance(default, str):
+        raise RuntimeError(f"setting {key!r} does not have a text default")
+    return default
+
+
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _session_id_is_valid(session_id: str) -> bool:
@@ -260,6 +256,7 @@ def _valid_session_messages(messages: object) -> list[dict]:
 
 
 _SESSION_LOCK = threading.Lock()
+
 
 def _load_session_file(session_id: str) -> dict | None:
     if not _session_id_is_valid(session_id):
@@ -318,7 +315,7 @@ def effective_settings() -> dict:
         return _effective_settings_unlocked()
 
 
-def _merge_settings(mutate: "Callable[[dict], None]") -> None:
+def _merge_settings(mutate: Callable[[dict], None]) -> None:
     """Read-modify-write of the settings file under one lock so concurrent
     updates (settings API + VTS state + motion config) cannot clobber each other."""
     with _SETTINGS_LOCK:
@@ -383,14 +380,13 @@ def _effective_settings_unlocked() -> dict:
         merged["subtitle_pos_x"] = _DEFAULT_SETTINGS["subtitle_pos_x"]
     if not isinstance(merged.get("subtitle_pos_y"), int):
         merged["subtitle_pos_y"] = _DEFAULT_SETTINGS["subtitle_pos_y"]
-    merged["voice_style_id"] = voice_style_from_saved(
-        merged.get("voice_style_id")
-    ).id
+    merged["voice_style_id"] = voice_style_from_saved(merged.get("voice_style_id")).id
     return merged
 
 
 def _new_session_id() -> str:
     from uuid import uuid4
+
     return uuid4().hex
 
 
@@ -439,10 +435,8 @@ def migrate_legacy_history() -> None:
     if not _session_append_messages(session_id, messages):
         logger.warning("Could not migrate legacy history into session %s", session_id)
         return
-    try:
+    with contextlib.suppress(OSError):
         HISTORY_FILE.unlink()
-    except OSError:
-        pass
     logger.info("Migrated legacy history into session %s (%d messages)", session_id, len(messages))
 
 
@@ -455,19 +449,21 @@ def _strip_voice_markers(text: str) -> str:
     return _VOICE_MARKERS_RE.sub(" ", text).strip()
 
 
-def _voice_selection() -> "VoiceSelection":
+def _voice_selection() -> VoiceSelection:
     label = effective_settings()["voice_label"]
     return voice_selection_from_saved(label)
 
 
-def _voice_config() -> "VoiceServiceConfig":
+def _voice_config() -> VoiceServiceConfig:
     return voice_service_config(_voice_selection(), PROJECT_ROOT)
 
 
 def voice_available() -> bool:
     config = _voice_config()
     try:
-        with socket.create_connection((config.host, config.port), timeout=_VOICE_PROBE_TIMEOUT_SECONDS):
+        with socket.create_connection(
+            (config.host, config.port), timeout=_VOICE_PROBE_TIMEOUT_SECONDS
+        ):
             return True
     except OSError:
         return False
@@ -497,9 +493,7 @@ def ensure_voice_service() -> None:
         elif config.python_path.is_file():
             executable = str(config.python_path)
         else:
-            raise FileNotFoundError(
-                f"OmniVoice Python interpreter not found: {config.python_path}"
-            )
+            raise FileNotFoundError(f"OmniVoice Python interpreter not found: {config.python_path}")
         creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         startup_info = None
         if os.name == "nt":
@@ -515,18 +509,22 @@ def ensure_voice_service() -> None:
             startupinfo=startup_info,
         )
         if _VOICE_PROCESS.stderr is not None:
+
             def _drain_voice_stderr(pipe):
                 try:
                     for line in iter(pipe.readline, b""):
-                        logger.debug("OmniVoice stderr: %s", line.decode("utf-8", errors="replace").rstrip())
+                        logger.debug(
+                            "OmniVoice stderr: %s", line.decode("utf-8", errors="replace").rstrip()
+                        )
                 except Exception:
                     pass
                 finally:
-                    try:
+                    with contextlib.suppress(Exception):
                         pipe.close()
-                    except Exception:
-                        pass
-            threading.Thread(target=_drain_voice_stderr, args=(_VOICE_PROCESS.stderr,), daemon=True).start()
+
+            threading.Thread(
+                target=_drain_voice_stderr, args=(_VOICE_PROCESS.stderr,), daemon=True
+            ).start()
         deadline = time.monotonic() + VOICE_START_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if voice_available():
@@ -684,8 +682,7 @@ def apply_saved_settings() -> str:
         settings = {
             **settings,
             "backend": BACKEND_OPENCODE,
-            "opencode_model": settings.get("opencode_model")
-            or _DEFAULT_SETTINGS["opencode_model"],
+            "opencode_model": settings.get("opencode_model") or _DEFAULT_SETTINGS["opencode_model"],
         }
         backend = BACKEND_OPENCODE
     logger.info("Loading settings: backend=%s, raw_backend=%s", backend, settings.get("backend"))
@@ -693,8 +690,10 @@ def apply_saved_settings() -> str:
         return f"No persisted settings to apply (backend={backend!r})"
     api_key = ""
     if backend in (BACKEND_OPENCODE, BACKEND_KILO, BACKEND_CUSTOM):
-        store = core.opencode_cred if backend == BACKEND_OPENCODE else (
-            core.kilo_cred if backend == BACKEND_KILO else core.custom_cred
+        store = (
+            core.opencode_cred
+            if backend == BACKEND_OPENCODE
+            else (core.kilo_cred if backend == BACKEND_KILO else core.custom_cred)
         )
         try:
             api_key = store.get_key() or ""
@@ -703,37 +702,40 @@ def apply_saved_settings() -> str:
     core.runner.select_backend(backend)
 
     model_name = ""
-    base_url = None
+    base_url: str | None = None
     if backend == BACKEND_OPENCODE:
-        model_name = settings.get("opencode_model") or _DEFAULT_SETTINGS["opencode_model"]
+        model_name = _text_setting(settings, "opencode_model")
     elif backend == BACKEND_KILO:
-        model_name = settings.get("kilo_model") or _DEFAULT_SETTINGS["kilo_model"]
+        model_name = _text_setting(settings, "kilo_model")
         logger.info("Using Kilo model: %s", model_name)
     elif backend == BACKEND_OLLAMA:
-        model_name = settings.get("ollama_model") or _DEFAULT_SETTINGS["ollama_model"]
-        base_url = settings.get("ollama_url", _DEFAULT_SETTINGS["ollama_url"])
+        model_name = _text_setting(settings, "ollama_model")
+        base_url = _text_setting(settings, "ollama_url")
         logger.info("Using Ollama model: %s (%s)", model_name, base_url)
     elif backend == BACKEND_LMSTUDIO:
-        model_name = settings.get("lmstudio_model") or _DEFAULT_SETTINGS["lmstudio_model"]
-        base_url = settings.get("lmstudio_url", _DEFAULT_SETTINGS["lmstudio_url"])
+        model_name = _text_setting(settings, "lmstudio_model")
+        base_url = _text_setting(settings, "lmstudio_url")
         logger.info("Using LM Studio model: %s (%s)", model_name, base_url)
     elif backend == BACKEND_CUSTOM:
-        model_name = settings.get("custom_model") or _DEFAULT_SETTINGS["custom_model"]
-        base_url = settings.get("custom_url", _DEFAULT_SETTINGS["custom_url"])
+        model_name = _text_setting(settings, "custom_model")
+        base_url = _text_setting(settings, "custom_url")
         logger.info("Using Custom OpenAI model: %s (%s)", model_name, base_url)
     else:
-        model_name = _DEFAULT_SETTINGS["opencode_model"]
+        model_name = _text_setting(settings, "opencode_model")
         logger.info("Using cloud default model after backend migration: %s", model_name)
 
     logger.info("Loading cloud-compatible runtime with model_name=%s", model_name)
 
-    return core.runner.load(
+    load_result = core.runner.load(
         api_key=api_key,
         model_name=model_name,
-        api_variant=settings.get("api_variant", _DEFAULT_SETTINGS["api_variant"]),
+        api_variant=_text_setting(settings, "api_variant"),
         kilo_reasoning_enabled=effective_settings()["kilo_reasoning_enabled"],
         base_url=base_url,
     )
+    if not isinstance(load_result, str):
+        raise RuntimeError("runtime load returned a non-text result")
+    return load_result
 
 
 def _apply_settings_on_startup() -> None:
@@ -781,7 +783,9 @@ def _stop_owned_voice_service() -> None:
                 err_text = ""
         else:
             err_text = ""
-        logger.warning("Voice process exited with code %s: %s", process.returncode, err_text.strip())
+        logger.warning(
+            "Voice process exited with code %s: %s", process.returncode, err_text.strip()
+        )
 
 
 def _shutdown_runtime() -> None:
@@ -789,10 +793,8 @@ def _shutdown_runtime() -> None:
     _MEMORY_WORKER_STARTED.clear()
     global _MEMORY_THREAD
     _invalidate_memory_queue()
-    try:
+    with contextlib.suppress(queue.Full):
         _MEMORY_QUEUE.put_nowait(_MEMORY_SENTINEL)
-    except queue.Full:
-        pass
     memory_thread = _MEMORY_THREAD
     if memory_thread is not None and memory_thread.is_alive():
         try:
@@ -814,6 +816,7 @@ def _shutdown_runtime() -> None:
 
 
 # ── VTS helpers ───────────────────────────────────────────────────────
+
 
 def _vts_manager() -> VTSManager:
     global _VTS_MANAGER, _VTS_THREAD
@@ -898,6 +901,7 @@ def _restore_vts_gui_state(manager) -> None:
 
 # ── memory / self-learning ────────────────────────────────────────────
 
+
 def _memory_turn_generation_is_current(generation: int) -> bool:
     with _MEMORY_QUEUE_LOCK:
         return generation == _MEMORY_QUEUE_GENERATION
@@ -913,10 +917,8 @@ def _invalidate_memory_queue() -> None:
         except queue.Empty:
             return
         else:
-            try:
+            with contextlib.suppress(ValueError):
                 _MEMORY_QUEUE.task_done()
-            except ValueError:
-                pass
 
 
 def _process_memory_turn(prompt: str, reply: str, generation: int | None = None) -> None:
@@ -925,7 +927,9 @@ def _process_memory_turn(prompt: str, reply: str, generation: int | None = None)
         return
     settings = effective_settings()
     hosted = core.runner.backend in (BACKEND_OPENCODE, BACKEND_KILO)
-    if hosted and not settings.get("share_memory_with_cloud", _DEFAULT_SETTINGS["share_memory_with_cloud"]):
+    if hosted and not settings.get(
+        "share_memory_with_cloud", _DEFAULT_SETTINGS["share_memory_with_cloud"]
+    ):
         logger.debug("Skipping hosted self-learning because cloud-memory sharing is disabled")
         return
     if is_sensitive_or_unsafe(prompt) or is_sensitive_or_unsafe(reply):
@@ -940,12 +944,14 @@ def _process_memory_turn(prompt: str, reply: str, generation: int | None = None)
         facts = extract_facts_with_llm(
             prompt,
             reply,
-            lambda fact_prompt, max_new_tokens, temperature, top_k, allow_web_search: core.runner.generate_reply(
-                prompt=fact_prompt,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_k=top_k,
-                allow_web_search=allow_web_search,
+            lambda fact_prompt, max_new_tokens, temperature, top_k, allow_web_search: (
+                core.runner.generate_reply(
+                    prompt=fact_prompt,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_k=top_k,
+                    allow_web_search=allow_web_search,
+                )
             ),
         )
         store = core.get_memory_store()
@@ -982,10 +988,8 @@ def _memory_learner_loop() -> None:
         except Exception as error:
             logger.warning("Self-learning worker error: %s", error)
         finally:
-            try:
+            with contextlib.suppress(ValueError):
                 _MEMORY_QUEUE.task_done()
-            except ValueError:
-                pass
 
 
 def _start_memory_learner() -> None:
@@ -994,5 +998,7 @@ def _start_memory_learner() -> None:
         return
     _MEMORY_STOP.clear()
     _MEMORY_WORKER_STARTED.set()
-    _MEMORY_THREAD = threading.Thread(target=_memory_learner_loop, name="memory-learner", daemon=True)
+    _MEMORY_THREAD = threading.Thread(
+        target=_memory_learner_loop, name="memory-learner", daemon=True
+    )
     _MEMORY_THREAD.start()

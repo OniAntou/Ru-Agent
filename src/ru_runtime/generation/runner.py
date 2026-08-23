@@ -1,4 +1,24 @@
 import logging
+from collections.abc import Sequence
+
+from ru_runtime.generation.chat import ChatTurn
+from ru_runtime.generation.openai import (
+    KILO_GATEWAY_BASE_URL,
+    LMSTUDIO_BASE_URL,
+    OLLAMA_BASE_URL,
+    OPENCODE_BASE_URL,
+    OpenAIRuntime,
+)
+from ru_runtime.generation.orchestration import execute_reply
+from ru_runtime.generation.search import perform_web_search
+from ru_runtime.policy.style import (
+    RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT,
+    RU_CLOUD_SYSTEM_PROMPT,
+    RU_SCREEN_REACTION_SYSTEM_PROMPT,
+    ru_action_selection_prompt,
+)
+from ru_runtime.voice.pacing import VOICE_PACE_INSTRUCTION
+from ru_runtime.vts.actions import VTS_ACTION_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 
@@ -20,25 +40,6 @@ ALL_BACKENDS = OPENAI_COMPATIBLE_BACKENDS
 KILO_SCREEN_REACTION_MODEL = "inclusionai/ling-3.0-flash:free"
 KILO_SCREEN_REACTION_FALLBACK_MODEL = "openrouter/free"
 _IMMEDIATE_KILO_FALLBACK_STATUSES = ("HTTP 429", "HTTP 502", "HTTP 503", "HTTP 504")
-
-from ru_runtime.generation.chat import ChatTurn
-from ru_runtime.generation.openai import (
-    OpenAIRuntime,
-    OPENCODE_BASE_URL,
-    KILO_GATEWAY_BASE_URL,
-    OLLAMA_BASE_URL,
-    LMSTUDIO_BASE_URL,
-)
-from ru_runtime.policy.style import (
-    RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT,
-    RU_CLOUD_SYSTEM_PROMPT,
-    RU_SCREEN_REACTION_SYSTEM_PROMPT,
-    ru_action_selection_prompt,
-)
-from ru_runtime.generation.orchestration import execute_reply
-from ru_runtime.generation.search import perform_web_search
-from ru_runtime.vts.actions import VTS_ACTION_INSTRUCTION
-from ru_runtime.voice.pacing import VOICE_PACE_INSTRUCTION
 
 
 class ModelRunner:
@@ -84,14 +85,21 @@ class ModelRunner:
                     default_model = "default"
 
                 effective_model = model_name or default_model
-                effective_key = api_key or ("local" if self.backend in (BACKEND_OLLAMA, BACKEND_LMSTUDIO) else "")
+                effective_key = api_key or (
+                    "local" if self.backend in (BACKEND_OLLAMA, BACKEND_LMSTUDIO) else ""
+                )
                 self.openai_runtime = OpenAIRuntime(
                     api_key=effective_key,
                     base_url=target_url,
                     model_name=effective_model,
                     api_variant=api_variant,
                 )
-                logger.info("Loaded %s runtime with model: %s (%s)", self.backend, effective_model, target_url)
+                logger.info(
+                    "Loaded %s runtime with model: %s (%s)",
+                    self.backend,
+                    effective_model,
+                    target_url,
+                )
                 return f"Ready ({self.backend} API)"
             raise ValueError(f"unsupported backend: {self.backend}")
         except Exception as error:
@@ -137,7 +145,7 @@ class ModelRunner:
         max_new_tokens: int,
         temperature: float,
         top_k: int,
-        turns_history: list[ChatTurn] | None = None,
+        turns_history: Sequence[ChatTurn] | None = None,
         memory_context: str | None = None,
         mood_context: str | None = None,
         allow_web_search: bool = False,
@@ -187,21 +195,12 @@ class ModelRunner:
         is_cancelled,
         on_complete_timing=None,
     ) -> str:
-        if (
-            self.backend not in (BACKEND_OPENCODE, BACKEND_KILO)
-            or self.openai_runtime is None
-        ):
-            raise RuntimeError(
-                "Screen reactions require an active OpenCode or Kilo cloud backend."
-            )
-        system = (
-            RU_SCREEN_REACTION_SYSTEM_PROMPT
-            + vts_instruction
-        )
+        if self.backend not in (BACKEND_OPENCODE, BACKEND_KILO) or self.openai_runtime is None:
+            raise RuntimeError("Screen reactions require an active OpenCode or Kilo cloud backend.")
+        system = RU_SCREEN_REACTION_SYSTEM_PROMPT + vts_instruction
         model_override = (
             KILO_SCREEN_REACTION_MODEL
-            if self.backend == BACKEND_KILO
-            and self.openai_runtime.model_name == "kilo-auto/free"
+            if self.backend == BACKEND_KILO and self.openai_runtime.model_name == "kilo-auto/free"
             else None
         )
         reasoning_effort_override = "none" if model_override is not None else None

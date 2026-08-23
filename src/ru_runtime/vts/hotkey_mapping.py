@@ -114,13 +114,13 @@ def resolve_hotkey(
     custom_config: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[str | None, str | None, float]:
     """Resolve an action to (primary_hotkey_name, reset_hotkey_name, reset_delay).
-    
+
     Order of precedence:
     1. Custom mapping in vts_hotkeys.json (by exact name or fuzzy search).
     2. Default multi-language aliases (exact match then substring match).
     """
     config = custom_config if custom_config is not None else load_custom_hotkeys()
-    
+
     # 1. Check custom overrides
     if action in config:
         entry = config[action]

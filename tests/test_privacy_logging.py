@@ -2,22 +2,19 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+
 import pytest
 
+from ru_runtime.persistence.activity_outbox import (
+    format_activity_preview,
+)
+from ru_runtime.persistence.diagnostic_log import (
+    DiagnosticLogWriter,
+)
 from ru_runtime.persistence.diagnostic_schema import (
     ALLOWED_EVENT_CODES,
     DiagnosticEvent,
     serialize_diagnostic_event,
-    sanitize_diagnostic_event,
-)
-from ru_runtime.persistence.diagnostic_log import (
-    DiagnosticLogWriter,
-    reset_global_diagnostic_writer,
-)
-from ru_runtime.persistence.activity_outbox import (
-    ActivityOutboxWriter,
-    format_activity_preview,
-    sanitize_activity_event,
 )
 
 
@@ -59,7 +56,7 @@ def test_privacy_scan_injected_action_values_never_survive_deserialization():
         "level": "error",
         "component": "worker.runtime",
         "event_code": "tool.receipt.rejected",
-        **{key: r"Bearer C:\secret https://example.com" for key in forbidden_keys},
+        **dict.fromkeys(forbidden_keys, r"Bearer C:\secret https://example.com"),
     }
     from ru_runtime.persistence.diagnostic_schema import deserialize_diagnostic_event
 

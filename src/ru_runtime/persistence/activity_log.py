@@ -7,17 +7,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import List, Optional
 
 from ru_runtime.persistence.activity_outbox import (
-    get_outbox_file,
     get_activity_outbox_writer,
-    sanitize_activity_event,
+    get_outbox_file,
 )
 
 logger = logging.getLogger("ru_runtime.persistence.activity_log")
@@ -31,7 +28,7 @@ def get_activity_log_file() -> Path:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def append(event: dict) -> None:
@@ -52,7 +49,7 @@ def clear() -> None:
             logger.warning("activity_log clear failed: %s", e)
 
 
-def read(limit: int = 200) -> List[dict]:
+def read(limit: int = 200) -> list[dict]:
     limit = max(1, min(int(limit), 500))
     writer = get_activity_outbox_writer()
     writer.flush(timeout_seconds=1.0)
@@ -60,7 +57,7 @@ def read(limit: int = 200) -> List[dict]:
     target = get_activity_log_file()
     if not target.is_file():
         return []
-    events: List[dict] = []
+    events: list[dict] = []
     with _log_lock:
         try:
             with target.open("r", encoding="utf-8") as fh:

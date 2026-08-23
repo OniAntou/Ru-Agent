@@ -7,7 +7,6 @@ from typing import Literal
 
 from ru_runtime.generation.tool_calls import ToolCall
 
-
 VolumeIntentKind = Literal["not_action", "clarification_required", "execute"]
 
 VOLUME_TOOL_ID = "system.volume"

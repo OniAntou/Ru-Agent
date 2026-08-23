@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -60,10 +61,8 @@ def atomic_write_json(
             os.replace(tmp_path, str(path))
             _restore_mode(path, existing_mode)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(fd)
-            except OSError:
-                pass
             _cleanup_tmp(tmp_path)
             raise
 
@@ -87,16 +86,12 @@ def atomic_write_text(path: str | Path, content: str) -> None:
             os.replace(tmp_path, str(path))
             _restore_mode(path, existing_mode)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(fd)
-            except OSError:
-                pass
             _cleanup_tmp(tmp_path)
             raise
 
 
 def _cleanup_tmp(tmp_path: str) -> None:
-    try:
+    with contextlib.suppress(OSError):
         Path(tmp_path).unlink(missing_ok=True)
-    except OSError:
-        pass

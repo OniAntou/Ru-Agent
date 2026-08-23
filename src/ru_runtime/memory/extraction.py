@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import PureWindowsPath
 
 from ru_runtime.policy.text import normalize_text
+
 from .store import MemoryKind
 
 # Shared with StructuredMemoryStore.retrieve() in memory.py (inline pattern there).

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import os
 import secrets
@@ -12,18 +13,16 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote
 
 import httpx
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from .artifacts import build_artifact
 from .broker_probe import probe_approval_lifecycle
-from .deterministic_worker import collect_deterministic_stream
 from .model import CheckResult
 from .ports import PortLease, wait_for_ports_closed
 from .processes import ChildLifecycle, start_owned_child, stop_owned_child
@@ -183,7 +182,7 @@ class HarnessSession:
         self._cleanup_result: dict[str, bool] | None = None
 
     @classmethod
-    def for_test(cls, readiness: bool) -> "HarnessSession":
+    def for_test(cls, readiness: bool) -> HarnessSession:
         return cls(
             Path(__file__).resolve().parents[2],
             readiness_override=readiness,
@@ -200,7 +199,7 @@ class HarnessSession:
         timeout_seconds: float = 180.0,
     ) -> dict[str, object]:
         started = time.perf_counter()
-        started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        started_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         checks: list[CheckResult] = []
         errors: list[object] = []
         try:
@@ -239,7 +238,7 @@ class HarnessSession:
                     "failed",
                     0.0,
                     reason="cleanup_failure",
-                    details={key: value for key, value in cleanup.items()},
+                    details=dict(cleanup.items()),
                 )
             )
         return build_artifact(
@@ -593,10 +592,8 @@ class HarnessSession:
                 shutil.rmtree(self._workspace_root)
             except OSError:
                 workspace_root_removed = False
-        try:
+        with contextlib.suppress(OSError):
             self._temporary.cleanup()
-        except OSError:
-            pass
         temporary_root_removed = not self._temporary_root.exists()
         self._closed = True
         self._cleanup_result = {
@@ -976,7 +973,7 @@ class HarnessSession:
                     "protocol_version": 1,
                     "session_root": str(session_root.resolve()),
                     "expires_at": (
-                        datetime.now(timezone.utc) + timedelta(minutes=30)
+                        datetime.now(UTC) + timedelta(minutes=30)
                     ).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
                 },
                 ensure_ascii=False,

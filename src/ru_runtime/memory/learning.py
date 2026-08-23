@@ -6,8 +6,8 @@ import math
 import re
 from dataclasses import dataclass
 
-from ru_runtime.memory.store import MemoryKind
 from ru_runtime.memory.extraction import is_sensitive_or_unsafe
+from ru_runtime.memory.store import MemoryKind
 
 logger = logging.getLogger(__name__)
 

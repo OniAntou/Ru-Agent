@@ -140,7 +140,7 @@ def test_search_error_returns_graceful_fallback() -> None:
         call_count += 1
         if call_count == 1:
             return "[SEARCH: hacker news]"
-        return f"Generated after search failure"
+        return "Generated after search failure"
 
     def failing_search(query: str) -> str:
         raise ConnectionError("network down")

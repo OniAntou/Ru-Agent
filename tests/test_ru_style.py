@@ -1,4 +1,3 @@
-import pytest
 
 from ru_runtime.policy.style import (
     RU_CLOUD_SYSTEM_PROMPT,

@@ -5,9 +5,9 @@ import io
 import wave
 
 from harness.deterministic_worker import (
+    _voice,
     collect_deterministic_stream,
     deterministic_worker_dependencies,
-    _voice,
 )
 from harness.voice_fixtures import (
     build_synthetic_wav,

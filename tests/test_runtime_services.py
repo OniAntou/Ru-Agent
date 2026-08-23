@@ -11,7 +11,6 @@ from ru_runtime.worker.v1 import runtime_services as shared
 from ru_runtime.worker.v1 import vts as runtime_vts
 from ru_runtime.worker.v1.http import dispatch_runtime_request
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -79,12 +78,18 @@ def test_voice_status_uses_saved_runtime_settings(monkeypatch) -> None:
 
 
 def test_transcribe_returns_text_without_exposing_audio(monkeypatch) -> None:
+    from ru_runtime.worker.v1 import voice
+
     class Recognizer:
         def recognize(self, audio):
             assert audio.sample_rate_hz == 16_000
             return "xin chao"
 
-    monkeypatch.setattr(shared, "build_speech_recognizer", lambda _config: Recognizer())
+    monkeypatch.setattr(
+        voice,
+        "build_speech_recognizer",
+        lambda _config: Recognizer(),
+    )
     audio = base64.b64encode(b"\x00\x00\x00\x00").decode("ascii")
 
     response = dispatch_runtime_request(

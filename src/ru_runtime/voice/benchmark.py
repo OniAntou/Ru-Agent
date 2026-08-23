@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -10,7 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
 from typing import Protocol, TypeVar
-
 
 logger = logging.getLogger(__name__)
 
@@ -146,10 +146,8 @@ def run_single_sample(
             trial,
             utterance.id,
         )
-        try:
+        with contextlib.suppress(OSError):
             Path(output_path).unlink(missing_ok=True)
-        except OSError:
-            pass
         return {
             "schema_version": 1,
             "engine_id": engine.engine_id,
@@ -231,11 +229,11 @@ def summarize(records: Sequence[dict[str, object]]) -> dict[str, object]:
     warm_records = [record for record in successful_records if record.get("phase") == "warm"]
 
     def median(field: str) -> float | None:
-        values = [
-            float(record[field])
-            for record in warm_records
-            if isinstance(record.get(field), (int, float)) and not isinstance(record.get(field), bool)
-        ]
+        values: list[float] = []
+        for record in warm_records:
+            value = record.get(field)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                values.append(float(value))
         return statistics.median(values) if values else None
 
     return {

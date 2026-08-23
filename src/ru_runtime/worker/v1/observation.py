@@ -1,21 +1,23 @@
 from __future__ import annotations
 
+import contextlib
 import re
 import time
 from typing import Any
 
-from ru_runtime.persistence.activity_log import append as append_activity_log
-from ru_runtime.worker.v1.http import RuntimeRequestError
+from ru_runtime.generation.openai import OpenAIGenerationCancelled
 from ru_runtime.observation.screen_reaction import (
     ReactionRequest,
     VisionObservation,
     format_observation_prompt,
 )
+from ru_runtime.persistence.activity_log import append as append_activity_log
+from ru_runtime.voice.pacing import effective_voice_speed, voice_pace_for
 from ru_runtime.vts.catalog import (
     catalog_instruction,
     split_reply_metadata,
 )
-
+from ru_runtime.worker.v1.http import RuntimeRequestError
 
 _OBSERVATION_ID = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 _MAX_OBSERVATION_SCENE_CHARS = 200
@@ -25,8 +27,8 @@ _MAX_OBSERVATION_VISIBLE_TEXT_CHARS = 150
 
 
 def observation_preflight() -> dict[str, object]:
-    from ru_runtime.worker.v1 import runtime_services as shared
     from ru_runtime.generation.runner import BACKEND_KILO, BACKEND_OPENCODE
+    from ru_runtime.worker.v1 import runtime_services as shared
 
     if shared.core.runner.backend not in (BACKEND_OPENCODE, BACKEND_KILO):
         return {
@@ -132,12 +134,12 @@ def observation_react(payload: object) -> dict[str, object]:
         )
         if manager is not None:
             manager.note_generating(False)
-        pace = shared.voice_pace_for(raw_reply)
+        pace = voice_pace_for(raw_reply)
         cleaned, codes, emotion = split_reply_metadata(raw_reply, catalog)
         cleaned = shared._strip_voice_markers(cleaned)
         if manager is not None:
             manager.note_emotion(emotion)
-        try:
+        with contextlib.suppress(Exception):
             append_activity_log(
                 {
                     "type": "emotion",
@@ -145,8 +147,6 @@ def observation_react(payload: object) -> dict[str, object]:
                     "data": {"emotion": emotion.value if emotion else None},
                 }
             )
-        except Exception:
-            pass
         if not cleaned:
             shared._SCREEN_REACTIONS.fail(observation_id)
             return {"status": "skipped", "reason": "empty"}
@@ -158,7 +158,7 @@ def observation_react(payload: object) -> dict[str, object]:
 
         selection = shared._voice_selection()
         settings = shared.effective_settings()
-        voice_speed = shared.effective_voice_speed(
+        voice_speed = effective_voice_speed(
             settings.get(
                 "voice_speed",
                 shared._DEFAULT_SETTINGS["voice_speed"],
@@ -190,7 +190,7 @@ def observation_react(payload: object) -> dict[str, object]:
                 "cloud_ms": int(round(cloud_seconds * 1000)),
             },
         }
-    except shared.OpenAIGenerationCancelled:
+    except OpenAIGenerationCancelled:
         shared._SCREEN_REACTIONS.fail(observation_id)
         return {"status": "skipped", "reason": "superseded"}
     except Exception as error:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from harness.artifacts import build_artifact
 from harness.model import CheckResult
 

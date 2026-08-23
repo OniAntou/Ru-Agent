@@ -8,9 +8,9 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from ru_runtime.generation.runner import OPENAI_COMPATIBLE_BACKENDS
-from ru_runtime.worker.v1.http import RuntimeHttpResponse
 from ru_runtime.voice.stream import VoiceStreamCoordinator, VoiceStreamEvent
 from ru_runtime.voice.style import voice_style_from_saved
+from ru_runtime.worker.v1.http import RuntimeHttpResponse
 
 
 class RuntimeVoiceBridge:

@@ -1,9 +1,9 @@
 import time
-import pytest
 from pathlib import Path
-from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
-from ru_runtime.persistence.diagnostic_log import DiagnosticLogWriter
+
 from ru_runtime.persistence.activity_outbox import ActivityOutboxWriter
+from ru_runtime.persistence.diagnostic_log import DiagnosticLogWriter
+from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
 
 
 def test_diagnostic_enqueue_latency(tmp_path: Path):
@@ -37,7 +37,7 @@ def test_activity_outbox_enqueue_latency(tmp_path: Path):
     writer = ActivityOutboxWriter(log_dir=str(tmp_path), capacity=500)
     try:
         latencies = []
-        for i in range(200):
+        for _i in range(200):
             t0 = time.perf_counter()
             writer.try_enqueue({"type": "chat", "data": {"role": "user", "preview": "hello"}, "session_id": "s1"})
             t1 = time.perf_counter()

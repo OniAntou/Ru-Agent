@@ -12,7 +12,7 @@ EMOTION_MARKER = re.compile(r"\[\[EMO:([^\[\]]+?)\]\]", re.IGNORECASE)
 _STRIP_EMOTION_MARKER = re.compile(r"\[\[EMO:[^\[\]]*\]\]", re.IGNORECASE)
 
 
-class EmotionTag(str, enum.Enum):
+class EmotionTag(enum.StrEnum):
     NONE = "none"
     JOY = "joy"
     SAD = "sad"
@@ -24,7 +24,7 @@ class EmotionTag(str, enum.Enum):
     PLAYFUL = "playful"
 
 
-class MoodTag(str, enum.Enum):
+class MoodTag(enum.StrEnum):
     NEUTRAL = "neutral"
     CHEERFUL = "cheerful"
     PLAYFUL = "playful"
@@ -156,12 +156,13 @@ class MoodTracker:
         normalized = _normalize(user_prompt)
         with self._lock:
             # If user is comforting/apologizing while Ru is pouting:
-            if self._state.current_mood == MoodTag.POUTING:
-                if _match_any(normalized, _COMFORT_PATTERNS):
-                    self._state.current_mood = MoodTag.CHEERFUL
-                    self._state.intensity = 0.7
-                    self._state.turns_remaining = 2
-                    return
+            if self._state.current_mood == MoodTag.POUTING and _match_any(
+                normalized, _COMFORT_PATTERNS
+            ):
+                self._state.current_mood = MoodTag.CHEERFUL
+                self._state.intensity = 0.7
+                self._state.turns_remaining = 2
+                return
 
             # If user is expressing fatigue or sadness:
             if _match_any(normalized, _USER_VULNERABLE_PATTERNS):

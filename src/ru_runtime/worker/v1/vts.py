@@ -5,6 +5,8 @@ import time
 from typing import Any
 
 from ru_runtime.persistence.activity_log import append as append_activity_log
+from ru_runtime.vts.actions import VtsActions
+from ru_runtime.vts.config import MotionConfig
 from ru_runtime.vts.overlay import (
     overlay_error,
     overlay_process_ids,
@@ -12,7 +14,6 @@ from ru_runtime.vts.overlay import (
     stop_overlay,
 )
 from ru_runtime.worker.v1.http import RuntimeRequestError
-from ru_runtime.vts.config import MotionConfig
 
 
 def vts_mouse_look_get() -> dict[str, object]:
@@ -228,7 +229,7 @@ def vts_action(payload: object) -> dict[str, str]:
                 }
             )
             return {"status": "ok"}
-        actions = shared.VtsActions(facial=facial or None, body=body or None)
+        actions = VtsActions(facial=facial or None, body=body or None)
         if actions.facial is None and actions.body is None:
             return {"status": "error", "message": "provide codes, facial, or body"}
         if not manager.trigger_actions_sync(actions):

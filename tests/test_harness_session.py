@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from harness.session import (
     HarnessSession,
     _contains_private_agent_metadata,

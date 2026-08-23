@@ -3,12 +3,11 @@ from __future__ import annotations
 import pytest
 
 from ru_runtime.persistence.diagnostic_context import (
+    correlation_scope,
     generate_correlation_id,
+    get_correlation_id,
     is_valid_correlation_id,
     sanitize_correlation_id,
-    get_correlation_id,
-    set_correlation_id,
-    correlation_scope,
 )
 
 

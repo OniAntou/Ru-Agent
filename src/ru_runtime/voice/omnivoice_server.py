@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+import contextlib
 import gc
+import importlib
 import io
 import logging
 import os
 import tempfile
 import threading
 import wave
+from collections.abc import Callable
 from pathlib import Path
 from time import perf_counter
-from typing import Callable
+from typing import Protocol, cast
 
 from flask import Flask, Response, jsonify, request
-from ru_runtime.voice.omnivoice_tuning import settings_for_profile
+
 from ru_runtime.voice.chunks import split_tts_chunks
+from ru_runtime.voice.omnivoice_tuning import settings_for_profile
 from ru_runtime.voice.pacing import DEFAULT_VOICE_SPEED, clamp_voice_speed
 from ru_runtime.voice.style import (
     ORIGINAL_STYLE_ID,
@@ -24,6 +28,13 @@ from ru_runtime.voice.style import (
 
 logger = logging.getLogger(__name__)
 _SINGLETON_GUARD: object | None = None
+
+
+class _FileLockModule(Protocol):
+    LOCK_EX: int
+    LOCK_NB: int
+
+    def flock(self, file_descriptor: int, operation: int) -> None: ...
 
 
 def _acquire_single_instance() -> bool:
@@ -44,8 +55,7 @@ def _acquire_single_instance() -> bool:
         _SINGLETON_GUARD = handle
         return True
 
-    import fcntl
-
+    fcntl = cast(_FileLockModule, importlib.import_module("fcntl"))
     guard = (Path(tempfile.gettempdir()) / "ru-omnivoice-5052.lock").open("a+b")
     try:
         fcntl.flock(guard.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -54,6 +64,7 @@ def _acquire_single_instance() -> bool:
         return False
     _SINGLETON_GUARD = guard
     return True
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = PROJECT_ROOT.parent.parent
@@ -111,7 +122,9 @@ def voice_profile(profile: str) -> tuple[Path, str]:
             transcript = REFERENCE_TEXT.read_text(encoding="utf-8").strip()
         except OSError as error:
             logger.error("OmniVoice reference transcript is missing: %s", REFERENCE_TEXT)
-            raise RuntimeError(f"OmniVoice reference transcript is missing: {REFERENCE_TEXT}") from error
+            raise RuntimeError(
+                f"OmniVoice reference transcript is missing: {REFERENCE_TEXT}"
+            ) from error
     if not audio.is_file():
         raise FileNotFoundError(f"OmniVoice voice asset is missing: {audio}")
     return audio, transcript
@@ -197,9 +210,8 @@ def _generate_source_audio(
     }
     if speed != DEFAULT_VOICE_SPEED:
         generate_kwargs["speed"] = speed
-    with _MODEL_LOCK:
-        with torch.inference_mode():
-            audio = get_model().generate(**generate_kwargs)
+    with _MODEL_LOCK, torch.inference_mode():
+        audio = get_model().generate(**generate_kwargs)
     if timing is not None:
         timing("generate_ms", (perf_counter() - generation_started) * 1000)
     if not audio:
@@ -208,8 +220,9 @@ def _generate_source_audio(
 
 
 def _waveform_to_wav(waveform, sample_rate: int) -> bytes:
-    import numpy as np
     import wave as wave_module
+
+    import numpy as np
 
     data = np.asarray(waveform, dtype=np.float32)
     if data.ndim == 2:
@@ -233,26 +246,22 @@ def synthesize_fast(
     timing: Callable[[str, float], None] | None = None,
 ) -> str:
     total_started = perf_counter()
-    waveform = _generate_source_audio(
-        text, profile, speed, voice_style_id, timing=timing
-    )
-    output = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-    output.close()
+    waveform = _generate_source_audio(text, profile, speed, voice_style_id, timing=timing)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as output:
+        output_path = output.name
     write_started = perf_counter()
     try:
         import soundfile as sf
 
-        sf.write(output.name, waveform, MODEL_SAMPLE_RATE)
+        sf.write(output_path, waveform, MODEL_SAMPLE_RATE)
         if timing is not None:
             timing("write_ms", (perf_counter() - write_started) * 1000)
             timing("total_ms", (perf_counter() - total_started) * 1000)
     except Exception:
-        try:
-            Path(output.name).unlink(missing_ok=True)
-        except OSError:
-            pass
+        with contextlib.suppress(OSError):
+            Path(output_path).unlink(missing_ok=True)
         raise
-    return output.name
+    return output_path
 
 
 def synthesize_fast_bytes(
@@ -264,9 +273,7 @@ def synthesize_fast_bytes(
     timing: Callable[[str, float], None] | None = None,
 ) -> bytes:
     total_started = perf_counter()
-    waveform = _generate_source_audio(
-        text, profile, speed, voice_style_id, timing=timing
-    )
+    waveform = _generate_source_audio(text, profile, speed, voice_style_id, timing=timing)
     write_started = perf_counter()
     try:
         wav_bytes = _waveform_to_wav(waveform, MODEL_SAMPLE_RATE)
@@ -356,10 +363,8 @@ def create_app(
             return jsonify({"error": "Synthesis failed. Check the server logs."}), 500
         finally:
             if isinstance(audio_path, str):
-                try:
+                with contextlib.suppress(OSError):
                     Path(audio_path).unlink(missing_ok=True)
-                except OSError:
-                    pass
 
     @app.post("/tts_stream")
     def tts_stream():

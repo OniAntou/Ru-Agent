@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
+from collections.abc import Mapping
 from typing import Any
 
-from ru_runtime.observation.screen_capture import capture_screen_jpeg
 from ru_runtime.observation.gemini_vision import analyze_screenshot_with_gemini
+from ru_runtime.observation.screen_capture import capture_screen_jpeg
 from ru_runtime.observation.screen_reaction import VisionObservation
 from ru_runtime.persistence.activity_log import append as append_activity_log
 from ru_runtime.voice.vietnamese_tts_normalizer import normalize_vietnamese_tts_text
@@ -216,7 +218,9 @@ class ScreenObserverLoop:
             from ru_runtime.worker.v1.observation import observation_react
             result = observation_react(payload)
             if result.get("status") == "ok":
-                reaction_obj = result.get("reaction") or {}
+                reaction_obj = result.get("reaction")
+                if not isinstance(reaction_obj, Mapping):
+                    reaction_obj = {}
                 reaction_text = reaction_obj.get("text")
                 reaction_id = reaction_obj.get("observation_id")
                 if isinstance(reaction_id, str) and reaction_id:
@@ -234,7 +238,7 @@ class ScreenObserverLoop:
                 logger.info("Published spontaneous screen reaction '%s' as %s", cleaned, observation_id)
 
                 # Log activity event for UI speech bubbles / subtitles
-                try:
+                with contextlib.suppress(Exception):
                     append_activity_log({
                         "type": "observation_reaction",
                         "session_id": None,
@@ -245,5 +249,3 @@ class ScreenObserverLoop:
                             "observation_id": observation_id,
                         },
                     })
-                except Exception:
-                    pass

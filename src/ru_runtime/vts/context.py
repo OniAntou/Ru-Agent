@@ -22,16 +22,20 @@ class MotionContextProvider:
         self._snap = MotionContextSnapshot()
 
     def set_speaking(self, speaking: bool) -> None:
-        self._set(speaking=bool(speaking))
+        with self._lock:
+            self._snap = dataclasses.replace(self._snap, speaking=bool(speaking))
 
     def set_generating(self, generating: bool) -> None:
-        self._set(generating=bool(generating))
+        with self._lock:
+            self._snap = dataclasses.replace(self._snap, generating=bool(generating))
 
     def set_user_typing(self, typing: bool) -> None:
-        self._set(user_typing=bool(typing))
+        with self._lock:
+            self._snap = dataclasses.replace(self._snap, user_typing=bool(typing))
 
     def set_system_idle(self, idle: bool) -> None:
-        self._set(system_idle=bool(idle))
+        with self._lock:
+            self._snap = dataclasses.replace(self._snap, system_idle=bool(idle))
 
     def set_emotion(self, emotion: EmotionTag | str) -> None:
         if isinstance(emotion, str):
@@ -39,12 +43,9 @@ class MotionContextProvider:
                 emotion = EmotionTag(emotion)
             except ValueError:
                 emotion = EmotionTag.NONE
-        self._set(emotion=emotion)
+        with self._lock:
+            self._snap = dataclasses.replace(self._snap, emotion=emotion)
 
     def snapshot(self) -> MotionContextSnapshot:
         with self._lock:
             return self._snap
-
-    def _set(self, **kwargs: object) -> None:
-        with self._lock:
-            self._snap = dataclasses.replace(self._snap, **kwargs)

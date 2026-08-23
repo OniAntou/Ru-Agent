@@ -5,8 +5,15 @@ import binascii
 import math
 from typing import Any
 
-from ru_runtime.worker.v1.http import RuntimeHttpResponse, RuntimeRequestError
+from ru_runtime.speech.runtime import (
+    CapturedAudio,
+    SpeechEngineConfig,
+    SpeechRecognitionError,
+    build_speech_recognizer,
+)
+from ru_runtime.voice.pacing import effective_voice_speed, voice_pace_for
 from ru_runtime.voice.style import voice_style_from_saved
+from ru_runtime.worker.v1.http import RuntimeHttpResponse, RuntimeRequestError
 
 
 def voice_status() -> dict[str, object]:
@@ -101,12 +108,12 @@ def voice_tts(payload: object) -> dict[str, str] | RuntimeHttpResponse:
         if speed_value is not None
         else settings.get("voice_speed", defaults["voice_speed"])
     )
-    speed = shared.effective_voice_speed(
+    speed = effective_voice_speed(
         speed,
         auto_pace_enabled=settings.get(
             "auto_pace_enabled", defaults["auto_pace_enabled"]
         ),
-        pace=shared.voice_pace_for(text),
+        pace=voice_pace_for(text),
     )
     from ru_runtime.voice.vietnamese_tts_normalizer import normalize_vietnamese_tts_text
 
@@ -213,12 +220,10 @@ def voice_transcribe(payload: object) -> dict[str, str]:
     if not raw:
         return {"status": "error", "message": "audio is empty"}
     try:
-        recognizer = shared.build_speech_recognizer(
-            shared.SpeechEngineConfig(language="vi-VN")
-        )
-        text = recognizer.recognize(shared.CapturedAudio(raw, sample_rate, 2))
+        recognizer = build_speech_recognizer(SpeechEngineConfig(language="vi-VN"))
+        text = recognizer.recognize(CapturedAudio(raw, sample_rate, 2))
         return {"status": "ok", "text": text}
-    except shared.SpeechRecognitionError as error:
+    except SpeechRecognitionError as error:
         return {"status": "error", "message": str(error)}
     except Exception as error:
         shared.logger.error("Speech recognition failed: %s", error)

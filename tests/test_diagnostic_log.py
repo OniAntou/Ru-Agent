@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-import json
 import importlib
 import logging
 import os
 import shutil
 import tempfile
 import time
+
 import ru_runtime
 from ru_runtime.persistence.diagnostic_log import (
-    DiagnosticLogWriter,
     BoundedDiagnosticQueue,
     DiagnosticLoggingHandler,
+    DiagnosticLogWriter,
     install_diagnostic_logging_handler,
 )
 from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
@@ -54,7 +54,7 @@ def test_python_diagnostic_log_writer_flushes_batches_and_rotates_by_date():
         files = [f for f in os.listdir(temp_dir) if f.startswith("worker-") and f.endswith(".jsonl")]
         assert len(files) == 1
 
-        with open(os.path.join(temp_dir, files[0]), "r", encoding="utf-8") as fp:
+        with open(os.path.join(temp_dir, files[0]), encoding="utf-8") as fp:
             lines = fp.readlines()
 
         assert len(lines) == 2
@@ -114,7 +114,8 @@ def test_diagnostic_logging_handler_drops_formatted_message_and_traceback():
 
         files = [f for f in os.listdir(temp_dir) if f.startswith("worker-")]
         assert len(files) == 1
-        payload = open(os.path.join(temp_dir, files[0]), encoding="utf-8").read()
+        with open(os.path.join(temp_dir, files[0]), encoding="utf-8") as log_file:
+            payload = log_file.read()
         assert "voice_failed" in payload
         assert "raw message" not in payload
         assert "secret" not in payload
@@ -126,10 +127,10 @@ def test_diagnostic_logging_handler_drops_formatted_message_and_traceback():
 
 
 def test_python_diagnostic_writer_requeues_failed_batches():
-    temp_file = tempfile.NamedTemporaryFile(prefix="ru_diag_blocked_", delete=False)
-    temp_file.close()
+    with tempfile.NamedTemporaryFile(prefix="ru_diag_blocked_", delete=False) as temp_file:
+        temp_path = temp_file.name
     try:
-        writer = DiagnosticLogWriter(log_dir=temp_file.name, prefix="worker-")
+        writer = DiagnosticLogWriter(log_dir=temp_path, prefix="worker-")
         event = DiagnosticEvent(
             event_id="evt_retry",
             ts=time.time(),
@@ -146,7 +147,7 @@ def test_python_diagnostic_writer_requeues_failed_batches():
         assert writer.queue.size >= 1
         writer.close()
     finally:
-        os.unlink(temp_file.name)
+        os.unlink(temp_path)
 
 
 def test_importing_ru_runtime_never_installs_a_root_console_handler():

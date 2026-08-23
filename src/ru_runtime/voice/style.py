@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
-
 VoiceStyleId: TypeAlias = Literal["original"]
 
 ORIGINAL_STYLE_ID: VoiceStyleId = "original"
@@ -15,12 +14,8 @@ class VoiceStyle:
     label: str
 
 
-VOICE_STYLES: tuple[VoiceStyle, ...] = (
-    VoiceStyle("original", "Giữ giọng gốc"),
-)
-_VOICE_STYLES_BY_ID: dict[str, VoiceStyle] = {
-    style.id: style for style in VOICE_STYLES
-}
+VOICE_STYLES: tuple[VoiceStyle, ...] = (VoiceStyle("original", "Giữ giọng gốc"),)
+_VOICE_STYLES_BY_ID: dict[str, VoiceStyle] = {style.id: style for style in VOICE_STYLES}
 
 
 def voice_style_by_id(value: str) -> VoiceStyle:

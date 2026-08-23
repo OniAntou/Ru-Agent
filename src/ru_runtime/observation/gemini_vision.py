@@ -3,8 +3,8 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import urllib.request
 import urllib.error
+import urllib.request
 
 from ru_runtime.observation.screen_reaction import VisionObservation, redact_text
 
@@ -34,7 +34,7 @@ def _send_gemini_vision_request(
     api_key: str,
     model_name: str,
     timeout_seconds: float,
-) -> dict | None:
+) -> dict[str, object] | None:
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
     payload = {
         "contents": [
@@ -69,7 +69,8 @@ def _send_gemini_vision_request(
     try:
         with urllib.request.urlopen(req, timeout=timeout_seconds) as response:
             resp_body = response.read().decode("utf-8")
-            return json.loads(resp_body)
+            decoded = json.loads(resp_body)
+            return decoded if isinstance(decoded, dict) else None
     except urllib.error.HTTPError as http_err:
         logger.warning("Gemini Vision HTTP %d on model '%s': %s", http_err.code, model_name, http_err.reason)
         return None
@@ -122,14 +123,26 @@ def analyze_screenshot_with_gemini(
 
     try:
         candidates = data.get("candidates", [])
-        if not candidates:
+        if not isinstance(candidates, list) or not candidates:
+            return None
+        first_candidate = candidates[0]
+        if not isinstance(first_candidate, dict):
             return None
 
-        content_parts = candidates[0].get("content", {}).get("parts", [])
-        if not content_parts:
+        content = first_candidate.get("content", {})
+        if not isinstance(content, dict):
+            return None
+        content_parts = content.get("parts", [])
+        if not isinstance(content_parts, list) or not content_parts:
+            return None
+        first_part = content_parts[0]
+        if not isinstance(first_part, dict):
+            return None
+        raw_json_value = first_part.get("text", "{}")
+        if not isinstance(raw_json_value, str):
             return None
 
-        raw_json_str = content_parts[0].get("text", "{}").strip()
+        raw_json_str = raw_json_value.strip()
         if raw_json_str.startswith("```json"):
             raw_json_str = raw_json_str[7:]
         if raw_json_str.startswith("```"):
@@ -137,7 +150,10 @@ def analyze_screenshot_with_gemini(
         if raw_json_str.endswith("```"):
             raw_json_str = raw_json_str[:-3]
 
-        parsed = json.loads(raw_json_str.strip())
+        parsed_value = json.loads(raw_json_str.strip())
+        if not isinstance(parsed_value, dict):
+            return None
+        parsed = parsed_value
         scene = redact_text(str(parsed.get("scene", "Desktop")))[:200]
         event = redact_text(str(parsed.get("event", "Working on PC")))[:1500]
         reaction = redact_text(str(parsed.get("reaction", "")))[:500] if parsed.get("reaction") else None

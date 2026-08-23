@@ -6,7 +6,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, cast
 
-
 ActionOutcomeStatus = Literal[
     "succeeded",
     "failed",

@@ -18,7 +18,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "flask>=3.1,<4"]
+dev = [
+    "pytest>=8",
+    "flask>=3.1,<4",
+    "pillow>=10",
+    "soundfile>=0.12",
+    "ruff==0.16.2",
+    "mypy==2.3.0",
+]
 runtime = [
     "ddgs>=9.0",
     "httpx>=0.25",
@@ -42,14 +49,18 @@ addopts = "-p no:warnings"
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
 ignore = ["E501"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.11"
+# Check Ru's source deterministically; CI executes the runtime on both 3.11 and 3.13.
+# Host-version-specific third-party stubs (notably NumPy) must not change this gate.
+no_site_packages = true
+check_untyped_defs = true
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true

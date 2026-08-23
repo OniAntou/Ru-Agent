@@ -3,10 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import wave
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Callable, Iterable
 
 from ru_runtime.speech.runtime import (
     SPEECH_ENGINE_GOOGLE,

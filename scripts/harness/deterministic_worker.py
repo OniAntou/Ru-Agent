@@ -6,8 +6,8 @@ Studio runtime imports. It only supplies fixed protocol fixtures.
 
 from __future__ import annotations
 
-import asyncio
 import argparse
+import asyncio
 import base64
 import json
 import os
@@ -91,7 +91,7 @@ async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> Async
             await asyncio.sleep(1.5)
         try:
             result = await asyncio.wait_for(tool_queue.get(), timeout=30.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             result = {"status": "timed_out", "safe_summary": "Tool timed out."}
         valid_result = (
             isinstance(result, Mapping)

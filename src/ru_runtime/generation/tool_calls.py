@@ -5,7 +5,6 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-
 _SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 _MAX_TOOL_ID_CHARS = 128
 _MAX_TOOL_ARGUMENT_BYTES = 64 * 1024

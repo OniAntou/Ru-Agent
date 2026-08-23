@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 ALLOWED_CLASSIFICATIONS = {"aspnet-direct", "runtime-worker"}
 LEGACY_OWNERSHIP_FIELDS = {
     "default_owner",

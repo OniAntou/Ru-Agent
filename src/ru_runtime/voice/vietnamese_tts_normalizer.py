@@ -29,15 +29,12 @@ def int_to_vietnamese_words(n: int) -> str:
             return f"mười {_DIGITS_VI[units]}"
         else:
             ten_str = f"{_DIGITS_VI[tens]} mươi"
-            if units == 0:
-                return ten_str
-            elif units == 1:
-                return f"{ten_str} mốt"
-            elif units == 4:
-                return f"{ten_str} tư"
-            elif units == 5:
-                return f"{ten_str} lăm"
-            return f"{ten_str} {_DIGITS_VI[units]}"
+            return {
+                0: ten_str,
+                1: f"{ten_str} mốt",
+                4: f"{ten_str} tư",
+                5: f"{ten_str} lăm",
+            }.get(units, f"{ten_str} {_DIGITS_VI[units]}")
 
     def _read_three_digits(val: int, is_highest_group: bool) -> str:
         if val == 0:

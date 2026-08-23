@@ -6,7 +6,6 @@ from typing import Literal
 
 from .emotion import EmotionTag, extract_reply_emotion
 
-
 VTS_CATALOG_MARKER = re.compile(r"\[\[VTS:([^\]]*)\]\]", re.IGNORECASE)
 CATALOG_INSTRUCTION_MAX_ENTRIES = 20
 CODE_DELIMITERS = re.compile(r"[\s,]+")

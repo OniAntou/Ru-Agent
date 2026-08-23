@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any, Protocol
 
 from .model import CheckResult
-from .routes import RequestSpec, RouteEntry, RouteSafety
+from .routes import RouteEntry, RouteSafety
 
 
 class HttpClientLike(Protocol):

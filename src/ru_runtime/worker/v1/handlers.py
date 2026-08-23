@@ -7,11 +7,11 @@ import math
 import threading
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import partial
-from typing import Any, ContextManager, Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from ru_runtime.generation.chat import ChatTurn
 from ru_runtime.generation.tool_calls import ToolCallParseError, parse_tool_call
@@ -23,6 +23,9 @@ from ru_runtime.generation.volume_intent import (
 from ru_runtime.memory.learning import extract_facts_with_llm
 from ru_runtime.persistence.diagnostic_log import get_diagnostic_log_writer
 from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
+from ru_runtime.voice.stream import VoiceStreamEvent
+from ru_runtime.voice.style import VoiceStyleId, voice_style_by_id
+from ru_runtime.vts.emotion import extract_reply_emotion
 from ru_runtime.worker.v1.action_loop import (
     ActionProtocolError,
     ActionSelection,
@@ -42,7 +45,6 @@ from ru_runtime.worker.v1.action_outcome import (
     safe_action_noun,
 )
 from ru_runtime.worker.v1.http import RuntimeHttpResponse
-from ru_runtime.voice.stream import VoiceStreamEvent
 from ru_runtime.worker.v1.protocol import (
     CHAT_CHUNK,
     CHAT_DONE,
@@ -63,14 +65,33 @@ from ru_runtime.worker.v1.server import WorkerHandlers, WorkerReply
 class RuntimeRunner(Protocol):
     backend: str
 
-    def generate_reply(self, **kwargs: Any) -> str: ...
+    def generate_reply(
+        self,
+        prompt: str,
+        max_new_tokens: int,
+        temperature: float,
+        top_k: int,
+        turns_history: Sequence[ChatTurn] | None = None,
+        memory_context: str | None = None,
+        mood_context: str | None = None,
+        allow_web_search: bool = False,
+        vts_instruction: str = "",
+        *,
+        on_stream_delta: Callable[[str], None] | None = None,
+        on_stream_reset: Callable[[], None] | None = None,
+        on_complete_timing: Any = None,
+        is_cancelled: Callable[[], bool] | None = None,
+        structured_tools_only: bool = False,
+        agent_follow_up: bool = False,
+        action_capabilities: Sequence[ModelCapability] = (),
+    ) -> str: ...
 
 
-VoiceAudio = Callable[[str, str, float, str], bytes]
+VoiceAudio = Callable[[str, str, float, VoiceStyleId], bytes]
 VoiceControl = Callable[[str, str], Mapping[str, Any]]
 VoiceStream = Callable[[dict[str, Any], asyncio.Event], AsyncIterator[VoiceStreamEvent]]
 VtsManagerFactory = Callable[[], Any]
-GenerationScope = Callable[[], ContextManager[Any]]
+GenerationScope = Callable[[], contextlib.AbstractContextManager[Any]]
 RuntimeLoader = Callable[[dict[str, Any]], Mapping[str, Any]]
 
 
@@ -122,8 +143,6 @@ def _runtime_load_params(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-from ru_runtime.vts.emotion import extract_reply_emotion
-
 @dataclass(frozen=True, slots=True)
 class RuntimeDependencies:
     runner: RuntimeRunner
@@ -171,7 +190,7 @@ def create_runtime_handlers() -> WorkerHandlers:
             return control
         return dispatch_runtime_request(method, path_and_query, content_type, body)
 
-    def generation_scope() -> ContextManager[Any]:
+    def generation_scope() -> contextlib.AbstractContextManager[Any]:
         return contextlib.nullcontext()
 
     def runtime_load(payload: dict[str, Any]) -> Mapping[str, Any]:
@@ -180,12 +199,10 @@ def create_runtime_handlers() -> WorkerHandlers:
         backend = params["backend"]
 
         with _RUNTIME_TRANSITION_LOCK:
-            previous = {
-                "backend": runner.backend,
-                "openai_runtime": runner.openai_runtime,
-                "kilo_reasoning_enabled": runner.kilo_reasoning_enabled,
-                "load_error": runner.load_error,
-            }
+            previous_backend = runner.backend
+            previous_runtime = runner.openai_runtime
+            previous_reasoning = runner.kilo_reasoning_enabled
+            previous_load_error = runner.load_error
             try:
                 api_key = ""
                 if backend == "OpenCode Zen":
@@ -208,10 +225,10 @@ def create_runtime_handlers() -> WorkerHandlers:
                     "backend": backend,
                 }
             except Exception:
-                runner.select_backend(previous["backend"])
-                runner.openai_runtime = previous["openai_runtime"]
-                runner.kilo_reasoning_enabled = previous["kilo_reasoning_enabled"]
-                runner.load_error = previous["load_error"]
+                runner.select_backend(previous_backend)
+                runner.openai_runtime = previous_runtime
+                runner.kilo_reasoning_enabled = previous_reasoning
+                runner.load_error = previous_load_error
                 raise RuntimeError("runtime_load_failed") from None
 
     return build_runtime_handlers(
@@ -273,50 +290,38 @@ async def _chat_handler(
         delta_sink: Callable[[str], None] | None = None,
         reset_sink: Callable[[], None] | None = None,
     ) -> str:
-        with dependencies.turn_locks():
-            with dependencies.generation_scope():
-                mood_context = None
-                if dependencies.mood_tracker is not None:
-                    if observe_user:
-                        dependencies.mood_tracker.observe_user_input(request.prompt)
-                    mood_context = dependencies.mood_tracker.state.describe_for_prompt()
-                advertise_tools = bool(action_capabilities) and phase != "tool_result"
-                raw_reply = dependencies.runner.generate_reply(
-                    prompt=prompt,
-                    max_new_tokens=request.max_tokens,
-                    temperature=request.temperature,
-                    top_k=request.top_k,
-                    allow_web_search=(
-                        request.allow_web_search
-                        and phase == "normal"
-                        and not advertise_tools
-                    ),
-                    turns_history=turns,
-                    memory_context=request.memory_context,
-                    mood_context=mood_context,
-                    on_stream_delta=(
-                        delta_sink or on_stream_delta
-                    ) if stream else None,
-                    on_stream_reset=(
-                        reset_sink or on_stream_reset
-                    ) if stream else None,
-                    vts_instruction=request.vts_instruction,
-                    is_cancelled=cancelled.is_set,
-                    structured_tools_only=(
-                        advertise_tools or phase == "tool_request"
-                    ),
-                    agent_follow_up=phase == "tool_result",
-                    action_capabilities=(
-                        action_capabilities if advertise_tools else ()
-                    ),
-                )
-                if dependencies.mood_tracker is not None and not (
-                    isinstance(raw_reply, str)
-                    and raw_reply.lstrip().startswith("{")
-                ):
-                    _, emotion = extract_reply_emotion(raw_reply)
-                    dependencies.mood_tracker.update_from_reply_emotion(emotion)
-                return raw_reply
+        with dependencies.turn_locks(), dependencies.generation_scope():
+            mood_context = None
+            if dependencies.mood_tracker is not None:
+                if observe_user:
+                    dependencies.mood_tracker.observe_user_input(request.prompt)
+                mood_context = dependencies.mood_tracker.state.describe_for_prompt()
+            advertise_tools = bool(action_capabilities) and phase != "tool_result"
+            raw_reply = dependencies.runner.generate_reply(
+                prompt=prompt,
+                max_new_tokens=request.max_tokens,
+                temperature=request.temperature,
+                top_k=request.top_k,
+                allow_web_search=(
+                    request.allow_web_search and phase == "normal" and not advertise_tools
+                ),
+                turns_history=turns,
+                memory_context=request.memory_context,
+                mood_context=mood_context,
+                on_stream_delta=(delta_sink or on_stream_delta) if stream else None,
+                on_stream_reset=(reset_sink or on_stream_reset) if stream else None,
+                vts_instruction=request.vts_instruction,
+                is_cancelled=cancelled.is_set,
+                structured_tools_only=(advertise_tools or phase == "tool_request"),
+                agent_follow_up=phase == "tool_result",
+                action_capabilities=(action_capabilities if advertise_tools else ()),
+            )
+            if dependencies.mood_tracker is not None and not (
+                isinstance(raw_reply, str) and raw_reply.lstrip().startswith("{")
+            ):
+                _, emotion = extract_reply_emotion(raw_reply)
+                dependencies.mood_tracker.update_from_reply_emotion(emotion)
+            return raw_reply
 
     async def wait_for_tool_result(
         deadline_at: float,
@@ -328,7 +333,7 @@ async def _chat_handler(
                 tool_result_queue.get(),
                 timeout=max(0.0, deadline_at - time.monotonic()),
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise ActionProtocolError("receipt_late") from None
         if not isinstance(result, Mapping):
             raise ActionProtocolError("invalid_receipt")
@@ -445,18 +450,11 @@ async def _chat_handler(
 
     async def run_generation() -> None:
         try:
-            if (
-                request.last_action_outcome is not None
-                and is_causal_follow_up(request.prompt)
-            ):
+            if request.last_action_outcome is not None and is_causal_follow_up(request.prompt):
                 publish(
                     WorkerReply(
                         CHAT_DONE,
-                        {
-                            "raw_reply": render_action_explanation(
-                                request.last_action_outcome
-                            )
-                        },
+                        {"raw_reply": render_action_explanation(request.last_action_outcome)},
                     )
                 )
                 return
@@ -471,9 +469,7 @@ async def _chat_handler(
                 _record_intent(
                     event_code,
                     correlation_id=correlation_id,
-                    status=(
-                        "failed" if event_code.endswith("rejected") else "skipped"
-                    ),
+                    status=("failed" if event_code.endswith("rejected") else "skipped"),
                     error_code=decision.reason_code,
                 )
                 outcome = ActionOutcome(
@@ -503,8 +499,7 @@ async def _chat_handler(
                     (
                         item
                         for item in request.model_tools
-                        if item.tool_id == call.tool_id
-                        and item.tool_version == call.tool_version
+                        if item.tool_id == call.tool_id and item.tool_version == call.tool_version
                     ),
                     None,
                 )
@@ -513,9 +508,7 @@ async def _chat_handler(
                     asyncio.Queue,
                 ):
                     reason_code = (
-                        "capability_unavailable"
-                        if capability is None
-                        else "agent_unavailable"
+                        "capability_unavailable" if capability is None else "agent_unavailable"
                     )
                     _record_intent(
                         "tool.intent.rejected",
@@ -546,7 +539,7 @@ async def _chat_handler(
                     )
                     return
 
-                selection = ActionSelection(
+                volume_selection = ActionSelection(
                     call.tool_id,
                     call.tool_version,
                     capability.capability_class,
@@ -557,14 +550,14 @@ async def _chat_handler(
                     correlation_id=correlation_id,
                     status="succeeded",
                     error_code=None,
-                    tool_id=selection.tool_id,
-                    tool_version=selection.tool_version,
+                    tool_id=volume_selection.tool_id,
+                    tool_version=volume_selection.tool_version,
                 )
-                tool_request_id, tool_correlation_id, deadline_at = (
-                    publish_chat_tool_request(request, selection, correlation_id)
+                tool_request_id, tool_correlation_id, deadline_at = publish_chat_tool_request(
+                    request, volume_selection, correlation_id
                 )
                 await resolve_native_action_outcome(
-                    selection,
+                    volume_selection,
                     tool_request_id,
                     tool_correlation_id,
                     deadline_at,
@@ -580,9 +573,7 @@ async def _chat_handler(
                 if not outcome_notes:
                     return request.prompt
                 joined = "\n".join(outcome_notes)
-                return (
-                    f"{request.prompt}\n\n[TOOL RESULT]\n{joined}\n[/TOOL RESULT]"
-                )
+                return f"{request.prompt}\n\n[TOOL RESULT]\n{joined}\n[/TOOL RESULT]"
 
             final_text = ""
             while True:
@@ -673,8 +664,8 @@ async def _chat_handler(
                     tool_id=selection.tool_id,
                     tool_version=selection.tool_version,
                 )
-                tool_request_id, tool_correlation_id, deadline_at = (
-                    publish_chat_tool_request(request, selection, correlation_id)
+                tool_request_id, tool_correlation_id, deadline_at = publish_chat_tool_request(
+                    request, selection, correlation_id
                 )
 
                 if selection.capability_class == "native_mutation":
@@ -847,12 +838,10 @@ def _bounded_outcome_summary(
     if compact_summary:
         payload["safe_summary"] = compact_summary
     if output:
-        try:
+        with contextlib.suppress(TypeError, ValueError, RecursionError):
             payload["output"] = json.loads(
                 json.dumps(dict(output), ensure_ascii=False, default=str)
             )
-        except (TypeError, ValueError, RecursionError):
-            pass
     summary = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     for droppable in ("output", "safe_summary", "duration_ms"):
         if len(summary) <= _MAX_OUTCOME_SUMMARY_CHARS:
@@ -876,7 +865,7 @@ def _record_intent(
             DiagnosticEvent(
                 event_id=f"evt_{uuid.uuid4().hex}",
                 ts=time.time(),
-                iso=datetime.now(timezone.utc).isoformat(),
+                iso=datetime.now(UTC).isoformat(),
                 level="warning" if status == "failed" else "info",
                 component="worker.runtime",
                 event_code=event_code,
@@ -903,7 +892,7 @@ def _record_receipt_rejection(
             DiagnosticEvent(
                 event_id=f"evt_{uuid.uuid4().hex}",
                 ts=time.time(),
-                iso=datetime.now(timezone.utc).isoformat(),
+                iso=datetime.now(UTC).isoformat(),
                 level="warning",
                 component="worker.runtime",
                 event_code="tool.receipt.rejected",
@@ -1072,9 +1061,7 @@ async def _runtime_request_handler(
         "headers": headers,
     }
     content_type_lower = response.content_type.casefold()
-    is_text = content_type_lower.startswith("text/") or (
-        "json" in content_type_lower
-    )
+    is_text = content_type_lower.startswith("text/") or ("json" in content_type_lower)
     if is_text:
         try:
             response_payload["body"] = response.body.decode("utf-8")
@@ -1137,7 +1124,9 @@ async def _voice_handler(
         try:
             text = _required_text(payload, "text", maximum=12_000)
             voice_label = _required_text(payload, "voice_label", maximum=128)
-            voice_style_id = _required_text(payload, "voice_style_id", maximum=32)
+            voice_style_id = voice_style_by_id(
+                _required_text(payload, "voice_style_id", maximum=32)
+            ).id
             speed = _bounded_float(payload.get("speed"), 0.5, 2.0)
         except (TypeError, ValueError):
             yield _error("invalid_request", retryable=False)
@@ -1212,13 +1201,9 @@ async def _vts_handler(
             {
                 "model_id": catalog.model_id,
                 "model_name": catalog.model_name,
-                "hotkey_codes": [
-                    entry.code for entry in catalog.entries if entry.kind == "hotkey"
-                ],
+                "hotkey_codes": [entry.code for entry in catalog.entries if entry.kind == "hotkey"],
                 "expression_codes": [
-                    entry.code
-                    for entry in catalog.entries
-                    if entry.kind == "expression"
+                    entry.code for entry in catalog.entries if entry.kind == "expression"
                 ],
             },
         )
@@ -1306,14 +1291,10 @@ def _parse_chat_request(payload: Mapping[str, Any]) -> _ChatRequest:
         max_tokens=_bounded_int(settings.get("max_tokens", 256), 1, 1024),
         temperature=_bounded_float(settings.get("temperature", 0.7), 0.1, 2.0),
         top_k=_bounded_int(settings.get("top_k", 50), 1, 200),
-        allow_web_search=_required_bool(
-            settings.get("allow_web_search", True)
-        ),
+        allow_web_search=_required_bool(settings.get("allow_web_search", True)),
         agent_mode=_required_bool(settings.get("agent_mode", False)),
         model_tools=parse_model_capabilities(settings),
-        last_action_outcome=parse_optional_action_outcome(
-            payload.get("last_action_outcome")
-        ),
+        last_action_outcome=parse_optional_action_outcome(payload.get("last_action_outcome")),
     )
 
 

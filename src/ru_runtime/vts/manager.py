@@ -1,12 +1,16 @@
 import asyncio
 import concurrent.futures
+import contextlib
 import logging
 import random
 import threading
 import time
-from pathlib import Path
+from collections.abc import Coroutine
+from typing import Any, TypeVar
 
 import pyvts
+
+from ru_runtime.persistence.canonical import canonical_data_root
 
 from .actions import VtsActions
 from .catalog import VtsCatalog, build_catalog
@@ -14,25 +18,26 @@ from .config import MotionConfig
 from .context import MotionContextProvider
 from .emotion import EmotionTag
 from .hotkey_mapping import resolve_hotkey
-from ru_runtime.persistence.canonical import canonical_data_root
 from .motion import (
-    body_pose_entries,
     BreathController,
     EyeMotionController,
-    head_nod_value,
-    head_tilt_value,
-    head_yaw_value,
-    is_idle_safe_micro_action,
     MicroActionScheduler,
     MouseEyeTracker,
     OrganicSwayController,
     PoseCycleScheduler,
+    body_pose_entries,
+    head_nod_value,
+    head_tilt_value,
+    head_yaw_value,
+    is_idle_safe_micro_action,
     safe_micro_action_entries,
     state_amplitude_scale,
 )
 from .state import MotionStateMachine, VtsMotionState
 
 logger = logging.getLogger(__name__)
+
+_ResultT = TypeVar("_ResultT")
 
 REQUEST_TIMEOUT_SECONDS = 2.0
 VTS_LOOP_WAIT_TIMEOUT_SECONDS = 10.0
@@ -48,7 +53,10 @@ VTS_TOKEN_PATH = canonical_data_root() / "pyvts_token.txt"
 
 def reconnect_delay(attempts: int) -> float:
     """Backoff that grows with attempts and caps, never gives up."""
-    return min(RECONNECT_MIN_INTERVAL_SECONDS + 5.0 * min(attempts, 5), RECONNECT_BACKOFF_CAP_SECONDS)
+    return min(
+        RECONNECT_MIN_INTERVAL_SECONDS + 5.0 * min(attempts, 5), RECONNECT_BACKOFF_CAP_SECONDS
+    )
+
 
 ACTION_HOTKEYS = {
     "joy": ("星星眼", "眼睛恢复", 2.0),
@@ -104,7 +112,7 @@ class VTSManager:
         self._last_reconnect_attempt_at = 0.0
         self._reconnect_attempts = 0
         self._context = MotionContextProvider()
-        self._fsm = MotionStateMachine()
+        self._fsm: MotionStateMachine = MotionStateMachine()
         self.config = MotionConfig.defaults()
         self._breath_controller = BreathController(self._motion_random)
         self._last_send_at = 0.0
@@ -138,17 +146,22 @@ class VTSManager:
             self._reconnect_lock = asyncio.Lock()
         return self._reconnect_lock
 
-    def _ensure_async_primitives(self) -> None:
-        if self._request_lock is None:
-            self._request_lock = asyncio.Lock()
-        if self._request_semaphore is None:
-            self._request_semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+    def _ensure_async_primitives(self) -> tuple[asyncio.Lock, asyncio.Semaphore]:
+        request_lock = self._request_lock
+        if request_lock is None:
+            request_lock = asyncio.Lock()
+            self._request_lock = request_lock
+        request_semaphore = self._request_semaphore
+        if request_semaphore is None:
+            request_semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+            self._request_semaphore = request_semaphore
+        return request_lock, request_semaphore
 
     async def _request(self, request: dict) -> dict:
         if not self.is_connected:
             return {}
-        self._ensure_async_primitives()
-        async with self._request_lock:
+        request_lock, _ = self._ensure_async_primitives()
+        async with request_lock:
             try:
                 return await asyncio.wait_for(
                     self.vts.request(request), timeout=REQUEST_TIMEOUT_SECONDS
@@ -186,7 +199,12 @@ class VTSManager:
                     self._reconnect_attempts = 0
                     return
 
-    def _run_on_vts_loop(self, coroutine, *, wait: bool):
+    def _run_on_vts_loop(
+        self,
+        coroutine: Coroutine[Any, Any, _ResultT],
+        *,
+        wait: bool,
+    ) -> _ResultT | None:
         loop = getattr(self, "_loop", None)
         if loop is not None and loop.is_running():
             future = asyncio.run_coroutine_threadsafe(coroutine, loop)
@@ -226,27 +244,21 @@ class VTSManager:
             connect_task = getattr(self, "_connect_task", None)
             if connect_task is not None and not connect_task.done():
                 connect_task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await connect_task
-                except (asyncio.CancelledError, Exception):
-                    pass
             sway_task = getattr(self, "_sway_task", None)
             if sway_task is not None and not sway_task.done():
                 sway_task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await sway_task
-                except (asyncio.CancelledError, Exception):
-                    pass
             for task in list(self._background_tasks):
                 task.cancel()
             self._background_tasks.clear()
             if self.vts.websocket is not None:
                 await self.vts.close()
 
-        try:
+        with contextlib.suppress(Exception):
             asyncio.run_coroutine_threadsafe(close_connection(), loop).result(timeout=2)
-        except Exception:
-            pass
         loop.call_soon_threadsafe(loop.stop)
 
     async def connect(self):
@@ -298,11 +310,7 @@ class VTSManager:
         try:
             logger.info("Setting up VTS custom parameters")
             req_create = self.vts.vts_request.requestCustomParameter(
-                parameter="LLM_Sway",
-                min=-30.0,
-                max=30.0,
-                default_value=0.0,
-                info="Swaying for LLM"
+                parameter="LLM_Sway", min=-30.0, max=30.0, default_value=0.0, info="Swaying for LLM"
             )
             await self._request(req_create)
             logger.info("Created VTS custom parameter: LLM_Sway")
@@ -313,13 +321,16 @@ class VTSManager:
             ("LLM_HeadZ", -15.0, 15.0, "Head tilt (PARAM_ANGLE_Z)"),
             ("LLM_HeadY", -15.0, 15.0, "Head nod (PARAM_ANGLE_Y)"),
             ("LLM_HeadX", -10.0, 10.0, "Head yaw (PARAM_ANGLE_X)"),
-            ("LLM_EyeX",  -10.0, 10.0, "Eye look left/right"),
-            ("LLM_EyeY",   -6.0,  6.0, "Eye look up/down"),
+            ("LLM_EyeX", -10.0, 10.0, "Eye look left/right"),
+            ("LLM_EyeY", -6.0, 6.0, "Eye look up/down"),
         ):
             try:
                 req = self.vts.vts_request.requestCustomParameter(
-                    parameter=name, min=min_val, max=max_val,
-                    default_value=0.0, info=info,
+                    parameter=name,
+                    min=min_val,
+                    max=max_val,
+                    default_value=0.0,
+                    info=info,
                 )
                 await self._request(req)
                 logger.info("Created VTS custom parameter: %s", name)
@@ -383,19 +394,34 @@ class VTSManager:
                     # ── Batch gửi tất cả parameter mỗi tick ──────────────
                     if not self._injection_paused:
                         req = self.vts.vts_request.requestSetMultiParameterValue(
-                            parameters=["LLM_Sway", "LLM_EyeX", "LLM_EyeY",
-                                        "LLM_HeadZ", "LLM_HeadY", "LLM_HeadX"],
+                            parameters=[
+                                "LLM_Sway",
+                                "LLM_EyeX",
+                                "LLM_EyeY",
+                                "LLM_HeadZ",
+                                "LLM_HeadY",
+                                "LLM_HeadX",
+                            ],
                             values=[
                                 val,
-                                eye_x * eye_scale, eye_y * eye_scale,
-                                hz * head_scale, hy * head_scale, hx * head_scale,
+                                eye_x * eye_scale,
+                                eye_y * eye_scale,
+                                hz * head_scale,
+                                hy * head_scale,
+                                hx * head_scale,
                             ],
                         )
                         self._last_send_at = now
                         self._spawn_background_task(self._send_request(req))
-                        logger.debug("VTS inject: sway=%.2f eye=(%.2f,%.2f) head=(%.2f,%.2f,%.2f)",
-                                     val, eye_x * eye_scale, eye_y * eye_scale,
-                                     hz * head_scale, hy * head_scale, hx * head_scale)
+                        logger.debug(
+                            "VTS inject: sway=%.2f eye=(%.2f,%.2f) head=(%.2f,%.2f,%.2f)",
+                            val,
+                            eye_x * eye_scale,
+                            eye_y * eye_scale,
+                            hz * head_scale,
+                            hy * head_scale,
+                            hx * head_scale,
+                        )
                     elif now - self._last_send_at > 15.0:
                         # keep-alive: VTS closes idle sockets after ~30s
                         self._last_send_at = now
@@ -410,12 +436,15 @@ class VTSManager:
                         self._spawn_background_task(self._trigger_micro_action())
 
                     # ── Idle pose cycle / post-reply pose ─────────────────
-                    if self._pose_cycle_scheduler.update(now, state, config):
-                        if not entered_post_reply or snap.emotion in (
+                    if self._pose_cycle_scheduler.update(now, state, config) and (
+                        not entered_post_reply
+                        or snap.emotion
+                        in (
                             EmotionTag.JOY,
                             EmotionTag.SURPRISED,
-                        ):
-                            self._spawn_background_task(self._trigger_pose())
+                        )
+                    ):
+                        self._spawn_background_task(self._trigger_pose())
 
                     await asyncio.sleep(SWAY_LOOP_SLEEP_SECONDS)  # 10 Hz
                 except Exception as e:
@@ -430,13 +459,16 @@ class VTSManager:
         task.add_done_callback(self._background_tasks.discard)
 
     async def _send_request(self, request: dict) -> None:
-        self._ensure_async_primitives()
+        _, request_semaphore = self._ensure_async_primitives()
         if not self.is_connected:
             return
-        async with self._request_semaphore:
+        async with request_semaphore:
             try:
                 await self._request(request)
-                logger.debug("VTS request sent: %s", request.get("messageType") or request.get("type") or "unknown")
+                logger.debug(
+                    "VTS request sent: %s",
+                    request.get("messageType") or request.get("type") or "unknown",
+                )
             except Exception as e:
                 logger.warning("VTS request failed: %s", e)
 
@@ -480,10 +512,8 @@ class VTSManager:
     async def _run_injection_toggle(self) -> None:
         chain = self._injection_chain
         if chain is not None and chain is not asyncio.current_task():
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await chain
-            except (asyncio.CancelledError, Exception):
-                pass
         self._injection_chain = asyncio.current_task()
         try:
             if self._injection_paused:
@@ -495,10 +525,8 @@ class VTSManager:
             self._injection_chain = None
 
     async def _disconnect(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             await self.vts.close()
-        except Exception:
-            pass
         self.is_connected = False
 
     async def _reconnect(self) -> None:
@@ -561,6 +589,7 @@ class VTSManager:
         try:
             import ctypes
             import ctypes.wintypes
+
             pt = ctypes.wintypes.POINT()
             if ctypes.windll.user32.GetCursorPos(ctypes.byref(pt)):
                 VTSManager._last_cursor = (pt.x, pt.y)
@@ -569,6 +598,7 @@ class VTSManager:
             pass
         try:
             import pyautogui  # type: ignore[import-untyped]
+
             pos = pyautogui.position()  # type: ignore[no-any-return]
             VTSManager._last_cursor = (int(pos.x), int(pos.y))
             return VTSManager._last_cursor
@@ -597,8 +627,7 @@ class VTSManager:
             )
             if not self._context.snapshot().speaking and candidates:
                 candidates = [
-                    e for e in candidates
-                    if is_idle_safe_micro_action(e.label, e.identifier)
+                    e for e in candidates if is_idle_safe_micro_action(e.label, e.identifier)
                 ]
             if self._last_micro_action_identifier and len(candidates) > 1:
                 alternatives = [
@@ -698,9 +727,11 @@ class VTSManager:
 
         self.trigger_hotkey_sync(primary_hotkey)
         if reset_hotkey is not None and self.is_connected:
+
             def _reset_with_guard() -> None:
                 if self.is_connected:
                     self.trigger_hotkey_sync(reset_hotkey)
+
             reset_timer = threading.Timer(reset_delay, _reset_with_guard)
             reset_timer.daemon = True
             with self._action_lock:
@@ -713,7 +744,10 @@ class VTSManager:
         if not self.is_connected:
             return None
         now = time.monotonic()
-        if self._catalog_cache is not None and now - self._catalog_cache_at < CATALOG_CACHE_TTL_SECONDS:
+        if (
+            self._catalog_cache is not None
+            and now - self._catalog_cache_at < CATALOG_CACHE_TTL_SECONDS
+        ):
             return self._catalog_cache
         current = await self._request(self.vts.vts_request.BaseRequest("CurrentModelRequest"))
         current_data = current.get("data", {})
@@ -776,7 +810,9 @@ class VTSManager:
                 self._active_expressions.add(expression_key)
             self._schedule_expression_deactivation(expression_key)
 
-    def trigger_catalog_actions_sync(self, catalog: VtsCatalog | None, codes: tuple[str, ...]) -> None:
+    def trigger_catalog_actions_sync(
+        self, catalog: VtsCatalog | None, codes: tuple[str, ...]
+    ) -> None:
         if catalog is None or not codes:
             return
         try:
@@ -786,7 +822,9 @@ class VTSManager:
             logger.warning("Could not trigger VTube catalog actions: %s", error)
 
     def _schedule_expression_deactivation(self, expression_key: tuple[str, str]) -> None:
-        timer = threading.Timer(EXPRESSION_ACTIVE_SECONDS, self._deactivate_expression_sync, args=(expression_key,))
+        timer = threading.Timer(
+            EXPRESSION_ACTIVE_SECONDS, self._deactivate_expression_sync, args=(expression_key,)
+        )
         timer.daemon = True
         with self._action_lock:
             self._prune_timers()

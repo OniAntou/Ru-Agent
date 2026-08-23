@@ -2,8 +2,8 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 
-from ru_runtime.worker.v1.core import RuRuntimeCore
 from ru_runtime.generation.runner import BACKEND_KILO
+from ru_runtime.worker.v1.core import RuRuntimeCore
 
 
 def test_clear_memory_closes_sqlite_before_removing_database(tmp_path: Path) -> None:
@@ -118,7 +118,8 @@ def test_generation_forwards_stream_reset_and_vts_instruction(monkeypatch) -> No
         "generate_reply",
         lambda **kwargs: captured.update(kwargs) or "ok",
     )
-    reset = lambda: None
+    def reset():
+        return None
 
     core.generate_reply_with_memory(
         "hello", on_stream_reset=reset, vts_instruction="private catalog"

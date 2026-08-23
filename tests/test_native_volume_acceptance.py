@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import json
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
-
 from native_volume_acceptance import (
     BrokerProtocolClient,
-    NativeAcceptanceRunner,
     NativeAcceptanceError,
+    NativeAcceptanceRunner,
     NativeRunConfig,
     PublishedBrokerProcess,
     VolumeReceipt,
@@ -18,7 +17,6 @@ from native_volume_acceptance import (
     main,
     prove_bearer_ownership,
 )
-
 
 ROLE = "default_render_multimedia"
 HASH = "0123456789abcdef"

@@ -7,9 +7,10 @@ import signal
 import subprocess
 import threading
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Protocol
 
 from .model import ChildExit, ChildExitClassification
 

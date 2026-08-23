@@ -9,6 +9,7 @@ from typing import Literal, cast
 
 from ru_runtime.worker.v1.action_outcome import (
     ActionOutcomeError,
+    ActionOutcomeStatus,
     VolumeReadback,
     parse_volume_readback,
 )
@@ -62,6 +63,8 @@ _RECEIPT_FIELDS = frozenset(
 )
 _ENDPOINT_HASH = re.compile(r"^[0-9a-f]{16}$")
 _ERROR_CODE = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
+
+
 class ActionProtocolError(ValueError):
     def __init__(self, code: str) -> None:
         self.code = code
@@ -89,7 +92,7 @@ class ActionSelection:
 
 @dataclass(frozen=True, slots=True)
 class ActionReceipt:
-    status: str
+    status: ActionOutcomeStatus
     error_code: str | None
     safe_summary: str
     duration_ms: int
@@ -146,11 +149,9 @@ def parse_model_capabilities(settings: Mapping[str, object]) -> tuple[ModelCapab
                 tool_id=tool_id,
                 tool_version=tool_version,
                 scopes=scopes,
-                availability=availability,
+                availability=cast(Literal["executable", "native_pending"], availability),
                 model_enabled=True,
-                capability_class=cast(
-                    Literal["native_mutation", "tool"], capability_class
-                ),
+                capability_class=cast(Literal["native_mutation", "tool"], capability_class),
                 hint=hint,
             )
         )
@@ -233,7 +234,9 @@ def validate_receipt(
         ("session_id", expected_session_id),
         ("correlation_id", expected_correlation_id),
     )
-    if any(expected is not None and payload.get(key) != expected for key, expected in expected_context):
+    if any(
+        expected is not None and payload.get(key) != expected for key, expected in expected_context
+    ):
         raise ActionProtocolError("receipt_mismatch")
 
     status = payload.get("status")
@@ -297,7 +300,7 @@ def validate_receipt(
             raise ActionProtocolError("invalid_receipt") from None
 
     return ActionReceipt(
-        status=status,
+        status=cast(ActionOutcomeStatus, status),
         error_code=error_code,
         safe_summary=safe_summary.strip(),
         duration_ms=duration_ms,
@@ -314,8 +317,6 @@ def _bounded_text(value: object, maximum: int) -> str | None:
 
 def _json_size(value: object, code: str) -> int:
     try:
-        return len(
-            json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        )
+        return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
     except (TypeError, ValueError, OverflowError, RecursionError) as error:
         raise ActionProtocolError(code) from error

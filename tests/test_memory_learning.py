@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
+from ru_runtime.memory.learning import extract_facts_with_llm
 from ru_runtime.memory.store import MemoryKind
-from ru_runtime.memory.learning import ExtractFact, extract_facts_with_llm
 
 
 def _json_generator(payload: str):

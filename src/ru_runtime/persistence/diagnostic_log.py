@@ -8,15 +8,14 @@ import threading
 import time
 import uuid
 from collections.abc import Mapping
-from typing import List, Optional
 
+from ru_runtime.persistence.activity_outbox import get_default_log_root
 from ru_runtime.persistence.diagnostic_context import get_correlation_id
 from ru_runtime.persistence.diagnostic_schema import (
     DiagnosticEvent,
     sanitize_diagnostic_event,
     serialize_diagnostic_event,
 )
-from ru_runtime.persistence.activity_outbox import get_default_log_root
 
 _SEVERITY_RANKS = {
     "trace": 1,
@@ -66,14 +65,14 @@ class BoundedDiagnosticQueue:
             self.enqueued_count += 1
             return True
 
-    def drain_batch(self, max_batch_size: int) -> List[DiagnosticEvent]:
+    def drain_batch(self, max_batch_size: int) -> list[DiagnosticEvent]:
         with self._lock:
-            batch: List[DiagnosticEvent] = []
+            batch: list[DiagnosticEvent] = []
             while self._items and len(batch) < max_batch_size:
                 batch.append(self._items.popleft())
             return batch
 
-    def requeue_front(self, batch: List[DiagnosticEvent]) -> None:
+    def requeue_front(self, batch: list[DiagnosticEvent]) -> None:
         if not batch:
             return
         with self._lock:
@@ -91,7 +90,7 @@ class BoundedDiagnosticQueue:
 class DiagnosticLogWriter:
     def __init__(
         self,
-        log_dir: Optional[str] = None,
+        log_dir: str | None = None,
         prefix: str = "worker-",
         capacity: int = 1000,
         batch_size: int = 64,
@@ -147,7 +146,7 @@ class DiagnosticLogWriter:
             except Exception:
                 self.queue.record_write_failure()
 
-    def _write_batch(self, batch: List[DiagnosticEvent]) -> bool:
+    def _write_batch(self, batch: list[DiagnosticEvent]) -> bool:
         if not batch:
             return True
         with self._write_lock:
@@ -156,7 +155,7 @@ class DiagnosticLogWriter:
                 # Group by date
                 by_date: dict[str, list[DiagnosticEvent]] = collections.defaultdict(list)
                 for evt in batch:
-                    dt = datetime.datetime.fromtimestamp(evt.ts, datetime.timezone.utc)
+                    dt = datetime.datetime.fromtimestamp(evt.ts, datetime.UTC)
                     date_str = dt.strftime("%Y-%m-%d")
                     by_date[date_str].append(evt)
 
@@ -180,7 +179,7 @@ class DiagnosticLoggingHandler(logging.Handler):
     unclassified event with only bounded metadata.
     """
 
-    def __init__(self, writer: Optional[DiagnosticLogWriter] = None) -> None:
+    def __init__(self, writer: DiagnosticLogWriter | None = None) -> None:
         super().__init__(level=logging.NOTSET)
         self.writer = writer or get_diagnostic_log_writer()
 
@@ -205,22 +204,26 @@ class DiagnosticLoggingHandler(logging.Handler):
             duration = fields.get("duration_ms")
             if isinstance(duration, bool) or not isinstance(duration, (int, float)):
                 duration = None
+            status = fields.get("status")
+            status_value = status if isinstance(status, str) else None
+            error_code = fields.get("error_code")
+            error_code_value = error_code if isinstance(error_code, str) else None
+            exception_kind = fields.get("exception_kind")
+            exception_kind_value = exception_kind if isinstance(exception_kind, str) else None
 
             event = DiagnosticEvent(
                 event_id=f"evt_{uuid.uuid4().hex}",
                 ts=time.time(),
-                iso=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                iso=datetime.datetime.now(datetime.UTC).isoformat(),
                 level=record.levelname.casefold(),
                 component=record.name,
                 event_code=str(getattr(record, "ru_event_code", "diagnostic_unclassified")),
                 correlation_id=get_correlation_id(),
                 duration_ms=float(duration) if duration is not None else None,
-                status=fields.get("status") if isinstance(fields.get("status"), str) else None,
-                error_code=fields.get("error_code") if isinstance(fields.get("error_code"), str) else None,
+                status=status_value,
+                error_code=error_code_value,
                 exception_kind=error_type if record.exc_info else (
-                    fields.get("exception_kind")
-                    if isinstance(fields.get("exception_kind"), str)
-                    else None
+                    exception_kind_value
                 ),
             )
             self.writer.try_enqueue(event)
@@ -230,7 +233,7 @@ class DiagnosticLoggingHandler(logging.Handler):
 
 
 def install_diagnostic_logging_handler(
-    writer: Optional[DiagnosticLogWriter] = None,
+    writer: DiagnosticLogWriter | None = None,
     *,
     replace_existing: bool = False,
 ) -> DiagnosticLoggingHandler:
@@ -258,7 +261,7 @@ def remove_diagnostic_logging_handler() -> None:
             handler.close()
 
 
-_global_diagnostic_writer: Optional[DiagnosticLogWriter] = None
+_global_diagnostic_writer: DiagnosticLogWriter | None = None
 _global_writer_lock = threading.Lock()
 
 

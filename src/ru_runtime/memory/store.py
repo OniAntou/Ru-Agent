@@ -13,7 +13,6 @@ from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
 
-
 logger = logging.getLogger(__name__)
 
 _MMAP_SIZE_BYTES = 300_000_000  # 300 MB — đủ cho hàng trăm nghìn dòng memory; 30 GB là vô lý
@@ -30,6 +29,7 @@ _RETRIEVE_SCAN_LIMIT = 2000
 # Memories not touched for this long are not scanned by lexical retrieval;
 # they stay stored and become visible again when the user interacts with them.
 _RETRIEVE_LOOKBACK_DAYS = 90
+
 
 class MemoryKind(StrEnum):
     PROFILE = "profile"
@@ -72,23 +72,35 @@ def _parse_datetime(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
 
 
+def _parse_required_datetime(value: str | None, *, field: str) -> datetime:
+    parsed = _parse_datetime(value)
+    if parsed is None:
+        raise ValueError(f"memory row is missing required {field}")
+    return parsed
+
+
 class StructuredMemoryStore:
     def __init__(self, database_path: str | Path):
         self.database_path = Path(database_path)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self._database_lock = threading.RLock()
-        self._db_conn = None
+        self._db_conn: sqlite3.Connection | None = None
         try:
-            self._db_conn = sqlite3.connect(self.database_path, check_same_thread=False, timeout=30)
-            self._db_conn.row_factory = sqlite3.Row
+            connection = sqlite3.connect(self.database_path, check_same_thread=False, timeout=30)
+            self._db_conn = connection
+            connection.row_factory = sqlite3.Row
             self._initialize_schema()
         except sqlite3.DatabaseError:
             # A corrupt or schema-lagging database must never take down the
             # whole backend: quarantine the bad file and rebuild in place.
             logger.exception("Memory database is corrupt; quarantining and rebuilding")
+            if self._db_conn is not None:
+                self._db_conn.close()
+                self._db_conn = None
             self._quarantine_database()
-            self._db_conn = sqlite3.connect(self.database_path, check_same_thread=False, timeout=30)
-            self._db_conn.row_factory = sqlite3.Row
+            connection = sqlite3.connect(self.database_path, check_same_thread=False, timeout=30)
+            self._db_conn = connection
+            connection.row_factory = sqlite3.Row
             self._initialize_schema()
         self._purge_expired_locked()
 
@@ -112,8 +124,9 @@ class StructuredMemoryStore:
         """Delete expired, unpinned records on startup so the table cannot
         grow without bound."""
         try:
-            with self._database_lock, self._db_conn:
-                self._db_conn.execute(
+            connection = self._connection
+            with self._database_lock, connection:
+                connection.execute(
                     "DELETE FROM memories WHERE status = 'active' AND pinned = 0 AND expires_at IS NOT NULL AND expires_at < ?",
                     (_serialize_datetime(_utc_now()),),
                 )
@@ -121,14 +134,15 @@ class StructuredMemoryStore:
             logger.exception("Could not purge expired memories")
 
     def _initialize_schema(self) -> None:
-        with self._database_lock, self._db_conn:
-            self._db_conn.executescript(
+        connection = self._connection
+        with self._database_lock, connection:
+            connection.executescript(
                 f"""
                 PRAGMA journal_mode = WAL;
                 PRAGMA synchronous = NORMAL;
                 PRAGMA mmap_size = {_MMAP_SIZE_BYTES};
                 PRAGMA temp_store = MEMORY;
-                
+
                 CREATE TABLE IF NOT EXISTS memories (
                     id TEXT PRIMARY KEY,
                     kind TEXT NOT NULL CHECK(kind IN ('profile', 'preference', 'project', 'decision', 'session_summary')),
@@ -151,20 +165,24 @@ class StructuredMemoryStore:
                 """
             )
 
-    def _require_open(self) -> None:
-        if self._db_conn is None:
+    @property
+    def _connection(self) -> sqlite3.Connection:
+        connection = self._db_conn
+        if connection is None:
             raise RuntimeError("StructuredMemoryStore is closed")
+        return connection
 
     def vacuum_database(self) -> None:
         """Run VACUUM to defragment the database and reclaim disk space."""
-        self._require_open()
+        connection = self._connection
         with self._database_lock:
             # VACUUM cannot be run inside a transaction.
-            self._db_conn.isolation_level = None
+            previous_isolation_level = connection.isolation_level
+            connection.isolation_level = None
             try:
-                self._db_conn.execute("VACUUM")
+                connection.execute("VACUUM")
             finally:
-                self._db_conn.isolation_level = ""
+                connection.isolation_level = previous_isolation_level
 
     @staticmethod
     def _record_from_row(row: sqlite3.Row) -> MemoryRecord:
@@ -176,8 +194,8 @@ class StructuredMemoryStore:
             evidence=row["evidence"],
             confidence=row["confidence"],
             importance=row["importance"],
-            created_at=_parse_datetime(row["created_at"]),
-            updated_at=_parse_datetime(row["updated_at"]),
+            created_at=_parse_required_datetime(row["created_at"], field="created_at"),
+            updated_at=_parse_required_datetime(row["updated_at"], field="updated_at"),
             accessed_at=_parse_datetime(row["accessed_at"]),
             expires_at=_parse_datetime(row["expires_at"]),
             status=row["status"],
@@ -185,9 +203,9 @@ class StructuredMemoryStore:
         )
 
     def get(self, record_id: str) -> MemoryRecord | None:
-        self._require_open()
+        connection = self._connection
         with self._database_lock:
-            row = self._db_conn.execute("SELECT * FROM memories WHERE id = ?", (record_id,)).fetchone()
+            row = connection.execute("SELECT * FROM memories WHERE id = ?", (record_id,)).fetchone()
         return self._record_from_row(row) if row is not None else None
 
     def upsert(
@@ -204,13 +222,13 @@ class StructuredMemoryStore:
     ) -> MemoryRecord:
         content = content.strip()
         evidence = evidence.strip()
-        self._require_open()
-        
+        connection = self._connection
+
         if not content or not evidence:
             raise ValueError("memory content and evidence cannot be blank")
         if len(content) > 100000 or len(evidence) > 100000:
             raise ValueError("memory content and evidence cannot exceed 100,000 characters")
-            
+
         if not 0 <= confidence <= 1 or not 0 <= importance <= 1:
             raise ValueError("memory confidence and importance must be between 0 and 1")
 
@@ -218,11 +236,13 @@ class StructuredMemoryStore:
         record = self._build_record(
             kind, content, scope, evidence, confidence, importance, expires_at, now
         )
-        with self._database_lock, self._db_conn:
+        with self._database_lock, connection:
             stored_id = self._upsert_locked(record, supersedes_id, now)
             if stored_id != record.id:
                 # Content already stored: return the existing active record.
-                row = self._db_conn.execute("SELECT * FROM memories WHERE id = ?", (stored_id,)).fetchone()
+                row = connection.execute(
+                    "SELECT * FROM memories WHERE id = ?", (stored_id,)
+                ).fetchone()
                 if row is not None:
                     return self._record_from_row(row)
         return record
@@ -258,9 +278,10 @@ class StructuredMemoryStore:
         """Insert *record*; caller must hold _database_lock with an open transaction.
         Returns the id of the record that is actually stored: the new one, or the
         existing active duplicate when the content already exists."""
+        connection = self._connection
         duplicate = None
         if supersedes_id is None:
-            duplicate = self._db_conn.execute(
+            duplicate = connection.execute(
                 """
                 SELECT id FROM memories
                 WHERE status = 'active'
@@ -280,16 +301,16 @@ class StructuredMemoryStore:
         if duplicate is not None:
             return str(duplicate["id"])
         if supersedes_id is not None:
-            row = self._db_conn.execute(
+            row = connection.execute(
                 "SELECT status FROM memories WHERE id = ?", (supersedes_id,)
             ).fetchone()
             if row is None or row["status"] != "active":
                 raise ValueError("superseded memory does not exist or is not active")
-            self._db_conn.execute(
+            connection.execute(
                 "UPDATE memories SET status = 'superseded', updated_at = ? WHERE id = ?",
                 (_serialize_datetime(now), supersedes_id),
             )
-        self._db_conn.execute(
+        connection.execute(
             """
             INSERT INTO memories (
                 id, kind, content, scope, evidence, confidence, importance,
@@ -315,10 +336,10 @@ class StructuredMemoryStore:
         return record.id
 
     def count_active(self) -> int:
-        self._require_open()
+        connection = self._connection
         now = _serialize_datetime(_utc_now())
         with self._database_lock:
-            row = self._db_conn.execute(
+            row = connection.execute(
                 """
                 SELECT COUNT(*) AS count FROM memories
                 WHERE status = 'active' AND (expires_at IS NULL OR expires_at > ? OR pinned = 1)
@@ -328,10 +349,10 @@ class StructuredMemoryStore:
         return int(row["count"])
 
     def list_active(self, query: str = "") -> tuple[MemoryRecord, ...]:
-        self._require_open()
+        connection = self._connection
         now = _serialize_datetime(_utc_now())
         with self._database_lock:
-            rows = self._db_conn.execute(
+            rows = connection.execute(
                 """
                 SELECT * FROM memories
                 WHERE status = 'active' AND (expires_at IS NULL OR expires_at > ? OR pinned = 1)
@@ -343,18 +364,25 @@ class StructuredMemoryStore:
         needle = query.strip().casefold()
         if not needle:
             return records
-        return tuple(record for record in records if needle in f"{record.content} {record.scope or ''}".casefold())
+        return tuple(
+            record
+            for record in records
+            if needle in f"{record.content} {record.scope or ''}".casefold()
+        )
 
     @staticmethod
     def _tokens(text: str) -> set[str]:
         return set(re.findall(r"\w+", text.casefold()))
 
-    def retrieve(self, query: str, *, limit: int = 5, max_chars: int = 1200) -> tuple[MemoryRecord, ...]:
-        self._require_open()
+    def retrieve(
+        self, query: str, *, limit: int = 5, max_chars: int = 1200
+    ) -> tuple[MemoryRecord, ...]:
+        connection = self._connection
         query_tokens = self._tokens(query)
         if not query_tokens:
             return ()
         from ru_runtime.memory.extraction import _PATH_PATTERN
+
         query_scopes = re.findall(_PATH_PATTERN.pattern, query)
         ranked: list[tuple[float, MemoryRecord]] = []
         now = _serialize_datetime(_utc_now())
@@ -362,7 +390,7 @@ class StructuredMemoryStore:
         # Avoid a full table scan every turn: score pinned memories plus the
         # most recently updated candidates within a lookback window.
         with self._database_lock:
-            rows = self._db_conn.execute(
+            rows = connection.execute(
                 """
                 SELECT * FROM memories
                 WHERE status = 'active'
@@ -375,7 +403,10 @@ class StructuredMemoryStore:
             ).fetchall()
         records = tuple(self._record_from_row(row) for row in rows)
         for record in records:
-            scope_match = bool(record.scope and any(scope.casefold() == record.scope.casefold() for scope in query_scopes))
+            scope_match = bool(
+                record.scope
+                and any(scope.casefold() == record.scope.casefold() for scope in query_scopes)
+            )
             if query_scopes and record.scope and not scope_match:
                 continue
             overlap = len(query_tokens & self._tokens(f"{record.content} {record.scope or ''}"))
@@ -390,9 +421,7 @@ class StructuredMemoryStore:
             if score >= _RETRIEVE_MIN_SCORE:
                 ranked.append((score, record))
         ranked.sort(key=lambda item: (item[0], item[1].updated_at), reverse=True)
-        return self._fit_records(
-            [record for _, record in ranked], max_chars, limit=limit
-        )
+        return self._fit_records([record for _, record in ranked], max_chars, limit=limit)
 
     @staticmethod
     def _render_record(record: MemoryRecord) -> str:
@@ -427,10 +456,10 @@ class StructuredMemoryStore:
         candidates = extract_candidates(prompt, response)
         if not candidates:
             return ()
-        self._require_open()
+        connection = self._connection
         now = _utc_now()
         records: list[MemoryRecord] = []
-        with self._database_lock, self._db_conn:
+        with self._database_lock, connection:
             for candidate in candidates:
                 record = self._build_record(
                     candidate.kind,
@@ -448,10 +477,10 @@ class StructuredMemoryStore:
         return tuple(records)
 
     def clear(self) -> None:
-        self._require_open()
-        with self._database_lock, self._db_conn:
-            self._db_conn.execute("DELETE FROM memories")
-            self._db_conn.execute("DELETE FROM legacy_memory_migrations")
+        connection = self._connection
+        with self._database_lock, connection:
+            connection.execute("DELETE FROM memories")
+            connection.execute("DELETE FROM legacy_memory_migrations")
 
     def close(self) -> None:
         with self._database_lock:
@@ -463,7 +492,7 @@ class StructuredMemoryStore:
         from ru_runtime.memory.extraction import extract_candidates
 
         legacy_path = Path(legacy_texts_path)
-        self._require_open()
+        connection = self._connection
         if not legacy_path.is_file():
             return {"imported": 0, "rejected": 0}
         source = legacy_path.read_bytes()
@@ -476,8 +505,8 @@ class StructuredMemoryStore:
         imported = 0
         rejected = 0
         now = _utc_now()
-        with self._database_lock, self._db_conn:
-            already_imported = self._db_conn.execute(
+        with self._database_lock, connection:
+            already_imported = connection.execute(
                 "SELECT 1 FROM legacy_memory_migrations WHERE source_hash = ?", (source_hash,)
             ).fetchone()
             if already_imported is not None:
@@ -490,7 +519,7 @@ class StructuredMemoryStore:
                 ):
                     rejected += 1
                     continue
-                prompt, response = block[len(_USER_PREFIX):].split("\nAssistant:", 1)
+                prompt, response = block[len(_USER_PREFIX) :].split("\nAssistant:", 1)
                 candidates = extract_candidates(prompt, response)
                 if not candidates:
                     rejected += 1
@@ -509,7 +538,8 @@ class StructuredMemoryStore:
                     stored_id = self._upsert_locked(record, None, now)
                     if stored_id == record.id:
                         imported += 1
-            self._db_conn.execute(
-                "INSERT OR IGNORE INTO legacy_memory_migrations (source_hash) VALUES (?)", (source_hash,)
+            connection.execute(
+                "INSERT OR IGNORE INTO legacy_memory_migrations (source_hash) VALUES (?)",
+                (source_hash,),
             )
         return {"imported": imported, "rejected": rejected}

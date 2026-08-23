@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import re
 import logging
+import re
 from collections.abc import Callable, Sequence
 
 from ru_runtime.policy.text import strip_emojis_and_emoticons
+
 from .chat import ChatTurn
 from .context import build_conversation_messages
 from .search import perform_web_search
@@ -84,7 +85,7 @@ def execute_reply(
         on_complete_timing=on_complete_timing,
         is_cancelled=is_cancelled,
     )
-    
+
     search_match = _SEARCH_MARKER.search(response)
     if not allow_web_search or search_match is None:
         response = _strip_search_marker(response)

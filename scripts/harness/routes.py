@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any
 
 
-class RouteSafety(str, Enum):
+class RouteSafety(StrEnum):
     READ_ONLY = "read_only"
     FIXTURE_MUTATION = "fixture_mutation"
     EXTERNAL_SKIP = "external_skip"
@@ -88,9 +89,7 @@ def _factory_for(method: str, path: str) -> RequestFactory:
             body = {"audio_b64": _synthetic_audio_base64(), "sample_rate": 16_000}
         elif path == "/vts/mouse-look":
             body = {"enabled": False, "sensitivity": 1.0}
-        elif path == "/vts/overlay":
-            body = {"enabled": False}
-        elif path == "/vts/connect":
+        elif path == "/vts/overlay" or path == "/vts/connect":
             body = {"enabled": False}
         elif path == "/vts/config":
             body = {"enabled": False, "sensitivity": 1.0}

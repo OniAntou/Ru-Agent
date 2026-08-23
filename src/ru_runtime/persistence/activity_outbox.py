@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import collections
+import contextlib
 import json
 import os
 import re
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 _URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
 _BEARER_PATTERN = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
@@ -38,7 +39,7 @@ def get_outbox_file() -> Path:
 DEFAULT_OUTBOX_FILE = get_outbox_file()
 
 
-def format_activity_preview(text: Optional[str], max_length: int = 160) -> Tuple[str, int, bool]:
+def format_activity_preview(text: str | None, max_length: int = 160) -> tuple[str, int, bool]:
     if not text:
         return "", 0, False
 
@@ -110,7 +111,7 @@ def sanitize_activity_event(event: dict) -> dict:
 
     iso = str(evt.get("iso") or "").strip()
     if not iso or "T" not in iso:
-        iso = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        iso = datetime.fromtimestamp(ts, tz=UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
     event_type = str(evt.get("type") or "chat").strip().lower()
     session_id = evt.get("session_id")
@@ -183,7 +184,7 @@ def sanitize_activity_event(event: dict) -> dict:
 class ActivityOutboxWriter:
     def __init__(
         self,
-        log_dir: Optional[str] = None,
+        log_dir: str | None = None,
         capacity: int = 1000,
         batch_size: int = 64,
         flush_interval_seconds: float = 0.2,
@@ -255,9 +256,9 @@ class ActivityOutboxWriter:
                 break
             batch = self._drain_batch()
 
-    def _drain_batch(self) -> List[dict]:
+    def _drain_batch(self) -> list[dict]:
         with self._lock:
-            batch: List[dict] = []
+            batch: list[dict] = []
             while self._queue and len(batch) < self.batch_size:
                 batch.append(self._queue.popleft())
             return batch
@@ -274,7 +275,7 @@ class ActivityOutboxWriter:
             except Exception:
                 self._record_write_failure()
 
-    def _write_batch(self, batch: List[dict]) -> bool:
+    def _write_batch(self, batch: list[dict]) -> bool:
         if not batch:
             return True
         with self._write_lock:
@@ -294,7 +295,7 @@ class ActivityOutboxWriter:
         with self._lock:
             self._write_failure_count += 1
 
-    def _requeue_failed_batch(self, batch: List[dict]) -> None:
+    def _requeue_failed_batch(self, batch: list[dict]) -> None:
         with self._lock:
             for event in reversed(batch):
                 if len(self._queue) >= self.capacity:
@@ -303,7 +304,7 @@ class ActivityOutboxWriter:
                 self._queue.appendleft(event)
 
 
-_global_outbox_writer: Optional[ActivityOutboxWriter] = None
+_global_outbox_writer: ActivityOutboxWriter | None = None
 _global_lock = threading.Lock()
 
 
@@ -322,8 +323,6 @@ def reset_global_outbox_writer() -> None:
     global _global_outbox_writer
     with _global_lock:
         if _global_outbox_writer is not None:
-            try:
+            with contextlib.suppress(Exception):
                 _global_outbox_writer.close()
-            except Exception:
-                pass
             _global_outbox_writer = None

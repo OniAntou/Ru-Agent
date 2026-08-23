@@ -126,7 +126,10 @@ def test_voice_timeout_keeps_model_lock_until_background_worker_exits() -> None:
         prepare_speech=lambda selection: None,
         request_audio=slow_request_audio,
         memory_lock=memory_lock,
-        request_timeout=0.01,
+        # Leave enough room for a cold Python 3.11 thread-pool startup; the
+        # audio worker still blocks for two seconds, so this deterministically
+        # exercises the synthesis-timeout cleanup path.
+        request_timeout=0.25,
     )
 
     async def collect() -> list[VoiceStreamEvent]:

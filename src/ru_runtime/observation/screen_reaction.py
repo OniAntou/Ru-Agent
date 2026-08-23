@@ -9,7 +9,6 @@ from time import monotonic
 
 from ru_runtime.memory.extraction import _SENSITIVE_PATTERN
 
-
 MAX_EVENT_AGE_MS = 4_500
 MIN_REACTION_INTERVAL_SECONDS = 10.0
 ROUTINE_REACTION_INTERVAL_SECONDS = 20.0

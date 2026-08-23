@@ -1,12 +1,9 @@
-import json
-import os
 import threading
 import time
-from pathlib import Path
 
 import pytest
 
-from ru_runtime.persistence.activity_log import append, clear, read, get_activity_log_file
+from ru_runtime.persistence.activity_log import append, clear, read
 from ru_runtime.persistence.activity_outbox import reset_global_outbox_writer
 
 
@@ -61,8 +58,10 @@ def test_append_thread_safe():
             errors.append(e)
 
     threads = [threading.Thread(target=worker, args=(i * 100,)) for i in range(4)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
     assert not errors
     assert len(read()) == 80
 

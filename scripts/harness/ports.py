@@ -18,7 +18,7 @@ class PortLease:
     _socket: socket.socket | None
 
     @classmethod
-    def acquire(cls, host: str = "127.0.0.1", port: int = 0) -> "PortLease":
+    def acquire(cls, host: str = "127.0.0.1", port: int = 0) -> PortLease:
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             listener.bind((host, port))

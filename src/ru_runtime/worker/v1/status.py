@@ -15,21 +15,20 @@ def get_status() -> dict[str, object]:
 
 
 def get_models(backend: str = "") -> dict[str, object]:
-    from ru_runtime.worker.v1 import runtime_services as shared
-    from ru_runtime.generation.runner import (
-        BACKEND_CUSTOM,
-        BACKEND_KILO,
-        BACKEND_LMSTUDIO,
-        BACKEND_OLLAMA,
-        BACKEND_OPENCODE,
-        OPENAI_COMPATIBLE_BACKENDS,
-    )
     from ru_runtime.generation.openai import (
         KILO_GATEWAY_BASE_URL,
         LMSTUDIO_BASE_URL,
         OLLAMA_BASE_URL,
         OPENCODE_BASE_URL,
     )
+    from ru_runtime.generation.runner import (
+        BACKEND_KILO,
+        BACKEND_LMSTUDIO,
+        BACKEND_OLLAMA,
+        BACKEND_OPENCODE,
+        OPENAI_COMPATIBLE_BACKENDS,
+    )
+    from ru_runtime.worker.v1 import runtime_services as shared
 
     backend = shared._resolve_backend(backend) or backend
     if backend not in OPENAI_COMPATIBLE_BACKENDS:

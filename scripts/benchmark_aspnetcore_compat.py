@@ -4,8 +4,8 @@ import argparse
 import asyncio
 import json
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 import httpx
 from websockets.asyncio.client import connect

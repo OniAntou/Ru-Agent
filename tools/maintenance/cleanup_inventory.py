@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from .cleanup_policy import (
@@ -13,7 +13,6 @@ from .cleanup_policy import (
     classify_path,
     normalize_relative_path,
 )
-
 
 _EXACT_CANDIDATES = (
     ".venv311",
@@ -288,7 +287,7 @@ def _modified_utc(path: Path) -> str | None:
         modified = path.lstat().st_mtime
     except OSError:
         return None
-    return datetime.fromtimestamp(modified, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.fromtimestamp(modified, tz=UTC).isoformat().replace("+00:00", "Z")
 
 
 def build_entry(

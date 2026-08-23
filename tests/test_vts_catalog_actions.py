@@ -1,5 +1,9 @@
-from ru_runtime.vts.catalog import build_catalog, catalog_instruction, parse_catalog_reply
-from ru_runtime.vts.catalog import split_reply_metadata
+from ru_runtime.vts.catalog import (
+    build_catalog,
+    catalog_instruction,
+    parse_catalog_reply,
+    split_reply_metadata,
+)
 from ru_runtime.vts.emotion import EmotionTag
 
 

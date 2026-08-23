@@ -1,23 +1,30 @@
-import os
-import sys
-import time
 import argparse
-import tempfile
 import statistics
+import sys
+import tempfile
+import time
 from pathlib import Path
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
-from ru_runtime.persistence.diagnostic_log import DiagnosticLogWriter
 from ru_runtime.persistence.activity_outbox import ActivityOutboxWriter
+from ru_runtime.persistence.diagnostic_log import DiagnosticLogWriter
+from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
 from ru_runtime.voice.vietnamese_tts_normalizer import normalize_vietnamese_tts_text
-from ru_runtime.worker.v1.protocol import encode_envelope, validate_envelope, CHAT_START, VOICE_START, VTS_ACTION
+from ru_runtime.worker.v1.protocol import (
+    CHAT_START,
+    VOICE_START,
+    VTS_ACTION,
+    encode_envelope,
+    validate_envelope,
+)
 
 
 def run_benchmark(samples: int = 30, output_path: str = None):
-    print(f"Running logging performance benchmark with {samples} paired samples per real pipeline path...")
+    print(
+        f"Running logging performance benchmark with {samples} paired samples per real pipeline path..."
+    )
     # Average a small batch per sample so scheduler noise does not dominate
     # the sub-millisecond enqueue cost being gated.
     repetitions_per_sample = 5
@@ -102,7 +109,9 @@ def run_benchmark(samples: int = 30, output_path: str = None):
                 for _ in range(1200):
                     scene = "Code editor with python file open in IDE"
                     event = "User typed a new function implementation"
-                    reaction = normalize_vietnamese_tts_text("Chủ nhân đang viết code chăm chỉ quá nè!")
+                    reaction = normalize_vietnamese_tts_text(
+                        "Chủ nhân đang viết code chăm chỉ quá nè!"
+                    )
                     total += len(scene) + len(event) + len(reaction)
                 return total
 
@@ -115,9 +124,15 @@ def run_benchmark(samples: int = 30, output_path: str = None):
             }
             work_fn = work_map[path]
 
-            def emit_logging_event(event_index):
-                if path == "chat_pipeline":
-                    activity_writer.try_enqueue({"type": "chat", "data": {"role": "user", "preview": "test message"}, "session_id": "s_1"})
+            def emit_logging_event(event_index, benchmark_path=path):
+                if benchmark_path == "chat_pipeline":
+                    activity_writer.try_enqueue(
+                        {
+                            "type": "chat",
+                            "data": {"role": "user", "preview": "test message"},
+                            "session_id": "s_1",
+                        }
+                    )
                     diag_writer.try_enqueue(
                         DiagnosticEvent(
                             event_id=f"evt_chat_{event_index}",
@@ -130,7 +145,7 @@ def run_benchmark(samples: int = 30, output_path: str = None):
                         )
                     )
 
-                elif path == "voice_pipeline":
+                elif benchmark_path == "voice_pipeline":
                     diag_writer.try_enqueue(
                         DiagnosticEvent(
                             event_id=f"evt_voice_{event_index}",
@@ -142,7 +157,7 @@ def run_benchmark(samples: int = 30, output_path: str = None):
                             duration_ms=0.3,
                         )
                     )
-                elif path == "stt_pipeline":
+                elif benchmark_path == "stt_pipeline":
                     diag_writer.try_enqueue(
                         DiagnosticEvent(
                             event_id=f"evt_stt_{event_index}",
@@ -154,8 +169,14 @@ def run_benchmark(samples: int = 30, output_path: str = None):
                             duration_ms=0.1,
                         )
                     )
-                elif path == "vts_pipeline":
-                    activity_writer.try_enqueue({"type": "vts_action", "data": {"category": "nod", "status": "ok"}, "session_id": "s_1"})
+                elif benchmark_path == "vts_pipeline":
+                    activity_writer.try_enqueue(
+                        {
+                            "type": "vts_action",
+                            "data": {"category": "nod", "status": "ok"},
+                            "session_id": "s_1",
+                        }
+                    )
                     diag_writer.try_enqueue(
                         DiagnosticEvent(
                             event_id=f"evt_vts_{event_index}",
@@ -167,8 +188,14 @@ def run_benchmark(samples: int = 30, output_path: str = None):
                             duration_ms=0.1,
                         )
                     )
-                elif path == "observation_pipeline":
-                    activity_writer.try_enqueue({"type": "observation_reaction", "data": {"preview": "test", "scene": "screen"}, "session_id": "s_1"})
+                elif benchmark_path == "observation_pipeline":
+                    activity_writer.try_enqueue(
+                        {
+                            "type": "observation_reaction",
+                            "data": {"preview": "test", "scene": "screen"},
+                            "session_id": "s_1",
+                        }
+                    )
                     diag_writer.try_enqueue(
                         DiagnosticEvent(
                             event_id=f"evt_obs_{event_index}",
@@ -181,16 +208,16 @@ def run_benchmark(samples: int = 30, output_path: str = None):
                         )
                     )
 
-            def measure_baseline():
+            def measure_baseline(operation=work_fn):
                 t0 = time.perf_counter()
                 for _ in range(repetitions_per_sample):
-                    work_fn()
+                    operation()
                 return (time.perf_counter() - t0) * 1000.0 / repetitions_per_sample
 
-            def measure_logging(event_index):
+            def measure_logging(event_index, operation=work_fn):
                 t0 = time.perf_counter()
                 for repeat in range(repetitions_per_sample):
-                    work_fn()
+                    operation()
                     emit_logging_event((event_index * repetitions_per_sample) + repeat)
                 return (time.perf_counter() - t0) * 1000.0 / repetitions_per_sample
 
@@ -203,6 +230,7 @@ def run_benchmark(samples: int = 30, output_path: str = None):
 
             # Interleaved paired sampling to avoid CPU throttling / scheduling bias
             import gc
+
             for i in range(samples):
                 gc.collect()
                 gc.disable()

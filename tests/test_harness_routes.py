@@ -3,12 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from harness.model import CheckResult
+from harness.protocols import probe_auth_ownership
 from harness.routes import (
     RouteSafety,
     build_route_registry,
     load_contract,
 )
-from harness.protocols import probe_auth_ownership
 
 
 def test_registry_covers_the_current_contract_without_silent_skips() -> None:

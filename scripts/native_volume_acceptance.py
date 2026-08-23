@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -18,16 +19,15 @@ import tempfile
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
 import psutil
-from websockets.asyncio.client import connect
-
 from harness.artifacts import build_artifact
 from harness.model import CheckResult
+from websockets.asyncio.client import connect
 
 _ROLE = "default_render_multimedia"
 _HASH_PATTERN = re.compile(r"^[0-9a-f]{16}$")
@@ -81,7 +81,7 @@ class VolumeReceipt:
     muted: bool | None
 
     @classmethod
-    def from_payload(cls, payload: object) -> "VolumeReceipt":
+    def from_payload(cls, payload: object) -> VolumeReceipt:
         if not isinstance(payload, Mapping):
             raise NativeAcceptanceError("malformed_receipt")
         allowed = {
@@ -534,7 +534,7 @@ class PublishedBrokerProcess:
                     "protocol_version": 1,
                     "session_root": str(session_root.resolve()),
                     "expires_at": (
-                        datetime.now(timezone.utc) + timedelta(minutes=5)
+                        datetime.now(UTC) + timedelta(minutes=5)
                     ).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
                 }
             ),
@@ -619,10 +619,8 @@ class PublishedBrokerProcess:
         descriptor_removed = self._descriptor is None or not self._descriptor.exists()
         temporary_root = self._temporary_root
         if self._temporary is not None:
-            try:
+            with contextlib.suppress(OSError):
                 self._temporary.cleanup()
-            except OSError:
-                pass
         temporary_root_removed = temporary_root is None or not temporary_root.exists()
         descriptor_removed = descriptor_removed or self._descriptor is None or not self._descriptor.exists()
         return {
@@ -680,7 +678,7 @@ def build_native_artifact(
         evidence_class="native",
         commit=commit,
         mode="native-volume-acceptance",
-        started_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        started_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         duration_ms=result.mutation_duration_ms + result.restoration_duration_ms,
         components={
             "broker": {"role": result.endpoint_role, "endpoint_hash": result.endpoint_hash},

@@ -30,7 +30,10 @@ def build_conversation_messages(
     if max_history_chars < 0:
         raise ValueError("max history chars cannot be negative")
 
-    from ru_runtime.system.pc_tools import get_realtime_clock_context, describe_pc_hardware_for_prompt
+    from ru_runtime.system.pc_tools import (
+        describe_pc_hardware_for_prompt,
+        get_realtime_clock_context,
+    )
 
     clock_info = system_clock_context if system_clock_context is not None else get_realtime_clock_context()
     hw_info = system_hardware_context if system_hardware_context is not None else describe_pc_hardware_for_prompt()

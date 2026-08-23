@@ -45,30 +45,30 @@ def test_settings_reject_invalid_configuration_values(kwargs: dict[str, object],
 
 
 def test_frozen_settings_define_the_entire_candidate_matrix_in_order() -> None:
-    assert BASELINE_SETTINGS == OmniVoiceGenerationSettings(
+    assert OmniVoiceGenerationSettings(
         config_id="baseline-16",
         language=None,
         normalize_text=False,
         num_step=16,
-    )
-    assert TEXT_AWARE_16_SETTINGS == OmniVoiceGenerationSettings(
+    ) == BASELINE_SETTINGS
+    assert OmniVoiceGenerationSettings(
         config_id="vi-normalized-16",
         language="Vietnamese",
         normalize_text=True,
         num_step=16,
-    )
-    assert TEXT_AWARE_20_SETTINGS == OmniVoiceGenerationSettings(
+    ) == TEXT_AWARE_16_SETTINGS
+    assert OmniVoiceGenerationSettings(
         config_id="vi-normalized-20",
         language="Vietnamese",
         normalize_text=True,
         num_step=20,
-    )
-    assert TEXT_AWARE_24_SETTINGS == OmniVoiceGenerationSettings(
+    ) == TEXT_AWARE_20_SETTINGS
+    assert OmniVoiceGenerationSettings(
         config_id="vi-normalized-24",
         language="Vietnamese",
         normalize_text=True,
         num_step=24,
-    )
+    ) == TEXT_AWARE_24_SETTINGS
     assert CANDIDATE_SETTINGS == (
         BASELINE_SETTINGS,
         TEXT_AWARE_16_SETTINGS,

@@ -1,22 +1,19 @@
 from __future__ import annotations
 
-import importlib
 import argparse
+import contextlib
+import ctypes
+import importlib
 import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
-import ctypes
+from collections.abc import Callable
 from pathlib import Path
 from time import perf_counter
-from typing import Callable
 
-from ru_runtime.voice.omnivoice_tuning import (
-    BASELINE_SETTINGS,
-    CANDIDATE_SETTINGS,
-    OmniVoiceGenerationSettings,
-)
 from ru_runtime.voice.benchmark import (
     BenchmarkUtterance,
     ResourceSampler,
@@ -24,6 +21,11 @@ from ru_runtime.voice.benchmark import (
     load_manifest,
     run_engine_benchmark,
     summarize,
+)
+from ru_runtime.voice.omnivoice_tuning import (
+    BASELINE_SETTINGS,
+    CANDIDATE_SETTINGS,
+    OmniVoiceGenerationSettings,
 )
 
 SETTINGS_BY_ID = {settings.config_id: settings for settings in CANDIDATE_SETTINGS}
@@ -322,10 +324,8 @@ def run_benchmark(
         engine.load(reference_audio, reference_text)
     except Exception as error:
         model_load_seconds = max(0.0, load_clock() - load_started)
-        try:
+        with contextlib.suppress(Exception):
             engine.release()
-        except Exception:
-            pass
         records = with_metadata([{
             "schema_version": 1,
             "engine_id": engine.engine_id,

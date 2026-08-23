@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import argparse
+import asyncio
 import contextlib
 import hmac
 import json
@@ -9,9 +9,9 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime, timezone
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, TypeAlias
 
 from websockets.asyncio.server import ServerConnection, serve
@@ -27,23 +27,22 @@ from ru_runtime.worker.v1.protocol import (
     CHAT_CANCEL,
     CHAT_START,
     CHAT_TOOL_CANCEL,
-    CHAT_TOOL_REQUEST,
     CHAT_TOOL_RESULT,
     ERROR,
     HELLO,
     HELLO_OK,
     MEMORY_EXTRACT,
+    PROTOCOL_VERSION,
     RUNTIME_LOAD,
     RUNTIME_REQUEST,
     RUNTIME_RESPONSE,
-    PROTOCOL_VERSION,
-    ProtocolError,
     VOICE_CONTROL,
     VOICE_START,
     VTS_ACTION,
     VTS_CATALOG,
     WORKER_HEALTH,
     WORKER_HEALTH_OK,
+    ProtocolError,
     encode_envelope,
     validate_envelope,
 )
@@ -224,7 +223,9 @@ async def _handle_connection(
 
         async for frame in connection:
             if not isinstance(frame, str):
-                await _send_error(connection, send_lock, "connection", "text_control_required", False)
+                await _send_error(
+                    connection, send_lock, "connection", "text_control_required", False
+                )
                 continue
 
             try:
@@ -277,7 +278,9 @@ async def _handle_connection(
                 if payload.get("session_id") != context[0] or (
                     context[1] is not None and payload.get("correlation_id") != context[1]
                 ):
-                    await _send_error(connection, send_lock, request_id, "tool_context_mismatch", False)
+                    await _send_error(
+                        connection, send_lock, request_id, "tool_context_mismatch", False
+                    )
                     continue
                 if message_type == CHAT_TOOL_CANCEL:
                     cancelled = cancellation_events.get(request_id)
@@ -290,7 +293,9 @@ async def _handle_connection(
                 try:
                     queue.put_nowait(dict(payload))
                 except asyncio.QueueFull:
-                    await _send_error(connection, send_lock, request_id, "duplicate_tool_result", False)
+                    await _send_error(
+                        connection, send_lock, request_id, "duplicate_tool_result", False
+                    )
                 continue
 
             handler = _select_handler(message_type, handlers)
@@ -306,7 +311,7 @@ async def _handle_connection(
             session_id = envelope["payload"].get("session_id")
             if not isinstance(session_id, str) or not session_id.strip():
                 session_id = ""
-            request_tool_queue = None
+            request_tool_queue: asyncio.Queue[Mapping[str, Any]] | None = None
             if message_type == CHAT_START:
                 request_tool_queue = asyncio.Queue(maxsize=1)
                 tool_result_queues[request_id] = request_tool_queue
@@ -377,12 +382,8 @@ async def _run_request(
                 response_payload = dict(reply.payload)
                 binary = reply.binary
                 announces_binary = (
-                    reply.type == VOICE_CONTROL
-                    and response_payload.get("state") == "audio_ready"
-                ) or (
-                    reply.type == RUNTIME_RESPONSE
-                    and response_payload.get("binary") is True
-                )
+                    reply.type == VOICE_CONTROL and response_payload.get("state") == "audio_ready"
+                ) or (reply.type == RUNTIME_RESPONSE and response_payload.get("binary") is True)
                 if announces_binary and not binary:
                     raise ValueError("announced binary requires non-empty payload")
                 if binary is not None and (not binary or not announces_binary):
@@ -412,7 +413,7 @@ async def _run_request(
                     DiagnosticEvent(
                         event_id=f"evt_{uuid.uuid4().hex[:12]}",
                         ts=time.time(),
-                        iso=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                        iso=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
                         level="info",
                         component="worker",
                         event_code="worker_completed",
@@ -434,7 +435,7 @@ async def _run_request(
                     DiagnosticEvent(
                         event_id=f"evt_{uuid.uuid4().hex[:12]}",
                         ts=time.time(),
-                        iso=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                        iso=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
                         level="error",
                         component="worker",
                         event_code="worker_failed",
@@ -446,7 +447,9 @@ async def _run_request(
                     )
                 )
             with contextlib.suppress(ConnectionClosed):
-                await _send_error(connection, send_lock, request_id, "worker_failure", True, sequence)
+                await _send_error(
+                    connection, send_lock, request_id, "worker_failure", True, sequence
+                )
 
 
 def _select_handler(message_type: str, handlers: WorkerHandlers) -> WorkerHandler | None:
@@ -499,7 +502,9 @@ def _safe_request_id(raw: str) -> str:
     except json.JSONDecodeError:
         return "connection"
     request_id = value.get("id") if isinstance(value, dict) else None
-    return request_id if isinstance(request_id, str) and 0 < len(request_id) <= 128 else "connection"
+    return (
+        request_id if isinstance(request_id, str) and 0 < len(request_id) <= 128 else "connection"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

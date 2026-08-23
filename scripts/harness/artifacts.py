@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any
 
 from . import HARNESS_VERSION
 from .model import CheckResult

@@ -27,7 +27,7 @@ def get_realtime_clock_context(now: datetime.datetime | None = None) -> str:
     weekday_name = _WEEKDAYS_VI.get(now.weekday(), f"Thứ {now.weekday() + 2}")
     time_str = now.strftime("%H:%M:%S")
     date_str = now.strftime("%d/%m/%Y")
-    
+
     # Calculate local UTC offset (e.g. GMT+7)
     utc_offset = now.astimezone().strftime("%z")
     tz_label = f"GMT{utc_offset[:3]}:{utc_offset[3:]}" if utc_offset else "Giờ địa phương"

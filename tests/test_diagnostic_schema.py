@@ -1,18 +1,15 @@
 from __future__ import annotations
 
 import json
+
 import pytest
 
 from ru_runtime.persistence.diagnostic_schema import (
-    DiagnosticEvent,
-    serialize_diagnostic_event,
-    sanitize_diagnostic_event,
-    deserialize_diagnostic_event,
-    ALLOWED_LEVELS,
-    ALLOWED_COMPONENTS,
     ALLOWED_EVENT_CODES,
-    ALLOWED_STATUSES,
-    ALLOWED_EXCEPTION_KINDS,
+    DiagnosticEvent,
+    deserialize_diagnostic_event,
+    sanitize_diagnostic_event,
+    serialize_diagnostic_event,
 )
 
 
@@ -264,7 +261,7 @@ def test_deserialize_drops_every_private_action_field():
         "level": "info",
         "component": "worker.runtime",
         "event_code": "tool.receipt.rejected",
-        **{name: r"Bearer C:\secret https://example.com" for name in forbidden},
+        **dict.fromkeys(forbidden, r"Bearer C:\secret https://example.com"),
     }
 
     event = deserialize_diagnostic_event(json.dumps(raw))

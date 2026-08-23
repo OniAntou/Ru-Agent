@@ -4,7 +4,6 @@ from pathlib import Path
 
 from check_aspnetcore_route_matrix import load_route_contract, validate_route_contract
 
-
 EXPECTED_HTTP_ROUTES = {
     ("GET", "/status"),
     ("GET", "/diagnostics/logs"),

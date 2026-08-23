@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import json
-from collections.abc import Callable
 
 import httpx
 import pytest
 
 import ru_runtime.generation.openai as runtime_module
-from ru_runtime.policy.text import append_stream_text
 from ru_runtime.generation.openai import OpenAIGenerationCancelled, OpenAIRuntime
+from ru_runtime.policy.text import append_stream_text
 
 
 class FakeStreamResponse:
@@ -20,7 +20,7 @@ class FakeStreamResponse:
         self.reason_phrase = "OK"
         self.headers: dict[str, str] = {}
 
-    def __enter__(self) -> "FakeStreamResponse":
+    def __enter__(self) -> FakeStreamResponse:
         return self
 
     def __exit__(self, *_args: object) -> None:
@@ -71,10 +71,8 @@ def _mock_stream(
 ) -> None:
     def fake_stream(method, url, *, headers=None, content=None, **kwargs):
         if capture is not None and content is not None:
-            try:
+            with contextlib.suppress(json.JSONDecodeError, TypeError):
                 capture.update(json.loads(content))
-            except (json.JSONDecodeError, TypeError):
-                pass
         if capture is not None:
             capture["timeout"] = kwargs.get("timeout")
         return response
@@ -168,10 +166,8 @@ def test_retry_emits_delta_from_empty_first_attempt(monkeypatch) -> None:
 
     def fake_stream(method, url, *, headers=None, content=None, **kwargs):
         if content is not None:
-            try:
+            with contextlib.suppress(json.JSONDecodeError, TypeError):
                 captured.update(json.loads(content))
-            except (json.JSONDecodeError, TypeError):
-                pass
         return make_response()
 
     monkeypatch.setattr(httpx, "stream", fake_stream)
@@ -381,10 +377,10 @@ def test_generate_allows_exact_loopback_urls_without_api_key(monkeypatch, base_u
 
 def test_model_runner_supports_ollama_and_lmstudio_backends() -> None:
     from ru_runtime.generation.runner import (
-        ModelRunner,
-        BACKEND_OLLAMA,
-        BACKEND_LMSTUDIO,
         BACKEND_CUSTOM,
+        BACKEND_LMSTUDIO,
+        BACKEND_OLLAMA,
+        ModelRunner,
     )
 
     runner = ModelRunner()

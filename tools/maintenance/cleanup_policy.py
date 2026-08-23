@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import PurePosixPath
 
 
-class CleanupCategory(str, Enum):
+class CleanupCategory(StrEnum):
     PROTECTED = "protected"
     REBUILDABLE = "rebuildable"
     LEGACY_LLAMA = "legacy_llama"

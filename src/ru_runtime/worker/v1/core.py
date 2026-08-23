@@ -1,10 +1,10 @@
+import contextlib
 import logging
 import os
 import threading
 from pathlib import Path
+
 from ru_runtime.generation.runner import (
-    BACKEND_KILO,
-    BACKEND_OPENCODE,
     OPENAI_COMPATIBLE_BACKENDS,
     ModelRunner,
 )
@@ -78,10 +78,8 @@ class RuRuntimeCore:
             except Exception as error:
                 logger.warning("Memory write failed (%s); retrying with a fresh store", error)
                 if self.memory_store is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         self.memory_store.close()
-                    except Exception:
-                        pass
                     self.memory_store = None
                 store = self.get_memory_store()
                 store.remember_turn(prompt, reply)

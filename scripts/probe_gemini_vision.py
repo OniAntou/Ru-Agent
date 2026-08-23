@@ -11,10 +11,8 @@ import json
 import os
 import sys
 import time
-from typing import Optional
 
 import websockets
-
 
 MODELS = [
     "gemini-2.0-flash-live-001",
@@ -152,7 +150,7 @@ async def probe_gemini_vision() -> int:
         print("ERROR: GEMINI_KEY environment variable not set", file=sys.stderr)
         return 1
 
-    print(f"Probing Gemini Live Vision API...")
+    print("Probing Gemini Live Vision API...")
     print("API key loaded from GEMINI_KEY environment variable")
 
     # First check available models via REST API
@@ -168,7 +166,7 @@ async def probe_gemini_vision() -> int:
                 methods = m.get('supportedGenerationMethods', [])
                 has_bidi = 'bidiGenerateContent' in methods
                 print(f"  - {name}: {methods} {'[HAS BIDI]' if has_bidi else ''}")
-            
+
             bidi_models = [m for m in models_data.get('models', []) if 'bidiGenerateContent' in m.get('supportedGenerationMethods', [])]
             if not bidi_models:
                 print("\n[RESULT] No models support bidiGenerateContent (Live API)")
@@ -184,13 +182,13 @@ async def probe_gemini_vision() -> int:
         result = await try_model(model, api_key)
 
         if result["success"]:
-            print(f"  [OK] SUCCESS")
+            print("  [OK] SUCCESS")
             print(f"  Model: {result['model']}")
             print(f"  Response: {result['response'][:200]}")
             print(f"  Latency: {result['latency_sec']}s")
             return 0
 
-        print(f"  [FAIL] FAILED")
+        print("  [FAIL] FAILED")
         if "close_code" in result:
             print(f"  Close code: {result['close_code']} ({result.get('close_reason', 'N/A')})")
         if "error" in result:

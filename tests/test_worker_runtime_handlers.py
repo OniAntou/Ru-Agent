@@ -9,8 +9,14 @@ import pytest
 
 import ru_runtime.memory.store
 import ru_runtime.worker.v1.handlers as handlers_module
-from ru_runtime.vts.catalog import VtsCatalog, VtsCatalogEntry
 from ru_runtime.voice.stream import VoiceStreamEvent
+from ru_runtime.vts.catalog import VtsCatalog, VtsCatalogEntry
+from ru_runtime.worker.v1.handlers import (
+    SELECTION_INVALID_COPY,
+    RuntimeDependencies,
+    RuntimeHttpResponse,
+    build_runtime_handlers,
+)
 from ru_runtime.worker.v1.protocol import (
     CHAT_CHUNK,
     CHAT_DONE,
@@ -24,12 +30,6 @@ from ru_runtime.worker.v1.protocol import (
     VOICE_DONE,
     VTS_ACTION,
     VTS_CATALOG,
-)
-from ru_runtime.worker.v1.handlers import (
-    SELECTION_INVALID_COPY,
-    RuntimeDependencies,
-    RuntimeHttpResponse,
-    build_runtime_handlers,
 )
 from ru_runtime.worker.v1.server import WorkerReply
 

@@ -5,12 +5,11 @@ import json
 from pathlib import Path
 
 import pytest
-
 from harness.deterministic_worker import _chat
 from harness.session import HarnessSession
+
 from ru_runtime.worker.v1.protocol import CHAT_DONE
 from ru_runtime.worker.v1.server import WorkerReply
-
 
 AGENT_SCENARIOS = (
     "agent-volume-contract",

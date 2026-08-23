@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
-
 
 RUNTIME_ROUTE_KEYS = frozenset(
     {
@@ -66,10 +66,7 @@ def dispatch_runtime_request(
     ASP.NET remains the only public HTTP owner when this function is reached
     through worker protocol v1.
     """
-    from ru_runtime.worker.v1 import observation
-    from ru_runtime.worker.v1 import status
-    from ru_runtime.worker.v1 import voice
-    from ru_runtime.worker.v1 import vts
+    from ru_runtime.worker.v1 import observation, status, voice, vts
 
     normalized_method = method.upper()
     parsed = urlsplit(path_and_query)
@@ -125,7 +122,7 @@ def dispatch_runtime_request(
     try:
         result = handler()
         if inspect.isawaitable(result):
-            result = asyncio.run(result)
+            result = asyncio.run(_await_result(result))
         return _coerce_response(result)
     except Exception as error:
         return _validation_or_error_response(error)
@@ -138,6 +135,10 @@ def _parse_json_body(body: str) -> object:
         return json.loads(body)
     except json.JSONDecodeError:
         raise RuntimeRequestError() from None
+
+
+async def _await_result(awaitable: Awaitable[object]) -> object:
+    return await awaitable
 
 
 def _query_text(query: Mapping[str, list[str]], key: str) -> str:

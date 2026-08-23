@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
-
+from typing import Literal, SupportsFloat, cast
 
 MIN_VOICE_SPEED = 0.75
 MAX_VOICE_SPEED = 1.20
@@ -42,7 +41,7 @@ VOICE_PACE_INSTRUCTION += _VOICE_PROSOIDY_INSTRUCTION
 
 def clamp_voice_speed(value: object, *, fallback: float = DEFAULT_VOICE_SPEED) -> float:
     try:
-        speed = float(value)
+        speed = float(cast(str | bytes | SupportsFloat, value))
     except (TypeError, ValueError):
         speed = fallback
     return round(min(MAX_VOICE_SPEED, max(MIN_VOICE_SPEED, speed)), 2)

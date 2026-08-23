@@ -157,11 +157,15 @@ class OpenAIRuntime:
             return None
         choice = choices[0]
         delta = choice.get("delta")
-        if isinstance(delta, dict) and isinstance(delta.get("content"), str):
-            return delta["content"]
+        if isinstance(delta, dict):
+            delta_content = delta.get("content")
+            if isinstance(delta_content, str):
+                return delta_content
         message = choice.get("message")
-        if not has_content and isinstance(message, dict) and isinstance(message.get("content"), str):
-            return message["content"]
+        if not has_content and isinstance(message, dict):
+            message_content = message.get("content")
+            if isinstance(message_content, str):
+                return message_content
         return None
 
     @staticmethod

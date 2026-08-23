@@ -31,7 +31,7 @@ def test_build_entry_records_metadata_without_contents(tmp_path: Path) -> None:
     assert entry["relative_path"] == "tmp_verify_fresh"
     assert entry["classification"] == "rebuildable"
     assert entry["file_count"] == 1
-    assert entry["size_bytes"] == len("private training row".encode("utf-8"))
+    assert entry["size_bytes"] == len(b"private training row")
     assert "private training row" not in json.dumps(entry)
 
 

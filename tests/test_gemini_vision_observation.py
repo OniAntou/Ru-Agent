@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import io
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from PIL import Image
 
-from ru_runtime.observation.screen_reaction import VisionObservation
-from ru_runtime.observation.screen_capture import capture_screen_jpeg
 from ru_runtime.observation.gemini_vision import analyze_screenshot_with_gemini
 from ru_runtime.observation.observer_loop import ScreenObserverLoop
+from ru_runtime.observation.screen_capture import capture_screen_jpeg
+from ru_runtime.observation.screen_reaction import VisionObservation
 
 
 def test_screen_capture_jpeg():

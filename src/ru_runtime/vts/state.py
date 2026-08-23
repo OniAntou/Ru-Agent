@@ -5,7 +5,7 @@ import enum
 from .context import MotionContextSnapshot
 
 
-class VtsMotionState(str, enum.Enum):
+class VtsMotionState(enum.StrEnum):
     IDLE = "idle"
     LISTENING = "listening"
     THINKING = "thinking"
@@ -46,9 +46,7 @@ class MotionStateMachine:
 
         if desired == self._state:
             return self._state
-        if desired in (VtsMotionState.SPEAKING, VtsMotionState.THINKING):
-            self._enter(desired, now)
-        elif self.state_elapsed(now) >= MIN_STATE_DWELL_SECONDS:
+        if desired in (VtsMotionState.SPEAKING, VtsMotionState.THINKING) or self.state_elapsed(now) >= MIN_STATE_DWELL_SECONDS:
             self._enter(desired, now)
         return self._state
 

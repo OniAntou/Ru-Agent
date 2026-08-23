@@ -34,7 +34,7 @@ no adapters.
   (`capability_unavailable`) with bounded copy that points the user to the
   Agent-mode toggle ("Chế độ Chat chỉ đọc dữ liệu. Bật Agent mode để em điều
   khiển âm lượng nha.").
-- Model-facing tool-selection channel wiring is an immediate follow-up plan:
-  the current release ships the policy, advertisement, and execution pipeline
-  plus volume; wiring the remaining advertised tools into model selection is
-  next.
+- Tool-selection follow-up is closed: the bounded model selection loop ships
+  activated in every profile (budget 10 per turn; approvals still gate
+  mutations) per
+  docs/superpowers/specs/2026-08-23-tool-selection-channel-design.md.

@@ -30,6 +30,17 @@ loosens. Filesystem mutations stay manually approved in every profile.
 deterministic contract/adapter evidence, but real endpoint and GUI acceptance
 are still pending until the user explicitly runs them.
 
+## Model selection channel
+
+The model invokes its advertised bindings through a structured selection
+loop, activated in all modes: Chat for its read-only set, Agent and Full
+Access for the rest of the matrix above. Each turn allows at most 10
+sequential tool selections; exhausting that budget forces one final wrap-up
+answer without tools. Approvals still gate mutating tools — a card with a
+bounded preview and an explicit user decision precede every side effect, in
+every profile. The `hint` strings inside the advertisement are static usage
+shapes: prompt material for the model, never executable schemas.
+
 ## One execution path
 
 An explicit, unambiguous volume command uses the deterministic volume parser

@@ -161,6 +161,21 @@ def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -
     assert "gives Ru bounded workspace" not in root_readme
 
 
+def test_agent_tools_close_the_model_selection_channel() -> None:
+    agent_tools = _text("docs/operations/agent-tools.md")
+    adr_0007 = _text("docs/adr/0007-mode-capability-profiles.md")
+
+    assert "## Model selection channel" in agent_tools
+    assert "at most 10" in agent_tools
+    assert "static usage" in agent_tools
+    assert "Approvals still gate mutating tools" in agent_tools
+    assert (
+        "docs/superpowers/specs/2026-08-23-tool-selection-channel-design.md"
+        in adr_0007
+    )
+    assert "immediate follow-up plan" not in adr_0007
+
+
 def test_current_docs_describe_deterministic_volume_recovery_truthfully() -> None:
     agent_tools = _text("docs/operations/agent-tools.md")
     runtime = _text("docs/operations/runtime-behavior.md")

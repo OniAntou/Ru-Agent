@@ -1,6 +1,6 @@
 # Ru Codebase Security and Reliability Remediation Design
 
-**Status:** Approved direction, awaiting written-spec review  
+**Status:** Approved
 **Date:** 2026-08-24  
 **Scope:** Repair every actionable P0-P2 finding from the 2026-08-24 full-codebase review without changing live audio, volume, desktop, or VTube Studio state.
 

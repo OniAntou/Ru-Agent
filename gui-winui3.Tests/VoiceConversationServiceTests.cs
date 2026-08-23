@@ -153,8 +153,43 @@ public sealed class VoiceConversationServiceTests
         Assert.Equal(1, events.Counts["voice.session.replaced"]);
     }
 
+    [Fact]
+    public async Task UnusableInputStopsTheLoopWithAnErrorStatus()
+    {
+        var capture = new FakeVoiceTurnCapture();
+        var statuses = new ConcurrentQueue<VoiceConversationStatus>();
+        int transcribeCalls = 0;
+        var service = new VoiceConversationService(
+            capture,
+            (_, _) =>
+            {
+                transcribeCalls++;
+                return Task.FromResult<string?>("unused");
+            },
+            (_, _) => Task.CompletedTask);
+        service.StatusChanged += (_, status) => statuses.Enqueue(status);
+
+        await service.StartAsync();
+        await capture.WaitForCaptureAsync(1);
+        capture.CompleteNext(new VoiceTurnCaptureResult(null, VoiceTurnStopReason.UnusableInput));
+        await Task.Delay(50);
+
+        Assert.Equal(0, transcribeCalls);
+        Assert.Contains(
+            statuses,
+            status => status.State == VoiceConversationState.Error
+                && status.Message != null
+                && status.Message.Contains("Micro", StringComparison.Ordinal));
+
+        await service.StopAsync();
+
+        Assert.Equal(1, capture.CaptureRequests);
+    }
+
     private sealed class FakeVoiceTurnCapture : IVoiceTurnCapture
     {
+        public int CaptureRequests { get; private set; }
+
         private readonly object _gate = new();
         private readonly List<TaskCompletionSource<VoiceTurnCaptureResult>> _turns = new();
         private CancellationTokenSource? _activeCancellation;
@@ -173,6 +208,7 @@ public sealed class VoiceConversationServiceTests
 
         public Task<VoiceTurnCaptureResult> CaptureTurnAsync(CancellationToken cancellationToken)
         {
+            CaptureRequests++;
             var turn = new TaskCompletionSource<VoiceTurnCaptureResult>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             lock (_gate)

@@ -199,6 +199,66 @@ public sealed class VoiceTurnCaptureServiceTests
         Assert.Equal(1, source.StopCalls);
     }
 
+    [Fact]
+    public async Task ConstantDigitalGarbageEndsWithUnusableInput()
+    {
+        var source = new FakeVoiceFrameSource();
+        var options = VoiceActivityOptions.Default with
+        {
+            MaxTurn = TimeSpan.FromSeconds(2),
+        };
+        var service = new VoiceTurnCaptureService(() => source, options);
+
+        Task<VoiceTurnCaptureResult> capture = service.CaptureTurnAsync(CancellationToken.None);
+        await source.Started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        for (int i = 0; i < 30; i++)
+        {
+            source.Emit(Samples(320, 0.55));
+        }
+
+        VoiceTurnCaptureResult result = await capture.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(VoiceTurnStopReason.UnusableInput, result.Reason);
+        Assert.Null(result.WavBytes);
+        Assert.Equal(1, source.StopCalls);
+        Assert.False(service.IsCapturing);
+    }
+
+    [Fact]
+    public async Task NormalSpeechWithLevelDipsIsNotFlaggedAsUnusable()
+    {
+        var source = new FakeVoiceFrameSource();
+        var service = new VoiceTurnCaptureService(() => source);
+
+        Task<VoiceTurnCaptureResult> capture = service.CaptureTurnAsync(CancellationToken.None);
+        await source.Started.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        for (int i = 0; i < 10; i++)
+        {
+            source.Emit(Samples(320, 0.0));
+        }
+        for (int i = 0; i < 6; i++)
+        {
+            source.Emit(Samples(320, 0.45));
+        }
+        for (int i = 0; i < 3; i++)
+        {
+            source.Emit(Samples(320, 0.03));
+        }
+        for (int i = 0; i < 6; i++)
+        {
+            source.Emit(Samples(320, 0.45));
+        }
+        for (int i = 0; i < 43; i++)
+        {
+            source.Emit(Samples(320, 0.0));
+        }
+
+        VoiceTurnCaptureResult result = await capture.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(VoiceTurnStopReason.SpeechEnded, result.Reason);
+        Assert.NotNull(result.WavBytes);
+    }
+
     private static short[] Samples(int count, double amplitude)
     {
         short value = (short)Math.Round(Math.Clamp(amplitude, -1.0, 1.0) * short.MaxValue);

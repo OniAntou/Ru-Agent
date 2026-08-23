@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,6 +23,7 @@ public enum VoiceTurnStopReason
     NoSpeech,
     Cancelled,
     CaptureError,
+    UnusableInput,
 }
 
 public sealed record VoiceTurnCaptureResult(
@@ -240,13 +242,22 @@ public sealed class VoiceTurnCaptureService : IVoiceTurnCapture
 
     private sealed class CaptureSession
     {
+        // Sustained near-clip signal with no level dips is digital garbage
+        // (broken USB mic/driver), not speech: end the turn instead of
+        // feeding sixty seconds of noise into STT.
+        private const int RmsWindowFrames = 25;
+        private const double UnusableAvgRms = 0.40;
+        private const double UnusableMinRms = 0.20;
+
         private readonly VoiceActivityDetector _detector;
         private readonly Queue<short[]> _preRoll = new();
         private readonly List<short> _pendingSamples = new();
         private readonly List<short> _samples = new();
+        private readonly Queue<double> _rmsWindow = new();
         private readonly object _frameGate = new();
         private readonly int _preRollFrames;
         private bool _hasSpeech;
+        private bool _unusableReported;
 
         public CaptureSession(VoiceActivityOptions options)
         {
@@ -285,6 +296,33 @@ public sealed class VoiceTurnCaptureService : IVoiceTurnCapture
 
                         bool hadSpeech = _hasSpeech;
                         VoiceActivityFrameResult frameResult = _detector.ProcessFrame(frameCopy);
+                        double frameRms = CalculateRms(frameCopy);
+
+                        if (!_unusableReported)
+                        {
+                            _rmsWindow.Enqueue(frameRms);
+                            while (_rmsWindow.Count > RmsWindowFrames)
+                            {
+                                _rmsWindow.Dequeue();
+                            }
+
+                            if (_rmsWindow.Count >= RmsWindowFrames
+                                && Average(_rmsWindow) >= UnusableAvgRms
+                                && Min(_rmsWindow) >= UnusableMinRms)
+                            {
+                                _unusableReported = true;
+                                result = new VoiceTurnCaptureResult(
+                                    null,
+                                    VoiceTurnStopReason.UnusableInput,
+                                    new InvalidOperationException(
+                                        "Micro input is sustained near-clip noise with no level dips."));
+                            }
+                        }
+
+                        if (result != null)
+                        {
+                            break;
+                        }
 
                         if (!hadSpeech)
                         {
@@ -341,6 +379,34 @@ public sealed class VoiceTurnCaptureService : IVoiceTurnCapture
                 null,
                 VoiceTurnStopReason.CaptureError,
                 exception));
+        }
+
+        private static double CalculateRms(short[] samples)
+        {
+            double sumSq = 0;
+            for (int index = 0; index < samples.Length; index++)
+            {
+                double normalized = samples[index] / 32768.0;
+                sumSq += normalized * normalized;
+            }
+
+            return Math.Sqrt(sumSq / Math.Max(1, samples.Length));
+        }
+
+        private static double Average(Queue<double> values) => values.Average();
+
+        private static double Min(Queue<double> values)
+        {
+            double minimum = double.MaxValue;
+            foreach (double value in values)
+            {
+                if (value < minimum)
+                {
+                    minimum = value;
+                }
+            }
+
+            return minimum;
         }
 
         private readonly VoiceActivityOptions _options;

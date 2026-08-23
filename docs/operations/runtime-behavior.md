@@ -60,7 +60,11 @@ speaks, so speaker audio is not fed back into STT.
 Raw PCM frames and transcripts are held only in memory for the active turn.
 Audio leaves the machine for the explicitly requested STT operation and is not
 persisted by Ru. A no-speech turn returns to Listening without sending an empty
-prompt. The controller and VAD are covered by deterministic tests; physical
+prompt. A capture whose input stays near full scale with no level dips for the
+first ~500 ms ends as an unusable-input error with a visible microphone message
+instead of looping sixty seconds of noise through STT; a broken or corrupted
+microphone stream therefore stops the loop instead of silently retrying. The
+controller and VAD are covered by deterministic tests; physical
 microphone accuracy, speaker output, and live VTube Studio behavior remain
 manual acceptance gates.
 

@@ -170,6 +170,15 @@ public sealed class VoiceConversationService : IDisposable
                     continue;
                 }
 
+                if (turn.Reason == VoiceTurnStopReason.UnusableInput)
+                {
+                    RaiseStatus(
+                        VoiceConversationState.Error,
+                        "Micro đang phát tín hiệu bất thường. Anh kiểm tra hoặc cắm lại micro rồi thử lại nha.",
+                        turn.Error);
+                    break;
+                }
+
                 if (turn.Reason == VoiceTurnStopReason.CaptureError || turn.WavBytes == null)
                 {
                     RaiseStatus(

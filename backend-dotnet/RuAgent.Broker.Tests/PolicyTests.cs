@@ -43,6 +43,35 @@ public sealed class PolicyTests
                 manifest).Code);
     }
 
+    [Fact]
+    public void ReversibleWriteRequiresApprovalByFlag()
+    {
+        var manifest = MakeManifest("files.write", ToolScope.WorkspaceWrite,
+            RiskClass.Reversible, requiresApproval: true);
+        var decision = new ToolPolicyEngine().Evaluate(MakeGrant(ToolScope.WorkspaceWrite), manifest);
+        Assert.True(decision.Allowed);
+        Assert.True(decision.RequiresApproval);
+    }
+
+    [Fact]
+    public void ReadToolsNeverRequireApproval()
+    {
+        var manifest = MakeManifest("files.read", ToolScope.WorkspaceRead,
+            RiskClass.Read, requiresApproval: false);
+        var decision = new ToolPolicyEngine().Evaluate(MakeGrant(ToolScope.WorkspaceRead), manifest);
+        Assert.False(decision.RequiresApproval);
+    }
+
+    private static PolicyGrant MakeGrant(params string[] scopes) =>
+        new("s1", scopes.ToHashSet(), DateTimeOffset.UtcNow.AddMinutes(5));
+
+    private static ToolManifest MakeManifest(string id, string scope, RiskClass risk,
+        bool requiresApproval) => new(
+        id, "1.0.0", "builtin", risk,
+        new HashSet<string>([scope]), new JsonObject { ["type"] = "object" },
+        new JsonObject { ["type"] = "object" }, 30_000, 256 * 1024, "builtin",
+        RequiresApproval: requiresApproval);
+
     private static ToolManifest Manifest(RiskClass risk, string[] scopes) => new(
         "files.write",
         "1.0.0",

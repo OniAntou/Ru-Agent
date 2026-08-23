@@ -39,5 +39,6 @@ public static class TerminalManifests
         Id = "terminal.shell",
         Risk = RiskClass.Destructive,
         Scopes = new HashSet<string>([ToolScope.TerminalExecute], StringComparer.Ordinal),
+        RequiresApproval = true,
     };
 }

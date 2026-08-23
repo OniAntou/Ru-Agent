@@ -50,6 +50,14 @@ public sealed class ToolCatalog
 
     public ToolBindingRegistry Registry { get; }
 
+    public bool RequiresApprovalFor(string id)
+    {
+        var manifest = Registry.Manifests.List().FirstOrDefault(item => item.Id == id)
+            ?? throw new KeyNotFoundException("tool_not_found");
+        return manifest.Risk is RiskClass.External or RiskClass.Destructive
+            || manifest.RequiresApproval;
+    }
+
     private static IEnumerable<ToolManifest> Manifests()
     {
         yield return Manifest("system.time", ToolScope.SystemRead, RiskClass.Read, "builtin");
@@ -58,10 +66,10 @@ public sealed class ToolCatalog
         yield return Manifest("app.list", ToolScope.SystemRead, RiskClass.Read, "desktop");
         yield return Manifest("files.list", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
         yield return Manifest("files.read", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
-        yield return Manifest("files.write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true);
+        yield return Manifest("files.write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
         yield return TerminalManifests.Run;
         yield return TerminalManifests.Shell;
-        yield return Manifest("notes.create", ToolScope.WorkspaceWrite, RiskClass.External, "builtin", workspace: true);
+        yield return Manifest("notes.create", ToolScope.WorkspaceWrite, RiskClass.External, "builtin", workspace: true, requiresApproval: true);
     }
 
     private static ToolManifest Manifest(
@@ -69,7 +77,8 @@ public sealed class ToolCatalog
         string scope,
         RiskClass risk,
         string adapter,
-        bool workspace = false) => new(
+        bool workspace = false,
+        bool requiresApproval = false) => new(
         id,
         "1.0.0",
         adapter,
@@ -80,5 +89,6 @@ public sealed class ToolCatalog
         30_000,
         256 * 1024,
         "builtin",
-        WorkspaceRequired: workspace);
+        WorkspaceRequired: workspace,
+        RequiresApproval: requiresApproval);
 }

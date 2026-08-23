@@ -15,4 +15,5 @@ public sealed record ToolManifest(
     int MaxOutputBytes,
     string TrustClass,
     bool NetworkAllowed = false,
-    bool WorkspaceRequired = false);
+    bool WorkspaceRequired = false,
+    bool RequiresApproval = false);

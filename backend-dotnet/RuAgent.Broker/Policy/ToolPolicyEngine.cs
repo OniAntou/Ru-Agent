@@ -28,7 +28,8 @@ public sealed class ToolPolicyEngine
             return new(false, false, "scope_missing");
         }
 
-        var approval = manifest.Risk is RiskClass.External or RiskClass.Destructive;
+        var approval = manifest.Risk is RiskClass.External or RiskClass.Destructive
+            || manifest.RequiresApproval;
         return new(true, approval, "allowed");
     }
 }

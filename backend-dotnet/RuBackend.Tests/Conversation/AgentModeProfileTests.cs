@@ -68,6 +68,15 @@ public sealed class AgentModeProfileTests
                 entry["capability_class"]!.GetValue<string>());
         }
 
+        Assert.Equal(
+            """{"path":"ten-file-trong-workspace"}""",
+            tools.Single(item => item!["tool_id"]!.GetValue<string>() == "files.read")!["hint"]!
+                .GetValue<string>());
+        Assert.Equal(
+            """{"operation":"set","level":30}""",
+            tools.Single(item => item!["tool_id"]!.GetValue<string>() == "system.volume")!["hint"]!
+                .GetValue<string>());
+
         await CloseAsync(socket);
     }
 

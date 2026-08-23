@@ -566,6 +566,19 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         }
     }
 
+    private const int HintMaxLength = 200;
+
+    private static readonly Dictionary<string, string> ToolHints = new()
+    {
+        ["files.list"] = """{"path":"thu-muc-trong-workspace"}""",
+        ["files.read"] = """{"path":"ten-file-trong-workspace"}""",
+        ["files.write"] = """{"path":"...","content":"noi-dung-moi"}""",
+        ["files.edit"] = """{"path":"...","old_string":"...","new_string":"..."}""",
+        ["terminal.run"] = """{"command":"git","args":["status"]}""",
+        ["terminal.shell"] = """{"script":"lenh-shell","network":false}""",
+        ["system.volume"] = """{"operation":"set","level":30}""",
+    };
+
     private static JsonObject BuildWorkerSettings(
         SettingsSnapshot settings,
         CapabilityProfile profile,
@@ -584,7 +597,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                     StringComparison.Ordinal)
                         ? "native_mutation"
                         : "tool";
-                return new JsonObject
+                var entry = new JsonObject
                 {
                     ["tool_id"] = tool.ToolId,
                     ["tool_version"] = tool.ToolVersion,
@@ -600,6 +613,14 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                         "native_mutation",
                         StringComparison.Ordinal),
                 };
+                if (ToolHints.TryGetValue(tool.ToolId, out var hint))
+                {
+                    entry["hint"] = hint.Length > HintMaxLength
+                        ? hint[..HintMaxLength]
+                        : hint;
+                }
+
+                return entry;
             }).ToArray()),
         };
 

@@ -99,6 +99,27 @@ def test_model_capabilities_fail_closed(mutation: str) -> None:
         parse_model_capabilities(settings)
 
 
+def test_model_capabilities_accept_and_bound_hint() -> None:
+    caps = parse_model_capabilities({
+        "model_tools": [
+            {"tool_id": "files.read", "tool_version": "1.0.0",
+             "scopes": ["workspace.read"], "availability": "executable",
+             "model_enabled": True, "capability_class": "tool",
+             "verification_required": False,
+             "hint": "h" * 500},
+        ]
+    })
+    assert caps[0].hint == "h" * 200
+
+
+def test_model_capabilities_reject_non_string_hint() -> None:
+    settings = copy.deepcopy(_tool_settings())
+    settings["model_tools"][0]["hint"] = 123  # type: ignore[union-attr]
+
+    with pytest.raises(ActionProtocolError, match="invalid_model_tools"):
+        parse_model_capabilities(settings)
+
+
 def test_selection_requires_one_exact_advertised_binding() -> None:
     capabilities = parse_model_capabilities(_settings())
     selection = validate_selection(

@@ -26,6 +26,7 @@ _MAX_TOOL_VERSION_CHARS = 32
 _MAX_CAPABILITY_CLASS_CHARS = 64
 _MAX_AVAILABILITY_CHARS = 32
 _MAX_SCOPE_CHARS = 64
+_MAX_HINT_CHARS = 200
 _MAX_DURATION_MS = 300_000
 _MAX_ERROR_CODE_CHARS = 128
 _KNOWN_AVAILABILITY = frozenset(("executable", "native_pending"))
@@ -42,6 +43,7 @@ _CAPABILITY_FIELDS = frozenset(
         "verification_required",
     )
 )
+_OPTIONAL_HINT_FIELD = frozenset(("hint",))
 _SELECTION_FIELDS = frozenset(("tool_id", "tool_version", "arguments"))
 _RECEIPT_FIELDS = frozenset(
     (
@@ -74,6 +76,7 @@ class ModelCapability:
     availability: Literal["executable", "native_pending"]
     model_enabled: bool
     capability_class: Literal["native_mutation", "tool"]
+    hint: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,8 +105,15 @@ def parse_model_capabilities(settings: Mapping[str, object]) -> tuple[ModelCapab
     capabilities: list[ModelCapability] = []
     tool_ids: set[str] = set()
     for raw in raw_tools:
-        if not isinstance(raw, Mapping) or set(raw) != _CAPABILITY_FIELDS:
+        if not isinstance(raw, Mapping):
             raise ActionProtocolError("invalid_model_tools")
+        keys = set(raw)
+        if keys != _CAPABILITY_FIELDS and keys != _CAPABILITY_FIELDS | _OPTIONAL_HINT_FIELD:
+            raise ActionProtocolError("invalid_model_tools")
+        raw_hint = raw.get("hint")
+        if raw_hint is not None and not isinstance(raw_hint, str):
+            raise ActionProtocolError("invalid_model_tools")
+        hint = raw_hint[:_MAX_HINT_CHARS] if raw_hint is not None else ""
         tool_id = _bounded_text(raw.get("tool_id"), _MAX_TOOL_ID_CHARS)
         tool_version = _bounded_text(raw.get("tool_version"), _MAX_TOOL_VERSION_CHARS)
         availability = _bounded_text(raw.get("availability"), _MAX_AVAILABILITY_CHARS)
@@ -141,6 +151,7 @@ def parse_model_capabilities(settings: Mapping[str, object]) -> tuple[ModelCapab
                 capability_class=cast(
                     Literal["native_mutation", "tool"], capability_class
                 ),
+                hint=hint,
             )
         )
     return tuple(capabilities)

@@ -5,7 +5,7 @@ import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, cast
 
 from ru_runtime.worker.v1.action_outcome import (
     ActionOutcomeError,
@@ -29,6 +29,7 @@ _MAX_SCOPE_CHARS = 64
 _MAX_DURATION_MS = 300_000
 _MAX_ERROR_CODE_CHARS = 128
 _KNOWN_AVAILABILITY = frozenset(("executable", "native_pending"))
+_KNOWN_CAPABILITY_CLASSES = frozenset(("native_mutation", "tool"))
 _KNOWN_VERIFICATION_STATES = frozenset(("not_required", "pending", "verified", "failed"))
 _CAPABILITY_FIELDS = frozenset(
     (
@@ -38,6 +39,7 @@ _CAPABILITY_FIELDS = frozenset(
         "availability",
         "model_enabled",
         "capability_class",
+        "verification_required",
     )
 )
 _SELECTION_FIELDS = frozenset(("tool_id", "tool_version", "arguments"))
@@ -71,7 +73,7 @@ class ModelCapability:
     scopes: tuple[str, ...]
     availability: Literal["executable", "native_pending"]
     model_enabled: bool
-    capability_class: Literal["native_mutation"]
+    capability_class: Literal["native_mutation", "tool"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,12 +111,15 @@ def parse_model_capabilities(settings: Mapping[str, object]) -> tuple[ModelCapab
             raw.get("capability_class"),
             _MAX_CAPABILITY_CLASS_CHARS,
         )
+        verification_required = raw.get("verification_required")
         raw_scopes = raw.get("scopes")
         if (
             tool_id is None
             or tool_version is None
             or availability not in _KNOWN_AVAILABILITY
-            or capability_class != "native_mutation"
+            or capability_class not in _KNOWN_CAPABILITY_CLASSES
+            or not isinstance(verification_required, bool)
+            or verification_required != (capability_class == "native_mutation")
             or raw.get("model_enabled") is not True
             or not isinstance(raw_scopes, list)
             or len(raw_scopes) > _MAX_SCOPES
@@ -133,7 +138,9 @@ def parse_model_capabilities(settings: Mapping[str, object]) -> tuple[ModelCapab
                 scopes=scopes,
                 availability=availability,
                 model_enabled=True,
-                capability_class="native_mutation",
+                capability_class=cast(
+                    Literal["native_mutation", "tool"], capability_class
+                ),
             )
         )
     return tuple(capabilities)
@@ -153,25 +160,9 @@ def validate_selection(
     try:
         parsed = json.loads(stripped)
     except (json.JSONDecodeError, RecursionError):
-        from ru_runtime.generation.tool_calls import (
-            ToolCallParseError,
-            parse_legacy_volume_intent,
-        )
-
-        try:
-            legacy_call = parse_legacy_volume_intent(stripped)
-        except ToolCallParseError:
+        if stripped.startswith(("{", "[")):
             raise ActionProtocolError("invalid_selection") from None
-        if legacy_call is not None:
-            parsed = {
-                "tool_id": legacy_call.tool_id,
-                "tool_version": legacy_call.tool_version,
-                "arguments": dict(legacy_call.arguments),
-            }
-        elif stripped.startswith(("{", "[")):
-            raise ActionProtocolError("invalid_selection") from None
-        else:
-            return None
+        return None
     if not isinstance(parsed, Mapping):
         raise ActionProtocolError("invalid_selection")
     if set(parsed) != _SELECTION_FIELDS:
@@ -192,11 +183,8 @@ def validate_selection(
     )
     if capability is None:
         raise ActionProtocolError("capability_unavailable")
-    if tool_id != "system.volume" or tool_version != "1.0.0":
-        raise ActionProtocolError("capability_unavailable")
 
     copied_arguments = dict(arguments)
-    _validate_volume_arguments(copied_arguments)
     if _json_size(copied_arguments, "invalid_selection") > MAX_TOOL_ARGUMENTS_BYTES:
         raise ActionProtocolError("invalid_selection")
     return ActionSelection(
@@ -219,7 +207,11 @@ def validate_receipt(
 ) -> ActionReceipt:
     if not isinstance(payload, Mapping):
         raise ActionProtocolError("invalid_receipt")
-    if payload.get("status") == "succeeded" and payload.get("verification_state") != "verified":
+    if (
+        payload.get("status") == "succeeded"
+        and selection.capability_class == "native_mutation"
+        and payload.get("verification_state") != "verified"
+    ):
         raise ActionProtocolError("receipt_unverified")
     if set(payload) != _RECEIPT_FIELDS:
         raise ActionProtocolError("invalid_receipt")
@@ -284,7 +276,7 @@ def validate_receipt(
         raise ActionProtocolError("invalid_receipt")
 
     readback = None
-    if status == "succeeded":
+    if status == "succeeded" and selection.capability_class == "native_mutation":
         try:
             readback = parse_volume_readback(
                 str(selection.arguments["operation"]),
@@ -301,32 +293,6 @@ def validate_receipt(
         verification_state=verification_state,
         readback=readback,
     )
-
-
-def _validate_volume_arguments(arguments: dict[str, object]) -> None:
-    operation = arguments.get("operation")
-    if operation in ("get", "mute", "unmute"):
-        valid = set(arguments) == {"operation"}
-    elif operation == "set":
-        level = arguments.get("level")
-        valid = (
-            set(arguments) == {"operation", "level"}
-            and isinstance(level, int)
-            and not isinstance(level, bool)
-            and 0 <= level <= 100
-        )
-    elif operation in ("increase", "decrease"):
-        amount = arguments.get("amount")
-        valid = (
-            set(arguments) == {"operation", "amount"}
-            and isinstance(amount, int)
-            and not isinstance(amount, bool)
-            and 1 <= amount <= 50
-        )
-    else:
-        valid = False
-    if not valid:
-        raise ActionProtocolError("invalid_selection")
 
 
 def _bounded_text(value: object, maximum: int) -> str | None:

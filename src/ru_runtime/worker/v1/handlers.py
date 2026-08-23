@@ -13,7 +13,11 @@ from functools import partial
 from typing import Any, ContextManager, Literal, Protocol
 
 from ru_runtime.generation.chat import ChatTurn
-from ru_runtime.generation.volume_intent import resolve_volume_intent
+from ru_runtime.generation.volume_intent import (
+    VOLUME_TOOL_ID,
+    VOLUME_TOOL_VERSION,
+    resolve_volume_intent,
+)
 from ru_runtime.memory.learning import extract_facts_with_llm
 from ru_runtime.persistence.diagnostic_log import get_diagnostic_log_writer
 from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
@@ -28,10 +32,11 @@ from ru_runtime.worker.v1.action_outcome import (
     ActionOutcome,
     is_causal_follow_up,
     parse_optional_action_outcome,
+    render_action_clarification,
     render_action_explanation,
-    render_volume_clarification,
-    render_volume_failure,
-    render_volume_success,
+    render_action_failure,
+    render_action_success,
+    safe_action_noun,
 )
 from ru_runtime.worker.v1.http import RuntimeHttpResponse
 from ru_runtime.voice.stream import VoiceStreamEvent
@@ -341,8 +346,8 @@ async def _chat_handler(
                 )
                 outcome = ActionOutcome(
                     1,
-                    "system.volume",
-                    "1.0.0",
+                    VOLUME_TOOL_ID,
+                    VOLUME_TOOL_VERSION,
                     "clarification_required",
                     decision.reason_code,
                 )
@@ -350,7 +355,7 @@ async def _chat_handler(
                     WorkerReply(
                         CHAT_DONE,
                         {
-                            "raw_reply": render_volume_clarification(
+                            "raw_reply": render_action_clarification(
                                 decision.reason_code or "volume_command_ambiguous"
                             ),
                             "action_outcome": outcome.to_payload(),
@@ -385,6 +390,8 @@ async def _chat_handler(
                         correlation_id=correlation_id,
                         status="failed",
                         error_code=reason_code,
+                        tool_id=call.tool_id,
+                        tool_version=call.tool_version,
                     )
                     outcome = ActionOutcome(
                         1,
@@ -397,7 +404,10 @@ async def _chat_handler(
                         WorkerReply(
                             CHAT_DONE,
                             {
-                                "raw_reply": render_volume_failure(reason_code),
+                                "raw_reply": render_action_failure(
+                                    safe_action_noun(call.tool_id),
+                                    reason_code,
+                                ),
                                 "action_outcome": outcome.to_payload(),
                             },
                         )
@@ -415,6 +425,8 @@ async def _chat_handler(
                     correlation_id=correlation_id,
                     status="succeeded",
                     error_code=None,
+                    tool_id=selection.tool_id,
+                    tool_version=selection.tool_version,
                 )
                 tool_request_id = f"tool-{uuid.uuid4().hex}"
                 tool_correlation_id = correlation_id or f"corr-{uuid.uuid4().hex}"
@@ -462,7 +474,10 @@ async def _chat_handler(
                         WorkerReply(
                             CHAT_DONE,
                             {
-                                "raw_reply": render_volume_failure(error.code),
+                                "raw_reply": render_action_failure(
+                                    safe_action_noun(selection.tool_id),
+                                    error.code,
+                                ),
                                 "action_outcome": outcome.to_payload(),
                             },
                         )
@@ -482,7 +497,10 @@ async def _chat_handler(
                         WorkerReply(
                             CHAT_DONE,
                             {
-                                "raw_reply": render_volume_failure(reason_code),
+                                "raw_reply": render_action_failure(
+                                    safe_action_noun(selection.tool_id),
+                                    reason_code,
+                                ),
                                 "action_outcome": outcome.to_payload(),
                             },
                         )
@@ -500,7 +518,7 @@ async def _chat_handler(
                     WorkerReply(
                         CHAT_DONE,
                         {
-                            "raw_reply": render_volume_success(receipt.readback),
+                            "raw_reply": render_action_success(receipt.readback),
                             "action_outcome": outcome.to_payload(),
                         },
                     )
@@ -545,6 +563,8 @@ def _record_intent(
     correlation_id: str,
     status: str,
     error_code: str | None,
+    tool_id: str = VOLUME_TOOL_ID,
+    tool_version: str = VOLUME_TOOL_VERSION,
 ) -> None:
     try:
         get_diagnostic_log_writer().try_enqueue(
@@ -558,8 +578,8 @@ def _record_intent(
                 correlation_id=correlation_id or None,
                 status=status,
                 error_code=error_code,
-                tool_id="system.volume",
-                tool_version="1.0.0",
+                tool_id=tool_id,
+                tool_version=tool_version,
             )
         )
     except Exception:

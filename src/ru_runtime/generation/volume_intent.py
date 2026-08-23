@@ -10,6 +10,9 @@ from ru_runtime.generation.tool_calls import ToolCall
 
 VolumeIntentKind = Literal["not_action", "clarification_required", "execute"]
 
+VOLUME_TOOL_ID = "system.volume"
+VOLUME_TOOL_VERSION = "1.0.0"
+
 _NUMBER = r"(?P<value>-?\d+(?:[.,]\d+)?)"
 _VOLUME_TOPIC = re.compile(r"(?<!\w)(?:âm lượng|tiếng máy|tiếng|volume|sound)(?!\w)")
 _NON_ACTION_PREFIX = re.compile(
@@ -178,7 +181,7 @@ def _numeric_decision(
 def _execute(arguments: dict[str, object]) -> VolumeIntentDecision:
     return VolumeIntentDecision(
         "execute",
-        tool_call=ToolCall("system.volume", "1.0.0", arguments),
+        tool_call=ToolCall(VOLUME_TOOL_ID, VOLUME_TOOL_VERSION, arguments),
     )
 
 

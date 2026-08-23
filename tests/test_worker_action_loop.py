@@ -22,6 +22,23 @@ def _settings() -> dict[str, object]:
                 "availability": "native_pending",
                 "model_enabled": True,
                 "capability_class": "native_mutation",
+                "verification_required": True,
+            }
+        ]
+    }
+
+
+def _tool_settings() -> dict[str, object]:
+    return {
+        "model_tools": [
+            {
+                "tool_id": "files.edit",
+                "tool_version": "1.0.0",
+                "scopes": ["workspace.write"],
+                "availability": "executable",
+                "model_enabled": True,
+                "capability_class": "tool",
+                "verification_required": False,
             }
         ]
     }
@@ -47,6 +64,8 @@ def test_model_capabilities_are_strict_bounded_and_immutable() -> None:
         "too_many",
         "availability",
         "capability_class",
+        "verification_required",
+        "verification_mismatch",
         "model_disabled",
     ),
 )
@@ -69,6 +88,10 @@ def test_model_capabilities_fail_closed(mutation: str) -> None:
         tools[0]["availability"] = "unknown"
     elif mutation == "capability_class":
         tools[0]["capability_class"] = "internal"
+    elif mutation == "verification_required":
+        tools[0]["verification_required"] = "yes"
+    elif mutation == "verification_mismatch":
+        tools[0]["verification_required"] = False
     else:
         tools[0]["model_enabled"] = False
 
@@ -97,14 +120,43 @@ def test_selection_requires_one_exact_advertised_binding() -> None:
         )
 
 
-def test_legacy_marker_selection_discards_unverified_surrounding_prose() -> None:
+def test_selection_accepts_any_advertised_tool_class() -> None:
+    capabilities = parse_model_capabilities(_tool_settings())
     selection = validate_selection(
-        "[VOLUME: set 2] Em đã chỉnh xong.",
+        '{"tool_id":"files.edit","tool_version":"1.0.0",'
+        '"arguments":{"path":"a.txt","old_string":"x","new_string":"y"}}',
+        capabilities,
+    )
+
+    assert selection is not None
+    assert selection.tool_id == "files.edit"
+    assert selection.capability_class == "tool"
+    assert selection.arguments == {
+        "path": "a.txt",
+        "old_string": "x",
+        "new_string": "y",
+    }
+
+
+def test_selection_leaves_argument_schemas_to_the_broker() -> None:
+    selection = validate_selection(
+        '{"tool_id":"system.volume","tool_version":"1.0.0",'
+        '"arguments":{"operation":"set","level":101,"extra":true}}',
         parse_model_capabilities(_settings()),
     )
 
     assert selection is not None
-    assert selection.arguments == {"operation": "set", "level": 2}
+    assert selection.arguments == {"operation": "set", "level": 101, "extra": True}
+
+
+def test_selection_rejects_unadvertised_id() -> None:
+    capabilities = parse_model_capabilities(_tool_settings())
+
+    with pytest.raises(ActionProtocolError, match="capability_unavailable"):
+        validate_selection(
+            '{"tool_id":"app.list","tool_version":"1.0.0","arguments":{}}',
+            capabilities,
+        )
 
 
 @pytest.mark.parametrize(
@@ -112,12 +164,13 @@ def test_legacy_marker_selection_discards_unverified_surrounding_prose() -> None
     (
         '[{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"mute"}},'
         '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"unmute"}}]',
-        '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"set","level":101}}',
-        '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":{"operation":"mute","extra":true}}',
+        '{"tool_id":"system.volume","tool_version":"1.0.0","arguments":["mute"]}',
+        "[VOLUME:-30]",
+        "[VOLUME: set 2] Em đã chỉnh xong.",
     ),
 )
-def test_selection_rejects_multiple_or_invalid_calls(text: str) -> None:
-    with pytest.raises(ActionProtocolError, match="invalid_selection"):
+def test_selection_rejects_non_object_or_legacy_text(text: str) -> None:
+    with pytest.raises(ActionProtocolError):
         validate_selection(text, parse_model_capabilities(_settings()))
 
 
@@ -126,6 +179,16 @@ def _selection():
         '{"tool_id":"system.volume","tool_version":"1.0.0",'
         '"arguments":{"operation":"set","level":20}}',
         parse_model_capabilities(_settings()),
+    )
+    assert selection is not None
+    return selection
+
+
+def _selection_class_tool():
+    selection = validate_selection(
+        '{"tool_id":"files.edit","tool_version":"1.0.0",'
+        '"arguments":{"path":"a.txt"}}',
+        parse_model_capabilities(_tool_settings()),
     )
     assert selection is not None
     return selection
@@ -144,6 +207,22 @@ def _receipt() -> dict[str, object]:
         "verification_state": "verified",
         "endpoint_role": "default_render_multimedia",
         "endpoint_hash": "0123456789abcdef",
+    }
+
+
+def _tool_receipt() -> dict[str, object]:
+    return {
+        "request_id": "request-1",
+        "session_id": "session-1",
+        "correlation_id": "correlation-1",
+        "status": "succeeded",
+        "output": {"replacements": 1},
+        "error_code": None,
+        "safe_summary": "File edited.",
+        "duration_ms": 8,
+        "verification_state": "not_required",
+        "endpoint_role": None,
+        "endpoint_hash": None,
     }
 
 
@@ -172,6 +251,40 @@ def test_verified_success_receipt_is_accepted_without_exposing_endpoint_proof() 
     assert "endpoint" not in repr(receipt).lower()
     assert "0123456789abcdef" not in repr(receipt)
     assert "level" not in repr(receipt).lower()
+
+
+def _validate_tool(payload: dict[str, object]):
+    return validate_receipt(
+        _selection_class_tool(),
+        payload,
+        expected_request_id="request-1",
+        expected_session_id="session-1",
+        expected_correlation_id="correlation-1",
+        deadline_at=10.0,
+        now=5.0,
+    )
+
+
+@pytest.mark.parametrize("verification_state", ("not_required", "pending", "failed"))
+def test_tool_class_success_passes_without_verified_readback(
+    verification_state: str,
+) -> None:
+    payload = _tool_receipt()
+    payload["verification_state"] = verification_state
+
+    receipt = _validate_tool(payload)
+
+    assert receipt.status == "succeeded"
+    assert receipt.verification_state == verification_state
+    assert receipt.readback is None
+
+
+def test_native_mutation_success_still_requires_verified_readback() -> None:
+    payload = _receipt()
+    payload["verification_state"] = "not_required"
+
+    with pytest.raises(ActionProtocolError, match="receipt_unverified"):
+        _validate(payload)
 
 
 @pytest.mark.parametrize(

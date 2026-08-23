@@ -179,13 +179,18 @@ def test_gui_agent_cancel_and_stale_scenarios_replace_in_flight_session() -> Non
 
 def test_deterministic_agent_harness_keeps_volume_metadata_only() -> None:
     catalog = Path("backend-dotnet/RuAgent.Broker/Tools/ToolCatalog.cs").read_text(encoding="utf-8")
+    binding_registry = Path(
+        "backend-dotnet/RuAgent.Broker/Tools/ToolBindingRegistry.cs"
+    ).read_text(encoding="utf-8")
     volume_tool = Path(
         "backend-dotnet/RuAgent.Broker/Tools/Desktop/VolumeTools.cs"
     ).read_text(encoding="utf-8")
     deterministic_worker = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
 
     assert "yield return VolumeTools.Manifest;" in catalog
-    assert 'var modelEnabled = manifest.Id == "system.volume";' in catalog
+    assert (
+        "ModelCapabilities(CapabilityProfile profile)" in binding_registry
+    )
     assert 'new HashSet<string>([ToolScope.SystemWrite]' in volume_tool
     assert 'RiskClass.Reversible' in volume_tool
     assert '"system.volume"' in deterministic_worker

@@ -106,6 +106,30 @@ def test_chat_done_accepts_one_bounded_action_outcome() -> None:
     assert envelope["payload"]["action_outcome"]["reason_code"] == "write_failed"
 
 
+def test_chat_done_accepts_outcomes_for_any_bounded_advertised_tool() -> None:
+    envelope = validate_envelope(
+        {
+            "v": 1,
+            "id": "chat-2",
+            "type": "chat.done",
+            "seq": 3,
+            "payload": {
+                "raw_reply": "bounded reply",
+                "action_outcome": {
+                    "schema_version": 1,
+                    "tool_id": "files.edit",
+                    "tool_version": "1.0.0",
+                    "status": "failed",
+                    "reason_code": "edit_not_unique",
+                },
+            },
+        }
+    )
+
+    outcome = envelope["payload"]["action_outcome"]
+    assert (outcome["tool_id"], outcome["status"]) == ("files.edit", "failed")
+
+
 @pytest.mark.parametrize(
     "outcome",
     (
@@ -147,7 +171,14 @@ def test_chat_done_accepts_one_bounded_action_outcome() -> None:
         },
         {
             "schema_version": 1,
-            "tool_id": "app.open",
+            "tool_id": "",
+            "tool_version": "1.0.0",
+            "status": "failed",
+            "reason_code": "write_failed",
+        },
+        {
+            "schema_version": 1,
+            "tool_id": "x" * 129,
             "tool_version": "1.0.0",
             "status": "failed",
             "reason_code": "write_failed",

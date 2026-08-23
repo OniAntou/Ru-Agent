@@ -7,10 +7,11 @@ from ru_runtime.worker.v1.action_outcome import (
     is_causal_follow_up,
     parse_action_outcome,
     parse_volume_readback,
+    render_action_clarification,
     render_action_explanation,
-    render_volume_clarification,
-    render_volume_failure,
-    render_volume_success,
+    render_action_failure,
+    render_action_success,
+    safe_action_noun,
 )
 
 
@@ -82,13 +83,46 @@ def test_verified_readback_renders_without_model_prose() -> None:
         {"operation": "set", "level": 2, "muted": False},
     )
 
-    assert render_volume_success(readback) == "Em đã đặt âm lượng về 2% rồi anh."
-    assert render_volume_failure("readback_mismatch") == (
+    assert render_action_success(readback) == "Em đã đặt âm lượng về 2% rồi anh."
+    assert render_action_failure("âm lượng", "readback_mismatch") == (
         "Windows không xác nhận mức âm lượng sau khi thay đổi."
     )
-    assert render_volume_clarification("volume_command_ambiguous") == (
+    assert render_action_clarification("volume_command_ambiguous") == (
         "Anh muốn đặt âm lượng về bao nhiêu phần trăm, hay tăng hoặc giảm bao nhiêu?"
     )
+
+
+def test_unknown_tool_degrades_to_the_generic_action_noun() -> None:
+    assert safe_action_noun("files.edit") == ""
+    assert safe_action_noun(" system.volume ") == "âm lượng"
+    assert safe_action_noun(None) == ""
+
+    assert render_action_failure(safe_action_noun("files.edit"), "timed_out") == (
+        "Thao tác đã hết thời gian chờ."
+    )
+    assert render_action_failure(safe_action_noun("system.volume"), "cancelled") == (
+        "Thao tác âm lượng đã bị huỷ."
+    )
+
+
+def test_outcomes_for_any_bounded_advertised_tool_round_trip() -> None:
+    outcome = parse_action_outcome(
+        {
+            "schema_version": 1,
+            "tool_id": "files.edit",
+            "tool_version": "1.0.0",
+            "status": "failed",
+            "reason_code": "edit_not_unique",
+        }
+    )
+
+    assert outcome.to_payload() == {
+        "schema_version": 1,
+        "tool_id": "files.edit",
+        "tool_version": "1.0.0",
+        "status": "failed",
+        "reason_code": "edit_not_unique",
+    }
 
 
 def test_action_explanation_uses_the_same_safe_reason_map() -> None:
@@ -218,7 +252,7 @@ def test_each_verified_operation_has_exact_deterministic_success_copy(
     payload: dict[str, object],
     expected: str,
 ) -> None:
-    assert render_volume_success(parse_volume_readback(operation, payload)) == expected
+    assert render_action_success(parse_volume_readback(operation, payload)) == expected
 
 
 @pytest.mark.parametrize(
@@ -243,6 +277,9 @@ def test_malformed_or_mismatched_volume_readback_is_never_success(
 
 
 def test_unknown_failure_reason_uses_conservative_copy() -> None:
-    assert render_volume_failure("future_failure") == (
+    assert render_action_failure("âm lượng", "future_failure") == (
         "Thao tác âm lượng thất bại và em không có lý do an toàn cụ thể hơn."
+    )
+    assert render_action_failure(None, "future_failure") == (
+        "Thao tác thất bại và em không có lý do an toàn cụ thể hơn."
     )

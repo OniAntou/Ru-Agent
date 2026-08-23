@@ -615,6 +615,7 @@ def _model_tools() -> list[dict[str, object]]:
             "availability": "native_pending",
             "model_enabled": True,
             "capability_class": "native_mutation",
+            "verification_required": True,
         }
     ]
 

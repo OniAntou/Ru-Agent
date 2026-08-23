@@ -2,7 +2,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace RuApp.Services;
 
@@ -43,20 +42,7 @@ public sealed class WindowsBackendProcessFactory : IBackendProcessFactory
     {
         Directory.CreateDirectory(Path.GetDirectoryName(spec.StandardOutputLogPath)!);
         Directory.CreateDirectory(Path.GetDirectoryName(spec.StandardErrorLogPath)!);
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = spec.FileName,
-            Arguments = spec.Arguments,
-            WorkingDirectory = spec.WorkingDirectory,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        foreach (var variable in spec.Environment)
-        {
-            startInfo.Environment[variable.Key] = variable.Value;
-        }
+        var startInfo = BackendChildProcessPolicy.CreateStartInfo(spec);
 
         var process = new Process { StartInfo = startInfo };
         try
@@ -83,22 +69,20 @@ public sealed class WindowsBackendProcessFactory : IBackendProcessFactory
         try
         {
             await Task.WhenAll(
-                CopyOutputAsync(process.StandardOutput, spec.StandardOutputLogPath),
-                CopyOutputAsync(process.StandardError, spec.StandardErrorLogPath));
+                BackendChildProcessPolicy.DrainToSummaryAsync(
+                    process.StandardOutput,
+                    spec.StandardOutputLogPath,
+                    spec.Role,
+                    "stdout"),
+                BackendChildProcessPolicy.DrainToSummaryAsync(
+                    process.StandardError,
+                    spec.StandardErrorLogPath,
+                    spec.Role,
+                    "stderr"));
         }
         catch (Exception error)
         {
-            Debug.WriteLine($"[BackendProcessManager] Could not persist {spec.Role} output: {error.GetType().Name}");
-        }
-    }
-
-    private static async Task CopyOutputAsync(StreamReader reader, string path)
-    {
-        using var writer = new StreamWriter(path, append: true, Encoding.UTF8);
-        await writer.WriteLineAsync($"--- {DateTimeOffset.Now:O} ---");
-        while (await reader.ReadLineAsync() is { } line)
-        {
-            await writer.WriteLineAsync(line);
+            Debug.WriteLine($"[BackendProcessManager] Could not summarize {spec.Role} output: {error.GetType().Name}");
         }
     }
 }

@@ -177,24 +177,24 @@ public sealed class BackendLaunchPlan
                 $"-m ru_runtime.worker.v1.server --host 127.0.0.1 --port {workerPort}",
                 root,
                 workerEnvironment,
-                Path.Combine(bootstrapRoot, "backend_worker_out.log"),
-                Path.Combine(bootstrapRoot, "backend_worker_err.log")),
+                Path.Combine(bootstrapRoot, "backend_worker_out.jsonl"),
+                Path.Combine(bootstrapRoot, "backend_worker_err.jsonl")),
             new(
                 "ru-agent-broker",
                 publishedBroker,
                 string.Empty,
                 root,
                 brokerEnvironment,
-                Path.Combine(bootstrapRoot, "backend_broker_out.log"),
-                Path.Combine(bootstrapRoot, "backend_broker_err.log")),
+                Path.Combine(bootstrapRoot, "backend_broker_out.jsonl"),
+                Path.Combine(bootstrapRoot, "backend_broker_err.jsonl")),
             new(
                 "aspnetcore-edge",
                 publishedEdge,
                 $"--urls http://127.0.0.1:{publicPort}",
                 root,
                 edgeEnvironment,
-                Path.Combine(bootstrapRoot, "backend_aspnetcore_out.log"),
-                Path.Combine(bootstrapRoot, "backend_aspnetcore_err.log")),
+                Path.Combine(bootstrapRoot, "backend_aspnetcore_out.jsonl"),
+                Path.Combine(bootstrapRoot, "backend_aspnetcore_err.jsonl")),
         };
 
         return new BackendLaunchPlan(

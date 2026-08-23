@@ -47,13 +47,7 @@ public sealed class DiagnosticRetentionService : BackgroundService
         try
         {
             var cutoffUtc = DateTime.UtcNow.AddDays(-_maxAgeDays);
-            var files = new DirectoryInfo(_logDirectory)
-                .GetFiles("*.jsonl")
-                .Where(f => f.Name.StartsWith("aspnetcore-", StringComparison.OrdinalIgnoreCase)
-                    || f.Name.StartsWith("worker-", StringComparison.OrdinalIgnoreCase)
-                    || f.Name.StartsWith("gui-", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(f.Name, "activity_outbox.jsonl", StringComparison.OrdinalIgnoreCase))
-                .ToList();
+            var files = GetManagedFiles();
 
             // 1. Age-based cleanup
             var remainingFiles = new List<FileInfo>();
@@ -124,13 +118,7 @@ public sealed class DiagnosticRetentionService : BackgroundService
 
         try
         {
-            var files = new DirectoryInfo(_logDirectory)
-                .GetFiles("*.jsonl")
-                .Where(f => f.Name.StartsWith("aspnetcore-", StringComparison.OrdinalIgnoreCase)
-                    || f.Name.StartsWith("worker-", StringComparison.OrdinalIgnoreCase)
-                    || f.Name.StartsWith("gui-", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(f.Name, "activity_outbox.jsonl", StringComparison.OrdinalIgnoreCase))
-                .ToList();
+            var files = GetManagedFiles();
 
             long totalBytes = 0;
             foreach (var file in files)
@@ -158,4 +146,30 @@ public sealed class DiagnosticRetentionService : BackgroundService
             return false;
         }
     }
+
+    private List<FileInfo> GetManagedFiles()
+    {
+        var root = new DirectoryInfo(_logDirectory);
+        var files = root.GetFiles("*.jsonl", SearchOption.TopDirectoryOnly)
+            .Where(IsStructuredDiagnosticFile)
+            .ToList();
+        var bootstrap = new DirectoryInfo(Path.Combine(_logDirectory, "bootstrap"));
+        if (!bootstrap.Exists)
+        {
+            return files;
+        }
+
+        files.AddRange(bootstrap
+            .GetFiles("*", SearchOption.AllDirectories)
+            .Where(file => file.Name.StartsWith("backend_", StringComparison.OrdinalIgnoreCase)
+                && (file.Extension.Equals(".jsonl", StringComparison.OrdinalIgnoreCase)
+                    || file.Extension.Equals(".log", StringComparison.OrdinalIgnoreCase))));
+        return files;
+    }
+
+    private static bool IsStructuredDiagnosticFile(FileInfo file) =>
+        file.Name.StartsWith("aspnetcore-", StringComparison.OrdinalIgnoreCase)
+        || file.Name.StartsWith("worker-", StringComparison.OrdinalIgnoreCase)
+        || file.Name.StartsWith("gui-", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(file.Name, "activity_outbox.jsonl", StringComparison.OrdinalIgnoreCase);
 }

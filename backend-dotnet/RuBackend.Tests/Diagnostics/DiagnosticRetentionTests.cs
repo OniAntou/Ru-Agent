@@ -54,4 +54,47 @@ public sealed class DiagnosticRetentionTests : IDisposable
         // Should not throw
         await retention.RunRetentionCleanupAsync();
     }
+
+    [Fact]
+    public async Task Retention_recursively_cleans_bootstrap_summaries_and_legacy_logs()
+    {
+        var bootstrap = Path.Combine(_tempLogDir, "bootstrap", "nested");
+        Directory.CreateDirectory(bootstrap);
+        var oldSummary = Path.Combine(bootstrap, "backend_worker_out.jsonl");
+        var oldLegacy = Path.Combine(bootstrap, "backend_worker_err.log");
+        var recentSummary = Path.Combine(bootstrap, "backend_broker_out.jsonl");
+        var unrelated = Path.Combine(bootstrap, "keep.txt");
+        await File.WriteAllTextAsync(oldSummary, "{}");
+        await File.WriteAllTextAsync(oldLegacy, "legacy raw line");
+        await File.WriteAllTextAsync(recentSummary, "{}");
+        await File.WriteAllTextAsync(unrelated, "keep");
+        File.SetLastWriteTimeUtc(oldSummary, DateTime.UtcNow.AddDays(-10));
+        File.SetLastWriteTimeUtc(oldLegacy, DateTime.UtcNow.AddDays(-10));
+
+        var retention = new DiagnosticRetentionService(_tempLogDir, maxAgeDays: 7);
+        await retention.RunRetentionCleanupAsync();
+
+        Assert.False(File.Exists(oldSummary));
+        Assert.False(File.Exists(oldLegacy));
+        Assert.True(File.Exists(recentSummary));
+        Assert.True(File.Exists(unrelated));
+    }
+
+    [Fact]
+    public async Task Diagnostics_reader_never_exposes_bootstrap_or_legacy_output()
+    {
+        var bootstrap = Path.Combine(_tempLogDir, "bootstrap");
+        Directory.CreateDirectory(bootstrap);
+        await File.WriteAllTextAsync(
+            Path.Combine(bootstrap, "backend_worker_out.jsonl"),
+            "raw-bootstrap-secret");
+        await File.WriteAllTextAsync(
+            Path.Combine(bootstrap, "backend_worker_out.log"),
+            "raw-legacy-secret");
+
+        var result = await new DiagnosticLogReader(_tempLogDir)
+            .ReadLogsAsync(new DiagnosticLogQuery(Limit: 10));
+
+        Assert.Empty(result.Events);
+    }
 }

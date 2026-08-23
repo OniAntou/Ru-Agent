@@ -41,12 +41,12 @@ public sealed class BackendLaunchPlanTests
         Assert.Equal(plan.Children[0].Environment["RU_LOG_ROOT"], plan.Children[2].Environment["RU_LOG_ROOT"]);
         var logRoot = plan.Children[0].Environment["RU_LOG_ROOT"];
         Assert.DoesNotContain(project.Root, logRoot, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_worker_out.log"), plan.Children[0].StandardOutputLogPath);
-        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_worker_err.log"), plan.Children[0].StandardErrorLogPath);
-        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_broker_out.log"), plan.Children[1].StandardOutputLogPath);
-        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_broker_err.log"), plan.Children[1].StandardErrorLogPath);
-        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_aspnetcore_out.log"), plan.Children[2].StandardOutputLogPath);
-        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_aspnetcore_err.log"), plan.Children[2].StandardErrorLogPath);
+        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_worker_out.jsonl"), plan.Children[0].StandardOutputLogPath);
+        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_worker_err.jsonl"), plan.Children[0].StandardErrorLogPath);
+        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_broker_out.jsonl"), plan.Children[1].StandardOutputLogPath);
+        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_broker_err.jsonl"), plan.Children[1].StandardErrorLogPath);
+        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_aspnetcore_out.jsonl"), plan.Children[2].StandardOutputLogPath);
+        Assert.Equal(Path.Combine(logRoot, "bootstrap", "backend_aspnetcore_err.jsonl"), plan.Children[2].StandardErrorLogPath);
         Assert.DoesNotContain(
             plan.Children[2].Environment.Keys,
             key => key.Contains("Ownership", StringComparison.OrdinalIgnoreCase));
@@ -68,9 +68,9 @@ public sealed class BackendLaunchPlanTests
         Assert.Equal(Path.GetFullPath(customLogRoot), plan.Children[0].Environment["RU_LOG_ROOT"]);
         Assert.Equal(Path.GetFullPath(customLogRoot), plan.Children[1].Environment["RU_LOG_ROOT"]);
         Assert.Equal(Path.GetFullPath(customLogRoot), plan.Children[2].Environment["RU_LOG_ROOT"]);
-        Assert.Equal(Path.Combine(customLogRoot, "bootstrap", "backend_worker_out.log"), plan.Children[0].StandardOutputLogPath);
-        Assert.Equal(Path.Combine(customLogRoot, "bootstrap", "backend_broker_out.log"), plan.Children[1].StandardOutputLogPath);
-        Assert.Equal(Path.Combine(customLogRoot, "bootstrap", "backend_aspnetcore_out.log"), plan.Children[2].StandardOutputLogPath);
+        Assert.Equal(Path.Combine(customLogRoot, "bootstrap", "backend_worker_out.jsonl"), plan.Children[0].StandardOutputLogPath);
+        Assert.Equal(Path.Combine(customLogRoot, "bootstrap", "backend_broker_out.jsonl"), plan.Children[1].StandardOutputLogPath);
+        Assert.Equal(Path.Combine(customLogRoot, "bootstrap", "backend_aspnetcore_out.jsonl"), plan.Children[2].StandardOutputLogPath);
     }
 
     [Theory]

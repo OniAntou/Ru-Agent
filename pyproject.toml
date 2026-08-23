@@ -9,7 +9,6 @@ description = "Cloud-first Vietnamese-English Ru conversational runtime."
 requires-python = ">=3.11,<3.15"
 dependencies = [
     "numpy>=1.26",
-    "torch>=2.9,<3",
     "SpeechRecognition>=3.10",
     "pyaudio>=0.2",
     "pyvts>=0.3",
@@ -25,6 +24,9 @@ runtime = [
     "httpx>=0.25",
     "keyring>=25",
 ]
+voice = [
+    "torch>=2.9,<3",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -33,8 +35,21 @@ where = ["src"]
 ru_runtime = ["reference_text.txt", "tyc_talk.wav"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "scripts"]
+pythonpath = ["src", "scripts", "."]
 testpaths = ["tests"]
+norecursedirs = [".venv", ".venv311", "omnivoice_env", "models", ".tmp", ".worktrees", "pip-cache", ".pytest_cache", ".minigpt", "gui-winui3", "backend-dotnet", "logs", "artifacts", "data"]
+addopts = "-p no:warnings"
 
 [tool.ruff]
 line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

@@ -31,6 +31,22 @@ namespace RuApp.Services
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AuthSecret);
         }
 
+        private static void LogApiError(string method, Exception ex)
+        {
+            var status = ex is HttpRequestException httpEx && httpEx.StatusCode.HasValue
+                ? $" status={(int)httpEx.StatusCode.Value} "
+                : string.Empty;
+            Debug.WriteLine(
+                $"[ApiService] {method} failed: {ex.GetType().Name}{status}: {ex.Message}");
+            if (ex.InnerException != null)
+            {
+                Debug.WriteLine($"[ApiService] {method} inner: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
+            }
+        }
+
+        private static bool IsCancellation(Exception ex) =>
+            ex is OperationCanceledException || ex is TaskCanceledException;
+
         public VoiceStreamClient CreateVoiceStreamClient()
         {
             return new VoiceStreamClient(_session);
@@ -44,7 +60,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetSettingsAsync failed: {ex}");
+                LogApiError("GetSettingsAsync", ex);
                 return null;
             }
         }
@@ -58,7 +74,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] SaveSettingsAsync failed: {ex.Message}");
+                LogApiError("SaveSettingsAsync", ex);
                 return false;
             }
         }
@@ -71,7 +87,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetSessionsAsync failed: {ex.Message}");
+                LogApiError("GetSessionsAsync", ex);
                 return null;
             }
         }
@@ -109,7 +125,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] CreateSessionAsync failed: {ex.Message}");
+                LogApiError("CreateSessionAsync", ex);
             }
             return null;
         }
@@ -123,7 +139,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] ActivateSessionAsync failed: {ex.Message}");
+                LogApiError("ActivateSessionAsync", ex);
                 return false;
             }
         }
@@ -155,7 +171,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetSessionMessagesAsync failed: {ex.Message}");
+                LogApiError("GetSessionMessagesAsync", ex);
             }
             return null;
         }
@@ -169,7 +185,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] DeleteSessionAsync failed: {ex.Message}");
+                LogApiError("DeleteSessionAsync", ex);
                 return false;
             }
         }
@@ -182,7 +198,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetVoiceStatusAsync failed: {ex.Message}");
+                LogApiError("GetVoiceStatusAsync", ex);
                 return null;
             }
         }
@@ -223,7 +239,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] UpdateVoiceAsync failed: {ex.Message}");
+                LogApiError("UpdateVoiceAsync", ex);
                 return false;
             }
         }
@@ -237,7 +253,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] WarmupVoiceAsync failed: {ex.Message}");
+                LogApiError("WarmupVoiceAsync", ex);
                 return false;
             }
         }
@@ -253,8 +269,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine(
-                    $"[ApiService] ReportVoiceLatencyAsync failed: {ex.GetType().Name}: {ex.Message}");
+                LogApiError("ReportVoiceLatencyAsync", ex);
                 return false;
             }
         }
@@ -268,7 +283,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] ReleaseVoiceAsync failed: {ex.Message}");
+                LogApiError("ReleaseVoiceAsync", ex);
                 return false;
             }
         }
@@ -282,7 +297,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] TestVoiceAsync failed: {ex.Message}");
+                LogApiError("TestVoiceAsync", ex);
                 return false;
             }
         }
@@ -306,7 +321,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] SynthesizeTtsAsync failed: {ex.Message}");
+                LogApiError("SynthesizeTtsAsync", ex);
             }
             return null;
         }
@@ -320,7 +335,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] SetVtsSpeakingAsync failed: {ex.Message}");
+                LogApiError("SetVtsSpeakingAsync", ex);
                 return false;
             }
         }
@@ -334,7 +349,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetVtsConfigAsync failed: {ex.Message}");
+                LogApiError("GetVtsConfigAsync", ex);
                 return null;
             }
         }
@@ -348,7 +363,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] SaveVtsConfigAsync failed: {ex.Message}");
+                LogApiError("SaveVtsConfigAsync", ex);
                 return false;
             }
         }
@@ -361,7 +376,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] PushVtsActivityAsync failed: {ex.Message}");
+                LogApiError("PushVtsActivityAsync", ex);
             }
         }
 
@@ -376,7 +391,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetMouseLookAsync failed: {ex.Message}");
+                LogApiError("GetMouseLookAsync", ex);
                 return null;
             }
         }
@@ -390,7 +405,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] SaveMouseLookAsync failed: {ex.Message}");
+                LogApiError("SaveMouseLookAsync", ex);
                 return false;
             }
         }
@@ -406,7 +421,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetOverlayAsync failed: {ex.Message}");
+                LogApiError("GetOverlayAsync", ex);
                 return null;
             }
         }
@@ -420,7 +435,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] SaveOverlayAsync failed: {ex.Message}");
+                LogApiError("SaveOverlayAsync", ex);
                 return false;
             }
         }
@@ -436,7 +451,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetActivityLogAsync failed: {ex.Message}");
+                LogApiError("GetActivityLogAsync", ex);
                 return null;
             }
         }
@@ -450,7 +465,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] ClearActivityLogAsync failed: {ex.Message}");
+                LogApiError("ClearActivityLogAsync", ex);
                 return false;
             }
         }
@@ -478,7 +493,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetModelsAsync failed: {ex.Message}");
+                LogApiError("GetModelsAsync", ex);
             }
             return new List<string>();
         }
@@ -512,7 +527,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] TranscribeAudioAsync failed: {ex.Message}");
+                LogApiError("TranscribeAudioAsync", ex);
             }
             return null;
         }
@@ -539,7 +554,7 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] CheckWorkerHealthAsync failed: {ex.Message}");
+                LogApiError("CheckWorkerHealthAsync", ex);
                 return (false, null);
             }
         }
@@ -552,7 +567,7 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetVtsStatusAsync failed: {ex.Message}");
+                LogApiError("GetVtsStatusAsync", ex);
                 return null;
             }
         }
@@ -566,7 +581,7 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] ConnectVtsAsync failed: {ex.Message}");
+                LogApiError("ConnectVtsAsync", ex);
                 return false;
             }
         }
@@ -579,7 +594,7 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetMemoryAsync failed: {ex.Message}");
+                LogApiError("GetMemoryAsync", ex);
                 return null;
             }
         }
@@ -593,7 +608,7 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] ClearMemoryAsync failed: {ex.Message}");
+                LogApiError("ClearMemoryAsync", ex);
                 return false;
             }
         }
@@ -606,7 +621,7 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetObservationStatusAsync failed: {ex.Message}");
+                LogApiError("GetObservationStatusAsync", ex);
                 return null;
             }
         }
@@ -620,7 +635,7 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] StartObservationAsync failed: {ex.Message}");
+                LogApiError("StartObservationAsync", ex);
                 return false;
             }
         }
@@ -634,7 +649,7 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] StopObservationAsync failed: {ex.Message}");
+                LogApiError("StopObservationAsync", ex);
                 return false;
             }
         }
@@ -651,7 +666,7 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] AcknowledgeObservationAsync failed: {ex.Message}");
+                LogApiError("AcknowledgeObservationAsync", ex);
                 return false;
             }
         }
@@ -681,7 +696,7 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetDiagnosticLogsAsync failed: {ex.Message}");
+                LogApiError("GetDiagnosticLogsAsync", ex);
                 return null;
             }
         }
@@ -707,7 +722,7 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] ExportDiagnosticLogsAsync failed: {ex.Message}");
+                LogApiError("ExportDiagnosticLogsAsync", ex);
                 return null;
             }
         }
@@ -720,7 +735,7 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ApiService] GetDiagnosticStatusAsync failed: {ex.Message}");
+                LogApiError("GetDiagnosticStatusAsync", ex);
                 return null;
             }
         }

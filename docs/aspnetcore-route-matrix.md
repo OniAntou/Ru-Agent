@@ -23,6 +23,15 @@ VTS, and observation.
 There are no feature-selected owners, shadow reads, public forwarding routes,
 or alternate host mode. Unknown public paths are never sent to Python.
 
+## Reserved routes
+
+Two entries intentionally have empty `winui_callers`:
+
+- `GET /history` — legacy `IHistoryStore.ReadLegacyAsync` retained for migration verification only; WinUI uses `GET /sessions` and `POST /sessions/{id}/activate` (`ApiService.GetSessionsAsync`/`GetSessionMessagesAsync`).
+- `POST /observation/preflight` — internal harness/validation preflight for observation; WinUI polls via `GET /observation/status` and `POST /observation/start|stop|react|ack` (`ApiService.GetObservationStatusAsync` etc.).
+
+Empty `winui_callers` is therefore expected for these reserved lifecycle routes and is not a dead-route signal.
+
 ## Verification
 
 ```powershell

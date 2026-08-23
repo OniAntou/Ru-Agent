@@ -11,7 +11,8 @@ public sealed record ToolExecutionContext(
     int DeadlineMs,
     bool Approved,
     string? ApprovalToken = null,
-    bool ConfinementRequired = true);
+    bool ConfinementRequired = true,
+    IReadOnlySet<string>? SessionScopes = null);
 
 public sealed record ToolExecutionOutcome(
     string Status,

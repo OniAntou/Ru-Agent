@@ -413,6 +413,7 @@ public sealed class ToolExecutionService : IToolInvoker
                 adapterInvoked: false);
         }
 
+        var sessionScopes = _session.Scopes;
         var context = new ToolExecutionContext(
             contextRequest.RequestId,
             contextRequest.SessionId,
@@ -421,7 +422,8 @@ public sealed class ToolExecutionService : IToolInvoker
             contextRequest.DeadlineMs,
             approved,
             approvalToken,
-            !_session.Scopes.Contains(ToolScope.TerminalNetwork));
+            !sessionScopes.Contains(ToolScope.TerminalNetwork),
+            sessionScopes);
         ToolExecutionOutcome outcome;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(Math.Clamp(context.DeadlineMs, 1, 300_000));
@@ -531,7 +533,7 @@ public sealed class ToolExecutionService : IToolInvoker
     {
         var grant = new PolicyGrant(
             context.SessionId,
-            _session.Scopes,
+            context.SessionScopes ?? _session.Scopes,
             _session.Descriptor.ExpiresAt);
         var result = await _terminal.RunAsync(
             grant,
@@ -544,7 +546,7 @@ public sealed class ToolExecutionService : IToolInvoker
                 arguments["network"]?.GetValue<bool>() ?? false),
             context.ConfinementRequired,
             cancellationToken).ConfigureAwait(false);
-        return ProcessOutcome(result);
+        return ProcessOutcome(result, context.ConfinementRequired);
     }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteTerminalShellAsync(
@@ -570,12 +572,12 @@ public sealed class ToolExecutionService : IToolInvoker
                 context.ApprovalToken,
                 context.RequestId,
                 context.SessionId,
-                argumentsHash),
+                    argumentsHash),
             cancellationToken).ConfigureAwait(false);
-        return ProcessOutcome(result);
+        return ProcessOutcome(result, confineWorkspace: true);
     }
 
-    private ToolExecutionOutcome ProcessOutcome(ProcessRunResult result)
+    private ToolExecutionOutcome ProcessOutcome(ProcessRunResult result, bool confineWorkspace)
     {
         var output = new JsonObject
         {
@@ -584,7 +586,9 @@ public sealed class ToolExecutionService : IToolInvoker
             ["stdout"] = result.Stdout,
             ["stderr"] = result.Stderr,
             ["output_truncated"] = result.OutputTruncated,
-            ["working_directory"] = _workspace.ToRelative(result.WorkingDirectory),
+            ["working_directory"] = confineWorkspace
+                ? _workspace.ToRelative(result.WorkingDirectory)
+                : BoundWorkingDirectory(result.WorkingDirectory),
         };
         return result.Status switch
         {
@@ -615,6 +619,16 @@ public sealed class ToolExecutionService : IToolInvoker
                 "Terminal process returned an invalid status.",
                 ToolVerificationStates.NotRequired),
         };
+    }
+
+    private static string BoundWorkingDirectory(string workingDirectory)
+    {
+        if (string.IsNullOrEmpty(workingDirectory))
+        {
+            return string.Empty;
+        }
+
+        return workingDirectory.Length > 1024 ? workingDirectory[..1024] : workingDirectory;
     }
 
     private static ToolExecutionOutcome Normalize(ToolBinding binding, ToolExecutionOutcome outcome)

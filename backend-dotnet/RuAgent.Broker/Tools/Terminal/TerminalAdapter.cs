@@ -1,10 +1,35 @@
 using System.Collections.Frozen;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
 using RuAgent.Broker.Policy;
 
 namespace RuAgent.Broker.Tools.Terminal;
 
 public sealed class TerminalAdapter
 {
+    private const uint QueryOnlyDesiredAccess = 0;
+    private const uint FileShareReadWrite = 0x3;
+    private const uint OpenExisting = 0x3;
+    private const uint BackupSemanticsFlag = 0x02000000;
+
+    [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFile(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        IntPtr lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        IntPtr hTemplateFile);
+
+    [DllImport("kernel32.dll", EntryPoint = "GetFinalPathNameByHandleW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandle(
+        SafeFileHandle hFile,
+        StringBuilder lpszFilePath,
+        uint cchFilePath,
+        uint dwFlags);
+
     private static readonly FrozenSet<string> AllowedExecutables = new HashSet<string>(
         ["git", "rg", "dotnet", "pytest", "python", "python.exe"],
         StringComparer.OrdinalIgnoreCase).ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -125,13 +150,73 @@ public sealed class TerminalAdapter
             : Path.IsPathRooted(relativeWorkingDirectory)
                 ? Path.GetFullPath(relativeWorkingDirectory)
                 : Path.GetFullPath(Path.Combine(_workspace.Root, relativeWorkingDirectory));
-        EnsureNotProtectedLocation(candidate);
         if (!Directory.Exists(candidate))
         {
             throw new FileNotFoundException("terminal_cwd_missing", candidate);
         }
 
+        EnsureNotProtectedLocation(ResolveFinalPath(candidate));
         return candidate;
+    }
+
+    private static string ResolveFinalPath(string candidate)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return Path.GetFullPath(candidate);
+        }
+
+        using var handle = CreateFile(
+            ExtendedDevicePath(candidate),
+            QueryOnlyDesiredAccess,
+            FileShareReadWrite,
+            IntPtr.Zero,
+            OpenExisting,
+            BackupSemanticsFlag,
+            IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            throw new UnauthorizedAccessException("terminal_cwd_not_allowed");
+        }
+
+        var buffer = new StringBuilder(1_024);
+        var required = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Capacity, 0);
+        if (required > (uint)buffer.Capacity)
+        {
+            buffer = new StringBuilder(checked((int)required));
+            required = GetFinalPathNameByHandle(handle, buffer, required, 0);
+        }
+
+        if (required == 0)
+        {
+            throw new UnauthorizedAccessException("terminal_cwd_not_allowed");
+        }
+
+        return StripDevicePrefix(buffer.ToString());
+    }
+
+    private static string ExtendedDevicePath(string candidate)
+    {
+        if (candidate.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+        {
+            return candidate;
+        }
+
+        return candidate.StartsWith(@"\\", StringComparison.OrdinalIgnoreCase)
+            ? @"\\?\UNC\" + candidate[2..]
+            : @"\\?\" + candidate;
+    }
+
+    private static string StripDevicePrefix(string finalPath)
+    {
+        if (finalPath.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+        {
+            return @"\\" + finalPath[@"\\?\UNC\".Length..];
+        }
+
+        return finalPath.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase)
+            ? finalPath[@"\\?\".Length..]
+            : finalPath;
     }
 
     private static void EnsureNotProtectedLocation(string candidate)

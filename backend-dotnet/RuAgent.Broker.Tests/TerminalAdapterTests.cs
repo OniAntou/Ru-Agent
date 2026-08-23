@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Terminal;
@@ -14,7 +15,7 @@ public sealed class TerminalAdapterTests
         try
         {
             var adapter = CreateAdapter(root);
-            Assert.Throws<UnauthorizedAccessException>(() =>
+            var allowlistError = Assert.Throws<UnauthorizedAccessException>(() =>
             {
                 _ = adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
@@ -22,6 +23,7 @@ public sealed class TerminalAdapterTests
                     confineWorkspace: true,
                     CancellationToken.None);
             });
+            Assert.Equal("terminal_command_not_allowed", allowlistError.Message);
 
             var error = Assert.Throws<UnauthorizedAccessException>(() =>
             {
@@ -128,6 +130,65 @@ public sealed class TerminalAdapterTests
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
                     Request("python", ["-c", "print(1)"], workingDirectory: windowsDirectory),
+                    confineWorkspace: false,
+                    CancellationToken.None));
+            Assert.Equal("terminal_cwd_not_allowed", error.Message);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Unrestricted_confinement_refuses_junctions_into_protected_directories()
+    {
+        var parent = CreateTemporaryRoot("ru-terminal-junction-");
+        var workspaceRoot = Path.Combine(parent, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var windowsDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        Assert.False(string.IsNullOrWhiteSpace(windowsDirectory));
+        var junction = Path.Combine(workspaceRoot, "windows-link");
+        CreateJunction(junction, windowsDirectory);
+        try
+        {
+            var adapter = CreateAdapter(workspaceRoot);
+            var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                adapter.RunAsync(
+                    MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
+                    Request(
+                        "python",
+                        ["-c", "print(1)"],
+                        network: true,
+                        workingDirectory: "windows-link"),
+                    confineWorkspace: false,
+                    CancellationToken.None));
+            Assert.Equal("terminal_cwd_not_allowed", error.Message);
+        }
+        finally
+        {
+            TryRemoveLink(junction);
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Unrestricted_confinement_refuses_extended_syntax_protected_directories()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-extended-cwd-");
+        var windowsDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        Assert.False(string.IsNullOrWhiteSpace(windowsDirectory));
+        try
+        {
+            var adapter = CreateAdapter(root);
+            var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                adapter.RunAsync(
+                    MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
+                    Request(
+                        "python",
+                        ["-c", "print(1)"],
+                        network: true,
+                        workingDirectory: $@"\\?\{windowsDirectory}"),
                     confineWorkspace: false,
                     CancellationToken.None));
             Assert.Equal("terminal_cwd_not_allowed", error.Message);
@@ -256,5 +317,31 @@ public sealed class TerminalAdapterTests
         var root = Path.Combine(Path.GetTempPath(), prefix + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         return root;
+    }
+
+    private static void CreateJunction(string junction, string target)
+    {
+        using var process = Process.Start(new ProcessStartInfo
+        {
+            FileName = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe",
+            Arguments = $"/c mklink /J \"{junction}\" \"{target}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        })!;
+        Assert.True(process.WaitForExit(15_000));
+        Assert.Equal(0, process.ExitCode);
+    }
+
+    private static void TryRemoveLink(string link)
+    {
+        try
+        {
+            new DirectoryInfo(link).Delete();
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 }

@@ -146,6 +146,10 @@ success only from a matching `succeeded` receipt whose verification state is
 `verified` and whose readback matches. Python does not own desktop side
 effects.
 
+The Host serializes one active Broker grant: a matching valid session is reused;
+a replacement chat session closes the old grant before open. Failure is
+fail-closed and never reaches the native adapter.
+
 Non-success outcomes, including failures and clarifications, cross the Worker
 boundary as a bounded `action_outcome`. The Public Host keeps at most one such
 outcome in a one-shot, in-memory, session-isolated store. It is consumed by the

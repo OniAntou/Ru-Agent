@@ -45,6 +45,11 @@ WinUI authenticated chat
         -> visible reply
 ```
 
+The Public Host keeps one active Broker lease. It reuses a valid matching
+session, and closes the previous lease before opening a different chat session.
+Close or open failure stops before adapter execution; the Broker continues to
+reject concurrent owners with `session_conflict`.
+
 Ordinary turns in both normal chat and Agent mode continue through normal
 streamed generation. Ambiguous volume wording produces deterministic
 clarification instead of an inferred action; unrelated conversation is never
@@ -82,6 +87,10 @@ The bounded volume operations are `get`, `set` from 0 through 100,
 default-render-endpoint acquisition and uses one disposable endpoint per
 operation. A mutation succeeds only when readback matches on the same fixed
 endpoint role and ephemeral endpoint hash.
+
+For deterministic Vietnamese commands, `tăng âm lượng lên N` is an absolute
+`set` target, while `tăng âm lượng thêm N` is a relative `increase`. Topic-free
+shorthand is not promoted into an action from conversation history.
 
 File, notes, and terminal bindings exist for policy, protocol, and adapter
 conformance. They are omitted from the model capability list in v1.

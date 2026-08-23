@@ -75,6 +75,9 @@ readback-mismatch failure. They also establish restoration logic and artifact
 privacy for the opt-in native runner through injected process, HTTP,
 WebSocket, and artifact-writer seams.
 
+Host tests cover cross-session rotation with a stateful single-owner fake and
+prove close-before-open, same-session reuse, and no dispatch after close failure.
+
 ## evidence_class: native
 
 Native evidence is an explicit user-owned smoke against a freshly published

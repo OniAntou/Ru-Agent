@@ -147,6 +147,10 @@ def test_current_docs_describe_deterministic_volume_recovery_truthfully() -> Non
 
     assert "deterministic volume parser" in agent_tools_flat
     assert "does not invoke model selection" in agent_tools_flat
+    assert "one active Broker lease" in agent_tools_flat
+    assert "closes the previous lease before opening" in agent_tools_flat
+    assert "tăng âm lượng lên N" in agent_tools
+    assert "tăng âm lượng thêm N" in agent_tools
     assert "ordinary normal-chat and Agent-mode turns" in runtime_flat
     assert "normal streamed generation" in runtime_flat
     assert "one-shot" in runtime_flat
@@ -171,3 +175,4 @@ def test_current_docs_describe_deterministic_volume_recovery_truthfully() -> Non
     assert "does not claim an audible Windows volume change" in verification_flat
     assert "native_volume_acceptance.py" in verification
     assert "--confirm-native-volume-change" in verification
+    assert "cross-session rotation" in verification_flat

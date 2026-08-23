@@ -184,7 +184,7 @@ namespace RuApp.Views
             DispatcherQueue.TryEnqueue(() =>
             {
                 _agentSession.Disable();
-                AgentModeButton.IsChecked = false;
+                UpdateModeSelectionVisuals();
                 AgentActivity.Visibility = Visibility.Collapsed;
                 ClearAgentApproval();
             });
@@ -202,27 +202,98 @@ namespace RuApp.Views
                 _activeSessionId = sessionId;
                 _agentSession.ObserveSession(sessionId);
                 _agentSession.Disable();
-                AgentModeButton.IsChecked = false;
+                UpdateModeSelectionVisuals();
                 AgentActivity.Visibility = Visibility.Collapsed;
                 ClearAgentApproval();
             });
         }
 
-        private void OnAgentModeClick(object sender, RoutedEventArgs e)
+        private void SelectChatMode()
         {
-            if (AgentModeButton.IsChecked == true)
+            _agentSession.Disable();
+            AgentActivity.Visibility = Visibility.Collapsed;
+            ClearAgentApproval();
+            UpdateModeSelectionVisuals();
+        }
+
+        private void UpdateModeSelectionVisuals()
+        {
+            ModeAgentButton.IsChecked = _agentSession.CurrentMode == RuAppMode.Agent;
+            ApplySegmentStyle(ModeChatButton, _agentSession.CurrentMode == RuAppMode.Chat);
+            ApplySegmentStyle(ModeAgentButton, _agentSession.CurrentMode == RuAppMode.Agent);
+            ApplySegmentStyle(ModeFullButton, _agentSession.CurrentMode == RuAppMode.Full);
+        }
+
+        private void ApplySegmentStyle(Control segment, bool active)
+        {
+            segment.BorderBrush = active
+                ? (Brush)Application.Current.Resources["RuAccentBrush"]
+                : (Brush)Application.Current.Resources["RuLineBrush"];
+            segment.Foreground = active
+                ? (Brush)Application.Current.Resources["RuInkBrush"]
+                : (Brush)Application.Current.Resources["RuMutedBrush"];
+        }
+
+        private void OnModeChatClick(object sender, RoutedEventArgs e)
+        {
+            SelectChatMode();
+        }
+
+        private void OnModeAgentClick(object sender, RoutedEventArgs e)
+        {
+            if (ModeAgentButton.IsChecked != true)
             {
-                _agentSession.ObserveSession(_activeSessionId);
-                _agentSession.BeginRequest(_activeSessionId);
-                AgentActivity.Text = "Agent mode đã bật";
-                AgentActivity.Visibility = Visibility.Visible;
+                SelectChatMode();
+                return;
             }
-            else
+
+            _agentSession.ObserveSession(_activeSessionId);
+            _agentSession.BeginRequest(_activeSessionId, RuAppMode.Agent);
+            AgentActivity.Text = "Agent mode đã bật";
+            AgentActivity.Visibility = Visibility.Visible;
+            UpdateModeSelectionVisuals();
+        }
+
+        private async void OnModeFullClick(object sender, RoutedEventArgs e)
+        {
+            if (_agentSession.CurrentMode == RuAppMode.Full)
             {
-                _agentSession.Disable();
-                AgentActivity.Visibility = Visibility.Collapsed;
-                ClearAgentApproval();
+                return;
             }
+
+            if (!_agentSession.HasConfirmedFullAccess)
+            {
+                ContentDialogResult result = await ShowFullAccessConfirmationAsync();
+                if (result != ContentDialogResult.Primary)
+                {
+                    UpdateModeSelectionVisuals();
+                    return;
+                }
+
+                _agentSession.ConfirmFullAccess();
+            }
+
+            _agentSession.ObserveSession(_activeSessionId);
+            _agentSession.BeginRequest(_activeSessionId, RuAppMode.Full);
+            AgentActivity.Text = "Full Access đã bật";
+            AgentActivity.Visibility = Visibility.Visible;
+            UpdateModeSelectionVisuals();
+        }
+
+        private async Task<ContentDialogResult> ShowFullAccessConfirmationAsync()
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Full Access",
+                Content = "Chế độ Full Access cho phép Ru chạy lệnh shell tự do trên toàn hệ thống "
+                    + "và dùng mạng mà không cần hỏi trước. Hành động ghi hoặc sửa file vẫn hiện thẻ duyệt một lần. "
+                    + "Anh có thể quay lại chế độ Chat bất cứ lúc nào.",
+                PrimaryButtonText = "Tôi hiểu, bật Full Access",
+                CloseButtonText = "Huỷ",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = this.XamlRoot
+            };
+            return await dialog.ShowAsync();
         }
 
         private void OnAgentSessionReceived(AgentSessionGrantModel grant)
@@ -269,6 +340,9 @@ namespace RuApp.Views
                 _pendingAgentApproval = approval;
                 _approvalResponsePending = false;
                 AgentApprovalActionText.Text = approval.SafeAction;
+                bool hasPreview = !string.IsNullOrWhiteSpace(approval.Preview);
+                AgentApprovalPreviewText.Text = hasPreview ? approval.Preview : string.Empty;
+                AgentApprovalPreviewText.Visibility = hasPreview ? Visibility.Visible : Visibility.Collapsed;
                 AgentApprovalScopeText.Text = $"Phạm vi: {approval.Scope}";
                 AgentApprovalExpiryText.Text = $"Hết hạn lúc {approval.ExpiresAt.ToLocalTime():HH:mm}";
                 AgentApprovalCard.Visibility = Visibility.Visible;
@@ -372,6 +446,8 @@ namespace RuApp.Views
             AgentApprovalCard.Visibility = Visibility.Collapsed;
             SetApprovalButtonsState(true);
             AgentApprovalActionText.Text = string.Empty;
+            AgentApprovalPreviewText.Text = string.Empty;
+            AgentApprovalPreviewText.Visibility = Visibility.Collapsed;
             AgentApprovalScopeText.Text = string.Empty;
             AgentApprovalExpiryText.Text = string.Empty;
         }
@@ -539,7 +615,7 @@ namespace RuApp.Views
 
             ScrollChatToBottom();
             cancellationToken.ThrowIfCancellationRequested();
-            await _wsClient.SendMessageAsync(text, _activeSessionId, cancellationToken, _agentSession.IsEnabled);
+            await _wsClient.SendMessageAsync(text, _activeSessionId, cancellationToken, _agentSession.CurrentMode);
         }
 
         private void HandleSendError(Exception exception, string operation)
@@ -821,7 +897,7 @@ namespace RuApp.Views
                 _activeSessionId = sessionId;
                 _agentSession.ObserveSession(sessionId);
                 _agentSession.Disable();
-                AgentModeButton.IsChecked = false;
+                UpdateModeSelectionVisuals();
                 AgentActivity.Visibility = Visibility.Collapsed;
                 ClearAgentApproval();
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));

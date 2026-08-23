@@ -120,6 +120,9 @@ public sealed record AgentActivityModel(
             "Windows không xác nhận mức âm lượng sau khi thay đổi.",
         "adapter_error" =>
             "Bộ điều khiển âm lượng gặp lỗi nên em không coi thao tác là thành công.",
+        "edit_not_unique" =>
+            "Không tìm thấy đoạn cần sửa hoặc đoạn xuất hiện nhiều lần.",
+        "approval_denied" => "Anh đã từ chối thao tác này.",
         "cancelled" => "Thao tác âm lượng đã bị huỷ.",
         "timed_out" => "Thao tác âm lượng đã hết thời gian chờ.",
         _ => "Không có lý do an toàn cụ thể hơn.",

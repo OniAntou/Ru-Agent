@@ -237,7 +237,7 @@
                     AutomationProperties.AutomationId="AgentApprovalCard"
                     AutomationProperties.Name="Yêu cầu phê duyệt một lần cho hành động của Agent"
                     AutomationProperties.LiveSetting="Polite">
-                <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
                     <TextBlock Text="Ru cần anh duyệt một hành động"
                                FontFamily="{StaticResource RuUiFontFamily}"
                                FontSize="12"
@@ -249,7 +249,16 @@
                                FontFamily="{StaticResource RuUiFontFamily}"
                                FontSize="14"
                                Foreground="{StaticResource RuInkBrush}" />
-                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBlock x:Name="AgentApprovalPreviewText"
+                               Grid.Row="2"
+                               TextWrapping="Wrap"
+                               FontFamily="Consolas"
+                               FontSize="12"
+                               IsTextSelectionEnabled="False"
+                               Visibility="Collapsed"
+                               AutomationProperties.AutomationId="AgentApprovalPreviewText"
+                               Foreground="{StaticResource RuMutedBrush}" />
+                    <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                         <StackPanel Spacing="2" VerticalAlignment="Center">
                             <TextBlock x:Name="AgentApprovalScopeText"
                                        TextWrapping="Wrap"
@@ -345,25 +354,57 @@
                                       Foreground="{StaticResource RuMutedBrush}" />
                         </Button>
 
-                        <ToggleButton x:Name="AgentModeButton"
-                                      Grid.Column="1"
-                                      Click="OnAgentModeClick"
-                                      Margin="6,0,0,0"
-                                      Height="32"
-                                      Padding="10,0"
-                                      CornerRadius="{StaticResource RuControlCornerRadius}"
-                                      AutomationProperties.AutomationId="AgentModeButton"
-                                      AutomationProperties.Name="Bật chế độ Agent cho session này với workspace và terminal giới hạn"
-                                      ToolTipService.ToolTip="Bật/tắt chế độ Agent"
-                                      Background="Transparent"
-                                      BorderBrush="{StaticResource RuLineBrush}"
-                                      BorderThickness="1"
-                                      Foreground="{StaticResource RuMutedBrush}">
-                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                <FontIcon Glyph="&#xE945;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" />
-                                <TextBlock Text="Agent mode" FontSize="12" FontFamily="{StaticResource RuUiFontFamily}" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </ToggleButton>
+                        <StackPanel x:Name="ModeSelector"
+                                    Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    Spacing="4"
+                                    Margin="6,0,0,0"
+                                    VerticalAlignment="Center">
+                            <Button x:Name="ModeChatButton"
+                                    Click="OnModeChatClick"
+                                    Height="32"
+                                    Padding="10,0"
+                                    CornerRadius="{StaticResource RuControlCornerRadius}"
+                                    AutomationProperties.AutomationId="ModeChatButton"
+                                    AutomationProperties.Name="Chế độ trò chuyện thông thường, chỉ đọc workspace"
+                                    ToolTipService.ToolTip="Chế độ trò chuyện thông thường, chỉ đọc workspace"
+                                    Background="Transparent"
+                                    BorderBrush="{StaticResource RuLineBrush}"
+                                    BorderThickness="1"
+                                    Foreground="{StaticResource RuMutedBrush}">
+                                <TextBlock Text="Chat" FontSize="12" FontFamily="{StaticResource RuUiFontFamily}" VerticalAlignment="Center" />
+                            </Button>
+                            <ToggleButton x:Name="ModeAgentButton" Click="OnModeAgentClick"
+                                          Height="32"
+                                          Padding="10,0"
+                                          CornerRadius="{StaticResource RuControlCornerRadius}"
+                                          AutomationProperties.AutomationId="AgentModeButton"
+                                          AutomationProperties.Name="Bật chế độ Agent cho session này với workspace và terminal giới hạn"
+                                          ToolTipService.ToolTip="Bật/tắt chế độ Agent"
+                                          Background="Transparent"
+                                          BorderBrush="{StaticResource RuLineBrush}"
+                                          BorderThickness="1"
+                                          Foreground="{StaticResource RuMutedBrush}">
+                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xE945;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" />
+                                    <TextBlock Text="Agent" FontSize="12" FontFamily="{StaticResource RuUiFontFamily}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </ToggleButton>
+                            <Button x:Name="ModeFullButton"
+                                    Click="OnModeFullClick"
+                                    Height="32"
+                                    Padding="10,0"
+                                    CornerRadius="{StaticResource RuControlCornerRadius}"
+                                    AutomationProperties.AutomationId="ModeFullButton"
+                                    AutomationProperties.Name="Bật Full Access với shell tự do trên toàn hệ thống và mạng được phép"
+                                    ToolTipService.ToolTip="Bật Full Access với shell tự do trên toàn hệ thống và mạng được phép"
+                                    Background="Transparent"
+                                    BorderBrush="{StaticResource RuLineBrush}"
+                                    BorderThickness="1"
+                                    Foreground="{StaticResource RuMutedBrush}">
+                                <TextBlock Text="Full" FontSize="12" FontFamily="{StaticResource RuUiFontFamily}" VerticalAlignment="Center" />
+                            </Button>
+                        </StackPanel>
 
                         <TextBlock x:Name="AgentActivity"
                                    Grid.Column="2"

@@ -2,13 +2,22 @@ using System.Collections.ObjectModel;
 
 namespace RuApp.Services;
 
+public enum RuAppMode
+{
+    Chat,
+    Agent,
+    Full,
+}
+
 public sealed class AgentSessionService
 {
     private readonly ObservableCollection<string> _scopes = new();
 
     public bool IsEnabled { get; private set; }
     public bool HasActualGrant { get; private set; }
+    public bool HasConfirmedFullAccess { get; private set; }
     public string? SessionId { get; private set; }
+    public RuAppMode CurrentMode { get; private set; } = RuAppMode.Chat;
     public ReadOnlyObservableCollection<string> Scopes { get; }
 
     public AgentSessionService()
@@ -34,11 +43,22 @@ public sealed class AgentSessionService
 
     public void BeginRequest(string sessionId)
     {
+        BeginRequest(sessionId, RuAppMode.Agent);
+    }
+
+    public void BeginRequest(string sessionId, RuAppMode mode)
+    {
         if (!string.Equals(SessionId, sessionId, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Agent mode must use the observed conversation session.");
         }
 
+        if (mode == RuAppMode.Chat)
+        {
+            throw new ArgumentException("Use Disable to return to chat mode.", nameof(mode));
+        }
+
+        CurrentMode = mode;
         IsEnabled = true;
         ClearGrant();
     }
@@ -59,9 +79,15 @@ public sealed class AgentSessionService
         HasActualGrant = true;
     }
 
+    public void ConfirmFullAccess()
+    {
+        HasConfirmedFullAccess = true;
+    }
+
     public void Disable()
     {
         IsEnabled = false;
+        CurrentMode = RuAppMode.Chat;
         ClearGrant();
     }
 

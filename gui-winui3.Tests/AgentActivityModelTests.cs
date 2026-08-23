@@ -49,6 +49,8 @@ public sealed class AgentActivityModelTests
     [InlineData("read_failed", "Em không đọc được trạng thái âm lượng hiện tại.")]
     [InlineData("readback_mismatch", "Windows không xác nhận mức âm lượng sau khi thay đổi.")]
     [InlineData("adapter_error", "Bộ điều khiển âm lượng gặp lỗi nên em không coi thao tác là thành công.")]
+    [InlineData("edit_not_unique", "Không tìm thấy đoạn cần sửa hoặc đoạn xuất hiện nhiều lần.")]
+    [InlineData("approval_denied", "Anh đã từ chối thao tác này.")]
     [InlineData("future_safe_code", "Không có lý do an toàn cụ thể hơn.")]
     public void Failure_codes_map_to_stable_safe_reasons(string errorCode, string expectedReason)
     {

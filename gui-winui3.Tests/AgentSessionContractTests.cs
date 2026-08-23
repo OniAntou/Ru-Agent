@@ -94,4 +94,58 @@ public sealed class AgentSessionContractTests
         Assert.False(service.HasActualGrant);
         Assert.Empty(service.Scopes);
     }
+
+    [Fact]
+    public void Mode_starts_at_chat_and_begin_request_selects_agent()
+    {
+        var service = new AgentSessionService();
+        service.ObserveSession("session-1");
+
+        Assert.Equal(RuAppMode.Chat, service.CurrentMode);
+        Assert.False(service.IsEnabled);
+
+        service.BeginRequest("session-1");
+
+        Assert.Equal(RuAppMode.Agent, service.CurrentMode);
+        Assert.True(service.IsEnabled);
+    }
+
+    [Fact]
+    public void Begin_request_with_full_selects_the_full_mode()
+    {
+        var service = new AgentSessionService();
+        service.ObserveSession("session-1");
+
+        service.BeginRequest("session-1", RuAppMode.Full);
+
+        Assert.Equal(RuAppMode.Full, service.CurrentMode);
+        Assert.True(service.IsEnabled);
+        Assert.False(service.HasActualGrant);
+    }
+
+    [Fact]
+    public void Disable_returns_the_mode_to_chat()
+    {
+        var service = new AgentSessionService();
+        service.ObserveSession("session-1");
+        service.BeginRequest("session-1", RuAppMode.Full);
+
+        service.Disable();
+
+        Assert.Equal(RuAppMode.Chat, service.CurrentMode);
+        Assert.False(service.IsEnabled);
+        Assert.Equal("session-1", service.SessionId);
+    }
+
+    [Fact]
+    public void Full_access_confirmation_is_stored_once_per_service()
+    {
+        var service = new AgentSessionService();
+
+        Assert.False(service.HasConfirmedFullAccess);
+
+        service.ConfirmFullAccess();
+
+        Assert.True(service.HasConfirmedFullAccess);
+    }
 }

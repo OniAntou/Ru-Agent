@@ -53,6 +53,25 @@ public sealed class AgentApprovalUiContractTests
         Assert.Contains("AgentRejectButton.IsEnabled", code, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Approval_card_shows_a_bounded_read_only_preview()
+    {
+        string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
+        string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+        string model = File.ReadAllText(FindSource("Services", "AgentApprovalModel.cs"));
+        string client = File.ReadAllText(FindSource("Services", "ChatWebSocketClient.cs"));
+
+        Assert.Contains("x:Name=\"AgentApprovalPreviewText\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsTextSelectionEnabled=\"False\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("FontFamily=\"Consolas\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AgentApprovalPreviewText.Text =", code, StringComparison.Ordinal);
+        Assert.Contains("approval.Preview", code, StringComparison.Ordinal);
+        Assert.Contains("public const int MaxPreviewLength = 512", model, StringComparison.Ordinal);
+        Assert.Contains("value[..MaxPreviewLength]", model, StringComparison.Ordinal);
+        Assert.Contains("AgentApprovalModel.TryParse(root, out var approval)", client, StringComparison.Ordinal);
+        Assert.DoesNotContain("TryReadApproval(", client, StringComparison.Ordinal);
+    }
+
     private static string FindSource(params string[] parts)
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);

@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Globalization;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -195,7 +194,7 @@ namespace RuApp.Services
                 }
                 else if (msgType == "agent.approval_required")
                 {
-                    if (TryReadApproval(root, out var approval))
+                    if (AgentApprovalModel.TryParse(root, out var approval))
                     {
                         OnAgentApprovalRequired?.Invoke(approval);
                     }
@@ -213,41 +212,6 @@ namespace RuApp.Services
                 System.Diagnostics.Debug.WriteLine($"JSON parse error: {ex.Message}");
                 // Ignore malformed frames.
             }
-        }
-
-        private static bool TryReadApproval(JsonElement root, out AgentApprovalModel approval)
-        {
-            approval = default!;
-            string approvalId = ReadBoundedString(root, "approval_id", 128);
-            string sessionId = ReadBoundedString(root, "session_id", 128);
-            string toolId = ReadBoundedString(root, "tool_id", 128);
-            string safeAction = ReadBoundedString(root, "content", 256);
-            string scope = ReadBoundedString(root, "scope", 256);
-            string expiresText = ReadBoundedString(root, "expires_at", 64);
-
-            if (string.IsNullOrWhiteSpace(approvalId)
-                || string.IsNullOrWhiteSpace(sessionId)
-                || string.IsNullOrWhiteSpace(toolId)
-                || string.IsNullOrWhiteSpace(safeAction)
-                || string.IsNullOrWhiteSpace(scope)
-                || !DateTimeOffset.TryParse(
-                    expiresText,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.RoundtripKind,
-                    out var expiresAt)
-                || expiresAt <= DateTimeOffset.UtcNow)
-            {
-                return false;
-            }
-
-            approval = new AgentApprovalModel(
-                approvalId,
-                sessionId,
-                toolId,
-                safeAction,
-                scope,
-                expiresAt);
-            return true;
         }
 
         private static bool TryReadApprovalResult(JsonElement root, out AgentApprovalResult result)
@@ -291,7 +255,7 @@ namespace RuApp.Services
             string messageText,
             string sessionId,
             CancellationToken cancellationToken,
-            bool agentMode = false)
+            RuAppMode mode = RuAppMode.Chat)
         {
             var socket = await WaitForSocketAsync(cancellationToken);
 
@@ -301,12 +265,19 @@ namespace RuApp.Services
                 prompt = messageText,
                 session_id = sessionId,
                 correlation_id = correlationId,
-                agent_mode = agentMode,
+                mode = ModeToWire(mode),
             };
             string json = JsonSerializer.Serialize(payload);
             byte[] bytes = Encoding.UTF8.GetBytes(json);
             await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
         }
+
+        private static string ModeToWire(RuAppMode mode) => mode switch
+        {
+            RuAppMode.Agent => "agent",
+            RuAppMode.Full => "full",
+            _ => "chat",
+        };
 
         public async Task SendAgentApprovalAsync(
             string sessionId,

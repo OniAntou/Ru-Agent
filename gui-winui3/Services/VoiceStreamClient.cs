@@ -192,7 +192,6 @@ public sealed class VoiceStreamClient : IDisposable
             _socket?.Abort();
             _socket?.Dispose();
             _socket = null;
-            _sendLock.Dispose();
         }
     }
 

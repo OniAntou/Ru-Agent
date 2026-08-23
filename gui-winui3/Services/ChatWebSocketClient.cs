@@ -137,7 +137,7 @@ namespace RuApp.Services
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine($"WebSocket received: {json}");
+                System.Diagnostics.Debug.WriteLine($"WebSocket received: {json.Length} chars");
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
                 if (!root.TryGetProperty("type", out var typeProp))
@@ -154,7 +154,7 @@ namespace RuApp.Services
                 else if (msgType == "chunk" && root.TryGetProperty("content", out var textProp))
                 {
                     string content = textProp.GetString() ?? "";
-                    System.Diagnostics.Debug.WriteLine($"Chunk content: {content.Substring(0, Math.Min(50, content.Length))}...");
+                    System.Diagnostics.Debug.WriteLine($"Chunk received: {content.Length} chars");
                     OnDeltaReceived?.Invoke(content);
                 }
                 else if (msgType == "done")
@@ -178,7 +178,7 @@ namespace RuApp.Services
                     string content = root.TryGetProperty("content", out var errProp)
                         ? errProp.GetString() ?? "Lỗi không xác định"
                         : "Lỗi không xác định";
-                    System.Diagnostics.Debug.WriteLine($"Error message: {content}");
+                    System.Diagnostics.Debug.WriteLine($"Error frame received: {content.Length} chars");
                     OnErrorReceived?.Invoke(content);
                 }
                 else if (msgType == "agent.session")

@@ -11,6 +11,11 @@ public sealed class ExternalRuBackendSessionProvider : IRuBackendSessionProvider
 
     public string DisplayName => "Harness edge";
     public BackendSession Session { get; }
+
+    /// <summary>
+    /// Deliberately never raised: the Harness edge owns no child processes,
+    /// so harness scenarios must not depend on backend-exit notifications.
+    /// </summary>
     public event EventHandler? BackendExited
     {
         add { }

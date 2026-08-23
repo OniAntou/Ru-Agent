@@ -210,42 +210,23 @@
 
         <Grid x:Name="InputContainer"
               Grid.Row="1"
-              RowDefinitions="Auto,Auto,Auto,Auto"
+              RowDefinitions="Auto,Auto,Auto"
               Width="820"
               MaxWidth="820"
               Background="Transparent"
               Padding="0,8,0,24"
               VerticalAlignment="Bottom"
               HorizontalAlignment="Center">
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,0,8,6">
-                <TextBlock x:Name="VoiceConversationStatusText"
-                           Grid.Column="0"
-                           Text=""
-                           Visibility="Collapsed"
-                           AutomationProperties.AutomationId="VoiceConversationStatus"
-                           AutomationProperties.LiveSetting="Polite"
-                           Foreground="{StaticResource RuMutedBrush}" />
-                <ToggleButton x:Name="AgentModeButton"
-                              Grid.Column="1"
-                              Content="Agent mode"
-                              Click="OnAgentModeClick"
-                              Padding="10,4"
-                              AutomationProperties.AutomationId="AgentModeButton"
-                              AutomationProperties.Name="Bật chế độ Agent cho session này với workspace và terminal giới hạn"
-                              Background="Transparent"
-                              BorderBrush="{StaticResource RuLineBrush}"
-                              Foreground="{StaticResource RuMutedBrush}" />
-            </Grid>
-            <TextBlock x:Name="AgentActivity"
-                       Grid.Row="1"
+            <TextBlock x:Name="VoiceConversationStatusText"
+                       Grid.Row="0"
                        Text=""
                        Visibility="Collapsed"
-                       AutomationProperties.AutomationId="AgentActivity"
+                       AutomationProperties.AutomationId="VoiceConversationStatus"
                        AutomationProperties.LiveSetting="Polite"
                        Foreground="{StaticResource RuMutedBrush}"
                        Margin="8,0,8,6" />
             <Border x:Name="AgentApprovalCard"
-                    Grid.Row="2"
+                    Grid.Row="1"
                     Visibility="Collapsed"
                     Background="{StaticResource RuSurfaceBrush}"
                     BorderBrush="{StaticResource RuAccentBrush}"
@@ -306,44 +287,27 @@
                 </Grid>
             </Border>
             <Border x:Name="InputBorder"
-                    Grid.Row="3"
+                    Grid.Row="2"
                     Background="{StaticResource RuSurfaceBrush}"
                     BorderBrush="{StaticResource RuLineBrush}"
-                    BorderThickness="0,1,0,0"
+                    BorderThickness="1"
                     CornerRadius="{StaticResource RuControlCornerRadius}"
-                    Padding="4,4">
-                <Grid ColumnDefinitions="Auto,*,Auto">
-                    <Button x:Name="MicButton"
-                            Grid.Column="0"
-                            Click="OnMicClick"
-                            Width="36"
-                            Height="36"
-                            CornerRadius="0"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            VerticalAlignment="Center"
-                            AutomationProperties.AutomationId="MicButton"
-                            AutomationProperties.Name="Bắt đầu trò chuyện bằng giọng nói"
-                            ToolTipService.ToolTip="Nói chuyện với Ru bằng giọng nói">
-                        <FontIcon x:Name="MicIcon"
-                                  Glyph="&#xE720;"
-                                  FontSize="15"
-                                  Foreground="{StaticResource RuMutedBrush}" />
-                    </Button>
-
+                    Padding="10,10,10,8">
+                <Grid RowDefinitions="Auto,Auto">
                     <TextBox x:Name="ChatInputTextBox"
-                             Grid.Column="1"
+                             Grid.Row="0"
                              AutomationProperties.AutomationId="ChatInput"
                              PlaceholderText="Viết cho Ru..."
                              PreviewKeyDown="OnChatInputPreviewKeyDown"
                              AcceptsReturn="True"
-                             MaxHeight="120"
-                             VerticalAlignment="Center"
+                             MinHeight="44"
+                             MaxHeight="150"
+                             VerticalAlignment="Stretch"
                              Background="Transparent"
                              BorderThickness="0"
                              FontFamily="{StaticResource RuUiFontFamily}"
-                             FontSize="16"
-                             Margin="8,0"
+                             FontSize="15"
+                             Padding="4,2,4,6"
                              Foreground="{StaticResource RuInkBrush}">
                         <TextBox.Resources>
                             <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
@@ -357,19 +321,79 @@
                         </TextBox.Resources>
                     </TextBox>
 
-                    <Button x:Name="SendButton"
-                            Grid.Column="2"
-                            AutomationProperties.AutomationId="SendButton"
-                            Click="OnSendClick"
-                            Width="36"
-                            Height="36"
-                            CornerRadius="0"
-                            Background="{StaticResource RuAccentBrush}"
-                            BorderThickness="0"
-                            VerticalAlignment="Center"
-                            ToolTipService.ToolTip="Gửi tin nhắn">
-                        <FontIcon Glyph="&#xE725;" FontSize="14" Foreground="White" Margin="-1,1,0,0" />
-                    </Button>
+                    <Grid Grid.Row="1"
+                          ColumnDefinitions="Auto,Auto,*,Auto"
+                          Margin="0,4,0,0">
+                        <Button x:Name="MicButton"
+                                Grid.Column="0"
+                                Click="OnMicClick"
+                                Width="32"
+                                Height="32"
+                                Padding="0"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center"
+                                CornerRadius="{StaticResource RuControlCornerRadius}"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                VerticalAlignment="Center"
+                                AutomationProperties.AutomationId="MicButton"
+                                AutomationProperties.Name="Bắt đầu trò chuyện bằng giọng nói"
+                                ToolTipService.ToolTip="Nói chuyện với Ru bằng giọng nói">
+                            <FontIcon x:Name="MicIcon"
+                                      Glyph="&#xE720;"
+                                      FontSize="14"
+                                      Foreground="{StaticResource RuMutedBrush}" />
+                        </Button>
+
+                        <ToggleButton x:Name="AgentModeButton"
+                                      Grid.Column="1"
+                                      Click="OnAgentModeClick"
+                                      Margin="6,0,0,0"
+                                      Height="32"
+                                      Padding="10,0"
+                                      CornerRadius="{StaticResource RuControlCornerRadius}"
+                                      AutomationProperties.AutomationId="AgentModeButton"
+                                      AutomationProperties.Name="Bật chế độ Agent cho session này với workspace và terminal giới hạn"
+                                      ToolTipService.ToolTip="Bật/tắt chế độ Agent"
+                                      Background="Transparent"
+                                      BorderBrush="{StaticResource RuLineBrush}"
+                                      BorderThickness="1"
+                                      Foreground="{StaticResource RuMutedBrush}">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <FontIcon Glyph="&#xE945;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" />
+                                <TextBlock Text="Agent mode" FontSize="12" FontFamily="{StaticResource RuUiFontFamily}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ToggleButton>
+
+                        <TextBlock x:Name="AgentActivity"
+                                   Grid.Column="2"
+                                   Text=""
+                                   Visibility="Collapsed"
+                                   VerticalAlignment="Center"
+                                   Margin="10,0,8,0"
+                                   FontSize="12"
+                                   TextTrimming="CharacterEllipsis"
+                                   AutomationProperties.AutomationId="AgentActivity"
+                                   AutomationProperties.LiveSetting="Polite"
+                                   Foreground="{StaticResource RuMutedBrush}" />
+
+                        <Button x:Name="SendButton"
+                                Grid.Column="3"
+                                AutomationProperties.AutomationId="SendButton"
+                                Click="OnSendClick"
+                                Width="32"
+                                Height="32"
+                                Padding="0"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center"
+                                CornerRadius="{StaticResource RuControlCornerRadius}"
+                                Background="{StaticResource RuAccentBrush}"
+                                BorderThickness="0"
+                                VerticalAlignment="Center"
+                                ToolTipService.ToolTip="Gửi tin nhắn">
+                            <FontIcon Glyph="&#xE725;" FontSize="13" Foreground="White" Margin="-1,1,0,0" />
+                        </Button>
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>

@@ -186,9 +186,9 @@ public sealed class MeteorShowerField : Canvas, IDisposable
         }
         else
         {
-            nebulaBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.00f, Color.FromArgb(12, accentColor.R, accentColor.G, accentColor.B)));
+            nebulaBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.00f, Color.FromArgb(36, accentColor.R, accentColor.G, accentColor.B)));
             nebulaBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.50f, Color.FromArgb(0, accentColor.R, accentColor.G, accentColor.B)));
-            nebulaBrush.ColorStops.Add(compositor.CreateColorGradientStop(1.00f, Color.FromArgb(10, softColor.R, softColor.G, softColor.B)));
+            nebulaBrush.ColorStops.Add(compositor.CreateColorGradientStop(1.00f, Color.FromArgb(30, softColor.R, softColor.G, softColor.B)));
         }
         _nebulaGlow.Brush = nebulaBrush;
 
@@ -366,17 +366,17 @@ public sealed class MeteorShowerField : Canvas, IDisposable
 
         if (startFromTop)
         {
-            startX = -0.20 + (Random.Shared.NextDouble() * 1.10);
-            startY = -0.25 - (Random.Shared.NextDouble() * 0.10);
+            startX = -0.30 + (Random.Shared.NextDouble() * 1.30);
+            startY = -0.30 - (Random.Shared.NextDouble() * 0.15);
         }
         else
         {
-            startX = -0.25 - (Random.Shared.NextDouble() * 0.10);
-            startY = -0.05 + (Random.Shared.NextDouble() * 0.80);
+            startX = -0.30 - (Random.Shared.NextDouble() * 0.15);
+            startY = -0.10 + (Random.Shared.NextDouble() * 0.85);
         }
 
-        double angleRad = (20.0 + (Random.Shared.NextDouble() * 22.0)) * (Math.PI / 180.0);
-        double flightDist = 1.60 + (Random.Shared.NextDouble() * 0.40);
+        double angleRad = (18.0 + (Random.Shared.NextDouble() * 24.0)) * (Math.PI / 180.0);
+        double flightDist = 2.40 + (Random.Shared.NextDouble() * 0.80);
 
         double endX = startX + (Math.Cos(angleRad) * flightDist);
         double endY = startY + (Math.Sin(angleRad) * flightDist);
@@ -384,12 +384,12 @@ public sealed class MeteorShowerField : Canvas, IDisposable
         bool isDark = ActualTheme == ElementTheme.Dark
             || (ActualTheme == ElementTheme.Default && Application.Current.RequestedTheme == ApplicationTheme.Dark);
 
-        double travelSeconds = 2.10 + (Random.Shared.NextDouble() * 0.60);
+        double travelSeconds = 2.40 + (Random.Shared.NextDouble() * 0.60);
         float scale = 0.75f + (float)(Random.Shared.NextDouble() * 0.25);
         float opacity = isDark
             ? 0.82f + (float)(Random.Shared.NextDouble() * 0.15)
-            : 0.50f + (float)(Random.Shared.NextDouble() * 0.15);
-        float tailLength = 380f + (float)(Random.Shared.NextDouble() * 140f);
+            : 0.78f + (float)(Random.Shared.NextDouble() * 0.14);
+        float tailLength = 460f + (float)(Random.Shared.NextDouble() * 180f);
 
         return new MeteorSpec(0.00, startX, startY, endX, endY, travelSeconds, scale, opacity, tailLength);
     }
@@ -433,8 +433,6 @@ public sealed class MeteorShowerField : Canvas, IDisposable
             ?? Color.FromArgb(255, 168, 75, 56);
         Color soft = (Application.Current.Resources["RuAccentSoftBrush"] as SolidColorBrush)?.Color
             ?? Color.FromArgb(150, 168, 75, 56);
-        Color ink = (Application.Current.Resources["RuInkBrush"] as SolidColorBrush)?.Color
-            ?? Color.FromArgb(255, 32, 35, 31);
 
         if (isDark)
         {
@@ -442,7 +440,8 @@ public sealed class MeteorShowerField : Canvas, IDisposable
         }
         else
         {
-            return (accent, soft, Color.FromArgb(190, ink.R, ink.G, ink.B), Color.FromArgb(160, accent.R, accent.G, accent.B), false);
+            // Light mode: Vibrant radiant copper-amber crystals
+            return (accent, soft, Color.FromArgb(220, accent.R, accent.G, accent.B), Color.FromArgb(140, accent.R, accent.G, accent.B), false);
         }
     }
 
@@ -484,9 +483,11 @@ public sealed class MeteorShowerField : Canvas, IDisposable
     {
         public ContainerVisual Layer { get; }
         private readonly SpriteVisual _visual;
+        private readonly bool _isDark;
 
         public StarVisual(Compositor compositor, Color softColor, Color accentColor, Color starCore, Color starCorona, bool isDark, StarSpec spec)
         {
+            _isDark = isDark;
             Layer = compositor.CreateContainerVisual();
             _visual = compositor.CreateSpriteVisual();
 
@@ -514,16 +515,18 @@ public sealed class MeteorShowerField : Canvas, IDisposable
             {
                 if (spec.IsMajor)
                 {
-                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.00f, starCore));
-                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.30f, Color.FromArgb(150, starCore.R, starCore.G, starCore.B)));
-                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.65f, Color.FromArgb(80, starCorona.R, starCorona.G, starCorona.B)));
-                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(1.00f, Color.FromArgb(0, starCorona.R, starCorona.G, starCorona.B)));
+                    // Light Major: Radiant gold-copper nucleus with amber halo
+                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.00f, Color.FromArgb(240, 220, 140, 70)));
+                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.30f, Color.FromArgb(190, accentColor.R, accentColor.G, accentColor.B)));
+                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.65f, Color.FromArgb(90, accentColor.R, accentColor.G, accentColor.B)));
+                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(1.00f, Color.FromArgb(0, accentColor.R, accentColor.G, accentColor.B)));
                 }
                 else
                 {
-                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.00f, Color.FromArgb(130, starCore.R, starCore.G, starCore.B)));
-                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.45f, Color.FromArgb(60, starCorona.R, starCorona.G, starCorona.B)));
-                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(1.00f, Color.FromArgb(0, starCorona.R, starCorona.G, starCorona.B)));
+                    // Light Regular: Glowing warm copper crystal
+                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.00f, Color.FromArgb(180, accentColor.R, accentColor.G, accentColor.B)));
+                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.45f, Color.FromArgb(85, accentColor.R, accentColor.G, accentColor.B)));
+                    radialBrush.ColorStops.Add(compositor.CreateColorGradientStop(1.00f, Color.FromArgb(0, accentColor.R, accentColor.G, accentColor.B)));
                 }
             }
 
@@ -534,12 +537,15 @@ public sealed class MeteorShowerField : Canvas, IDisposable
 
         public void StartTwinkle(Compositor compositor, StarSpec spec)
         {
+            float maxOp = _isDark ? spec.MaxOpacity : spec.MaxOpacity * 0.80f;
+            float minOp = maxOp * (_isDark ? (spec.IsMajor ? 0.20f : 0.08f) : (spec.IsMajor ? 0.25f : 0.15f));
+
             var anim = compositor.CreateScalarKeyFrameAnimation();
             anim.Duration = TimeSpan.FromSeconds(Math.Max(0.6, spec.TwinkleSpeed));
             anim.IterationBehavior = AnimationIterationBehavior.Forever;
             anim.Direction = AnimationDirection.Alternate;
-            anim.InsertKeyFrame(0.0f, spec.MaxOpacity * (spec.IsMajor ? 0.20f : 0.08f));
-            anim.InsertKeyFrame(1.0f, spec.MaxOpacity);
+            anim.InsertKeyFrame(0.0f, minOp);
+            anim.InsertKeyFrame(1.0f, maxOp);
             Layer.StartAnimation("Opacity", anim);
         }
 
@@ -547,7 +553,9 @@ public sealed class MeteorShowerField : Canvas, IDisposable
         {
             float posX = (float)(spec.X * width);
             float posY = (float)(spec.Y * height);
-            float visualSize = spec.IsMajor ? spec.Size * 2.8f : spec.Size * 1.8f;
+            float visualSize = _isDark
+                ? (spec.IsMajor ? spec.Size * 2.8f : spec.Size * 1.8f)
+                : (spec.IsMajor ? spec.Size * 2.4f : spec.Size * 1.5f);
             _visual.Size = new Vector2(visualSize, visualSize);
             _visual.Offset = new Vector3(-visualSize / 2f, -visualSize / 2f, 0);
             Layer.Offset = new Vector3(posX, posY, 0);
@@ -584,8 +592,8 @@ public sealed class MeteorShowerField : Canvas, IDisposable
             else
             {
                 mistBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.00f, Color.FromArgb(0, accentColor.R, accentColor.G, accentColor.B)));
-                mistBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.50f, Color.FromArgb(25, accentColor.R, accentColor.G, accentColor.B)));
-                mistBrush.ColorStops.Add(compositor.CreateColorGradientStop(1.00f, Color.FromArgb(60, accentColor.R, accentColor.G, accentColor.B)));
+                mistBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.50f, Color.FromArgb(50, accentColor.R, accentColor.G, accentColor.B)));
+                mistBrush.ColorStops.Add(compositor.CreateColorGradientStop(1.00f, Color.FromArgb(140, accentColor.R, accentColor.G, accentColor.B)));
             }
             _outerMist.Brush = mistBrush;
 
@@ -603,9 +611,9 @@ public sealed class MeteorShowerField : Canvas, IDisposable
             else
             {
                 haloBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.00f, Color.FromArgb(0, accentColor.R, accentColor.G, accentColor.B)));
-                haloBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.40f, Color.FromArgb(40, accentColor.R, accentColor.G, accentColor.B)));
-                haloBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.80f, Color.FromArgb(110, accentColor.R, accentColor.G, accentColor.B)));
-                haloBrush.ColorStops.Add(compositor.CreateColorGradientStop(1.00f, Color.FromArgb(160, accentColor.R, accentColor.G, accentColor.B)));
+                haloBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.40f, Color.FromArgb(90, accentColor.R, accentColor.G, accentColor.B)));
+                haloBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.80f, Color.FromArgb(200, accentColor.R, accentColor.G, accentColor.B)));
+                haloBrush.ColorStops.Add(compositor.CreateColorGradientStop(1.00f, Color.FromArgb(255, 200, 100, 50)));
             }
             _haloStreak.Brush = haloBrush;
 
@@ -623,17 +631,21 @@ public sealed class MeteorShowerField : Canvas, IDisposable
             else
             {
                 coreBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.00f, Color.FromArgb(0, accentColor.R, accentColor.G, accentColor.B)));
-                coreBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.30f, Color.FromArgb(70, accentColor.R, accentColor.G, accentColor.B)));
-                coreBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.75f, Color.FromArgb(180, accentColor.R, accentColor.G, accentColor.B)));
-                coreBrush.ColorStops.Add(compositor.CreateColorGradientStop(1.00f, Color.FromArgb(220, accentColor.R, accentColor.G, accentColor.B)));
+                coreBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.30f, Color.FromArgb(140, accentColor.R, accentColor.G, accentColor.B)));
+                coreBrush.ColorStops.Add(compositor.CreateColorGradientStop(0.75f, Color.FromArgb(240, accentColor.R, accentColor.G, accentColor.B)));
+                coreBrush.ColorStops.Add(compositor.CreateColorGradientStop(1.00f, Color.FromArgb(255, 235, 160, 90)));
             }
             _coreStreak.Brush = coreBrush;
 
             _headAura = compositor.CreateSpriteVisual();
-            _headAura.Brush = compositor.CreateColorBrush(isDark ? Color.FromArgb(220, accentColor.R, accentColor.G, accentColor.B) : Color.FromArgb(140, accentColor.R, accentColor.G, accentColor.B));
+            _headAura.Brush = compositor.CreateColorBrush(isDark
+                ? Color.FromArgb(220, accentColor.R, accentColor.G, accentColor.B)
+                : Color.FromArgb(220, accentColor.R, accentColor.G, accentColor.B));
 
             _headCore = compositor.CreateSpriteVisual();
-            _headCore.Brush = compositor.CreateColorBrush(isDark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(220, accentColor.R, accentColor.G, accentColor.B));
+            _headCore.Brush = compositor.CreateColorBrush(isDark
+                ? Color.FromArgb(255, 255, 255, 255)
+                : Color.FromArgb(255, 245, 180, 110));
 
             Layer.Children.InsertAtBottom(_outerMist);
             Layer.Children.InsertAtTop(_haloStreak);

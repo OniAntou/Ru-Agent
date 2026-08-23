@@ -980,7 +980,11 @@ namespace RuApp.Views
         private void SetVoiceButtonState(bool active)
         {
             MicButton.IsEnabled = true;
-            MicIcon.Glyph = active ? "\uE7C7" : "\uE720";
+            MicIcon.Glyph = active ? "\uE768" : "\uE720";
+            MicIcon.FontSize = 14;
+            MicIcon.Foreground = active
+                ? new SolidColorBrush(Microsoft.UI.Colors.White)
+                : (Brush)Application.Current.Resources["RuMutedBrush"];
             MicButton.Background = active
                 ? (SolidColorBrush)Application.Current.Resources["AppDangerBrush"]
                 : new SolidColorBrush(Microsoft.UI.Colors.Transparent);

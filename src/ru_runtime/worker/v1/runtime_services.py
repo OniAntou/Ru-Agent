@@ -314,52 +314,8 @@ def _load_settings_unlocked() -> dict:
 
 
 def effective_settings() -> dict:
-    saved = load_settings()
-    merged = {
-        **_DEFAULT_SETTINGS,
-        **{key: saved[key] for key in _DEFAULT_SETTINGS if key in saved},
-    }
-
-    backend = saved.get("backend", _DEFAULT_SETTINGS["backend"])
-    legacy_model = saved.get("model", "")
-    legacy_is_gguf = str(legacy_model).lower().endswith(".gguf")
-    if backend == BACKEND_KILO and not merged.get("kilo_model"):
-        merged["kilo_model"] = (
-            legacy_model if not legacy_is_gguf else _DEFAULT_SETTINGS["kilo_model"]
-        )
-    elif backend == BACKEND_OPENCODE and not merged.get("opencode_model"):
-        merged["opencode_model"] = (
-            legacy_model if not legacy_is_gguf else _DEFAULT_SETTINGS["opencode_model"]
-        )
-
-    def bounded_number(key: str, lower: float, upper: float) -> None:
-        value = merged.get(key)
-        if not isinstance(value, (int, float)) or isinstance(value, bool):
-            merged[key] = _DEFAULT_SETTINGS[key]
-            return
-        merged[key] = max(lower, min(upper, value))
-
-    bounded_number("max_tokens", 1, 1024)
-    bounded_number("temperature", 0.1, 2.0)
-    bounded_number("top_k", 1, 200)
-    bounded_number("voice_speed", 0.5, 2.0)
-    merged["max_tokens"] = int(merged["max_tokens"])
-    merged["top_k"] = int(merged["top_k"])
-    for key in (
-        "allow_web_search",
-        "enable_self_learning",
-        "share_memory_with_cloud",
-        "kilo_reasoning_enabled",
-        "auto_pace_enabled",
-        "auto_read_replies",
-        "show_subtitles",
-    ):
-        if not isinstance(merged.get(key), bool):
-            merged[key] = _DEFAULT_SETTINGS[key]
-    merged["voice_style_id"] = voice_style_from_saved(
-        merged.get("voice_style_id")
-    ).id
-    return merged
+    with _SETTINGS_LOCK:
+        return _effective_settings_unlocked()
 
 
 def _merge_settings(mutate: "Callable[[dict], None]") -> None:

@@ -8,24 +8,27 @@ is actually allowed to select. Those states are not interchangeable.
 
 Model advertisement derives from the session capability profile: a binding is
 visible to the model exactly when its manifest scopes fit the active profile's
-scope set. Chat grants `{workspace.read}`; Agent adds `{workspace.write}`,
-`terminal.execute`, and `system.write`; Full Access adds only
-`terminal.network`.
+scope set. Chat grants `{workspace.read}`; Agent adds `{workspace.write}` and
+`system.write` but has no terminal capability; Full Access adds the
+`terminal.execute` and `terminal.network` scopes. The `network` argument on a
+terminal request is descriptive input metadata, not a security boundary.
 
 | Capability | Chat | Agent | Full Access |
 | --- | --- | --- | --- |
 | `files.list@1.0.0`, `files.read@1.0.0` (`workspace.read`) | automatic | automatic | automatic |
 | `files.write@1.0.0`, `files.edit@1.0.0` new binding (`workspace.write`) | — | approval card with preview | approval card with preview (unchanged) |
 | `notes.create@1.0.0` (`workspace.write`) | — | approval card + one-time token | approval card + one-time token |
-| `terminal.run@1.0.0` (`terminal.execute`) | — | allowlisted executables, workspace-confined, no network | no workspace confinement, network allowed, no card |
-| `terminal.shell@1.0.0` (`terminal.execute`) | — | approval card + one-time token | no card, system-wide, network allowed |
+| `terminal.run@1.0.0` (`terminal.execute`) | — | — | explicit approval required for every request |
+| `terminal.shell@1.0.0` (`terminal.execute`) | — | — | explicit approval required for every request |
 | `system.volume@1.0.0` (`system.write`) | — | yes, verified readback required | yes, verified readback required |
 | `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` (`system.read`) | Broker-internal | Broker-internal | Broker-internal |
 | Web search/fetch, connectors, workspace search, `app.open` | absent | absent | absent |
 | Skills | disabled | disabled | disabled |
 
-Full Access advertises the same tool ids as Agent; only the execution policy
-loosens. Filesystem mutations stay manually approved in every profile.
+Agent has no model-visible terminal binding and therefore cannot invoke a
+general-purpose terminal. Full Access advertises the terminal bindings, but
+both `terminal.run` and `terminal.shell` require a fresh explicit approval for
+every request. Filesystem mutations stay manually approved in every profile.
 `native_pending` means the volume binding has a native Windows adapter and
 deterministic contract/adapter evidence, but real endpoint and GUI acceptance
 are still pending until the user explicitly runs them.
@@ -33,8 +36,9 @@ are still pending until the user explicitly runs them.
 ## Model selection channel
 
 The model invokes its advertised bindings through a structured selection
-loop, activated in all modes: Chat for its read-only set, Agent and Full
-Access for the rest of the matrix above. Each turn allows at most 10
+loop, activated in all modes: Chat for its read-only set, Agent for its
+workspace/system set, and Full Access for the terminal plus the rest of the
+matrix above. Each turn allows at most 10
 sequential tool selections; exhausting that budget forces one final wrap-up
 answer without tools. Approvals still gate mutating tools — a card with a
 bounded preview and an explicit user decision precede every side effect, in
@@ -106,13 +110,13 @@ For deterministic Vietnamese commands, `tăng âm lượng lên N` is an absolut
 shorthand is not promoted into an action from conversation history.
 
 File, notes, and terminal bindings are advertised by capability profile as the
-matrix above shows. In Agent mode `terminal.run` still enforces its non-admin
-executable allowlist, bounded arguments/output, workspace-relative directory,
-timeout, and process-tree cleanup; Full Access removes only the workspace
-confinement and network ban through the `terminal.network` scope. A zero exit
-is `succeeded`; non-zero exit and start failure are `failed`; timeout is
-`timed_out`. `files.write`, `files.edit`, `terminal.shell`, and `notes.create`
-retain their approval cards in every profile.
+matrix above shows. Agent has no terminal path. After approval, Full Access is
+intentionally unrestricted; its `network` field is descriptive input
+validation, not an operating-system sandbox or network-isolation boundary. A
+zero exit is `succeeded`; non-zero exit and start failure are `failed`; timeout
+is `timed_out`. `files.write`, `files.edit`, both terminal bindings, and
+`notes.create` retain explicit approval in the profiles where they are
+advertised.
 
 Skills are disabled at session-open and execution boundaries. No current
 skill package, Web connector, calendar/task/mail connector, workspace search,

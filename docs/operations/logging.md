@@ -9,12 +9,20 @@ The Ru logging system is split into two cleanly separated subsystems:
 ### Log Root Resolution
 - Environment variable `RU_LOG_ROOT` (highest precedence).
 - Canonical default: `%LOCALAPPDATA%\Ru\logs` on Windows (`~/.local/share/Ru/logs` on Linux/macOS).
-- Bootstrap fallback: `<logRoot>\bootstrap\` contains process stdout/stderr files (`aspnetcore.log`, `worker.log`, `omnivoice.log`).
+- Bootstrap fallback: `<logRoot>\bootstrap\` contains bounded structured
+  JSONL summaries for each owned backend child stream. Each record carries
+  only the fixed role and stream, timestamp, saturated line/byte counts, and
+  a truncation flag; raw stdout/stderr lines are never persisted or exposed.
 
 ## 2. Retention & Bounded Rotation
 
 - **File rotation**: Daily JSONL files named `<prefix>-YYYY-MM-DD.jsonl` (e.g. `aspnetcore-2026-08-20.jsonl`, `worker-2026-08-20.jsonl`, `gui-2026-08-20.jsonl`).
-- **Retention Limits**: Maximum 7 days retention and aggregate directory cap of 100 MB.
+- **Retention Limits**: Cleanup applies the seven-day age limit and 100 MB
+  aggregate cap to recognized top-level technical JSONL files and recursively
+  to `bootstrap\backend_*.jsonl` and `bootstrap\backend_*.log`.
+- **Legacy cleanup**: Existing matching bootstrap `.log` files are eligible
+  for the same retention cleanup, but are never parsed or returned by the
+  diagnostics API. New bootstrap output is structured JSONL only.
 - **Activity Log Retention**: Maximum 5,000 entries with duplicate `event_id` suppression.
 
 ## 3. Correlation ID Propagation

@@ -126,7 +126,9 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
         "| Web search/fetch, connectors, workspace search, `app.open` "
         "| absent | absent | absent |"
     ) in agent_tools
-    assert "Full Access advertises the same tool ids as Agent" in agent_tools
+    assert "Agent has no model-visible terminal binding" in agent_tools
+    assert "`terminal.execute` and `terminal.network` scopes" in agent_tools
+    assert "descriptive input metadata, not a security boundary" in agent_tools
     assert "files.edit@1.0.0" in agent_tools
     assert "evidence_class: contract" in verification
     assert "evidence_class: adapter" in verification
@@ -148,10 +150,9 @@ def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -
         "| `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` "
         "(`system.read`) | Broker-internal | Broker-internal | Broker-internal |",
         "| `terminal.shell@1.0.0` (`terminal.execute`) | — | "
-        "approval card + one-time token | no card, system-wide, network allowed |",
+        "— | explicit approval required for every request |",
         "| `terminal.run@1.0.0` (`terminal.execute`) | — | "
-        "allowlisted executables, workspace-confined, no network | "
-        "no workspace confinement, network allowed, no card |",
+        "— | explicit approval required for every request |",
     ):
         assert row in agent_tools
 

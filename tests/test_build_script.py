@@ -1,0 +1,98 @@
+"""Behavioral tests for the Windows release build script."""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+
+def _write_stub_commands(root: Path) -> None:
+    bin_dir = root / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "dotnet.cmd").write_text(
+        "@echo off\n"
+        "if /I \"%~1\"==\"publish\" (\n"
+        "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Broker\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
+        "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuBackend\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
+        "  echo broker > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Broker\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Broker.exe\"\n"
+        "  echo backend > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuBackend\\bin\\Release\\net10.0\\win-x64\\publish\\RuBackend.exe\"\n"
+        ")\n"
+        "exit /b 0\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "powershell.cmd").write_text(
+        "@echo off\n"
+        ">>\"%RU_BUILD_TEST_ROOT%\\powershell.invocations\" echo %*\n"
+        ">>\"%RU_BUILD_TEST_ROOT%\\cmake.invocations\" echo cmake --build out\\build --config Release --target test\n"
+        "if exist \"%RU_BUILD_TEST_ROOT%\\powershell.fail\" exit /b 7\n"
+        "mkdir \"%RU_BUILD_TEST_ROOT%\\tools\\ru_desktop_overlay\\out\\build\\Release\" >nul 2>&1\n"
+        "echo overlay > \"%RU_BUILD_TEST_ROOT%\\tools\\ru_desktop_overlay\\out\\build\\Release\\RuDesktopOverlay.exe\"\n"
+        "exit /b 0\n",
+        encoding="utf-8",
+    )
+
+
+def _run_build_script(
+    tmp_path: Path, *, overlay_exists: bool, native_failure: bool = False
+) -> subprocess.CompletedProcess[str]:
+    repo_root = Path(__file__).resolve().parents[1]
+    build_root = tmp_path / "checkout"
+    build_root.mkdir()
+    shutil.copy2(repo_root / "build.bat", build_root / "build.bat")
+    (build_root / "gui-winui3").mkdir()
+    (build_root / "gui-winui3" / "RuApp.csproj").write_text("stub\n", encoding="utf-8")
+    (build_root / "backend-dotnet" / "RuAgent.Broker").mkdir(parents=True)
+    (build_root / "backend-dotnet" / "RuBackend").mkdir(parents=True)
+    (build_root / "backend-dotnet" / "RuAgent.Broker" / "RuAgent.Broker.csproj").write_text(
+        "stub\n", encoding="utf-8"
+    )
+    (build_root / "backend-dotnet" / "RuBackend" / "RuBackend.csproj").write_text(
+        "stub\n", encoding="utf-8"
+    )
+    (build_root / "scripts").mkdir()
+    (build_root / "scripts" / "build_ru_desktop_overlay.ps1").write_text(
+        "# stub\n", encoding="utf-8"
+    )
+    if overlay_exists:
+        overlay = build_root / "tools" / "ru_desktop_overlay" / "out" / "build" / "Release"
+        overlay.mkdir(parents=True)
+        (overlay / "RuDesktopOverlay.exe").write_text("pre-existing\n", encoding="utf-8")
+    if native_failure:
+        (build_root / "powershell.fail").write_text("fail\n", encoding="utf-8")
+
+    _write_stub_commands(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env['PATH']}"
+    env["RU_BUILD_TEST_ROOT"] = str(build_root)
+    return subprocess.run(
+        ["cmd", "/d", "/c", str(build_root / "build.bat")],
+        cwd=build_root,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_existing_overlay_still_runs_incremental_native_build(tmp_path: Path) -> None:
+    result = _run_build_script(tmp_path, overlay_exists=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    invocations = (tmp_path / "checkout" / "powershell.invocations").read_text(
+        encoding="utf-8"
+    )
+    assert "build_ru_desktop_overlay.ps1" in invocations
+    assert "cmake --build" in (
+        tmp_path / "checkout" / "cmake.invocations"
+    ).read_text(encoding="utf-8")
+    assert "[1/7]" in result.stdout
+    assert "[7/7]" in result.stdout
+
+
+def test_native_build_failure_stops_release_build(tmp_path: Path) -> None:
+    result = _run_build_script(tmp_path, overlay_exists=True, native_failure=True)
+
+    assert result.returncode != 0
+    assert "Build complete" not in result.stdout

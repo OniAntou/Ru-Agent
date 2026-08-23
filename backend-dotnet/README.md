@@ -1,8 +1,8 @@
 # Ru ASP.NET Core backend
 
 `RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
-when launched by RuApp and owns all 41 HTTP method/path pairs plus `/chat` and
-`/voice/stream`.
+when launched by RuApp and owns all 41 HTTP routes plus 2 WebSocket routes:
+`/chat` and `/voice/stream`.
 
 ```text
 RuApp / local client
@@ -10,6 +10,8 @@ RuApp / local client
         | bearer token or authenticated WebSocket
         v
 ASP.NET Core :8000
+        |\
+        | \-- private RuAgentBroker (leased loopback endpoint)
         |
         | protocol v1, separate per-run token
         v
@@ -18,6 +20,8 @@ Python runtime worker :8005
         +-- hosted / external OpenAI-compatible provider adapters
         +-- OmniVoice and Google STT
         +-- VTube Studio and observation runtime
+RuApp owns all three children (Public Host, Worker, and Broker) in one
+kill-on-close Windows Job Object.
 ```
 
 There is no public Python HTTP server, forwarding catch-all, WebSocket relay,
@@ -49,12 +53,13 @@ persistent text.
 | `RU_WORKER_TOKEN` | required per run | Authenticates ASP.NET to the private worker. |
 | `RU_BACKEND_WORKER_PORT` | `8005` | Private worker loopback port selected by RuApp. |
 | `RuBackend__BindUrl` | `http://127.0.0.1:8010` standalone | Public ASP.NET bind URL; RuApp sets port `8000`. |
-| `RuBackend__WorkerUrl` | `ws://127.0.0.1:5053/worker/v1` standalone | Private worker protocol URL; RuApp overrides it. |
+| `RuBackend__WorkerUrl` | `ws://127.0.0.1:8005/worker/v1` standalone | Private worker protocol URL; RuApp overrides it. |
 | `RU_DATA_ROOT` | project/user data default | Isolates settings, sessions, activity, and memory for tests. |
 
 RuApp generates distinct 256-bit desktop and worker secrets, starts the private
-worker before `RuBackend.exe`, assigns both children to one kill-on-close Windows
-Job Object, probes public readiness, and terminates both on shutdown or failure.
+Worker and RuAgentBroker before `RuBackend.exe`, assigns all three children to
+one kill-on-close Windows Job Object, probes public readiness, and terminates
+the owned process tree on shutdown or failure.
 
 ## Build and verification
 

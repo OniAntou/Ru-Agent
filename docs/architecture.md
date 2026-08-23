@@ -1,6 +1,6 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, 2026-08-13.
+Status: current ownership plus accepted architecture-v2 targets, 2026-08-24.
 
 Operational invariants for generation, voice, STT, VTS, observation, and live
 acceptance are maintained in
@@ -9,21 +9,26 @@ acceptance are maintained in
 ## Process topology
 
 RuApp owns the desktop lifecycle. It creates separate per-run desktop and
-worker secrets, starts the private Runtime Worker on loopback port 8005, then
-starts the ASP.NET Core Public Host on port 8000. Both children enter one
-Windows kill-on-close Job Object. Startup succeeds only after public readiness;
-shutdown or startup failure terminates the owned process tree.
+worker secrets, starts the private Runtime Worker on loopback port 8005, the
+private RuAgentBroker execution boundary, and the ASP.NET Core Public Host on
+port 8000. All three children enter one Windows kill-on-close Job Object.
+Startup succeeds only after public readiness; shutdown or startup failure
+terminates the owned process tree.
 
 The current process flow is:
 
 ```text
-RuApp
-  -> ASP.NET Core Public Host :8000
-       -> direct business and persistence services
-       -> authenticated Runtime Worker protocol v1 :8005
-            -> hosted and external OpenAI-compatible provider adapters
-            -> Google STT, VTube Studio, and observation implementations
-            -> OmniVoice Flask service :5052 in omnivoice_env
+RuApp (owns one kill-on-close Job Object)
+  |-- ASP.NET Core Public Host :8000
+  |     |-- direct business and persistence services
+  |     |-- private call to Runtime Worker :8005
+  |     `-- private call to RuAgentBroker execution boundary
+  |-- Runtime Worker :8005
+  |     |-- hosted and external OpenAI-compatible provider adapters
+  |     |-- Google STT, VTube Studio, and observation implementations
+  |     `-- OmniVoice Flask service :5052 in omnivoice_env
+  `-- RuAgentBroker
+        `-- policy, approvals, and local action adapters
 ```
 
 The accepted target flow, implemented by later architecture-v2 plans, is:
@@ -61,9 +66,10 @@ as connected.
 
 | Owner | Responsibilities |
 | --- | --- |
-| RuApp | Desktop views, playback, microphone capture, public client calls, child lifecycle, and user-visible state. |
+| RuApp | Desktop views, playback, microphone capture, public client calls, child lifecycle, and user-visible state; owns the Worker, Broker, and Public Host children. |
 | ASP.NET Core Public Host | Authentication, limits, all 41 HTTP and 2 WebSocket routes, settings transactions, credentials, sessions, history, activity, structured memory, chat ordering, public error mapping, and metadata filtering. |
 | Runtime Worker | Provider adapters and device implementations that materially require Python: generation, STT execution, VTS, observation, and current OmniVoice coordination. |
+| RuAgentBroker | Private execution boundary for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts. It has no public HTTP contract. |
 | Voice Engine | OmniVoice model lifecycle and native WAV synthesis inside its isolated environment; currently reached through Flask and replaced by framed process I/O in a later plan. |
 
 Unknown public paths stop in ASP.NET Core. Python has no public HTTP fallback,

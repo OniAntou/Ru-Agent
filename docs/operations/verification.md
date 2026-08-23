@@ -12,20 +12,30 @@ dotnet restore D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.c
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj --nologo
 dotnet restore D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 dotnet restore D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj --nologo
+& D:\LLM\.venv\Scripts\python.exe -m ruff check D:\LLM\src D:\LLM\tests D:\LLM\scripts D:\LLM\tools
+& D:\LLM\.venv\Scripts\python.exe -m mypy D:\LLM\src
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output "$env:TEMP\ru-remediation-harness.json"
+& D:\LLM\.venv\Scripts\python.exe -m pip check
 dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj -c Release --no-restore --nologo
 dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --no-restore --nologo
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
 cmd /c D:\LLM\build.bat
 ```
 
-The route checker must remain at 41 HTTP routes and 2 WebSocket routes. A
-successful build proves only compilation and publish output; it does not prove
-that a GUI, microphone, speaker, VTube Studio model, or Windows audio endpoint
-worked.
+This is the local equivalent of the CI release gates and must run
+sequentially. The route checker must remain at 41 HTTP routes and 2 WebSocket
+routes. The compatibility Harness is deterministic contract evidence. A
+successful build proves only compilation, publish output, and the incremental
+native overlay build/test invocation; it does not prove that a GUI,
+microphone, speaker, VTube Studio model, or Windows audio endpoint worked.
+
+Ruff, Mypy, and `pip check` are required dependency/tooling gates; do not hide
+findings with permanent ignores or `continue-on-error`. Live microphone,
+speaker, volume, and VTube Studio acceptance remain explicit user-run checks.
 
 ## evidence_class: contract
 

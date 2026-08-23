@@ -1,7 +1,7 @@
 # Ru Agent Session Rotation and Vietnamese Volume Semantics
 
 Date: 2026-08-23
-Status: Approved direction; awaiting written-spec review
+Status: Approved
 
 ## Context
 
@@ -58,7 +58,10 @@ For each tool request, the coordinator will:
 4. Validate that the returned grant contains every required scope before
    publishing it or allowing execution. If it is incomplete, close that new
    Broker session, retain no local lease, and fail with `scope_not_granted`.
-5. Store a replacement grant only after open and scope validation succeed.
+5. Reuse or publish a replacement grant only after open and scope validation
+   succeed. If the defensive close of an incomplete new grant itself fails,
+   retain that grant only as an ownership record so the next request can retry
+   cleanup; it must never authorize execution.
 6. Emit `agent.session` only for a newly opened, validated grant.
 
 If close or open fails, the action fails closed and the adapter is not invoked.

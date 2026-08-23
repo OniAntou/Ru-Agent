@@ -13,6 +13,7 @@ public static class DiagnosticCodes
     public const string TurnDone = "turn.done";
     public const string TurnFailed = "turn.failed";
     public const string TurnCancelled = "turn.cancelled";
+    public const string ModeClamped = "mode_clamped";
 
     public const string LlmRequest = "llm.request";
     public const string LlmResponse = "llm.response";

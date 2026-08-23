@@ -364,10 +364,8 @@ public sealed class ConversationCoordinatorTests
         Assert.Null(outcomes.Take("session-1"));
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Volume_action_uses_same_handler_in_both_modes(bool agentMode)
+    [Fact]
+    public async Task Agent_profile_advertises_volume_with_verification_flag()
     {
         var log = new List<string>();
         var worker = new FakeWorkerClient(log)
@@ -395,24 +393,51 @@ public sealed class ConversationCoordinatorTests
             agent: agent);
 
         var events = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Tắt tiếng giúp anh", "session-1", AgentMode: agentMode),
+            new ChatRequest("Tắt tiếng giúp anh", "session-1", Profile: CapabilityProfile.Agent),
             CancellationToken.None));
 
         Assert.True(worker.ToolHandlerWasPresent);
         Assert.Equal(1, agent.ExecuteCount);
         Assert.Contains(events, item => item.Type == "agent.activity" && item.Status == "succeeded");
-        Assert.Equal(2, events.Count(item => item.Type == "agent.activity"));
-        Assert.All(events.Where(item => item.Type == "agent.activity"), item => Assert.Null(item.Content));
 
-        var tools = worker.LastChatRequest!.Settings["model_tools"]!.AsArray();
-        var volume = Assert.Single(tools)!.AsObject();
-        Assert.Equal("system.volume", volume["tool_id"]!.GetValue<string>());
+        var settings = worker.LastChatRequest!.Settings;
+        Assert.True(settings["agent_mode"]!.GetValue<bool>());
+        var tools = settings["model_tools"]!.AsArray();
+        var volume = tools.Single(item => item!["tool_id"]!.GetValue<string>() == "system.volume")!;
         Assert.Equal("1.0.0", volume["tool_version"]!.GetValue<string>());
         Assert.Equal(["system.write"], volume["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
         Assert.Equal("native_pending", volume["availability"]!.GetValue<string>());
         Assert.True(volume["model_enabled"]!.GetValue<bool>());
         Assert.Equal("native_mutation", volume["capability_class"]!.GetValue<string>());
-        Assert.DoesNotContain("files.read", tools.ToJsonString(), StringComparison.Ordinal);
+        Assert.True(volume["verification_required"]!.GetValue<bool>());
+        var readTool = tools.Single(item => item!["tool_id"]!.GetValue<string>() == "files.read")!;
+        Assert.Equal("internal", readTool["capability_class"]!.GetValue<string>());
+        Assert.False(readTool["verification_required"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Chat_profile_advertises_no_mutating_tools_and_legacy_flag_is_false()
+    {
+        var log = new List<string>();
+        var worker = SuccessfulWorker(log);
+        var agent = new FakeAgentTurnCoordinator(ModelCapabilities());
+        var coordinator = CreateCoordinator(
+            log,
+            new FakeSessionStore(log),
+            new FakeMemoryService(log),
+            worker,
+            agent: agent);
+
+        _ = await CollectAsync(coordinator.HandleAsync(
+            new ChatRequest("Xin chào", "session-1", Profile: CapabilityProfile.Chat),
+            CancellationToken.None));
+
+        Assert.Equal(0, agent.ExecuteCount);
+        var settings = worker.LastChatRequest!.Settings;
+        Assert.False(settings["agent_mode"]!.GetValue<bool>());
+        var serializedTools = settings["model_tools"]!.AsArray().ToJsonString();
+        Assert.DoesNotContain("system.volume", serializedTools, StringComparison.Ordinal);
+        Assert.DoesNotContain(agent.RequestedProfiles, profile => profile != CapabilityProfile.Chat);
     }
 
     [Fact]
@@ -429,7 +454,7 @@ public sealed class ConversationCoordinatorTests
             agent: agent);
 
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Xin chào", "session-1", AgentMode: true),
+            new ChatRequest("Xin chào", "session-1", Profile: CapabilityProfile.Agent),
             CancellationToken.None));
 
         Assert.Null(worker.LastChatRequest!.ToolHandler);
@@ -802,9 +827,23 @@ public sealed class ConversationCoordinatorTests
         }
 
         public int ExecuteCount { get; private set; }
+        public List<CapabilityProfile> RequestedProfiles { get; } = [];
 
         public Task<IReadOnlyList<AgentToolCapability>> GetModelCapabilitiesAsync(
-            CancellationToken cancellationToken) => Task.FromResult(_capabilities);
+            CapabilityProfile profile,
+            CancellationToken cancellationToken)
+        {
+            RequestedProfiles.Add(profile);
+            IReadOnlyList<AgentToolCapability> capabilities = profile == CapabilityProfile.Chat
+                ? _capabilities
+                    .Where(tool => !string.Equals(
+                        tool.ToolId,
+                        "system.volume",
+                        StringComparison.Ordinal))
+                    .ToArray()
+                : _capabilities;
+            return Task.FromResult(capabilities);
+        }
 
         public async IAsyncEnumerable<ChatEvent> HandleToolTurnAsync(
             AgentTurnRequest request,

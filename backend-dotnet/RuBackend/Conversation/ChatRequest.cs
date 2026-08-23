@@ -1,10 +1,12 @@
+using RuBackend.Agent;
+
 namespace RuBackend.Conversation;
 
 public sealed record ChatRequest(
     string Prompt,
     string? SessionId,
     string? CorrelationId = null,
-    bool AgentMode = false)
+    CapabilityProfile Profile = CapabilityProfile.Chat)
 {
     public const int MaxPromptCharacters = 16_000;
     public const int MaxMessageBytes = 256 * 1024;

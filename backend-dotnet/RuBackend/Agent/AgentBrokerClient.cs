@@ -25,7 +25,7 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
     private readonly BrokerSessionDescriptor _descriptor;
     private readonly AgentSessionGrantStore _grants;
     private readonly object _capabilityGate = new();
-    private IReadOnlyList<AgentToolCapability>? _capabilities;
+    private readonly Dictionary<CapabilityProfile, IReadOnlyList<AgentToolCapability>> _capabilityLists = new();
     private IReadOnlyDictionary<(string ToolId, string ToolVersion), AgentToolCapability>? _capabilityIndex;
     private int _disposed;
 
@@ -39,16 +39,18 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
     }
 
     public async Task<IReadOnlyList<AgentToolCapability>> GetCapabilitiesAsync(
+        CapabilityProfile profile,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        var cached = CapabilitySnapshot();
+        var cached = CapabilitySnapshot(profile);
         if (cached is not null)
         {
             return cached;
         }
 
         _ = await RoundTripAsync(
+            profile,
             new AgentEnvelope(
                 AgentEnvelopeCodec.ProtocolVersion,
                 NewRequestId("capabilities"),
@@ -58,7 +60,7 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
                 5_000,
                 new JsonObject()),
             cancellationToken).ConfigureAwait(false);
-        return CapabilitySnapshot()
+        return CapabilitySnapshot(profile)
             ?? throw new AgentBrokerException("invalid_capabilities");
     }
 
@@ -75,6 +77,7 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
         ArgumentNullException.ThrowIfNull(scopes);
         ArgumentNullException.ThrowIfNull(skillIds);
         var response = await RoundTripAsync(
+            CapabilityProfile.Chat,
             new AgentEnvelope(
                 AgentEnvelopeCodec.ProtocolVersion,
                 NewRequestId("session"),
@@ -119,13 +122,18 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
 
     public async Task<AgentToolResult> ExecuteToolAsync(
         AgentToolCall call,
+        CapabilityProfile profile,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(call);
         ValidateSessionId(call.SessionId);
         ValidateCall(call);
-        _ = await GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+        if (CapabilityIndex() is null)
+        {
+            _ = await GetCapabilitiesAsync(CapabilityProfile.Chat, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         AgentToolCapability? capability;
         lock (_capabilityGate)
@@ -146,6 +154,7 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
         var arguments = JsonSerializer.SerializeToNode(call.Arguments) as JsonObject
             ?? throw new ArgumentException("Tool arguments are invalid.", nameof(call));
         var response = await RoundTripAsync(
+            profile,
             CreateRequest(
                 call.RequestId,
                 AgentMessageTypes.ToolRequest,
@@ -173,6 +182,7 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
         ValidateSessionId(response.SessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(response.ApprovalId);
         var envelope = await RoundTripAsync(
+            CapabilityProfile.Chat,
             CreateRequest(
                 response.ApprovalId,
                 AgentMessageTypes.ApprovalResponse,
@@ -197,6 +207,7 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
         ValidateSessionId(sessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(requestId);
         _ = await RoundTripAsync(
+            CapabilityProfile.Chat,
             new AgentEnvelope(
                 AgentEnvelopeCodec.ProtocolVersion,
                 requestId,
@@ -215,6 +226,7 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
     {
         ValidateSessionId(sessionId);
         _ = await RoundTripAsync(
+            CapabilityProfile.Chat,
             new AgentEnvelope(
                 AgentEnvelopeCodec.ProtocolVersion,
                 NewRequestId("close"),
@@ -236,7 +248,7 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
 
         lock (_capabilityGate)
         {
-            _capabilities = Array.AsReadOnly(Array.Empty<AgentToolCapability>());
+            _capabilityLists.Clear();
             _capabilityIndex = new Dictionary<(string, string), AgentToolCapability>();
         }
 
@@ -245,6 +257,7 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
     }
 
     private async Task<AgentEnvelope> RoundTripAsync(
+        CapabilityProfile profile,
         AgentEnvelope request,
         CancellationToken cancellationToken)
     {
@@ -262,7 +275,11 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
         {
             RequestId = NewRequestId("hello"),
             MessageType = AgentMessageTypes.Hello,
-            Payload = new JsonObject { ["client"] = "RuBackend" },
+            Payload = new JsonObject
+            {
+                ["client"] = "RuBackend",
+                ["profile"] = profile.ToWireValue(),
+            },
         };
         await SendAsync(socket, hello, cancellationToken).ConfigureAwait(false);
         var helloReply = await ReceiveAsync(socket, cancellationToken).ConfigureAwait(false);
@@ -273,7 +290,7 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
             throw new AgentBrokerException("invalid_hello");
         }
 
-        CacheCapabilities(ParseCapabilities(helloReply.Payload));
+        CacheCapabilities(profile, ParseCapabilities(helloReply.Payload));
         await SendAsync(socket, request, cancellationToken).ConfigureAwait(false);
         var reply = await ReceiveAsync(socket, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(reply.RequestId, request.RequestId, StringComparison.Ordinal)
@@ -358,13 +375,15 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
             .ToArray());
     }
 
-    private void CacheCapabilities(IReadOnlyList<AgentToolCapability> snapshot)
+    private void CacheCapabilities(
+        CapabilityProfile profile,
+        IReadOnlyList<AgentToolCapability> snapshot)
     {
         lock (_capabilityGate)
         {
-            if (_capabilities is not null)
+            if (_capabilityLists.TryGetValue(profile, out var existing))
             {
-                if (!CapabilitiesEqual(_capabilities, snapshot))
+                if (!CapabilitiesEqual(existing, snapshot))
                 {
                     throw new AgentBrokerException("capability_snapshot_changed");
                 }
@@ -372,18 +391,39 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
                 return;
             }
 
-            _capabilities = snapshot;
-            _capabilityIndex = snapshot.ToDictionary(
-                item => (item.ToolId, item.ToolVersion),
-                item => item);
+            var index = new Dictionary<(string ToolId, string ToolVersion), AgentToolCapability>(
+                _capabilityIndex ?? new Dictionary<(string, string), AgentToolCapability>());
+            foreach (var capability in snapshot)
+            {
+                if (index.TryGetValue(
+                        (capability.ToolId, capability.ToolVersion),
+                        out var merged)
+                    && !CapabilitiesEqual([merged], [capability]))
+                {
+                    throw new AgentBrokerException("capability_snapshot_changed");
+                }
+
+                index[(capability.ToolId, capability.ToolVersion)] = capability;
+            }
+
+            _capabilityLists[profile] = snapshot;
+            _capabilityIndex = index;
         }
     }
 
-    private IReadOnlyList<AgentToolCapability>? CapabilitySnapshot()
+    private IReadOnlyList<AgentToolCapability>? CapabilitySnapshot(CapabilityProfile profile)
     {
         lock (_capabilityGate)
         {
-            return _capabilities;
+            return _capabilityLists.TryGetValue(profile, out var snapshot) ? snapshot : null;
+        }
+    }
+
+    private IReadOnlyDictionary<(string ToolId, string ToolVersion), AgentToolCapability>? CapabilityIndex()
+    {
+        lock (_capabilityGate)
+        {
+            return _capabilityIndex;
         }
     }
 

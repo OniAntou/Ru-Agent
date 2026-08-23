@@ -326,13 +326,59 @@ public sealed class AgentTurnCoordinatorTests
         Assert.Equal(new[] { "open:session-1", "close:session-1" }, broker.Calls);
     }
 
+    [Fact]
+    public async Task Profile_session_requests_the_union_of_advertised_turn_scopes()
+    {
+        var broker = new FakeBroker
+        {
+            ExtraCapabilities =
+            [
+                new AgentToolCapability(
+                    "files.write",
+                    "1.0.0",
+                    new HashSet<string>(["workspace.write"], StringComparer.Ordinal),
+                    "reversible",
+                    "executable",
+                    true),
+            ],
+        };
+
+        var result = await new AgentTurnCoordinator(broker).ExecuteToolAsync(
+            Request(),
+            CancellationToken.None);
+
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+        Assert.Equal(
+            new HashSet<string>(["system.write", "workspace.write"], StringComparer.Ordinal),
+            broker.LastRequestedScopes);
+    }
+
+    [Fact]
+    public async Task Cancelling_a_tool_releases_the_open_profile_session()
+    {
+        var broker = new FakeBroker { BlockExecution = true };
+        var coordinator = new AgentTurnCoordinator(broker);
+        using var cancellation = new CancellationTokenSource();
+        var executing = coordinator.ExecuteToolAsync(Request(), cancellation.Token);
+        await broker.ExecutionStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        cancellation.Cancel();
+        broker.ReleaseExecution.TrySetResult();
+        var result = await executing;
+
+        Assert.Equal(ToolResultStatuses.Cancelled, result.Status);
+        Assert.Null(broker.ActiveSessionId);
+        Assert.Contains("close:session-1", broker.Calls);
+    }
+
     private static AgentTurnRequest Request(
         string toolId = "system.volume",
         string toolVersion = "1.0.0",
         string capabilityClass = "native_mutation",
         string requestId = "tool-request-1",
         string sessionId = "session-1",
-        string correlationId = "correlation-1") => new(
+        string correlationId = "correlation-1",
+        CapabilityProfile profile = CapabilityProfile.Agent) => new(
         new WorkerToolRequest(
             requestId,
             sessionId,
@@ -345,7 +391,9 @@ public sealed class AgentTurnCoordinatorTests
                 ["operation"] = "set",
                 ["level"] = 2,
             },
-            30_000));
+            30_000),
+        null,
+        profile);
 
     private static async Task<List<ChatEvent>> CollectAsync(IAsyncEnumerable<ChatEvent> source)
     {
@@ -381,6 +429,7 @@ public sealed class AgentTurnCoordinatorTests
     {
         public IReadOnlySet<string> ActualScopes { get; init; } =
             new HashSet<string>(["system.write"], StringComparer.Ordinal);
+        public IReadOnlyList<AgentToolCapability> ExtraCapabilities { get; init; } = [];
         public string? ResultRequestId { get; init; }
         public string ResultStatus { get; init; } = ToolResultStatuses.Succeeded;
         public string? ResultErrorCode { get; init; }
@@ -407,14 +456,22 @@ public sealed class AgentTurnCoordinatorTests
         public AgentToolCall? LastCall { get; private set; }
 
         public Task<IReadOnlyList<AgentToolCapability>> GetCapabilitiesAsync(
-            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<AgentToolCapability>>(
-            [new AgentToolCapability(
-                "system.volume",
-                "1.0.0",
-                new HashSet<string>(["system.write"], StringComparer.Ordinal),
-                "reversible",
-                "native_pending",
-                true)]);
+            CapabilityProfile profile,
+            CancellationToken cancellationToken)
+        {
+            IReadOnlyList<AgentToolCapability> capabilities =
+            [
+                new AgentToolCapability(
+                    "system.volume",
+                    "1.0.0",
+                    new HashSet<string>(["system.write"], StringComparer.Ordinal),
+                    "reversible",
+                    "native_pending",
+                    true),
+                ..ExtraCapabilities,
+            ];
+            return Task.FromResult(capabilities);
+        }
 
         public Task<AgentSessionGrant> OpenSessionAsync(
             string sessionId,
@@ -444,6 +501,7 @@ public sealed class AgentTurnCoordinatorTests
 
         public async Task<AgentToolResult> ExecuteToolAsync(
             AgentToolCall call,
+            CapabilityProfile profile,
             CancellationToken cancellationToken)
         {
             Calls.Add($"execute:{call.SessionId}");

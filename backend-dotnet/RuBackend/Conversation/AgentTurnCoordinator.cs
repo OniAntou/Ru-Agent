@@ -9,11 +9,13 @@ namespace RuBackend.Conversation;
 
 public sealed record AgentTurnRequest(
     WorkerToolRequest ToolRequest,
-    Func<ChatEvent, ValueTask>? PublishAsync = null);
+    Func<ChatEvent, ValueTask>? PublishAsync,
+    CapabilityProfile Profile);
 
 public interface IAgentTurnCoordinator
 {
     Task<IReadOnlyList<AgentToolCapability>> GetModelCapabilitiesAsync(
+        CapabilityProfile profile,
         CancellationToken cancellationToken);
 
     IAsyncEnumerable<ChatEvent> HandleToolTurnAsync(
@@ -47,9 +49,10 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
     }
 
     public Task<IReadOnlyList<AgentToolCapability>> GetModelCapabilitiesAsync(
+        CapabilityProfile profile,
         CancellationToken cancellationToken) => _broker is null
         ? Task.FromResult(NoCapabilities)
-        : _broker.GetCapabilitiesAsync(cancellationToken);
+        : _broker.GetCapabilitiesAsync(profile, cancellationToken);
 
     public async IAsyncEnumerable<ChatEvent> HandleToolTurnAsync(
         AgentTurnRequest request,
@@ -75,6 +78,26 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
             cancellationToken.ThrowIfCancellationRequested();
             yield return item;
         }
+    }
+
+    public static (CapabilityProfile Profile, bool Clamped) ProfileForTurn(
+        string? mode,
+        bool legacyAgentMode)
+    {
+        if (!string.IsNullOrWhiteSpace(mode))
+        {
+            return mode switch
+            {
+                "chat" => (CapabilityProfile.Chat, false),
+                "agent" => (CapabilityProfile.Agent, false),
+                "full" => (CapabilityProfile.Full, false),
+                _ => (CapabilityProfile.Chat, true),
+            };
+        }
+
+        return legacyAgentMode
+            ? (CapabilityProfile.Agent, false)
+            : (CapabilityProfile.Chat, false);
     }
 
     public async Task<WorkerToolResult> ExecuteToolAsync(
@@ -112,7 +135,9 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
 
         try
         {
-            var capabilities = await GetModelCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
+            var capabilities = await GetModelCapabilitiesAsync(
+                request.Profile,
+                cancellationToken).ConfigureAwait(false);
             var capability = capabilities.FirstOrDefault(item =>
                 item.ModelEnabled
                 && string.Equals(item.ToolId, tool.ToolId, StringComparison.Ordinal)
@@ -140,6 +165,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                 tool,
                 capability,
                 correlationId,
+                request.Profile,
                 cancellationToken).ConfigureAwait(false);
             if (opened)
             {
@@ -174,6 +200,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                         pair => (object?)pair.Value?.DeepClone(),
                         StringComparer.Ordinal),
                     tool.DeadlineMs),
+                request.Profile,
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -221,6 +248,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            await ReleaseSessionAsync().ConfigureAwait(false);
             return Cancelled(request.ToolRequest.RequestId);
         }
         catch (AgentBrokerException error)
@@ -237,6 +265,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
         WorkerToolRequest tool,
         AgentToolCapability capability,
         string correlationId,
+        CapabilityProfile profile,
         CancellationToken cancellationToken)
     {
         await _sessionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -262,7 +291,7 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
 
             var grant = await _broker!.OpenSessionAsync(
                 tool.SessionId,
-                capability.Scopes.ToHashSet(StringComparer.Ordinal),
+                await TurnScopesAsync(profile, cancellationToken).ConfigureAwait(false),
                 new HashSet<string>(StringComparer.Ordinal),
                 correlationId,
                 tool.DeadlineMs,
@@ -286,6 +315,62 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
         finally
         {
             _sessionLock.Release();
+        }
+    }
+
+    private async Task<IReadOnlySet<string>> TurnScopesAsync(
+        CapabilityProfile profile,
+        CancellationToken cancellationToken)
+    {
+        var capabilities = await GetModelCapabilitiesAsync(profile, cancellationToken)
+            .ConfigureAwait(false);
+        var scopes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var capability in capabilities)
+        {
+            scopes.UnionWith(capability.Scopes);
+        }
+
+        return scopes;
+    }
+
+    private async Task ReleaseSessionAsync()
+    {
+        if (_broker is null)
+        {
+            return;
+        }
+
+        AgentSessionGrant? grant;
+        await _sessionLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            grant = _activeSession;
+            _activeSession = null;
+        }
+        finally
+        {
+            _sessionLock.Release();
+        }
+
+        if (grant is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // Release must never mask the original cancellation, so the close
+            // roundtrip runs detached from the cancelled turn token.
+            await _broker.CloseSessionAsync(
+                grant.SessionId,
+                null,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (AgentBrokerException)
+        {
         }
     }
 

@@ -22,7 +22,9 @@ public sealed class AgentBrokerClientTests
         await using var fixture = await ClientFixture.StartAsync();
         await using var client = fixture.Client;
 
-        var capabilities = await client.GetCapabilitiesAsync(CancellationToken.None);
+        var capabilities = await client.GetCapabilitiesAsync(
+            CapabilityProfile.Agent,
+            CancellationToken.None);
         var volume = Assert.Single(capabilities);
         Assert.Equal("system.volume", volume.ToolId);
         Assert.Equal("1.0.0", volume.ToolVersion);
@@ -49,6 +51,7 @@ public sealed class AgentBrokerClientTests
                 "native_mutation",
                 new Dictionary<string, object?> { ["operation"] = "mute" },
                 2_000),
+            CapabilityProfile.Agent,
             CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
@@ -66,7 +69,7 @@ public sealed class AgentBrokerClientTests
     {
         await using var fixture = await ClientFixture.StartAsync();
         await using var client = fixture.Client;
-        _ = await client.GetCapabilitiesAsync(CancellationToken.None);
+        _ = await client.GetCapabilitiesAsync(CapabilityProfile.Agent, CancellationToken.None);
         _ = await client.OpenSessionAsync(
             "session-1",
             new HashSet<string>(["system.write"], StringComparer.Ordinal),
@@ -86,6 +89,7 @@ public sealed class AgentBrokerClientTests
                 "native_mutation",
                 new Dictionary<string, object?> { ["operation"] = "mute" },
                 2_000),
+            CapabilityProfile.Agent,
             CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.Failed, result.Status);
@@ -119,6 +123,7 @@ public sealed class AgentBrokerClientTests
                 "native_mutation",
                 new Dictionary<string, object?> { ["operation"] = "mute" },
                 2_000),
+            CapabilityProfile.Agent,
             CancellationToken.None);
 
         Assert.Equal(ToolResultStatuses.Failed, result.Status);
@@ -152,7 +157,7 @@ public sealed class AgentBrokerClientTests
         await using var client = fixture.Client;
 
         var error = await Assert.ThrowsAsync<AgentBrokerException>(() =>
-            client.GetCapabilitiesAsync(CancellationToken.None));
+            client.GetCapabilitiesAsync(CapabilityProfile.Agent, CancellationToken.None));
 
         Assert.Equal("invalid_capabilities", error.Code);
     }
@@ -199,6 +204,7 @@ public sealed class AgentBrokerClientTests
                     "native_mutation",
                     new Dictionary<string, object?> { ["operation"] = "mute" },
                     2_000),
+                CapabilityProfile.Agent,
                 CancellationToken.None));
 
         Assert.Equal("invalid_tool_result", error.Code);

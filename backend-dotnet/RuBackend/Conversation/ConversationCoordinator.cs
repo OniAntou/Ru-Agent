@@ -140,8 +140,9 @@ public sealed class ConversationCoordinator : IConversationCoordinator
             var settings = await _settings.ReadAsync(cancellationToken).ConfigureAwait(false);
             var modelTools = _agent is null
                 ? Array.Empty<AgentToolCapability>()
-                : (await _agent.GetModelCapabilitiesAsync(cancellationToken).ConfigureAwait(false))
-                    .Where(tool => tool.ModelEnabled)
+                : (await _agent.GetModelCapabilitiesAsync(
+                        request.Profile,
+                        cancellationToken).ConfigureAwait(false))
                     .OrderBy(tool => tool.ToolId, StringComparer.Ordinal)
                     .ThenBy(tool => tool.ToolVersion, StringComparer.Ordinal)
                     .ToArray();
@@ -171,7 +172,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                 turns.Select(turn => new WorkerTurn(turn.Prompt, turn.Response)).ToArray(),
                 ShouldShareMemory(settings) ? RenderMemory(memories) : string.Empty,
                 BuildVtsInstruction(catalog),
-                BuildWorkerSettings(settings, request.AgentMode, modelTools))
+                BuildWorkerSettings(settings, request.Profile, modelTools))
             {
                 LastActionOutcome = lastActionOutcome,
             };
@@ -183,7 +184,8 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                         _agent.ExecuteToolAsync(
                             new AgentTurnRequest(
                                 tool,
-                                value => WriteAsync(writer, value, toolCancellation)),
+                                value => WriteAsync(writer, value, toolCancellation),
+                                request.Profile),
                             toolCancellation),
                 };
             }
@@ -561,30 +563,38 @@ public sealed class ConversationCoordinator : IConversationCoordinator
 
     private static JsonObject BuildWorkerSettings(
         SettingsSnapshot settings,
-        bool agentMode,
+        CapabilityProfile profile,
         IReadOnlyList<AgentToolCapability> modelTools) => new()
         {
             ["max_tokens"] = settings.MaxTokens,
             ["temperature"] = settings.Temperature,
             ["top_k"] = settings.TopK,
             ["allow_web_search"] = settings.AllowWebSearch,
-            ["agent_mode"] = agentMode,
-            ["model_tools"] = new JsonArray(modelTools.Select(tool => new JsonObject
+            ["agent_mode"] = profile is not CapabilityProfile.Chat,
+            ["model_tools"] = new JsonArray(modelTools.Select(tool =>
             {
-                ["tool_id"] = tool.ToolId,
-                ["tool_version"] = tool.ToolVersion,
-                ["scopes"] = new JsonArray(tool.Scopes
-                    .Order(StringComparer.Ordinal)
-                    .Select(scope => (JsonNode?)scope)
-                    .ToArray()),
-                ["availability"] = tool.Availability,
-                ["model_enabled"] = tool.ModelEnabled,
-                ["capability_class"] = string.Equals(
+                var capabilityClass = string.Equals(
                     tool.ToolId,
                     "system.volume",
                     StringComparison.Ordinal)
                         ? "native_mutation"
-                        : "internal",
+                        : "internal";
+                return new JsonObject
+                {
+                    ["tool_id"] = tool.ToolId,
+                    ["tool_version"] = tool.ToolVersion,
+                    ["scopes"] = new JsonArray(tool.Scopes
+                        .Order(StringComparer.Ordinal)
+                        .Select(scope => (JsonNode?)scope)
+                        .ToArray()),
+                    ["availability"] = tool.Availability,
+                    ["model_enabled"] = tool.ModelEnabled,
+                    ["capability_class"] = capabilityClass,
+                    ["verification_required"] = string.Equals(
+                        capabilityClass,
+                        "native_mutation",
+                        StringComparison.Ordinal),
+                };
             }).ToArray()),
         };
 

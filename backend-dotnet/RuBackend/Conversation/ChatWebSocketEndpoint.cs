@@ -22,6 +22,7 @@ public static class ChatWebSocketEndpoint
         IConversationCoordinator coordinator,
         IAgentApprovalCoordinator approvalCoordinator,
         IActionOutcomeContextStore actionOutcomes,
+        IDiagnosticEmitter? diagnostics,
         CancellationToken cancellationToken)
     {
         if (!context.WebSockets.IsWebSocketRequest)
@@ -117,8 +118,9 @@ public static class ChatWebSocketEndpoint
 
                 ChatRequest? request = null;
                 ChatEvent? parseError = null;
+                var modeClamped = false;
                 if (message.MessageType != WebSocketMessageType.Text
-                    || !TryParseRequest(message.Bytes, out request, out parseError))
+                    || !TryParseRequest(message.Bytes, out request, out modeClamped, out parseError))
                 {
                     await SendAsync(
                         socket,
@@ -131,6 +133,11 @@ public static class ChatWebSocketEndpoint
                 if (request is null || string.IsNullOrWhiteSpace(request.Prompt))
                 {
                     continue;
+                }
+
+                if (modeClamped)
+                {
+                    EmitModeClamped(diagnostics, request.CorrelationId);
                 }
 
                 var prompt = request.Prompt.Trim();
@@ -155,7 +162,7 @@ public static class ChatWebSocketEndpoint
                         prompt,
                         request.SessionId?.Trim(),
                         request.CorrelationId,
-                        request.AgentMode),
+                        request.Profile),
                     inbound.Reader,
                     ObserveSession,
                     connectionCancellation.Token).ConfigureAwait(false);
@@ -404,9 +411,11 @@ public static class ChatWebSocketEndpoint
     private static bool TryParseRequest(
         byte[] bytes,
         out ChatRequest? request,
+        out bool modeClamped,
         out ChatEvent? error)
     {
         request = null;
+        modeClamped = false;
         error = null;
         try
         {
@@ -436,18 +445,31 @@ public static class ChatWebSocketEndpoint
                 correlationId = parsedCorr;
             }
 
-            var agentMode = false;
-            if (root["agent_mode"] is JsonNode agentNode)
+            string? mode = null;
+            if (root["mode"] is JsonNode modeNode)
             {
-                if (agentNode is not JsonValue agentValue
-                    || !agentValue.TryGetValue<bool>(out agentMode))
+                if (modeNode is not JsonValue modeValue
+                    || !modeValue.TryGetValue<string>(out mode))
                 {
                     error = Error("malformed_message", "Malformed message.");
                     return false;
                 }
             }
 
-            request = new ChatRequest(prompt, sessionId, correlationId, agentMode);
+            var legacyAgentMode = false;
+            if (root["agent_mode"] is JsonNode agentNode)
+            {
+                if (agentNode is not JsonValue agentValue
+                    || !agentValue.TryGetValue<bool>(out legacyAgentMode))
+                {
+                    error = Error("malformed_message", "Malformed message.");
+                    return false;
+                }
+            }
+
+            (var profile, modeClamped) =
+                AgentTurnCoordinator.ProfileForTurn(mode, legacyAgentMode);
+            request = new ChatRequest(prompt, sessionId, correlationId, profile);
             return true;
         }
         catch (Exception parseError) when (parseError is JsonException or DecoderFallbackException)
@@ -549,6 +571,22 @@ public static class ChatWebSocketEndpoint
 
     private static ChatEvent Error(string code, string content) =>
         new("error", content, ErrorCode: code);
+
+    private static void EmitModeClamped(IDiagnosticEmitter? diagnostics, string? correlationId)
+    {
+        try
+        {
+            diagnostics?.TryEmit(
+                "warning",
+                "host.conversation",
+                DiagnosticCodes.ModeClamped,
+                correlationId);
+        }
+        catch
+        {
+            // Diagnostics must never break the chat loop.
+        }
+    }
 
     private sealed record InboundMessage(
         WebSocketMessageType MessageType,

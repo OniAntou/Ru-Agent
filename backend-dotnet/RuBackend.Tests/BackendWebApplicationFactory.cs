@@ -8,6 +8,7 @@ using RuBackend.Business;
 using RuBackend.Business.Settings;
 using RuBackend.Agent;
 using RuBackend.Conversation;
+using RuBackend.Diagnostics;
 using RuBackend.Memory;
 using RuBackend.Runtime;
 using RuBackend.Worker;
@@ -28,6 +29,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly IActionOutcomeContextStore? _actionOutcomeContextStore;
     private readonly IAgentApprovalCoordinator? _approvalCoordinator;
     private readonly IVoiceProtocolClient? _voiceProtocolClient;
+    private readonly IAgentBrokerClient? _agentBrokerClient;
+    private readonly IDiagnosticEmitter? _diagnosticEmitter;
+    private readonly IWorkerClient? _workerClient;
 
     public BackendWebApplicationFactory(
         IMemoryService? memoryService = null,
@@ -39,7 +43,10 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         IConversationCoordinator? conversationCoordinator = null,
         IActionOutcomeContextStore? actionOutcomeContextStore = null,
         IAgentApprovalCoordinator? approvalCoordinator = null,
-        IVoiceProtocolClient? voiceProtocolClient = null)
+        IVoiceProtocolClient? voiceProtocolClient = null,
+        IAgentBrokerClient? agentBrokerClient = null,
+        IDiagnosticEmitter? diagnosticEmitter = null,
+        IWorkerClient? workerClient = null)
     {
         _ownedDataRoot = dataPaths is null
             ? Path.Combine(Path.GetTempPath(), "ru-backend-test-" + Guid.NewGuid().ToString("N"))
@@ -54,6 +61,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _actionOutcomeContextStore = actionOutcomeContextStore;
         _approvalCoordinator = approvalCoordinator;
         _voiceProtocolClient = voiceProtocolClient;
+        _agentBrokerClient = agentBrokerClient;
+        _diagnosticEmitter = diagnosticEmitter;
+        _workerClient = workerClient;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -122,6 +132,24 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             {
                 services.RemoveAll<IVoiceProtocolClient>();
                 services.AddSingleton(_voiceProtocolClient);
+            }
+
+            if (_agentBrokerClient is not null)
+            {
+                services.RemoveAll<IAgentBrokerClient>();
+                services.AddSingleton(_agentBrokerClient);
+            }
+
+            if (_diagnosticEmitter is not null)
+            {
+                services.RemoveAll<IDiagnosticEmitter>();
+                services.AddSingleton(_diagnosticEmitter);
+            }
+
+            if (_workerClient is not null)
+            {
+                services.RemoveAll<IWorkerClient>();
+                services.AddSingleton(_workerClient);
             }
         });
     }

@@ -5,6 +5,7 @@ namespace RuBackend.Agent;
 public interface IAgentBrokerClient : IAsyncDisposable
 {
     Task<IReadOnlyList<RuAgent.Protocol.AgentToolCapability>> GetCapabilitiesAsync(
+        CapabilityProfile profile,
         CancellationToken cancellationToken);
 
     Task<AgentSessionGrant> OpenSessionAsync(
@@ -17,6 +18,7 @@ public interface IAgentBrokerClient : IAsyncDisposable
 
     Task<AgentToolResult> ExecuteToolAsync(
         AgentToolCall call,
+        CapabilityProfile profile,
         CancellationToken cancellationToken);
 
     Task<AgentToolResult> RespondToApprovalAsync(

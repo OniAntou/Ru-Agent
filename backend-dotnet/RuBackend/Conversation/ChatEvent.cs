@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using RuAgent.Protocol;
 
 namespace RuBackend.Conversation;
 
@@ -17,7 +18,8 @@ public sealed record ChatEvent
         string? ToolId = null,
         string? Scope = null,
         DateTimeOffset? ExpiresAt = null,
-        IReadOnlyList<string>? Scopes = null)
+        IReadOnlyList<string>? Scopes = null,
+        string? Preview = null)
     {
         this.Type = Type;
         this.Content = Content;
@@ -29,6 +31,7 @@ public sealed record ChatEvent
         this.Scope = Scope;
         this.ExpiresAt = ExpiresAt;
         this.Scopes = ValidateScopes(Scopes);
+        this.Preview = Preview;
     }
 
     [JsonPropertyName("type")]
@@ -69,6 +72,10 @@ public sealed record ChatEvent
     [JsonPropertyName("scopes")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? Scopes { get; init; }
+
+    [JsonPropertyName(ApprovalPreviewFields.Field)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Preview { get; init; }
 
     private static IReadOnlyList<string>? ValidateScopes(IReadOnlyList<string>? scopes)
     {

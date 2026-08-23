@@ -533,7 +533,7 @@ public sealed class BrokerHostTests
 
         Assert.Equal("approval_required", pending.Payload["status"]!.GetValue<string>());
         var approvalId = pending.Payload["output"]!["approval_id"]!.GetValue<string>();
-        Assert.DoesNotContain("Get-Date", pending.Payload.ToJsonString(), StringComparison.Ordinal);
+        Assert.Equal("Get-Date", pending.Payload["output"]![ApprovalPreviewFields.Field]!.GetValue<string>());
 
         await SendAsync(
             socket,

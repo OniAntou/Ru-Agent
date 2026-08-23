@@ -154,6 +154,10 @@ public sealed class ToolExecutionService : IToolInvoker
                         ["scope"] = string.Join(", ", binding.Manifest.Scopes.OrderBy(value => value, StringComparer.Ordinal)),
                         ["safe_action"] = SafeAction(binding.Manifest),
                         ["expires_at"] = expiresAt.ToString("O"),
+                        [ApprovalPreviewFields.Field] = BuildPreview(
+                            toolId,
+                            arguments,
+                            ReadTargetFileText(arguments)),
                     },
                     "approval_required",
                     "Approval is required.",
@@ -688,6 +692,97 @@ public sealed class ToolExecutionService : IToolInvoker
         "notes.create" => "Create a note in the workspace.",
         _ => "Run an external or destructive Agent action.",
     };
+
+    internal static string BuildPreview(string toolId, JsonObject arguments, string? fileText = null)
+    {
+        try
+        {
+            if (arguments is null)
+            {
+                return string.Empty;
+            }
+
+            var preview = toolId switch
+            {
+                "files.write" => ReadOptionalString(arguments, "content") ?? string.Empty,
+                "files.edit" => EditPreview(arguments, fileText),
+                "terminal.shell" => ReadOptionalString(arguments, "script") ?? string.Empty,
+                _ => string.Empty,
+            };
+            return preview.Length <= ApprovalPreviewFields.MaxLength
+                ? preview
+                : preview[..ApprovalPreviewFields.MaxLength];
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string EditPreview(JsonObject arguments, string? fileText)
+    {
+        var oldString = ReadOptionalString(arguments, "old_string") ?? string.Empty;
+        var newString = ReadOptionalString(arguments, "new_string") ?? string.Empty;
+        if (oldString.Length == 0 && newString.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var matchIndex = oldString.Length > 0 && fileText is not null
+            ? fileText.IndexOf(oldString, StringComparison.Ordinal)
+            : -1;
+        if (matchIndex < 0)
+        {
+            return $"[-{Bound(oldString)}-][+{Bound(newString)}+]";
+        }
+
+        var before = fileText![..matchIndex];
+        var after = fileText[(matchIndex + oldString.Length)..];
+        var core = $"[-{oldString}-][+{newString}+]";
+        var budget = ApprovalPreviewFields.MaxLength - core.Length;
+        if (budget <= 0)
+        {
+            return core;
+        }
+
+        var afterCount = Math.Min(after.Length, budget / 2);
+        var beforeCount = Math.Min(before.Length, budget - afterCount);
+        afterCount = Math.Min(after.Length, budget - beforeCount);
+        return $"{before[^beforeCount..]}{core}{after[..afterCount]}";
+    }
+
+    private static string Bound(string value) =>
+        value.Length <= ApprovalPreviewFields.MaxLength / 2 ? value : value[..(ApprovalPreviewFields.MaxLength / 2)];
+
+    private string? ReadTargetFileText(JsonObject arguments)
+    {
+        try
+        {
+            var relativePath = ReadOptionalString(arguments, "path");
+            if (relativePath is null)
+            {
+                return null;
+            }
+
+            var fullPath = _workspace.Resolve(relativePath, allowMissing: true);
+            if (!File.Exists(fullPath))
+            {
+                return null;
+            }
+
+            var info = new FileInfo(fullPath);
+            if (info.Length > 4 * 1024 * 1024)
+            {
+                return null;
+            }
+
+            return File.ReadAllText(fullPath, Encoding.UTF8);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private static ToolResult Receipt(
         AgentEnvelope request,

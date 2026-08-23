@@ -16,6 +16,20 @@ public static class ToolResultStatuses
         StringComparer.Ordinal);
 }
 
+public static class ApprovalPreviewFields
+{
+    public const string Field = "preview";
+    public const int MaxLength = 512;
+
+    public static string? TryRead(JsonObject payload) =>
+        payload[Field] is JsonValue value
+        && value.TryGetValue<string>(out var preview)
+        && !string.IsNullOrWhiteSpace(preview)
+        && preview.Length <= MaxLength
+            ? preview
+            : null;
+}
+
 public static class ToolVerificationStates
 {
     public const string NotRequired = "not_required";

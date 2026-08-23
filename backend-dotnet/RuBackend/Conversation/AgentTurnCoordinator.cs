@@ -231,7 +231,8 @@ public sealed class AgentTurnCoordinator : IAgentTurnCoordinator
                         "agent.approval_required",
                         "Agent is waiting for approval.",
                         tool.SessionId,
-                        Status: ToolResultStatuses.ApprovalRequired);
+                        Status: ToolResultStatuses.ApprovalRequired,
+                        Preview: ApprovalPreviewFields.TryRead(result.Output));
                 await PublishAsync(request, approval, cancellationToken).ConfigureAwait(false);
             }
 

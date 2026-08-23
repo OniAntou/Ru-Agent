@@ -235,6 +235,36 @@ public sealed class ChatWebSocketEndpointTests
         Assert.False(approvals.LastResponse.Approved);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Approval_frame_keeps_the_bounded_preview_optional(bool withPreview)
+    {
+        var coordinator = new FakeCoordinator();
+        coordinator.ExtraEvents.Enqueue(ApprovalEvent(withPreview ? "Get-Date" : null));
+        using var factory = Factory(coordinator);
+        using var socket = await ConnectAsync(factory, "?token=test-secret");
+
+        await SendTextAsync(socket, "{\"prompt\":\"Xin chào\",\"session_id\":\"session-1\"}");
+        var frames = new List<string>();
+        for (var index = 0; index < 5; index++)
+        {
+            frames.Add(await ReceiveTextAsync(socket));
+        }
+
+        var approval = JsonDocument.Parse(
+            frames.Single(frame => frame.Contains("\"agent.approval_required\"", StringComparison.Ordinal))).RootElement;
+        Assert.Equal("terminal.shell", approval.GetProperty("tool_id").GetString());
+        if (withPreview)
+        {
+            Assert.Equal("Get-Date", approval.GetProperty(RuAgent.Protocol.ApprovalPreviewFields.Field).GetString());
+        }
+        else
+        {
+            Assert.False(approval.TryGetProperty(RuAgent.Protocol.ApprovalPreviewFields.Field, out _));
+        }
+    }
+
     private static BackendWebApplicationFactory Factory(
         IConversationCoordinator coordinator,
         IAgentApprovalCoordinator? approvals = null,
@@ -317,10 +347,22 @@ public sealed class ChatWebSocketEndpointTests
             ["reason_code"] = reasonCode,
         });
 
+    private static ChatEvent ApprovalEvent(string? preview) => new(
+        "agent.approval_required",
+        "Run a terminal action in the workspace.",
+        "session-1",
+        Status: ToolResultStatuses.ApprovalRequired,
+        ApprovalId: "approval-1",
+        ToolId: "terminal.shell",
+        Scope: "terminal.execute",
+        ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(1),
+        Preview: preview);
+
     private sealed class FakeCoordinator : IConversationCoordinator
     {
         public bool Block { get; init; }
         public List<ChatRequest> Requests { get; } = [];
+        public Queue<ChatEvent> ExtraEvents { get; } = new();
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -347,6 +389,11 @@ public sealed class ChatWebSocketEndpointTests
 
             var sessionId = request.SessionId ?? "session-created";
             yield return new ChatEvent("session", SessionId: sessionId);
+            while (ExtraEvents.TryDequeue(out var extra))
+            {
+                yield return extra;
+            }
+
             yield return new ChatEvent("reset");
             yield return new ChatEvent("chunk", "Em nghe đây.");
             yield return new ChatEvent("done", "Em nghe đây.", sessionId);

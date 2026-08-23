@@ -56,7 +56,8 @@ public sealed class AgentApprovalCoordinator : IAgentApprovalCoordinator
                 ApprovalId: approval.ApprovalId,
                 ToolId: approval.ToolId,
                 Scope: approval.Scope,
-                ExpiresAt: approval.ExpiresAt);
+                ExpiresAt: approval.ExpiresAt,
+                Preview: ApprovalPreviewFields.TryRead(result.Output));
         }
         catch (Exception) when (result.Output is not null)
         {

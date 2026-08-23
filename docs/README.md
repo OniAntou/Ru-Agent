@@ -20,6 +20,7 @@ an operating contract.
 ## Historical implementation records
 
 - [FastAPI decommission validation](aspnetcore-cutover-validation.md)
+- [2026-08-24 codebase security and reliability remediation design](superpowers/specs/2026-08-24-codebase-security-reliability-remediation-design.md)
 - [Action execution kernel v1 design](superpowers/specs/2026-08-22-ru-action-execution-kernel-v1-design.md)
 - [Action execution kernel v1 implementation plan](superpowers/plans/2026-08-22-ru-action-execution-kernel-v1.md)
 - [Superseded volume vertical-slice design](superpowers/specs/2026-08-22-ru-volume-tool-vertical-slice-design.md)

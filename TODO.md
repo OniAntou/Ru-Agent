@@ -22,6 +22,12 @@
 
 ## Deferred capabilities
 
+- [ ] Design a Windows OS-enforced filesystem/network sandbox for Agent
+  execution as a separate architecture project. It must restrict the complete
+  child process tree, deny filesystem access outside explicitly granted roots,
+  deny network at the OS boundary unless granted, and include adversarial
+  junction/symlink and real-socket acceptance. Until then, do not describe
+  executable allowlists, working directories, or request metadata as sandboxing.
 - [ ] Keep microphone STT on the current Google boundary; any offline STT
   provider requires a separate product decision and resource review.
 - [ ] Design WASAPI system-audio understanding only after the hosted observation

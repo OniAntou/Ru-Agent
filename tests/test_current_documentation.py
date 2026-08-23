@@ -191,8 +191,10 @@ def test_current_docs_describe_deterministic_volume_recovery_truthfully() -> Non
     assert "closes the previous lease before opening" in agent_tools_flat
     assert "tăng âm lượng lên N" in agent_tools
     assert "tăng âm lượng thêm N" in agent_tools
-    assert "ordinary normal-chat and Agent-mode turns" in runtime_flat
-    assert "normal streamed generation" in runtime_flat
+    assert "ordinary normal-chat and Agent-mode turns" in runtime_flat or (
+        "model selection channel is active in every mode" in runtime_flat)
+    assert "up to ten model-initiated tool calls" in runtime_flat
+    assert "never streamed into the visible transcript" in runtime_flat
     assert "one-shot" in runtime_flat
     assert "session-isolated" in runtime_flat
     assert "consumed by the next turn" in runtime_flat
@@ -201,6 +203,8 @@ def test_current_docs_describe_deterministic_volume_recovery_truthfully() -> Non
         "tool.intent.resolved",
         "tool.intent.clarification",
         "tool.intent.rejected",
+        "selection_invalid",
+        "mode_clamped",
     ):
         assert event_code in logging
 

@@ -84,3 +84,12 @@ reason code. They contain no prompt, arguments, level, amount, output, muted
 state, reply, device name, endpoint hash, or exception data. Resolution occurs
 before model selection, and logging failure cannot change the user-visible
 action result.
+
+### Selection and mode diagnostics
+
+The Runtime Worker emits `selection_invalid` once per chat turn when a
+braced candidate reply fails structured selection parsing or validation; it
+carries no reply text or arguments. The Public Host emits `mode_clamped` once
+when an unknown chat-request mode string is clamped to Chat; it carries only
+level, component, code, and correlation ID. Both are bounded, fixed-field
+events: no prompt, transcript, tool arguments, output, or exception data.

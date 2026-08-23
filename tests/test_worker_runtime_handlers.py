@@ -640,6 +640,31 @@ _SELECTION_JSON = (
     '"arguments":{"path":"ghi-chu.txt"}}'
 )
 
+_WRITE_SELECTION_JSON = (
+    '{"tool_id":"files.write","tool_version":"1.0.0",'
+    '"arguments":{"path":"ghi-chu.txt","content":"Noi dung moi"}}'
+)
+
+_CARD_PREVIEW = 'Ghi tệp "ghi-chu.txt" với nội dung mới ("Noi dung moi").'
+
+_WRITE_FOLLOW_UP = "Em đã ghi xong tệp ghi-chu.txt rồi anh!"
+
+_READ_FOLLOW_UP = "Trong file có dòng nội dung đó anh."
+
+
+def _write_tool() -> list[dict[str, object]]:
+    return [
+        {
+            "tool_id": "files.write",
+            "tool_version": "1.0.0",
+            "scopes": ["workspace.write"],
+            "availability": "executable",
+            "model_enabled": True,
+            "capability_class": "tool",
+            "verification_required": False,
+        }
+    ]
+
 
 def _read_receipt() -> dict[str, object]:
     return {
@@ -1146,6 +1171,116 @@ def test_agent_selection_runs_tool_then_follow_up_answer() -> None:
     assert "[TOOL RESULT]" in runner.calls[1]["prompt"]
     assert '"status":"succeeded"' in runner.calls[1]["prompt"].replace(" ", "")
     assert "hello" in runner.calls[1]["prompt"]
+
+
+def test_agent_mode_write_card_approve_then_edited_file_follow_up() -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner(_WRITE_SELECTION_JSON, _WRITE_FOLLOW_UP)
+    payload = _action_payload(
+        queue,
+        True,
+        prompt="Ghi file ghi chú cho anh",
+        model_tools=_write_tool(),
+    )
+
+    replies = asyncio.run(_run_tool_turn(
+        runner,
+        payload,
+        queue,
+        {
+            "status": "succeeded",
+            "output": {
+                "path": "ghi-chu.txt",
+                "bytes_written": 12,
+                "preview": _CARD_PREVIEW,
+            },
+            "safe_summary": "Đã duyệt thẻ và ghi tệp trong workspace.",
+            "error_code": None,
+            "duration_ms": 18,
+            "verification_state": "not_required",
+            "endpoint_role": None,
+            "endpoint_hash": None,
+        },
+    ))
+
+    requests = [reply for reply in replies if reply.type == CHAT_TOOL_REQUEST]
+    assert len(requests) == 1
+    assert requests[0].payload["tool_id"] == "files.write"
+    assert requests[0].payload["tool_version"] == "1.0.0"
+    assert requests[0].payload["capability_class"] == "tool"
+    assert requests[0].payload["arguments"] == {
+        "path": "ghi-chu.txt",
+        "content": "Noi dung moi",
+    }
+    follow_up = runner.calls[1]["prompt"]
+    assert "[TOOL RESULT]" in follow_up
+    note = follow_up.split("[TOOL RESULT]\n", 1)[1].split(
+        "\n[/TOOL RESULT]", 1,
+    )[0]
+    assert len(note) <= handlers_module._MAX_OUTCOME_SUMMARY_CHARS
+    assert json.loads(note)["output"]["preview"] == _CARD_PREVIEW
+    assert json.loads(note)["status"] == "succeeded"
+    assert runner.calls[0]["structured_tools_only"] is True
+    assert runner.calls[0]["agent_follow_up"] is False
+    assert runner.calls[1]["agent_follow_up"] is True
+    chunks = [reply.payload["text"] for reply in replies if reply.type == CHAT_CHUNK]
+    assert chunks == [_WRITE_FOLLOW_UP]
+    visible = chunks + [replies[-1].payload["raw_reply"]]
+    assert all("{" not in text for text in visible)
+    assert all(_CARD_PREVIEW not in text for text in visible)
+    assert all(reply.type != ERROR for reply in replies)
+    assert replies[-1].type == CHAT_DONE
+    assert replies[-1].payload["raw_reply"] == _WRITE_FOLLOW_UP
+
+
+def test_chat_mode_reads_workspace_file_without_cards() -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner(_SELECTION_JSON, _READ_FOLLOW_UP)
+    payload = _action_payload(
+        queue,
+        False,
+        prompt="Đọc file ghi chú cho anh",
+        model_tools=_read_tool(),
+    )
+
+    replies = asyncio.run(_run_tool_turn(
+        runner,
+        payload,
+        queue,
+        {
+            "status": "succeeded",
+            "output": {"content": "nội dung"},
+            "safe_summary": "Đã đọc tệp trong workspace.",
+            "error_code": None,
+            "duration_ms": 5,
+            "verification_state": "not_required",
+            "endpoint_role": None,
+            "endpoint_hash": None,
+        },
+    ))
+
+    requests = [reply for reply in replies if reply.type == CHAT_TOOL_REQUEST]
+    assert len(requests) == 1
+    assert requests[0].payload["tool_id"] == "files.read"
+    assert requests[0].payload["capability_class"] == "tool"
+    assert requests[0].payload["arguments"] == {"path": "ghi-chu.txt"}
+    serialized = [
+        json.dumps(reply.payload, ensure_ascii=False) for reply in replies
+    ]
+    assert all(
+        "approval" not in item and "preview" not in item for item in serialized
+    )
+    assert runner.calls[0]["structured_tools_only"] is True
+    assert runner.calls[1]["agent_follow_up"] is True
+    follow_up = runner.calls[1]["prompt"]
+    assert '"status":"succeeded"' in follow_up.replace(" ", "")
+    assert "nội dung" in follow_up
+    chunks = [reply.payload["text"] for reply in replies if reply.type == CHAT_CHUNK]
+    assert chunks == [_READ_FOLLOW_UP]
+    assert all("{" not in chunk for chunk in chunks)
+    assert all(reply.type != ERROR for reply in replies)
+    assert replies[-1].type == CHAT_DONE
+    assert replies[-1].payload["raw_reply"] == _READ_FOLLOW_UP
 
 
 def test_budget_exhaustion_forces_wrapup_without_tools() -> None:

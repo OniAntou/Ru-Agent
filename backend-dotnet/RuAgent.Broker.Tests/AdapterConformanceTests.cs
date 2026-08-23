@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using RuAgent.Broker.Policy;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Notes;
@@ -32,7 +33,9 @@ public sealed class AdapterConformanceTests
                 new ProcessTreeRunner(),
                 new ShellRuntimeResolver());
             ProcessRunResult result = await terminal.RunAsync(
+                MakeGrant(),
                 new TerminalRunRequest("dotnet", ".", "dotnet", ["--version"], 10_000),
+                confineWorkspace: true,
                 CancellationToken.None);
 
             Assert.Equal("bounded", read["content"]!.GetValue<string>());
@@ -109,6 +112,11 @@ public sealed class AdapterConformanceTests
         Directory.CreateDirectory(root);
         return root;
     }
+
+    private static PolicyGrant MakeGrant() => new(
+        "session-conformance-" + Guid.NewGuid().ToString("N"),
+        new HashSet<string>([ToolScope.TerminalExecute], StringComparer.Ordinal),
+        DateTimeOffset.UtcNow.AddMinutes(30));
 
     private static ProcessRunSpec Spec(
         string executable,

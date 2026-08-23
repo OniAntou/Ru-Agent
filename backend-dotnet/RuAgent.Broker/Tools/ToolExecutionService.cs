@@ -420,7 +420,8 @@ public sealed class ToolExecutionService : IToolInvoker
             ReadCapabilityClass(contextRequest.Payload),
             contextRequest.DeadlineMs,
             approved,
-            approvalToken);
+            approvalToken,
+            !_session.Scopes.Contains(ToolScope.TerminalNetwork));
         ToolExecutionOutcome outcome;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(Math.Clamp(context.DeadlineMs, 1, 300_000));
@@ -528,7 +529,12 @@ public sealed class ToolExecutionService : IToolInvoker
         JsonObject arguments,
         CancellationToken cancellationToken)
     {
+        var grant = new PolicyGrant(
+            context.SessionId,
+            _session.Scopes,
+            _session.Descriptor.ExpiresAt);
         var result = await _terminal.RunAsync(
+            grant,
             new TerminalRunRequest(
                 ReadOptionalString(arguments, "shell") ?? "powershell",
                 ReadOptionalString(arguments, "working_directory") ?? ".",
@@ -536,6 +542,7 @@ public sealed class ToolExecutionService : IToolInvoker
                 ReadArguments(arguments["arguments"]),
                 Math.Min(context.DeadlineMs, 120_000),
                 arguments["network"]?.GetValue<bool>() ?? false),
+            context.ConfinementRequired,
             cancellationToken).ConfigureAwait(false);
         return ProcessOutcome(result);
     }

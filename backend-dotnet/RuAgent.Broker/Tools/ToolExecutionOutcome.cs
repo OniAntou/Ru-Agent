@@ -10,7 +10,8 @@ public sealed record ToolExecutionContext(
     string CapabilityClass,
     int DeadlineMs,
     bool Approved,
-    string? ApprovalToken = null);
+    string? ApprovalToken = null,
+    bool ConfinementRequired = true);
 
 public sealed record ToolExecutionOutcome(
     string Status,

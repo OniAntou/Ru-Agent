@@ -26,9 +26,12 @@ public sealed class TerminalAdapter
     }
 
     public Task<ProcessRunResult> RunAsync(
+        PolicyGrant grant,
         TerminalRunRequest request,
+        bool confineWorkspace,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(grant);
         ArgumentNullException.ThrowIfNull(request);
         if (!AllowedExecutables.Contains(request.Executable)
             || request.Arguments.Count > 64
@@ -37,13 +40,13 @@ public sealed class TerminalAdapter
             throw new UnauthorizedAccessException("terminal_command_not_allowed");
         }
 
-        var workingDirectory = _workspace.Resolve(request.RelativeWorkingDirectory);
-        var environment = SafeEnvironment();
-        if (request.Network)
+        if (request.Network && !grant.Scopes.Contains(ToolScope.TerminalNetwork))
         {
             throw new UnauthorizedAccessException("terminal_network_requires_approval");
         }
 
+        var workingDirectory = ResolveWorkingDirectory(request.RelativeWorkingDirectory, confineWorkspace);
+        var environment = SafeEnvironment();
         return _runner.RunAsync(
             new ProcessRunSpec(
                 request.Executable,
@@ -98,6 +101,62 @@ public sealed class TerminalAdapter
                 request.TimeoutMs,
                 256 * 1024),
             cancellationToken);
+    }
+
+    private string ResolveWorkingDirectory(string relativeWorkingDirectory, bool confineWorkspace)
+    {
+        if (confineWorkspace)
+        {
+            return _workspace.Resolve(relativeWorkingDirectory);
+        }
+
+        if (string.IsNullOrWhiteSpace(relativeWorkingDirectory))
+        {
+            return _workspace.Root;
+        }
+
+        if (relativeWorkingDirectory.Contains('\0'))
+        {
+            throw new UnauthorizedAccessException("workspace_path_invalid");
+        }
+
+        var candidate = relativeWorkingDirectory.Equals(".", StringComparison.Ordinal)
+            ? _workspace.Root
+            : Path.IsPathRooted(relativeWorkingDirectory)
+                ? Path.GetFullPath(relativeWorkingDirectory)
+                : Path.GetFullPath(Path.Combine(_workspace.Root, relativeWorkingDirectory));
+        EnsureNotProtectedLocation(candidate);
+        if (!Directory.Exists(candidate))
+        {
+            throw new FileNotFoundException("terminal_cwd_missing", candidate);
+        }
+
+        return candidate;
+    }
+
+    private static void EnsureNotProtectedLocation(string candidate)
+    {
+        foreach (var protectedLocation in ProtectedLocations())
+        {
+            var baseDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(protectedLocation));
+            if (candidate.Equals(baseDirectory, StringComparison.OrdinalIgnoreCase)
+                || candidate.StartsWith(baseDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new UnauthorizedAccessException("terminal_cwd_not_allowed");
+            }
+        }
+    }
+
+    private static IEnumerable<string> ProtectedLocations()
+    {
+        yield return ProtectedLocation("WINDIR", Environment.SpecialFolder.Windows);
+        yield return ProtectedLocation("ProgramFiles", Environment.SpecialFolder.ProgramFiles);
+    }
+
+    private static string ProtectedLocation(string variable, Environment.SpecialFolder fallback)
+    {
+        var value = Environment.GetEnvironmentVariable(variable);
+        return string.IsNullOrWhiteSpace(value) ? Environment.GetFolderPath(fallback) : value;
     }
 
     private static IReadOnlyDictionary<string, string> SafeEnvironment()

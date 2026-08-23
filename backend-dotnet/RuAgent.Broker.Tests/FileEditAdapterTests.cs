@@ -84,9 +84,14 @@ public sealed class FileEditAdapterTests : IDisposable
             stream.WriteByte((byte)'a');
         }
 
+        var before = GC.GetAllocatedBytesForCurrentThread();
         var error = Assert.Throws<FileEditException>(() => _files.Edit("big.bin", "b", "z"));
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.Equal("file_too_large", error.Code);
+        Assert.True(
+            allocated < 1024 * 1024,
+            $"Oversized edit allocated {allocated} bytes before rejection.");
     }
 
     public void Dispose() => Directory.Delete(_workspace.Root, recursive: true);

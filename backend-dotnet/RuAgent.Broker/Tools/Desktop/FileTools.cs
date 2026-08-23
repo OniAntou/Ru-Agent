@@ -57,9 +57,10 @@ public sealed class FileTools
             throw new ArgumentOutOfRangeException(nameof(maxBytes));
         }
 
-        var bytes = File.ReadAllBytes(path);
-        var truncated = bytes.Length > maxBytes;
-        var content = Encoding.UTF8.GetString(bytes, 0, Math.Min(bytes.Length, maxBytes));
+        var observedLength = new FileInfo(path).Length;
+        var read = ReadAtMost(path, maxBytes);
+        var truncated = observedLength > maxBytes || read.Truncated;
+        var content = Encoding.UTF8.GetString(read.Bytes);
         return new JsonObject
         {
             ["path"] = _workspace.ToRelative(path),
@@ -100,13 +101,18 @@ public sealed class FileTools
             throw new FileEditException("file_not_found");
         }
 
-        var bytes = File.ReadAllBytes(path);
-        if (bytes.Length > MaxEditBytes)
+        if (new FileInfo(path).Length > MaxEditBytes)
         {
             throw new FileEditException("file_too_large");
         }
 
-        var text = Encoding.UTF8.GetString(bytes);
+        var read = ReadAtMost(path, checked((int)MaxEditBytes));
+        if (read.Truncated)
+        {
+            throw new FileEditException("file_too_large");
+        }
+
+        var text = Encoding.UTF8.GetString(read.Bytes);
         var matches = CountOccurrences(text, oldString);
         if (matches != expectedOccurrences)
         {
@@ -116,6 +122,33 @@ public sealed class FileTools
         var updated = text.Replace(oldString, newString ?? string.Empty, StringComparison.Ordinal);
         File.WriteAllBytes(path, new UTF8Encoding(false).GetBytes(updated));
         return new JsonObject { ["path"] = _workspace.ToRelative(path), ["replacements"] = matches };
+    }
+
+    private static BoundedRead ReadAtMost(string path, int maxBytes)
+    {
+        var buffer = new byte[checked(maxBytes + 1)];
+        var total = 0;
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 4096,
+            FileOptions.SequentialScan);
+        while (total < buffer.Length)
+        {
+            var count = stream.Read(buffer, total, buffer.Length - total);
+            if (count == 0)
+            {
+                break;
+            }
+
+            total += count;
+        }
+
+        var truncated = total > maxBytes;
+        Array.Resize(ref buffer, Math.Min(total, maxBytes));
+        return new BoundedRead(buffer, truncated);
     }
 
     private static int CountOccurrences(string text, string value)
@@ -130,4 +163,6 @@ public sealed class FileTools
 
         return count;
     }
+
+    private readonly record struct BoundedRead(byte[] Bytes, bool Truncated);
 }

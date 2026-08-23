@@ -16,6 +16,7 @@ _BEARER_PATTERN = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
 _KEY_PATTERN = re.compile(r"(?:sk-|key=)[a-zA-Z0-9_\-]{8,}", re.IGNORECASE)
 _CONTROL_MARKER_PATTERN = re.compile(r"\[\[.*?\]\]", re.IGNORECASE)
 _PATH_PATTERN = re.compile(r"(?:[a-zA-Z]:\\|\b/)[a-zA-Z0-9_\-\\/.]+", re.IGNORECASE)
+_MAX_ACTIVITY_ORIGINAL_LENGTH = 50_000
 
 
 def get_default_log_root() -> Path:
@@ -87,6 +88,15 @@ def format_activity_preview(text: Optional[str], max_length: int = 160) -> Tuple
     return preview, orig_len, redacted
 
 
+def _normalize_original_length(metadata: Any, computed_length: int) -> int:
+    fallback = min(max(computed_length, 0), _MAX_ACTIVITY_ORIGINAL_LENGTH)
+    if isinstance(metadata, bool) or not isinstance(metadata, int):
+        return fallback
+    if metadata < 0 or metadata > _MAX_ACTIVITY_ORIGINAL_LENGTH:
+        return fallback
+    return metadata
+
+
 def sanitize_activity_event(event: dict) -> dict:
     evt = dict(event)
 
@@ -120,7 +130,7 @@ def sanitize_activity_event(event: dict) -> dict:
 
         sanitized_data["role"] = role
         sanitized_data["preview"] = preview
-        sanitized_data["original_length"] = int(raw_data.get("original_length") or orig_len)
+        sanitized_data["original_length"] = _normalize_original_length(raw_data.get("original_length"), orig_len)
         sanitized_data["redacted"] = bool(raw_data.get("redacted") or redacted)
 
     elif event_type == "emotion":
@@ -136,17 +146,17 @@ def sanitize_activity_event(event: dict) -> dict:
         sanitized_data["status"] = status
 
     elif event_type == "observation_reaction":
-        if "text" in raw_data and raw_data["text"] is not None:
-            text = str(raw_data["text"]).strip()
-            sanitized_data["preview"] = text[:120]
-            sanitized_data["original_length"] = len(text)
-            sanitized_data["redacted"] = False
+        text = str(raw_data.get("text") or raw_data.get("preview") or "").strip()
+        preview, orig_len, redacted = format_activity_preview(text, max_length=120)
+        sanitized_data["preview"] = preview
+        sanitized_data["original_length"] = _normalize_original_length(raw_data.get("original_length"), orig_len)
+        sanitized_data["redacted"] = bool(raw_data.get("redacted") or redacted)
         if "scene" in raw_data and raw_data["scene"]:
-            sanitized_data["scene"] = str(raw_data["scene"])[:100]
+            sanitized_data["scene"] = str(raw_data["scene"]).strip()[:100]
         if "event" in raw_data and raw_data["event"]:
-            sanitized_data["event"] = str(raw_data["event"])[:100]
+            sanitized_data["event"] = str(raw_data["event"]).strip()[:100]
         if "observation_id" in raw_data and raw_data["observation_id"]:
-            sanitized_data["observation_id"] = str(raw_data["observation_id"])[:64]
+            sanitized_data["observation_id"] = str(raw_data["observation_id"]).strip()[:64]
 
     else:
         allowed_scalar_keys = {"status", "category", "duration_ms", "error_code", "observation_id"}
@@ -230,7 +240,8 @@ class ActivityOutboxWriter:
                 # Give worker thread a moment if it's currently writing
                 with self._write_lock:
                     pass
-                if not self._drain_batch():
+                batch = self._drain_batch()
+                if not batch:
                     break
             if not self._write_batch(batch):
                 break

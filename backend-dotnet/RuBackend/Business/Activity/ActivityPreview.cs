@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 
 public static class ActivityPreview
 {
+    private const int MaxActivityOriginalLength = 50_000;
     private static readonly Regex UrlPattern = new(@"https?://\S+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex BearerPattern = new(@"Bearer\s+\S+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex KeyPattern = new(@"(?:sk-|key=)[a-zA-Z0-9_\-]{8,}", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -105,10 +106,7 @@ public static class ActivityPreview
 
             var (preview, origLen, redacted) = FormatPreview(rawContent);
 
-            if (rawData.TryGetPropertyValue("original_length", out var ol) && ol is JsonValue olv && olv.TryGetValue<int>(out var parsedOl))
-            {
-                origLen = parsedOl;
-            }
+            origLen = NormalizeOriginalLength(rawData, "original_length", origLen);
             if (rawData.TryGetPropertyValue("redacted", out var red) && red is JsonValue redv && redv.TryGetValue<bool>(out var parsedRed))
             {
                 redacted = redacted || parsedRed;
@@ -144,6 +142,35 @@ public static class ActivityPreview
 
             sanitizedData["category"] = category;
             sanitizedData["status"] = status;
+        }
+        else if (type == "observation_reaction")
+        {
+            string? rawPreview = null;
+            if (rawData.TryGetPropertyValue("text", out var textValue) && textValue is JsonValue textJson)
+            {
+                textJson.TryGetValue<string>(out rawPreview);
+            }
+            else if (rawData.TryGetPropertyValue("preview", out var previewValue) && previewValue is JsonValue previewJson)
+            {
+                previewJson.TryGetValue<string>(out rawPreview);
+            }
+
+            var (preview, originalLength, redacted) = FormatPreview(rawPreview, 120);
+            originalLength = NormalizeOriginalLength(rawData, "original_length", originalLength);
+            if (rawData.TryGetPropertyValue("redacted", out var redactedValue) &&
+                redactedValue is JsonValue redactedJson &&
+                redactedJson.TryGetValue<bool>(out var parsedRedacted))
+            {
+                redacted = redacted || parsedRedacted;
+            }
+
+            sanitizedData["preview"] = preview;
+            sanitizedData["original_length"] = originalLength;
+            sanitizedData["redacted"] = redacted;
+
+            CopyBoundedString(rawData, sanitizedData, "scene", 100);
+            CopyBoundedString(rawData, sanitizedData, "event", 100);
+            CopyBoundedString(rawData, sanitizedData, "observation_id", 64);
         }
         else if (type == "observation")
         {
@@ -186,5 +213,29 @@ public static class ActivityPreview
             type,
             evt.SessionId,
             sanitizedData);
+    }
+
+    private static void CopyBoundedString(JsonObject source, JsonObject target, string key, int maxLength)
+    {
+        if (source.TryGetPropertyValue(key, out var value) && value is JsonValue json && json.TryGetValue<string>(out var text) && !string.IsNullOrWhiteSpace(text))
+        {
+            var trimmed = text.Trim();
+            target[key] = trimmed[..Math.Min(maxLength, trimmed.Length)];
+        }
+    }
+
+    private static int NormalizeOriginalLength(JsonObject data, string key, int computedLength)
+    {
+        var fallback = Math.Clamp(computedLength, 0, MaxActivityOriginalLength);
+        if (!data.TryGetPropertyValue(key, out var value) ||
+            value is not JsonValue json ||
+            !json.TryGetValue<int>(out var parsed) ||
+            parsed < 0 ||
+            parsed > MaxActivityOriginalLength)
+        {
+            return fallback;
+        }
+
+        return parsed;
     }
 }

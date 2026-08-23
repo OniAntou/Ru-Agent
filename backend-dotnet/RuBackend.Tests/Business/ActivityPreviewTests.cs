@@ -96,4 +96,63 @@ public sealed class ActivityPreviewTests
         Assert.Equal(123.46, sanitizedObs.Data["duration_ms"]!.GetValue<double>());
         Assert.False(sanitizedObs.Data.ContainsKey("screenshot_b64"));
     }
+
+    [Fact]
+    public void SanitizeEvent_preserves_bounded_observation_reaction_preview_without_private_markers()
+    {
+        var text = "React [[SCREENSHOT:private]] Bearer token123 and sk-1234567890abcdef";
+        var rawEvent = new ActivityEvent(null, 100, "2026-08-20T00:00:00Z", "observation_reaction", "s1", new JsonObject
+        {
+            ["text"] = text,
+            ["scene"] = new string('s', 150),
+            ["event"] = new string('e', 150),
+            ["observation_id"] = new string('o', 150),
+            ["private_payload"] = "must not persist",
+        });
+
+        var sanitized = ActivityPreview.SanitizeEvent(rawEvent);
+        var data = sanitized.Data;
+
+        Assert.Equal("observation_reaction", sanitized.Type);
+        Assert.Equal(text.Length, data["original_length"]!.GetValue<int>());
+        Assert.True(data["redacted"]!.GetValue<bool>());
+        Assert.DoesNotContain("[[SCREENSHOT", data["preview"]!.GetValue<string>());
+        Assert.DoesNotContain("Bearer token123", data["preview"]!.GetValue<string>());
+        Assert.DoesNotContain("sk-1234567890abcdef", data["preview"]!.GetValue<string>());
+        Assert.True(data["preview"]!.GetValue<string>().Length <= 120);
+        Assert.True(data["scene"]!.GetValue<string>().Length <= 100);
+        Assert.True(data["event"]!.GetValue<string>().Length <= 100);
+        Assert.True(data["observation_id"]!.GetValue<string>().Length <= 64);
+        Assert.False(data.ContainsKey("private_payload"));
+    }
+
+    [Theory]
+    [InlineData("string")]
+    [InlineData("negative")]
+    [InlineData("huge")]
+    public void SanitizeEvent_uses_bounded_original_length_fallback_for_invalid_metadata(string metadataKind)
+    {
+        const string text = "A short activity";
+        JsonNode metadata = metadataKind switch
+        {
+            "string" => JsonValue.Create("25")!,
+            "negative" => JsonValue.Create(-1)!,
+            "huge" => JsonValue.Create(50_001_000)!,
+            _ => throw new ArgumentOutOfRangeException(nameof(metadataKind)),
+        };
+
+        foreach (var (type, textKey) in new[] { ("chat", "content"), ("observation_reaction", "text") })
+        {
+            var rawEvent = new ActivityEvent(null, 100, "2026-08-20T00:00:00Z", type, "s1", new JsonObject
+            {
+                [textKey] = text,
+                ["original_length"] = metadata.DeepClone(),
+            });
+
+            var sanitized = ActivityPreview.SanitizeEvent(rawEvent);
+
+            Assert.Equal(text.Length, sanitized.Data["original_length"]!.GetValue<int>());
+            Assert.InRange(sanitized.Data["original_length"]!.GetValue<int>(), 0, 50_000);
+        }
+    }
 }

@@ -112,6 +112,7 @@ namespace RuApp.Views
                 "chat" => FormatChat(e.Data),
                 "emotion" => FormatEmotion(e.Data),
                 "vts_action" => FormatVts(e.Data),
+                "observation_reaction" => FormatObservationReaction(e.Data),
                 _ => e.Type ?? "",
             };
 
@@ -123,10 +124,23 @@ namespace RuApp.Views
 
             return e.Type switch
             {
-                "chat" => new LogRow(time, "CHAT", LogRowKind.Chat, summary, detail),
-                "emotion" => new LogRow(time, "CẢM XÚC", LogRowKind.Emotion, summary, detail),
-                "vts_action" => new LogRow(time, "VTS", LogRowKind.Vts, summary, detail),
-                _ => new LogRow(time, e.Type ?? "?", LogRowKind.Info, summary, detail),
+                "chat" => new LogRow(time, GetActivityBadge(e.Type), LogRowKind.Chat, summary, detail),
+                "emotion" => new LogRow(time, GetActivityBadge(e.Type), LogRowKind.Emotion, summary, detail),
+                "vts_action" => new LogRow(time, GetActivityBadge(e.Type), LogRowKind.Vts, summary, detail),
+                "observation_reaction" => new LogRow(time, GetActivityBadge(e.Type), LogRowKind.Observation, summary, detail),
+                _ => new LogRow(time, GetActivityBadge(e.Type), LogRowKind.Info, summary, detail),
+            };
+        }
+
+        private static string GetActivityBadge(string? type)
+        {
+            return type switch
+            {
+                "chat" => "CHAT",
+                "emotion" => "CẢM XÚC",
+                "vts_action" => "VTS",
+                "observation_reaction" => "QUAN SÁT",
+                _ => type ?? "?",
             };
         }
 
@@ -181,6 +195,36 @@ namespace RuApp.Views
             catch
             {
                 return "Hành động VTS";
+            }
+        }
+
+        private static string FormatObservationReaction(JsonElement data)
+        {
+            try
+            {
+                string preview = data.TryGetProperty("preview", out var previewValue)
+                    ? previewValue.GetString() ?? ""
+                    : "";
+                if (!string.IsNullOrWhiteSpace(preview))
+                {
+                    return $"Quan sát: {preview}";
+                }
+
+                string scene = data.TryGetProperty("scene", out var sceneValue)
+                    ? sceneValue.GetString() ?? ""
+                    : "";
+                string observedEvent = data.TryGetProperty("event", out var eventValue)
+                    ? eventValue.GetString() ?? ""
+                    : "";
+                if (!string.IsNullOrWhiteSpace(scene) && !string.IsNullOrWhiteSpace(observedEvent))
+                {
+                    return $"Quan sát: {scene} ({observedEvent})";
+                }
+                return "Phản ứng quan sát";
+            }
+            catch
+            {
+                return "Phản ứng quan sát";
             }
         }
 
@@ -239,6 +283,7 @@ namespace RuApp.Views
         Chat,
         Emotion,
         Vts,
+        Observation,
         Info,
     }
 
@@ -247,6 +292,7 @@ namespace RuApp.Views
         private static readonly SolidColorBrush ChatBrush = FromArgb(0xFF, 0x3C, 0x87, 0xFF);
         private static readonly SolidColorBrush EmotionBrush = FromArgb(0xFF, 0xB0, 0x6E, 0xF0);
         private static readonly SolidColorBrush VtsBrush = FromArgb(0xFF, 0xFF, 0x5C, 0x92);
+        private static readonly SolidColorBrush ObservationBrush = FromArgb(0xFF, 0x2D, 0xC9, 0xB8);
         private static readonly SolidColorBrush InfoBrush = FromArgb(0xFF, 0x8A, 0x8A, 0x8A);
 
         public string Time { get; }
@@ -268,6 +314,7 @@ namespace RuApp.Views
                 LogRowKind.Chat => ChatBrush,
                 LogRowKind.Emotion => EmotionBrush,
                 LogRowKind.Vts => VtsBrush,
+                LogRowKind.Observation => ObservationBrush,
                 _ => InfoBrush,
             };
             LabelBrush = DotBrush;

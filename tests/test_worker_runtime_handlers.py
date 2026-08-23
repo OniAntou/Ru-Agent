@@ -1253,6 +1253,138 @@ def test_holdback_streams_prose_but_buffers_braced_reply() -> None:
     assert forwarded[-1] == "A"
 
 
+def test_missing_agent_channel_terminates_tool_class_selection(monkeypatch) -> None:
+    diagnostic_writer = _RecordingDiagnosticWriter()
+    monkeypatch.setattr(
+        handlers_module,
+        "get_diagnostic_log_writer",
+        lambda: diagnostic_writer,
+    )
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner(*([_SELECTION_JSON] * 12))
+    payload = _action_payload(
+        queue,
+        True,
+        prompt="Đọc file ghi chú cho anh",
+        model_tools=_read_tool(),
+    )
+    payload.pop("__worker_tool_result_queue")
+    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+
+    replies = asyncio.run(collect(handlers.chat(payload, asyncio.Event())))
+
+    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
+    assert all(reply.type != ERROR for reply in replies)
+    assert len(runner.calls) == 1
+    assert replies[-1].type == CHAT_DONE
+    assert replies[-1].payload["raw_reply"] == (
+        "Tính năng điều khiển chưa sẵn sàng trong phiên này."
+    )
+    assert replies[-1].payload["action_outcome"] == {
+        "schema_version": 1,
+        "tool_id": "files.read",
+        "tool_version": "1.0.0",
+        "status": "failed",
+        "reason_code": "agent_unavailable",
+    }
+    assert [event.event_code for event in diagnostic_writer.events] == [
+        "tool.intent.rejected"
+    ]
+    rejected = diagnostic_writer.events[0]
+    assert rejected.error_code == "agent_unavailable"
+    assert rejected.tool_id == "files.read"
+
+
+def test_budget_exhausted_wrapup_suppresses_braced_garbage(monkeypatch) -> None:
+    diagnostic_writer = _RecordingDiagnosticWriter()
+    monkeypatch.setattr(
+        handlers_module,
+        "get_diagnostic_log_writer",
+        lambda: diagnostic_writer,
+    )
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner(*([_SELECTION_JSON] * 10), '{"unexpected": true}')
+    payload = _action_payload(
+        queue,
+        True,
+        prompt="Đọc file ghi chú cho anh",
+        model_tools=_read_tool(),
+    )
+
+    replies = asyncio.run(_run_tool_turn(runner, payload, queue, _read_receipt()))
+
+    requests = [reply for reply in replies if reply.type == CHAT_TOOL_REQUEST]
+    assert len(requests) == 10
+    assert len(runner.calls) == 11
+    wrapup = runner.calls[10]
+    assert wrapup["action_capabilities"] == ()
+    assert wrapup["agent_follow_up"] is True
+    chunks = [reply.payload["text"] for reply in replies if reply.type == CHAT_CHUNK]
+    assert chunks == []
+    assert all(reply.type != ERROR for reply in replies)
+    assert replies[-1].type == CHAT_DONE
+    assert replies[-1].payload["raw_reply"] == SELECTION_INVALID_COPY
+    invalid_events = [
+        event for event in diagnostic_writer.events
+        if event.event_code == "selection_invalid"
+    ]
+    assert len(invalid_events) == 1
+
+
+class _RecordingMoodTracker:
+    def __init__(self) -> None:
+        self.state = SimpleNamespace(describe_for_prompt=lambda: "")
+        self.observed: list[str] = []
+        self.updates: list[str] = []
+
+    def observe_user_input(self, prompt: str) -> None:
+        self.observed.append(prompt)
+
+    def update_from_reply_emotion(self, emotion: str) -> None:
+        self.updates.append(emotion)
+
+
+def test_mood_tracker_never_learns_from_machine_json() -> None:
+    tracker = _RecordingMoodTracker()
+    runner = SequencedRunner("{not json")
+    handlers = build_runtime_handlers(
+        RuntimeDependencies(runner=runner, mood_tracker=tracker)
+    )
+    payload = _action_payload(
+        _make_queue(),
+        True,
+        prompt="Đọc file ghi chú cho anh",
+        model_tools=_read_tool(),
+    )
+
+    suppressed = asyncio.run(collect(handlers.chat(payload, asyncio.Event())))
+    assert suppressed[-1].payload["raw_reply"] == SELECTION_INVALID_COPY
+    assert tracker.updates == []
+    assert tracker.observed == ["Đọc file ghi chú cho anh"]
+
+    prose_runner = SequencedRunner("Em nghe đây.")
+    prose_tracker = _RecordingMoodTracker()
+    prose_handlers = build_runtime_handlers(
+        RuntimeDependencies(runner=prose_runner, mood_tracker=prose_tracker)
+    )
+
+    asyncio.run(collect(prose_handlers.chat(
+        _action_payload(
+            _make_queue(),
+            False,
+            prompt="Kể em nghe chuyện hôm nay",
+            model_tools=[],
+        ),
+        asyncio.Event(),
+    )))
+
+    assert len(prose_tracker.updates) == 1
+
+
+def _make_queue() -> asyncio.Queue:
+    return asyncio.Queue()
+
+
 class FakeVtsManager:
     def __init__(self) -> None:
         self.is_connected = True

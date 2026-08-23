@@ -310,7 +310,10 @@ async def _chat_handler(
                         action_capabilities if advertise_tools else ()
                     ),
                 )
-                if dependencies.mood_tracker is not None:
+                if dependencies.mood_tracker is not None and not (
+                    isinstance(raw_reply, str)
+                    and raw_reply.lstrip().startswith("{")
+                ):
                     _, emotion = extract_reply_emotion(raw_reply)
                     dependencies.mood_tracker.update_from_reply_emotion(emotion)
                 return raw_reply
@@ -569,6 +572,7 @@ async def _chat_handler(
                 return
 
             remaining = MAX_TOOL_CALLS_PER_TURN
+            passes_left = MAX_TOOL_CALLS_PER_TURN + 2
             outcome_notes: list[str] = []
             first_pass = True
 
@@ -582,21 +586,12 @@ async def _chat_handler(
 
             final_text = ""
             while True:
-                if remaining <= 0:
-                    raw_reply = await asyncio.to_thread(
-                        generate_once,
-                        follow_up_prompt(),
-                        request.turns,
-                        stream=True,
-                        observe_user=False,
-                        phase="tool_result",
-                        action_capabilities=(),
-                    )
-                    if not isinstance(raw_reply, str):
-                        raise TypeError("model reply must be text")
-                    final_text = raw_reply
+                passes_left -= 1
+                if passes_left < 0:
+                    final_text = SELECTION_INVALID_COPY
                     break
 
+                exhausted = remaining <= 0
                 holdback = _StreamingHoldback(
                     enabled=bool(request.model_tools),
                     sink=on_stream_delta,
@@ -609,7 +604,7 @@ async def _chat_handler(
                     stream=True,
                     observe_user=first_pass,
                     phase="normal" if first_pass else "tool_result",
-                    action_capabilities=request.model_tools,
+                    action_capabilities=() if exhausted else request.model_tools,
                     delta_sink=holdback.forward,
                     reset_sink=holdback.reset,
                 )
@@ -621,7 +616,7 @@ async def _chat_handler(
                 try:
                     selection = _parse_selection_candidate(
                         candidate_text,
-                        request.model_tools,
+                        () if exhausted else request.model_tools,
                     )
                 except ActionProtocolError:
                     _record_intent(
@@ -640,36 +635,36 @@ async def _chat_handler(
                     break
 
                 if not isinstance(tool_result_queue, asyncio.Queue):
-                    if selection.capability_class == "native_mutation":
-                        outcome = ActionOutcome(
-                            1,
-                            selection.tool_id,
-                            selection.tool_version,
-                            "failed",
-                            "agent_unavailable",
-                        )
-                        publish(
-                            WorkerReply(
-                                CHAT_DONE,
-                                {
-                                    "raw_reply": render_action_failure(
-                                        safe_action_noun(selection.tool_id),
-                                        "agent_unavailable",
-                                    ),
-                                    "action_outcome": outcome.to_payload(),
-                                },
-                            )
-                        )
-                        return
-                    outcome_notes.append(
-                        _bounded_outcome_summary(
-                            selection,
-                            status="failed",
-                            error_code="agent_unavailable",
+                    _record_intent(
+                        "tool.intent.rejected",
+                        correlation_id=correlation_id,
+                        status="failed",
+                        error_code="agent_unavailable",
+                        tool_id=selection.tool_id,
+                        tool_version=selection.tool_version,
+                    )
+                    outcome = ActionOutcome(
+                        1,
+                        selection.tool_id,
+                        selection.tool_version,
+                        "failed",
+                        "agent_unavailable",
+                    )
+                    publish(
+                        WorkerReply(
+                            CHAT_DONE,
+                            {
+                                "raw_reply": render_action_failure(
+                                    safe_action_noun(selection.tool_id),
+                                    "agent_unavailable",
+                                ),
+                                "action_outcome": outcome.to_payload(),
+                            },
                         )
                     )
-                    continue
+                    return
 
+                remaining -= 1
                 _record_intent(
                     "tool.intent.resolved",
                     correlation_id=correlation_id,
@@ -681,7 +676,6 @@ async def _chat_handler(
                 tool_request_id, tool_correlation_id, deadline_at = (
                     publish_chat_tool_request(request, selection, correlation_id)
                 )
-                remaining -= 1
 
                 if selection.capability_class == "native_mutation":
                     await resolve_native_action_outcome(

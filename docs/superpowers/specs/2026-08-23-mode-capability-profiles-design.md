@@ -181,3 +181,24 @@ cleanup apply in all modes.
 - Grant churn is contained: one Broker session per conversational turn-loop
   replaces today's per-call sessions, reducing connection churn while keeping
   per-call policy re-evaluation.
+
+## Amendment (post-final-review)
+
+Rulings recorded after the final review wave (2026-08-23):
+
+1. Full Access shell matches the approved spec exactly: no approval card, no
+   workspace confinement, system-wide execution. The session grant's
+   `terminal.network` scope is the single marker: `ToolPolicyEngine` waives
+   `terminal.shell` approval, `ToolExecutionService` derives confinement from
+   the same check, and `TerminalAdapter.RunApprovedShellAsync` honors the flag
+   with the shared cwd resolution (final-path denylist still refuses
+   protected locations). Agent-profile shell keeps the card plus one-time
+   token path unchanged.
+2. Volume-in-Chat decline is accepted as a deliberate regression with honest
+   copy: deterministic volume intents in Chat fail typed
+   (`capability_unavailable`) and tell the user to enable Agent mode
+   ("Chế độ Chat chỉ đọc dữ liệu. Bật Agent mode để em điều khiển âm lượng
+   nha.") instead of implying a transient outage.
+3. README no longer claims `system.volume` sits behind previewed approval
+   cards: volume is card-free with verified readback and requires Agent mode;
+   Chat declines volume commands with guidance.

@@ -26,6 +26,7 @@ from ru_runtime.worker.v1.protocol import (
     VTS_CATALOG,
 )
 from ru_runtime.worker.v1.handlers import (
+    SELECTION_INVALID_COPY,
     RuntimeDependencies,
     RuntimeHttpResponse,
     build_runtime_handlers,
@@ -620,6 +621,39 @@ def _model_tools() -> list[dict[str, object]]:
     ]
 
 
+def _read_tool() -> list[dict[str, object]]:
+    return [
+        {
+            "tool_id": "files.read",
+            "tool_version": "1.0.0",
+            "scopes": ["workspace.read"],
+            "availability": "executable",
+            "model_enabled": True,
+            "capability_class": "tool",
+            "verification_required": False,
+        }
+    ]
+
+
+_SELECTION_JSON = (
+    '{"tool_id":"files.read","tool_version":"1.0.0",'
+    '"arguments":{"path":"ghi-chu.txt"}}'
+)
+
+
+def _read_receipt() -> dict[str, object]:
+    return {
+        "status": "succeeded",
+        "output": {"text": "hello"},
+        "safe_summary": "Đã đọc tệp trong workspace.",
+        "error_code": None,
+        "duration_ms": 5,
+        "verification_state": "not_required",
+        "endpoint_role": None,
+        "endpoint_hash": None,
+    }
+
+
 def _action_payload(
     tool_result_queue: asyncio.Queue,
     agent_mode: bool,
@@ -686,6 +720,29 @@ async def _run_action_turn(
     return replies
 
 
+async def _run_tool_turn(
+    runner: SequencedRunner,
+    payload: dict,
+    queue: asyncio.Queue,
+    receipt: dict[str, object],
+) -> list[WorkerReply]:
+    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+    replies: list[WorkerReply] = []
+    stream = handlers.chat(payload, asyncio.Event())
+    async for reply in stream:
+        replies.append(reply)
+        if reply.type == CHAT_TOOL_REQUEST:
+            await queue.put(
+                {
+                    "request_id": reply.payload["request_id"],
+                    "session_id": reply.payload["session_id"],
+                    "correlation_id": reply.payload["correlation_id"],
+                    **receipt,
+                }
+            )
+    return replies
+
+
 @pytest.mark.parametrize("agent_mode", (False, True))
 def test_explicit_volume_command_emits_one_request_without_model_generation(
     agent_mode: bool,
@@ -744,7 +801,7 @@ def test_ordinary_normal_chat_streams_without_entering_selection() -> None:
     assert [reply.type for reply in replies] == [CHAT_RESET, CHAT_CHUNK, CHAT_DONE]
 
 
-def test_ordinary_agent_chat_uses_normal_streaming_generation() -> None:
+def test_ordinary_agent_chat_advertises_tools_but_streams_plain_answer() -> None:
     queue: asyncio.Queue = asyncio.Queue()
     runner = SequencedRunner("Em đang nghe anh đây.")
     handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
@@ -755,7 +812,7 @@ def test_ordinary_agent_chat_uses_normal_streaming_generation() -> None:
     )))
 
     assert len(runner.calls) == 1
-    assert runner.calls[0]["structured_tools_only"] is False
+    assert runner.calls[0]["structured_tools_only"] is True
     assert runner.calls[0]["agent_follow_up"] is False
     assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
     assert [reply.type for reply in replies] == [CHAT_RESET, CHAT_CHUNK, CHAT_DONE]
@@ -978,7 +1035,7 @@ def test_unrelated_follow_up_ignores_bounded_outcome_and_uses_normal_model() -> 
     replies = asyncio.run(collect(handlers.chat(payload, asyncio.Event())))
 
     assert len(runner.calls) == 1
-    assert runner.calls[0]["structured_tools_only"] is False
+    assert runner.calls[0]["agent_follow_up"] is False
     assert replies[-1].payload == {"raw_reply": "Em nghe đây."}
 
 
@@ -1057,6 +1114,143 @@ def test_intent_diagnostics_are_bounded_and_never_include_command_values(
         "device",
         "exception",
     }.isdisjoint(data)
+
+
+def test_agent_selection_runs_tool_then_follow_up_answer() -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner(_SELECTION_JSON, "Xin chào!")
+    payload = _action_payload(
+        queue,
+        True,
+        prompt="Đọc file ghi chú cho anh",
+        model_tools=_read_tool(),
+    )
+
+    replies = asyncio.run(_run_tool_turn(runner, payload, queue, _read_receipt()))
+
+    requests = [reply for reply in replies if reply.type == CHAT_TOOL_REQUEST]
+    assert len(requests) == 1
+    assert requests[0].payload["tool_id"] == "files.read"
+    assert requests[0].payload["tool_version"] == "1.0.0"
+    assert requests[0].payload["capability_class"] == "tool"
+    assert requests[0].payload["arguments"] == {"path": "ghi-chu.txt"}
+    chunks = [reply.payload["text"] for reply in replies if reply.type == CHAT_CHUNK]
+    assert chunks == ["Xin chào!"]
+    assert all("{" not in chunk for chunk in chunks)
+    assert replies[-1].type == CHAT_DONE
+    assert replies[-1].payload["raw_reply"] == "Xin chào!"
+    assert len(runner.calls) == 2
+    assert runner.calls[0]["structured_tools_only"] is True
+    assert runner.calls[0]["agent_follow_up"] is False
+    assert runner.calls[1]["agent_follow_up"] is True
+    assert "[TOOL RESULT]" in runner.calls[1]["prompt"]
+    assert '"status":"succeeded"' in runner.calls[1]["prompt"].replace(" ", "")
+    assert "hello" in runner.calls[1]["prompt"]
+
+
+def test_budget_exhaustion_forces_wrapup_without_tools() -> None:
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner(
+        *([_SELECTION_JSON] * 10),
+        "Ngân sách công cụ đã hết rồi anh.",
+    )
+    payload = _action_payload(
+        queue,
+        True,
+        prompt="Đọc file ghi chú cho anh",
+        model_tools=_read_tool(),
+    )
+
+    replies = asyncio.run(_run_tool_turn(runner, payload, queue, _read_receipt()))
+
+    requests = [reply for reply in replies if reply.type == CHAT_TOOL_REQUEST]
+    assert len(requests) == 10
+    assert len(runner.calls) == 11
+    wrapup = runner.calls[10]
+    assert wrapup["action_capabilities"] == ()
+    assert wrapup["structured_tools_only"] is False
+    assert wrapup["agent_follow_up"] is True
+    assert replies[-1].type == CHAT_DONE
+    assert replies[-1].payload["raw_reply"] == (
+        "Ngân sách công cụ đã hết rồi anh."
+    )
+
+
+def test_broken_json_candidate_is_suppressed_with_fixed_copy(monkeypatch) -> None:
+    diagnostic_writer = _RecordingDiagnosticWriter()
+    monkeypatch.setattr(
+        handlers_module,
+        "get_diagnostic_log_writer",
+        lambda: diagnostic_writer,
+    )
+    queue: asyncio.Queue = asyncio.Queue()
+    runner = SequencedRunner("{not json")
+    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
+
+    replies = asyncio.run(collect(handlers.chat(
+        _action_payload(
+            queue,
+            True,
+            prompt="Đọc file ghi chú cho anh",
+            model_tools=_read_tool(),
+        ),
+        asyncio.Event(),
+    )))
+
+    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
+    assert all(reply.type != ERROR for reply in replies)
+    assert all(reply.type != CHAT_CHUNK for reply in replies)
+    assert replies[-1].type == CHAT_DONE
+    assert replies[-1].payload["raw_reply"] == SELECTION_INVALID_COPY
+    events = [
+        event for event in diagnostic_writer.events
+        if event.event_code == "selection_invalid"
+    ]
+    assert len(events) == 1
+    assert events[0].status == "failed"
+    assert events[0].error_code == "invalid_selection"
+    assert events[0].correlation_id == "correlation-1"
+
+
+def test_holdback_streams_prose_but_buffers_braced_reply() -> None:
+    forwarded: list[str] = []
+    resets: list[int] = []
+    holdback = handlers_module._StreamingHoldback(
+        enabled=True,
+        sink=forwarded.append,
+        reset=lambda: resets.append(1),
+    )
+    holdback.forward("  ")
+    holdback.forward("Xin chào")
+    holdback.forward(" nhé")
+    assert forwarded == ["  ", "Xin chào", " nhé"]
+
+    buffered: list[str] = []
+    braced = handlers_module._StreamingHoldback(
+        enabled=True,
+        sink=buffered.append,
+        reset=lambda: None,
+    )
+    braced.forward('{"tool_id": ')
+    braced.forward('"files.read"}')
+    assert buffered == []
+    assert braced.finish() == '{"tool_id": "files.read"}'
+
+    passthrough: list[str] = []
+    plain = handlers_module._StreamingHoldback(
+        enabled=False,
+        sink=passthrough.append,
+        reset=lambda: None,
+    )
+    plain.forward('{"raw"')
+    plain.forward(" text")
+    assert passthrough == ['{"raw"', " text"]
+    assert plain.finish() == '{"raw" text'
+
+    holdback.reset()
+    assert resets == [1]
+    holdback.forward("A")
+    assert forwarded[-1] == "A"
 
 
 class FakeVtsManager:

@@ -3,8 +3,25 @@ using System.Text.Json.Nodes;
 
 namespace RuAgent.Broker.Tools.Desktop;
 
+public sealed class FileEditException : Exception
+{
+    public FileEditException(string code) : base(code) => Code = code;
+
+    public FileEditException(string code, JsonObject details) : base(code)
+    {
+        Code = code;
+        Details = details;
+    }
+
+    public string Code { get; }
+
+    public JsonObject? Details { get; }
+}
+
 public sealed class FileTools
 {
+    private const long MaxEditBytes = 4 * 1024 * 1024;
+
     private readonly WorkspacePathGuard _workspace;
 
     public FileTools(WorkspacePathGuard workspace) => _workspace = workspace;
@@ -68,5 +85,49 @@ public sealed class FileTools
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, content, new UTF8Encoding(false));
         return new JsonObject { ["path"] = _workspace.ToRelative(path), ["bytes"] = Encoding.UTF8.GetByteCount(content) };
+    }
+
+    public JsonObject Edit(string relativePath, string? oldString, string? newString, int expectedOccurrences = 1)
+    {
+        if (string.IsNullOrEmpty(oldString))
+        {
+            throw new FileEditException("old_string_empty");
+        }
+
+        var path = _workspace.Resolve(relativePath, allowMissing: true);
+        if (!File.Exists(path))
+        {
+            throw new FileEditException("file_not_found");
+        }
+
+        var bytes = File.ReadAllBytes(path);
+        if (bytes.Length > MaxEditBytes)
+        {
+            throw new FileEditException("file_too_large");
+        }
+
+        var text = Encoding.UTF8.GetString(bytes);
+        var matches = CountOccurrences(text, oldString);
+        if (matches != expectedOccurrences)
+        {
+            throw new FileEditException("edit_not_unique", new JsonObject { ["matches"] = matches });
+        }
+
+        var updated = text.Replace(oldString, newString ?? string.Empty, StringComparison.Ordinal);
+        File.WriteAllBytes(path, new UTF8Encoding(false).GetBytes(updated));
+        return new JsonObject { ["path"] = _workspace.ToRelative(path), ["replacements"] = matches };
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
     }
 }

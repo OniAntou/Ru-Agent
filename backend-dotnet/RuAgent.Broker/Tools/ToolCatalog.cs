@@ -13,6 +13,7 @@ public sealed class ToolCatalog
         "system.status",
         "system.volume",
         "app.list",
+        "files.edit",
         "files.list",
         "files.read",
         "files.write",
@@ -66,6 +67,7 @@ public sealed class ToolCatalog
         yield return Manifest("app.list", ToolScope.SystemRead, RiskClass.Read, "desktop");
         yield return Manifest("files.list", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
         yield return Manifest("files.read", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
+        yield return Manifest("files.edit", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
         yield return Manifest("files.write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
         yield return TerminalManifests.Run;
         yield return TerminalManifests.Shell;

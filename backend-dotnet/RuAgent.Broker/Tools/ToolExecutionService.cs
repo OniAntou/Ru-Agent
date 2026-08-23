@@ -355,6 +355,7 @@ public sealed class ToolExecutionService : IToolInvoker
             ["files.read"] = (_, arguments, _) => Succeeded(
                 _files.Read(ReadString(arguments, "path")),
                 "Workspace file read."),
+            ["files.edit"] = (_, arguments, _) => ExecuteFileEdit(arguments),
             ["files.write"] = (_, arguments, _) => Succeeded(
                 _files.Write(
                     ReadString(arguments, "path"),
@@ -495,6 +496,32 @@ public sealed class ToolExecutionService : IToolInvoker
         JsonObject arguments,
         CancellationToken cancellationToken)
         => ValueTask.FromResult(_volume.Value.Execute(arguments));
+
+    private ValueTask<ToolExecutionOutcome> ExecuteFileEdit(JsonObject arguments)
+    {
+        try
+        {
+            return Succeeded(
+                _files.Edit(
+                    ReadString(arguments, "path"),
+                    ReadOptionalString(arguments, "old_string"),
+                    ReadOptionalString(arguments, "new_string"),
+                    arguments["expected_occurrences"] is JsonValue value
+                        && value.TryGetValue<int>(out var occurrences)
+                            ? occurrences
+                            : 1),
+                "Workspace file edited.");
+        }
+        catch (FileEditException error)
+        {
+            return ValueTask.FromResult(new ToolExecutionOutcome(
+                ToolResultStatuses.Failed,
+                error.Details ?? new JsonObject(),
+                error.Code,
+                "Workspace file was not edited.",
+                ToolVerificationStates.NotRequired));
+        }
+    }
 
     private async ValueTask<ToolExecutionOutcome> ExecuteTerminalRunAsync(
         ToolExecutionContext context,

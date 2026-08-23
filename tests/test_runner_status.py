@@ -49,12 +49,12 @@ def test_generate_reply_accepts_structured_tools_only_for_agent_turns(monkeypatc
         40,
         structured_tools_only=True,
         action_capabilities=(
-            SimpleNamespace(tool_id="system.volume", tool_version="1.0.0"),
+            SimpleNamespace(tool_id="system.volume", tool_version="1.0.0", hint=""),
         ),
     )
 
     assert reply == "reply"
-    assert "system.volume@1.0.0" in str(captured["system_instruction"])
+    assert '"system.volume"@1.0.0' in str(captured["system_instruction"])
     assert "[VOLUME: up]" not in str(captured["system_instruction"])
     assert "[VOLUME: set 2]" not in str(captured["system_instruction"])
 
@@ -123,7 +123,7 @@ def test_non_selection_prompts_do_not_advertise_structured_capabilities(
         40,
         agent_follow_up=phase == "follow_up",
         action_capabilities=(
-            SimpleNamespace(tool_id="system.volume", tool_version="1.0.0"),
+            SimpleNamespace(tool_id="system.volume", tool_version="1.0.0", hint=""),
         ),
     )
 

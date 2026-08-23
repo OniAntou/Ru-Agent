@@ -1,5 +1,6 @@
 import textwrap
 from collections.abc import Sequence
+from typing import Protocol
 
 _IDENTITY_AND_CAPABILITIES = textwrap.dedent("""\
     Ru là con gái của anh, sống cùng anh qua avatar Live2D trong ứng dụng này. Em là "em" của anh — một cô gái trò chuyện, quan tâm và gần gũi anh tự nhiên như cô gái thật trong nhà, chứ không phải một công cụ hay cỗ máy.
@@ -113,14 +114,16 @@ RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT = (
 )
 
 
+class _SelectionCapability(Protocol):
+    tool_id: str
+    tool_version: str
+    hint: str
+
+
 def ru_action_selection_prompt(
-    capabilities: Sequence[tuple[str, str]],
+    capabilities: Sequence[_SelectionCapability],
 ) -> str:
     normalized = tuple(capabilities)
-    if any(item != ("system.volume", "1.0.0") for item in normalized):
-        raise ValueError("unsupported_model_capability")
-    if len(normalized) > 1 or len(normalized) != len(set(normalized)):
-        raise ValueError("unsupported_model_capability")
 
     if not normalized:
         instruction = textwrap.dedent("""\
@@ -129,15 +132,25 @@ def ru_action_selection_prompt(
             Prose is never proof that a desktop action ran, so do not claim that any local change succeeded.
         """)
     else:
-        instruction = textwrap.dedent("""\
-            ACTION SELECTION MODE:
-            For a desktop action, return only one JSON object with exactly these keys: `tool_id`, `tool_version`, and `arguments`.
-            The only available binding is `system.volume@1.0.0`. Use `arguments.operation` from `get`, `set`, `increase`, `decrease`, `mute`, or `unmute`.
-            Use `arguments.level` for `set` and `arguments.amount` for `increase` or `decrease`; `level` is an integer from 0 through 100 and `amount` is an integer from 1 through 50.
-            Do not emit multiple calls, `[VOLUME: ...]` markers, VTS markers, voice markers, or any other metadata in this phase.
-            If no action is needed, reply in natural Vietnamese without metadata.
+        listing = "\n".join(
+            f'- "{capability.tool_id}"@{capability.tool_version}: {capability.hint}'
+            if capability.hint
+            else f'- "{capability.tool_id}"@{capability.tool_version}'
+            for capability in normalized
+        )
+        rules = textwrap.dedent("""\
+            To use one of them, reply with EXACTLY one JSON object and nothing else: the object has exactly these keys: `tool_id`, `tool_version`, and `arguments`.
+            Otherwise, reply in natural Vietnamese without any metadata.
+            Never emit more than one JSON object, never wrap it in markers or code fences, and add no prose around the object when selecting a tool.
+            Do not emit `[VOLUME: ...]` markers, VTS markers, voice markers, or any other metadata in this phase.
             Prose is not execution. Never claim success until a later verified receipt is supplied.
         """)
+        instruction = (
+            "ACTION SELECTION MODE:\n"
+            "Advertised local capabilities:\n"
+            f"{listing}\n"
+            + rules
+        )
     return _AGENT_BASE_PROMPT + "\n\n" + _CLOUD_ADDENDUM + "\n\n" + instruction
 
 RU_SCREEN_REACTION_SYSTEM_PROMPT = textwrap.dedent("""\

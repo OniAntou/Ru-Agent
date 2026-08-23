@@ -155,11 +155,7 @@ class ModelRunner:
             system_prompt = RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT
             private_instruction = VTS_ACTION_INSTRUCTION + VOICE_PACE_INSTRUCTION + vts_instruction
         elif structured_tools_only:
-            descriptors = tuple(
-                (capability.tool_id, capability.tool_version)
-                for capability in action_capabilities
-            )
-            system_prompt = ru_action_selection_prompt(descriptors)
+            system_prompt = ru_action_selection_prompt(tuple(action_capabilities))
             private_instruction = ""
         else:
             system_prompt = RU_CLOUD_SYSTEM_PROMPT

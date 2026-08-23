@@ -7,6 +7,19 @@ from ru_runtime.policy.style import (
     RU_SYSTEM_PROMPT,
     ru_action_selection_prompt,
 )
+from ru_runtime.worker.v1.action_loop import ModelCapability
+
+
+def _tool_cap(tool_id: str) -> ModelCapability:
+    return ModelCapability(
+        tool_id=tool_id,
+        tool_version="1.0.0",
+        scopes=(),
+        availability="executable",
+        model_enabled=True,
+        capability_class="tool",
+        hint="",
+    )
 
 
 def test_ru_prompts_use_natural_signoff_and_bounded_profanity() -> None:
@@ -93,14 +106,24 @@ def test_normal_prompts_do_not_advertise_legacy_desktop_markers() -> None:
     assert all("system.volume@1.0.0" not in prompt for prompt in prompts)
 
 
-def test_action_selection_prompt_is_capability_driven_and_receipt_gated() -> None:
-    unavailable = ru_action_selection_prompt(())
-    available = ru_action_selection_prompt((("system.volume", "1.0.0"),))
+def test_action_selection_prompt_lists_every_advertised_capability() -> None:
+    prompt = ru_action_selection_prompt((
+        ModelCapability(tool_id="files.read", tool_version="1.0.0",
+                        scopes=(), availability="executable",
+                        model_enabled=True, capability_class="tool",
+                        hint='{"path":"..."}'),
+        ModelCapability(tool_id="system.volume", tool_version="1.0.0",
+                        scopes=(), availability="native_pending",
+                        model_enabled=True, capability_class="native_mutation",
+                        hint=""),
+    ))
+    assert '"files.read"' in prompt and '"system.volume"' in prompt
+    assert '{"path":"..."}' in prompt
+    assert "Prose is not execution" in prompt
+    assert "verified receipt" in prompt
 
-    assert "system.volume@1.0.0" not in unavailable
-    assert "system.volume@1.0.0" in available
-    assert "Prose is not execution" in available
-    assert "verified receipt" in available
 
-    with pytest.raises(ValueError, match="unsupported_model_capability"):
-        ru_action_selection_prompt((("app.open", "1.0.0"),))
+def test_action_selection_prompt_no_longer_rejects_non_volume() -> None:
+    prompt = ru_action_selection_prompt((_tool_cap("files.edit"),))
+    assert "unsupported_model_capability" not in prompt
+    assert '"files.edit"' in prompt

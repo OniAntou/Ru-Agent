@@ -31,6 +31,10 @@ _COMMAND_WORD = re.compile(
 )
 _ABSOLUTE_PATTERNS = (
     re.compile(
+        rf"(?:tăng).*?(?:âm lượng|tiếng máy|tiếng).*?"
+        rf"(?:lên)\s*(?:mức\s*)?{_NUMBER}\s*%?"
+    ),
+    re.compile(
         rf"(?:đặt|chỉnh|hạ|giảm).*?(?:âm lượng|tiếng máy|tiếng).*?"
         rf"(?:xuống\s+)?(?:còn|về|tới|đến|ở mức)\s*{_NUMBER}\s*%?"
     ),
@@ -44,7 +48,7 @@ _RELATIVE_PATTERNS = (
         "increase",
         re.compile(
             rf"(?:tăng).*?(?:âm lượng|tiếng máy|tiếng).*?"
-            rf"(?:lên|thêm)\s*{_NUMBER}\s*%?"
+            rf"(?:thêm)\s*{_NUMBER}\s*%?"
         ),
     ),
     (

@@ -642,11 +642,11 @@ def _action_payload(
     }
 
 
-def _verified_result() -> dict[str, object]:
+def _verified_result(level: int = 2) -> dict[str, object]:
     return {
         "status": "succeeded",
-        "output": {"operation": "set", "level": 2, "muted": False},
-        "safe_summary": "Đã xác minh âm lượng ở mức 2%.",
+        "output": {"operation": "set", "level": level, "muted": False},
+        "safe_summary": f"Đã xác minh âm lượng ở mức {level}%.",
         "error_code": None,
         "duration_ms": 12,
         "verification_state": "verified",
@@ -659,12 +659,14 @@ async def _run_action_turn(
     runner: SequencedRunner,
     result: dict[str, object],
     agent_mode: bool,
+    *,
+    prompt: str = "Hạ âm lượng còn 2%",
 ) -> list[WorkerReply]:
     tool_result_queue: asyncio.Queue = asyncio.Queue()
     handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
     replies = []
     stream = handlers.chat(
-        _action_payload(tool_result_queue, agent_mode),
+        _action_payload(tool_result_queue, agent_mode, prompt=prompt),
         asyncio.Event(),
     )
     replies.append(await anext(stream))
@@ -705,6 +707,25 @@ def test_explicit_volume_command_emits_one_request_without_model_generation(
             "reason_code": None,
         },
     }
+
+
+@pytest.mark.parametrize("agent_mode", (False, True))
+def test_vietnamese_target_increase_dispatches_absolute_set(
+    agent_mode: bool,
+) -> None:
+    runner = SequencedRunner("model must not be called")
+
+    replies = asyncio.run(_run_action_turn(
+        runner,
+        _verified_result(10),
+        agent_mode,
+        prompt="Tăng âm lượng lên 10",
+    ))
+
+    request = next(reply for reply in replies if reply.type == CHAT_TOOL_REQUEST)
+    assert request.payload["arguments"] == {"operation": "set", "level": 10}
+    assert runner.calls == []
+    assert replies[-1].payload["raw_reply"] == "Em đã đặt âm lượng về 10% rồi anh."
 
 
 def test_ordinary_normal_chat_streams_without_entering_selection() -> None:

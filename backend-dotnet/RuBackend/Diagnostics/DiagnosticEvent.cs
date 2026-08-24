@@ -18,4 +18,10 @@ public sealed record DiagnosticEvent(
     [property: JsonPropertyName("tool_version")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ToolVersion = null,
     [property: JsonPropertyName("verification_state")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? VerificationState = null,
     [property: JsonPropertyName("endpoint_role")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? EndpointRole = null,
-    [property: JsonPropertyName("endpoint_hash")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? EndpointHash = null);
+    [property: JsonPropertyName("endpoint_hash")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? EndpointHash = null,
+    [property: JsonPropertyName("run_id")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RunId = null,
+    [property: JsonPropertyName("model_step_id")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ModelStepId = null,
+    [property: JsonPropertyName("tool_call_id")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ToolCallId = null,
+    [property: JsonPropertyName("execution_id")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ExecutionId = null,
+    [property: JsonPropertyName("byte_count")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ByteCount = null,
+    [property: JsonPropertyName("truncated")][property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Truncated = null);

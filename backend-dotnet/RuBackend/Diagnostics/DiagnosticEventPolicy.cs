@@ -34,6 +34,10 @@ public static class DiagnosticEventPolicy
         "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
         RegexOptions.Compiled);
     private static readonly Regex EndpointHashPattern = new("^[0-9a-f]{16}$", RegexOptions.Compiled);
+    private static readonly Regex RunIdPattern = new("^run_[0-9a-f]{32}$", RegexOptions.Compiled);
+    private static readonly Regex ModelStepIdPattern = new("^step_[0-9a-f]{32}$", RegexOptions.Compiled);
+    private static readonly Regex ToolCallIdPattern = new("^call_[0-9a-f]{32}$", RegexOptions.Compiled);
+    private static readonly Regex ExecutionIdPattern = new("^exec_[0-9a-f]{32}$", RegexOptions.Compiled);
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -83,6 +87,16 @@ public static class DiagnosticEventPolicy
             var verificationState = ReadOptionalString(root, "verification_state");
             var endpointRole = ReadOptionalString(root, "endpoint_role");
             var endpointHash = ReadOptionalString(root, "endpoint_hash");
+            var runId = ReadOptionalString(root, "run_id");
+            var modelStepId = ReadOptionalString(root, "model_step_id");
+            var toolCallId = ReadOptionalString(root, "tool_call_id");
+            var executionId = ReadOptionalString(root, "execution_id");
+            var byteCount = root.TryGetProperty("byte_count", out var pByte)
+                && pByte.ValueKind == JsonValueKind.Number
+                && pByte.TryGetInt64(out var vByte) ? (long?)vByte : null;
+            var truncated = root.TryGetProperty("truncated", out var pTrunc)
+                && pTrunc.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? (bool?)pTrunc.GetBoolean() : null;
 
             var raw = new DiagnosticEvent(
                 eventId ?? string.Empty,
@@ -100,7 +114,13 @@ public static class DiagnosticEventPolicy
                 toolVersion,
                 verificationState,
                 endpointRole,
-                endpointHash);
+                endpointHash,
+                runId,
+                modelStepId,
+                toolCallId,
+                executionId,
+                byteCount,
+                truncated);
 
             return Sanitize(raw);
         }
@@ -205,6 +225,42 @@ public static class DiagnosticEventPolicy
             endpointHash = evt.EndpointHash;
         }
 
+        string? runId = null;
+        if (!string.IsNullOrEmpty(evt.RunId) && RunIdPattern.IsMatch(evt.RunId))
+        {
+            runId = evt.RunId;
+        }
+
+        string? modelStepId = null;
+        if (!string.IsNullOrEmpty(evt.ModelStepId) && ModelStepIdPattern.IsMatch(evt.ModelStepId))
+        {
+            modelStepId = evt.ModelStepId;
+        }
+
+        string? toolCallId = null;
+        if (!string.IsNullOrEmpty(evt.ToolCallId) && ToolCallIdPattern.IsMatch(evt.ToolCallId))
+        {
+            toolCallId = evt.ToolCallId;
+        }
+
+        string? executionId = null;
+        if (!string.IsNullOrEmpty(evt.ExecutionId) && ExecutionIdPattern.IsMatch(evt.ExecutionId))
+        {
+            executionId = evt.ExecutionId;
+        }
+
+        long? byteCount = null;
+        if (evt.ByteCount is >= 0 and <= 16777216)
+        {
+            byteCount = evt.ByteCount;
+        }
+
+        bool? truncated = null;
+        if (evt.Truncated is not null)
+        {
+            truncated = evt.Truncated;
+        }
+
         return new DiagnosticEvent(
             eventId,
             ts,
@@ -221,7 +277,13 @@ public static class DiagnosticEventPolicy
             toolVersion,
             verificationState,
             endpointRole,
-            endpointHash);
+            endpointHash,
+            runId,
+            modelStepId,
+            toolCallId,
+            executionId,
+            byteCount,
+            truncated);
     }
 
     private static string? ReadOptionalString(JsonElement root, string name) =>

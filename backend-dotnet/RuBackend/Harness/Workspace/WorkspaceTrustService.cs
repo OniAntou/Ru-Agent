@@ -33,11 +33,8 @@ public sealed class WorkspaceTrustService
         }
 
         // Need to create or replace with fresh request
-        var requestId = new TrustRequestId($"trust_{Guid.NewGuid():N}".PadRight(6 + 32, '0')[..(5 + 32)]);
-        // Use proper generator: use CryptographicIdGenerator if available? For simplicity generate ws-style
-        // Use deterministic fallback: generate random hex 32
         var hex = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
-        requestId = new TrustRequestId($"trust_{hex}");
+        var requestId = new TrustRequestId($"trust_{hex}");
 
         var now = DateTimeOffset.UtcNow;
         var request = new WorkspaceTrustRequest(requestId, identity, now, now.AddMinutes(10));

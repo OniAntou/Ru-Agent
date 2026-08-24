@@ -18,6 +18,8 @@ using RuBackend.Vts;
 using RuBackend.Worker;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence;
+using RuAgent.Harness.Persistence.Policy;
+using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -76,6 +78,41 @@ builder.Services.AddSingleton<IHarnessSessionArtifactStore, HarnessSessionArtifa
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IHarnessSessionDeletionCoordinator,
     HarnessSessionDeletionCoordinator>();
+builder.Services.AddSingleton<AgentSessionPermissionStore>(services =>
+    new AgentSessionPermissionStore(services.GetRequiredService<HarnessSqliteOptions>()));
+builder.Services.AddSingleton<IHarnessKeyStore>(services =>
+{
+    var paths = services.GetRequiredService<DataPaths>();
+    var options = services.GetRequiredService<HarnessSqliteOptions>();
+    var keyPath = Path.Combine(Path.GetDirectoryName(options.DatabasePath) ?? paths.BusinessDataRoot, "harness_key.dat");
+    if (OperatingSystem.IsWindows())
+    {
+        try
+        {
+            return new WindowsDpapiKeyStore(keyPath, options.DatabasePath);
+        }
+        catch
+        {
+            return new EphemeralHarnessKeyStore();
+        }
+    }
+
+    return new EphemeralHarnessKeyStore();
+});
+builder.Services.AddSingleton<KnownSecretRedactor>(KnownSecretRedactor.Empty);
+builder.Services.AddSingleton<HarnessPayloadCryptography>(services =>
+    new HarnessPayloadCryptography(services.GetRequiredService<IHarnessKeyStore>()));
+builder.Services.AddSingleton<HarnessPayloadStore>(services =>
+    new HarnessPayloadStore(
+        services.GetRequiredService<HarnessSqliteOptions>(),
+        services.GetRequiredService<HarnessPayloadCryptography>(),
+        services.GetRequiredService<KnownSecretRedactor>()));
+builder.Services.AddSingleton<IHarnessEventStore>(services =>
+    new SqliteHarnessEventStore(
+        services.GetRequiredService<HarnessSqliteOptions>(),
+        services.GetRequiredService<HarnessPayloadStore>()));
+builder.Services.AddSingleton<HarnessLiveEventHub>();
+builder.Services.AddSingleton<AgentV1Service>();
 // Harness Core adapters: Worker v2 and ToolGateway via factory
 builder.Services.AddSingleton<LoopbackModelStepRunner>(services =>
     new LoopbackModelStepRunner(services.GetRequiredService<WorkerClientOptions>()));
@@ -147,6 +184,7 @@ app.MapMethods("/{**path}", new[] { HttpMethods.Options }, () => Results.NoConte
 ChatWebSocketEndpoint.Map(app);
 VoiceStreamEndpoint.Map(app);
 BusinessEndpoints.Map(app);
+AgentV1Endpoints.Map(app);
 DiagnosticEndpoints.Map(app);
 MemoryEndpoints.Map(app);
 StatusEndpoints.Map(app);
@@ -215,6 +253,23 @@ static WorkerClientOptions BuildWorkerClientOptions(IConfiguration configuration
             : new Uri(workerUrl, UriKind.Absolute),
         Token = workerToken,
     };
+}
+
+internal sealed class EphemeralHarnessKeyStore : RuAgent.Harness.Persistence.Privacy.IHarnessKeyStore
+{
+    private readonly byte[] _key;
+
+    public EphemeralHarnessKeyStore()
+    {
+        _key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+    }
+
+    public ValueTask<byte[]> GetOrCreateKeyAsync(CancellationToken cancellationToken)
+    {
+        var copy = new byte[32];
+        Buffer.BlockCopy(_key, 0, copy, 0, 32);
+        return ValueTask.FromResult(copy);
+    }
 }
 
 public partial class Program { }

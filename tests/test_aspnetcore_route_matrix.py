@@ -46,6 +46,19 @@ EXPECTED_HTTP_ROUTES = {
     ("POST", "/vts/activity"),
     ("POST", "/vts/action"),
     ("POST", "/vts/speaking"),
+    ("POST", "/agent/v1/runs"),
+    ("GET", "/agent/v1/runs/{runId}"),
+    ("GET", "/agent/v1/runs/{runId}/events"),
+    ("GET", "/agent/v1/runs/{runId}/payloads/{payloadId}"),
+    ("POST", "/agent/v1/runs/{runId}/approvals/{approvalId}"),
+    ("POST", "/agent/v1/runs/{runId}/trust"),
+    ("POST", "/agent/v1/runs/{runId}/cancel"),
+    ("POST", "/agent/v1/runs/{runId}/continue"),
+    ("POST", "/agent/v1/runs/{runId}/reconcile"),
+    ("GET", "/agent/v1/sessions/{sessionId}/runs"),
+    ("GET", "/agent/v1/policies"),
+    ("POST", "/agent/v1/policies"),
+    ("DELETE", "/agent/v1/policies/{ruleId}"),
 }
 
 EXPECTED_WEBSOCKET_ROUTES = {("WS", "/chat"), ("WS", "/voice/stream")}
@@ -54,7 +67,7 @@ EXPECTED_WEBSOCKET_ROUTES = {("WS", "/chat"), ("WS", "/voice/stream")}
 def test_public_route_contract_matches_the_final_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    assert validate_route_contract(repo_root) == (41, 2)
+    assert validate_route_contract(repo_root) == (54, 2)
     contract = load_route_contract(repo_root)
 
     assert {
@@ -86,6 +99,18 @@ def test_every_public_route_has_one_final_aspnet_execution_class() -> None:
         "/sessions/{sessionId}/activate",
         "/sessions/{sessionId}",
         "/chat",
+        "/agent/v1/runs",
+        "/agent/v1/runs/{runId}",
+        "/agent/v1/runs/{runId}/events",
+        "/agent/v1/runs/{runId}/payloads/{payloadId}",
+        "/agent/v1/runs/{runId}/approvals/{approvalId}",
+        "/agent/v1/runs/{runId}/trust",
+        "/agent/v1/runs/{runId}/cancel",
+        "/agent/v1/runs/{runId}/continue",
+        "/agent/v1/runs/{runId}/reconcile",
+        "/agent/v1/sessions/{sessionId}/runs",
+        "/agent/v1/policies",
+        "/agent/v1/policies/{ruleId}",
     }
     for entry in contract:
         expected = (

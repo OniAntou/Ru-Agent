@@ -2,8 +2,11 @@
 
 The canonical public surface is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-41 HTTP method/path pairs and two WebSocket routes. ASP.NET Core is the only
-public owner.
+54 HTTP method/path pairs and two WebSocket routes. ASP.NET Core is the only
+public owner. The 13 Agent v1 routes under `/agent/v1/*` are additive and
+feature-flagged: `RuBackend:AgentHarness:Version` defaults to `v1`, and Agent v2
+remains behind the flag until phase 4 cutover; the routes are present but read-only
+tracer-only at this checkpoint.
 
 Each entry contains:
 

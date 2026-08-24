@@ -43,7 +43,7 @@ This checkpoint is not coding-loop parity. File mutations, reusable permission r
 - Modify `backend-dotnet/RuBackend/RuBackend.csproj`.
 - Modify `gui-winui3/RuApp.csproj`.
 
-- [ ] Verify the worktree and baseline before edits:
+- [x] Verify the worktree and baseline before edits:
 
 ```powershell
 git -C D:\LLM status --short --branch
@@ -53,10 +53,10 @@ dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Rele
 
 Expected: clean/disclosed worktree and zero failures. Run the .NET and Python commands sequentially.
 
-- [ ] Create SDK-style projects targeting `net10.0`; test projects use the same xUnit package versions as existing test projects. `RuAgent.Harness.Persistence` references Core and `Microsoft.Data.Sqlite` 10.0.11. `RuAgent.Cli` has `OutputType=Exe`. Do not add `System.CommandLine`; keep parsing explicit and bounded.
-- [ ] Add project references exactly as fixed in the program index. Do not reference `RuBackend` or `RuApp` from Core, Persistence, Client, or CLI.
-- [ ] Add one architecture test in `RuAgent.Harness.Core.Tests/ProjectBoundaryTests.cs` that parses `RuAgent.Harness.Core.csproj` and rejects `FrameworkReference`, `PackageReference`, and any `ProjectReference`.
-- [ ] Build each new empty project sequentially:
+- [x] Create SDK-style projects targeting `net10.0`; test projects use the same xUnit package versions as existing test projects. `RuAgent.Harness.Persistence` references Core and `Microsoft.Data.Sqlite` 10.0.11. `RuAgent.Cli` has `OutputType=Exe`. Do not add `System.CommandLine`; keep parsing explicit and bounded.
+- [x] Add project references exactly as fixed in the program index. Do not reference `RuBackend` or `RuApp` from Core, Persistence, Client, or CLI.
+- [x] Add one architecture test in `RuAgent.Harness.Core.Tests/ProjectBoundaryTests.cs` that parses `RuAgent.Harness.Core.csproj` and rejects `FrameworkReference`, `PackageReference`, and any `ProjectReference`.
+- [x] Build each new empty project sequentially:
 
 ```powershell
 dotnet build D:\LLM\backend-dotnet\RuAgent.Harness.Core\RuAgent.Harness.Core.csproj -c Release --nologo
@@ -68,7 +68,7 @@ dotnet build D:\LLM\backend-dotnet\RuAgent.Cli\RuAgent.Cli.csproj -c Release --n
 
 Expected: five successful builds and no dependency-cycle warning.
 
-- [ ] Commit only scaffold files: `build(agent): scaffold harness project boundaries`.
+- [x] Commit only scaffold files: `build(agent): scaffold harness project boundaries`.
 
 ## Task 2: Implement explicit Core identities and state machines
 
@@ -78,12 +78,20 @@ Expected: five successful builds and no dependency-cycle warning.
 - Create `backend-dotnet/RuAgent.Harness.Core/HarnessRunState.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/HarnessToolCallState.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/HistoryWaitKind.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/TransitionResult.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/HarnessRunStatus.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/HarnessRunTransition.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/ToolCallTransition.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/AgentPermissionPreset.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/IIdGenerator.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/CryptographicIdGenerator.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/AgentRun.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/HarnessEvent.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/Workspace/WorkspaceIdentity.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/Workspace/WorkspaceTrustDecision.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/Workspace/WorkspaceTrustRequest.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/Policy/PolicyDecision.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/Policy/PolicyRuleScope.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/Policy/PolicyRule.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/Policy/PolicyMatcher.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/Policy/PolicySnapshot.cs`.
@@ -91,17 +99,19 @@ Expected: five successful builds and no dependency-cycle warning.
 - Create `backend-dotnet/RuAgent.Harness.Core/AgentRunStateMachine.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/ToolCallStateMachine.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core.Tests/AgentRunStateMachineTests.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core.Tests/AgentRunProjectionTests.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core.Tests/HarnessEventTests.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core.Tests/ToolCallStateMachineTests.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core.Tests/HarnessIdentifierTests.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core.Tests/WorkspaceTrustStateTests.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core.Tests/PolicySnapshotCanonicalizerTests.cs`.
 
-- [ ] Write RED theory tests covering every legal run transition from the approved design. Persist `HistoryWaitKind.UserBeforeFirstStep` versus `FinalBeforeCompletion` and prove acknowledgement advances only to `Running` or `Completed` respectively. Reject at least: `Completed -> Running`, `WaitingApproval -> Completed`, `WaitingUser -> Completed`, mismatched history acknowledgement, and `ReconciliationRequired -> Running` without a typed reconcile command.
-- [ ] Add RED tool-call tests for the exact branches: `Proposed -> Denied` terminal; `Proposed -> Allowed -> Executing -> Succeeded|Failed|TimedOut|Cancelled|OutcomeUnknown`; and `Proposed -> AwaitingApproval -> Denied` or consumed approval `-> Allowed -> Executing`. A typed expiry alone may return `AwaitingApproval -> Proposed` for re-evaluation with a fresh approval ID. Reject `AwaitingApproval -> Executing` without a consumed approval and every transition out of a terminal tool state.
-- [ ] Add ID validation tests: non-empty bounded values, correct prefixes from `IIdGenerator`, and no implicit conversion between run/tool/execution IDs.
-- [ ] Add workspace trust state tests for opaque request identity, exact displayed identity-hash binding, idempotent repeated same decision, stale/different response rejection, and denial becoming terminal before any model step.
-- [ ] Add a phase-1 canonical snapshot test proving preset/workspace/version/empty ordered-rule list produce deterministic canonical UTF-8 JSON and SHA-256; any changed field changes the hash.
-- [ ] Run RED:
+- [x] Write RED theory tests covering every legal run transition from the approved design. Persist `HistoryWaitKind.UserBeforeFirstStep` versus `FinalBeforeCompletion` and prove acknowledgement advances only to `Running` or `Completed` respectively. Reject at least: `Completed -> Running`, `WaitingApproval -> Completed`, `WaitingUser -> Completed`, mismatched history acknowledgement, and `ReconciliationRequired -> Running` without a typed reconcile command.
+- [x] Add RED tool-call tests for the exact branches: `Proposed -> Denied` terminal; `Proposed -> Allowed -> Executing -> Succeeded|Failed|TimedOut|Cancelled|OutcomeUnknown`; and `Proposed -> AwaitingApproval -> Denied` or consumed approval `-> Allowed -> Executing`. A typed expiry alone may return `AwaitingApproval -> Proposed` for re-evaluation with a fresh approval ID. Reject `AwaitingApproval -> Executing` without a consumed approval and every transition out of a terminal tool state.
+- [x] Add ID validation tests: non-empty bounded values, correct prefixes from `IIdGenerator`, and no implicit conversion between run/tool/execution IDs.
+- [x] Add workspace trust state tests for opaque request identity, exact displayed identity-hash binding, idempotent repeated same decision, stale/different response rejection, and denial becoming terminal before any model step.
+- [x] Add a phase-1 canonical snapshot test proving preset/workspace/version/empty ordered-rule list produce deterministic canonical UTF-8 JSON and SHA-256; any changed field changes the hash.
+- [x] Run RED:
 
 ```powershell
 dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Release --nologo --filter "FullyQualifiedName~StateMachine|FullyQualifiedName~Identifier|FullyQualifiedName~WorkspaceTrust|FullyQualifiedName~PolicySnapshot"
@@ -109,10 +119,10 @@ dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Cor
 
 Expected RED: compile failures for the missing domain types, then assertion failures until all legal edges are encoded.
 
-- [ ] Implement the two enums and state machines as total functions returning a typed `TransitionResult`; do not expose a public mutable `State` setter.
-- [ ] Implement `readonly record struct` IDs and an immutable `AgentRun` projection with `Version`, `LastSequence`, budget counters, nullable `HistoryWaitKind`, preset snapshot, policy snapshot version/hash, timestamps, and stable terminal error code.
-- [ ] Run GREEN with the same command. Expected: zero failures.
-- [ ] Commit: `feat(agent): add explicit harness state machines`.
+- [x] Implement the two enums and state machines as total functions returning a typed `TransitionResult`; do not expose a public mutable `State` setter.
+- [x] Implement `readonly record struct` IDs and an immutable `AgentRun` projection with `Version`, `LastSequence`, budget counters, nullable `HistoryWaitKind`, preset snapshot, policy snapshot version/hash, timestamps, and stable terminal error code.
+- [x] Run GREEN with the same command. Expected: zero failures.
+- [x] Commit: `feat(agent): add explicit harness state machines`.
 
 ## Task 3: Implement Core ports, commits, and the one-step outer loop
 
@@ -134,7 +144,6 @@ Expected RED: compile failures for the missing domain types, then assertion fail
 - Create `backend-dotnet/RuAgent.Harness.Core/IToolGateway.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/IHarnessEventStore.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/ITimeProvider.cs`.
-- Create `backend-dotnet/RuAgent.Harness.Core/IIdGenerator.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/AgentRunCoordinator.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/ToolCallScheduler.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core.Tests/Fakes/FakeModelStepRunner.cs`.

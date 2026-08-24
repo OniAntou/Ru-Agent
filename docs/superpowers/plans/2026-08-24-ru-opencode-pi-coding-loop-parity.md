@@ -157,7 +157,7 @@ public enum ReconcileOutcome { Applied, NotApplied, UnknownContinue }
 public enum HistoryWaitKind { UserBeforeFirstStep, FinalBeforeCompletion }
 ```
 
-Stable IDs are separate `readonly record struct` values in `HarnessIdentifiers.cs`: `WorkspaceId`, `SessionId`, `RunId`, `ModelStepId`, `ToolCallId`, `ExecutionId`, `ApprovalId`, `EventId`, and `PayloadId`. Wire adapters serialize their `Value` as lowercase snake-case JSON fields.
+Stable IDs are separate `readonly record struct` values in `HarnessIdentifiers.cs`: `WorkspaceId`, `SessionId`, `RunId`, `ModelStepId`, `ToolCallId`, `ExecutionId`, `ApprovalId`, `TrustRequestId`, `PolicyRuleId`, `EventId`, and `PayloadId`. Wire adapters serialize their `Value` as lowercase snake-case JSON fields.
 
 The Core persistence boundary is a compare-and-swap commit, so event append, projection change, encrypted payload intent, and conversation outbox intent cannot drift:
 

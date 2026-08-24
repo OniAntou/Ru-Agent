@@ -1,0 +1,174 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using RuAgent.Harness.Core.Workspace;
+
+namespace RuAgent.Harness.Core.Policy;
+
+public static class PolicySnapshotCanonicalizer
+{
+    public static PolicySnapshot Create(
+        long version,
+        AgentPermissionPreset preset,
+        WorkspaceIdentity workspace,
+        IReadOnlyList<PolicyRule> orderedRules,
+        DateTimeOffset createdAt)
+    {
+        var unhashed = new PolicySnapshot(
+            version,
+            preset,
+            workspace,
+            orderedRules,
+            createdAt,
+            string.Empty);
+        var sha256 = Convert.ToHexString(SHA256.HashData(GetCanonicalUtf8(unhashed)))
+            .ToLowerInvariant();
+
+        return new PolicySnapshot(
+            unhashed.Version,
+            unhashed.Preset,
+            unhashed.Workspace,
+            unhashed.OrderedRules,
+            unhashed.CreatedAt,
+            sha256);
+    }
+
+    public static byte[] GetCanonicalUtf8(PolicySnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(
+                   stream,
+                   new JsonWriterOptions
+                   {
+                       Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                   }))
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("version", snapshot.Version);
+            writer.WriteString("preset", PresetName(snapshot.Preset));
+            WriteWorkspace(writer, snapshot.Workspace);
+            WriteRules(writer, snapshot.OrderedRules);
+            writer.WriteString(
+                "created_at",
+                snapshot.CreatedAt.ToString("O", CultureInfo.InvariantCulture));
+            writer.WriteEndObject();
+        }
+
+        return stream.ToArray();
+    }
+
+    private static void WriteWorkspace(Utf8JsonWriter writer, WorkspaceIdentity workspace)
+    {
+        writer.WritePropertyName("workspace");
+        writer.WriteStartObject();
+        writer.WriteString("workspace_id", workspace.WorkspaceId.Value);
+        writer.WriteString("volume_serial_number", workspace.VolumeSerialNumber);
+        writer.WriteString("root_file_id", workspace.RootFileId);
+        writer.WriteString("display_identity_hash", workspace.DisplayIdentityHash);
+        writer.WriteEndObject();
+    }
+
+    private static void WriteRules(Utf8JsonWriter writer, IReadOnlyList<PolicyRule> rules)
+    {
+        writer.WritePropertyName("ordered_rules");
+        writer.WriteStartArray();
+        foreach (var rule in rules)
+        {
+            ArgumentNullException.ThrowIfNull(rule);
+            ArgumentNullException.ThrowIfNull(rule.Matcher);
+
+            writer.WriteStartObject();
+            writer.WriteString("rule_id", rule.RuleId.Value);
+            writer.WriteString("scope", ScopeName(rule.Scope));
+            writer.WriteString("decision", DecisionName(rule.Decision));
+            WriteMatcher(writer, rule.Matcher);
+            writer.WriteNumber("creation_order", rule.CreationOrder);
+            if (rule.ExpiresAt is { } expiresAt)
+            {
+                writer.WriteString(
+                    "expires_at",
+                    expiresAt.ToString("O", CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                writer.WriteNull("expires_at");
+            }
+
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+    }
+
+    private static void WriteMatcher(Utf8JsonWriter writer, PolicyMatcher matcher)
+    {
+        writer.WritePropertyName("matcher");
+        writer.WriteStartObject();
+        WriteOptionalString(writer, "tool_id", matcher.ToolId);
+        WriteOptionalString(writer, "tool_version", matcher.ToolVersion);
+        WriteOptionalString(writer, "canonical_path_pattern", matcher.CanonicalPathPattern);
+        WriteOptionalString(writer, "resolved_executable", matcher.ResolvedExecutable);
+        writer.WritePropertyName("argv_pattern");
+        if (matcher.ArgvPattern is null)
+        {
+            writer.WriteNullValue();
+        }
+        else
+        {
+            writer.WriteStartArray();
+            foreach (var argument in matcher.ArgvPattern)
+            {
+                writer.WriteStringValue(argument);
+            }
+
+            writer.WriteEndArray();
+        }
+
+        WriteOptionalString(writer, "cwd_pattern", matcher.CwdPattern);
+        WriteOptionalString(writer, "operation_class", matcher.OperationClass);
+        WriteOptionalString(writer, "network_intent", matcher.NetworkIntent);
+        writer.WriteEndObject();
+    }
+
+    private static void WriteOptionalString(
+        Utf8JsonWriter writer,
+        string propertyName,
+        string? value)
+    {
+        if (value is null)
+        {
+            writer.WriteNull(propertyName);
+        }
+        else
+        {
+            writer.WriteString(propertyName, value);
+        }
+    }
+
+    private static string PresetName(AgentPermissionPreset preset) => preset switch
+    {
+        AgentPermissionPreset.Standard => "standard",
+        AgentPermissionPreset.FullAccess => "full_access",
+        _ => throw new ArgumentOutOfRangeException(nameof(preset)),
+    };
+
+    private static string ScopeName(PolicyRuleScope scope) => scope switch
+    {
+        PolicyRuleScope.Global => "global",
+        PolicyRuleScope.Project => "project",
+        PolicyRuleScope.Run => "run",
+        PolicyRuleScope.Once => "once",
+        _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+    };
+
+    private static string DecisionName(PolicyDecision decision) => decision switch
+    {
+        PolicyDecision.Allow => "allow",
+        PolicyDecision.Ask => "ask",
+        PolicyDecision.Deny => "deny",
+        _ => throw new ArgumentOutOfRangeException(nameof(decision)),
+    };
+}

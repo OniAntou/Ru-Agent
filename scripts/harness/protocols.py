@@ -100,11 +100,8 @@ def safe_probe_status_ok(entry: RouteEntry, status_code: int) -> bool:
         return True
     # Agent v2 routes are feature-flagged read-only tracer at Phase 1: generic synthetic probe
     # may receive deterministic 400/404/409 (invalid workspace, unknown run, phase_not_available)
-    # and still proves route existence + bearer auth. Accept those as probe success.
-    if entry.path.startswith("/agent/v1/"):
-        if status_code in {400, 404, 409}:
-            return True
-    return False
+    # and still proves route existence + bearer auth.
+    return entry.path.startswith("/agent/v1/") and status_code in {400, 404, 409}
 
 
 def _response_session_id(response: object) -> str | None:

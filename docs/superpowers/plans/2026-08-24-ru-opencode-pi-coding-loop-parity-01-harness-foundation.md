@@ -38,6 +38,7 @@ This checkpoint is not coding-loop parity. File mutations, reusable permission r
 - Create `backend-dotnet/RuAgent.Client/RuAgent.Client.csproj`.
 - Create `backend-dotnet/RuAgent.Client.Tests/RuAgent.Client.Tests.csproj`.
 - Create `backend-dotnet/RuAgent.Cli/RuAgent.Cli.csproj`.
+- Create `backend-dotnet/RuAgent.Cli/Program.cs` as a zero-behavior scaffold entrypoint; Task 10 replaces it with the real parser/commands.
 - Create `backend-dotnet/RuAgent.Cli.Tests/RuAgent.Cli.Tests.csproj`.
 - Modify `backend-dotnet/RuBackend/RuBackend.csproj`.
 - Modify `gui-winui3/RuApp.csproj`.
@@ -494,7 +495,7 @@ Expected: zero failures and only Public Host owns Worker/Broker.
 
 **Files:**
 
-- Create `backend-dotnet/RuAgent.Cli/Program.cs`.
+- Modify `backend-dotnet/RuAgent.Cli/Program.cs`.
 - Create `backend-dotnet/RuAgent.Cli/AgentCliParser.cs`.
 - Create `backend-dotnet/RuAgent.Cli/AgentCommands.cs`.
 - Create `backend-dotnet/RuAgent.Cli/SafeEventRenderer.cs`.

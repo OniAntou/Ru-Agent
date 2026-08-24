@@ -7,6 +7,9 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\RuAgent.Harness.Core\RuAgent.Harness.Core.csproj" />
+    <ProjectReference Include="..\RuAgent.Harness.Persistence\RuAgent.Harness.Persistence.csproj" />
+    <ProjectReference Include="..\RuAgent.Hosting\RuAgent.Hosting.csproj" />
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
   </ItemGroup>

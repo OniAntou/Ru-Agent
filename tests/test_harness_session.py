@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
+import harness.session as session_module
 import pytest
+from harness.processes import ChildLifecycle
 from harness.session import (
     HarnessSession,
     _contains_private_agent_metadata,
@@ -211,3 +214,103 @@ def test_session_owns_and_removes_a_temporary_workspace() -> None:
 
     assert cleanup["workspace_root_removed"] is True
     assert not workspace.exists()
+
+
+class _ExitedProcess:
+    def poll(self) -> int:
+        return 1
+
+    def terminate(self) -> None:
+        pass
+
+    def kill_tree(self) -> None:
+        pass
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 1
+
+
+def test_dotnet_projects_are_prebuilt_before_any_child_launch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = HarnessSession.for_test(readiness=True)
+    calls: list[tuple[str, tuple[str, ...]]] = []
+
+    def record_prebuild() -> None:
+        calls.append(("prebuild", ()))
+
+    def record_child(command: list[str], **kwargs: object) -> object:
+        role = kwargs["role"]
+        assert isinstance(role, str)
+        calls.append((role, tuple(command)))
+        return object()
+
+    monkeypatch.setattr(
+        session,
+        "_prepare_dotnet_projects",
+        record_prebuild,
+        raising=False,
+    )
+    monkeypatch.setattr(session_module, "start_owned_child", record_child)
+
+    try:
+        session._start_children(deterministic=True)
+        assert [role for role, _ in calls] == ["prebuild", "worker", "broker", "edge"]
+        assert "--no-build" in calls[2][1]
+        assert "--no-build" in calls[3][1]
+    finally:
+        session._children.clear()
+        session.close()
+
+
+def test_dotnet_prebuilds_are_sequential_and_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = HarnessSession.for_test(readiness=True)
+    calls: list[tuple[tuple[str, ...], bool, int]] = []
+
+    def record_run(
+        command: list[str],
+        *,
+        cwd: Path,
+        check: bool,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        del cwd
+        calls.append((tuple(command), check, timeout))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(session_module.subprocess, "run", record_run)
+
+    try:
+        session._prepare_dotnet_projects()
+    finally:
+        session.close()
+
+    assert len(calls) == 2
+    assert "RuAgent.Broker.csproj" in calls[0][0][3]
+    assert "RuBackend.csproj" in calls[1][0][3]
+    assert all(check is True and 0 < timeout <= 120 for _, check, timeout in calls)
+
+
+def test_startup_failure_reports_the_exited_child_without_log_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = HarnessSession.for_test(readiness=True)
+    session._children = [ChildLifecycle(role="edge", process=_ExitedProcess())]
+    monkeypatch.setattr(session, "_start_children", lambda **_: None)
+
+    try:
+        checks = session._run_backend("backend-deterministic")
+    finally:
+        session._children.clear()
+        session.close()
+
+    startup = checks[0]
+    assert startup.status == "blocked_by_startup"
+    assert startup.reason == "child_unexpected_exit"
+    assert startup.details == {
+        "role": "edge",
+        "exit_code": 1,
+        "classification": "unexpected_exit",
+    }

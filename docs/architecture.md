@@ -44,11 +44,16 @@ not claims about the currently running v1/Flask implementation.
 ## Harness ownership
 
 The vNext compatibility Harness is a test-only owner. Its CLI creates a
-temporary data/log root, two dynamically leased loopback ports, memory-only
-bearers, and one worker plus one ASP.NET Core edge child. It classifies all 41
-HTTP and 2 WebSocket contract entries, uses deterministic fixtures for safe
-mutations and voice, skips observation routes that require hardware or
-external services, and removes the temporary root during idempotent cleanup.
+temporary data/log root, three dynamically leased loopback ports, memory-only
+bearers, and one Worker, Broker, and ASP.NET Core edge child. While the port
+leases are still held, it prebuilds Broker and edge sequentially; both are then
+started with `--no-build` so their shared `RuAgent.Protocol` output cannot race
+during a cold build. It classifies all 41 HTTP and 2 WebSocket contract entries,
+uses deterministic fixtures for safe mutations and voice, skips observation
+routes that require hardware or external services, and removes the temporary
+root during idempotent cleanup. An early child exit is recorded only as its
+role, exit code, and lifecycle classification; raw child output is not copied
+into the public artifact.
 The Harness does not change RuApp's normal production ownership of its
 children, credentials, or fixed runtime defaults.
 

@@ -31,6 +31,8 @@ from .routes import RouteSafety, build_route_registry, load_contract
 from .voice_fixtures import build_synthetic_wav, is_valid_wav
 
 HarnessMode = Literal["backend-deterministic", "gui-deterministic", "runtime-live"]
+_DOTNET_BUILD_TIMEOUT_SECONDS = 120
+_DOTNET_CONFIGURATION = "Debug"
 GuiScenario = Literal[
     "turn",
     "stop",
@@ -180,6 +182,8 @@ class HarnessSession:
         self.broker_base_url = f"http://127.0.0.1:{self.broker_port}"
         self._registry = build_route_registry(load_contract(self.project_root))
         self._cleanup_result: dict[str, bool] | None = None
+        self._startup_failure_reason: str | None = None
+        self._startup_failure_details: dict[str, object] = {}
 
     @classmethod
     def for_test(cls, readiness: bool) -> HarnessSession:
@@ -670,7 +674,12 @@ class HarnessSession:
                 "startup.readiness",
                 "passed" if ready else "blocked_by_startup",
                 0.0,
-                reason=None if ready else "edge_not_ready",
+                reason=None
+                if ready
+                else self._startup_failure_reason or "readiness_timeout",
+                details={}
+                if ready
+                else dict(self._startup_failure_details),
             )
         )
         if not ready:
@@ -853,6 +862,10 @@ class HarnessSession:
             and self.edge_lease is not None
             and self.broker_lease is not None
         )
+        # Broker and Edge share RuAgent.Protocol. Building both through concurrent
+        # `dotnet run` calls races on the shared obj output during a cold start.
+        # Keep the port leases held while the projects build in a fixed order.
+        self._prepare_dotnet_projects()
         workspace_root = self._workspace_root
         workspace_root.mkdir(parents=True, exist_ok=True)
         self.worker_lease.handoff()
@@ -932,6 +945,9 @@ class HarnessSession:
             "--project",
             str(self.project_root / "backend-dotnet" / "RuAgent.Broker" / "RuAgent.Broker.csproj"),
             "--no-launch-profile",
+            "--no-build",
+            "--configuration",
+            _DOTNET_CONFIGURATION,
         ]
         self._children.append(
             start_owned_child(
@@ -949,6 +965,9 @@ class HarnessSession:
             "--project",
             str(self.project_root / "backend-dotnet" / "RuBackend" / "RuBackend.csproj"),
             "--no-launch-profile",
+            "--no-build",
+            "--configuration",
+            _DOTNET_CONFIGURATION,
             "--",
             "--urls",
             self.edge_base_url,
@@ -963,6 +982,28 @@ class HarnessSession:
                 secrets=(self._desktop_token, self._worker_token, self._broker_token),
             )
         )
+
+    def _prepare_dotnet_projects(self) -> None:
+        projects = (
+            self.project_root / "backend-dotnet" / "RuAgent.Broker" / "RuAgent.Broker.csproj",
+            self.project_root / "backend-dotnet" / "RuBackend" / "RuBackend.csproj",
+        )
+        for project in projects:
+            subprocess.run(
+                [
+                    "dotnet",
+                    "build",
+                    "--nologo",
+                    str(project),
+                    "--configuration",
+                    _DOTNET_CONFIGURATION,
+                    "--verbosity",
+                    "minimal",
+                ],
+                cwd=self.project_root,
+                check=True,
+                timeout=_DOTNET_BUILD_TIMEOUT_SECONDS,
+            )
 
     def _write_broker_descriptor(self, descriptor_path: Path, session_root: Path) -> None:
         descriptor_path.write_text(
@@ -982,12 +1023,22 @@ class HarnessSession:
         )
 
     def _wait_for_readiness(self, timeout_seconds: float = 60.0) -> bool:
+        self._startup_failure_reason = None
+        self._startup_failure_details = {}
         deadline = time.monotonic() + timeout_seconds
         edge_headers = {"Authorization": f"Bearer {self._desktop_token}"}
         broker_headers = {"Authorization": f"Bearer {self._broker_token}"}
         while time.monotonic() < deadline:
-            if any(child.process.poll() is not None for child in self._children):
-                return False
+            for child in self._children:
+                child_exit = child.poll()
+                if child_exit.code is not None:
+                    self._startup_failure_reason = "child_unexpected_exit"
+                    self._startup_failure_details = {
+                        "role": child_exit.role,
+                        "exit_code": child_exit.code,
+                        "classification": child_exit.classification,
+                    }
+                    return False
             try:
                 response = httpx.get(
                     self.edge_base_url + "/settings",
@@ -1006,7 +1057,7 @@ class HarnessSession:
                 if (
                     200 <= edge_status < 300
                     and 200 <= broker_status < 300
-                    and all(child.process.poll() is None for child in self._children)
+                    and all(child.poll().code is None for child in self._children)
                 ):
                     for child in self._children:
                         child.mark_ready()
@@ -1014,6 +1065,10 @@ class HarnessSession:
             except httpx.HTTPError:
                 pass
             time.sleep(0.2)
+        self._startup_failure_reason = "readiness_timeout"
+        self._startup_failure_details = {
+            "timeout_seconds": round(timeout_seconds, 3),
+        }
         return False
 
     def _probe_voice_http(self, client: httpx.Client) -> list[CheckResult]:

@@ -67,6 +67,14 @@ fixture. The schema-v2 artifact contains bounded statuses and cleanup
 booleans, not request arguments, note content, workspace paths, tokens, or
 native output values.
 
+For a cold start, the Harness keeps all three port leases while it builds the
+Broker and Public Host projects sequentially, then launches each with
+`--no-build`. This avoids concurrent writes to their shared
+`RuAgent.Protocol` intermediate output. If a child still exits before
+readiness, `startup.readiness` reports `child_unexpected_exit` plus only the
+child role, exit code, and lifecycle classification; a live child that never
+becomes ready reports `readiness_timeout`.
+
 ## evidence_class: adapter
 
 Adapter evidence proves result semantics with fake endpoints, temporary files,

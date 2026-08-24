@@ -17,6 +17,10 @@ an operating contract.
 - [Canonical route data](../backend-dotnet/public-route-contract.json)
 - [Local conversational-model retirement](adr/0005-retire-legacy-llama-line.md)
 
+## Approved future work
+
+- [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md)
+
 ## Historical implementation records
 
 - [FastAPI decommission validation](aspnetcore-cutover-validation.md)
@@ -27,10 +31,6 @@ an operating contract.
 - [Superseded volume vertical-slice design](superpowers/specs/2026-08-22-ru-volume-tool-vertical-slice-design.md)
 - [Superseded volume vertical-slice plan](superpowers/plans/2026-08-22-ru-volume-tool-vertical-slice.md)
 - [Agent tools and skills roadmap](superpowers/plans/2026-08-22-ru-agent-tools-skills.md)
-
-## Approved future work
-
-- [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md)
 
 Superseded local-model, training, and evaluation plans were removed after the
 current decisions were consolidated into the architecture, ADRs, runtime

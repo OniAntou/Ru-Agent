@@ -66,12 +66,36 @@ def test_adrs_are_accepted_and_concise() -> None:
 
 def test_architecture_records_current_ownership_and_privacy() -> None:
     architecture = _text("docs/architecture.md")
+    readme = _text("README.md")
+    backend_readme = _text("backend-dotnet/README.md")
+    context = _text("CONTEXT.md")
+    cli_readme = _text("backend-dotnet/RuAgent.Cli/README.md")
     assert "ASP.NET Core" in architecture
-    assert "41 HTTP" in architecture
+    assert "54 HTTP" in architecture
     assert "2 WebSocket" in architecture
-    assert "typed worker protocol v2" in architecture
+    assert "typed worker protocol v2" in architecture.lower() or "worker v2" in architecture.lower()
     assert "chat text" in architecture
     assert "private VTS" in architecture
+    # Phase-1 headless harness foundation transitional facts
+    assert "54 HTTP" in readme
+    assert "54 HTTP" in backend_readme
+    assert "54 HTTP" in context
+    assert "Public Host" in architecture
+    assert "Worker/Broker" in architecture
+    assert "RuBackend.exe --managed-runtime" in architecture or "Public Host" in backend_readme
+    assert "RuAgent.Cli" in readme
+    assert "RuAgent.Cli" in backend_readme or "Cli" in backend_readme
+    assert "RuAgent.Cli" in cli_readme
+    assert "one-step" in architecture.lower() or "one step" in architecture.lower() or "AssistantStep" in architecture
+    assert "/agent/v1" in architecture or "/agent/v1" in readme
+    assert "/worker/v2" in architecture or "/worker/v2" in readme
+    # stale WinUI ownership must be gone
+    assert "RuApp owns all three" not in backend_readme
+    assert "RuApp owns the desktop lifecycle. It creates" not in architecture
+    # public contract is 54+2
+    contract = _text("backend-dotnet/public-route-contract.json")
+    assert '"/agent/v1/runs"' in contract
+    assert contract.count('"method"') == 56
 
 
 def test_current_docs_do_not_publish_retired_operating_instructions() -> None:

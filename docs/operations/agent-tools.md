@@ -1,8 +1,29 @@
 # Agent tools and truthful execution
 
-This document is the operating contract for Ru's action execution kernel v1.
+This document is the operating contract for Ru's action execution kernel v1
+plus the additive Phase-1 headless harness foundation (2026-08-25).
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
+
+> **Transitional Phase-1 note (headless harness foundation, 2026-08-25):**
+> - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
+>   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
+>   `RuAgent.Client`. Normal Chat remains on Worker v1; harness runs are
+>   feature-flagged at `RuBackend:AgentHarness:Version` (default `v1`), with
+>   additive Agent v2 at `/worker/v2` (one-step `AssistantStep`) and
+>   `/agent/v1/*` (13 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
+>   `id:<sequence>`/`Last-Event-ID` cursor). This checkpoint exposes only
+>   Broker-backed `files.list`/`files.read` through a durable Core (state
+>   machines, SQLite WAL `agent_harness.db`, AES-GCM payloads, idempotent
+>   conversation outbox, workspace trust, session permissions) and a thin
+>   `RuAgent.Cli` tracer (safe envelope only, NDJSON `--json` `v:1`, no private
+>   payload auto-fetch). Policy/approval/reconcile routes exist but return
+>   `phase_not_available` until their phase; `full` preset is rejected until
+>   phase 2.
+> - Public Contract is now **54 HTTP plus 2 WebSocket** (41 + 13 `/agent/v1/*`).
+> - Worker v2, Harness Core/Persistence, `RuAgent.Hosting`, `RuAgent.Client`,
+>   and `RuAgent.Cli` are covered in `docs/architecture.md`, `CONTEXT.md`,
+>   `backend-dotnet/README.md`, and `backend-dotnet/RuAgent.Cli/README.md`.
 
 ## Current capability matrix
 

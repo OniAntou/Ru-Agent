@@ -15,19 +15,34 @@ Current maintainer documentation:
 
 ## Runtime topology
 
-`RuApp.exe` owns the process lifecycle. It creates per-run secrets, starts the
-private Runtime Worker on loopback port 8005, starts the isolated
-`RuAgentBroker` on a dynamic loopback port, starts the ASP.NET Core Public Host
-on port 8000, waits for public readiness, and places all owned children in a
-Windows kill-on-close Job Object. The Broker descriptor and grants are
-session-scoped and are removed during shutdown.
+`RuBackend.exe --managed-runtime` (the ASP.NET Core Public Host) owns the
+Worker/Broker lifecycle in one Windows kill-on-close Job Object. `RuApp.exe`
+and the headless `RuAgent.Cli` tracer start-or-attach the Public Host through
+the shared `RuAgent.Client` (`PublicHostStarter`/`PublicHostLocator`), which
+validates an ACL-restricted loopback descriptor (`protocol_version`, `base_url`,
+bearer, PID/start-time/nonce) and `GET /status` bearer. On first start the
+Public Host creates per-run secrets, starts the private Runtime Worker on
+loopback port 8005 via the shared `ru_runtime.worker.server` multiplexer
+(`/worker/v1` Chat and `/worker/v2` one-step Agent), starts the isolated
+`RuAgentBroker` on a dynamic loopback port, binds the ASP.NET Core Public Host
+on port 8000, waits for public readiness, and assigns Worker/Broker to one Job
+Object. Idle Public Host exits after 10 minutes without an active Agent run,
+approval, or long-lived Chat WebSocket/Agent SSE lease. Broker descriptors and
+grants are session-scoped and removed during shutdown.
 
 ASP.NET Core is the only public backend. It owns authentication, validation,
 settings and credentials, sessions/history, activity, structured memory, chat
-ordering, public errors, and all 41 HTTP plus 2 WebSocket routes. Python is an
-authenticated private implementation boundary for model generation, provider
-adapters, STT execution, VTube Studio, observation, and the current voice
-engine coordination.
+ordering, public errors, durable Agent harness, and all 54 HTTP plus
+2 WebSocket routes (41 pre-existing plus 13 additive `/agent/v1/*`).
+Agent v2 (`/worker/v2` one-step `AssistantStep` and `/agent/v1/*` 13-route
+API/SSE) is additive and feature-flagged behind
+`RuBackend:AgentHarness:Version` (default `v1`); the stable `phase_not_available`
+policy/approval/reconcile routes remain fail-closed until their owning phase.
+Python is an authenticated private implementation boundary for model generation
+(one-step Worker v2 plus retained v1 Chat), provider adapters, STT execution,
+VTube Studio, observation, and the current voice engine coordination. The CLI
+tracer `RuAgent.Cli` is a thin headless client: it delegates start/attach to
+`RuAgent.Client` and all run behavior to authenticated HTTP/SSE.
 
 The canonical route inventory is
 [`backend-dotnet/public-route-contract.json`](backend-dotnet/public-route-contract.json).
@@ -122,15 +137,19 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 cmd /c D:\LLM\build.bat
 ```
 
-The backend artifact covers 41 HTTP routes and 2 WebSocket routes, requires
-correct-bearer success plus wrong/missing-bearer rejection, and records
-observation routes as explicit hardware/external skips. It uses synthetic
-STT/TTS and records only statuses, timings, counts, event types, and cleanup
-state. In deterministic mode it also requires one intentionally invalid
-`system.volume` request to end as `failed/invalid_arguments` before any native
-endpoint is opened. Broker approval/replay is checked separately with a
-temporary `notes.create` fixture. `--deterministic-chat` remains an alias for
-the backend mode.
+The backend artifact covers 54 HTTP routes and 2 WebSocket routes (41 legacy
+plus 13 `/agent/v1/*`), requires correct-bearer success plus
+wrong/missing-bearer rejection, and records observation routes as explicit
+hardware/external skips. It uses synthetic STT/TTS and records only statuses,
+timings, counts, event types, and cleanup state. In deterministic mode it also
+requires one intentionally invalid `system.volume` request to end as
+`failed/invalid_arguments` before any native endpoint is opened. Broker
+approval/replay is checked separately with a temporary `notes.create` fixture.
+`--deterministic-chat` remains an alias for the backend mode. At this
+checkpoint the harness also covers the additive Agent v2 read-only tracer
+(HTTP 201/200/409 idempotency, `workspace_busy`, `preset_mismatch`,
+`phase_not_available`, SSE reconnect `id:<sequence>`/`Last-Event-ID` cursor,
+and encrypted payload binding) via the temp Harness store and fake Worker/Broker.
 
 The deterministic GUI voice Harness is manual and interactive on Windows. It
 publishes the real WinUI shell, injects deterministic capture/playback at the

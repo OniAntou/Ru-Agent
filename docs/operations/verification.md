@@ -10,6 +10,11 @@ exhaust the page file on this workspace.
 dotnet restore D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj --nologo
+dotnet restore D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj --nologo
+dotnet restore D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj --nologo
+dotnet restore D:\LLM\backend-dotnet\RuAgent.Hosting.Tests\RuAgent.Hosting.Tests.csproj --nologo
+dotnet restore D:\LLM\backend-dotnet\RuAgent.Client.Tests\RuAgent.Client.Tests.csproj --nologo
+dotnet restore D:\LLM\backend-dotnet\RuAgent.Cli.Tests\RuAgent.Cli.Tests.csproj --nologo
 dotnet restore D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 dotnet restore D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe -m ruff check D:\LLM\src D:\LLM\tests D:\LLM\scripts D:\LLM\tools
@@ -20,6 +25,11 @@ dotnet restore D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe -m pip check
 dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj -c Release --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Release --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj -c Release --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Hosting.Tests\RuAgent.Hosting.Tests.csproj -c Release --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Client.Tests\RuAgent.Client.Tests.csproj -c Release --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Cli.Tests\RuAgent.Cli.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj -c Release --no-restore --nologo
 dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --no-restore --nologo
@@ -27,11 +37,12 @@ cmd /c D:\LLM\build.bat
 ```
 
 This is the local equivalent of the CI release gates and must run
-sequentially. The route checker must remain at 41 HTTP routes and 2 WebSocket
-routes. The compatibility Harness is deterministic contract evidence. A
-successful build proves only compilation, publish output, and the incremental
-native overlay build/test invocation; it does not prove that a GUI,
-microphone, speaker, VTube Studio model, or Windows audio endpoint worked.
+sequentially. The route checker must remain at 54 HTTP routes and 2 WebSocket
+routes (41 legacy plus 13 additive `/agent/v1/*`). The compatibility Harness is
+deterministic contract evidence. A successful build proves only compilation,
+publish output, and the incremental native overlay build/test invocation; it
+does not prove that a GUI, microphone, speaker, VTube Studio model, or Windows
+audio endpoint worked.
 
 Ruff, Mypy, and `pip check` are required dependency/tooling gates; do not hide
 findings with permanent ignores or `continue-on-error`. Live microphone,

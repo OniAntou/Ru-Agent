@@ -8,7 +8,8 @@ maintained in this repository.
 
 **Public Host**:
 The ASP.NET Core process that exclusively owns RuApp's authenticated HTTP and
-WebSocket contract.
+WebSocket contract and, when launched as `RuBackend.exe --managed-runtime`,
+owns Worker/Broker children in one Job Object (RuApp/CLI start-or-attach via descriptor).
 _Avoid_: Edge, proxy, FastAPI backend
 
 **Runtime Worker**:
@@ -28,8 +29,9 @@ over a private lifecycle/TTS contract.
 _Avoid_: TTS web server, Flask voice server
 
 **Public Contract**:
-The stable authenticated surface of 41 HTTP method/path pairs plus `/chat` and
-`/voice/stream`.
+The stable authenticated surface of 54 HTTP method/path pairs plus `/chat` and
+`/voice/stream` (41 legacy plus 13 additive `/agent/v1/*`; Agent v2 feature-flagged at
+`/worker/v2` and `/agent/v1/*`, default `v1`).
 _Avoid_: Compatibility routes
 
 **Worker Contract**:

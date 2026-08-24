@@ -15,11 +15,14 @@ def test_removed_python_web_host_and_forwarders_cannot_return_silently() -> None
     assert '"uvicorn' not in project
     assert '"pydantic' not in project
 
-    launch_plan = (
-        root / "gui-winui3" / "Services" / "BackendLaunchPlan.cs"
-    ).read_text(encoding="utf-8")
-    assert "RU_BACKEND_HOST_MODE" not in launch_plan
-    assert "ru_runtime.server" not in launch_plan
+    # Legacy WinUI ownership file was intentionally removed in phase-1 (Public Host now owns Worker/Broker)
+    assert not (root / "gui-winui3" / "Services" / "BackendLaunchPlan.cs").exists()
+    assert not (root / "gui-winui3" / "Services" / "BackendProcessManager.cs").exists()
+    hosting = (root / "backend-dotnet" / "RuAgent.Hosting" / "WorkerBrokerLaunchPlan.cs").read_text(encoding="utf-8")
+    assert "RU_BACKEND_HOST_MODE" not in hosting
+    # shared multiplexer is ru_runtime.worker.server (not legacy ru_runtime.server top-level)
+    assert "from ru_runtime.server import" not in hosting
+    assert "ru_runtime.worker.server" in hosting
 
     program = (root / "backend-dotnet" / "RuBackend" / "Program.cs").read_text(
         encoding="utf-8"

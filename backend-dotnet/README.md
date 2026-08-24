@@ -1,27 +1,27 @@
 # Ru ASP.NET Core backend
 
 `RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
-when launched by RuApp and owns all 41 HTTP routes plus 2 WebSocket routes:
-`/chat` and `/voice/stream`.
+when started as `RuBackend.exe --managed-runtime` and owns all 54 HTTP routes
+plus 2 WebSocket routes: `/chat` and `/voice/stream` plus 13 additive
+`/agent/v1/*` (Agent v2 feature-flagged, default `v1`).
 
 ```text
-RuApp / local client
+RuApp / RuAgent.Cli (thin client via RuAgent.Client start-or-attach)
         |
-        | bearer token or authenticated WebSocket
+        | bearer token or authenticated WebSocket / SSE
         v
-ASP.NET Core :8000
+ASP.NET Core Public Host :8000 (RuBackend.exe --managed-runtime)
         |\
-        | \-- private RuAgentBroker (leased loopback endpoint)
+        | \-- owned Worker/Broker in one kill-on-close Job Object
+        |      |-- Python runtime worker :8005 (ru_runtime.worker.server multiplex: /worker/v1 Chat, /worker/v2 one-step AssistantStep)
+        |      |     +-- hosted / external OpenAI-compatible provider adapters
+        |      |     +-- OmniVoice and Google STT
+        |      |     +-- VTube Studio and observation runtime
+        |      `-- private RuAgentBroker (leased loopback endpoint, run lease for files.list/read)
         |
-        | protocol v1, separate per-run token
-        v
-Python runtime worker :8005
-        |
-        +-- hosted / external OpenAI-compatible provider adapters
-        +-- OmniVoice and Google STT
-        +-- VTube Studio and observation runtime
-RuApp owns all three children (Public Host, Worker, and Broker) in one
-kill-on-close Windows Job Object.
+        | durable Harness: Core + SQLite (agent_harness.db) + encrypted payloads + idempotent history
+Public Host owns Worker/Broker in one Job Object; RuApp/CLI only own the
+Public Host descriptor lease and long-lived WebSocket/SSE client leases.
 ```
 
 There is no public Python HTTP server, forwarding catch-all, WebSocket relay,
@@ -56,10 +56,21 @@ persistent text.
 | `RuBackend__WorkerUrl` | `ws://127.0.0.1:8005/worker/v1` standalone | Private worker protocol URL; RuApp overrides it. |
 | `RU_DATA_ROOT` | project/user data default | Isolates settings, sessions, activity, and memory for tests. |
 
-RuApp generates distinct 256-bit desktop and worker secrets, starts the private
-Worker and RuAgentBroker before `RuBackend.exe`, assigns all three children to
-one kill-on-close Windows Job Object, probes public readiness, and terminates
-the owned process tree on shutdown or failure.
+Public Host (`RuBackend.exe --managed-runtime`) generates distinct 256-bit
+desktop and worker secrets, starts the private Worker (shared
+`ru_runtime.worker.server`) and RuAgentBroker before serving public traffic,
+assigns Worker/Broker to one kill-on-close Windows Job Object, publishes an
+ACL-restricted loopback descriptor for `RuAgent.Client` start-or-attach,
+probes public readiness, and terminates the owned Worker/Broker tree on
+shutdown or failure. `RuApp` and `RuAgent.Cli` never start Worker/Broker
+directly; they validate the descriptor and `GET /status` bearer, and poll for a
+valid descriptor if stale/absent. `RuBackend:AgentHarness:Version` defaults to
+`v1`; Agent v2 (`/worker/v2` one-step, `/agent/v1/*` 13 routes, SSE reconnect
+with durable `id:<sequence>` and `Last-Event-ID`/`after_sequence` cursors) is
+additive and runs only when explicitly set to `v2`. Worker v2 performs exactly
+one `generate_reply` per `agent.step.start` and returns provider-neutral
+`AssistantStep(text, tool_calls, finish_reason)`; phase-1 tracer advertises only
+Broker-backed `files.list`/`files.read`.
 
 ## Build and verification
 

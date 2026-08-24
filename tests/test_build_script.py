@@ -16,8 +16,10 @@ def _write_stub_commands(root: Path) -> None:
         "if /I \"%~1\"==\"publish\" (\n"
         "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Broker\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
         "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuBackend\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
+        "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Cli\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
         "  echo broker > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Broker\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Broker.exe\"\n"
         "  echo backend > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuBackend\\bin\\Release\\net10.0\\win-x64\\publish\\RuBackend.exe\"\n"
+        "  echo cli > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Cli\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Cli.exe\"\n"
         ")\n"
         "exit /b 0\n",
         encoding="utf-8",
@@ -87,8 +89,10 @@ def test_existing_overlay_still_runs_incremental_native_build(tmp_path: Path) ->
     assert "cmake --build" in (
         tmp_path / "checkout" / "cmake.invocations"
     ).read_text(encoding="utf-8")
-    assert "[1/7]" in result.stdout
-    assert "[7/7]" in result.stdout
+    assert "[1/12]" in result.stdout
+    assert "[12/12]" in result.stdout
+    assert "RuAgent.Cli" in result.stdout
+    assert "RuAgent.Harness.Core" in result.stdout
 
 
 def test_native_build_failure_stops_release_build(tmp_path: Path) -> None:

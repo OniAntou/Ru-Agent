@@ -17,7 +17,11 @@ an operating contract.
 - [Canonical route data](../backend-dotnet/public-route-contract.json)
 - [Local conversational-model retirement](adr/0005-retire-legacy-llama-line.md)
 
-## Approved future work
+## Implemented checkpoint (Phase 1 — headless harness foundation, 2026-08-25)
+
+- [Phase 1: Harness Foundation and Headless Read-Only Tracer](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-01-harness-foundation.md) — Public Host owns Worker/Broker in one Job Object, Worker v2 one-step `AssistantStep`, 54 HTTP + 2 WS (13 `/agent/v1/*` additive, `RuBackend:AgentHarness:Version=v1` default), encrypted SQLite harness store, SSE reconnect with durable `id:<sequence>`, and thin `RuAgent.Cli` tracer (safe NDJSON, no private payload auto-fetch).
+
+## Approved future work (Phases 2-4)
 
 - [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md)
 - [OpenCode/Pi coding-loop parity implementation program](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity.md)

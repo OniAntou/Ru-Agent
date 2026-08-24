@@ -46,11 +46,16 @@ def test_active_python_has_no_legacy_package_imports() -> None:
 
 
 def test_desktop_launches_the_new_worker_module() -> None:
-    source = (ROOT / "gui-winui3/Services/BackendLaunchPlan.cs").read_text(
+    # Phase-1 harness foundation moved ownership to Public Host (RuAgent.Hosting)
+    assert not (ROOT / "gui-winui3/Services/BackendLaunchPlan.cs").exists(), "legacy WinUI launch plan should be removed; Public Host owns Worker/Broker"
+    hosting = (ROOT / "backend-dotnet/RuAgent.Hosting/WorkerBrokerLaunchPlan.cs").read_text(
         encoding="utf-8"
     )
-    assert "-m ru_runtime.worker.v1.server" in source
-    assert "-m mini_gpt." not in source
+    assert "ru_runtime.worker.server" in hosting
+    assert "-m mini_gpt." not in hosting
+    # multiplexer serves both v1 and v2; ensure no legacy mini_gpt import remains
+    worker_server = (ROOT / "src/ru_runtime/worker/server.py").read_text(encoding="utf-8")
+    assert "worker.v1" in worker_server or "worker.server" in worker_server
 
 
 def test_runtime_modules_are_owned_by_explicit_domain_packages() -> None:

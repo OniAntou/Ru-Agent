@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using RuAgent.Harness.Core;
 using RuBackend.Harness.Workspace;
 using Xunit;
 
@@ -139,5 +140,133 @@ public sealed class WorkspaceIdentityResolverTests
         {
             Directory.Delete(tempRoot, true);
         }
+    }
+
+    [Fact]
+    public async Task Lease_mapping_preserves_trusted_identity_without_reinterpreting_markers_or_cwd()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ru-lease-map-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var resolver = new WindowsWorkspaceIdentityResolver();
+            var identity = await resolver.ResolveAsync(tempRoot);
+            var canonicalRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(tempRoot);
+            var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
+
+            var request = WindowsWorkspaceIdentityResolver.CreateBrokerLeaseRequest(
+                identity,
+                canonicalRoot,
+                "run_" + new string('a', 32),
+                new Guid("00000000000000000000000000000001").ToString("N"),
+                "standard",
+                snapshotVersion: 1,
+                snapshotHash: new string('0', 64),
+                expiresAt);
+
+            Assert.Equal(identity.WorkspaceId.Value, request.WorkspaceId);
+            Assert.Equal(identity.VolumeSerialNumber, request.VolumeSerialNumber);
+            Assert.Equal(identity.RootFileId, request.RootFileId);
+            Assert.Equal(identity.DisplayIdentityHash, request.DisplayIdentityHash);
+            Assert.Equal(
+                canonicalRoot.TrimEnd(Path.DirectorySeparatorChar),
+                request.CanonicalRoot.TrimEnd(Path.DirectorySeparatorChar));
+
+            // Repository markers appearing after trust must not change the mapped lease.
+            Directory.CreateDirectory(Path.Combine(tempRoot, ".git"));
+            File.WriteAllText(Path.Combine(tempRoot, "Cargo.toml"), "[package]");
+            var remapped = WindowsWorkspaceIdentityResolver.CreateBrokerLeaseRequest(
+                identity,
+                canonicalRoot,
+                "run_" + new string('a', 32),
+                new Guid("00000000000000000000000000000001").ToString("N"),
+                "standard",
+                snapshotVersion: 1,
+                snapshotHash: new string('0', 64),
+                expiresAt);
+            Assert.Equal(request.VolumeSerialNumber, remapped.VolumeSerialNumber);
+            Assert.Equal(request.RootFileId, remapped.RootFileId);
+            Assert.Equal(request.DisplayIdentityHash, remapped.DisplayIdentityHash);
+            Assert.Equal(request.WorkspaceId, remapped.WorkspaceId);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task Moved_identity_produces_different_lease_binding()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-lease-move-" + Guid.NewGuid().ToString("N"));
+        var sub = Path.Combine(root, "ws");
+        Directory.CreateDirectory(sub);
+        try
+        {
+            var resolver = new WindowsWorkspaceIdentityResolver();
+            var before = await resolver.ResolveAsync(sub);
+            var moved = Path.Combine(Path.GetTempPath(), "ru-lease-moved-" + Guid.NewGuid().ToString("N"));
+            Directory.Move(sub, moved);
+            try
+            {
+                var after = await resolver.ResolveAsync(moved);
+                var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
+                var session = Guid.NewGuid().ToString("N");
+
+                var beforeRequest = WindowsWorkspaceIdentityResolver.CreateBrokerLeaseRequest(
+                    before,
+                    WindowsWorkspaceIdentityResolver.GetCanonicalRoot(sub),
+                    "run_" + new string('b', 32),
+                    session,
+                    "standard",
+                    1,
+                    new string('1', 64),
+                    expiresAt);
+                var afterRequest = WindowsWorkspaceIdentityResolver.CreateBrokerLeaseRequest(
+                    after,
+                    WindowsWorkspaceIdentityResolver.GetCanonicalRoot(moved),
+                    "run_" + new string('b', 32),
+                    session,
+                    "standard",
+                    1,
+                    new string('1', 64),
+                    expiresAt);
+
+                Assert.NotEqual(beforeRequest.WorkspaceId, afterRequest.WorkspaceId);
+                Assert.NotEqual(beforeRequest.DisplayIdentityHash, afterRequest.DisplayIdentityHash);
+            }
+            finally
+            {
+                Directory.Delete(moved, true);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Relative_canonical_root_is_rejected_for_lease_mapping()
+    {
+        var identity = new RuAgent.Harness.Core.Workspace.WorkspaceIdentity(
+            new WorkspaceId("ws_" + new string('c', 32)),
+            "vol",
+            "fileid",
+            new string('d', 64));
+
+        Assert.ThrowsAny<ArgumentException>(() =>
+            WindowsWorkspaceIdentityResolver.CreateBrokerLeaseRequest(
+                identity,
+                "relative/path",
+                "run_" + new string('e', 32),
+                Guid.NewGuid().ToString("N"),
+                "standard",
+                1,
+                new string('0', 64),
+                DateTimeOffset.UtcNow.AddMinutes(5)));
     }
 }

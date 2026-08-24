@@ -5,6 +5,7 @@ using System.Text;
 using Microsoft.Win32.SafeHandles;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Workspace;
+using RuAgent.Protocol.Harness;
 
 namespace RuBackend.Harness.Workspace;
 
@@ -19,6 +20,110 @@ public sealed class WindowsWorkspaceIdentityResolver
         var displayHash = ComputeDisplayIdentityHash(canonicalRoot, volumeSerial, rootFileId);
         var workspaceId = ComputeWorkspaceId(canonicalRoot, volumeSerial, rootFileId);
         return new WorkspaceIdentity(workspaceId, volumeSerial, rootFileId, displayHash);
+    }
+
+    // v2 lease mapping: bind the already-trusted exact identity and canonical root into the Broker lease
+    // without reinterpreting repository markers or current directory.
+    public static BrokerRunLeaseRequest CreateBrokerLeaseRequest(
+        WorkspaceIdentity trustedIdentity,
+        string canonicalRoot,
+        string runId,
+        string sessionId,
+        string preset,
+        long snapshotVersion,
+        string snapshotHash,
+        DateTimeOffset expiresAt)
+    {
+        ArgumentNullException.ThrowIfNull(trustedIdentity);
+        ArgumentException.ThrowIfNullOrWhiteSpace(canonicalRoot);
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(preset);
+        ArgumentException.ThrowIfNullOrWhiteSpace(snapshotHash);
+
+        // Do not reinterpret markers or cwd: use the provided canonicalRoot exactly, only normalize separators via GetFullPath
+        // without calling GetCanonicalRoot (which would re-resolve final path) – we assume caller already resolved via phase-1 final-path.
+        // Validate rootedness BEFORE GetFullPath: GetFullPath would silently anchor a relative
+        // input to the current directory, which is exactly the reinterpretation we forbid.
+        if (!Path.IsPathRooted(canonicalRoot))
+        {
+            throw new ArgumentException("Canonical root must be rooted.", nameof(canonicalRoot));
+        }
+
+        var normalizedRoot = Path.GetFullPath(canonicalRoot);
+
+        // Preserve trusted identity fields exactly; do not recompute from path.
+        var request = new BrokerRunLeaseRequest(
+            RunId: runId,
+            SessionId: sessionId,
+            WorkspaceId: trustedIdentity.WorkspaceId.Value,
+            CanonicalRoot: normalizedRoot,
+            VolumeSerialNumber: trustedIdentity.VolumeSerialNumber,
+            RootFileId: trustedIdentity.RootFileId,
+            DisplayIdentityHash: trustedIdentity.DisplayIdentityHash,
+            Preset: preset,
+            SnapshotVersion: snapshotVersion,
+            SnapshotHash: snapshotHash,
+            ExpiresAt: expiresAt);
+        request.Validate();
+        return request;
+    }
+
+    public static RuAgent.Protocol.Harness.BrokerRunLease CreateBrokerLease(
+        WorkspaceIdentity trustedIdentity,
+        string canonicalRoot,
+        string runId,
+        string sessionId,
+        string preset,
+        long snapshotVersion,
+        string snapshotHash,
+        DateTimeOffset expiresAt,
+        IReadOnlyList<string> advertisedCapabilities)
+    {
+        var request = CreateBrokerLeaseRequest(
+            trustedIdentity,
+            canonicalRoot,
+            runId,
+            sessionId,
+            preset,
+            snapshotVersion,
+            snapshotHash,
+            expiresAt);
+        return new RuAgent.Protocol.Harness.BrokerRunLease(
+            request.RunId,
+            request.SessionId,
+            request.WorkspaceId,
+            request.CanonicalRoot,
+            request.VolumeSerialNumber,
+            request.RootFileId,
+            request.DisplayIdentityHash,
+            request.Preset,
+            request.SnapshotVersion,
+            request.SnapshotHash,
+            request.ExpiresAt,
+            advertisedCapabilities);
+    }
+
+    public BrokerRunLeaseRequest CreateLeaseRequestForTrustedWorkspace(
+        WorkspaceIdentity trustedIdentity,
+        string canonicalRoot,
+        string runId,
+        string sessionId,
+        AgentPermissionPreset preset,
+        long snapshotVersion,
+        string snapshotHash,
+        DateTimeOffset expiresAt)
+    {
+        var presetWire = preset == AgentPermissionPreset.FullAccess ? "full_access" : "standard";
+        return CreateBrokerLeaseRequest(
+            trustedIdentity,
+            canonicalRoot,
+            runId,
+            sessionId,
+            presetWire,
+            snapshotVersion,
+            snapshotHash,
+            expiresAt);
     }
 
     public static string GetCanonicalRoot(string workspacePath)

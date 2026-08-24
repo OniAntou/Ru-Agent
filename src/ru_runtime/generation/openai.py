@@ -19,7 +19,6 @@ KILO_GATEWAY_BASE_URL = "https://api.kilo.ai/api/gateway"
 OLLAMA_BASE_URL = "http://localhost:11434/v1"
 LMSTUDIO_BASE_URL = "http://localhost:1234/v1"
 _STREAM_TIMEOUT_SECONDS = 120.0
-_MAX_ERROR_BODY_BYTES = 4096
 _RETRY_DELAY_SECONDS = 1.0
 _MAX_RETRIES = 2
 _MAX_RETRY_DELAY_SECONDS = 60.0
@@ -54,6 +53,7 @@ def _parse_retry_after(value: str | None) -> float | None:
     except ValueError:
         pass
     from email.utils import parsedate_to_datetime
+
     try:
         when = parsedate_to_datetime(value)
     except (TypeError, ValueError):
@@ -83,11 +83,29 @@ def _is_loopback_url(base_url: str) -> bool:
     return parsed.scheme.casefold() in {"http", "https"} and hostname in _LOOPBACK_HOSTNAMES
 
 
+def safe_endpoint_label(base_url: str) -> str:
+    """Return a log-safe origin without userinfo, path, query, or fragment."""
+    try:
+        parsed = urlsplit(base_url)
+        scheme = parsed.scheme.casefold()
+        hostname = (parsed.hostname or "").rstrip(".")
+        port = parsed.port
+        ascii_hostname = hostname.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        return "configured-endpoint"
+    if scheme not in {"http", "https"} or not ascii_hostname:
+        return "configured-endpoint"
+    displayed_host = f"[{ascii_hostname}]" if ":" in ascii_hostname else ascii_hostname
+    if port is not None:
+        displayed_host = f"{displayed_host}:{port}"
+    return f"{scheme}://{displayed_host}"
+
+
 class OpenAIRuntime:
     """Uses the OpenCode OpenAI-compatible API to generate responses."""
 
     def __repr__(self) -> str:
-        return f"OpenAIRuntime(base_url={self.base_url!r}, model_name={self.model_name!r})"
+        return f"OpenAIRuntime(endpoint={safe_endpoint_label(self.base_url)!r})"
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -102,16 +120,16 @@ class OpenAIRuntime:
         self.api_key = api_key
         self.model_name = model_name
         self.api_variant = api_variant
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         if self.base_url.startswith("http://"):
             logger.warning(
                 "base_url uses plaintext HTTP; the API key will be sent unencrypted: %s",
-                self.base_url,
+                safe_endpoint_label(self.base_url),
             )
 
     @staticmethod
     def fetch_models(api_key: str, base_url: str) -> list[dict]:
-        base_url = base_url.rstrip('/')
+        base_url = base_url.rstrip("/")
         is_local = _is_loopback_url(base_url)
         if not api_key and not is_local:
             raise ValueError("API Key is missing")
@@ -133,7 +151,7 @@ class OpenAIRuntime:
                 ) from error
             raise RuntimeError(f"Cannot fetch models: HTTP {error.response.status_code}") from error
         except RequestError as error:
-            raise RuntimeError(f"Cannot fetch models: {error}") from error
+            raise RuntimeError("Cannot fetch models: network request failed") from error
 
         try:
             decoded = json.loads(response_body)
@@ -224,11 +242,11 @@ class OpenAIRuntime:
                     try:
                         decoded = json.loads(payload)
                     except json.JSONDecodeError as error:
-                        raise RuntimeError(f"OpenCode returned invalid JSON: {payload[:50]}") from error
+                        raise RuntimeError("Provider returned invalid JSON stream") from error
 
                     error_detail = self._stream_error(decoded)
                     if error_detail:
-                        raise RuntimeError(f"OpenCode stream error: {error_detail}")
+                        raise RuntimeError("Provider reported a stream error")
                     raw_delta = self._event_content(decoded, has_content=bool(accumulated))
                     if raw_delta is None:
                         continue
@@ -239,12 +257,10 @@ class OpenAIRuntime:
                     else:
                         if stream_mode is None:
                             stream_mode = (
-                                "cumulative"
-                                if raw_delta.startswith(accumulated)
-                                else "incremental"
+                                "cumulative" if raw_delta.startswith(accumulated) else "incremental"
                             )
                         if stream_mode == "cumulative" and raw_delta.startswith(accumulated):
-                            new_text = raw_delta[len(accumulated):]
+                            new_text = raw_delta[len(accumulated) :]
                             accumulated = raw_delta
                         else:
                             stream_mode = "incremental"
@@ -255,33 +271,23 @@ class OpenAIRuntime:
                         on_delta(new_text)
             _raise_if_cancelled(is_cancelled)
         except HTTPStatusError as error:
-            error_body = error.response.read()
-            logger.debug(
-                "OpenCode API error body (HTTP %s): %s",
-                error.response.status_code,
-                error_body[:_MAX_ERROR_BODY_BYTES],
-            )
-            message = f"OpenCode API HTTP {error.response.status_code}: {error.response.reason_phrase}"
-            try:
-                payload = json.loads(error_body)
-                provider_message = (payload.get("error") or {}).get("message") or ""
-            except (ValueError, AttributeError):
-                provider_message = ""
-            if provider_message and not provider_message.casefold().startswith(error.response.reason_phrase.casefold()):
-                message = f"{message}: {provider_message}"
-            if error.response.status_code == _HTTP_UNAUTHORIZED:
+            _ = error.response.read()
+            status_code = error.response.status_code
+            logger.debug("Provider API request failed with HTTP %s", status_code)
+            message = f"OpenCode API HTTP {status_code}"
+            if status_code == _HTTP_UNAUTHORIZED:
                 raise AuthenticationError(
                     "API key was rejected (HTTP 401). Check the saved key in Settings."
                 ) from error
-            if error.response.status_code == _HTTP_TOO_MANY_REQUESTS:
+            if status_code == _HTTP_TOO_MANY_REQUESTS:
                 retry_after = _parse_retry_after(error.response.headers.get("Retry-After"))
                 raise _NetworkStreamError(
                     "OpenCode API rate limited (HTTP 429); retrying after backoff",
                     retry_after=retry_after,
                 ) from error
             raise RuntimeError(message) from error
-        except (TimeoutException, RequestError) as e:
-            raise _NetworkStreamError(f"Network error while communicating with OpenCode API: {e}") from e
+        except (TimeoutException, RequestError) as error:
+            raise _NetworkStreamError("Network error while communicating with provider") from error
         if not saw_data_line:
             raise RuntimeError(
                 "OpenCode returned a non-SSE response (HTTP 200 but no 'data:' lines found)"
@@ -318,7 +324,9 @@ class OpenAIRuntime:
 
         body = {
             "model": model_override or self.model_name,
-            "messages": [{"role": role, "content": normalize_text(text)} for role, text in messages],
+            "messages": [
+                {"role": role, "content": normalize_text(text)} for role, text in messages
+            ],
             "max_tokens": max_new_tokens,
             "temperature": temperature,
             "top_k": top_k,
@@ -362,7 +370,9 @@ class OpenAIRuntime:
                 )
                 if content.strip():
                     break
-                logger.warning("OpenCode returned an empty stream (attempt %s); retrying", attempt + 1)
+                logger.warning(
+                    "OpenCode returned an empty stream (attempt %s); retrying", attempt + 1
+                )
             except _NetworkStreamError as error:
                 logger.warning("OpenCode network error (attempt %s): %s", attempt + 1, error)
                 if attempt >= max_retries:

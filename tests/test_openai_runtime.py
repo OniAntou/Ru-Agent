@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 
 import httpx
 import pytest
@@ -13,9 +14,7 @@ from ru_runtime.policy.text import append_stream_text
 
 class FakeStreamResponse:
     def __init__(self, events: list[dict[str, object]]) -> None:
-        self._lines = [
-            f"data: {json.dumps(event)}\n" for event in events
-        ] + ["data: [DONE]\n"]
+        self._lines = [f"data: {json.dumps(event)}\n" for event in events] + ["data: [DONE]\n"]
         self.status_code = 200
         self.reason_phrase = "OK"
         self.headers: dict[str, str] = {}
@@ -45,7 +44,7 @@ class EmptyStreamResponse(FakeStreamResponse):
 class MalformedStreamResponse(FakeStreamResponse):
     def __init__(self) -> None:
         super().__init__([])
-        self._lines = ['data: NOT_VALID_JSON\n', "data: [DONE]\n"]
+        self._lines = ["data: NOT_VALID_JSON\n", "data: [DONE]\n"]
 
 
 class ErrorStreamResponse(FakeStreamResponse):
@@ -151,6 +150,118 @@ def test_stream_error_from_api_raises_runtime_error(monkeypatch) -> None:
     rt = OpenAIRuntime("key")
     with pytest.raises(RuntimeError, match="stream error"):
         rt._read_stream("https://test", {}, b"", None)
+
+
+def test_http_provider_error_body_and_query_never_reach_logs_or_exception(
+    monkeypatch, caplog
+) -> None:
+    secret_url = "https://provider.test/v1?token=credential-secret"
+    request = httpx.Request("POST", secret_url)
+    response = httpx.Response(
+        400,
+        json={"error": {"message": "provider body contains private prompt"}},
+        request=request,
+    )
+
+    class HttpErrorStream:
+        status_code = response.status_code
+        reason_phrase = response.reason_phrase
+        headers = response.headers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def raise_for_status(self) -> None:
+            response.raise_for_status()
+
+        def read(self) -> bytes:
+            return response.content
+
+    monkeypatch.setattr(httpx, "stream", lambda *_args, **_kwargs: HttpErrorStream())
+
+    with (
+        caplog.at_level(logging.DEBUG, logger="ru_runtime.generation.openai"),
+        pytest.raises(RuntimeError) as caught,
+    ):
+        OpenAIRuntime("key").generate(
+            [("user", "private prompt")],
+            max_new_tokens=32,
+            temperature=0.7,
+            top_k=20,
+            max_retries=0,
+        )
+
+    exposed = f"{caplog.text}\n{caught.value}"
+    assert "credential-secret" not in exposed
+    assert "provider body" not in exposed
+    assert "private prompt" not in exposed
+    assert "HTTP 400" in str(caught.value)
+
+
+def test_network_exception_url_never_reaches_logs_or_public_error(monkeypatch, caplog) -> None:
+    class NetworkFailureStream:
+        def __enter__(self):
+            request = httpx.Request("POST", "https://provider.test/v1?api_key=credential-secret")
+            raise httpx.ReadError(
+                "request failed for private prompt at " + str(request.url),
+                request=request,
+            )
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(httpx, "stream", lambda *_args, **_kwargs: NetworkFailureStream())
+
+    with (
+        caplog.at_level(logging.WARNING, logger="ru_runtime.generation.openai"),
+        pytest.raises(RuntimeError) as caught,
+    ):
+        OpenAIRuntime("key").generate(
+            [("user", "private prompt")],
+            max_new_tokens=32,
+            temperature=0.7,
+            top_k=20,
+            max_retries=0,
+        )
+
+    exposed = f"{caplog.text}\n{caught.value}"
+    assert "credential-secret" not in exposed
+    assert "private prompt" not in exposed
+    assert "api_key" not in exposed
+
+
+def test_configured_endpoint_credentials_and_query_are_redacted_from_logs_and_repr(caplog) -> None:
+    secret_url = "http://local-user:local-pass@provider.test/v1?token=credential-secret"
+
+    with caplog.at_level(logging.INFO):
+        runtime = OpenAIRuntime("key", base_url=secret_url)
+
+    exposed = f"{caplog.text}\n{runtime!r}"
+    assert "local-user" not in exposed
+    assert "local-pass" not in exposed
+    assert "credential-secret" not in exposed
+    assert "?token=" not in exposed
+
+
+def test_model_runner_load_logs_only_a_redacted_endpoint_label(caplog) -> None:
+    from ru_runtime.generation.runner import BACKEND_CUSTOM, ModelRunner
+
+    runner = ModelRunner()
+    runner.select_backend(BACKEND_CUSTOM)
+    with caplog.at_level(logging.INFO):
+        runner.load(
+            api_key="key",
+            model_name="model",
+            base_url="http://local-user:local-pass@provider.test/v1?token=credential-secret",
+        )
+
+    assert "local-user" not in caplog.text
+    assert "local-pass" not in caplog.text
+    assert "credential-secret" not in caplog.text
+    assert "?token=" not in caplog.text
 
 
 def test_retry_emits_delta_from_empty_first_attempt(monkeypatch) -> None:
@@ -331,6 +442,45 @@ def test_fetch_models_raises_for_cloud_when_key_is_blank() -> None:
         OpenAIRuntime.fetch_models("", "https://opencode.ai/zen/v1")
 
 
+def test_fetch_models_redacts_request_url_and_exception_text(monkeypatch) -> None:
+    secret = "https://user:password@provider.example/v1/models?api_key=credential"
+
+    def failing_get(self, url, *, headers=None, **kwargs):
+        request = httpx.Request("GET", secret)
+        raise httpx.ConnectError(f"connection failed for {secret}", request=request)
+
+    monkeypatch.setattr(httpx.Client, "get", failing_get)
+
+    with pytest.raises(RuntimeError) as captured:
+        OpenAIRuntime.fetch_models("key", "https://provider.example/v1")
+
+    message = str(captured.value)
+    assert message == "Cannot fetch models: network request failed"
+    assert "password" not in message
+    assert "credential" not in message
+
+
+def test_status_get_models_redacts_unexpected_provider_failure(monkeypatch, caplog) -> None:
+    from ru_runtime.worker.v1.status import get_models
+
+    secret = "https://user:password@provider.example/models?api_key=credential"
+
+    def explode(_api_key: str, _base_url: str):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(OpenAIRuntime, "fetch_models", staticmethod(explode))
+
+    with caplog.at_level(logging.WARNING, logger="ru_runtime.worker.v1.runtime_services"):
+        result = get_models("ollama")
+
+    assert result == {
+        "status": "error",
+        "message": "Cannot fetch models from the configured provider.",
+    }
+    assert "password" not in caplog.text
+    assert "credential" not in caplog.text
+
+
 @pytest.mark.parametrize(
     "base_url",
     [
@@ -366,13 +516,16 @@ def test_generate_allows_exact_loopback_urls_without_api_key(monkeypatch, base_u
     runtime = OpenAIRuntime("", base_url=base_url)
     monkeypatch.setattr(runtime, "_read_stream", lambda *args, **kwargs: "local response")
 
-    assert runtime.generate(
-        [("user", "hello")],
-        max_new_tokens=32,
-        temperature=0.7,
-        top_k=20,
-        max_retries=0,
-    ) == "local response"
+    assert (
+        runtime.generate(
+            [("user", "hello")],
+            max_new_tokens=32,
+            temperature=0.7,
+            top_k=20,
+            max_retries=0,
+        )
+        == "local response"
+    )
 
 
 def test_model_runner_supports_ollama_and_lmstudio_backends() -> None:
@@ -423,4 +576,3 @@ def test_status_get_models_handles_ollama_and_lmstudio(monkeypatch) -> None:
     result_lmstudio = get_models("lmstudio")
     assert result_lmstudio["status"] == "ok"
     assert result_lmstudio["models"] == ["local-model-1"]
-

@@ -300,8 +300,8 @@ Expected RED: privacy/outbox contracts absent, then duplicate-delivery assertion
 - Create `tests/test_worker_v2_server.py`.
 - Modify `tests/test_worker_server.py` only for the shared server entrypoint.
 
-- [ ] Write RED protocol tests for authenticated `/worker/v2` hello and these messages only: `agent.step.start`, `agent.step.delta`, `agent.step.done`, `agent.step.cancel`, `error`.
-- [ ] Define the v2 result shape in tests:
+- [x] Write RED protocol tests for authenticated `/worker/v2` hello and these messages only: `agent.step.start`, `agent.step.delta`, `agent.step.done`, `agent.step.cancel`, `error`.
+- [x] Define the v2 result shape in tests:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -313,10 +313,10 @@ class AssistantStep:
 
 `ModelToolCall` contains optional provider call ID, `tool_id`, `tool_version`, and bounded object arguments. It never contains a receipt or approval token.
 
-- [ ] Add RED tests that one request invokes `RuntimeRunner.generate_reply` exactly once; a structured selection becomes one tool call; prose becomes text; braced selection JSON never streams as visible delta; cancellation cancels the single generation.
-- [ ] Add RED failure/privacy tests: provider timeout/unavailable/protocol failure emits only a stable bounded Worker error code and correlation IDs; provider body, URL query, credentials, prompt, and exception message never enter Worker logs or public/safe frames.
-- [ ] Add a source-contract test that `src/ru_runtime/worker/v2` contains no tool-result queue, receipt wait, approval request, Broker import, event-store import, or outer `MAX_TOOL_CALLS_PER_TURN` loop.
-- [ ] Run RED:
+- [x] Add RED tests that one request invokes `RuntimeRunner.generate_reply` exactly once; a structured selection becomes one tool call; prose becomes text; braced selection JSON never streams as visible delta; cancellation cancels the single generation.
+- [x] Add RED failure/privacy tests: provider timeout/unavailable/protocol failure emits only a stable bounded Worker error code and correlation IDs; provider body, URL query, credentials, prompt, and exception message never enter Worker logs or public/safe frames.
+- [x] Add a source-contract test that `src/ru_runtime/worker/v2` contains no tool-result queue, receipt wait, approval request, Broker import, event-store import, or outer `MAX_TOOL_CALLS_PER_TURN` loop.
+- [x] Run RED:
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q D:\LLM\tests\test_worker_v2_protocol.py D:\LLM\tests\test_worker_v2_step.py D:\LLM\tests\test_worker_v2_server.py
@@ -324,9 +324,9 @@ class AssistantStep:
 
 Expected RED: v2 package/messages missing.
 
-- [ ] Implement the shared server multiplexer: `/worker/v1` delegates untouched v1 behavior; `/worker/v2` uses independent connection state and never accepts `chat.tool.result`.
-- [ ] Reuse the current provider/model adapter and structured-selection parser, but perform exactly one generation. Bound messages, tools, schemas, arguments, text, and deltas at protocol ingress/egress.
-- [ ] Run GREEN, then run v1 regression:
+- [x] Implement the shared server multiplexer: `/worker/v1` delegates untouched v1 behavior; `/worker/v2` uses independent connection state and never accepts `chat.tool.result`.
+- [x] Reuse the current provider/model adapter and structured-selection parser, but perform exactly one generation. Bound messages, tools, schemas, arguments, text, and deltas at protocol ingress/egress.
+- [x] Run GREEN, then run v1 regression:
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q D:\LLM\tests\test_worker_v2_protocol.py D:\LLM\tests\test_worker_v2_step.py D:\LLM\tests\test_worker_v2_server.py
@@ -335,7 +335,9 @@ Expected RED: v2 package/messages missing.
 
 Expected: both commands pass.
 
-- [ ] Commit: `feat(worker): add one-step agent protocol v2`.
+Evidence on 2026-08-24: Worker v2/provider tests passed 72/72, v1 Worker regression passed 104/104, and the full Python suite passed 866/866. Targeted Ruff, mypy, compileall, and documentation checks were clean. The shared multiplexer is additive; the production Desktop launcher intentionally remains on the v1 entrypoint until Task 9 cutover. The current-document audit found no operational document that could truthfully advertise v2 as active and no genuinely obsolete document to delete; dated plans/specs remain retained history.
+
+- [x] Commit: `feat(worker): add one-step agent protocol v2`.
 
 ## Task 7: Adapt Worker and Broker read-only ports in ASP.NET Core
 

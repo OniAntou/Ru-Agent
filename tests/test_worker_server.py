@@ -9,6 +9,7 @@ import pytest
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
+from ru_runtime.worker.server import serve_worker
 from ru_runtime.worker.v1.protocol import (
     CHAT_CHUNK,
     CHAT_DONE,
@@ -30,7 +31,6 @@ from ru_runtime.worker.v1.server import (
     WorkerHandlers,
     WorkerReply,
     serve_runtime_worker,
-    serve_worker,
 )
 
 

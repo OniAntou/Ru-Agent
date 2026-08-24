@@ -18,6 +18,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request as UrlRequest
 from urllib.request import urlopen
 
+from ru_runtime.generation.openai import safe_endpoint_label
 from ru_runtime.generation.runner import (
     ALL_BACKENDS,
     BACKEND_CUSTOM,
@@ -697,8 +698,8 @@ def apply_saved_settings() -> str:
         )
         try:
             api_key = store.get_key() or ""
-        except Exception as error:
-            logger.warning("Could not read the saved API key: %s", error)
+        except Exception:
+            logger.warning("Could not read the saved provider credential")
     core.runner.select_backend(backend)
 
     model_name = ""
@@ -711,15 +712,19 @@ def apply_saved_settings() -> str:
     elif backend == BACKEND_OLLAMA:
         model_name = _text_setting(settings, "ollama_model")
         base_url = _text_setting(settings, "ollama_url")
-        logger.info("Using Ollama model: %s (%s)", model_name, base_url)
+        logger.info("Using Ollama model: %s (%s)", model_name, safe_endpoint_label(base_url))
     elif backend == BACKEND_LMSTUDIO:
         model_name = _text_setting(settings, "lmstudio_model")
         base_url = _text_setting(settings, "lmstudio_url")
-        logger.info("Using LM Studio model: %s (%s)", model_name, base_url)
+        logger.info("Using LM Studio model: %s (%s)", model_name, safe_endpoint_label(base_url))
     elif backend == BACKEND_CUSTOM:
         model_name = _text_setting(settings, "custom_model")
         base_url = _text_setting(settings, "custom_url")
-        logger.info("Using Custom OpenAI model: %s (%s)", model_name, base_url)
+        logger.info(
+            "Using Custom OpenAI model: %s (%s)",
+            model_name,
+            safe_endpoint_label(base_url),
+        )
     else:
         model_name = _text_setting(settings, "opencode_model")
         logger.info("Using cloud default model after backend migration: %s", model_name)
@@ -746,8 +751,8 @@ def _apply_settings_on_startup() -> None:
     try:
         result = apply_saved_settings()
         logger.info("Applied saved settings on startup: %s", result)
-    except Exception as error:
-        logger.error("Failed to apply saved settings on startup: %s", error)
+    except Exception:
+        logger.error("Failed to apply saved settings on startup")
     try:
         _start_memory_learner()
     except Exception as error:

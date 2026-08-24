@@ -19,7 +19,7 @@ def test_load_records_load_error_and_re_raises(monkeypatch) -> None:
     with pytest.raises(RuntimeError, match="cannot reach server"):
         model.load(model_name="qwen2.5:latest")
 
-    assert model.load_error == "cannot reach server"
+    assert model.load_error == "model_runtime_load_failed"
 
 
 def test_load_clears_load_error_on_success() -> None:

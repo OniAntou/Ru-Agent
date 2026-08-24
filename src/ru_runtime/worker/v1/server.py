@@ -354,6 +354,15 @@ async def _handle_connection(
             await asyncio.gather(*request_tasks.values(), return_exceptions=True)
 
 
+async def handle_connection(
+    connection: ServerConnection,
+    token: str,
+    handlers: WorkerHandlers,
+) -> None:
+    """Expose the unchanged v1 connection handler to the shared multiplexer."""
+    await _handle_connection(connection, token, handlers)
+
+
 async def _run_request(
     connection: ServerConnection,
     send_lock: asyncio.Lock,

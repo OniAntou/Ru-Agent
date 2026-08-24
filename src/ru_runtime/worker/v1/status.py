@@ -6,7 +6,7 @@ def get_status() -> dict[str, object]:
 
     runner = shared.core.runner
     if runner.load_error:
-        return {"status": "error", "message": runner.load_error}
+        return {"status": "error", "message": "Model runtime failed to load."}
     return {
         "status": "ok",
         "message": "Backend is running and ready for the WinUI3 UI.",
@@ -32,15 +32,15 @@ def get_models(backend: str = "") -> dict[str, object]:
 
     backend = shared._resolve_backend(backend) or backend
     if backend not in OPENAI_COMPATIBLE_BACKENDS:
-        return {"status": "error", "message": f"unsupported backend: {backend!r}"}
+        return {"status": "error", "message": "Unsupported model backend."}
 
     settings = shared.load_settings()
     api_key = ""
     if backend == BACKEND_OPENCODE:
         try:
             api_key = shared.core.opencode_cred.get_key() or ""
-        except Exception as error:
-            shared.logger.warning("Could not read OpenCode key: %s", error)
+        except Exception:
+            shared.logger.warning("Could not read OpenCode credential")
         if not api_key:
             return {
                 "status": "error",
@@ -50,8 +50,8 @@ def get_models(backend: str = "") -> dict[str, object]:
     elif backend == BACKEND_KILO:
         try:
             api_key = shared.core.kilo_cred.get_key() or ""
-        except Exception as error:
-            shared.logger.warning("Could not read Kilo key: %s", error)
+        except Exception:
+            shared.logger.warning("Could not read Kilo credential")
         if not api_key:
             return {
                 "status": "error",
@@ -68,15 +68,21 @@ def get_models(backend: str = "") -> dict[str, object]:
         base_url = settings.get("custom_url", "http://localhost:8000/v1")
         try:
             api_key = shared.core.custom_cred.get_key() or ""
-        except Exception as error:
-            shared.logger.warning("Could not read Custom key: %s", error)
+        except Exception:
+            shared.logger.warning("Could not read Custom credential")
             api_key = ""
 
     try:
         from ru_runtime.generation.openai import OpenAIRuntime
 
         models = OpenAIRuntime.fetch_models(api_key, base_url)
-    except Exception as error:
-        shared.logger.warning("Failed to fetch models for %s: %s", backend, error)
-        return {"status": "error", "message": str(error)}
+    except Exception:
+        # Provider exceptions may include credential-bearing URLs, response
+        # bodies, or transport details.  Keep both the diagnostic log and the
+        # v1 response on a stable public message.
+        shared.logger.warning("Failed to fetch models for %s", backend)
+        return {
+            "status": "error",
+            "message": "Cannot fetch models from the configured provider.",
+        }
     return {"status": "ok", "models": [model["id"] for model in models]}

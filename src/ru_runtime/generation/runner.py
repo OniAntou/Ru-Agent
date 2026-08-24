@@ -8,6 +8,7 @@ from ru_runtime.generation.openai import (
     OLLAMA_BASE_URL,
     OPENCODE_BASE_URL,
     OpenAIRuntime,
+    safe_endpoint_label,
 )
 from ru_runtime.generation.orchestration import execute_reply
 from ru_runtime.generation.search import perform_web_search
@@ -95,15 +96,15 @@ class ModelRunner:
                     api_variant=api_variant,
                 )
                 logger.info(
-                    "Loaded %s runtime with model: %s (%s)",
+                    "Loaded %s runtime with model: %s (endpoint=%s)",
                     self.backend,
                     effective_model,
-                    target_url,
+                    safe_endpoint_label(target_url),
                 )
                 return f"Ready ({self.backend} API)"
             raise ValueError(f"unsupported backend: {self.backend}")
-        except Exception as error:
-            self.load_error = str(error)
+        except Exception:
+            self.load_error = "model_runtime_load_failed"
             raise
 
     def _generate(

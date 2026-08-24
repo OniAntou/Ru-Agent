@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,8 +34,10 @@ def test_runtime_service_modules_have_no_web_framework_imports() -> None:
         "observation.py",
     ):
         source = (
-            ROOT / "src" / "ru_runtime" / "worker" / "v1" / name
-        ).read_text(encoding="utf-8").casefold()
+            (ROOT / "src" / "ru_runtime" / "worker" / "v1" / name)
+            .read_text(encoding="utf-8")
+            .casefold()
+        )
         assert "ru_runtime.routers" not in source
         assert "fastapi" not in source
         assert "starlette" not in source
@@ -177,9 +180,7 @@ def test_apply_saved_settings_migrates_retired_gguf_to_opencode(monkeypatch, tmp
     assert result == "Ready"
 
 
-def test_apply_saved_settings_loads_custom_key_for_custom_backend(
-    monkeypatch, tmp_path
-) -> None:
+def test_apply_saved_settings_loads_custom_key_for_custom_backend(monkeypatch, tmp_path) -> None:
     settings_file = tmp_path / "settings.json"
     settings_file.write_text(
         '{"backend": "Custom OpenAI", "custom_model": "my-model", "custom_url": "http://localhost:9000/v1"}',
@@ -212,9 +213,33 @@ def test_apply_saved_settings_loads_custom_key_for_custom_backend(
     assert result == "Ready"
 
 
-def test_effective_settings_never_inherits_a_retired_gguf_model(
-    monkeypatch, tmp_path
+def test_apply_saved_settings_never_logs_credential_exception_text(
+    monkeypatch, tmp_path, caplog
 ) -> None:
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(
+        '{"backend": "Custom OpenAI", "custom_model": "model", "custom_url": "http://localhost:9000/v1"}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(shared, "SETTINGS_FILE", settings_file)
+    secret = "https://user:password@provider.example/?api_key=credential"
+
+    def explode() -> str:
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(shared.core.custom_cred, "get_key", explode)
+    monkeypatch.setattr(shared.core.runner, "select_backend", lambda _backend: None)
+    monkeypatch.setattr(shared.core.runner, "load", lambda **_kwargs: "Ready")
+
+    with caplog.at_level(logging.WARNING, logger="ru_runtime.worker.v1.runtime_services"):
+        assert shared.apply_saved_settings() == "Ready"
+
+    assert "password" not in caplog.text
+    assert "api_key" not in caplog.text
+    assert "provider.example" not in caplog.text
+
+
+def test_effective_settings_never_inherits_a_retired_gguf_model(monkeypatch, tmp_path) -> None:
     settings_file = tmp_path / "settings.json"
     settings_file.write_text(
         '{"backend": "OpenCode Zen", "model": "LFM2.5-2.6B-Q4_K_M.gguf", "opencode_model": ""}',

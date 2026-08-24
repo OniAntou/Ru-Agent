@@ -17,6 +17,13 @@ public static class AgentMessageTypes
     public const string Cancel = "cancel";
     public const string Health = "health";
     public const string HealthOk = "health_ok";
+    public const string RunOpen = "run.open";
+    public const string RunOpened = "run.opened";
+    public const string RunClose = "run.close";
+    public const string ToolEvaluate = "tool.evaluate";
+    public const string ToolPrepare = "tool.prepare";
+    public const string ToolExecute = "tool.execute";
+    public const string ToolOutputDelta = "tool.output.delta";
 
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(
         [
@@ -35,6 +42,25 @@ public static class AgentMessageTypes
             Cancel,
             Health,
             HealthOk,
+            RunOpen,
+            RunOpened,
+            RunClose,
+            ToolEvaluate,
+            ToolPrepare,
+            ToolExecute,
+            ToolOutputDelta,
+        ],
+        StringComparer.Ordinal);
+
+    public static IReadOnlySet<string> V2Only { get; } = new HashSet<string>(
+        [
+            RunOpen,
+            RunOpened,
+            RunClose,
+            ToolEvaluate,
+            ToolPrepare,
+            ToolExecute,
+            ToolOutputDelta,
         ],
         StringComparer.Ordinal);
 }

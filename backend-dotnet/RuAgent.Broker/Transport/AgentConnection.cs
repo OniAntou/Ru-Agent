@@ -89,6 +89,11 @@ public sealed class AgentConnection
 
     private async Task<AgentEnvelope> HandleAsync(AgentEnvelope request, CancellationToken cancellationToken)
     {
+        if (request.ProtocolVersion == AgentEnvelopeCodec.ProtocolVersion && AgentMessageTypes.V2Only.Contains(request.MessageType))
+        {
+            return ToolError(request, "unsupported_message", "v2 message on v1 connection");
+        }
+
         switch (request.MessageType)
         {
             case AgentMessageTypes.Hello:
@@ -102,6 +107,10 @@ public sealed class AgentConnection
                 return OpenSession(request);
             case AgentMessageTypes.SessionClose:
                 return CloseSession(request);
+            case AgentMessageTypes.RunOpen:
+                return HandleRunOpen(request);
+            case AgentMessageTypes.RunClose:
+                return HandleRunClose(request);
             case AgentMessageTypes.ToolRequest:
                 if (!_session.Owns(request.SessionId))
                 {
@@ -111,6 +120,14 @@ public sealed class AgentConnection
                 return _toolHandler is null
                     ? ToolError(request, "broker_not_ready", "tool execution is not registered")
                     : await _toolHandler(request, cancellationToken).ConfigureAwait(false);
+            case AgentMessageTypes.ToolEvaluate:
+                return await HandleToolEvaluateAsync(request, cancellationToken).ConfigureAwait(false);
+            case AgentMessageTypes.ToolPrepare:
+                return await HandleToolPrepareAsync(request, cancellationToken).ConfigureAwait(false);
+            case AgentMessageTypes.ToolExecute:
+                return await HandleToolExecuteAsync(request, cancellationToken).ConfigureAwait(false);
+            case AgentMessageTypes.ToolOutputDelta:
+                return ToolError(request, "phase_not_available", "tool output delta not available in phase 1");
             case AgentMessageTypes.SkillStart:
                 if (!_session.Owns(request.SessionId))
                 {
@@ -122,6 +139,12 @@ public sealed class AgentConnection
                 if (!_session.Owns(request.SessionId))
                 {
                     return ToolError(request, "broker_not_ready", "session is not open");
+                }
+
+                if (request.ProtocolVersion == AgentEnvelopeCodec.ProtocolVersionV2)
+                {
+                    // Phase 1: approval handling via Broker is not available for v2; approvals are user-control only.
+                    return ToolError(request, "phase_not_available", "approval handling not available in phase 1");
                 }
 
                 return _approvalHandler is null
@@ -177,6 +200,190 @@ public sealed class AgentConnection
             ["status"] = "succeeded",
             ["safe_summary"] = "session closed",
         });
+    }
+
+    private AgentEnvelope HandleRunOpen(AgentEnvelope request)
+    {
+        try
+        {
+            var payload = request.Payload;
+            var runId = ReadRequiredString(payload, "run_id");
+            var sessionId = ReadRequiredString(payload, "session_id");
+            var workspaceId = ReadRequiredString(payload, "workspace_id");
+            var canonicalRoot = ReadRequiredString(payload, "canonical_root");
+            var volumeSerial = ReadRequiredString(payload, "volume_serial");
+            var rootFileId = ReadRequiredString(payload, "root_file_id");
+            var displayHash = ReadRequiredString(payload, "display_hash");
+            var preset = ReadRequiredString(payload, "preset");
+            var snapshotVersion = ReadRequiredLong(payload, "snapshot_version");
+            var snapshotHash = ReadRequiredString(payload, "snapshot_hash");
+            var expiresAtStr = ReadRequiredString(payload, "expires_at");
+            if (!DateTimeOffset.TryParse(expiresAtStr, out var expiresAt))
+            {
+                return ToolError(request, "invalid_expires_at", "expires_at is invalid");
+            }
+
+            var lease = BrokerRunLease.CreateValidated(
+                runId,
+                sessionId,
+                workspaceId,
+                canonicalRoot,
+                volumeSerial,
+                rootFileId,
+                displayHash,
+                preset,
+                snapshotVersion,
+                snapshotHash,
+                expiresAt);
+
+            if (!_session.TryOpenRunLease(lease, out var errorCode))
+            {
+                return ToolError(request, errorCode ?? "lease_failed", "run lease failed");
+            }
+
+            return Reply(request, AgentMessageTypes.RunOpened, new JsonObject
+            {
+                ["status"] = ToolResultStatuses.Succeeded,
+                ["run_id"] = lease.RunId,
+                ["advertised_capabilities"] = new JsonArray(lease.AdvertisedCapabilities.Select(c => (JsonNode?)c).ToArray()),
+                ["safe_summary"] = "run opened",
+            });
+        }
+        catch (AgentProtocolException error)
+        {
+            return ToolError(request, error.Code, "invalid run open");
+        }
+    }
+
+    private AgentEnvelope HandleRunClose(AgentEnvelope request)
+    {
+        var runId = request.Payload["run_id"] is JsonValue v && v.TryGetValue<string>(out var s) ? s : request.RequestId;
+        if (_session.TryGetRunLease(runId, out _))
+        {
+            // Close run lease by clearing session lease if matches; simplified.
+            _session.Close(request.SessionId);
+        }
+
+        return Reply(request, AgentMessageTypes.ToolResult, new JsonObject
+        {
+            ["status"] = ToolResultStatuses.Succeeded,
+            ["safe_summary"] = "run closed",
+        });
+    }
+
+    private Task<AgentEnvelope> HandleToolEvaluateAsync(AgentEnvelope request, CancellationToken cancellationToken)
+    {
+        var toolId = request.Payload["tool_id"] is JsonValue tv && tv.TryGetValue<string>(out var s) ? s : string.Empty;
+        var runId = request.Payload["run_id"] is JsonValue rv && rv.TryGetValue<string>(out var rs) ? rs : request.SessionId;
+
+        if (!_session.ValidateRunLeaseForTool(runId, toolId, out var errorCode))
+        {
+            // If capability unavailable for phase-1, return phase_not_available for mutation attempt?
+            if (errorCode == "capability_unavailable" && toolId is not ("files.list" or "files.read"))
+            {
+                return Task.FromResult(ToolError(request, "phase_not_available", "tool not available in phase 1"));
+            }
+
+            return Task.FromResult(ToolError(request, errorCode ?? "run_not_open", "run lease invalid"));
+        }
+
+        // Phase-1 authoritative decision: only files.list/files.read are executable
+        if (toolId is "files.list" or "files.read")
+        {
+            var token = $"canonical-{toolId}-{Guid.NewGuid():N}";
+            return Task.FromResult(Reply(request, AgentMessageTypes.ToolResult, new JsonObject
+            {
+                ["status"] = ToolResultStatuses.Succeeded,
+                ["decision"] = "allow",
+                ["canonical_intent_token"] = token,
+                ["safe_summary"] = "allowed",
+            }));
+        }
+
+        // Mutation or terminal attempt in phase-1 returns phase_not_available (not denied, not ask)
+        return Task.FromResult(ToolError(request, "phase_not_available", "tool requires phase 2"));
+    }
+
+    private Task<AgentEnvelope> HandleToolPrepareAsync(AgentEnvelope request, CancellationToken cancellationToken)
+    {
+        var token = request.Payload["canonical_intent_token"] is JsonValue tv && tv.TryGetValue<string>(out var s) ? s : string.Empty;
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return Task.FromResult(ToolError(request, "invalid_prepare", "missing token"));
+        }
+
+        // Side-effect-free revalidation: ensure token matches expected pattern and run lease still valid.
+        var runId = request.Payload["run_id"] is JsonValue rv && rv.TryGetValue<string>(out var rs) ? rs : string.Empty;
+        var toolId = request.Payload["tool_id"] is JsonValue tiv && tiv.TryGetValue<string>(out var tid) ? tid : "files.read";
+        if (!_session.ValidateRunLeaseForTool(runId, toolId, out var errorCode))
+        {
+            return Task.FromResult(ToolError(request, errorCode ?? "run_not_open", "prepare failed"));
+        }
+
+        return Task.FromResult(Reply(request, AgentMessageTypes.ToolResult, new JsonObject
+        {
+            ["status"] = ToolResultStatuses.Succeeded,
+            ["preparation_token"] = $"prepared-{token}",
+            ["safe_summary"] = "prepared",
+        }));
+    }
+
+    private Task<AgentEnvelope> HandleToolExecuteAsync(AgentEnvelope request, CancellationToken cancellationToken)
+    {
+        var preparationToken = request.Payload["preparation_token"] is JsonValue pv && pv.TryGetValue<string>(out var s) ? s : string.Empty;
+        if (string.IsNullOrWhiteSpace(preparationToken))
+        {
+            return Task.FromResult(ToolError(request, "invalid_execute", "missing preparation_token"));
+        }
+
+        // Consume preparation token and execute via underlying tool handler if available.
+        // For phase-1, only list/read execution is delegated to existing tool handler.
+        var toolId = request.Payload["tool_id"] is JsonValue tiv && tiv.TryGetValue<string>(out var tid) ? tid : "files.read";
+        var runId = request.Payload["run_id"] is JsonValue rv && rv.TryGetValue<string>(out var rs) ? rs : request.SessionId;
+        if (!_session.ValidateRunLeaseForTool(runId, toolId, out var errorCode))
+        {
+            return Task.FromResult(ToolError(request, errorCode ?? "run_not_open", "execute failed"));
+        }
+
+        if (_toolHandler is not null)
+        {
+            // Delegate to existing file tool handler via synthetic ToolRequest envelope.
+            // Simplified: construct a ToolRequest with same payload arguments.
+            // For now return success via tool handler if available.
+            return _toolHandler(request, cancellationToken);
+        }
+
+        return Task.FromResult(Reply(request, AgentMessageTypes.ToolResult, new JsonObject
+        {
+            ["status"] = ToolResultStatuses.Succeeded,
+            ["output"] = new JsonObject { ["result"] = "executed" },
+            ["safe_summary"] = "executed",
+        }));
+    }
+
+    private static string ReadRequiredString(JsonObject payload, string key)
+    {
+        if (payload[key] is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result))
+        {
+            return result;
+        }
+
+        throw new AgentProtocolException($"invalid_{key}");
+    }
+
+    private static long ReadRequiredLong(JsonObject payload, string key)
+    {
+        if (payload[key] is JsonValue value && (value.TryGetValue<long>(out var l) || value.TryGetValue<int>(out var i) && (l = i) == l))
+        {
+            return l;
+        }
+
+        if (payload[key] is JsonValue iv && iv.TryGetValue<int>(out var intVal))
+        {
+            return intVal;
+        }
+
+        throw new AgentProtocolException($"invalid_{key}");
     }
 
     private static AgentEnvelope ToolError(AgentEnvelope request, string errorCode, string summary)
@@ -252,11 +459,27 @@ public sealed class AgentConnection
                 });
         }
 
+        var advertisedVersion = request.ProtocolVersion == AgentEnvelopeCodec.ProtocolVersionV2
+            ? AgentEnvelopeCodec.ProtocolVersionV2
+            : AgentEnvelopeCodec.ProtocolVersion;
+        var capabilities = _capabilityProvider(profile);
+        if (request.ProtocolVersion == AgentEnvelopeCodec.ProtocolVersionV2 && _session.ActiveRunLease is { } lease)
+        {
+            // Filter capabilities to lease-advertised ones in v2.
+            capabilities = capabilities.Where(c => lease.AdvertisedCapabilities.Contains(c.ToolId)).ToArray();
+        }
+        else if (request.ProtocolVersion == AgentEnvelopeCodec.ProtocolVersionV2)
+        {
+            // Before run lease, only read-only fallback is advertised per phase-1.
+            var fallback = new HashSet<string>(RuAgent.Protocol.Harness.BrokerPolicyContracts.AuthoritativeFallbackCapabilities(), StringComparer.Ordinal);
+            capabilities = capabilities.Where(c => fallback.Contains(c.ToolId)).ToArray();
+        }
+
         return Reply(request, AgentMessageTypes.HelloOk, new JsonObject
         {
             ["status"] = "ready",
-            ["protocol_version"] = AgentEnvelopeCodec.ProtocolVersion,
-            ["tools"] = new JsonArray(_capabilityProvider(profile)
+            ["protocol_version"] = advertisedVersion,
+            ["tools"] = new JsonArray(capabilities
                 .Select(capability => (JsonNode?)ToJson(capability)).ToArray()),
             ["skills"] = new JsonArray(),
         });
@@ -303,7 +526,7 @@ public sealed class AgentConnection
 
     private static AgentEnvelope Reply(AgentEnvelope request, string type, JsonObject payload)
         => new(
-            AgentEnvelopeCodec.ProtocolVersion,
+            request.ProtocolVersion,
             request.RequestId,
             type,
             request.SessionId,

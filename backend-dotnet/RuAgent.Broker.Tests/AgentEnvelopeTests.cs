@@ -105,6 +105,67 @@ public sealed class AgentEnvelopeTests
         Assert.Equal(expectedCode, error.Code);
     }
 
+    [Fact]
+    public void V2_envelope_round_trips()
+    {
+        var envelope = new AgentEnvelope(
+            2,
+            "run-1",
+            AgentMessageTypes.RunOpen,
+            "session-1",
+            "corr-1",
+            10_000,
+            new JsonObject
+            {
+                ["run_id"] = "run_11111111111111111111111111111111",
+                ["session_id"] = "session-1",
+                ["workspace_id"] = "ws_11111111111111111111111111111111",
+                ["canonical_root"] = @"D:\workspace",
+                ["volume_serial"] = "VOL-1234",
+                ["root_file_id"] = "fid-1234",
+                ["display_hash"] = new string('a', 64),
+                ["preset"] = "standard",
+                ["snapshot_version"] = 1,
+                ["snapshot_hash"] = new string('b', 64),
+                ["expires_at"] = DateTimeOffset.UtcNow.AddMinutes(5).ToString("O"),
+            });
+
+        var json = AgentEnvelopeCodec.Serialize(envelope);
+        var parsed = AgentEnvelopeCodec.Parse(json);
+        Assert.Equal(2, parsed.ProtocolVersion);
+        Assert.Equal(AgentMessageTypes.RunOpen, parsed.MessageType);
+    }
+
+    [Fact]
+    public void V1_with_v2_only_message_is_codec_allowed_but_broker_rejects()
+    {
+        var envelope = new AgentEnvelope(
+            1,
+            "run-1",
+            AgentMessageTypes.RunOpen,
+            "session-1",
+            null,
+            1_000,
+            new JsonObject
+            {
+                ["run_id"] = "run_11111111111111111111111111111111",
+                ["session_id"] = "session-1",
+                ["workspace_id"] = "ws_11111111111111111111111111111111",
+                ["canonical_root"] = @"D:\workspace",
+                ["volume_serial"] = "VOL-1234",
+                ["root_file_id"] = "fid-1234",
+                ["display_hash"] = new string('a', 64),
+                ["preset"] = "standard",
+                ["snapshot_version"] = 1,
+                ["snapshot_hash"] = new string('b', 64),
+                ["expires_at"] = DateTimeOffset.UtcNow.AddMinutes(5).ToString("O"),
+            });
+
+        var ex = Record.Exception(() => AgentEnvelopeCodec.Validate(envelope));
+        Assert.Null(ex);
+        Assert.Contains(AgentMessageTypes.RunOpen, AgentMessageTypes.V2Only);
+    }
+
     private static string InvalidEnvelopeFor(string code)
     {
         var envelope = new JsonObject

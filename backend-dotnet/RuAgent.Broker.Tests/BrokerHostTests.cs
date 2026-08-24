@@ -648,6 +648,83 @@ public sealed class BrokerHostTests
         Assert.Equal("approval_stale", replay.Payload["error_code"]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task V1_rejects_v2_only_message()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        var v2Envelope = new AgentEnvelope(
+            1,
+            "v2-reject-1",
+            AgentMessageTypes.RunOpen,
+            "session-v2-reject",
+            null,
+            10_000,
+            new System.Text.Json.Nodes.JsonObject
+            {
+                ["run_id"] = "run_11111111111111111111111111111111",
+                ["session_id"] = "session-v2-reject",
+                ["workspace_id"] = "ws_11111111111111111111111111111111",
+                ["canonical_root"] = Path.GetTempPath(),
+                ["volume_serial"] = "VOL-1234",
+                ["root_file_id"] = "fid-1234",
+                ["display_hash"] = new string('a', 64),
+                ["preset"] = "standard",
+                ["snapshot_version"] = 1,
+                ["snapshot_hash"] = new string('b', 64),
+                ["expires_at"] = DateTimeOffset.UtcNow.AddMinutes(5).ToString("O"),
+            });
+        await SendAsync(socket, v2Envelope, cts.Token);
+        var reply = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal("unsupported_message", reply.Payload["error_code"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task V2_run_open_advertises_only_read_capabilities()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+        // Hello v2
+        var hello = new AgentEnvelope(2, "hello-v2", AgentMessageTypes.Hello, "session-v2", null, 10_000, new System.Text.Json.Nodes.JsonObject { ["profile"] = "chat" });
+        await SendAsync(socket, hello, cts.Token);
+        var helloReply = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.HelloOk, helloReply.MessageType);
+        // Run open
+        var runOpen = new AgentEnvelope(
+            2,
+            "run-open-1",
+            AgentMessageTypes.RunOpen,
+            "session-v2",
+            null,
+            10_000,
+            new System.Text.Json.Nodes.JsonObject
+            {
+                ["run_id"] = "run_22222222222222222222222222222222",
+                ["session_id"] = "session-v2",
+                ["workspace_id"] = "ws_22222222222222222222222222222222",
+                ["canonical_root"] = Path.GetTempPath(),
+                ["volume_serial"] = "VOL-5678",
+                ["root_file_id"] = "fid-5678",
+                ["display_hash"] = new string('c', 64),
+                ["preset"] = "standard",
+                ["snapshot_version"] = 1,
+                ["snapshot_hash"] = new string('d', 64),
+                ["expires_at"] = DateTimeOffset.UtcNow.AddMinutes(5).ToString("O"),
+            });
+        await SendAsync(socket, runOpen, cts.Token);
+        var opened = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
+        Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
+        var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
+        Assert.Equal(new[] { "files.list", "files.read" }, caps);
+    }
+
     private sealed class HostFixture : IAsyncDisposable
     {
         private HostFixture(string root, string token, BrokerHost host)

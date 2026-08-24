@@ -7,13 +7,18 @@ using RuBackend.Configuration;
 using RuBackend.Conversation;
 using RuBackend.Diagnostics;
 using RuBackend.Harness;
+using RuBackend.Harness.Broker;
+using RuBackend.Harness.Worker;
+using RuBackend.Harness.Workspace;
 using RuBackend.Memory;
 using RuBackend.Runtime;
 using RuBackend.Security;
 using RuBackend.Speech;
 using RuBackend.Vts;
 using RuBackend.Worker;
+using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence;
+using RuAgent.Harness.Persistence.Workspace;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -57,10 +62,37 @@ builder.Services.AddSingleton<ISettingsTransitionService, SettingsTransitionServ
 builder.Services.AddSingleton<ISessionStore, SessionStore>();
 builder.Services.AddSingleton(services => new HarnessSqliteOptions(
     services.GetRequiredService<DataPaths>().AgentHarnessDatabase));
+builder.Services.AddSingleton<HarnessFeatureOptions>(services =>
+    new HarnessFeatureOptions(services.GetRequiredService<IConfiguration>()["RuBackend:AgentHarness:Version"]));
+builder.Services.AddSingleton<WindowsWorkspaceIdentityResolver>();
+builder.Services.AddSingleton<SqliteWorkspaceStore>(services =>
+    new SqliteWorkspaceStore(services.GetRequiredService<HarnessSqliteOptions>()));
+builder.Services.AddSingleton<WorkspaceTrustRequestStore>(services =>
+    new WorkspaceTrustRequestStore(services.GetRequiredService<HarnessSqliteOptions>()));
+builder.Services.AddSingleton<WorkspaceTrustService>();
+builder.Services.AddSingleton<IIdGenerator, CryptographicIdGenerator>();
+builder.Services.AddSingleton<ITimeProvider, SystemTimeProvider>();
 builder.Services.AddSingleton<IHarnessSessionArtifactStore, HarnessSessionArtifactStore>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IHarnessSessionDeletionCoordinator,
     HarnessSessionDeletionCoordinator>();
+// Harness Core adapters: Worker v2 and ToolGateway via factory
+builder.Services.AddSingleton<LoopbackModelStepRunner>(services =>
+    new LoopbackModelStepRunner(services.GetRequiredService<WorkerClientOptions>()));
+builder.Services.AddSingleton<IModelStepRunner>(services => services.GetRequiredService<LoopbackModelStepRunner>());
+builder.Services.AddSingleton<HarnessStoreHealth>(services =>
+{
+    var options = services.GetRequiredService<HarnessSqliteOptions>();
+    try
+    {
+        var health = HarnessSqliteSchema.InitializeAsync(options, CancellationToken.None).GetAwaiter().GetResult();
+        return health.IsAvailable ? new HarnessStoreHealth(true, health.SchemaVersion, null) : new HarnessStoreHealth(false, health.SchemaVersion, health.ErrorCode);
+    }
+    catch
+    {
+        return new HarnessStoreHealth(false, 0, "agent_store_unavailable");
+    }
+});
 builder.Services.AddSingleton<IHistoryStore, HistoryStore>();
 builder.Services.AddSingleton<IActivityLogStore, ActivityLogStore>();
 builder.Services.AddSingleton<ActivityLogMigrationService>();
@@ -93,6 +125,23 @@ app.UseMiddleware<CorrelationMiddleware>();
 app.UseMiddleware<DesktopTokenMiddleware>();
 app.UseMiddleware<RequestSizeMiddleware>();
 app.UseMiddleware<DiagnosticRequestMiddleware>();
+// Harness store health: disable only /agent/v1/* with agent_store_unavailable
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/agent/v1", StringComparison.OrdinalIgnoreCase))
+    {
+        var health = context.RequestServices.GetService<HarnessStoreHealth>();
+        if (health is not null && !health.IsAvailable)
+        {
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new { error_code = "agent_store_unavailable" });
+            return;
+        }
+    }
+
+    await next();
+});
 
 app.MapMethods("/{**path}", new[] { HttpMethods.Options }, () => Results.NoContent());
 ChatWebSocketEndpoint.Map(app);

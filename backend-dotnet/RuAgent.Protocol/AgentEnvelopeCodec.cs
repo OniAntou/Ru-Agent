@@ -6,6 +6,7 @@ namespace RuAgent.Protocol;
 public static class AgentEnvelopeCodec
 {
     public const int ProtocolVersion = 1;
+    public const int ProtocolVersionV2 = 2;
     public const int MaxIdLength = 128;
     public const int MaxDeadlineMs = 300_000;
 
@@ -71,7 +72,7 @@ public static class AgentEnvelopeCodec
 
     public static void Validate(AgentEnvelope envelope)
     {
-        if (envelope.ProtocolVersion != ProtocolVersion)
+        if (envelope.ProtocolVersion != ProtocolVersion && envelope.ProtocolVersion != ProtocolVersionV2)
         {
             throw new AgentProtocolException("unsupported_version");
         }
@@ -94,6 +95,29 @@ public static class AgentEnvelopeCodec
         }
 
         ArgumentNullException.ThrowIfNull(envelope.Payload);
+        if (envelope.ProtocolVersion == ProtocolVersionV2)
+        {
+            ValidateV2Payload(envelope);
+        }
+    }
+
+    private static void ValidateV2Payload(AgentEnvelope envelope)
+    {
+        // Broker v2 requires run lease fields for run.open and strict payload validation for other v2 types.
+        // Minimal check: for run.open, payload must contain run_id, session_id, workspace_id, canonical_root, etc.
+        // For other v2 messages, ensure they are not sent on v1-only paths; actual payload validation is done in BrokerSession.
+        if (envelope.MessageType == AgentMessageTypes.RunOpen)
+        {
+            var payload = envelope.Payload;
+            var required = new[] { "run_id", "session_id", "workspace_id", "canonical_root", "volume_serial", "root_file_id", "display_hash", "preset", "snapshot_version", "snapshot_hash", "expires_at" };
+            foreach (var field in required)
+            {
+                if (!payload.ContainsKey(field))
+                {
+                    throw new AgentProtocolException("invalid_run_open");
+                }
+            }
+        }
     }
 
     private static int ReadInt(JsonObject node, string property, string code)

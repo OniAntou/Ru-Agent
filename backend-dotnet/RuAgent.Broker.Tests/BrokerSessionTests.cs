@@ -49,6 +49,91 @@ public sealed class BrokerSessionTests
         Assert.True(session.Open("session-2", scopes, skills));
     }
 
+    [Fact]
+    public void V2_run_open_requires_valid_lease_before_advertising_capabilities()
+    {
+        using var fixture = DescriptorFixture.Create();
+        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        var lease = BrokerRunLease.CreateValidated(
+            "run_11111111111111111111111111111111",
+            "session-1",
+            "ws_11111111111111111111111111111111",
+            Path.GetTempPath(),
+            "VOL-1234",
+            "fid-1234",
+            new string('a', 64),
+            "standard",
+            1,
+            new string('b', 64),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Assert.True(session.TryOpenRunLease(lease, out var error));
+        Assert.Null(error);
+        Assert.NotNull(session.ActiveRunLease);
+        Assert.Equal(new[] { "files.list", "files.read" }, session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void V2_identity_hash_mismatch_fails_closed()
+    {
+        using var fixture = DescriptorFixture.Create();
+        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        var ex = Assert.Throws<AgentProtocolException>(() => BrokerRunLease.CreateValidated(
+            "run_11111111111111111111111111111111",
+            "session-1",
+            "ws_11111111111111111111111111111111",
+            Path.GetTempPath(),
+            "VOL-1234",
+            "fid-1234",
+            "invalid-hash",
+            "standard",
+            1,
+            new string('b', 64),
+            DateTimeOffset.UtcNow.AddMinutes(5)));
+        Assert.Equal("invalid_display_hash", ex.Code);
+    }
+
+    [Fact]
+    public void V2_lease_expired_fails_closed()
+    {
+        using var fixture = DescriptorFixture.Create();
+        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        var ex = Assert.Throws<AgentProtocolException>(() => BrokerRunLease.CreateValidated(
+            "run_11111111111111111111111111111111",
+            "session-1",
+            "ws_11111111111111111111111111111111",
+            Path.GetTempPath(),
+            "VOL-1234",
+            "fid-1234",
+            new string('a', 64),
+            "standard",
+            1,
+            new string('b', 64),
+            DateTimeOffset.UtcNow.AddSeconds(-10)));
+        Assert.Equal("lease_expired", ex.Code);
+    }
+
+    [Fact]
+    public void Phase_one_snapshot_advertises_only_list_and_read()
+    {
+        using var fixture = DescriptorFixture.Create();
+        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        var lease = BrokerRunLease.CreateValidated(
+            "run_22222222222222222222222222222222",
+            "session-2",
+            "ws_22222222222222222222222222222222",
+            Path.GetTempPath(),
+            "VOL-5678",
+            "fid-5678",
+            new string('c', 64),
+            "standard",
+            1,
+            new string('d', 64),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Assert.Equal(new[] { "files.list", "files.read" }, lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
+        Assert.False(lease.AdvertisedCapabilities.Contains("files.write"));
+        Assert.False(lease.AdvertisedCapabilities.Contains("terminal.run"));
+    }
+
     private sealed class DescriptorFixture : IDisposable
     {
         private DescriptorFixture(

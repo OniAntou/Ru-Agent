@@ -108,7 +108,7 @@ public sealed class BrokerHost : IAsyncDisposable
         await context.Response.WriteAsJsonAsync(new
         {
             status = IsReady ? "ready" : "starting",
-            protocol_version = RuAgent.Protocol.AgentEnvelopeCodec.ProtocolVersion,
+            protocol_version = _session.Descriptor.ProtocolVersion,
         }).ConfigureAwait(false);
     }
 
@@ -148,7 +148,7 @@ public sealed class BrokerHost : IAsyncDisposable
     {
         var result = await _tools.ExecuteAsync(request, cancellationToken).ConfigureAwait(false);
         return new RuAgent.Protocol.AgentEnvelope(
-            RuAgent.Protocol.AgentEnvelopeCodec.ProtocolVersion,
+            request.ProtocolVersion,
             request.RequestId,
             RuAgent.Protocol.AgentMessageTypes.ToolResult,
             request.SessionId,
@@ -174,7 +174,7 @@ public sealed class BrokerHost : IAsyncDisposable
     {
         var result = await _tools.RespondToApprovalAsync(request, cancellationToken).ConfigureAwait(false);
         return new RuAgent.Protocol.AgentEnvelope(
-            RuAgent.Protocol.AgentEnvelopeCodec.ProtocolVersion,
+            request.ProtocolVersion,
             request.RequestId,
             RuAgent.Protocol.AgentMessageTypes.ToolResult,
             request.SessionId,

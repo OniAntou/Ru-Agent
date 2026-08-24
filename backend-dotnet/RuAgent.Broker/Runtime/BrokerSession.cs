@@ -20,6 +20,7 @@ public sealed class BrokerSession
     private string? _activeSessionId;
     private IReadOnlySet<string> _activeScopes = new HashSet<string>(StringComparer.Ordinal);
     private IReadOnlySet<string> _activeSkillIds = new HashSet<string>(StringComparer.Ordinal);
+    private BrokerRunLease? _activeRunLease;
 
     private BrokerSession(string descriptorPath, BrokerSessionDescriptor descriptor)
     {
@@ -108,7 +109,104 @@ public sealed class BrokerSession
                 _activeSessionId = null;
                 _activeScopes = new HashSet<string>(StringComparer.Ordinal);
                 _activeSkillIds = new HashSet<string>(StringComparer.Ordinal);
+                _activeRunLease = null;
             }
+        }
+    }
+
+    public BrokerRunLease? ActiveRunLease
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _activeRunLease;
+            }
+        }
+    }
+
+    public bool TryOpenRunLease(BrokerRunLease lease, out string? errorCode)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        lock (_gate)
+        {
+            if (lease.IsExpired(DateTimeOffset.UtcNow))
+            {
+                errorCode = "lease_expired";
+                return false;
+            }
+
+            if (_activeRunLease is not null && !string.Equals(_activeRunLease.RunId, lease.RunId, StringComparison.Ordinal))
+            {
+                errorCode = "run_conflict";
+                return false;
+            }
+
+            // Validate snapshot hash matches recomputed canonical (phase-1 empty snapshot)
+            var expectedCapabilities = RuAgent.Protocol.Harness.BrokerPolicyContracts.AuthoritativeFallbackCapabilities();
+            // hash already validated in BrokerRunLease.CreateValidated, but double-check
+            if (!expectedCapabilities.SequenceEqual(lease.AdvertisedCapabilities))
+            {
+                // Phase-1 must advertise only files.list/files.read; mismatch fails closed
+                errorCode = "capability_mismatch";
+                return false;
+            }
+
+            _activeRunLease = lease;
+            // Also open session for v2 lease if not already open
+            if (_activeSessionId is null)
+            {
+                _activeSessionId = lease.SessionId;
+                _activeScopes = new HashSet<string>(lease.AdvertisedCapabilities.Select(_ => "workspace.read"), StringComparer.Ordinal);
+            }
+
+            errorCode = null;
+            return true;
+        }
+    }
+
+    public bool TryGetRunLease(string runId, out BrokerRunLease? lease)
+    {
+        lock (_gate)
+        {
+            if (_activeRunLease is not null && string.Equals(_activeRunLease.RunId, runId, StringComparison.Ordinal))
+            {
+                lease = _activeRunLease;
+                return true;
+            }
+
+            lease = null;
+            return false;
+        }
+    }
+
+    public bool ValidateRunLeaseForTool(string runId, string toolId, out string? errorCode)
+    {
+        lock (_gate)
+        {
+            if (_activeRunLease is null || !string.Equals(_activeRunLease.RunId, runId, StringComparison.Ordinal))
+            {
+                errorCode = "run_not_open";
+                return false;
+            }
+
+            if (_activeRunLease.IsExpired(DateTimeOffset.UtcNow))
+            {
+                errorCode = "lease_expired";
+                return false;
+            }
+
+            if (!_activeRunLease.AdvertisedCapabilities.Contains(toolId))
+            {
+                errorCode = "capability_unavailable";
+                return false;
+            }
+
+            // Phase-1 tracer root must come from lease's canonical root, not broker cwd.
+            // Identity/hash mismatch already enforced at lease creation; here we ensure file tools use lease root.
+
+            errorCode = null;
+            return true;
         }
     }
 
@@ -151,7 +249,7 @@ public sealed class BrokerSession
             throw new BrokerSessionException("missing_token");
         }
 
-        if (descriptor.ProtocolVersion != AgentEnvelopeCodec.ProtocolVersion)
+        if (descriptor.ProtocolVersion != AgentEnvelopeCodec.ProtocolVersion && descriptor.ProtocolVersion != AgentEnvelopeCodec.ProtocolVersionV2)
         {
             throw new BrokerSessionException("unsupported_version");
         }

@@ -55,15 +55,29 @@ if (-not (Test-Path -LiteralPath $toolchain)) {
 }
 
 $cache = Join-Path $build 'CMakeCache.txt'
-if (Test-Path -LiteralPath $cache) {
-    $cachedToolchain = Select-String -LiteralPath $cache -Pattern '^CMAKE_TOOLCHAIN_FILE:FILEPATH=' |
+$cmakeConfigureArgs = @(
+    '-S', $source,
+    '-B', $build,
+    '-DVCPKG_MANIFEST_MODE=ON'
+)
+
+if (-not (Test-Path -LiteralPath $cache)) {
+    # CMake consumes CMAKE_TOOLCHAIN_FILE only during the first configure.
+    $cmakeConfigureArgs += "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=$toolchain"
+} else {
+    $cachedToolchain = Select-String -LiteralPath $cache -Pattern '^CMAKE_TOOLCHAIN_FILE:(?:FILEPATH|UNINITIALIZED)=(.+)$' |
         Select-Object -First 1
-    if ($cachedToolchain -and $cachedToolchain.Line -notlike "*${toolchain}*") {
-        Write-Output "Reconfiguring stale native build with the active vcpkg toolchain: $toolchain"
+    if (-not $cachedToolchain) {
+        throw 'Native build cache does not record a vcpkg toolchain. Delete tools/ru_desktop_overlay/out/build and rerun this script.'
+    }
+
+    $cachedToolchainPath = $cachedToolchain.Matches[0].Groups[1].Value.Trim()
+    if ([IO.Path]::GetFullPath($cachedToolchainPath) -ne [IO.Path]::GetFullPath($toolchain)) {
+        throw "Native build cache uses a different vcpkg toolchain: $cachedToolchainPath. Delete tools/ru_desktop_overlay/out/build and rerun this script with the active toolchain: $toolchain"
     }
 }
 
-& $cmake -S $source -B $build "-DCMAKE_TOOLCHAIN_FILE=$toolchain" '-DVCPKG_MANIFEST_MODE=ON'
+& $cmake @cmakeConfigureArgs
 if ($LASTEXITCODE -ne 0) {
     throw "CMake configure failed with exit code $LASTEXITCODE."
 }

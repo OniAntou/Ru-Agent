@@ -230,7 +230,7 @@ dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Rele
 
 Expected RED: schema/store types missing, then constraint/rollback assertions fail.
 
-- [x] Implement migration version 1 with foreign keys on, busy timeout, WAL, bounded text/blob columns enforced in code, UTC timestamps, and partial unique active-run indexes. Do not reuse `memory.db`.
+- [x] Implement the current schema as version 2 with foreign keys on, busy timeout, WAL, encrypted payload/context/outbox columns, UTC timestamps, and partial unique active-run indexes. Legacy pre-privacy version 1 is rejected as incompatible rather than reinterpreted or silently migrated. Do not reuse `memory.db`.
 - [x] Implement idempotent initialization and store health reporting. A failed Harness database disables Agent endpoints only; it must not prevent ordinary backend startup.
 - [x] Run GREEN sequentially. Expected: zero failures.
 - [x] Commit: `feat(agent): persist runs and events in sqlite`.
@@ -263,15 +263,15 @@ Expected RED: schema/store types missing, then constraint/rollback assertions fa
 - Create `backend-dotnet/RuBackend.Tests/Harness/HarnessModelContextBootstrapperTests.cs`.
 - Modify `backend-dotnet/RuBackend.Tests/Business/BusinessEndpointTests.cs`.
 
-- [ ] Write RED AES-GCM tests: ciphertext differs for equal plaintext due to nonce; wrong run/payload associated data fails; tampering fails; size caps reject before allocation.
-- [ ] Write RED DPAPI/key-file tests behind `OperatingSystem.IsWindows()`: one random 256-bit key persists, unprotects only in CurrentUser scope, and key/database ACLs contain no broad write principal. Use an injected fake key store for non-Windows unit coverage.
-- [ ] Write RED streaming-redactor tests with secrets split across chunk boundaries and verify safe events, encrypted payload plaintext after decryption, SSE frames, and diagnostic captures contain no known secret. Add an explicit test documenting that an unknown arbitrary value is not promised detectable.
-- [ ] Add RED payload-kind tests: each intent has a fixed size cap and audience; model/client/terminal text uses redaction; opaque internal recovery bytes are rejected by public/model readers and remain byte-identical through encrypt/decrypt rather than passing through a text redactor.
-- [ ] Extend `SessionMessage` with optional `source_message_id` and `source_run_id`; add RED tests that legacy JSON loads, `AppendIfAbsentAsync` returns `Appended` then `AlreadyPresent`, and a retry after append-before-outbox-ack creates one visible message.
-- [ ] Add RED context-source tests: after the user outbox acknowledgement, capture the current bounded `GetContextTurnsAsync` result once as encrypted `model_context_base` payload entries with stable source IDs; append run-local context payload intents atomically with their durable events; restart/decrypt reconstructs the same ordered snapshot; deleted/wrong-run/tampered payload fails closed and no plaintext enters logs.
-- [ ] Add RED dispatcher tests for transient retry, deleted/invalid session failing before first model step, final answer remaining `WaitingHistory`, and session deletion cancelling/removing Harness records before deleting the session file.
-- [ ] Add RED atomicity tests: an already-trusted run creates its user payload/user outbox/`WaitingHistory` together; an untrusted run stores the encrypted prompt in `WaitingWorkspaceTrust` and only an accepted trust decision atomically creates the user outbox plus `WaitingHistory`; final model event/final visible payload/assistant outbox/`WaitingHistory` commit together. Only stable-ID append acknowledgement advances to `Running` or terminal `Completed`. Crash at every boundary must produce zero or one visible message, never a model/tool replay caused by history delivery.
-- [ ] Run RED:
+- [x] Write RED AES-GCM tests: ciphertext differs for equal plaintext due to nonce; wrong run/payload associated data fails; tampering fails; size caps reject before allocation.
+- [x] Write RED DPAPI/key-file tests behind `OperatingSystem.IsWindows()`: one random 256-bit key persists, unprotects only in CurrentUser scope, and key/database ACLs contain no broad write principal. Use an injected fake key store for non-Windows unit coverage.
+- [x] Write RED streaming-redactor tests with secrets split across chunk boundaries and verify encrypted payload plaintext after decryption plus assistant/tool transient frames contain no known secret. Add an explicit test documenting that an unknown arbitrary value is not promised detectable. Diagnostic-factory capture assertions remain owned by Task 8, where that factory is introduced.
+- [x] Add RED payload-kind tests: each intent has a fixed size cap and audience; model/client/terminal text uses redaction; opaque internal recovery bytes are rejected by public/model readers and remain byte-identical through encrypt/decrypt rather than passing through a text redactor.
+- [x] Extend `SessionMessage` with optional `source_message_id` and `source_run_id`; add RED tests that legacy JSON loads, `AppendIfAbsentAsync` returns `Appended` then `AlreadyPresent`, and a retry after append-before-outbox-ack creates one visible message.
+- [x] Add RED context-source tests: after the user outbox acknowledgement, capture one coherent bounded session snapshot as encrypted `model_context_base` payload entries with stable source IDs; append run-local context payload intents atomically with their durable events; restart/decrypt reconstructs the same ordered snapshot; deleted/wrong-run/tampered payload fails closed and no plaintext enters logs.
+- [x] Add RED dispatcher tests for transient retry, deleted/invalid session failing before first model step, final answer remaining `WaitingHistory`, and session deletion cancelling/removing Harness records before deleting the session file.
+- [x] Add RED atomicity tests: an already-trusted run creates its user payload/user outbox/`WaitingHistory` together; an untrusted run stores the encrypted prompt in `WaitingWorkspaceTrust` and only an accepted trust decision atomically creates the user outbox plus `WaitingHistory`; final model event/final visible payload/assistant outbox/`WaitingHistory` commit together. Only stable-ID append acknowledgement advances to `Running` or terminal `Completed`. Crash at every boundary must produce zero or one visible message, never a model/tool replay caused by history delivery.
+- [x] Run RED:
 
 ```powershell
 dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj -c Release --nologo --filter "FullyQualifiedName~Payload|FullyQualifiedName~Redactor|FullyQualifiedName~Outbox|FullyQualifiedName~ModelContext"
@@ -280,10 +280,10 @@ dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Rele
 
 Expected RED: privacy/outbox contracts absent, then duplicate-delivery assertions fail.
 
-- [ ] Implement encryption, source-ID compatibility, outbox claim/ack/retry, bounded exponential retry, and the context bootstrap/source. Store visible/context text only as encrypted payloads; safe events and the outbox reference opaque payload/source IDs.
-- [ ] Ensure `GetContextTurnsAsync` ignores source metadata and preserves current eight-turn behavior.
-- [ ] Run GREEN sequentially. Expected: zero failures.
-- [ ] Commit: `feat(agent): protect payloads and dedupe history`.
+- [x] Implement encryption, caller-owned key zeroing, source-ID compatibility, outbox claim/ack/retry, bounded exponential retry, and the context bootstrap/source. Store visible/context text only as encrypted payloads; safe events and the outbox reference opaque payload/source IDs.
+- [x] Ensure `GetContextTurnsAsync` ignores source metadata and preserves current eight-turn behavior.
+- [x] Run GREEN sequentially. Evidence: Core 108/108, Persistence 47/47, and Backend 456/456 passed in Release on 2026-08-24.
+- [x] Commit: `feat(agent): protect payloads and dedupe history`.
 
 ## Task 6: Add an additive one-step Worker v2
 

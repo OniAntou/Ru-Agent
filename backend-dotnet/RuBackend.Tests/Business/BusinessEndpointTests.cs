@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Data.Sqlite;
 using RuBackend.Business;
 using RuBackend.Business.Settings;
 using RuBackend.Conversation;
@@ -437,6 +438,17 @@ public sealed class BusinessEndpointTests
 
         public void Dispose()
         {
+            using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = Paths.AgentHarnessDatabase,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Shared,
+                Pooling = true,
+            }.ToString()))
+            {
+                SqliteConnection.ClearPool(pool);
+            }
+
             if (Directory.Exists(Root))
             {
                 Directory.Delete(Root, recursive: true);

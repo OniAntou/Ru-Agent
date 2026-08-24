@@ -13,7 +13,7 @@ public sealed record HarnessStoreHealth(bool IsAvailable, int SchemaVersion, str
 
 public static class HarnessSqliteSchema
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     public static async Task<HarnessStoreHealth> InitializeAsync(
         HarnessSqliteOptions options,
@@ -39,7 +39,7 @@ public static class HarnessSqliteSchema
             }
 
             await using var command = connection.CreateCommand();
-            command.CommandText = SchemaVersionOne;
+            command.CommandText = SchemaVersionTwo;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             if (!await HarnessSqliteSchemaValidator.ValidateAsync(connection, cancellationToken)
                 .ConfigureAwait(false))
@@ -75,7 +75,7 @@ public static class HarnessSqliteSchema
             or ArgumentException
             or NotSupportedException;
 
-    private const string SchemaVersionOne = """
+    private const string SchemaVersionTwo = """
         PRAGMA journal_mode = WAL;
         PRAGMA foreign_keys = ON;
 
@@ -124,6 +124,8 @@ public static class HarnessSqliteSchema
             updated_at_utc TEXT NOT NULL,
             terminal_at_utc TEXT NULL,
             terminal_error_code TEXT NULL,
+            base_context_captured_at_utc TEXT NULL,
+            base_context_entry_count INTEGER NOT NULL DEFAULT 0 CHECK(base_context_entry_count >= 0),
             UNIQUE(session_id, idempotency_key_sha256)
         );
 
@@ -142,11 +144,24 @@ public static class HarnessSqliteSchema
             encoding INTEGER NOT NULL,
             byte_cap INTEGER NOT NULL CHECK(byte_cap BETWEEN 1 AND 16777216),
             protected_content BLOB NOT NULL,
-            protection_version INTEGER NOT NULL DEFAULT 0,
-            nonce BLOB NULL,
-            authentication_tag BLOB NULL,
+            protection_version INTEGER NOT NULL CHECK(protection_version = 1),
+            nonce BLOB NOT NULL CHECK(length(nonce) = 12),
+            authentication_tag BLOB NOT NULL CHECK(length(authentication_tag) = 16),
+            consumed_at_utc TEXT NULL,
+            context_scope INTEGER NULL CHECK(context_scope IN (0, 1)),
+            context_source_id TEXT NULL CHECK(length(context_source_id) BETWEEN 1 AND 128),
+            context_sequence INTEGER NULL CHECK(context_sequence > 0),
+            context_role INTEGER NULL CHECK(context_role BETWEEN 0 AND 3),
+            context_entry_kind INTEGER NULL CHECK(context_entry_kind BETWEEN 0 AND 2),
             created_at_utc TEXT NOT NULL
         );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_agent_payloads_context_source
+            ON agent_payloads(run_id, context_source_id)
+            WHERE context_scope IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_agent_payloads_context_sequence
+            ON agent_payloads(run_id, context_scope, context_sequence)
+            WHERE context_scope IS NOT NULL;
 
         CREATE TABLE IF NOT EXISTS agent_events (
             event_id TEXT PRIMARY KEY,
@@ -161,6 +176,8 @@ public static class HarnessSqliteSchema
             approval_id TEXT NULL,
             safe_count INTEGER NULL CHECK(safe_count >= 0),
             safe_code TEXT NULL CHECK(length(safe_code) BETWEEN 1 AND 64),
+            tool_outcome INTEGER NULL CHECK(tool_outcome BETWEEN 0 AND 4),
+            side_effects_possible INTEGER NULL CHECK(side_effects_possible IN (0, 1)),
             UNIQUE(run_id, sequence)
         );
 
@@ -171,12 +188,23 @@ public static class HarnessSqliteSchema
             payload_id TEXT NOT NULL REFERENCES agent_payloads(payload_id) ON DELETE RESTRICT,
             role INTEGER NOT NULL CHECK(role IN (0, 1)),
             history_wait_kind INTEGER NOT NULL CHECK(history_wait_kind IN (0, 1)),
-            delivery_state INTEGER NOT NULL DEFAULT 0 CHECK(delivery_state BETWEEN 0 AND 2),
+            delivery_state INTEGER NOT NULL DEFAULT 0 CHECK(delivery_state BETWEEN 0 AND 3),
             attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
             next_attempt_at_utc TEXT NULL,
+            claim_token TEXT NULL,
+            lease_expires_at_utc TEXT NULL,
+            last_error_code TEXT NULL,
             acknowledged_at_utc TEXT NULL,
             created_at_utc TEXT NOT NULL
         );
+
+        CREATE INDEX IF NOT EXISTS ix_agent_conversation_outbox_dispatch
+            ON agent_conversation_outbox(
+                delivery_state,
+                next_attempt_at_utc,
+                lease_expires_at_utc,
+                created_at_utc,
+                intent_id);
 
         CREATE TABLE IF NOT EXISTS agent_global_rules (
             rule_id TEXT PRIMARY KEY,
@@ -202,6 +230,6 @@ public static class HarnessSqliteSchema
             created_at_utc TEXT NOT NULL
         );
 
-        PRAGMA user_version = 1;
+        PRAGMA user_version = 2;
         """;
 }

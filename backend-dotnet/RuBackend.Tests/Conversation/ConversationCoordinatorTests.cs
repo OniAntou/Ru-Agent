@@ -581,6 +581,24 @@ public sealed class ConversationCoordinatorTests
             return Task.FromResult(true);
         }
 
+        public Task<SessionAppendOutcome> AppendIfAbsentAsync(
+            string sessionId,
+            SessionMessage message,
+            CancellationToken cancellationToken)
+        {
+            var existing = Messages.FirstOrDefault(candidate =>
+                candidate.SourceMessageId == message.SourceMessageId);
+            if (existing is not null)
+            {
+                return Task.FromResult(existing == message
+                    ? SessionAppendOutcome.AlreadyPresent
+                    : SessionAppendOutcome.InvalidMessage);
+            }
+
+            Messages.Add(message);
+            return Task.FromResult(SessionAppendOutcome.Appended);
+        }
+
         public Task<IReadOnlyList<ConversationTurn>> GetContextTurnsAsync(
             string sessionId,
             int maxTurns,

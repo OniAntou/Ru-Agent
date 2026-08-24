@@ -9,6 +9,8 @@ public enum HarnessPayloadKind
     Diff,
     ContinuationSummary,
     RecoveryOpaque,
+    AssistantStep,
+    ModelContextBase,
 }
 
 [Flags]

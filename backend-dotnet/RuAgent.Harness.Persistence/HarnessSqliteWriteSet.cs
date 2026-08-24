@@ -27,6 +27,11 @@ internal static class HarnessSqliteWriteSet
             request.ConversationOutbox,
             request.Run.SessionId,
             nameof(request));
+        ValidateOutboxBoundary(
+            previous: null,
+            request.Run,
+            request.Payloads,
+            request.ConversationOutbox);
     }
 
     internal static void ValidateCommit(AgentRun current, HarnessCommit commit)
@@ -55,6 +60,11 @@ internal static class HarnessSqliteWriteSet
             commit.ConversationOutbox,
             current.SessionId,
             nameof(commit));
+        ValidateOutboxBoundary(
+            current,
+            commit.NextRun,
+            commit.Payloads,
+            commit.ConversationOutbox);
     }
 
     internal static async Task InsertRunAsync(
@@ -150,52 +160,6 @@ internal static class HarnessSqliteWriteSet
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
     }
 
-    internal static async Task InsertPayloadsAsync(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        RunId runId,
-        IReadOnlyList<HarnessPayloadIntent> payloads,
-        DateTimeOffset occurredAt,
-        CancellationToken cancellationToken)
-    {
-        foreach (var payload in payloads)
-        {
-            await using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = """
-                INSERT INTO agent_payloads(
-                    payload_id,
-                    run_id,
-                    kind,
-                    audience,
-                    encoding,
-                    byte_cap,
-                    protected_content,
-                    protection_version,
-                    created_at_utc)
-                VALUES (
-                    $payload_id,
-                    $run_id,
-                    $kind,
-                    $audience,
-                    $encoding,
-                    $byte_cap,
-                    $content,
-                    0,
-                    $created_at)
-                """;
-            command.Parameters.AddWithValue("$payload_id", payload.PayloadId.Value);
-            command.Parameters.AddWithValue("$run_id", runId.Value);
-            command.Parameters.AddWithValue("$kind", (int)payload.Kind);
-            command.Parameters.AddWithValue("$audience", (int)payload.Audience);
-            command.Parameters.AddWithValue("$encoding", (int)payload.Encoding);
-            command.Parameters.AddWithValue("$byte_cap", payload.ByteCap);
-            command.Parameters.AddWithValue("$content", payload.Plaintext.ToArray());
-            command.Parameters.AddWithValue("$created_at", HarnessSqliteMapper.Utc(occurredAt));
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
-    }
-
     internal static async Task InsertEventsAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -223,7 +187,9 @@ internal static class HarnessSqliteWriteSet
                     execution_id,
                     approval_id,
                     safe_count,
-                    safe_code)
+                    safe_code,
+                    tool_outcome,
+                    side_effects_possible)
                 VALUES (
                     $event_id,
                     $run_id,
@@ -236,7 +202,9 @@ internal static class HarnessSqliteWriteSet
                     $execution_id,
                     $approval_id,
                     $safe_count,
-                    $safe_code)
+                    $safe_code,
+                    $tool_outcome,
+                    $side_effects_possible)
                 """;
             command.Parameters.AddWithValue("$event_id", intent.EventId.Value);
             command.Parameters.AddWithValue("$run_id", runId.Value);
@@ -252,6 +220,12 @@ internal static class HarnessSqliteWriteSet
                 "$safe_count",
                 intent.SafeCount is { } safeCount ? safeCount : DBNull.Value);
             AddOptional(command, "$safe_code", intent.SafeCode);
+            command.Parameters.AddWithValue(
+                "$tool_outcome",
+                intent.ToolOutcome is { } outcome ? (int)outcome : DBNull.Value);
+            command.Parameters.AddWithValue(
+                "$side_effects_possible",
+                intent.SideEffectsPossible is { } sideEffects ? sideEffects : DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
@@ -350,6 +324,58 @@ internal static class HarnessSqliteWriteSet
         if (outbox.Any(item => item.SessionId != expectedSessionId))
         {
             throw new HarnessStoreException("outbox_session_mismatch");
+        }
+    }
+
+    private static void ValidateOutboxBoundary(
+        AgentRun? previous,
+        AgentRun next,
+        IReadOnlyList<HarnessPayloadIntent> payloads,
+        IReadOnlyList<ConversationOutboxIntent> outbox)
+    {
+        if (outbox.Count == 0)
+        {
+            if (next.State == HarnessRunState.WaitingHistory
+                && previous?.State != HarnessRunState.WaitingHistory)
+            {
+                throw new HarnessStoreException("outbox_history_boundary_invalid");
+            }
+
+            return;
+        }
+
+        if (outbox.Count != 1
+            || next.State != HarnessRunState.WaitingHistory
+            || next.HistoryWaitKind != outbox[0].HistoryWaitKind)
+        {
+            throw new HarnessStoreException("outbox_history_boundary_invalid");
+        }
+
+        var intent = outbox[0];
+        var validTransition = intent.Role switch
+        {
+            ConversationOutboxRole.User =>
+                next.HistoryWaitKind == HistoryWaitKind.UserBeforeFirstStep
+                && (previous is null
+                    || previous.State is HarnessRunState.Created
+                        or HarnessRunState.WaitingWorkspaceTrust),
+            ConversationOutboxRole.Assistant =>
+                previous?.State == HarnessRunState.Running
+                && next.HistoryWaitKind == HistoryWaitKind.FinalBeforeCompletion,
+            _ => false,
+        };
+        if (!validTransition)
+        {
+            throw new HarnessStoreException("outbox_history_boundary_invalid");
+        }
+
+        var payload = payloads.Single(item => item.PayloadId == intent.PayloadId);
+        var expectedKind = intent.Role == ConversationOutboxRole.User
+            ? HarnessPayloadKind.UserPrompt
+            : HarnessPayloadKind.AssistantText;
+        if (payload.Kind != expectedKind)
+        {
+            throw new HarnessStoreException("outbox_payload_kind_invalid");
         }
     }
 

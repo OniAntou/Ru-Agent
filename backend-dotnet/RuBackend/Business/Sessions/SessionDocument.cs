@@ -4,14 +4,29 @@ namespace RuBackend.Business.Sessions;
 
 public sealed record SessionMessage(
     [property: JsonPropertyName("role")] string Role,
-    [property: JsonPropertyName("content")] string Content);
+    [property: JsonPropertyName("content")] string Content,
+    [property: JsonPropertyName("source_message_id")]
+    string? SourceMessageId = null,
+    [property: JsonPropertyName("source_run_id")]
+    string? SourceRunId = null);
+
+public enum SessionAppendOutcome
+{
+    Appended,
+    AlreadyPresent,
+    SessionNotFound,
+    InvalidMessage,
+    TransientFailure,
+}
 
 public sealed record SessionDocument(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("title")] string Title,
     [property: JsonPropertyName("created_at")] DateTimeOffset CreatedAt,
     [property: JsonPropertyName("updated_at")] DateTimeOffset UpdatedAt,
-    [property: JsonPropertyName("messages")] IReadOnlyList<SessionMessage> Messages);
+    [property: JsonPropertyName("messages")] IReadOnlyList<SessionMessage> Messages,
+    [property: JsonPropertyName("source_message_ledger")]
+    IReadOnlyDictionary<string, string>? SourceMessageLedger = null);
 
 public sealed record SessionSummary(
     string Id,
@@ -35,6 +50,11 @@ public interface ISessionStore
     Task<bool> AppendAsync(
         string sessionId,
         IReadOnlyList<SessionMessage> messages,
+        CancellationToken cancellationToken);
+
+    Task<SessionAppendOutcome> AppendIfAbsentAsync(
+        string sessionId,
+        SessionMessage message,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ConversationTurn>> GetContextTurnsAsync(

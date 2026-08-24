@@ -6,12 +6,14 @@ using RuBackend.Agent;
 using RuBackend.Configuration;
 using RuBackend.Conversation;
 using RuBackend.Diagnostics;
+using RuBackend.Harness;
 using RuBackend.Memory;
 using RuBackend.Runtime;
 using RuBackend.Security;
 using RuBackend.Speech;
 using RuBackend.Vts;
 using RuBackend.Worker;
+using RuAgent.Harness.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -53,6 +55,12 @@ builder.Services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
 builder.Services.AddSingleton<IRuntimeSettingsLoader, LoopbackRuntimeSettingsLoader>();
 builder.Services.AddSingleton<ISettingsTransitionService, SettingsTransitionService>();
 builder.Services.AddSingleton<ISessionStore, SessionStore>();
+builder.Services.AddSingleton(services => new HarnessSqliteOptions(
+    services.GetRequiredService<DataPaths>().AgentHarnessDatabase));
+builder.Services.AddSingleton<IHarnessSessionArtifactStore, HarnessSessionArtifactStore>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IHarnessSessionDeletionCoordinator,
+    HarnessSessionDeletionCoordinator>();
 builder.Services.AddSingleton<IHistoryStore, HistoryStore>();
 builder.Services.AddSingleton<IActivityLogStore, ActivityLogStore>();
 builder.Services.AddSingleton<ActivityLogMigrationService>();

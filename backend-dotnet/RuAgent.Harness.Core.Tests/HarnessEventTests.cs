@@ -34,7 +34,9 @@ public sealed class HarnessEventTests
                 "SafeCode",
                 "SafeCount",
                 "Sequence",
+                "SideEffectsPossible",
                 "ToolCallId",
+                "ToolOutcome",
             },
             typeof(HarnessEvent)
                 .GetProperties()

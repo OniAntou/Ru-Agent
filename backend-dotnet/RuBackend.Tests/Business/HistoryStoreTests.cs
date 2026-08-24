@@ -136,6 +136,12 @@ public sealed class HistoryStoreTests
             IReadOnlyList<SessionMessage> messages,
             CancellationToken cancellationToken) => Task.FromResult(false);
 
+        public Task<SessionAppendOutcome> AppendIfAbsentAsync(
+            string sessionId,
+            SessionMessage message,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(SessionAppendOutcome.InvalidMessage);
+
         public Task<IReadOnlyList<ConversationTurn>> GetContextTurnsAsync(
             string sessionId,
             int maxTurns,

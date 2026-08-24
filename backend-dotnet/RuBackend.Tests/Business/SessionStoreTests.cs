@@ -133,6 +133,147 @@ public sealed class SessionStoreTests
         Assert.Null(await store.GetAsync(sessionId, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Legacy_json_without_source_metadata_still_loads()
+    {
+        var (store, paths) = CreateStore();
+        const string sessionId = "11111111111111111111111111111111";
+        Directory.CreateDirectory(paths.SessionDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(paths.SessionDirectory, $"{sessionId}.json"),
+            """
+            {
+              "id": "11111111111111111111111111111111",
+              "title": "Legacy",
+              "created_at": "2026-08-24T00:00:00+00:00",
+              "updated_at": "2026-08-24T00:00:00+00:00",
+              "messages": [
+                { "role": "user", "content": "old prompt" },
+                { "role": "ai", "content": "old reply" }
+              ]
+            }
+            """);
+
+        var loaded = await store.GetAsync(sessionId, CancellationToken.None);
+
+        Assert.NotNull(loaded);
+        Assert.All(loaded!.Messages, message =>
+        {
+            Assert.Null(message.SourceMessageId);
+            Assert.Null(message.SourceRunId);
+        });
+    }
+
+    [Fact]
+    public async Task AppendIfAbsent_is_idempotent_by_stable_source_message_id()
+    {
+        var (store, _) = CreateStore();
+        var sessionId = (await store.CreateAsync(CancellationToken.None))!;
+        var message = new SessionMessage(
+            "user",
+            "agent prompt",
+            SourceMessageId: "evt_11111111111111111111111111111111",
+            SourceRunId: "run_11111111111111111111111111111111");
+
+        var appended = await store.AppendIfAbsentAsync(
+            sessionId,
+            message,
+            CancellationToken.None);
+        var replayed = await store.AppendIfAbsentAsync(
+            sessionId,
+            message,
+            CancellationToken.None);
+        var loaded = await store.GetAsync(sessionId, CancellationToken.None);
+
+        Assert.Equal(SessionAppendOutcome.Appended, appended);
+        Assert.Equal(SessionAppendOutcome.AlreadyPresent, replayed);
+        Assert.Single(loaded!.Messages);
+        Assert.Equal(message, loaded.Messages[0]);
+    }
+
+    [Fact]
+    public async Task AppendIfAbsent_rejects_conflicting_content_for_the_same_source_id()
+    {
+        var (store, _) = CreateStore();
+        var sessionId = (await store.CreateAsync(CancellationToken.None))!;
+        var original = new SessionMessage(
+            "ai",
+            "first",
+            "evt_22222222222222222222222222222222",
+            "run_22222222222222222222222222222222");
+        var conflict = original with { Content = "different" };
+        await store.AppendIfAbsentAsync(sessionId, original, CancellationToken.None);
+
+        var result = await store.AppendIfAbsentAsync(
+            sessionId,
+            conflict,
+            CancellationToken.None);
+
+        Assert.Equal(SessionAppendOutcome.InvalidMessage, result);
+        Assert.Single((await store.GetAsync(sessionId, CancellationToken.None))!.Messages);
+    }
+
+    [Fact]
+    public async Task Ordinary_append_cannot_overwrite_the_idempotency_ledger()
+    {
+        var (store, _) = CreateStore();
+        var sessionId = (await store.CreateAsync(CancellationToken.None))!;
+        var original = new SessionMessage(
+            "ai",
+            "first",
+            "evt_ledger_owner",
+            "run_ledger_owner");
+        await store.AppendIfAbsentAsync(sessionId, original, CancellationToken.None);
+
+        var appended = await store.AppendAsync(
+            sessionId,
+            [original with { Content = "conflicting ordinary append" }],
+            CancellationToken.None);
+        var replayed = await store.AppendIfAbsentAsync(
+            sessionId,
+            original,
+            CancellationToken.None);
+        var loaded = await store.GetAsync(sessionId, CancellationToken.None);
+
+        Assert.False(appended);
+        Assert.Equal(SessionAppendOutcome.AlreadyPresent, replayed);
+        Assert.Equal([original], loaded!.Messages);
+    }
+
+    [Fact]
+    public async Task Stable_source_dedupe_survives_message_retention_trimming()
+    {
+        var (store, _) = CreateStore();
+        var sessionId = (await store.CreateAsync(CancellationToken.None))!;
+        var original = new SessionMessage(
+            "user",
+            "old agent prompt",
+            "evt_33333333333333333333333333333333",
+            "run_33333333333333333333333333333333");
+        await store.AppendIfAbsentAsync(sessionId, original, CancellationToken.None);
+        await store.AppendAsync(
+            sessionId,
+            Enumerable.Range(0, 201)
+                .Select(index => new SessionMessage("user", $"ordinary-{index}"))
+                .ToArray(),
+            CancellationToken.None);
+
+        var replayed = await store.AppendIfAbsentAsync(
+            sessionId,
+            original,
+            CancellationToken.None);
+        var conflict = await store.AppendIfAbsentAsync(
+            sessionId,
+            original with { Content = "changed" },
+            CancellationToken.None);
+        var loaded = await store.GetAsync(sessionId, CancellationToken.None);
+
+        Assert.Equal(SessionAppendOutcome.AlreadyPresent, replayed);
+        Assert.Equal(SessionAppendOutcome.InvalidMessage, conflict);
+        Assert.Equal(200, loaded!.Messages.Count);
+        Assert.DoesNotContain(loaded.Messages, message => message == original);
+    }
+
     private static (SessionStore Store, DataPaths Paths) CreateStore(TimeProvider? clock = null)
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-session-tests", Guid.NewGuid().ToString("N"));

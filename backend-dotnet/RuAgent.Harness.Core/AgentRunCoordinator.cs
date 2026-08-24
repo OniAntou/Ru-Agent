@@ -12,6 +12,7 @@ public sealed class AgentRunCoordinator
     private readonly IIdGenerator _ids;
     private readonly ITimeProvider _time;
     private readonly TransientFrameBuffer _frames;
+    private readonly ITransientContentRedactor _transientRedactor;
     private readonly AgentToolExecutionPipeline _tools;
 
     public AgentRunCoordinator(
@@ -22,7 +23,8 @@ public sealed class AgentRunCoordinator
         IIdGenerator ids,
         ITimeProvider time,
         ToolCallScheduler scheduler,
-        TransientFrameBuffer frames)
+        TransientFrameBuffer frames,
+        ITransientContentRedactor? transientRedactor = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -31,13 +33,16 @@ public sealed class AgentRunCoordinator
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _frames = frames ?? throw new ArgumentNullException(nameof(frames));
+        _transientRedactor = transientRedactor
+            ?? PassthroughTransientContentRedactor.Instance;
         _tools = new AgentToolExecutionPipeline(
             gateway ?? throw new ArgumentNullException(nameof(gateway)),
             store,
             ids,
             time,
             scheduler ?? throw new ArgumentNullException(nameof(scheduler)),
-            frames);
+            frames,
+            _transientRedactor);
     }
 
     public async Task<AgentRunStepResult> RunOneStepAsync(
@@ -83,12 +88,19 @@ public sealed class AgentRunCoordinator
             run.PolicySnapshotVersion,
             run.PolicySnapshotSha256);
         var droppedBefore = _frames.DroppedCount;
+        var assistantStream = new TransientContentStream(
+            _frames,
+            _transientRedactor,
+            run.RunId,
+            TransientFrameKind.AssistantDelta,
+            modelStepId: modelStepId);
         var step = await _model.RunStepAsync(
                 request,
-                delta => PublishAssistantDelta(run.RunId, modelStepId, delta),
+                delta => PublishAssistantDelta(modelStepId, assistantStream, delta),
                 cancellationToken)
             .ConfigureAwait(false)
             ?? throw new InvalidOperationException("model_step_returned_null");
+        assistantStream.Complete();
         var modelDroppedCount = checked((int)(_frames.DroppedCount - droppedBefore));
 
         if (step.ToolCalls.Count > 0)
@@ -155,6 +167,42 @@ public sealed class AgentRunCoordinator
             .ConfigureAwait(false);
     }
 
+    public async Task<AgentRun> FailAsync(
+        RunId runId,
+        string errorCode,
+        CancellationToken cancellationToken)
+    {
+        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+        var stateChange = AgentRunStateMachine.TryTransition(
+            run.Status,
+            HarnessRunTransition.Fail);
+        if (!stateChange.Accepted)
+        {
+            throw new InvalidOperationException(stateChange.ErrorCode);
+        }
+
+        var failure = new HarnessEventIntent(
+            _ids.NewEventId(),
+            HarnessEventKind.RunFailed,
+            safeCode: errorCode);
+        var next = run.Advance(
+            stateChange.Next,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            1,
+            _time.UtcNow,
+            errorCode);
+        return await CommitAsync(
+                run,
+                next,
+                new[] { failure },
+                Array.Empty<HarnessPayloadIntent>(),
+                Array.Empty<ConversationOutboxIntent>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public async Task<AgentRun> ContinueAsync(
         RunId runId,
         CancellationToken cancellationToken)
@@ -188,21 +236,16 @@ public sealed class AgentRunCoordinator
             run,
             step.ToolCalls.Count,
             _time.UtcNow);
-        var modelPayloads = new List<HarnessPayloadIntent>();
-        PayloadId? assistantPayloadId = null;
-        if (!string.IsNullOrEmpty(step.Text))
-        {
-            var assistantBytes = Encoding.UTF8.GetBytes(step.Text);
-            assistantPayloadId = _ids.NewPayloadId();
-            modelPayloads.Add(new HarnessPayloadIntent(
-                assistantPayloadId.Value,
-                HarnessPayloadKind.AssistantText,
-                HarnessPayloadAudience.AuthenticatedClient
-                    | HarnessPayloadAudience.ModelContext,
-                HarnessPayloadEncoding.Utf8Text,
-                Math.Max(assistantBytes.Length, 1),
-                assistantBytes));
-        }
+        var assistantBytes = AssistantStepJsonCodec.Serialize(step);
+        var assistantPayloadId = _ids.NewPayloadId();
+        var modelPayload = new HarnessPayloadIntent(
+            assistantPayloadId,
+            HarnessPayloadKind.AssistantStep,
+            HarnessPayloadAudience.AuthenticatedClient
+                | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Json,
+            Math.Max(assistantBytes.Length, 1),
+            assistantBytes);
 
         run = await CommitAsync(
                 run,
@@ -219,7 +262,7 @@ public sealed class AgentRunCoordinator
                         safeCount: step.ToolCalls.Count,
                         safeCode: reservation.ErrorCode),
                 },
-                modelPayloads,
+                new[] { modelPayload },
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
             .ConfigureAwait(false);
@@ -310,9 +353,9 @@ public sealed class AgentRunCoordinator
         return new AgentRunStepResult(run, Array.Empty<ToolExecutionReceipt>());
     }
 
-    private ValueTask PublishAssistantDelta(
-        RunId runId,
+    private static ValueTask PublishAssistantDelta(
         ModelStepId expectedStepId,
+        TransientContentStream stream,
         AssistantDelta delta)
     {
         ArgumentNullException.ThrowIfNull(delta);
@@ -321,12 +364,7 @@ public sealed class AgentRunCoordinator
             throw new InvalidOperationException("model_delta_identity_mismatch");
         }
 
-        _frames.TryPublish(new HarnessTransientFrame(
-            runId,
-            TransientFrameKind.AssistantDelta,
-            delta.Sequence,
-            delta.Content,
-            modelStepId: expectedStepId));
+        stream.Append(delta.Content);
         return ValueTask.CompletedTask;
     }
 

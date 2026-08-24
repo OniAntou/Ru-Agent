@@ -26,15 +26,20 @@ public sealed class FakeToolGateway : IToolGateway
 
     public List<ExecutionId> ExecuteAttempts { get; } = new();
 
+    public IReadOnlyList<string> OutputChunks { get; set; } = [];
+
+    public Func<ToolProposal, ToolProposalDecision>? DecisionFactory { get; set; }
+
     public Task<ToolProposalDecision> EvaluateAsync(
         ToolProposal proposal,
         CancellationToken cancellationToken)
     {
         Proposals.Add(proposal);
         _trace?.Add("evaluate");
-        return Task.FromResult(ToolProposalDecision.Allow(
-            AccessKind,
-            $"canonical-{proposal.ModelOrder}"));
+        return Task.FromResult(DecisionFactory?.Invoke(proposal)
+            ?? ToolProposalDecision.Allow(
+                AccessKind,
+                $"canonical-{proposal.ModelOrder}"));
     }
 
     public Task<PreparedToolExecution> PrepareAsync(
@@ -51,7 +56,7 @@ public sealed class FakeToolGateway : IToolGateway
             PreparationPayloads));
     }
 
-    public Task<ToolExecutionReceipt> ExecuteAsync(
+    public async Task<ToolExecutionReceipt> ExecuteAsync(
         PreparedToolExecution execution,
         Func<ToolOutputChunk, ValueTask> publishDelta,
         CancellationToken cancellationToken)
@@ -64,7 +69,16 @@ public sealed class FakeToolGateway : IToolGateway
             throw new ToolTransportException("fake_transport_failure");
         }
 
-        return Task.FromResult(new ToolExecutionReceipt(
+        for (var index = 0; index < OutputChunks.Count; index++)
+        {
+            await publishDelta(new ToolOutputChunk(
+                execution.ExecutionId,
+                index + 1,
+                ToolOutputStream.Stdout,
+                OutputChunks[index]));
+        }
+
+        return new ToolExecutionReceipt(
             execution.ExecutionId,
             execution.ToolCallId,
             ToolExecutionOutcome.Succeeded,
@@ -72,7 +86,7 @@ public sealed class FakeToolGateway : IToolGateway
             null,
             sideEffectsPossible: false,
             modelContent: "{\"content\":\"fake result\"}"u8.ToArray(),
-            contentEncoding: HarnessPayloadEncoding.Json));
+            contentEncoding: HarnessPayloadEncoding.Json);
     }
 
     public Task CancelAsync(ExecutionId executionId, CancellationToken cancellationToken)

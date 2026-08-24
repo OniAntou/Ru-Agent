@@ -95,7 +95,9 @@ internal static class HarnessSqliteMapper
             Optional(reader, 8, value => new ExecutionId(value)),
             Optional(reader, 9, value => new ApprovalId(value)),
             reader.IsDBNull(10) ? null : reader.GetInt32(10),
-            reader.IsDBNull(11) ? null : reader.GetString(11));
+            reader.IsDBNull(11) ? null : reader.GetString(11),
+            reader.IsDBNull(12) ? null : (ToolExecutionOutcome)reader.GetInt32(12),
+            reader.IsDBNull(13) ? null : reader.GetBoolean(13));
     }
 
     internal static string EventKind(HarnessEventKind kind) => kind switch

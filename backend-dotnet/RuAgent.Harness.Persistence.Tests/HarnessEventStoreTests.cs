@@ -11,7 +11,7 @@ public sealed class HarnessEventStoreTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         var request = fixture.NewRun(1, 1, 1);
 
         var created = await store.TryCreateRunAsync(request, CancellationToken.None);
@@ -33,12 +33,12 @@ public sealed class HarnessEventStoreTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         var request = fixture.NewRun(1, 1, 1);
         await store.TryCreateRunAsync(request, CancellationToken.None);
         var next = CopyRun(
             request.Run,
-            new HarnessRunStatus(HarnessRunState.WaitingHistory, HistoryWaitKind.UserBeforeFirstStep),
+            new HarnessRunStatus(HarnessRunState.Running),
             version: 1,
             lastSequence: 2);
         var commit = new HarnessCommit(

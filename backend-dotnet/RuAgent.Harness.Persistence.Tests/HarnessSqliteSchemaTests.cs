@@ -18,6 +18,15 @@ public sealed class HarnessSqliteSchemaTests
         "agent_session_settings",
     ];
 
+    private static readonly string[] RequiredIndexes =
+    [
+        "ux_agent_runs_active_session",
+        "ux_agent_runs_active_workspace",
+        "ux_agent_payloads_context_source",
+        "ux_agent_payloads_context_sequence",
+        "ix_agent_conversation_outbox_dispatch",
+    ];
+
     [Fact]
     public async Task Initialize_creates_wal_schema_and_is_idempotent()
     {
@@ -43,12 +52,27 @@ public sealed class HarnessSqliteSchemaTests
         }
 
         Assert.All(RequiredTables, name => Assert.Contains(name, names));
+        await using var indexCommand = connection.CreateCommand();
+        indexCommand.CommandText =
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE '%agent_%'";
+        var indexes = new HashSet<string>(StringComparer.Ordinal);
+        await using (var reader = await indexCommand.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                indexes.Add(reader.GetString(0));
+            }
+        }
+
+        Assert.All(RequiredIndexes, name => Assert.Contains(name, indexes));
         await using var journalCommand = connection.CreateCommand();
         journalCommand.CommandText = "PRAGMA journal_mode";
         Assert.Equal("wal", (string?)await journalCommand.ExecuteScalarAsync());
         await using var versionCommand = connection.CreateCommand();
         versionCommand.CommandText = "PRAGMA user_version";
-        Assert.Equal(1L, (long)(await versionCommand.ExecuteScalarAsync() ?? 0L));
+        Assert.Equal(
+            HarnessSqliteSchema.CurrentVersion,
+            (long)(await versionCommand.ExecuteScalarAsync() ?? 0L));
     }
 
     [Fact]
@@ -72,7 +96,7 @@ public sealed class HarnessSqliteSchemaTests
     }
 
     [Fact]
-    public async Task Initialize_rejects_a_version_one_database_with_an_invalid_shape()
+    public async Task Initialize_rejects_a_legacy_version_one_database_without_reinterpreting_it()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-harness-invalid-schema", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -95,11 +119,21 @@ public sealed class HarnessSqliteSchemaTests
                 CancellationToken.None);
 
             Assert.False(health.IsAvailable);
-            Assert.Equal("harness_schema_invalid", health.ErrorCode);
+            Assert.Equal("harness_schema_incompatible", health.ErrorCode);
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
+            using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Shared,
+                Pooling = true,
+            }.ToString()))
+            {
+                SqliteConnection.ClearPool(pool);
+            }
+
             Directory.Delete(root, recursive: true);
         }
     }

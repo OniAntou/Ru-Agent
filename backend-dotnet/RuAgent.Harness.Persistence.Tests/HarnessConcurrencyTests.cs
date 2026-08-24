@@ -11,7 +11,7 @@ public sealed class HarnessConcurrencyTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         var first = fixture.NewRun(1, 1, 1, 'a', 'b');
         var replay = fixture.NewRun(2, 1, 1, 'a', 'b');
 
@@ -29,7 +29,7 @@ public sealed class HarnessConcurrencyTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         var first = fixture.NewRun(1, 1, 1, 'a', 'b');
         var conflicting = fixture.NewRun(2, 1, 1, 'a', 'c');
         await store.TryCreateRunAsync(first, CancellationToken.None);
@@ -46,8 +46,8 @@ public sealed class HarnessConcurrencyTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
-        var firstStore = new SqliteHarnessEventStore(fixture.Options);
-        var secondStore = new SqliteHarnessEventStore(fixture.Options);
+        var firstStore = fixture.CreateEventStore();
+        var secondStore = fixture.CreateEventStore();
         var first = fixture.NewRun(1, 1, 1, 'a', 'b');
         var second = fixture.NewRun(2, 2, 1, 'c', 'd');
 
@@ -67,7 +67,7 @@ public sealed class HarnessConcurrencyTests
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
         await fixture.RegisterWorkspaceAsync(2);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         await store.TryCreateRunAsync(fixture.NewRun(1, 1, 1, 'a', 'b'), CancellationToken.None);
 
         var result = await store.TryCreateRunAsync(
@@ -84,7 +84,7 @@ public sealed class HarnessConcurrencyTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         var first = fixture.NewRun(1, 1, 1, 'a', 'b');
         await store.TryCreateRunAsync(first, CancellationToken.None);
         var cancelled = HarnessEventStoreTests.CopyRun(

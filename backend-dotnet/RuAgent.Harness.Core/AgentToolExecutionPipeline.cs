@@ -13,6 +13,7 @@ internal sealed class AgentToolExecutionPipeline
     private readonly ITimeProvider _time;
     private readonly ToolCallScheduler _scheduler;
     private readonly TransientFrameBuffer _frames;
+    private readonly ITransientContentRedactor _transientRedactor;
 
     internal AgentToolExecutionPipeline(
         IToolGateway gateway,
@@ -20,7 +21,8 @@ internal sealed class AgentToolExecutionPipeline
         IIdGenerator ids,
         ITimeProvider time,
         ToolCallScheduler scheduler,
-        TransientFrameBuffer frames)
+        TransientFrameBuffer frames,
+        ITransientContentRedactor transientRedactor)
     {
         _gateway = gateway;
         _store = store;
@@ -28,6 +30,7 @@ internal sealed class AgentToolExecutionPipeline
         _time = time;
         _scheduler = scheduler;
         _frames = frames;
+        _transientRedactor = transientRedactor;
     }
 
     internal async Task<AgentToolPipelineResult> ExecuteAsync(
@@ -53,6 +56,9 @@ internal sealed class AgentToolExecutionPipeline
         }
 
         var prepared = new List<PreparedToolExecution>(modelCalls.Count);
+        var denied = new Dictionary<int, DeniedToolExecution>();
+        var orderedReceipts = new List<(int ModelOrder, ToolExecutionReceipt Receipt)>(
+            modelCalls.Count);
         for (var index = 0; index < modelCalls.Count; index++)
         {
             var modelCall = modelCalls[index];
@@ -116,18 +122,33 @@ internal sealed class AgentToolExecutionPipeline
 
             if (decision.Decision == PolicyDecision.Deny)
             {
-                run = await CommitSingleEventAsync(
-                        run,
-                        run.Status,
-                        new HarnessEventIntent(
-                            _ids.NewEventId(),
-                            HarnessEventKind.ToolExecutionCompleted,
-                            modelStepId: modelStepId,
-                            toolCallId: proposal.ToolCallId,
-                            safeCode: decision.SafeCode),
-                        Array.Empty<HarnessPayloadIntent>(),
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                var deniedExecutionId = _ids.NewExecutionId();
+                var code = decision.SafeCode ?? "policy_denied";
+                var modelContent = JsonSerializer.SerializeToUtf8Bytes(new
+                {
+                    error = "tool_denied",
+                    code,
+                });
+                var resultPayloadId = _ids.NewPayloadId();
+                var resultPayload = new HarnessPayloadIntent(
+                    resultPayloadId,
+                    HarnessPayloadKind.ToolOutput,
+                    HarnessPayloadAudience.AuthenticatedClient
+                        | HarnessPayloadAudience.ModelContext,
+                    HarnessPayloadEncoding.Json,
+                    modelContent.Length,
+                    modelContent);
+                var receipt = new ToolExecutionReceipt(
+                    deniedExecutionId,
+                    proposal.ToolCallId,
+                    ToolExecutionOutcome.Failed,
+                    code,
+                    resultPayloadId,
+                    sideEffectsPossible: false,
+                    contentEncoding: HarnessPayloadEncoding.Json);
+                denied.Add(
+                    proposal.ModelOrder,
+                    new DeniedToolExecution(resultPayload, receipt));
                 continue;
             }
 
@@ -176,12 +197,36 @@ internal sealed class AgentToolExecutionPipeline
                 cancellationToken)
             .ConfigureAwait(false);
         var executionDropped = checked((int)(_frames.DroppedCount - droppedBeforeExecution));
-        var receipts = new List<ToolExecutionReceipt>(rawReceipts.Count);
-
-        for (var index = 0; index < rawReceipts.Count; index++)
+        var rawByOrder = rawReceipts.ToDictionary(
+            receipt => prepared.Single(call => call.ExecutionId == receipt.ExecutionId).ModelOrder);
+        var executionDropEventPending = executionDropped > 0;
+        foreach (var modelOrder in rawByOrder.Keys.Concat(denied.Keys).Order())
         {
-            var receipt = rawReceipts[index];
-            var call = prepared.Single(item => item.ExecutionId == receipt.ExecutionId);
+            if (denied.TryGetValue(modelOrder, out var deniedExecution))
+            {
+                var deniedReceipt = deniedExecution.Receipt;
+                run = await CommitSingleEventAsync(
+                        run,
+                        run.Status,
+                        new HarnessEventIntent(
+                            _ids.NewEventId(),
+                            HarnessEventKind.ToolExecutionCompleted,
+                            modelStepId: modelStepId,
+                            toolCallId: deniedReceipt.ToolCallId,
+                            executionId: deniedReceipt.ExecutionId,
+                            payloadId: deniedReceipt.ResultPayloadId,
+                            safeCode: deniedReceipt.Code,
+                            toolOutcome: deniedReceipt.Outcome,
+                            sideEffectsPossible: deniedReceipt.SideEffectsPossible),
+                        new[] { deniedExecution.Payload },
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                orderedReceipts.Add((modelOrder, deniedReceipt));
+                continue;
+            }
+
+            var receipt = rawByOrder[modelOrder];
+            var call = prepared.Single(item => item.ModelOrder == modelOrder);
             var receiptPayloads = new List<HarnessPayloadIntent>();
             if (receipt.ResultPayloadId is not null)
             {
@@ -202,7 +247,7 @@ internal sealed class AgentToolExecutionPipeline
                 receipt = receipt.WithResultPayload(resultPayloadId);
             }
 
-            receipts.Add(receipt);
+            orderedReceipts.Add((call.ModelOrder, receipt));
             var events = new List<HarnessEventIntent>
             {
                 new(
@@ -212,15 +257,18 @@ internal sealed class AgentToolExecutionPipeline
                     toolCallId: receipt.ToolCallId,
                     executionId: receipt.ExecutionId,
                     payloadId: receipt.ResultPayloadId,
-                    safeCode: receipt.Code),
+                    safeCode: receipt.Code,
+                    toolOutcome: receipt.Outcome,
+                    sideEffectsPossible: receipt.SideEffectsPossible),
             };
-            if (index == 0 && executionDropped > 0)
+            if (executionDropEventPending)
             {
                 events.Add(new HarnessEventIntent(
                     _ids.NewEventId(),
                     HarnessEventKind.TransientFramesDropped,
                     executionId: receipt.ExecutionId,
                     safeCount: executionDropped));
+                executionDropEventPending = false;
             }
 
             var nextStatus = run.Status;
@@ -260,8 +308,18 @@ internal sealed class AgentToolExecutionPipeline
                 .ConfigureAwait(false);
         }
 
-        return new AgentToolPipelineResult(run, receipts, null);
+        return new AgentToolPipelineResult(
+            run,
+            orderedReceipts
+                .OrderBy(item => item.ModelOrder)
+                .Select(item => item.Receipt)
+                .ToArray(),
+            null);
     }
+
+    private sealed record DeniedToolExecution(
+        HarnessPayloadIntent Payload,
+        ToolExecutionReceipt Receipt);
 
     private async Task<ToolExecutionReceipt> ExecuteWithRetryAsync(
         RunId runId,
@@ -271,13 +329,24 @@ internal sealed class AgentToolExecutionPipeline
         const int maximumAttempts = 2;
         for (var attempt = 1; attempt <= maximumAttempts; attempt++)
         {
+            var outputStream = new TransientContentStream(
+                _frames,
+                _transientRedactor,
+                runId,
+                TransientFrameKind.ToolOutput,
+                executionId: execution.ExecutionId);
             try
             {
-                return await _gateway.ExecuteAsync(
+                var receipt = await _gateway.ExecuteAsync(
                         execution,
-                        chunk => PublishToolOutput(runId, execution.ExecutionId, chunk),
+                        chunk => PublishToolOutput(
+                            execution.ExecutionId,
+                            outputStream,
+                            chunk),
                         cancellationToken)
                     .ConfigureAwait(false);
+                outputStream.Complete();
+                return receipt;
             }
             catch (ToolTransportException) when (
                 execution.AccessKind == ToolAccessKind.ReadOnly
@@ -301,9 +370,9 @@ internal sealed class AgentToolExecutionPipeline
         throw new InvalidOperationException("unreachable_tool_retry_state");
     }
 
-    private ValueTask PublishToolOutput(
-        RunId runId,
+    private static ValueTask PublishToolOutput(
         ExecutionId expectedExecutionId,
+        TransientContentStream stream,
         ToolOutputChunk chunk)
     {
         ArgumentNullException.ThrowIfNull(chunk);
@@ -312,12 +381,7 @@ internal sealed class AgentToolExecutionPipeline
             throw new InvalidOperationException("tool_output_identity_mismatch");
         }
 
-        _frames.TryPublish(new HarnessTransientFrame(
-            runId,
-            TransientFrameKind.ToolOutput,
-            chunk.Sequence,
-            chunk.Content,
-            executionId: chunk.ExecutionId));
+        stream.Append(chunk.Content);
         return ValueTask.CompletedTask;
     }
 

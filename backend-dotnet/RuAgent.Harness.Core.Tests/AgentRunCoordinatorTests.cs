@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
@@ -58,6 +59,31 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Permanent_history_failure_terminates_the_run_with_a_safe_error()
+    {
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(
+            HarnessRunState.WaitingHistory,
+            HistoryWaitKind.UserBeforeFirstStep)));
+        var coordinator = Coordinator(
+            new FakeModelStepRunner(),
+            new FakeToolGateway(),
+            store);
+
+        var failed = await coordinator.FailAsync(
+            RunId(),
+            "session_not_found",
+            CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.Failed, failed.State);
+        Assert.Equal("session_not_found", failed.TerminalErrorCode);
+        var failure = Assert.Single(
+            Assert.Single(store.Commits).Events,
+            item => item.Kind == HarnessEventKind.RunFailed);
+        Assert.Equal("session_not_found", failure.SafeCode);
+    }
+
+    [Fact]
     public async Task Preparation_payload_and_execution_request_commit_before_dispatch()
     {
         var trace = new List<string>();
@@ -86,9 +112,11 @@ public sealed class AgentRunCoordinatorTests
             store.Commits,
             commit => commit.Events.Any(item =>
                 item.Kind == HarnessEventKind.ModelStepCompleted));
+        var assistantPayload = Assert.Single(modelCompletedCommit.Payloads);
+        Assert.Equal(HarnessPayloadKind.AssistantStep, assistantPayload.Kind);
         Assert.Equal(
-            HarnessPayloadKind.AssistantText,
-            Assert.Single(modelCompletedCommit.Payloads).Kind);
+            "files.read",
+            Assert.Single(AssistantStepJsonCodec.Deserialize(assistantPayload.Plaintext).ToolCalls).ToolId);
         var proposedCommit = Assert.Single(
             store.Commits,
             commit => commit.Events.Any(item => item.Kind == HarnessEventKind.ToolProposed));
@@ -140,6 +168,73 @@ public sealed class AgentRunCoordinatorTests
 
         Assert.True(trace.IndexOf("commit:ToolExecutionCompleted") < trace.IndexOf("model:2"));
         Assert.Equal(2, model.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Denied_tool_is_returned_to_the_model_without_execution()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = _ => ToolProposalDecision.Deny(
+                ToolAccessKind.ReadOnly,
+                "policy_denied"),
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Empty(gateway.ExecuteAttempts);
+        var receipt = Assert.Single(result.Receipts);
+        Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
+        Assert.Equal("policy_denied", receipt.Code);
+        Assert.False(receipt.SideEffectsPossible);
+        var commit = Assert.Single(
+            store.Commits,
+            item => item.Events.Any(@event =>
+                @event.Kind == HarnessEventKind.ToolExecutionCompleted));
+        var @event = Assert.Single(commit.Events);
+        Assert.Equal(ToolExecutionOutcome.Failed, @event.ToolOutcome);
+        Assert.False(@event.SideEffectsPossible);
+        var payload = Assert.Single(commit.Payloads);
+        Assert.Equal(HarnessPayloadKind.ToolOutput, payload.Kind);
+        Assert.Equal(payload.PayloadId, receipt.ResultPayloadId);
+        Assert.Contains("policy_denied", Encoding.UTF8.GetString(payload.Plaintext.Span));
+    }
+
+    [Fact]
+    public async Task Mixed_allowed_and_denied_results_remain_in_model_order()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep(callCount: 2));
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = proposal => proposal.ModelOrder == 2
+                ? ToolProposalDecision.Deny(ToolAccessKind.ReadOnly, "policy_denied")
+                : ToolProposalDecision.Allow(
+                    ToolAccessKind.ReadOnly,
+                    $"canonical-{proposal.ModelOrder}"),
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        var completed = store.Commits
+            .SelectMany(commit => commit.Events)
+            .Where(@event => @event.Kind == HarnessEventKind.ToolExecutionCompleted)
+            .ToArray();
+        Assert.Equal(2, completed.Length);
+        Assert.Equal(gateway.Proposals[0].ToolCallId, completed[0].ToolCallId);
+        Assert.Equal(gateway.Proposals[1].ToolCallId, completed[1].ToolCallId);
+        Assert.Equal(
+            gateway.Proposals.Select(proposal => proposal.ToolCallId),
+            result.Receipts.Select(receipt => receipt.ToolCallId));
+        Assert.Single(gateway.ExecuteAttempts);
     }
 
     [Fact]
@@ -243,11 +338,60 @@ public sealed class AgentRunCoordinatorTests
         Assert.Equal(2, persistedDropped.Event.SafeCount);
     }
 
+    [Fact]
+    public async Task Assistant_stream_redacts_a_known_secret_split_across_deltas()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("done"), "before split-", "secret after");
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var frames = new TransientFrameBuffer(4);
+        var coordinator = Coordinator(
+            model,
+            new FakeToolGateway(),
+            store,
+            frames,
+            new BufferedSecretRedactor("split-secret"));
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        var frame = await ReadOneFrameAsync(frames);
+
+        Assert.Equal("before [REDACTED] after", frame.Content);
+        Assert.DoesNotContain("split-secret", frame.Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Tool_stream_redacts_a_known_secret_split_across_chunks()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var gateway = new FakeToolGateway
+        {
+            OutputChunks = ["before split-", "secret after"],
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var frames = new TransientFrameBuffer(4);
+        var coordinator = Coordinator(
+            model,
+            gateway,
+            store,
+            frames,
+            new BufferedSecretRedactor("split-secret"));
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+        var frame = await ReadOneFrameAsync(frames);
+
+        Assert.Equal("before [REDACTED] after", frame.Content);
+        Assert.DoesNotContain("split-secret", frame.Content, StringComparison.Ordinal);
+    }
+
     private static AgentRunCoordinator Coordinator(
         FakeModelStepRunner model,
         FakeToolGateway gateway,
         InMemoryHarnessEventStore store,
-        TransientFrameBuffer? frames = null) =>
+        TransientFrameBuffer? frames = null,
+        ITransientContentRedactor? redactor = null) =>
         new(
             model,
             gateway,
@@ -256,22 +400,36 @@ public sealed class AgentRunCoordinatorTests
             new SequenceIdGenerator(),
             new IncrementingTimeProvider(Epoch),
             new ToolCallScheduler(),
-            frames ?? new TransientFrameBuffer(32));
+            frames ?? new TransientFrameBuffer(32),
+            redactor);
+
+    private static async Task<HarnessTransientFrame> ReadOneFrameAsync(
+        TransientFrameBuffer frames)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await using var enumerator = frames.ReadAllAsync(timeout.Token).GetAsyncEnumerator();
+        Assert.True(await enumerator.MoveNextAsync());
+        return enumerator.Current;
+    }
 
     private static AssistantStep FinalStep(string text) =>
         new(text, Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop, 16);
 
-    private static AssistantStep ToolStep() =>
+    private static AssistantStep ToolStep(int callCount = 1) =>
         new(
             "checking",
-            new[]
-            {
+            Enumerable.Range(1, callCount)
+                .Select(index =>
                 new ModelToolCall(
-                    "provider-call",
+                    callCount == 1 ? "provider-call" : $"provider-call-{index}",
                     "files.read",
                     "1",
-                    JsonDocument.Parse("{\"path\":\"README.md\"}").RootElement.Clone()),
-            },
+                    JsonDocument.Parse(
+                        callCount == 1
+                            ? "{\"path\":\"README.md\"}"
+                            : $"{{\"path\":\"README-{index}.md\"}}")
+                        .RootElement.Clone()))
+                .ToArray(),
             AssistantFinishReason.ToolCalls,
             16);
 
@@ -312,6 +470,27 @@ public sealed class AgentRunCoordinatorTests
         public IncrementingTimeProvider(DateTimeOffset current) => _current = current;
 
         public DateTimeOffset UtcNow => _current = _current.AddSeconds(1);
+    }
+
+    private sealed class BufferedSecretRedactor(string secret) : ITransientContentRedactor
+    {
+        public ITransientContentRedactionSession CreateSession() => new Session(secret);
+
+        private sealed class Session(string secret) : ITransientContentRedactionSession
+        {
+            private readonly StringBuilder _content = new();
+
+            public string Append(string content)
+            {
+                _content.Append(content);
+                return string.Empty;
+            }
+
+            public string Complete() => _content.ToString().Replace(
+                secret,
+                "[REDACTED]",
+                StringComparison.Ordinal);
+        }
     }
 
     private sealed class SequenceIdGenerator : IIdGenerator

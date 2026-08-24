@@ -88,7 +88,9 @@ public sealed class InMemoryHarnessEventStore : IHarnessEventStore
                         executionId: intent.ExecutionId,
                         approvalId: intent.ApprovalId,
                         safeCount: intent.SafeCount,
-                        safeCode: intent.SafeCode)));
+                        safeCode: intent.SafeCode,
+                        toolOutcome: intent.ToolOutcome,
+                        sideEffectsPossible: intent.SideEffectsPossible)));
                 _trace?.Add($"commit:{intent.Kind}");
             }
 

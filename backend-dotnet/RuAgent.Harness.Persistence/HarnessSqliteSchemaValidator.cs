@@ -30,6 +30,8 @@ internal static class HarnessSqliteSchemaValidator
                 "idempotency_key_sha256",
                 "normalized_request_sha256",
                 "terminal_at_utc",
+                "base_context_captured_at_utc",
+                "base_context_entry_count",
             ],
             ["agent_payloads"] =
             [
@@ -39,6 +41,14 @@ internal static class HarnessSqliteSchemaValidator
                 "audience",
                 "protected_content",
                 "protection_version",
+                "nonce",
+                "authentication_tag",
+                "consumed_at_utc",
+                "context_scope",
+                "context_source_id",
+                "context_sequence",
+                "context_role",
+                "context_entry_kind",
             ],
             ["agent_events"] =
             [
@@ -47,6 +57,8 @@ internal static class HarnessSqliteSchemaValidator
                 "sequence",
                 "kind",
                 "payload_id",
+                "tool_outcome",
+                "side_effects_possible",
             ],
             ["agent_conversation_outbox"] =
             [
@@ -55,6 +67,9 @@ internal static class HarnessSqliteSchemaValidator
                 "session_id",
                 "payload_id",
                 "delivery_state",
+                "claim_token",
+                "lease_expires_at_utc",
+                "last_error_code",
             ],
             ["agent_global_rules"] = ["rule_id", "rule_document", "version"],
             ["agent_project_rules"] = ["rule_id", "workspace_id", "rule_document"],
@@ -98,10 +113,15 @@ internal static class HarnessSqliteSchemaValidator
             SELECT COUNT(*)
             FROM sqlite_master
             WHERE type = 'index'
-              AND name IN ('ux_agent_runs_active_session', 'ux_agent_runs_active_workspace')
+              AND name IN (
+                  'ux_agent_runs_active_session',
+                  'ux_agent_runs_active_workspace',
+                  'ux_agent_payloads_context_source',
+                  'ux_agent_payloads_context_sequence',
+                  'ix_agent_conversation_outbox_dispatch')
             """;
         return (long)(await indexCommand.ExecuteScalarAsync(cancellationToken)
-            .ConfigureAwait(false) ?? 0L) == 2;
+            .ConfigureAwait(false) ?? 0L) == 5;
     }
 
     private static async Task<HashSet<string>> ReadColumnsAsync(

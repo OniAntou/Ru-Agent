@@ -3,6 +3,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence.Workspace;
+using RuAgent.Harness.Persistence.Privacy;
 using Xunit;
 
 namespace RuAgent.Harness.Persistence.Tests;
@@ -13,11 +14,19 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
     {
         RootPath = rootPath;
         Options = new HarnessSqliteOptions(Path.Combine(rootPath, "agent_harness.db"));
+        PayloadStore = new HarnessPayloadStore(
+            Options,
+            new HarnessPayloadCryptography(new FakeHarnessKeyStore()),
+            KnownSecretRedactor.Empty);
     }
 
     public string RootPath { get; }
 
     public HarnessSqliteOptions Options { get; }
+
+    public HarnessPayloadStore PayloadStore { get; }
+
+    public SqliteHarnessEventStore CreateEventStore() => new(Options, PayloadStore);
 
     public static async Task<HarnessStoreTestFixture> CreateAsync()
     {
@@ -65,13 +74,14 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
         AgentPermissionPreset preset = AgentPermissionPreset.Standard,
         long selectionVersion = 1,
         IReadOnlyList<HarnessPayloadIntent>? payloads = null,
-        IReadOnlyList<ConversationOutboxIntent>? outbox = null)
+        IReadOnlyList<ConversationOutboxIntent>? outbox = null,
+        HarnessRunStatus? status = null)
     {
         var run = new AgentRun(
             Run(runNumber),
             Session(sessionNumber),
             Workspace(workspaceNumber).WorkspaceId,
-            new HarnessRunStatus(HarnessRunState.Created),
+            status ?? new HarnessRunStatus(HarnessRunState.Created),
             version: 0,
             lastSequence: 1,
             budgetWindow: 1,
@@ -117,7 +127,17 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        SqliteConnection.ClearAllPools();
+        using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = Options.DatabasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Cache = SqliteCacheMode.Shared,
+            Pooling = true,
+        }.ToString()))
+        {
+            SqliteConnection.ClearPool(pool);
+        }
+
         await Task.Yield();
         if (Directory.Exists(RootPath))
         {

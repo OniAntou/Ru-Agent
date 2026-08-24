@@ -13,7 +13,7 @@ public sealed class HarnessProjectionTransactionTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         var request = fixture.NewRun(1, 1, 1);
         await store.TryCreateRunAsync(request, CancellationToken.None);
         var payload = UserPayload(100, "visible user message");
@@ -49,12 +49,12 @@ public sealed class HarnessProjectionTransactionTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         var request = fixture.NewRun(1, 1, 1);
         await store.TryCreateRunAsync(request, CancellationToken.None);
         var first = HarnessEventStoreTests.CopyRun(
             request.Run,
-            new HarnessRunStatus(HarnessRunState.Running),
+            new HarnessRunStatus(HarnessRunState.WaitingWorkspaceTrust),
             version: 1,
             lastSequence: 2);
         var duplicateEventId = HarnessStoreTestFixture.Event(110);
@@ -105,7 +105,7 @@ public sealed class HarnessProjectionTransactionTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         var request = fixture.NewRun(1, 1, 1);
         await store.TryCreateRunAsync(request, CancellationToken.None);
         var first = HarnessEventStoreTests.CopyRun(
@@ -151,7 +151,7 @@ public sealed class HarnessProjectionTransactionTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         var request = fixture.NewRun(1, 1, 1);
         await store.TryCreateRunAsync(request, CancellationToken.None);
         await using var connection = fixture.CreateRawConnection();
@@ -174,7 +174,7 @@ public sealed class HarnessProjectionTransactionTests
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
         await fixture.RegisterWorkspaceAsync(2);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         var first = fixture.NewRun(1, 1, 1, 'a', 'b');
         await store.TryCreateRunAsync(first, CancellationToken.None);
         var secondBase = fixture.NewRun(2, 2, 2, 'c', 'd');
@@ -201,7 +201,7 @@ public sealed class HarnessProjectionTransactionTests
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         var request = fixture.NewRun(1, 1, 1);
         await store.TryCreateRunAsync(request, CancellationToken.None);
         var payload = UserPayload(140, "wrong session");
@@ -233,15 +233,104 @@ public sealed class HarnessProjectionTransactionTests
     }
 
     [Fact]
+    public async Task Outbox_is_rejected_outside_its_atomic_history_boundary()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var store = fixture.CreateEventStore();
+        var request = fixture.NewRun(1, 1, 1);
+        await store.TryCreateRunAsync(request, CancellationToken.None);
+        var payload = UserPayload(145, "not waiting for history");
+        var next = HarnessEventStoreTests.CopyRun(
+            request.Run,
+            new HarnessRunStatus(HarnessRunState.Running),
+            version: 1,
+            lastSequence: 2);
+        var commit = new HarnessCommit(
+            request.Run.RunId,
+            0,
+            next,
+            [new HarnessEventIntent(
+                HarnessStoreTestFixture.Event(145),
+                HarnessEventKind.RunStateChanged,
+                payloadId: payload.PayloadId)],
+            [payload],
+            [new ConversationOutboxIntent(
+                HarnessStoreTestFixture.Event(146),
+                request.Run.SessionId,
+                payload.PayloadId,
+                ConversationOutboxRole.User,
+                HistoryWaitKind.UserBeforeFirstStep)]);
+
+        var exception = await Assert.ThrowsAsync<HarnessStoreException>(
+            () => store.CommitAsync(commit, CancellationToken.None));
+
+        Assert.Equal("outbox_history_boundary_invalid", exception.Code);
+        Assert.Equal(0L, await ScalarAsync(fixture, "SELECT COUNT(*) FROM agent_payloads"));
+    }
+
+    [Fact]
+    public async Task User_history_outbox_requires_a_user_prompt_payload()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var store = fixture.CreateEventStore();
+        var request = fixture.NewRun(1, 1, 1);
+        await store.TryCreateRunAsync(request, CancellationToken.None);
+        var bytes = Encoding.UTF8.GetBytes("wrong visible kind");
+        var payload = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(147),
+            HarnessPayloadKind.AssistantText,
+            HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            1024,
+            bytes);
+        var next = HarnessEventStoreTests.CopyRun(
+            request.Run,
+            new HarnessRunStatus(
+                HarnessRunState.WaitingHistory,
+                HistoryWaitKind.UserBeforeFirstStep),
+            version: 1,
+            lastSequence: 2);
+        var commit = new HarnessCommit(
+            request.Run.RunId,
+            0,
+            next,
+            [new HarnessEventIntent(
+                HarnessStoreTestFixture.Event(147),
+                HarnessEventKind.RunStateChanged,
+                payloadId: payload.PayloadId)],
+            [payload],
+            [new ConversationOutboxIntent(
+                HarnessStoreTestFixture.Event(148),
+                request.Run.SessionId,
+                payload.PayloadId,
+                ConversationOutboxRole.User,
+                HistoryWaitKind.UserBeforeFirstStep)]);
+
+        var exception = await Assert.ThrowsAsync<HarnessStoreException>(
+            () => store.CommitAsync(commit, CancellationToken.None));
+
+        Assert.Equal("outbox_payload_kind_invalid", exception.Code);
+    }
+
+    [Fact]
     public async Task Deleting_a_run_cascades_events_payloads_and_outbox()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
         await fixture.RegisterWorkspaceAsync(1);
-        var store = new SqliteHarnessEventStore(fixture.Options);
+        var store = fixture.CreateEventStore();
         var payload = UserPayload(150, "delete with run");
         var requestBase = fixture.NewRun(1, 1, 1);
-        var request = new NewAgentRun(
+        var waitingRun = HarnessEventStoreTests.CopyRun(
             requestBase.Run,
+            new HarnessRunStatus(
+                HarnessRunState.WaitingHistory,
+                HistoryWaitKind.UserBeforeFirstStep),
+            version: 0,
+            lastSequence: 1);
+        var request = new NewAgentRun(
+            waitingRun,
             [new HarnessEventIntent(
                 requestBase.Events[0].EventId,
                 HarnessEventKind.RunStateChanged,

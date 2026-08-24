@@ -1,0 +1,131 @@
+using Microsoft.Data.Sqlite;
+using RuAgent.Harness.Core;
+
+namespace RuAgent.Harness.Persistence;
+
+public sealed record HarnessSessionArtifactDeleteResult(
+    int ClosedActiveRuns,
+    int DeletedRuns);
+
+public interface IHarnessSessionArtifactStore
+{
+    Task<HarnessSessionArtifactDeleteResult> CloseAndDeleteAsync(
+        string sessionId,
+        DateTimeOffset deletedAt,
+        CancellationToken cancellationToken);
+}
+
+public sealed class HarnessSessionArtifactStore : IHarnessSessionArtifactStore
+{
+    private readonly HarnessSqliteOptions _options;
+
+    public HarnessSessionArtifactStore(HarnessSqliteOptions options) =>
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+
+    public async Task<HarnessSessionArtifactDeleteResult> CloseAndDeleteAsync(
+        string sessionId,
+        DateTimeOffset deletedAt,
+        CancellationToken cancellationToken)
+    {
+        ValidateSessionId(sessionId);
+        var health = await HarnessSqliteSchema.InitializeAsync(_options, cancellationToken)
+            .ConfigureAwait(false);
+        if (!health.IsAvailable)
+        {
+            throw new HarnessStoreException(
+                health.ErrorCode ?? "harness_store_unavailable");
+        }
+
+        try
+        {
+            await using var connection = await _options.OpenConnectionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await using var transaction = connection.BeginTransaction(deferred: false);
+            var deletedRuns = await CountRunsAsync(
+                    connection,
+                    transaction,
+                    sessionId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await using var close = connection.CreateCommand();
+            close.Transaction = transaction;
+            close.CommandText = """
+                UPDATE agent_runs
+                SET state = $cancelled,
+                    history_wait_kind = NULL,
+                    version = version + 1,
+                    updated_at_utc = $deleted_at,
+                    terminal_at_utc = $deleted_at,
+                    terminal_error_code = $reason
+                WHERE session_id = $session_id
+                  AND terminal_at_utc IS NULL
+                """;
+            close.Parameters.AddWithValue("$cancelled", (int)HarnessRunState.Cancelled);
+            close.Parameters.AddWithValue("$deleted_at", HarnessSqliteMapper.Utc(deletedAt));
+            close.Parameters.AddWithValue("$reason", "session_deleted");
+            close.Parameters.AddWithValue("$session_id", sessionId);
+            var closedRuns = await close.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            await using var deleteRuns = connection.CreateCommand();
+            deleteRuns.Transaction = transaction;
+            deleteRuns.CommandText = "DELETE FROM agent_runs WHERE session_id = $session_id";
+            deleteRuns.Parameters.AddWithValue("$session_id", sessionId);
+            if (await deleteRuns.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false)
+                != deletedRuns)
+            {
+                throw new HarnessStoreException("harness_session_delete_conflict");
+            }
+
+            await using var deleteSetting = connection.CreateCommand();
+            deleteSetting.Transaction = transaction;
+            deleteSetting.CommandText =
+                "DELETE FROM agent_session_settings WHERE session_id = $session_id";
+            deleteSetting.Parameters.AddWithValue("$session_id", sessionId);
+            await deleteSetting.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return new HarnessSessionArtifactDeleteResult(closedRuns, deletedRuns);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (HarnessStoreException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is SqliteException or IOException)
+        {
+            throw new HarnessStoreException("harness_session_delete_failed", exception);
+        }
+    }
+
+    private static async Task<int> CountRunsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT COUNT(*) FROM agent_runs WHERE session_id = $session_id";
+        command.Parameters.AddWithValue("$session_id", sessionId);
+        var value = (long)(await command.ExecuteScalarAsync(cancellationToken)
+            .ConfigureAwait(false) ?? 0L);
+        return checked((int)value);
+    }
+
+    private static void ValidateSessionId(string? sessionId)
+    {
+        if (sessionId is not { Length: >= 1 and <= 64 }
+            || sessionId.Any(character =>
+                character is not (>= 'a' and <= 'z')
+                    and not (>= 'A' and <= 'Z')
+                    and not (>= '0' and <= '9')
+                    and not '_'
+                    and not '-'))
+        {
+            throw new ArgumentException("Session ID is invalid.", nameof(sessionId));
+        }
+    }
+}

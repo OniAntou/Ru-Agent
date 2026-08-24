@@ -3,6 +3,7 @@ using RuBackend.Business.Activity;
 using RuBackend.Business.Sessions;
 using RuBackend.Business.Settings;
 using RuBackend.Conversation;
+using RuBackend.Harness;
 
 namespace RuBackend.Business;
 
@@ -202,15 +203,16 @@ public static class BusinessEndpoints
 
     private static async Task<IResult> DeleteSessionAsync(
         string sessionId,
-        ISessionStore sessions,
+        IHarnessSessionDeletionCoordinator deletion,
         IActionOutcomeContextStore actionOutcomes,
         ILoggerFactory loggers,
         CancellationToken cancellationToken)
     {
         try
         {
-            var deleted = await sessions.DeleteAsync(sessionId, cancellationToken)
+            var outcome = await deletion.DeleteAsync(sessionId, cancellationToken)
                 .ConfigureAwait(false);
+            var deleted = outcome == HarnessSessionDeletionOutcome.Deleted;
             if (deleted)
             {
                 actionOutcomes.Remove(sessionId);

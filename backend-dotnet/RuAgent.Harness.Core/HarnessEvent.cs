@@ -14,7 +14,9 @@ public sealed record HarnessEvent
         ExecutionId? executionId = null,
         ApprovalId? approvalId = null,
         int? safeCount = null,
-        string? safeCode = null)
+        string? safeCode = null,
+        ToolExecutionOutcome? toolOutcome = null,
+        bool? sideEffectsPossible = null)
     {
         _ = eventId.Value;
         _ = runId.Value;
@@ -50,6 +52,18 @@ public sealed record HarnessEvent
             throw new ArgumentException("Event safe code must be a bounded token.", nameof(safeCode));
         }
 
+        if (toolOutcome is { } outcome && !Enum.IsDefined(outcome))
+        {
+            throw new ArgumentOutOfRangeException(nameof(toolOutcome));
+        }
+
+        if ((toolOutcome is null) != (sideEffectsPossible is null))
+        {
+            throw new ArgumentException(
+                "Tool outcome and side-effect flag must be present together.",
+                nameof(toolOutcome));
+        }
+
         EventId = eventId;
         RunId = runId;
         Sequence = sequence;
@@ -62,6 +76,8 @@ public sealed record HarnessEvent
         ApprovalId = approvalId;
         SafeCount = safeCount;
         SafeCode = safeCode;
+        ToolOutcome = toolOutcome;
+        SideEffectsPossible = sideEffectsPossible;
     }
 
     public EventId EventId { get; }
@@ -87,6 +103,10 @@ public sealed record HarnessEvent
     public int? SafeCount { get; }
 
     public string? SafeCode { get; }
+
+    public ToolExecutionOutcome? ToolOutcome { get; }
+
+    public bool? SideEffectsPossible { get; }
 
     private static void ValidateOptional<T>(T? value, Func<T, string> readValue)
         where T : struct

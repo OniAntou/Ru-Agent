@@ -9,11 +9,15 @@ public sealed class SqliteHarnessEventStore : IHarnessEventStore
 {
     private const int ProtocolVersion = 1;
     private readonly HarnessSqliteOptions _options;
+    private readonly HarnessPayloadStore _payloadStore;
 
-    public SqliteHarnessEventStore(HarnessSqliteOptions options)
+    public SqliteHarnessEventStore(
+        HarnessSqliteOptions options,
+        HarnessPayloadStore payloadStore)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options;
+        _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
     }
 
     public Task<HarnessStoreHealth> GetHealthAsync(CancellationToken cancellationToken) =>
@@ -106,11 +110,13 @@ public sealed class SqliteHarnessEventStore : IHarnessEventStore
                     request,
                     cancellationToken)
                 .ConfigureAwait(false);
-            await HarnessSqliteWriteSet.InsertPayloadsAsync(
+            await _payloadStore.InsertAsync(
                     connection,
                     transaction,
                     request.Run.RunId,
                     request.Payloads,
+                    request.Events,
+                    firstEventSequence: 1,
                     request.Run.UpdatedAt,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -213,11 +219,13 @@ public sealed class SqliteHarnessEventStore : IHarnessEventStore
                 throw new HarnessStoreException("harness_cas_failed");
             }
 
-            await HarnessSqliteWriteSet.InsertPayloadsAsync(
+            await _payloadStore.InsertAsync(
                     connection,
                     transaction,
                     commit.RunId,
                     commit.Payloads,
+                    commit.Events,
+                    checked(current.LastSequence + 1),
                     commit.NextRun.UpdatedAt,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -289,7 +297,9 @@ public sealed class SqliteHarnessEventStore : IHarnessEventStore
                    execution_id,
                    approval_id,
                    safe_count,
-                   safe_code
+                   safe_code,
+                   tool_outcome,
+                   side_effects_possible
             FROM agent_events
             WHERE run_id = $run_id
               AND sequence > $after_sequence

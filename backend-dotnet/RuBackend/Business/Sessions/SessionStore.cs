@@ -172,6 +172,13 @@ public sealed partial class SessionStore : ISessionStore
             return false;
         }
 
+        if (messages.Any(message =>
+                message?.SourceMessageId is not null
+                || message?.SourceRunId is not null))
+        {
+            return false;
+        }
+
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -183,18 +190,8 @@ public sealed partial class SessionStore : ISessionStore
             }
 
             var validNewMessages = messages.Where(IsValidMessage).ToArray();
-            var merged = current.Messages.Concat(validNewMessages).ToArray();
-            var title = string.IsNullOrWhiteSpace(current.Title) || current.Title == DefaultTitle
-                ? TitleFromMessages(merged)
-                : current.Title;
-            var retained = merged.TakeLast(MaximumMessages).ToArray();
-            var updated = current with
-            {
-                Title = title,
-                UpdatedAt = _clock.GetUtcNow().ToUniversalTime(),
-                Messages = retained,
-            };
-            await WriteUnlockedAsync(updated, cancellationToken).ConfigureAwait(false);
+            await AppendUnlockedAsync(current, validNewMessages, cancellationToken)
+                .ConfigureAwait(false);
             return true;
         }
         catch (IOException)
@@ -231,28 +228,7 @@ public sealed partial class SessionStore : ISessionStore
                 return [];
             }
 
-            string? pendingPrompt = null;
-            var turns = new List<ConversationTurn>();
-            foreach (var message in document.Messages)
-            {
-                var content = message.Content.Trim();
-                if (content.Length == 0)
-                {
-                    continue;
-                }
-
-                if (message.Role == "user")
-                {
-                    pendingPrompt = content;
-                }
-                else if (message.Role == "ai" && pendingPrompt is not null)
-                {
-                    turns.Add(new ConversationTurn(pendingPrompt, content));
-                    pendingPrompt = null;
-                }
-            }
-
-            return turns.TakeLast(maxTurns).ToArray();
+            return SessionContextTurns.Select(document.Messages, maxTurns);
         }
         finally
         {
@@ -302,8 +278,21 @@ public sealed partial class SessionStore : ISessionStore
                 var content = ReadNullableString(messageNode, "content");
                 if ((role == "user" || role == "ai") && content is not null)
                 {
-                    messages.Add(new SessionMessage(role, content));
+                    var message = new SessionMessage(
+                        role,
+                        content,
+                        ReadNullableString(messageNode, "source_message_id"),
+                        ReadNullableString(messageNode, "source_run_id"));
+                    if (IsValidMessage(message))
+                    {
+                        messages.Add(message);
+                    }
                 }
+            }
+
+            if (!TryReadSourceLedger(root, messages, out var ledger))
+            {
+                return null;
             }
 
             return new SessionDocument(
@@ -313,7 +302,8 @@ public sealed partial class SessionStore : ISessionStore
                     : DefaultTitle,
                 ReadTimestamp(root, "created_at"),
                 ReadTimestamp(root, "updated_at"),
-                messages);
+                messages,
+                ledger.Count == 0 ? null : ledger);
         }
         catch (JsonException)
         {
@@ -367,7 +357,10 @@ public sealed partial class SessionStore : ISessionStore
     private static bool IsValidMessage(SessionMessage? message) =>
         message is not null &&
         (message.Role == "user" || message.Role == "ai") &&
-        message.Content is not null;
+        message.Content is not null &&
+        ((message.SourceMessageId is null && message.SourceRunId is null)
+            || (IsValidSourceId(message.SourceMessageId)
+                && IsValidSourceId(message.SourceRunId)));
 
     private static string TitleFromMessages(IEnumerable<SessionMessage> messages)
     {

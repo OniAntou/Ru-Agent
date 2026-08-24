@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the Architecture v2 branch, 2026-08-23.
+Status: operating contract for the current main branch, 2026-08-24.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -138,12 +138,14 @@ STT, voice, subtitle, VTS, or memory paths.
 ## Action execution kernel v1
 
 Capability profiles gate everything: Chat advertises only `files.list` and
-`files.read`; Agent adds `files.write`, `files.edit`, `terminal.run`,
-`terminal.shell`, and `system.volume`; Full Access keeps Agent's tool ids with
-looser execution policy (cardless unconfined shell, network). Explicit,
-unambiguous volume commands use a deterministic parser before generation in
-Agent and Full mode; in Chat mode the same intent is declined with copy that
-points at the Agent toggle. The parser creates one typed
+`files.read`; Agent adds `files.write`, `files.edit`, `notes.create`, and
+`system.volume` but has no terminal scope; Full Access additionally advertises
+`terminal.run` and `terminal.shell`. Both terminal tools require a fresh
+per-request approval even in Full Access. After approval, the Full Access
+terminal is intentionally not an OS-enforced filesystem/network sandbox.
+Explicit, unambiguous volume commands use a deterministic parser before
+generation in Agent and Full mode; in Chat mode the same intent is declined
+with copy that points at the Agent toggle. The parser creates one typed
 `system.volume@1.0.0` request and does not call the configured model for action
 selection. Ambiguous volume wording returns a bounded clarification.
 
@@ -152,12 +154,13 @@ to ten model-initiated tool calls through the existing
 `chat.tool.request`/receipt pipeline. Selection JSON is never streamed into
 the visible transcript, history, mood state, or diagnostics; a malformed
 selection ends the turn with fixed copy and one bounded diagnostic.
-Mutating tools (`files.write`, `files.edit`, Agent-mode `terminal.shell`) still
-require per-action approval cards with bounded previews; reads and Full-access
-shell run without cards. The Public Host opens one profile-scoped Broker
-session per turn loop, and RuAgentBroker executes and verifies adapters. The
-Worker may render native-volume success only from a matching `succeeded`
-receipt whose verification state is `verified` and whose readback matches;
+Mutating tools (`files.write`, `files.edit`, `notes.create`, and the two
+Full-Access terminal bindings) require per-action approval cards with bounded
+previews; reads and verified volume operations do not. The Public Host opens
+one profile-scoped Broker session per turn loop, and RuAgentBroker executes and
+verifies adapters. The Worker may render native-volume success only from a
+matching `succeeded` receipt whose verification state is `verified` and whose
+readback matches;
 tool-class successes require an invoked adapter without readback. Python does
 not own desktop side effects.
 
@@ -172,10 +175,10 @@ next turn and cleared on replacement, disconnect, or deletion; it is not
 persisted to history, memory, reviewed examples, TTS, or VTS metadata.
 
 Model-enabled bindings follow the capability profiles above; `files.edit@1.0.0`
-joins the catalog, while notes, read-only system bindings other than the
-profile sets, unbound connectors, and `app.open` remain Broker-internal;
-skills are disabled. The GUI renders the actual `agent.session` grant received
-from the Host.
+and `notes.create@1.0.0` join the Agent/Full catalog, while read-only system
+bindings, unbound connectors, and `app.open` remain Broker-internal; skills are
+disabled. The GUI renders the actual `agent.session` grant received from the
+Host.
 
 The Agent activity line maps actual events to fixed copy: toggle-only idle is
 `Agent mode đã bật`; typed request is `Đang chuẩn bị thao tác…`; a matching

@@ -77,13 +77,14 @@ requests one session grant covering that profile's scope set, and publishes
 the actual resulting grant as `agent.session`. WinUI renders that received
 grant; it does not infer workspace, terminal, Web, connector, or skill access.
 
-The Worker emits at most one tool request in a turn. It receives only the
-bounded enabled capability and emits an exact ID/version plus typed arguments.
-No prose is execution. A visible success reply is legal only after a matching
-outer `succeeded` receipt with `verification_state: verified` and readback from
-the same endpoint. Timeout, cancellation, policy denial, malformed context,
-adapter failure, and failed readback all terminate the action path with a
-deterministic failure reply.
+The Worker emits at most one tool request at a time and at most 10 sequential
+tool requests in one conversational turn. It receives only the bounded enabled
+capabilities and emits an exact ID/version plus typed arguments. No prose is
+execution. A visible success reply is legal only after a matching outer
+`succeeded` receipt; native volume additionally requires
+`verification_state: verified` and readback from the same endpoint. Timeout,
+cancellation, policy denial, malformed context, adapter failure, and failed
+readback all terminate that action with a deterministic failure receipt.
 
 A non-success outcome, including a failure or clarification, is also kept as
 one bounded in-memory value. It is isolated by session, consumed once by the

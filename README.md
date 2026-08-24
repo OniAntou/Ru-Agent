@@ -84,15 +84,16 @@ the Runtime Worker or voice engine as independent public services.
   `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
 - Tool capability is an explicit tri-state selector. Chat (default) advertises
   only workspace list/read tools and declines volume commands with guidance.
-  Agent adds file write/edit, notes, two-tier terminal behind previewed
-  approval cards, plus card-free `system.volume` commands with verified
-  readback (volume requires Agent mode). Full Access advertises the same tool
-  ids as Agent with looser execution policy — shell and run without cards,
-  outside-workspace paths, and network allowed — while filesystem mutations
-  always require manual approval cards. Modes reset to Chat on every launch
-  and Full Access needs one explicit confirmation per run. WinUI displays
-  typed activity from actual Host events, and a success is visible only after
-  a matching verified Broker receipt.
+  Agent adds approved file write/edit and notes plus card-free
+  `system.volume` commands with verified readback; Agent has no terminal
+  capability. Full Access additionally advertises `terminal.run` and
+  `terminal.shell`, but each terminal request still requires a fresh approval
+  card. An approved Full Access terminal is not an OS filesystem/network
+  sandbox, while file mutations remain workspace-bounded and manually
+  approved. Modes reset to Chat on every launch and Full Access needs one
+  explicit confirmation per run. WinUI displays typed activity from actual
+  Host events, and a success is visible only after a matching verified Broker
+  receipt.
 - Screen observation is opt-in from Settings. When a Gemini Vision key and a
   supported hosted generation backend are configured, the private worker
   captures bounded JPEG frames and publishes reaction events. WinUI consumes

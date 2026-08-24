@@ -21,7 +21,21 @@ public sealed class HarnessEventTests
         Assert.Equal("run.created", harnessEvent.Kind);
         Assert.Equal(payloadId, harnessEvent.PayloadId);
         Assert.Equal(
-            new[] { "EventId", "Kind", "OccurredAt", "PayloadId", "RunId", "Sequence" },
+            new[]
+            {
+                "ApprovalId",
+                "EventId",
+                "ExecutionId",
+                "Kind",
+                "ModelStepId",
+                "OccurredAt",
+                "PayloadId",
+                "RunId",
+                "SafeCode",
+                "SafeCount",
+                "Sequence",
+                "ToolCallId",
+            },
             typeof(HarnessEvent)
                 .GetProperties()
                 .Select(property => property.Name)

@@ -135,6 +135,7 @@ Expected RED: compile failures for the missing domain types, then assertion fail
 - Create `backend-dotnet/RuAgent.Harness.Core/Context/IModelContextSource.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/Context/AgentContextAssembler.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/ToolContracts.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/ToolExecutionContracts.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/Persistence/HarnessCommit.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/Persistence/HarnessEventIntent.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/Persistence/HarnessPayloadIntent.cs`.
@@ -145,7 +146,11 @@ Expected RED: compile failures for the missing domain types, then assertion fail
 - Create `backend-dotnet/RuAgent.Harness.Core/IHarnessEventStore.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/ITimeProvider.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/AgentRunCoordinator.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/AgentRunStepResult.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/AgentToolExecutionPipeline.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/AgentBudgetPolicy.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core/ToolCallScheduler.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Core/TransientFrameBuffer.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core.Tests/Fakes/FakeModelStepRunner.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core.Tests/Fakes/FakeToolGateway.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core.Tests/Fakes/InMemoryHarnessEventStore.cs`.
@@ -155,13 +160,13 @@ Expected RED: compile failures for the missing domain types, then assertion fail
 - Create `backend-dotnet/RuAgent.Harness.Core.Tests/AgentContextAssemblerTests.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Core.Tests/HarnessCommitContractTests.cs`.
 
-- [ ] Add RED tests proving the first model step cannot start before a durable user-history acknowledgement; the final answer leaves the run in `WaitingHistory` until its assistant outbox item is acknowledged.
-- [ ] Add RED context tests: immutable session-base entries precede run-local entries; assistant text/tool calls and typed tool results follow durable sequence order; restart produces byte-equivalent provider-neutral input; duplicate source IDs fail closed; no UI/Worker DTO enters the assembler; no durable entry is silently dropped.
-- [ ] Add RED commit-contract tests requiring immutable event/payload/outbox lists, unique intent IDs, bounded payload kind/audience/cap metadata, `RecoveryOpaque` internal-only semantics, and rejection when a safe event embeds private bytes/text.
-- [ ] Add RED tests proving one `AssistantStep` may contain several calls, independent read-only calls may overlap, and mutations/terminal calls remain serialized in model order.
-- [ ] Add RED tests for 32-step/64-call exhaustion entering `WaitingUser`, approval waiting not consuming either budget, and Continue opening a fresh window without creating a new run.
-- [ ] Add RED crash-boundary tests: side-effect-free gateway preparation occurs before `tool.execution_requested`; preparation payloads and that event commit atomically before dispatch; a receipt is committed before another model step; a mutation transport failure after dispatch becomes `ReconciliationRequired` and never reuses its execution ID.
-- [ ] Run RED:
+- [x] Add RED tests proving the first model step cannot start before a durable user-history acknowledgement; the final answer leaves the run in `WaitingHistory` until its assistant outbox item is acknowledged.
+- [x] Add RED context tests: immutable session-base entries precede run-local entries; assistant text/tool calls and typed tool results follow durable sequence order; restart produces byte-equivalent provider-neutral input; duplicate source IDs fail closed; no UI/Worker DTO enters the assembler; no durable entry is silently dropped.
+- [x] Add RED commit-contract tests requiring immutable event/payload/outbox lists, unique intent IDs, bounded payload kind/audience/cap metadata, `RecoveryOpaque` internal-only semantics, and rejection when a safe event embeds private bytes/text.
+- [x] Add RED tests proving one `AssistantStep` may contain several calls, independent read-only calls may overlap, and mutations/terminal calls remain serialized in model order.
+- [x] Add RED tests for 32-step/64-call exhaustion entering `WaitingUser`, approval waiting not consuming either budget, and Continue opening a fresh window without creating a new run.
+- [x] Add RED crash-boundary tests: side-effect-free gateway preparation occurs before `tool.execution_requested`; preparation payloads and that event commit atomically before dispatch; a receipt is committed before another model step; a mutation transport failure after dispatch becomes `ReconciliationRequired` and never reuses its execution ID.
+- [x] Run RED:
 
 ```powershell
 dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Release --nologo --filter "FullyQualifiedName~Coordinator|FullyQualifiedName~Budget|FullyQualifiedName~Scheduler|FullyQualifiedName~ContextAssembler|FullyQualifiedName~HarnessCommit"
@@ -169,12 +174,12 @@ dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Cor
 
 Expected RED: missing contracts/coordinator, then ordering assertions fail.
 
-- [ ] Implement `AssistantStep(Text, ToolCalls, FinishReason, EstimatedInputTokens)`, provider-neutral context entries/assembler, `ToolOutputChunk`, and immutable proposed-call/receipt records. Generate model-step, tool-call, execution, approval, event, and payload IDs in Core, never in UI. Core streaming types remain independent of Broker/public wire DTOs.
-- [ ] Implement the compare-and-swap `HarnessCommit` boundary from the program index. Every state change emits a typed safe event intent; no raw prompt, arguments, output, or diff enters `HarnessEventIntent`.
-- [ ] Implement a bounded channel for transient deltas. Dropped transient frames increment a safe counter but never block Worker/Broker draining or durable commits.
-- [ ] Implement read-only retry at most twice with the same execution ID and never retry a mutation after dispatch.
-- [ ] Run GREEN. Expected: zero failures and deterministic event sequences.
-- [ ] Commit: `feat(agent): own the model tool loop in core`.
+- [x] Implement `AssistantStep(Text, ToolCalls, FinishReason, EstimatedInputTokens)`, provider-neutral context entries/assembler, `ToolOutputChunk`, and immutable proposed-call/receipt records. Generate model-step, tool-call, execution, approval, event, and payload IDs in Core, never in UI. Core streaming types remain independent of Broker/public wire DTOs.
+- [x] Implement the compare-and-swap `HarnessCommit` boundary from the program index. Every state change emits a typed safe event intent; no raw prompt, arguments, output, or diff enters `HarnessEventIntent`.
+- [x] Implement a bounded channel for transient deltas. Dropped transient frames increment a safe counter but never block Worker/Broker draining or durable commits.
+- [x] Implement read-only retry at most twice with the same execution ID and never retry a mutation after dispatch.
+- [x] Run GREEN. Expected: zero failures and deterministic event sequences.
+- [x] Commit: `feat(agent): own the model tool loop in core`.
 
 ## Task 4: Add the separate SQLite Harness store
 

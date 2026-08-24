@@ -8,7 +8,13 @@ public sealed record HarnessEvent
         long sequence,
         string kind,
         DateTimeOffset occurredAt,
-        PayloadId? payloadId = null)
+        PayloadId? payloadId = null,
+        ModelStepId? modelStepId = null,
+        ToolCallId? toolCallId = null,
+        ExecutionId? executionId = null,
+        ApprovalId? approvalId = null,
+        int? safeCount = null,
+        string? safeCode = null)
     {
         _ = eventId.Value;
         _ = runId.Value;
@@ -16,6 +22,11 @@ public sealed record HarnessEvent
         {
             _ = privatePayloadId.Value;
         }
+
+        ValidateOptional(modelStepId, id => id.Value);
+        ValidateOptional(toolCallId, id => id.Value);
+        ValidateOptional(executionId, id => id.Value);
+        ValidateOptional(approvalId, id => id.Value);
 
         if (sequence <= 0)
         {
@@ -29,12 +40,28 @@ public sealed record HarnessEvent
                 nameof(kind));
         }
 
+        if (safeCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(safeCount));
+        }
+
+        if (safeCode is not null && !IsSafeKind(safeCode))
+        {
+            throw new ArgumentException("Event safe code must be a bounded token.", nameof(safeCode));
+        }
+
         EventId = eventId;
         RunId = runId;
         Sequence = sequence;
         Kind = kind;
         OccurredAt = occurredAt;
         PayloadId = payloadId;
+        ModelStepId = modelStepId;
+        ToolCallId = toolCallId;
+        ExecutionId = executionId;
+        ApprovalId = approvalId;
+        SafeCount = safeCount;
+        SafeCode = safeCode;
     }
 
     public EventId EventId { get; }
@@ -48,6 +75,27 @@ public sealed record HarnessEvent
     public DateTimeOffset OccurredAt { get; }
 
     public PayloadId? PayloadId { get; }
+
+    public ModelStepId? ModelStepId { get; }
+
+    public ToolCallId? ToolCallId { get; }
+
+    public ExecutionId? ExecutionId { get; }
+
+    public ApprovalId? ApprovalId { get; }
+
+    public int? SafeCount { get; }
+
+    public string? SafeCode { get; }
+
+    private static void ValidateOptional<T>(T? value, Func<T, string> readValue)
+        where T : struct
+    {
+        if (value is { } present)
+        {
+            _ = readValue(present);
+        }
+    }
 
     private static bool IsSafeKind(string? value)
     {

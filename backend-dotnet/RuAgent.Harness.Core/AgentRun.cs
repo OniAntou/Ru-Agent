@@ -129,6 +129,40 @@ public sealed record AgentRun
 
     public string? TerminalErrorCode { get; }
 
+    internal AgentRun Advance(
+        HarnessRunStatus nextStatus,
+        int nextBudgetWindow,
+        int nextModelStepsInWindow,
+        int nextToolCallsInWindow,
+        long appendedEventCount,
+        DateTimeOffset updatedAt,
+        string? terminalErrorCode = null)
+    {
+        if (appendedEventCount <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(appendedEventCount));
+        }
+
+        DateTimeOffset? terminalAt = nextStatus.State.IsTerminal() ? updatedAt : null;
+        return new AgentRun(
+            RunId,
+            SessionId,
+            WorkspaceId,
+            nextStatus,
+            checked(Version + 1),
+            checked(LastSequence + appendedEventCount),
+            nextBudgetWindow,
+            nextModelStepsInWindow,
+            nextToolCallsInWindow,
+            Preset,
+            PolicySnapshotVersion,
+            PolicySnapshotSha256,
+            CreatedAt,
+            updatedAt,
+            terminalAt,
+            terminalErrorCode);
+    }
+
     private static void ValidateTerminalMetadata(
         HarnessRunStatus status,
         DateTimeOffset createdAt,

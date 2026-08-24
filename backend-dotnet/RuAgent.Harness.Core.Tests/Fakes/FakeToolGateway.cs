@@ -1,0 +1,83 @@
+using RuAgent.Harness.Core.Persistence;
+
+namespace RuAgent.Harness.Core.Tests.Fakes;
+
+public sealed class FakeToolGateway : IToolGateway
+{
+    private readonly IList<string>? _trace;
+    private int _remainingTransportFailures;
+
+    public FakeToolGateway(
+        ToolAccessKind accessKind = ToolAccessKind.ReadOnly,
+        int transportFailures = 0,
+        IList<string>? trace = null)
+    {
+        AccessKind = accessKind;
+        _remainingTransportFailures = transportFailures;
+        _trace = trace;
+    }
+
+    public ToolAccessKind AccessKind { get; }
+
+    public IReadOnlyList<PreparedPayload> PreparationPayloads { get; set; } =
+        Array.Empty<PreparedPayload>();
+
+    public List<ToolProposal> Proposals { get; } = new();
+
+    public List<ExecutionId> ExecuteAttempts { get; } = new();
+
+    public Task<ToolProposalDecision> EvaluateAsync(
+        ToolProposal proposal,
+        CancellationToken cancellationToken)
+    {
+        Proposals.Add(proposal);
+        _trace?.Add("evaluate");
+        return Task.FromResult(ToolProposalDecision.Allow(
+            AccessKind,
+            $"canonical-{proposal.ModelOrder}"));
+    }
+
+    public Task<PreparedToolExecution> PrepareAsync(
+        ApprovedToolExecution execution,
+        CancellationToken cancellationToken)
+    {
+        _trace?.Add("prepare");
+        return Task.FromResult(new PreparedToolExecution(
+            execution.ExecutionId,
+            execution.Proposal.ToolCallId,
+            execution.Proposal.ModelOrder,
+            AccessKind,
+            $"prepared-{execution.Proposal.ModelOrder}",
+            PreparationPayloads));
+    }
+
+    public Task<ToolExecutionReceipt> ExecuteAsync(
+        PreparedToolExecution execution,
+        Func<ToolOutputChunk, ValueTask> publishDelta,
+        CancellationToken cancellationToken)
+    {
+        ExecuteAttempts.Add(execution.ExecutionId);
+        _trace?.Add("execute");
+        if (_remainingTransportFailures > 0)
+        {
+            _remainingTransportFailures--;
+            throw new ToolTransportException("fake_transport_failure");
+        }
+
+        return Task.FromResult(new ToolExecutionReceipt(
+            execution.ExecutionId,
+            execution.ToolCallId,
+            ToolExecutionOutcome.Succeeded,
+            "ok",
+            null,
+            sideEffectsPossible: false,
+            modelContent: "{\"content\":\"fake result\"}"u8.ToArray(),
+            contentEncoding: HarnessPayloadEncoding.Json));
+    }
+
+    public Task CancelAsync(ExecutionId executionId, CancellationToken cancellationToken)
+    {
+        _trace?.Add("cancel");
+        return Task.CompletedTask;
+    }
+}

@@ -28,6 +28,10 @@ an operating contract.
 - [Superseded volume vertical-slice plan](superpowers/plans/2026-08-22-ru-volume-tool-vertical-slice.md)
 - [Agent tools and skills roadmap](superpowers/plans/2026-08-22-ru-agent-tools-skills.md)
 
+## Approved future work
+
+- [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md)
+
 Superseded local-model, training, and evaluation plans were removed after the
 current decisions were consolidated into the architecture, ADRs, runtime
 behavior, and verification documents. Git history remains the recovery source

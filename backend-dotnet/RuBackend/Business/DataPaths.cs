@@ -10,6 +10,12 @@ public sealed record DataPaths(
     string LogRoot,
     string BootstrapLogRoot)
 {
+    public string BusinessDataRoot =>
+        Path.GetDirectoryName(SettingsFile) ?? string.Empty;
+
+    public string AgentHarnessDatabase =>
+        Path.Combine(BusinessDataRoot, "agent_harness.db");
+
     public DataPaths(
         string memoryDatabase,
         string legacyMemoryTexts,

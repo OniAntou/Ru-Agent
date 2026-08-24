@@ -32,6 +32,11 @@ public sealed class DataPathsTests
         Assert.Equal(
             Path.GetFullPath(Path.Combine(localAppData, "Ru", "activity_log.jsonl")),
             paths.ActivityLogFile);
+        var expectedBusinessRoot = Path.GetFullPath(Path.Combine(localAppData, "Ru"));
+        Assert.Equal(expectedBusinessRoot, paths.BusinessDataRoot);
+        Assert.Equal(
+            Path.Combine(expectedBusinessRoot, "agent_harness.db"),
+            paths.AgentHarnessDatabase);
         Assert.Equal(
             Path.GetFullPath(Path.Combine(localAppData, "Ru", "logs")),
             paths.LogRoot);
@@ -57,6 +62,8 @@ public sealed class DataPathsTests
         Assert.Equal(Path.Combine(expectedRoot, "history.json"), paths.HistoryFile);
         Assert.Equal(Path.Combine(expectedRoot, "sessions"), paths.SessionDirectory);
         Assert.Equal(Path.Combine(expectedRoot, "activity_log.jsonl"), paths.ActivityLogFile);
+        Assert.Equal(expectedRoot, paths.BusinessDataRoot);
+        Assert.Equal(Path.Combine(expectedRoot, "agent_harness.db"), paths.AgentHarnessDatabase);
         Assert.Equal(Path.GetFullPath(Path.Combine(localAppData, "Ru", "logs")), paths.LogRoot);
     }
 

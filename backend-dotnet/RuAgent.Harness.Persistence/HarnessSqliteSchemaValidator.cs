@@ -1,0 +1,144 @@
+using Microsoft.Data.Sqlite;
+
+namespace RuAgent.Harness.Persistence;
+
+internal static class HarnessSqliteSchemaValidator
+{
+    private static readonly IReadOnlyDictionary<string, string[]> RequiredColumns =
+        new Dictionary<string, string[]>(StringComparer.Ordinal)
+        {
+            ["agent_workspaces"] =
+            [
+                "workspace_id",
+                "canonical_root_ciphertext",
+                "volume_serial_number",
+                "root_file_id",
+                "display_identity_hash",
+                "trust_request_id",
+                "trust_decision",
+            ],
+            ["agent_session_settings"] = ["session_id", "preset", "version"],
+            ["agent_runs"] =
+            [
+                "run_id",
+                "session_id",
+                "workspace_id",
+                "state",
+                "version",
+                "last_sequence",
+                "session_preset_version",
+                "idempotency_key_sha256",
+                "normalized_request_sha256",
+                "terminal_at_utc",
+            ],
+            ["agent_payloads"] =
+            [
+                "payload_id",
+                "run_id",
+                "kind",
+                "audience",
+                "protected_content",
+                "protection_version",
+            ],
+            ["agent_events"] =
+            [
+                "event_id",
+                "run_id",
+                "sequence",
+                "kind",
+                "payload_id",
+            ],
+            ["agent_conversation_outbox"] =
+            [
+                "intent_id",
+                "run_id",
+                "session_id",
+                "payload_id",
+                "delivery_state",
+            ],
+            ["agent_global_rules"] = ["rule_id", "rule_document", "version"],
+            ["agent_project_rules"] = ["rule_id", "workspace_id", "rule_document"],
+            ["agent_run_rules"] = ["rule_id", "run_id", "rule_document"],
+        };
+
+    internal static async Task<bool> ValidateAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        if (await ScalarLongAsync(connection, "PRAGMA foreign_keys", cancellationToken)
+                .ConfigureAwait(false) != 1
+            || await ScalarLongAsync(connection, "PRAGMA user_version", cancellationToken)
+                .ConfigureAwait(false) != HarnessSqliteSchema.CurrentVersion
+            || !string.Equals(
+                await ScalarStringAsync(connection, "PRAGMA journal_mode", cancellationToken)
+                    .ConfigureAwait(false),
+                "wal",
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(
+                await ScalarStringAsync(connection, "PRAGMA quick_check", cancellationToken)
+                    .ConfigureAwait(false),
+                "ok",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        foreach (var (table, requiredColumns) in RequiredColumns)
+        {
+            var actualColumns = await ReadColumnsAsync(connection, table, cancellationToken)
+                .ConfigureAwait(false);
+            if (requiredColumns.Any(column => !actualColumns.Contains(column)))
+            {
+                return false;
+            }
+        }
+
+        await using var indexCommand = connection.CreateCommand();
+        indexCommand.CommandText = """
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'index'
+              AND name IN ('ux_agent_runs_active_session', 'ux_agent_runs_active_workspace')
+            """;
+        return (long)(await indexCommand.ExecuteScalarAsync(cancellationToken)
+            .ConfigureAwait(false) ?? 0L) == 2;
+    }
+
+    private static async Task<HashSet<string>> ReadColumnsAsync(
+        SqliteConnection connection,
+        string table,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({table})";
+        var columns = new HashSet<string>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken)
+            .ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            columns.Add(reader.GetString(1));
+        }
+
+        return columns;
+    }
+
+    private static async Task<long> ScalarLongAsync(
+        SqliteConnection connection,
+        string commandText,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
+    }
+
+    private static async Task<string?> ScalarStringAsync(
+        SqliteConnection connection,
+        string commandText,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        return (string?)await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+    }
+}

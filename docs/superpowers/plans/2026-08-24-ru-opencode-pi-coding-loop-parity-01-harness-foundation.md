@@ -187,7 +187,11 @@ Expected RED: missing contracts/coordinator, then ordering assertions fail.
 
 - Create `backend-dotnet/RuAgent.Harness.Persistence/HarnessSqliteOptions.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Persistence/HarnessSqliteSchema.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Persistence/HarnessSqliteSchemaValidator.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Persistence/SqliteHarnessEventStore.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Persistence/HarnessSqliteMapper.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Persistence/HarnessSqliteQueries.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Persistence/HarnessSqliteWriteSet.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Persistence/Workspace/SqliteWorkspaceStore.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Persistence/Workspace/WorkspaceTrustRequestStore.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Persistence/Policy/AgentSessionPermissionStore.cs`.
@@ -198,10 +202,12 @@ Expected RED: missing contracts/coordinator, then ordering assertions fail.
 - Create `backend-dotnet/RuAgent.Harness.Persistence.Tests/HarnessConcurrencyTests.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Persistence.Tests/WorkspaceStoreTests.cs`.
 - Create `backend-dotnet/RuAgent.Harness.Persistence.Tests/AgentSessionPermissionStoreTests.cs`.
+- Create `backend-dotnet/RuAgent.Harness.Persistence.Tests/HarnessStoreTestFixture.cs`.
+- Modify `backend-dotnet/RuAgent.Harness.Core/Persistence/HarnessStoreResults.cs`.
 - Modify `backend-dotnet/RuBackend/Business/DataPaths.cs`.
 - Modify `backend-dotnet/RuBackend.Tests/Business/DataPathsTests.cs`.
 
-- [ ] Add computed path tests before implementation:
+- [x] Add computed path tests before implementation:
 
 ```csharp
 Assert.Equal(root, paths.BusinessDataRoot);
@@ -210,12 +216,12 @@ Assert.Equal(Path.Combine(root, "agent_harness.db"), paths.AgentHarnessDatabase)
 
 Keep the existing six-argument and eight-argument constructors source-compatible.
 
-- [ ] Write RED schema tests for WAL, the design's eight minimum tables (`agent_runs`, `agent_events`, `agent_payloads`, `agent_conversation_outbox`, `agent_global_rules`, `agent_project_rules`, `agent_run_rules`, `agent_workspaces`), and the required `agent_session_settings` table for per-session preset/version validation.
-- [ ] Write RED transaction tests proving event append plus run projection plus payload/outbox insert all commit or all roll back; enforce unique `(run_id, sequence)` and compare-and-swap `version`.
-- [ ] Write RED concurrency tests for unique active session and active workspace partial indexes, idempotent `(session_id, idempotency_key)` run creation, and `workspace_busy` without a second insert.
-- [ ] Write RED workspace tests for encrypted canonical root, volume/root identity fields, opaque trust request, identity-hash binding, same-response idempotency, moved identity requiring a new request, and Full Access never bypassing trust.
-- [ ] Write RED session-permission tests: missing selection plus first Standard run atomically creates version 1; subsequent run must match preset/version; Full can never be created implicitly; new session defaults independently; deleting a session removes its selection.
-- [ ] Run RED:
+- [x] Write RED schema tests for WAL, the design's eight minimum tables (`agent_runs`, `agent_events`, `agent_payloads`, `agent_conversation_outbox`, `agent_global_rules`, `agent_project_rules`, `agent_run_rules`, `agent_workspaces`), and the required `agent_session_settings` table for per-session preset/version validation.
+- [x] Write RED transaction tests proving event append plus run projection plus payload/outbox insert all commit or all roll back; enforce unique `(run_id, sequence)` and compare-and-swap `version`.
+- [x] Write RED concurrency tests for unique active session and active workspace partial indexes, idempotent `(session_id, idempotency_key)` run creation, and `workspace_busy` without a second insert.
+- [x] Write RED workspace tests for encrypted canonical root, volume/root identity fields, opaque trust request, identity-hash binding, same-response idempotency, moved identity requiring a new request, and Full Access never bypassing trust.
+- [x] Write RED session-permission tests: missing selection plus first Standard run atomically creates version 1; subsequent run must match preset/version; Full can never be created implicitly; new session defaults independently; deleting a session removes its selection.
+- [x] Run RED:
 
 ```powershell
 dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj -c Release --nologo
@@ -224,10 +230,10 @@ dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Rele
 
 Expected RED: schema/store types missing, then constraint/rollback assertions fail.
 
-- [ ] Implement migration version 1 with foreign keys on, busy timeout, WAL, bounded text/blob columns enforced in code, UTC timestamps, and partial unique active-run indexes. Do not reuse `memory.db`.
-- [ ] Implement idempotent initialization and store health reporting. A failed Harness database disables Agent endpoints only; it must not prevent ordinary backend startup.
-- [ ] Run GREEN sequentially. Expected: zero failures.
-- [ ] Commit: `feat(agent): persist runs and events in sqlite`.
+- [x] Implement migration version 1 with foreign keys on, busy timeout, WAL, bounded text/blob columns enforced in code, UTC timestamps, and partial unique active-run indexes. Do not reuse `memory.db`.
+- [x] Implement idempotent initialization and store health reporting. A failed Harness database disables Agent endpoints only; it must not prevent ordinary backend startup.
+- [x] Run GREEN sequentially. Expected: zero failures.
+- [x] Commit: `feat(agent): persist runs and events in sqlite`.
 
 ## Task 5: Encrypt private payloads and deliver Chat history idempotently
 

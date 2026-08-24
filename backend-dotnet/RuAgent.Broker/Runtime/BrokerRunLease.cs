@@ -1,5 +1,4 @@
-using System.Security.Cryptography;
-using System.Text;
+using RuAgent.Broker.Policy;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
@@ -17,7 +16,9 @@ public sealed record BrokerRunLease(
     long SnapshotVersion,
     string SnapshotHash,
     DateTimeOffset ExpiresAt,
-    IReadOnlyList<string> AdvertisedCapabilities)
+    IReadOnlyList<string> AdvertisedCapabilities,
+    BoundPolicySnapshot Snapshot,
+    long BindingVersion)
 {
     public bool IsExpired(DateTimeOffset now) => ExpiresAt <= now;
 
@@ -32,7 +33,9 @@ public sealed record BrokerRunLease(
         string presetWire,
         long snapshotVersion,
         string snapshotHash,
-        DateTimeOffset expiresAt)
+        DateTimeOffset expiresAt,
+        BrokerPolicySnapshotWire snapshotWire,
+        long bindingVersion = 1)
     {
         if (string.IsNullOrWhiteSpace(runId) || runId.Length > 128)
         {
@@ -90,8 +93,35 @@ public sealed record BrokerRunLease(
             throw new AgentProtocolException("lease_expired");
         }
 
-        // Phase-1: snapshot must be version 1 and hash must be valid hex; we don't recompute canonical hash here
-        // to avoid Core dependency. The advertised capabilities are always the fallback list/read.
+        // v2 authority: the lease must carry the complete immutable ordered-rule snapshot, its
+        // canonical hash must match the declared hash, and its workspace identity must equal the
+        // lease identity exactly (a moved workspace cannot inherit the binding).
+        var snapshot = BoundPolicySnapshot.Parse(snapshotWire);
+        if (snapshot.Version != snapshotVersion)
+        {
+            throw new AgentProtocolException("snapshot_version_mismatch");
+        }
+
+        if (!string.Equals(snapshot.Preset, presetWire, StringComparison.Ordinal))
+        {
+            throw new AgentProtocolException("preset_mismatch");
+        }
+
+        if (!string.Equals(snapshot.Sha256, snapshotHash, StringComparison.Ordinal))
+        {
+            throw new AgentProtocolException("snapshot_hash_mismatch");
+        }
+
+        if (!string.Equals(snapshot.WorkspaceId, workspaceId, StringComparison.Ordinal)
+            || !string.Equals(snapshot.VolumeSerialNumber, volumeSerial, StringComparison.Ordinal)
+            || !string.Equals(snapshot.RootFileId, rootFileId, StringComparison.Ordinal)
+            || !string.Equals(snapshot.DisplayIdentityHash, displayHash, StringComparison.Ordinal))
+        {
+            throw new AgentProtocolException("workspace_identity_mismatch");
+        }
+
+        // Phase-2 advertises only the fallback read capabilities; terminal and remaining file
+        // tools arrive in later tasks.
         var capabilities = BrokerPolicyContracts.AuthoritativeFallbackCapabilities();
 
         return new BrokerRunLease(
@@ -106,7 +136,9 @@ public sealed record BrokerRunLease(
             snapshotVersion,
             snapshotHash,
             expiresAt,
-            capabilities);
+            capabilities,
+            snapshot,
+            bindingVersion);
     }
 
     private static bool IsHex(string value) => value.All(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));

@@ -19,11 +19,19 @@ public static class AgentMessageTypes
     public const string HealthOk = "health_ok";
     public const string RunOpen = "run.open";
     public const string RunOpened = "run.opened";
+    public const string RunPolicyRebind = "run.policy.rebind";
+    public const string RunRebound = "run.policy.rebound";
     public const string RunClose = "run.close";
+    public const string RunClosed = "run.closed";
     public const string ToolEvaluate = "tool.evaluate";
+    public const string ToolDecision = "tool.decision";
     public const string ToolPrepare = "tool.prepare";
+    public const string ToolPrepared = "tool.prepared";
     public const string ToolExecute = "tool.execute";
+    public const string ToolExecuteResult = "tool.result";
     public const string ToolOutputDelta = "tool.output.delta";
+    public const string ApprovalRespond = "approval.respond";
+    public const string ApprovalResult = "approval.result";
 
     public static IReadOnlySet<string> Known { get; } = new HashSet<string>(
         [
@@ -44,11 +52,19 @@ public static class AgentMessageTypes
             HealthOk,
             RunOpen,
             RunOpened,
+            RunPolicyRebind,
+            RunRebound,
             RunClose,
+            RunClosed,
             ToolEvaluate,
+            ToolDecision,
             ToolPrepare,
+            ToolPrepared,
             ToolExecute,
+            ToolExecuteResult,
             ToolOutputDelta,
+            ApprovalRespond,
+            ApprovalResult,
         ],
         StringComparer.Ordinal);
 
@@ -56,11 +72,19 @@ public static class AgentMessageTypes
         [
             RunOpen,
             RunOpened,
+            RunPolicyRebind,
+            RunRebound,
             RunClose,
+            RunClosed,
             ToolEvaluate,
+            ToolDecision,
             ToolPrepare,
+            ToolPrepared,
             ToolExecute,
+            ToolExecuteResult,
             ToolOutputDelta,
+            ApprovalRespond,
+            ApprovalResult,
         ],
         StringComparer.Ordinal);
 }

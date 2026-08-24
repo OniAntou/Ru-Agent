@@ -13,7 +13,8 @@ public sealed record BrokerRunLeaseRequest(
     string Preset,
     long SnapshotVersion,
     string SnapshotHash,
-    DateTimeOffset ExpiresAt)
+    DateTimeOffset ExpiresAt,
+    BrokerPolicySnapshotWire? Snapshot = null)
 {
     private static readonly Regex Sha256Pattern = new("^[0-9a-f]{64}$", RegexOptions.Compiled);
     private static readonly Regex IdPattern = new(@"^[a-z]+_[0-9a-f]{32}$", RegexOptions.Compiled);
@@ -75,6 +76,49 @@ public sealed record BrokerRunLeaseRequest(
         if (ExpiresAt <= DateTimeOffset.UtcNow.AddSeconds(-5))
         {
             throw new AgentProtocolException("lease_expired");
+        }
+    }
+
+    /// <summary>
+    /// v2 lease validation: requires the complete immutable ordered-rule snapshot and proves the
+    /// declared hash, version, preset, and workspace identity all match before a run may open.
+    /// </summary>
+    public void ValidateV2Snapshot()
+    {
+        if (Snapshot is null)
+        {
+            throw new AgentProtocolException("invalid_snapshot");
+        }
+
+        BrokerPolicyContracts.ValidateSnapshot(Snapshot);
+
+        if (Snapshot.Version != SnapshotVersion)
+        {
+            throw new AgentProtocolException("snapshot_version_mismatch");
+        }
+
+        if (!string.Equals(Snapshot.Preset, Preset, StringComparison.Ordinal))
+        {
+            throw new AgentProtocolException("preset_mismatch");
+        }
+
+        var computedHash = BrokerPolicyContracts.ComputeCanonicalSnapshotHash(Snapshot);
+        if (!string.Equals(computedHash, SnapshotHash, StringComparison.Ordinal))
+        {
+            throw new AgentProtocolException("snapshot_hash_mismatch");
+        }
+
+        if (!WorkspaceContracts.IsTrustedExactMatch(
+                WorkspaceId,
+                VolumeSerialNumber,
+                RootFileId,
+                DisplayIdentityHash,
+                Snapshot.Workspace.WorkspaceId,
+                Snapshot.Workspace.VolumeSerialNumber,
+                Snapshot.Workspace.RootFileId,
+                Snapshot.Workspace.DisplayIdentityHash))
+        {
+            throw new AgentProtocolException("workspace_identity_mismatch");
         }
     }
 }

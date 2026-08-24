@@ -109,6 +109,8 @@ public sealed class AgentConnection
                 return CloseSession(request);
             case AgentMessageTypes.RunOpen:
                 return HandleRunOpen(request);
+            case AgentMessageTypes.RunPolicyRebind:
+                return HandleRunPolicyRebind(request);
             case AgentMessageTypes.RunClose:
                 return HandleRunClose(request);
             case AgentMessageTypes.ToolRequest:
@@ -127,7 +129,13 @@ public sealed class AgentConnection
             case AgentMessageTypes.ToolExecute:
                 return await HandleToolExecuteAsync(request, cancellationToken).ConfigureAwait(false);
             case AgentMessageTypes.ToolOutputDelta:
-                return ToolError(request, "phase_not_available", "tool output delta not available in phase 1");
+                // Reserved for phase 3 terminal streaming; explicitly rejected, never ignored.
+                return Reply(request, AgentMessageTypes.ToolExecuteResult, new JsonObject
+                {
+                    ["status"] = ToolResultStatuses.Denied,
+                    ["error_code"] = "phase_not_available",
+                    ["safe_summary"] = "tool output delta is reserved for phase 3",
+                });
             case AgentMessageTypes.SkillStart:
                 if (!_session.Owns(request.SessionId))
                 {
@@ -150,6 +158,20 @@ public sealed class AgentConnection
                 return _approvalHandler is null
                     ? ToolError(request, "broker_not_ready", "approval handling is not registered")
                     : await _approvalHandler(request, cancellationToken).ConfigureAwait(false);
+            case AgentMessageTypes.ApprovalRespond:
+                if (!_session.Owns(request.SessionId))
+                {
+                    return ToolError(request, "broker_not_ready", "session is not open");
+                }
+
+                // v2 approval decisions arrive in phase 5; the wire message parses and answers
+                // with an explicit approval.result rejection until then.
+                return Reply(request, AgentMessageTypes.ApprovalResult, new JsonObject
+                {
+                    ["status"] = ToolResultStatuses.Denied,
+                    ["error_code"] = "phase_not_available",
+                    ["safe_summary"] = "v2 approval decisions are not wired yet",
+                });
             case AgentMessageTypes.Cancel:
                 return Reply(request, AgentMessageTypes.ToolResult, new JsonObject
             {
@@ -206,36 +228,7 @@ public sealed class AgentConnection
     {
         try
         {
-            var payload = request.Payload;
-            var runId = ReadRequiredString(payload, "run_id");
-            var sessionId = ReadRequiredString(payload, "session_id");
-            var workspaceId = ReadRequiredString(payload, "workspace_id");
-            var canonicalRoot = ReadRequiredString(payload, "canonical_root");
-            var volumeSerial = ReadRequiredString(payload, "volume_serial");
-            var rootFileId = ReadRequiredString(payload, "root_file_id");
-            var displayHash = ReadRequiredString(payload, "display_hash");
-            var preset = ReadRequiredString(payload, "preset");
-            var snapshotVersion = ReadRequiredLong(payload, "snapshot_version");
-            var snapshotHash = ReadRequiredString(payload, "snapshot_hash");
-            var expiresAtStr = ReadRequiredString(payload, "expires_at");
-            if (!DateTimeOffset.TryParse(expiresAtStr, out var expiresAt))
-            {
-                return ToolError(request, "invalid_expires_at", "expires_at is invalid");
-            }
-
-            var lease = BrokerRunLease.CreateValidated(
-                runId,
-                sessionId,
-                workspaceId,
-                canonicalRoot,
-                volumeSerial,
-                rootFileId,
-                displayHash,
-                preset,
-                snapshotVersion,
-                snapshotHash,
-                expiresAt);
-
+            var lease = ReadRunLease(request);
             if (!_session.TryOpenRunLease(lease, out var errorCode))
             {
                 return ToolError(request, errorCode ?? "lease_failed", "run lease failed");
@@ -245,6 +238,8 @@ public sealed class AgentConnection
             {
                 ["status"] = ToolResultStatuses.Succeeded,
                 ["run_id"] = lease.RunId,
+                ["snapshot_version"] = lease.Snapshot.Version,
+                ["binding_version"] = lease.BindingVersion,
                 ["advertised_capabilities"] = new JsonArray(lease.AdvertisedCapabilities.Select(c => (JsonNode?)c).ToArray()),
                 ["safe_summary"] = "run opened",
             });
@@ -255,111 +250,302 @@ public sealed class AgentConnection
         }
     }
 
+    private AgentEnvelope HandleRunPolicyRebind(AgentEnvelope request)
+    {
+        try
+        {
+            var lease = ReadRunLease(request);
+            if (!_session.TryRebindRunPolicy(lease, out var errorCode))
+            {
+                return ToolError(request, errorCode ?? "rebind_failed", "run policy rebind failed");
+            }
+
+            var bound = _session.ActiveRunLease!;
+            return Reply(request, AgentMessageTypes.RunRebound, new JsonObject
+            {
+                ["status"] = ToolResultStatuses.Succeeded,
+                ["run_id"] = bound.RunId,
+                ["snapshot_version"] = bound.Snapshot.Version,
+                ["binding_version"] = bound.BindingVersion,
+                ["safe_summary"] = "run policy rebound",
+            });
+        }
+        catch (AgentProtocolException error)
+        {
+            return ToolError(request, error.Code, "invalid rebind");
+        }
+    }
+
+    private BrokerRunLease ReadRunLease(AgentEnvelope request)
+    {
+        var payload = request.Payload;
+        var runId = ReadRequiredString(payload, "run_id");
+        var sessionId = ReadRequiredString(payload, "session_id");
+        var workspaceId = ReadRequiredString(payload, "workspace_id");
+        var canonicalRoot = ReadRequiredString(payload, "canonical_root");
+        var volumeSerial = ReadRequiredString(payload, "volume_serial");
+        var rootFileId = ReadRequiredString(payload, "root_file_id");
+        var displayHash = ReadRequiredString(payload, "display_hash");
+        var preset = ReadRequiredString(payload, "preset");
+        var snapshotVersion = ReadRequiredLong(payload, "snapshot_version");
+        var snapshotHash = ReadRequiredString(payload, "snapshot_hash");
+        var expiresAtStr = ReadRequiredString(payload, "expires_at");
+        if (!DateTimeOffset.TryParse(expiresAtStr, out var expiresAt))
+        {
+            throw new AgentProtocolException("invalid_expires_at");
+        }
+
+        if (payload["snapshot"] is not JsonObject snapshotNode)
+        {
+            throw new AgentProtocolException("invalid_run_open");
+        }
+
+        var snapshot = RuAgent.Protocol.Harness.BrokerPolicyContracts.ReadSnapshot(snapshotNode);
+        return BrokerRunLease.CreateValidated(
+            runId,
+            sessionId,
+            workspaceId,
+            canonicalRoot,
+            volumeSerial,
+            rootFileId,
+            displayHash,
+            preset,
+            snapshotVersion,
+            snapshotHash,
+            expiresAt,
+            snapshot);
+    }
+
     private AgentEnvelope HandleRunClose(AgentEnvelope request)
     {
         var runId = request.Payload["run_id"] is JsonValue v && v.TryGetValue<string>(out var s) ? s : request.RequestId;
-        if (_session.TryGetRunLease(runId, out _))
+        if (_session.TryCloseRun(runId))
         {
-            // Close run lease by clearing session lease if matches; simplified.
-            _session.Close(request.SessionId);
+            return Reply(request, AgentMessageTypes.RunClosed, new JsonObject
+            {
+                ["status"] = ToolResultStatuses.Succeeded,
+                ["run_id"] = runId,
+                ["safe_summary"] = "run closed",
+            });
         }
 
-        return Reply(request, AgentMessageTypes.ToolResult, new JsonObject
+        return Reply(request, AgentMessageTypes.RunClosed, new JsonObject
         {
-            ["status"] = ToolResultStatuses.Succeeded,
-            ["safe_summary"] = "run closed",
+            ["status"] = ToolResultStatuses.Denied,
+            ["error_code"] = "run_not_open",
+            ["safe_summary"] = "no matching open run",
         });
     }
 
     private Task<AgentEnvelope> HandleToolEvaluateAsync(AgentEnvelope request, CancellationToken cancellationToken)
     {
-        var toolId = request.Payload["tool_id"] is JsonValue tv && tv.TryGetValue<string>(out var s) ? s : string.Empty;
-        var runId = request.Payload["run_id"] is JsonValue rv && rv.TryGetValue<string>(out var rs) ? rs : request.SessionId;
+        var payload = request.Payload;
+        var runId = ReadOptionalPayloadString(payload, "run_id") ?? request.SessionId;
+        var toolId = ReadOptionalPayloadString(payload, "tool_id") ?? string.Empty;
+        var toolVersion = ReadOptionalPayloadString(payload, "tool_version") ?? "1.0.0";
 
-        if (!_session.ValidateRunLeaseForTool(runId, toolId, out var errorCode))
+        if (!_session.TryGetRunLease(runId, out var lease) || lease is null)
         {
-            // If capability unavailable for phase-1, return phase_not_available for mutation attempt?
-            if (errorCode == "capability_unavailable" && toolId is not ("files.list" or "files.read"))
+            return Task.FromResult(ToolError(request, "run_not_open", "run lease is not open"));
+        }
+
+        if (!lease.AdvertisedCapabilities.Contains(toolId))
+        {
+            // Phase 2 advertises only files.list/files.read; terminal and mutation tools stay
+            // unadvertised until their phases land, regardless of what a rule might allow.
+            return Task.FromResult(ToolError(request, "phase_not_available", "tool is not advertised yet"));
+        }
+
+        if (payload["arguments"] is not JsonObject arguments)
+        {
+            return Task.FromResult(DecisionReply(
+                request,
+                decision: "deny",
+                reasonCode: "schema_invalid",
+                matchedRuleId: null));
+        }
+
+        PolicyContext context;
+        try
+        {
+            context = new PolicyContextFactory(lease).Create(toolId, toolVersion, arguments);
+        }
+        catch (PolicyContextException error)
+        {
+            return Task.FromResult(DecisionReply(request, "deny", error.Code, null));
+        }
+
+        var evaluation = new PolicySnapshotEvaluator()
+            .Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
+
+        string? decisionToken = null;
+        if (string.Equals(evaluation.Decision, "allow", StringComparison.Ordinal))
+        {
+            try
             {
-                return Task.FromResult(ToolError(request, "phase_not_available", "tool not available in phase 1"));
+                decisionToken = _session.RegisterDecision(runId, toolId, context.IntentHash, DecisionLifetime);
             }
-
-            return Task.FromResult(ToolError(request, errorCode ?? "run_not_open", "run lease invalid"));
-        }
-
-        // Phase-1 authoritative decision: only files.list/files.read are executable
-        if (toolId is "files.list" or "files.read")
-        {
-            var token = $"canonical-{toolId}-{Guid.NewGuid():N}";
-            return Task.FromResult(Reply(request, AgentMessageTypes.ToolResult, new JsonObject
+            catch (BrokerSessionException)
             {
-                ["status"] = ToolResultStatuses.Succeeded,
-                ["decision"] = "allow",
-                ["canonical_intent_token"] = token,
-                ["safe_summary"] = "allowed",
-            }));
+                return Task.FromResult(ToolError(request, "run_not_open", "run lease is not open"));
+            }
         }
 
-        // Mutation or terminal attempt in phase-1 returns phase_not_available (not denied, not ask)
-        return Task.FromResult(ToolError(request, "phase_not_available", "tool requires phase 2"));
+        var replyPayload = new JsonObject
+        {
+            ["status"] = evaluation.Decision switch
+            {
+                "allow" => ToolResultStatuses.Succeeded,
+                "deny" => ToolResultStatuses.Denied,
+                _ => ToolResultStatuses.Succeeded,
+            },
+            ["decision"] = evaluation.Decision,
+            ["reason_code"] = evaluation.ReasonCode,
+            ["analyzer_risk_pending"] = evaluation.AnalyzerRiskPending,
+            ["safe_summary"] = evaluation.Decision switch
+            {
+                "allow" => "policy allowed the call",
+                "ask" => "policy requires user approval",
+                _ => "policy denied the call",
+            },
+        };
+        if (evaluation.MatchedRuleId is not null)
+        {
+            replyPayload["matched_rule_id"] = evaluation.MatchedRuleId;
+        }
+
+        if (decisionToken is not null)
+        {
+            replyPayload["decision_token"] = decisionToken;
+        }
+        else if (string.Equals(evaluation.Decision, "ask", StringComparison.Ordinal))
+        {
+            // Approvals over v2 are wired in phase 5; an ask never dispatches before that.
+            replyPayload["error_code"] = "approval_not_wired";
+        }
+
+        return Task.FromResult(Reply(request, AgentMessageTypes.ToolDecision, replyPayload));
     }
 
     private Task<AgentEnvelope> HandleToolPrepareAsync(AgentEnvelope request, CancellationToken cancellationToken)
     {
-        var token = request.Payload["canonical_intent_token"] is JsonValue tv && tv.TryGetValue<string>(out var s) ? s : string.Empty;
-        if (string.IsNullOrWhiteSpace(token))
+        var payload = request.Payload;
+        var runId = ReadOptionalPayloadString(payload, "run_id") ?? request.SessionId;
+        var toolId = ReadOptionalPayloadString(payload, "tool_id") ?? string.Empty;
+        var decisionToken = ReadOptionalPayloadString(payload, "decision_token");
+
+        if (!_session.TryGetRunLease(runId, out _) )
         {
-            return Task.FromResult(ToolError(request, "invalid_prepare", "missing token"));
+            return Task.FromResult(ToolError(request, "run_not_open", "run lease is not open"));
         }
 
-        // Side-effect-free revalidation: ensure token matches expected pattern and run lease still valid.
-        var runId = request.Payload["run_id"] is JsonValue rv && rv.TryGetValue<string>(out var rs) ? rs : string.Empty;
-        var toolId = request.Payload["tool_id"] is JsonValue tiv && tiv.TryGetValue<string>(out var tid) ? tid : "files.read";
-        if (!_session.ValidateRunLeaseForTool(runId, toolId, out var errorCode))
+        if (string.IsNullOrWhiteSpace(decisionToken))
         {
-            return Task.FromResult(ToolError(request, errorCode ?? "run_not_open", "prepare failed"));
+            return Task.FromResult(ToolError(request, "invalid_prepare", "missing decision token"));
         }
 
-        return Task.FromResult(Reply(request, AgentMessageTypes.ToolResult, new JsonObject
+        if (!_session.TryPrepareDecision(decisionToken!, runId, toolId, out var preparationToken, out var errorCode))
+        {
+            return Task.FromResult(ToolError(request, errorCode ?? "decision_stale", "prepare failed"));
+        }
+
+        return Task.FromResult(Reply(request, AgentMessageTypes.ToolPrepared, new JsonObject
         {
             ["status"] = ToolResultStatuses.Succeeded,
-            ["preparation_token"] = $"prepared-{token}",
+            ["preparation_token"] = preparationToken,
             ["safe_summary"] = "prepared",
         }));
     }
 
-    private Task<AgentEnvelope> HandleToolExecuteAsync(AgentEnvelope request, CancellationToken cancellationToken)
+    private async Task<AgentEnvelope> HandleToolExecuteAsync(AgentEnvelope request, CancellationToken cancellationToken)
     {
-        var preparationToken = request.Payload["preparation_token"] is JsonValue pv && pv.TryGetValue<string>(out var s) ? s : string.Empty;
+        var payload = request.Payload;
+        var runId = ReadOptionalPayloadString(payload, "run_id") ?? request.SessionId;
+        var toolId = ReadOptionalPayloadString(payload, "tool_id") ?? string.Empty;
+        var toolVersion = ReadOptionalPayloadString(payload, "tool_version") ?? "1.0.0";
+        var preparationToken = ReadOptionalPayloadString(payload, "preparation_token");
+
+        if (!_session.TryGetRunLease(runId, out var lease) || lease is null)
+        {
+            return ToolError(request, "run_not_open", "run lease is not open");
+        }
+
+        if (!lease.AdvertisedCapabilities.Contains(toolId))
+        {
+            return ToolError(request, "phase_not_available", "tool is not advertised yet");
+        }
+
         if (string.IsNullOrWhiteSpace(preparationToken))
         {
-            return Task.FromResult(ToolError(request, "invalid_execute", "missing preparation_token"));
+            return ToolError(request, "invalid_execute", "missing preparation token");
         }
 
-        // Consume preparation token and execute via underlying tool handler if available.
-        // For phase-1, only list/read execution is delegated to existing tool handler.
-        var toolId = request.Payload["tool_id"] is JsonValue tiv && tiv.TryGetValue<string>(out var tid) ? tid : "files.read";
-        var runId = request.Payload["run_id"] is JsonValue rv && rv.TryGetValue<string>(out var rs) ? rs : request.SessionId;
-        if (!_session.ValidateRunLeaseForTool(runId, toolId, out var errorCode))
+        if (payload["arguments"] is not JsonObject arguments)
         {
-            return Task.FromResult(ToolError(request, errorCode ?? "run_not_open", "execute failed"));
+            return ToolError(request, "invalid_execute", "missing arguments");
         }
 
-        if (_toolHandler is not null)
+        PolicyContext context;
+        try
         {
-            // Delegate to existing file tool handler via synthetic ToolRequest envelope.
-            // Simplified: construct a ToolRequest with same payload arguments.
-            // For now return success via tool handler if available.
-            return _toolHandler(request, cancellationToken);
+            context = new PolicyContextFactory(lease).Create(toolId, toolVersion, arguments);
+        }
+        catch (PolicyContextException error)
+        {
+            return ToolError(request, error.Code, "execution intent could not be re-resolved");
         }
 
-        return Task.FromResult(Reply(request, AgentMessageTypes.ToolResult, new JsonObject
+        // Execution-time re-resolution: the prepared canonical intent must still match exactly.
+        if (!_session.TryConsumePreparation(preparationToken!, runId, toolId, context.IntentHash, out var consumeError))
         {
-            ["status"] = ToolResultStatuses.Succeeded,
-            ["output"] = new JsonObject { ["result"] = "executed" },
-            ["safe_summary"] = "executed",
-        }));
+            return ToolError(request, consumeError ?? "decision_stale", "preparation is no longer valid");
+        }
+
+        if (_toolHandler is null)
+        {
+            return ToolError(request, "broker_not_ready", "tool execution is not registered");
+        }
+
+        var result = await _toolHandler(request, cancellationToken).ConfigureAwait(false);
+        return new AgentEnvelope(
+            result.ProtocolVersion,
+            result.RequestId,
+            AgentMessageTypes.ToolExecuteResult,
+            result.SessionId,
+            result.CorrelationId,
+            result.DeadlineMs,
+            (JsonObject)result.Payload.DeepClone());
     }
+
+    private static readonly TimeSpan DecisionLifetime = TimeSpan.FromMinutes(10);
+
+    private static string? ReadOptionalPayloadString(JsonObject payload, string key) =>
+        payload[key] is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result)
+            ? result
+            : null;
+
+    private static AgentEnvelope DecisionReply(
+        AgentEnvelope request,
+        string decision,
+        string reasonCode,
+        string? matchedRuleId) => Reply(request, AgentMessageTypes.ToolDecision, new JsonObject
+        {
+            ["status"] = decision switch
+            {
+                "deny" => ToolResultStatuses.Denied,
+                _ => ToolResultStatuses.Succeeded,
+            },
+            ["decision"] = decision,
+            ["reason_code"] = reasonCode,
+            ["analyzer_risk_pending"] = false,
+            ["matched_rule_id"] = matchedRuleId,
+            ["safe_summary"] = decision switch
+            {
+                "allow" => "policy allowed the call",
+                "ask" => "policy requires user approval",
+                _ => "policy denied the call",
+            },
+        });
 
     private static string ReadRequiredString(JsonObject payload, string key)
     {

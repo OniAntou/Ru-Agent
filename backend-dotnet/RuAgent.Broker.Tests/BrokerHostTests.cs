@@ -5,6 +5,7 @@ using System.Text.Json;
 using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Runtime;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuAgent.Broker.Tests;
@@ -663,23 +664,41 @@ public sealed class BrokerHostTests
             "session-v2-reject",
             null,
             10_000,
-            new System.Text.Json.Nodes.JsonObject
-            {
-                ["run_id"] = "run_11111111111111111111111111111111",
-                ["session_id"] = "session-v2-reject",
-                ["workspace_id"] = "ws_11111111111111111111111111111111",
-                ["canonical_root"] = Path.GetTempPath(),
-                ["volume_serial"] = "VOL-1234",
-                ["root_file_id"] = "fid-1234",
-                ["display_hash"] = new string('a', 64),
-                ["preset"] = "standard",
-                ["snapshot_version"] = 1,
-                ["snapshot_hash"] = new string('b', 64),
-                ["expires_at"] = DateTimeOffset.UtcNow.AddMinutes(5).ToString("O"),
-            });
+            EnvelopeTestSnapshots.RunOpenPayload(
+                "run_11111111111111111111111111111111",
+                "session-v2-reject",
+                Path.GetTempPath(),
+                EnvelopeTestSnapshots.StandardEmpty()));
         await SendAsync(socket, v2Envelope, cts.Token);
         var reply = await ReceiveAsync(socket, cts.Token);
         Assert.Equal("unsupported_message", reply.Payload["error_code"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task V1_rejects_new_v2_only_policy_and_approval_messages()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+
+        foreach (var messageType in new[]
+                 {
+                     AgentMessageTypes.RunPolicyRebind,
+                     AgentMessageTypes.ToolDecision,
+                     AgentMessageTypes.ToolPrepared,
+                     AgentMessageTypes.ApprovalRespond,
+                     AgentMessageTypes.ApprovalResult,
+                 })
+        {
+            await SendAsync(
+                socket,
+                new AgentEnvelope(1, "v1-reject-" + messageType, messageType, "session-v1-new", null, 10_000, new System.Text.Json.Nodes.JsonObject()),
+                cts.Token);
+            var reply = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal("unsupported_message", reply.Payload["error_code"]!.GetValue<string>());
+        }
     }
 
     [Fact]
@@ -703,26 +722,305 @@ public sealed class BrokerHostTests
             "session-v2",
             null,
             10_000,
-            new System.Text.Json.Nodes.JsonObject
-            {
-                ["run_id"] = "run_22222222222222222222222222222222",
-                ["session_id"] = "session-v2",
-                ["workspace_id"] = "ws_22222222222222222222222222222222",
-                ["canonical_root"] = Path.GetTempPath(),
-                ["volume_serial"] = "VOL-5678",
-                ["root_file_id"] = "fid-5678",
-                ["display_hash"] = new string('c', 64),
-                ["preset"] = "standard",
-                ["snapshot_version"] = 1,
-                ["snapshot_hash"] = new string('d', 64),
-                ["expires_at"] = DateTimeOffset.UtcNow.AddMinutes(5).ToString("O"),
-            });
+            EnvelopeTestSnapshots.RunOpenPayload(
+                "run_22222222222222222222222222222222",
+                "session-v2",
+                Path.GetTempPath(),
+                EnvelopeTestSnapshots.StandardEmpty()));
         await SendAsync(socket, runOpen, cts.Token);
         var opened = await ReceiveAsync(socket, cts.Token);
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
         Assert.Equal(new[] { "files.list", "files.read" }, caps);
+    }
+
+    [Fact]
+    public async Task V2_run_open_with_tampered_snapshot_hash_fails_closed()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+
+        var payload = EnvelopeTestSnapshots.RunOpenPayload(
+            "run_tamper111111111111111111111111",
+            "session-tamper",
+            Path.GetTempPath(),
+            EnvelopeTestSnapshots.StandardWithRules(
+                new BrokerPolicyRuleWire(
+                    "rule_allow_reads",
+                    "project",
+                    "allow",
+                    new BrokerPolicyMatcherWire("files.read", null, null, null, null, null, null, null),
+                    1,
+                    null)));
+        payload["snapshot_hash"] = new string('e', 64);
+        await SendAsync(socket, new AgentEnvelope(2, "run-tamper", AgentMessageTypes.RunOpen, "session-tamper", null, 10_000, payload), cts.Token);
+        var reply = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(ToolResultStatuses.Denied, reply.Payload["status"]!.GetValue<string>());
+        Assert.Equal("snapshot_hash_mismatch", reply.Payload["error_code"]!.GetValue<string>());
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "hello-after-tamper", AgentMessageTypes.Hello, "session-tamper", null, 10_000, new System.Text.Json.Nodes.JsonObject { ["profile"] = "full" }),
+            cts.Token);
+        var helloReply = await ReceiveAsync(socket, cts.Token);
+        var ids = helloReply.Payload["tools"]!.AsArray()
+            .Select(node => node!["tool_id"]!.GetValue<string>())
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(new[] { "files.list", "files.read" }, ids);
+    }
+
+    [Fact]
+    public async Task V2_evaluate_prepare_execute_flow_for_workspace_reads()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        var probePath = Path.Combine(fixture.Root, "probe.txt");
+        File.WriteAllText(probePath, "workspace-probe");
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "run-open-flow", AgentMessageTypes.RunOpen, "session-flow", null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload("run_flow111111111111111111111111111", "session-flow", fixture.Root, EnvelopeTestSnapshots.StandardEmpty())),
+            cts.Token);
+        var opened = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "evaluate-1", AgentMessageTypes.ToolEvaluate, "session-flow", null, 10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["run_id"] = "run_flow111111111111111111111111111",
+                    ["tool_id"] = "files.read",
+                    ["tool_version"] = "1.0.0",
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "probe.txt" },
+                }),
+            cts.Token);
+        var decision = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.ToolDecision, decision.MessageType);
+        Assert.Equal("allow", decision.Payload["decision"]!.GetValue<string>());
+        Assert.Equal("standard_workspace_allow", decision.Payload["reason_code"]!.GetValue<string>());
+        var decisionToken = decision.Payload["decision_token"]!.GetValue<string>();
+        Assert.False(string.IsNullOrWhiteSpace(decisionToken));
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "prepare-1", AgentMessageTypes.ToolPrepare, "session-flow", null, 10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["run_id"] = "run_flow111111111111111111111111111",
+                    ["tool_id"] = "files.read",
+                    ["decision_token"] = decisionToken,
+                }),
+            cts.Token);
+        var prepared = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.ToolPrepared, prepared.MessageType);
+        Assert.Equal("succeeded", prepared.Payload["status"]!.GetValue<string>());
+        var preparationToken = prepared.Payload["preparation_token"]!.GetValue<string>();
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "execute-1", AgentMessageTypes.ToolExecute, "session-flow", null, 10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["run_id"] = "run_flow111111111111111111111111111",
+                    ["tool_id"] = "files.read",
+                    ["tool_version"] = "1.0.0",
+                    ["preparation_token"] = preparationToken,
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "probe.txt" },
+                }),
+            cts.Token);
+        var result = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.ToolExecuteResult, result.MessageType);
+        Assert.Equal(ToolResultStatuses.Succeeded, result.Payload["status"]!.GetValue<string>());
+        Assert.True(result.Payload["adapter_invoked"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task V2_evaluate_keeps_unadvertised_tools_unavailable()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "run-open-unadv", AgentMessageTypes.RunOpen, "session-unadv", null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload("run_unad111111111111111111111111111", "session-unadv", Path.GetTempPath(), EnvelopeTestSnapshots.StandardEmpty())),
+            cts.Token);
+        _ = await ReceiveAsync(socket, cts.Token);
+
+        foreach (var toolId in new[] { "files.write", "terminal.shell" })
+        {
+            await SendAsync(
+                socket,
+                new AgentEnvelope(2, "evaluate-" + toolId, AgentMessageTypes.ToolEvaluate, "session-unadv", null, 10_000,
+                    new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["run_id"] = "run_unad111111111111111111111111111",
+                        ["tool_id"] = toolId,
+                        ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "." },
+                    }),
+                cts.Token);
+            var reply = await ReceiveAsync(socket, cts.Token);
+            Assert.Equal(ToolResultStatuses.Denied, reply.Payload["status"]!.GetValue<string>());
+            Assert.Equal("phase_not_available", reply.Payload["error_code"]!.GetValue<string>());
+        }
+    }
+
+    [Fact]
+    public async Task V2_policy_rebind_invalidates_pending_decisions_over_the_wire()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+
+        const string sessionId = "session-rebind-wire";
+        const string runId = "run_rwire111111111111111111111111111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "rebind-open", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty(version: 1))),
+            cts.Token);
+        _ = await ReceiveAsync(socket, cts.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "rebind-eval", AgentMessageTypes.ToolEvaluate, sessionId, null, 10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["run_id"] = runId,
+                    ["tool_id"] = "files.list",
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "." },
+                }),
+            cts.Token);
+        var decision = await ReceiveAsync(socket, cts.Token);
+        var staleToken = decision.Payload["decision_token"]!.GetValue<string>();
+
+        var rebind = new AgentEnvelope(
+            2,
+            "rebind-1",
+            AgentMessageTypes.RunPolicyRebind,
+            sessionId,
+            null,
+            10_000,
+            EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, fixture.Root, EnvelopeTestSnapshots.StandardEmpty(version: 2)));
+        await SendAsync(socket, rebind, cts.Token);
+        var rebound = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.RunRebound, rebound.MessageType);
+        Assert.Equal("succeeded", rebound.Payload["status"]!.GetValue<string>());
+        Assert.Equal(2, rebound.Payload["binding_version"]!.GetValue<long>());
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "rebind-prepare-stale", AgentMessageTypes.ToolPrepare, sessionId, null, 10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["run_id"] = runId,
+                    ["tool_id"] = "files.list",
+                    ["decision_token"] = staleToken,
+                }),
+            cts.Token);
+        var stale = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(ToolResultStatuses.Denied, stale.Payload["status"]!.GetValue<string>());
+        Assert.Equal("decision_stale", stale.Payload["error_code"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task V2_run_close_stops_further_evaluation()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+
+        const string sessionId = "session-close-wire";
+        const string runId = "run_clos1111111111111111111111111111";
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "close-open", AgentMessageTypes.RunOpen, sessionId, null, 10_000,
+                EnvelopeTestSnapshots.RunOpenPayload(runId, sessionId, Path.GetTempPath(), EnvelopeTestSnapshots.StandardEmpty())),
+            cts.Token);
+        _ = await ReceiveAsync(socket, cts.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "close-1", AgentMessageTypes.RunClose, sessionId, null, 10_000,
+                new System.Text.Json.Nodes.JsonObject { ["run_id"] = runId }),
+            cts.Token);
+        var closed = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.RunClosed, closed.MessageType);
+        Assert.Equal("succeeded", closed.Payload["status"]!.GetValue<string>());
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "after-close-eval", AgentMessageTypes.ToolEvaluate, sessionId, null, 10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["run_id"] = runId,
+                    ["tool_id"] = "files.list",
+                    ["arguments"] = new System.Text.Json.Nodes.JsonObject { ["path"] = "." },
+                }),
+            cts.Token);
+        var rejected = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(ToolResultStatuses.Denied, rejected.Payload["status"]!.GetValue<string>());
+        Assert.Equal("run_not_open", rejected.Payload["error_code"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task V2_approval_respond_and_output_delta_are_reserved()
+    {
+        await using var fixture = await HostFixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(new Uri(fixture.Host.BaseUrl.Replace("http://", "ws://", StringComparison.Ordinal) + "/agent"), cts.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(1, "hello-reserved", AgentMessageTypes.Hello, "session-reserved", null, 10_000, new System.Text.Json.Nodes.JsonObject()),
+            cts.Token);
+        _ = await ReceiveAsync(socket, cts.Token);
+        await SendAsync(
+            socket,
+            new AgentEnvelope(1, "open-reserved", AgentMessageTypes.SessionOpen, "session-reserved", null, 10_000, new System.Text.Json.Nodes.JsonObject { ["scopes"] = new System.Text.Json.Nodes.JsonArray("workspace.read") }),
+            cts.Token);
+        _ = await ReceiveAsync(socket, cts.Token);
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "approval-respond-1", AgentMessageTypes.ApprovalRespond, "session-reserved", null, 10_000,
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["approval_id"] = "approval-1",
+                    ["approved"] = true,
+                }),
+            cts.Token);
+        var approval = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.ApprovalResult, approval.MessageType);
+        Assert.Equal("phase_not_available", approval.Payload["error_code"]!.GetValue<string>());
+
+        await SendAsync(
+            socket,
+            new AgentEnvelope(2, "delta-1", AgentMessageTypes.ToolOutputDelta, "session-reserved", null, 10_000,
+                new System.Text.Json.Nodes.JsonObject { ["execution_id"] = "exec-1", ["text"] = "partial" }),
+            cts.Token);
+        var delta = await ReceiveAsync(socket, cts.Token);
+        Assert.Equal(AgentMessageTypes.ToolExecuteResult, delta.MessageType);
+        Assert.Equal("phase_not_available", delta.Payload["error_code"]!.GetValue<string>());
     }
 
     private sealed class HostFixture : IAsyncDisposable
@@ -756,15 +1054,25 @@ public sealed class BrokerHostTests
                 descriptorPath,
                 JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
 
+            // Phase-1 file adapters still resolve through the legacy workspace root; pin it to
+            // this fixture so delegated execution matches the leased workspace. The v2 policy
+            // evaluator itself only ever uses the lease root.
+            Directory.CreateDirectory(Path.Combine(root, "src"));
+            PreviousWorkspaceRoot = Environment.GetEnvironmentVariable("RU_WORKSPACE_ROOT");
+            Environment.SetEnvironmentVariable("RU_WORKSPACE_ROOT", root);
+
             var host = volumeController is null
                 ? await BrokerHost.StartAsync(descriptorPath)
                 : await BrokerHost.StartAsync(descriptorPath, volumeController);
             return new HostFixture(root, token, host);
         }
 
+        private static string? PreviousWorkspaceRoot { get; set; }
+
         public async ValueTask DisposeAsync()
         {
             await Host.DisposeAsync();
+            Environment.SetEnvironmentVariable("RU_WORKSPACE_ROOT", PreviousWorkspaceRoot);
             if (Directory.Exists(Root))
             {
                 Directory.Delete(Root, recursive: true);

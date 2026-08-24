@@ -103,10 +103,9 @@ public static class AgentEnvelopeCodec
 
     private static void ValidateV2Payload(AgentEnvelope envelope)
     {
-        // Broker v2 requires run lease fields for run.open and strict payload validation for other v2 types.
-        // Minimal check: for run.open, payload must contain run_id, session_id, workspace_id, canonical_root, etc.
-        // For other v2 messages, ensure they are not sent on v1-only paths; actual payload validation is done in BrokerSession.
-        if (envelope.MessageType == AgentMessageTypes.RunOpen)
+        // Broker v2 requires run lease fields for run.open/run.policy.rebind including the complete
+        // immutable ordered-rule snapshot. Deep validation happens when the lease binds in the Broker.
+        if (envelope.MessageType is AgentMessageTypes.RunOpen or AgentMessageTypes.RunPolicyRebind)
         {
             var payload = envelope.Payload;
             var required = new[] { "run_id", "session_id", "workspace_id", "canonical_root", "volume_serial", "root_file_id", "display_hash", "preset", "snapshot_version", "snapshot_hash", "expires_at" };
@@ -116,6 +115,11 @@ public static class AgentEnvelopeCodec
                 {
                     throw new AgentProtocolException("invalid_run_open");
                 }
+            }
+
+            if (payload["snapshot"] is not JsonObject)
+            {
+                throw new AgentProtocolException("invalid_run_open");
             }
         }
     }

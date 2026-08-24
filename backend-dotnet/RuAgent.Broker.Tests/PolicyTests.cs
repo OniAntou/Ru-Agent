@@ -1,7 +1,10 @@
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
+using RuAgent.Protocol.Harness;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Terminal;
+using RuAgent.Protocol;
+using BrokerRunLease = RuAgent.Broker.Runtime.BrokerRunLease;
 using Xunit;
 
 namespace RuAgent.Broker.Tests;
@@ -107,4 +110,387 @@ public sealed class PolicyTests
         64 * 1024,
         "builtin",
         WorkspaceRequired: true);
+}
+
+public sealed class PolicyEvaluationTests
+{
+    private static readonly DateTimeOffset Now = new(2026, 8, 24, 12, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void Protocol_invariants_deny_before_any_rule_evaluation()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.AllowAllRule()));
+        var context = factory.Create("files.read", "1.0.0", Args(("path", "notes/a.txt")));
+        var evaluator = new PolicySnapshotEvaluator();
+
+        AssertDeny(evaluator.Evaluate(lease.Snapshot, context, Inv(schemaValid: false), Now), "schema_invalid");
+        AssertDeny(evaluator.Evaluate(lease.Snapshot, context, Inv(requestBound: false), Now), "request_unbound");
+        AssertDeny(evaluator.Evaluate(lease.Snapshot, context, Inv(notExpired: false), Now), "request_expired");
+        AssertDeny(evaluator.Evaluate(lease.Snapshot, context, Inv(intentHash: false), Now), "intent_hash_invalid");
+    }
+
+    [Fact]
+    public void Last_matching_rule_wins_in_snapshot_order()
+    {
+        var allowThenDeny = PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule("r-allow", "allow", PolicyEvalSnapshots.Matcher(toolId: "files.read")),
+            PolicyEvalSnapshots.Rule("r-deny", "deny", PolicyEvalSnapshots.Matcher(toolId: "files.read")));
+        var denyThenAllow = PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule("r-deny", "deny", PolicyEvalSnapshots.Matcher(toolId: "files.read")),
+            PolicyEvalSnapshots.Rule("r-allow", "allow", PolicyEvalSnapshots.Matcher(toolId: "files.read")));
+
+        var (firstLease, firstFactory) = Bind(allowThenDeny);
+        var first = new PolicySnapshotEvaluator().Evaluate(
+            firstLease.Snapshot,
+            firstFactory.Create("files.read", "1.0.0", Args(("path", "a.txt"))),
+            PolicyRequestInvariants.Valid,
+            Now);
+        Assert.Equal("deny", first.Decision);
+        Assert.Equal("r-deny", first.MatchedRuleId);
+
+        var (secondLease, secondFactory) = Bind(denyThenAllow);
+        var second = new PolicySnapshotEvaluator().Evaluate(
+            secondLease.Snapshot,
+            secondFactory.Create("files.read", "1.0.0", Args(("path", "a.txt"))),
+            PolicyRequestInvariants.Valid,
+            Now);
+        Assert.Equal("allow", second.Decision);
+        Assert.Equal("r-allow", second.MatchedRuleId);
+    }
+
+    [Fact]
+    public void Expired_rules_are_skipped_and_fallback_applies()
+    {
+        var expired = PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule(
+                "r-expired",
+                "deny",
+                PolicyEvalSnapshots.Matcher(toolId: "files.read"),
+                expiresAt: "2026-08-24T00:00:00.0000000+00:00"));
+
+        var (lease, factory) = Bind(expired);
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create("files.read", "1.0.0", Args(("path", "a.txt"))),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("allow", evaluation.Decision);
+        Assert.Equal("standard_workspace_allow", evaluation.ReasonCode);
+        Assert.Null(evaluation.MatchedRuleId);
+    }
+
+    [Fact]
+    public void Standard_fallback_allows_ordinary_workspace_operations()
+    {
+        foreach (var toolId in new[] { "files.list", "files.glob", "files.search", "files.read", "files.write", "files.edit", "files.apply_patch" })
+        {
+            var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+            var arguments = toolId == "files.list"
+                ? new JsonObject { ["path"] = "." }
+                : Args(("path", $"src/{toolId}.txt"));
+            var evaluation = EvaluateDefault(lease, factory, toolId, arguments);
+            Assert.Equal("allow", evaluation.Decision);
+            Assert.Equal("standard_workspace_allow", evaluation.ReasonCode);
+        }
+    }
+
+    [Theory]
+    [InlineData("delete_requires_approval", "files.delete", "src/old.txt")]
+    [InlineData("restore_once", "files.restore", "src/old.txt")]
+    [InlineData("outside_workspace", "files.read", null)]
+    [InlineData("protected_path", "files.read", ".env.local")]
+    public void Standard_fallback_asks_for_risky_file_operations(string reasonCode, string toolId, string? path)
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var arguments = path is null
+            ? Args(("path", @"C:\Windows\outside.txt"))
+            : Args(("path", path));
+
+        var evaluation = EvaluateDefault(lease, factory, toolId, arguments);
+
+        Assert.Equal("ask", evaluation.Decision);
+        Assert.Equal(reasonCode, evaluation.ReasonCode);
+    }
+
+    [Fact]
+    public void Standard_fallback_asks_for_declared_network_intent()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var evaluation = EvaluateDefault(
+            lease,
+            factory,
+            "files.write",
+            Args(("path", "out.txt"), ("network", true)));
+
+        Assert.Equal("ask", evaluation.Decision);
+        Assert.Equal("network_intent", evaluation.ReasonCode);
+    }
+
+    [Fact]
+    public void Standard_terminal_classification_covers_recognized_and_unknown_forms()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var evaluator = new PolicySnapshotEvaluator();
+
+        var rg = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "rg", "pattern", "."), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("allow", rg.Decision);
+        Assert.Equal("recognized_safe_form", rg.ReasonCode);
+        Assert.True(rg.AnalyzerRiskPending);
+
+        var gitStatus = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "status"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("allow", gitStatus.Decision);
+        Assert.True(gitStatus.AnalyzerRiskPending);
+
+        var gitCommit = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "commit"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("ask", gitCommit.Decision);
+        Assert.Equal("git_mutation", gitCommit.ReasonCode);
+
+        var dotnetTest = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "dotnet", "test"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("allow", dotnetTest.Decision);
+        Assert.True(dotnetTest.AnalyzerRiskPending);
+
+        var pytest = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "python", "-m", "pytest"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("allow", pytest.Decision);
+        Assert.True(pytest.AnalyzerRiskPending);
+
+        var unknown = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "frobnicate.exe"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("ask", unknown.Decision);
+        Assert.Equal("unknown_executable", unknown.ReasonCode);
+    }
+
+    [Fact]
+    public void Standard_asks_for_every_terminal_shell_without_an_exact_reusable_rule()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            Shell(factory, "Get-Date"),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+        Assert.Equal("ask", evaluation.Decision);
+        Assert.Equal("terminal_requires_rule", evaluation.ReasonCode);
+
+        var withExactRule = PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule(
+                "r-shell-exact",
+                "allow",
+                PolicyEvalSnapshots.Matcher(toolId: "terminal.shell", cwdPattern: LeaseRoot)));
+        var (ruleLease, ruleFactory) = Bind(withExactRule);
+        var allowed = new PolicySnapshotEvaluator().Evaluate(
+            ruleLease.Snapshot,
+            Shell(ruleFactory, "Get-Date"),
+            PolicyRequestInvariants.Valid,
+            Now);
+        Assert.Equal("allow", allowed.Decision);
+        Assert.Equal("r-shell-exact", allowed.MatchedRuleId);
+    }
+
+    [Fact]
+    public void Full_access_fallback_allows_well_formed_calls_but_not_invariant_violations()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.FullAccessEmpty());
+        var evaluator = new PolicySnapshotEvaluator();
+        var valid = PolicyRequestInvariants.Valid;
+
+        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.delete", "src/old.txt"), valid, Now).Decision);
+        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.read", @"C:\Windows\outside.txt"), valid, Now).Decision);
+        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.write", ".env.local"), valid, Now).Decision);
+        var networked = FileCall(factory, "files.write", "out.txt");
+        networked = networked with { NetworkIntent = "declared", NetworkDeclared = true };
+        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, networked, valid, Now).Decision);
+        Assert.Equal("allow", evaluator.Evaluate(lease.Snapshot, Shell(factory, "Remove-Item /"), valid, Now).Decision);
+
+        AssertDeny(evaluator.Evaluate(lease.Snapshot, FileCall(factory, "files.read", "a.txt"), Inv(schemaValid: false), Now), "schema_invalid");
+    }
+
+    [Fact]
+    public void Model_supplied_safety_labels_have_no_effect_on_decisions()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var labelledDelete = Args(("path", "src/old.txt"));
+        labelledDelete["safe"] = true;
+        labelledDelete["risk"] = "none";
+        labelledDelete["safety_label"] = "approved_by_model";
+        labelledDelete["decision_hint"] = "allow";
+
+        var plain = EvaluateDefault(lease, factory, "files.delete", Args(("path", "src/old.txt")));
+        var labelled = EvaluateDefault(lease, factory, "files.delete", labelledDelete);
+
+        Assert.Equal(plain.Decision, labelled.Decision);
+        Assert.Equal(plain.ReasonCode, labelled.ReasonCode);
+        Assert.Equal("ask", labelled.Decision);
+    }
+
+    [Fact]
+    public void Malformed_matcher_values_fail_closed_at_binding()
+    {
+        Assert.Throws<AgentProtocolException>(() => BoundPolicySnapshot.Parse(PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule("r-bad-class", "allow", PolicyEvalSnapshots.Matcher(operationClass: "banana")))));
+        Assert.Throws<AgentProtocolException>(() => BoundPolicySnapshot.Parse(PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule("r-bad-intent", "allow", PolicyEvalSnapshots.Matcher(networkIntent: "sometimes")))));
+        Assert.Throws<AgentProtocolException>(() => BoundPolicySnapshot.Parse(PolicyEvalSnapshots.SnapshotWith(
+            PolicyEvalSnapshots.Rule("r-empty-path", "allow", PolicyEvalSnapshots.Matcher(pathPattern: "  ")))));
+    }
+
+    private static PolicyEvaluation EvaluateDefault(
+        BrokerRunLease lease,
+        PolicyContextFactory factory,
+        string toolId,
+        JsonObject arguments) =>
+        new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create(toolId, "1.0.0", arguments),
+            PolicyRequestInvariants.Valid,
+            Now);
+
+    private static PolicyContext FileCall(PolicyContextFactory factory, string toolId, string path) =>
+        factory.Create(toolId, "1.0.0", Args(("path", path)));
+
+    private static PolicyContext Terminal(PolicyContextFactory factory, string executable, params string[] argv)
+    {
+        var arguments = new JsonObject
+        {
+            ["executable"] = executable,
+            ["arguments"] = new JsonArray(argv.Select(a => JsonValue.Create(a)).ToArray()),
+            ["working_directory"] = ".",
+        };
+        return factory.Create("terminal.run", "1.0.0", arguments);
+    }
+
+    private static PolicyContext Shell(PolicyContextFactory factory, string script)
+    {
+        var arguments = new JsonObject
+        {
+            ["script"] = script,
+            ["working_directory"] = ".",
+        };
+        return factory.Create("terminal.shell", "1.0.0", arguments);
+    }
+
+    private static void AssertDeny(PolicyEvaluation evaluation, string reasonCode)
+    {
+        Assert.Equal("deny", evaluation.Decision);
+        Assert.Equal(reasonCode, evaluation.ReasonCode);
+        Assert.Null(evaluation.MatchedRuleId);
+    }
+
+    private static JsonObject Args(params (string Key, object Value)[] fields)
+    {
+        var result = new JsonObject();
+        foreach (var (key, value) in fields)
+        {
+            result[key] = value switch
+            {
+                bool b => b,
+                int i => i,
+                long l => l,
+                string s => s,
+                _ => throw new ArgumentOutOfRangeException(nameof(value)),
+            };
+        }
+
+        return result;
+    }
+
+    private static PolicyRequestInvariants Inv(
+        bool schemaValid = true,
+        bool requestBound = true,
+        bool notExpired = true,
+        bool intentHash = true) => new(
+        SchemaValid: schemaValid,
+        RequestBound: requestBound,
+        NotExpired: notExpired,
+        IntentHashValid: intentHash);
+
+    private static (BrokerRunLease Lease, PolicyContextFactory Factory) Bind(BrokerPolicySnapshotWire snapshot)
+    {
+        var lease = BrokerRunLease.CreateValidated(
+            PolicyEvalSnapshots.RunId,
+            PolicyEvalSnapshots.SessionId,
+            PolicyEvalSnapshots.WorkspaceId,
+            LeaseRoot,
+            PolicyEvalSnapshots.VolumeSerial,
+            PolicyEvalSnapshots.RootFileId,
+            PolicyEvalSnapshots.DisplayHash,
+            snapshot.Preset,
+            snapshot.Version,
+            RuAgent.Protocol.Harness.BrokerPolicyContracts.ComputeCanonicalSnapshotHash(snapshot),
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            snapshot);
+        return (lease, new PolicyContextFactory(lease));
+    }
+
+    private static string LeaseRoot
+    {
+        get
+        {
+            if (_leaseRoot is null)
+            {
+                _leaseRoot = Path.Combine(Path.GetTempPath(), "ru-policy-eval-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(Path.Combine(_leaseRoot, "src"));
+                Directory.CreateDirectory(_leaseRoot);
+            }
+
+            return _leaseRoot;
+        }
+    }
+
+    private static string? _leaseRoot;
+}
+
+internal static class PolicyEvalSnapshots
+{
+    public const string RunId = "run_44444444444444444444444444444444";
+    public const string SessionId = "session-eval";
+    public const string WorkspaceId = "ws_22222222222222222222222222222222";
+    public const string VolumeSerial = "VOL-EVAL";
+    public const string RootFileId = "fid-eval";
+    public const string DisplayHash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    public const string CreatedAt = "2026-08-24T00:00:00.0000000+00:00";
+
+    public static BrokerPolicySnapshotWire Empty() => Snapshot(1, "standard", []);
+
+    public static BrokerPolicySnapshotWire FullAccessEmpty(long version = 1) => Snapshot(version, "full_access", []);
+
+    public static BrokerPolicySnapshotWire SnapshotWith(params BrokerPolicyRuleWire[] rules) =>
+        Snapshot(1, "standard", rules);
+
+    public static BrokerPolicyRuleWire AllowAllRule() =>
+        Rule("r-allow-all", "allow", Matcher());
+
+    public static BrokerPolicyRuleWire Rule(
+        string id,
+        string decision,
+        BrokerPolicyMatcherWire matcher,
+        string scope = "project",
+        string? expiresAt = null) => new(id, scope, decision, matcher, CreationOrder: 1, ExpiresAt: expiresAt);
+
+    public static BrokerPolicyMatcherWire Matcher(
+        string? toolId = null,
+        string? toolVersion = null,
+        string? pathPattern = null,
+        string? resolvedExecutable = null,
+        IReadOnlyList<string>? argvPattern = null,
+        string? cwdPattern = null,
+        string? operationClass = null,
+        string? networkIntent = null) => new(
+        toolId,
+        toolVersion,
+        pathPattern,
+        resolvedExecutable,
+        argvPattern,
+        cwdPattern,
+        operationClass,
+        networkIntent);
+
+    private static BrokerPolicySnapshotWire Snapshot(long version, string preset, BrokerPolicyRuleWire[] rules) =>
+        new(
+            version,
+            preset,
+            new BrokerPolicyWorkspaceIdentityWire(WorkspaceId, VolumeSerial, RootFileId, DisplayHash),
+            rules,
+            CreatedAt);
 }

@@ -90,6 +90,7 @@ public sealed class BrokerHost : IAsyncDisposable
 
         _disposed = true;
         IsReady = false;
+        _session.ClearDecisions();
         _tools.ClearPendingApprovals();
         await _cleanup.RunAsync().ConfigureAwait(false);
         await _application.DisposeAsync().ConfigureAwait(false);

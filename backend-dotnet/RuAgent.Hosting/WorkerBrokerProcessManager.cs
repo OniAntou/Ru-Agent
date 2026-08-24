@@ -9,7 +9,7 @@ public interface IWorkerBrokerProcessFactory
 
 public interface IWorkerBrokerProcessHandle : IProcessHandle, IDisposable
 {
-    bool HasExited { get; }
+    new bool HasExited { get; }
     void Kill();
     bool WaitForExit(TimeSpan timeout);
 }

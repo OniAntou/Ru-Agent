@@ -64,6 +64,19 @@ def _synthetic_audio_base64() -> str:
 def _factory_for(method: str, path: str) -> RequestFactory:
     def make(session_id: str | None = None) -> RequestSpec:
         resolved_path = path.replace("{sessionId}", session_id or "harness-session")
+        resolved_path = resolved_path.replace("{sessionId}", session_id or "harness-session")
+        # Agent route placeholders – use synthetic deterministic IDs that satisfy bounded validation
+        if "{runId}" in resolved_path:
+            resolved_path = resolved_path.replace("{runId}", "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        if "{payloadId}" in resolved_path:
+            resolved_path = resolved_path.replace("{payloadId}", "payload_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        if "{approvalId}" in resolved_path:
+            resolved_path = resolved_path.replace("{approvalId}", "apr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        if "{ruleId}" in resolved_path:
+            resolved_path = resolved_path.replace("{ruleId}", "rule_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        # Fallback for session-prefixed agent runs listing
+        if "{sessionId}" in resolved_path:
+            resolved_path = resolved_path.replace("{sessionId}", session_id or "harness-session")
         body: Mapping[str, object] | None = None
         if path == "/settings":
             body = {
@@ -99,6 +112,25 @@ def _factory_for(method: str, path: str) -> RequestFactory:
             body = {"codes": ["vts_01"]}
         elif path == "/vts/speaking":
             body = {"speaking": False}
+        elif path == "/agent/v1/runs" and method == "POST":
+            # Minimal valid tracer payload – harness will fill session_id/workspace if available later;
+            # generic probe uses synthetic session and a workspace placeholder; endpoint validates and may
+            # return 201 (created) or 400/409 for placeholder workspace – both considered probe success
+            body = {
+                "session_id": session_id or "harness-session",
+                "workspace_path": "D:\\LLM",
+                "prompt": "harness agent tracer probe",
+                "preset": "standard",
+                "idempotency_key": "harness-probe-key",
+            }
+        elif path.startswith("/agent/v1/runs/") and path.endswith("/trust"):
+            body = {"decision": "approve", "workspace_identity_hash": "probe"}
+        elif path.startswith("/agent/v1/runs/") and "/approvals/" in path:
+            body = {"decision": "approve", "scope": "once"}
+        elif path.startswith("/agent/v1/runs/") and path.endswith("/reconcile"):
+            body = {"outcome": "applied", "snapshot_hash": "probe"}
+        elif path == "/agent/v1/policies" and method == "POST":
+            body = {"scope": "global", "decision": "allow", "tool_id": "files.read"}
         return RequestSpec(method=method, path=resolved_path, json_body=body)
 
     return make

@@ -1240,8 +1240,11 @@ class HarnessSession:
         return f"ws://127.0.0.1:{self.edge_port}{path}?token={quote(token)}"
 
     def _coverage(self, checks: list[CheckResult]) -> dict[str, object]:
-        def group(prefix: str, total: int) -> dict[str, int]:
+        def group(prefix: str, total: int | None) -> dict[str, int]:
             values = [check for check in checks if check.check_id.startswith(prefix)]
+            if total is None:
+                # Dynamic total from registry – preserves 54+2 after Phase 1
+                total = len([e for e in self._registry if e.check_id.startswith(prefix)])
             return {
                 "total": total,
                 "passed": sum(check.status == "passed" for check in values),
@@ -1249,7 +1252,7 @@ class HarnessSession:
                 "skipped": sum(check.status == "skipped" for check in values),
             }
 
-        return {"http": group("route.http.", 41), "websocket": group("route.websocket.", 2)}
+        return {"http": group("route.http.", None), "websocket": group("route.websocket.", 2)}
 
     def _edge_ready(self) -> bool:
         return bool(self._children and self._children[-1].ready) or self._test_mode and bool(self._readiness_override)

@@ -16,7 +16,9 @@ public sealed class ManagedRuBackendSessionProvider : IRuBackendSessionProvider
 
     public string DisplayName => "Public Host (managed)";
     public BackendSession? Session { get; private set; }
+#pragma warning disable CS0067 // Interface requires event; managed host does not raise it – next StartAsync re-validates descriptor
     public event EventHandler? BackendExited;
+#pragma warning restore CS0067
 
     public async Task<BackendSession?> StartAsync(
         string projectRoot,

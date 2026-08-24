@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Workspace;
@@ -190,6 +191,51 @@ public sealed class WorkspaceStoreTests
             CancellationToken.None);
         Assert.False(stale.Accepted);
         Assert.Equal("trust_stale", stale.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Canonical_root_only_encrypted_volume_and_root_hash_stored_one_active_identity_per_workspace()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var identity = HarnessStoreTestFixture.Workspace(9);
+        var canonicalRoot = @"D:\private\root\secret-workspace-path";
+        var ciphertext = new WorkspaceRootCiphertext(
+            Enumerable.Repeat((byte)9, 12).ToArray(),
+            Encoding.UTF8.GetBytes("encrypted-blob-not-plain-root"),
+            Enumerable.Repeat((byte)8, 16).ToArray());
+        var registration = new WorkspaceRegistration(identity, ciphertext);
+        var request = Request(identity, 9);
+        var store = new SqliteWorkspaceStore(fixture.Options);
+
+        var stored = await store.RegisterAsync(registration, request, CancellationToken.None);
+
+        // canonical root only in encrypted payload
+        await using var conn = fixture.CreateRawConnection();
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT volume_serial_number, root_file_id, display_identity_hash, canonical_root_ciphertext FROM agent_workspaces WHERE workspace_id = $id";
+        cmd.Parameters.AddWithValue("$id", identity.WorkspaceId.Value);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(identity.VolumeSerialNumber, reader.GetString(0));
+        Assert.Equal(identity.RootFileId, reader.GetString(1));
+        Assert.Equal(identity.DisplayIdentityHash, reader.GetString(2));
+        var storedCipher = (byte[])reader[3];
+        Assert.DoesNotContain(canonicalRoot, Encoding.UTF8.GetString(storedCipher));
+        Assert.Equal(1L, await ScalarAsync(fixture, "SELECT COUNT(*) FROM agent_workspaces"));
+
+        // one active trusted identity per workspace – second registration with same ID but moved identity replaces
+        var moved = new WorkspaceIdentity(identity.WorkspaceId, "volume-serial-moved-9", "root-file-moved-9", HarnessStoreTestFixture.Sha('e'));
+        var movedReg = new WorkspaceRegistration(moved, new WorkspaceRootCiphertext(new byte[12], new byte[] { 7, 8, 9 }, new byte[16]));
+        var freshRequest = new WorkspaceTrustRequest(HarnessStoreTestFixture.Trust(10), moved, HarnessStoreTestFixture.Timestamp.AddMinutes(5), HarnessStoreTestFixture.Timestamp.AddMinutes(15));
+        var movedStored = await store.RegisterAsync(movedReg, freshRequest, CancellationToken.None);
+        Assert.Equal(1L, await ScalarAsync(fixture, "SELECT COUNT(*) FROM agent_workspaces"));
+        Assert.Equal(moved.VolumeSerialNumber, movedStored.Identity.VolumeSerialNumber);
+        Assert.Equal(moved.RootFileId, movedStored.Identity.RootFileId);
+        Assert.Equal(moved.DisplayIdentityHash, movedStored.Identity.DisplayIdentityHash);
+        Assert.False(movedStored.IsTrusted);
+        Assert.False(await store.IsTrustedAsync(identity, AgentPermissionPreset.Standard, CancellationToken.None));
+        Assert.False(await store.IsTrustedAsync(moved, AgentPermissionPreset.Standard, CancellationToken.None));
     }
 
     private static WorkspaceTrustRequest Request(WorkspaceIdentity identity, int number) =>

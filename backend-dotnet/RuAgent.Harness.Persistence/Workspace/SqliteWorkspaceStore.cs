@@ -2,6 +2,9 @@ using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Workspace;
 
+// Task 2: canonical root is stored only as encrypted payload; volume/root file identity and display hash are plaintext queryable.
+// One active trusted identity per workspace ID is enforced via workspace_id PK; moved identity creates fresh trust request.
+
 namespace RuAgent.Harness.Persistence.Workspace;
 
 public sealed record WorkspaceRootCiphertext

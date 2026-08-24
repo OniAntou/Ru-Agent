@@ -21,18 +21,133 @@ using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
 using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
+using RuAgent.Hosting;
+using RuAgent.Protocol.Harness;
+using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
+
+var isManagedRuntime = args.Contains("--managed-runtime", StringComparer.Ordinal);
+RuAgent.Hosting.PublicHostSingleInstance? managedSingleInstance = null;
+RuAgent.Hosting.WorkerBrokerProcessManager? managedWorkerBrokerManager = null;
+RuAgent.Hosting.RuntimeDescriptorWriter? managedDescriptorWriter = null;
+RuAgent.Hosting.RuntimeClientLeaseRegistry? managedLeaseRegistry = null;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Routing.EndpointMiddleware", LogLevel.Warning);
 builder.Logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
+
+// Managed runtime bootstrap BEFORE DI: resolve paths, check port conflict, acquire single instance, generate credentials, start Worker/Broker, publish descriptor
+string? managedPublicBearer = null;
+if (isManagedRuntime)
+{
+    var configDataRoot = builder.Configuration["RU_DATA_ROOT"] ?? Environment.GetEnvironmentVariable("RU_DATA_ROOT");
+    var configLogRoot = builder.Configuration["RU_LOG_ROOT"] ?? Environment.GetEnvironmentVariable("RU_LOG_ROOT");
+    var projectRoot = Directory.GetCurrentDirectory();
+    // Resolve descriptor path via hosting options
+    var descriptorPath = RuAgent.Hosting.PublicHostRuntimeOptions.ResolveDescriptorPath(configDataRoot, configLogRoot, projectRoot);
+    managedDescriptorWriter = new RuAgent.Hosting.RuntimeDescriptorWriter(descriptorPath);
+
+    // Determine public port from BindUrl
+    var bindUrl = builder.Configuration["RuBackend:BindUrl"] ?? "http://127.0.0.1:8000";
+    int publicPort = 8000;
+    if (Uri.TryCreate(bindUrl, UriKind.Absolute, out var bindUri))
+        publicPort = bindUri.Port;
+
+    // Port conflict check: if port occupied and no valid owned descriptor, fail fast
+    bool IsPortOccupied(int port)
+    {
+        try { using var l = new TcpListener(IPAddress.Loopback, port); l.Start(); l.Stop(); return false; }
+        catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AddressAlreadyInUse) { return true; }
+        catch { return false; }
+    }
+
+    if (IsPortOccupied(publicPort) && managedDescriptorWriter.IsStale())
+    {
+        Console.Error.WriteLine("{\"error_code\":\"public_host_port_conflict\"}");
+        // Do not attach to or kill foreign process; exit immediately
+        Environment.Exit(2);
+    }
+
+    // Single instance mutex (global per port)
+    managedSingleInstance = new RuAgent.Hosting.PublicHostSingleInstance($"Global\\RuPublicHost-{publicPort}");
+    if (!managedSingleInstance.IsAcquired)
+    {
+        // Try Local fallback
+        managedSingleInstance.Dispose();
+        managedSingleInstance = new RuAgent.Hosting.PublicHostSingleInstance($"Local\\RuPublicHost-{publicPort}");
+        if (!managedSingleInstance.IsAcquired)
+        {
+            Console.Error.WriteLine("{\"error_code\":\"public_host_already_running\"}");
+            Environment.Exit(3);
+        }
+    }
+
+    // Generate private credentials
+    var workerSecret = RuAgent.Hosting.PublicHostRuntimeOptions.GenerateBearerToken();
+    managedPublicBearer = builder.Configuration["RU_DESKTOP_TOKEN"] ?? Environment.GetEnvironmentVariable("RU_DESKTOP_TOKEN");
+    if (string.IsNullOrWhiteSpace(managedPublicBearer))
+    {
+        managedPublicBearer = RuAgent.Hosting.PublicHostRuntimeOptions.GenerateBearerToken();
+        Environment.SetEnvironmentVariable("RU_DESKTOP_TOKEN", managedPublicBearer);
+        builder.Configuration["RU_DESKTOP_TOKEN"] = managedPublicBearer;
+        builder.Configuration["RuBackend:DesktopToken"] = managedPublicBearer;
+    }
+    // Ensure worker token is available for Worker and RuBackend's Loopback client
+    Environment.SetEnvironmentVariable("RU_WORKER_TOKEN", workerSecret);
+    builder.Configuration["RU_WORKER_TOKEN"] = workerSecret;
+
+    // Determine worker port
+    int workerPort = 8005;
+    var workerPortRaw = Environment.GetEnvironmentVariable("RU_BACKEND_WORKER_PORT");
+    if (!string.IsNullOrWhiteSpace(workerPortRaw) && int.TryParse(workerPortRaw, out var parsedWorkerPort))
+        workerPort = parsedWorkerPort;
+
+    // Start Worker and Broker in one Job
+    managedWorkerBrokerManager = new RuAgent.Hosting.WorkerBrokerProcessManager();
+    var workerStarted = managedWorkerBrokerManager.StartAsync(projectRoot, workerSecret, workerPort).GetAwaiter().GetResult();
+    if (!workerStarted)
+    {
+        Console.Error.WriteLine($"Worker/Broker start failed: {managedWorkerBrokerManager.LastError}");
+        Environment.Exit(4);
+    }
+
+    // Propagate broker descriptor to Host's env for Broker client
+    var brokerDescriptorPath = managedWorkerBrokerManager.BrokerDescriptorPath;
+    if (!string.IsNullOrWhiteSpace(brokerDescriptorPath))
+    {
+        Environment.SetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR", brokerDescriptorPath);
+        builder.Configuration["RU_AGENT_BROKER_DESCRIPTOR"] = brokerDescriptorPath;
+    }
+
+    // Publish ACL-restricted descriptor after children are running and before health is available
+    var proc = Process.GetCurrentProcess();
+    var descriptor = new RuntimeDescriptor(
+        RuntimeDescriptor.CurrentProtocolVersion,
+        $"http://127.0.0.1:{publicPort}/",
+        managedPublicBearer,
+        proc.Id,
+        proc.StartTime.ToUniversalTime().ToString("O"),
+        RuAgent.Hosting.PublicHostRuntimeOptions.GenerateNonce(),
+        DateTimeOffset.UtcNow.ToString("O"));
+    managedDescriptorWriter.WriteAsync(descriptor).GetAwaiter().GetResult();
+
+    // Lease registry and idle monitor
+    managedLeaseRegistry = new RuAgent.Hosting.RuntimeClientLeaseRegistry();
+    // Idle monitor will be created after DataPaths etc but we can create here with lease registry; need hasActiveRun/hasApproval hooks
+    // We'll create idle monitor as singleton later with proper hooks; for now keep registry singleton
+}
+
 builder.Services.Configure<BackendOptions>(options =>
 {
     builder.Configuration.GetSection(BackendOptions.SectionName).Bind(options);
     if (string.IsNullOrWhiteSpace(options.DesktopToken))
     {
         options.DesktopToken = builder.Configuration["RU_DESKTOP_TOKEN"] ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(managedPublicBearer))
+            options.DesktopToken = managedPublicBearer;
     }
 });
 builder.Services.AddSingleton(BuildDataPaths(builder.Configuration));
@@ -117,6 +232,25 @@ builder.Services.AddSingleton<AgentV1Service>();
 builder.Services.AddSingleton<LoopbackModelStepRunner>(services =>
     new LoopbackModelStepRunner(services.GetRequiredService<WorkerClientOptions>()));
 builder.Services.AddSingleton<IModelStepRunner>(services => services.GetRequiredService<LoopbackModelStepRunner>());
+// Lease registry and idle monitor singletons (managed or not)
+if (managedLeaseRegistry is not null)
+{
+    builder.Services.AddSingleton(managedLeaseRegistry);
+    // Create idle monitor that checks active runs/approvals via store? For now simple suppressed check via lease and stub active checks
+    // We'll provide a monitor that defaults to 10 min and suppressed while lease exists
+    builder.Services.AddSingleton<RuntimeIdleMonitor>(services =>
+    {
+        var registry = services.GetRequiredService<RuntimeClientLeaseRegistry>();
+        return new RuntimeIdleMonitor(registry);
+    });
+    builder.Services.AddHostedService<RuntimeIdleHostedService>();
+}
+else
+{
+    var fallbackRegistry = new RuntimeClientLeaseRegistry();
+    builder.Services.AddSingleton(fallbackRegistry);
+    builder.Services.AddSingleton<RuntimeIdleMonitor>(services => new RuntimeIdleMonitor(services.GetRequiredService<RuntimeClientLeaseRegistry>()));
+}
 builder.Services.AddSingleton<HarnessStoreHealth>(services =>
 {
     var options = services.GetRequiredService<HarnessSqliteOptions>();
@@ -150,6 +284,18 @@ builder.WebHost.UseUrls(
     builder.Configuration["RuBackend:BindUrl"] ?? "http://127.0.0.1:8000");
 
 var app = builder.Build();
+
+// Hook shutdown cleanup for managed runtime: descriptor cleanup, job shutdown
+if (isManagedRuntime)
+{
+    var lifetime = app.Lifetime;
+    lifetime.ApplicationStopping.Register(() =>
+    {
+        try { managedDescriptorWriter?.Cleanup(); } catch { }
+        try { managedWorkerBrokerManager?.Dispose(); } catch { }
+        try { managedSingleInstance?.Dispose(); } catch { }
+    });
+}
 
 using (var scope = app.Services.CreateScope())
 {
@@ -269,6 +415,29 @@ internal sealed class EphemeralHarnessKeyStore : RuAgent.Harness.Persistence.Pri
         var copy = new byte[32];
         Buffer.BlockCopy(_key, 0, copy, 0, 32);
         return ValueTask.FromResult(copy);
+    }
+}
+
+internal sealed class RuntimeIdleHostedService : BackgroundService
+{
+    private readonly RuntimeIdleMonitor _monitor;
+    private readonly IHostApplicationLifetime _lifetime;
+    public RuntimeIdleHostedService(RuntimeIdleMonitor monitor, IHostApplicationLifetime lifetime)
+    {
+        _monitor = monitor;
+        _lifetime = lifetime;
+    }
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken).ConfigureAwait(false);
+            if (_monitor.ShouldShutdown())
+            {
+                _lifetime.StopApplication();
+                break;
+            }
+        }
     }
 }
 

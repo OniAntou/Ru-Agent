@@ -1,17 +1,20 @@
+using RuAgent.Client;
+
 namespace RuApp.Services;
 
 public sealed class ManagedRuBackendSessionProvider : IRuBackendSessionProvider
 {
-    private readonly BackendProcessManager _manager;
+    private readonly PublicHostStarter _starter;
+    private readonly PublicHostLocator _locator;
     private bool _disposed;
 
-    public ManagedRuBackendSessionProvider(BackendProcessManager? manager = null)
+    public ManagedRuBackendSessionProvider(PublicHostStarter? starter = null, PublicHostLocator? locator = null)
     {
-        _manager = manager ?? new BackendProcessManager();
-        _manager.BackendExited += OnBackendExited;
+        _locator = locator ?? new PublicHostLocator();
+        _starter = starter ?? new PublicHostStarter(_locator);
     }
 
-    public string DisplayName => _manager.DisplayName;
+    public string DisplayName => "Public Host (managed)";
     public BackendSession? Session { get; private set; }
     public event EventHandler? BackendExited;
 
@@ -20,26 +23,39 @@ public sealed class ManagedRuBackendSessionProvider : IRuBackendSessionProvider
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!await _manager.StartBackendAsync(projectRoot, cancellationToken).ConfigureAwait(false))
+        if (Session is not null)
+            return Session;
+
+        try
         {
+            var hostSession = await _starter.GetOrStartAsync(projectRoot, cancellationToken).ConfigureAwait(false);
+            // Validate descriptor + health already done by starter; create BackendSession for Chat and future Agent
+            var backendSession = BackendSession.FromLoopback(hostSession.BaseUri.Port, hostSession.BearerToken);
+            Session = backendSession;
+            return backendSession;
+        }
+        catch (AgentApiException ex) when (ex.ErrorCode == "public_host_port_conflict")
+        {
+            // Stable error for port conflict – do not attach to foreign process
+            System.Diagnostics.Debug.WriteLine($"[ManagedRuBackendSessionProvider] Port conflict: {ex.Message}");
             return null;
         }
-
-        Session = BackendSession.FromLoopback(_manager.Port, _manager.AuthSecret);
-        return Session;
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ManagedRuBackendSessionProvider] Start failed: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
     }
 
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
+        if (_disposed) return;
         _disposed = true;
-        _manager.BackendExited -= OnBackendExited;
-        _manager.Dispose();
+        // Do not kill Public Host – it owns Worker/Broker and outlives WinUI. Just release local state.
+        // BackendExited is not raised for managed host; if host exits, next StartAsync will re-attach via descriptor validation.
     }
-
-    private void OnBackendExited(object? sender, EventArgs args) => BackendExited?.Invoke(this, args);
 }

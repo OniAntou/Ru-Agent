@@ -50,7 +50,7 @@ public static class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task GetEventsAsync(string runId, HttpContext context, AgentV1Service service, IHarnessEventStore store, HarnessLiveEventHub hub, CancellationToken ct)
+    private static async Task GetEventsAsync(string runId, HttpContext context, AgentV1Service service, IHarnessEventStore store, HarnessLiveEventHub hub, RuAgent.Hosting.RuntimeClientLeaseRegistry leaseRegistry, CancellationToken ct)
     {
         // cursor handling: Last-Event-ID header and after_sequence query param
         var afterSequenceRaw = context.Request.Query["after_sequence"].ToString();
@@ -117,6 +117,8 @@ public static class AgentV1Endpoints
             return;
         }
 
+        // Acquire client lease for SSE lifetime (per spec: Agent SSE = long-lived lease)
+        using var lease = leaseRegistry.Acquire("sse");
         // Set SSE headers
         context.Response.Headers.CacheControl = "no-cache";
         context.Response.Headers.Connection = "keep-alive";

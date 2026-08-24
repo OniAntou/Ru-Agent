@@ -4,9 +4,9 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using RuAgent.Protocol;
 
-namespace RuApp.Services;
+namespace RuAgent.Hosting;
 
-public sealed record BackendProcessSpec(
+public sealed record WorkerBrokerProcessSpec(
     string Role,
     string FileName,
     string Arguments,
@@ -15,17 +15,15 @@ public sealed record BackendProcessSpec(
     string StandardOutputLogPath,
     string StandardErrorLogPath);
 
-public sealed class BackendLaunchPlan
+public sealed class WorkerBrokerLaunchPlan
 {
-    private BackendLaunchPlan(
-        int publicPort,
+    private WorkerBrokerLaunchPlan(
         int workerPort,
         int brokerPort,
         string brokerDescriptorPath,
         string brokerSessionRoot,
-        IReadOnlyList<BackendProcessSpec> children)
+        IReadOnlyList<WorkerBrokerProcessSpec> children)
     {
-        PublicPort = publicPort;
         WorkerPort = workerPort;
         BrokerPort = brokerPort;
         BrokerDescriptorPath = brokerDescriptorPath;
@@ -33,16 +31,14 @@ public sealed class BackendLaunchPlan
         Children = children;
     }
 
-    public int PublicPort { get; }
     public int WorkerPort { get; }
     public int BrokerPort { get; }
     public string BrokerDescriptorPath { get; }
     public string BrokerSessionRoot { get; }
-    public IReadOnlyList<BackendProcessSpec> Children { get; }
+    public IReadOnlyList<WorkerBrokerProcessSpec> Children { get; }
 
-    public static BackendLaunchPlan Create(
+    public static WorkerBrokerLaunchPlan Create(
         string projectRoot,
-        string authSecret,
         string workerSecret,
         int workerPort,
         string? edgeExecutable = null,
@@ -50,85 +46,36 @@ public sealed class BackendLaunchPlan
         int? brokerPort = null,
         string? brokerExecutable = null)
     {
+        // edgeExecutable is ignored for WorkerBroker only (kept for compatibility with moved tests)
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
-        ArgumentException.ThrowIfNullOrWhiteSpace(authSecret);
         ArgumentException.ThrowIfNullOrWhiteSpace(workerSecret);
+        if (workerPort is < 1024 or > 65535)
+            throw new ArgumentOutOfRangeException(nameof(workerPort));
 
         const int publicPort = 8000;
-        if (workerPort is < 1024 or > 65535)
-        {
-            throw new ArgumentOutOfRangeException(nameof(workerPort));
-        }
-
         var root = Path.GetFullPath(projectRoot);
         var selectedBrokerPort = brokerPort ?? FindFreeLoopbackPort();
         if (selectedBrokerPort is < 1024 or > 65535)
-        {
             throw new ArgumentOutOfRangeException(nameof(brokerPort));
-        }
 
         if (workerPort == publicPort || workerPort == 8001 || workerPort == selectedBrokerPort)
-        {
-            throw new ArgumentException(
-                "The ASP.NET Core worker port must differ from public port 8000, VTube Studio port 8001, and Broker port.",
-                nameof(workerPort));
-        }
-
+            throw new ArgumentException("Worker port must differ from public port 8000, VTube Studio 8001, and Broker port.", nameof(workerPort));
         if (selectedBrokerPort == publicPort || selectedBrokerPort == 8001)
-        {
-            throw new ArgumentException(
-                "The RuAgentBroker port must differ from public port 8000 and VTube Studio port 8001.",
-                nameof(brokerPort));
-        }
+            throw new ArgumentException("Broker port must differ from public port 8000 and VTube 8001.", nameof(brokerPort));
 
         var pythonExecutable = Path.Combine(root, ".venv", "Scripts", "python.exe");
         if (!File.Exists(pythonExecutable))
-        {
             pythonExecutable = "python.exe";
-        }
 
         var resolvedLogRoot = ResolveLogRoot(root, configuredLogRoot);
         var bootstrapRoot = Path.Combine(resolvedLogRoot, "bootstrap");
         Directory.CreateDirectory(bootstrapRoot);
 
-        var publishedEdge = edgeExecutable;
-        if (string.IsNullOrWhiteSpace(publishedEdge))
-        {
-            publishedEdge = Path.Combine(
-                root,
-                "backend-dotnet",
-                "RuBackend",
-                "bin",
-                "Release",
-                "net10.0",
-                "win-x64",
-                "publish",
-                "RuBackend.exe");
-        }
-
-        publishedEdge = Path.GetFullPath(publishedEdge);
-        if (!File.Exists(publishedEdge))
-        {
-            throw new FileNotFoundException(
-                $"Published RuBackend.exe was not found at '{publishedEdge}'. Run build.bat before selecting ASP.NET Core mode.",
-                publishedEdge);
-        }
-
         var publishedBroker = brokerExecutable;
         if (string.IsNullOrWhiteSpace(publishedBroker))
         {
-            publishedBroker = Path.Combine(
-                root,
-                "backend-dotnet",
-                "RuAgent.Broker",
-                "bin",
-                "Release",
-                "net10.0",
-                "win-x64",
-                "publish",
-                "RuAgent.Broker.exe");
+            publishedBroker = Path.Combine(root, "backend-dotnet", "RuAgent.Broker", "bin", "Release", "net10.0", "win-x64", "publish", "RuAgent.Broker.exe");
         }
-
         publishedBroker = Path.GetFullPath(publishedBroker);
         if (!File.Exists(publishedBroker))
         {
@@ -160,21 +107,13 @@ public sealed class BackendLaunchPlan
             ["RU_AGENT_BROKER_DESCRIPTOR"] = brokerDescriptorPath,
             ["RU_LOG_ROOT"] = resolvedLogRoot,
         };
-        var edgeEnvironment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["RU_DESKTOP_TOKEN"] = authSecret,
-            ["RU_WORKER_TOKEN"] = workerSecret,
-            ["RU_AGENT_BROKER_DESCRIPTOR"] = brokerDescriptorPath,
-            ["RU_LOG_ROOT"] = resolvedLogRoot,
-            ["RuBackend__BindUrl"] = $"http://127.0.0.1:{publicPort}",
-            ["RuBackend__WorkerUrl"] = $"ws://127.0.0.1:{workerPort}/worker/v1",
-        };
-        var children = new List<BackendProcessSpec>
+
+        var children = new List<WorkerBrokerProcessSpec>
         {
             new(
                 "python-runtime-worker",
                 pythonExecutable,
-                $"-m ru_runtime.worker.v1.server --host 127.0.0.1 --port {workerPort}",
+                $"-m ru_runtime.worker.server --host 127.0.0.1 --port {workerPort}",
                 root,
                 workerEnvironment,
                 Path.Combine(bootstrapRoot, "backend_worker_out.jsonl"),
@@ -187,18 +126,9 @@ public sealed class BackendLaunchPlan
                 brokerEnvironment,
                 Path.Combine(bootstrapRoot, "backend_broker_out.jsonl"),
                 Path.Combine(bootstrapRoot, "backend_broker_err.jsonl")),
-            new(
-                "aspnetcore-edge",
-                publishedEdge,
-                $"--urls http://127.0.0.1:{publicPort}",
-                root,
-                edgeEnvironment,
-                Path.Combine(bootstrapRoot, "backend_aspnetcore_out.jsonl"),
-                Path.Combine(bootstrapRoot, "backend_aspnetcore_err.jsonl")),
         };
 
-        return new BackendLaunchPlan(
-            publicPort,
+        return new WorkerBrokerLaunchPlan(
             workerPort,
             selectedBrokerPort,
             brokerDescriptorPath,
@@ -220,13 +150,9 @@ public sealed class BackendLaunchPlan
 
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrWhiteSpace(localAppData))
-        {
             localAppData = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        }
         if (string.IsNullOrWhiteSpace(localAppData))
-        {
             localAppData = projectRoot;
-        }
 
         var logRoot = Path.Combine(localAppData, "Ru", "logs");
         Directory.CreateDirectory(logRoot);

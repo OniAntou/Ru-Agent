@@ -1,0 +1,85 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text.Json;
+
+namespace RuAgent.Client;
+
+public sealed class SessionApiClient
+{
+    private readonly HttpClient _httpClient;
+    private readonly PublicHostSession _session;
+
+    public SessionApiClient(PublicHostSession session, HttpClient? httpClient = null)
+    {
+        _session = session ?? throw new ArgumentNullException(nameof(session));
+        _httpClient = httpClient ?? new HttpClient();
+        if (_httpClient.DefaultRequestHeaders.Authorization is null)
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.BearerToken);
+    }
+
+    public async Task<string> CreateAsync(CancellationToken cancellationToken = default)
+    {
+        var url = new Uri(_session.BaseUri, "sessions/new");
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected.", (int)response.StatusCode);
+
+        if (!response.IsSuccessStatusCode)
+            throw new AgentApiException("session_create_failed", $"HTTP {(int)response.StatusCode}", (int)response.StatusCode);
+
+        var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        return ParseSessionId(content);
+    }
+
+    public static string ParseSessionId(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            throw new AgentApiException("invalid_response", "Empty response");
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(json); }
+        catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
+
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+            throw new AgentApiException("invalid_response", "Root must be object");
+
+        // Strict: allow only status, session_id, session (and maybe id?) but reject unknown
+        var allowed = new HashSet<string>(["status", "session_id", "session", "id", "message"], StringComparer.Ordinal);
+        foreach (var prop in root.EnumerateObject())
+        {
+            if (!allowed.Contains(prop.Name))
+                throw new AgentApiException("unknown_field", $"Unexpected field {prop.Name}");
+        }
+
+        if (!root.TryGetProperty("status", out var statusProp) || statusProp.ValueKind != JsonValueKind.String)
+            throw new AgentApiException("invalid_response", "Missing status");
+        var status = statusProp.GetString();
+        if (!string.Equals(status, "ok", StringComparison.Ordinal))
+            throw new AgentApiException("invalid_response", $"Status must be ok, got {status}");
+
+        string? sessionId = null;
+        if (root.TryGetProperty("session_id", out var sidProp) && sidProp.ValueKind == JsonValueKind.String)
+            sessionId = sidProp.GetString();
+        else if (root.TryGetProperty("session", out var sessProp) && sessProp.ValueKind == JsonValueKind.Object && sessProp.TryGetProperty("id", out var innerId) && innerId.ValueKind == JsonValueKind.String)
+            sessionId = innerId.GetString();
+        else if (root.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.String)
+            sessionId = idProp.GetString();
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+            throw new AgentApiException("invalid_session_id", "Missing session_id");
+
+        // Bounded validation: 1..64 chars, pattern a-zA-Z0-9_- 
+        if (sessionId.Length > 64 || sessionId.Length < 1)
+            throw new AgentApiException("invalid_session_id", "Length invalid");
+        foreach (var c in sessionId)
+        {
+            if (!(char.IsLetterOrDigit(c) || c == '_' || c == '-'))
+                throw new AgentApiException("invalid_session_id", $"Invalid char {c}");
+        }
+
+        return sessionId;
+    }
+}

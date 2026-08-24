@@ -23,6 +23,7 @@ public static class ChatWebSocketEndpoint
         IAgentApprovalCoordinator approvalCoordinator,
         IActionOutcomeContextStore actionOutcomes,
         IDiagnosticEmitter? diagnostics,
+        RuAgent.Hosting.RuntimeClientLeaseRegistry leaseRegistry,
         CancellationToken cancellationToken)
     {
         if (!context.WebSockets.IsWebSocketRequest)
@@ -32,6 +33,8 @@ public static class ChatWebSocketEndpoint
         }
 
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
+        // Acquire client lease for lifetime of accepted WebSocket (per spec)
+        using var lease = leaseRegistry.Acquire("chat");
         using var connectionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             context.RequestAborted);

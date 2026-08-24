@@ -2,9 +2,9 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 
-namespace RuApp.Services;
+namespace RuAgent.Hosting;
 
-internal static class BackendChildProcessPolicy
+public static class ChildProcessPolicy
 {
     private const long DefaultMaxLineCount = 1_000_000;
     private const long DefaultMaxByteCount = 64L * 1024 * 1024;
@@ -32,14 +32,14 @@ internal static class BackendChildProcessPolicy
     ];
 
     private static readonly IReadOnlySet<string> Roles = new HashSet<string>(
-        ["python-runtime-worker", "ru-agent-broker", "aspnetcore-edge"],
+        ["python-runtime-worker", "ru-agent-broker"],
         StringComparer.Ordinal);
 
     private static readonly IReadOnlySet<string> Streams = new HashSet<string>(
         ["stdout", "stderr"],
         StringComparer.Ordinal);
 
-    internal static ProcessStartInfo CreateStartInfo(BackendProcessSpec spec)
+    public static ProcessStartInfo CreateStartInfo(WorkerBrokerProcessSpec spec)
     {
         ArgumentNullException.ThrowIfNull(spec);
         if (!Roles.Contains(spec.Role))
@@ -75,7 +75,7 @@ internal static class BackendChildProcessPolicy
         return startInfo;
     }
 
-    internal static async Task DrainToSummaryAsync(
+    public static async Task DrainToSummaryAsync(
         TextReader reader,
         string path,
         string role,

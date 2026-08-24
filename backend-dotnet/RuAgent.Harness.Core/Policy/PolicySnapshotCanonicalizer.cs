@@ -15,12 +15,37 @@ public static class PolicySnapshotCanonicalizer
         IReadOnlyList<PolicyRule> orderedRules,
         DateTimeOffset createdAt)
     {
+        ArgumentNullException.ThrowIfNull(workspace);
+        ArgumentNullException.ThrowIfNull(orderedRules);
+        if (version <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(version));
+        }
+
+        if (!Enum.IsDefined(preset))
+        {
+            throw new ArgumentOutOfRangeException(nameof(preset));
+        }
+
+        if (createdAt == default)
+        {
+            throw new ArgumentException("CreatedAt must be a valid timestamp.", nameof(createdAt));
+        }
+
+        foreach (var rule in orderedRules)
+        {
+            ArgumentNullException.ThrowIfNull(rule);
+            rule.Validate();
+        }
+
+        // Normalize CreatedAt to UTC for deterministic hash as per contract.
+        var normalizedCreatedAt = createdAt.ToUniversalTime();
         var unhashed = new PolicySnapshot(
             version,
             preset,
             workspace,
             orderedRules,
-            createdAt,
+            normalizedCreatedAt,
             string.Empty);
         var sha256 = Convert.ToHexString(SHA256.HashData(GetCanonicalUtf8(unhashed)))
             .ToLowerInvariant();
@@ -37,14 +62,15 @@ public static class PolicySnapshotCanonicalizer
     public static byte[] GetCanonicalUtf8(PolicySnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        ValidateSnapshotForCanonicalization(snapshot);
 
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(
-                   stream,
-                   new JsonWriterOptions
-                   {
-                       Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-                   }))
+                    stream,
+                    new JsonWriterOptions
+                    {
+                        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                    }))
         {
             writer.WriteStartObject();
             writer.WriteNumber("version", snapshot.Version);
@@ -53,12 +79,52 @@ public static class PolicySnapshotCanonicalizer
             WriteRules(writer, snapshot.OrderedRules);
             writer.WriteString(
                 "created_at",
-                snapshot.CreatedAt.ToString("O", CultureInfo.InvariantCulture));
+                snapshot.CreatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
             writer.WriteEndObject();
         }
 
         return stream.ToArray();
     }
+
+    private static void ValidateSnapshotForCanonicalization(PolicySnapshot snapshot)
+    {
+        if (snapshot.Version <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(snapshot.Version));
+        }
+
+        if (!Enum.IsDefined(snapshot.Preset))
+        {
+            throw new ArgumentOutOfRangeException(nameof(snapshot.Preset));
+        }
+
+        ArgumentNullException.ThrowIfNull(snapshot.Workspace);
+        _ = snapshot.Workspace.WorkspaceId.Value;
+        _ = snapshot.Workspace.VolumeSerialNumber;
+        _ = snapshot.Workspace.RootFileId;
+        _ = snapshot.Workspace.DisplayIdentityHash;
+
+        ArgumentNullException.ThrowIfNull(snapshot.OrderedRules);
+        foreach (var rule in snapshot.OrderedRules)
+        {
+            ArgumentNullException.ThrowIfNull(rule);
+            rule.Validate();
+        }
+
+        if (snapshot.CreatedAt == default)
+        {
+            throw new ArgumentException("CreatedAt must be a valid timestamp.", nameof(snapshot.CreatedAt));
+        }
+
+        // Sha256 may be empty for intermediate unhashed snapshot; otherwise must be 64 hex.
+        if (snapshot.Sha256.Length != 0 && !IsSha256(snapshot.Sha256))
+        {
+            throw new ArgumentException("Sha256 must be empty or 64 hex.", nameof(snapshot.Sha256));
+        }
+    }
+
+    private static bool IsSha256(string value) =>
+        value.Length == 64 && value.All(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));
 
     private static void WriteWorkspace(Utf8JsonWriter writer, WorkspaceIdentity workspace)
     {
@@ -90,7 +156,7 @@ public static class PolicySnapshotCanonicalizer
             {
                 writer.WriteString(
                     "expires_at",
-                    expiresAt.ToString("O", CultureInfo.InvariantCulture));
+                    expiresAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
             }
             else
             {

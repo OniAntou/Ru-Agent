@@ -54,7 +54,8 @@ public sealed record PolicyContext(
     string OperationClass,
     string NetworkIntent,
     bool NetworkDeclared,
-    string IntentHash)
+    string IntentHash,
+    int? TimeoutMs = null)
 {
     public static readonly IReadOnlyList<string> EmptyArgv = Array.Empty<string>();
 }

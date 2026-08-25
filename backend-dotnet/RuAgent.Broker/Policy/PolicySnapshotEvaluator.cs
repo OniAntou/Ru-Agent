@@ -1,4 +1,5 @@
 using System.Globalization;
+using RuAgent.Broker.Policy.Commands;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
@@ -68,10 +69,18 @@ public sealed record PolicyEvaluation(
 
 /// <summary>
 /// Authoritative decision point: non-overridable protocol invariants first, then ordered
-/// last-match-wins evaluation over the bound snapshot, then preset fallbacks.
+/// last-match-wins evaluation over the bound snapshot, then preset fallbacks. Terminal
+/// fallbacks are classified by the versioned command analyzer registry.
 /// </summary>
 public sealed class PolicySnapshotEvaluator
 {
+    private readonly CommandAnalyzerRegistry _analyzers;
+
+    public PolicySnapshotEvaluator(CommandAnalyzerRegistry? analyzers = null)
+    {
+        _analyzers = analyzers ?? new CommandAnalyzerRegistry();
+    }
+
     public PolicyEvaluation Evaluate(
         BoundPolicySnapshot snapshot,
         PolicyContext context,
@@ -131,17 +140,36 @@ public sealed class PolicySnapshotEvaluator
         return Fallback(snapshot.Preset, context);
     }
 
-    private static PolicyEvaluation Fallback(string preset, PolicyContext context)
+    private PolicyEvaluation Fallback(string preset, PolicyContext context)
     {
         if (string.Equals(preset, "full_access", StringComparison.Ordinal))
         {
-            return new PolicyEvaluation("allow", "full_access_fallback", MatchedRuleId: null);
+            return FullAccessFallback(context);
         }
 
         return StandardFallback(context);
     }
 
-    internal static PolicyEvaluation StandardFallback(PolicyContext context)
+    private static PolicyEvaluation FullAccessFallback(PolicyContext context)
+    {
+        if (string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal))
+        {
+            var timeoutMs = context.TimeoutMs ?? TerminalLimits.DefaultTimeoutMs;
+            if (timeoutMs > TerminalLimits.HardMaxTimeoutMs)
+            {
+                return Deny("timeout_exceeds_hard_max");
+            }
+
+            if (timeoutMs > TerminalLimits.StandardApprovalThresholdMs)
+            {
+                return Ask("extended_timeout_approval");
+            }
+        }
+
+        return new PolicyEvaluation("allow", "full_access_fallback", MatchedRuleId: null);
+    }
+
+    private PolicyEvaluation StandardFallback(PolicyContext context)
     {
         if (string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal))
         {
@@ -191,116 +219,30 @@ public sealed class PolicySnapshotEvaluator
         }
     }
 
-    private static PolicyEvaluation TerminalFallback(PolicyContext context)
+    private PolicyEvaluation TerminalFallback(PolicyContext context)
     {
         if (string.Equals(context.ToolId, "terminal.shell", StringComparison.Ordinal))
         {
             return Ask("terminal_requires_rule");
         }
 
-        var form = RecognizeTerminalForm(context.ResolvedExecutable, context.Argv);
-        switch (form)
+        var analysis = _analyzers.Analyze(context.ResolvedExecutable, context.Argv);
+        return analysis.OperationClass switch
         {
-            case TerminalForm.Unknown:
-                return Ask("unknown_executable");
-            case TerminalForm.GitMutation:
-                return Ask("git_mutation");
-            default:
-                return new PolicyEvaluation(
+            TerminalOperationClass.ReadOnly
+                or TerminalOperationClass.Test
+                or TerminalOperationClass.Build
+                or TerminalOperationClass.Lint => new PolicyEvaluation(
                     "allow",
                     "recognized_safe_form",
                     MatchedRuleId: null,
-                    AnalyzerRiskPending: true);
-        }
-    }
-
-    internal enum TerminalForm
-    {
-        Unknown,
-        RecognizedSafe,
-        GitMutation,
-    }
-
-    internal static TerminalForm RecognizeTerminalForm(
-        string? resolvedExecutable,
-        IReadOnlyList<string> argv)
-    {
-        if (resolvedExecutable is null)
-        {
-            return TerminalForm.Unknown;
-        }
-
-        var baseName = Path.GetFileName(resolvedExecutable);
-        baseName = baseName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-            ? baseName[..^4]
-            : baseName;
-
-        // Phase-3 command analyzers own per-family parsing; these are conservative recognizers
-        // for read/test/build/lint families only. No general shell understanding is claimed.
-        switch (baseName.ToLowerInvariant())
-        {
-            case "rg":
-                return TerminalForm.RecognizedSafe;
-            case "git":
-                var verb = FirstVerb(argv);
-                if (verb is null)
-                {
-                    return TerminalForm.Unknown;
-                }
-
-                return GitReadOnlyVerbs.Contains(verb)
-                    ? TerminalForm.RecognizedSafe
-                    : GitMutationVerbs.Contains(verb)
-                        ? TerminalForm.GitMutation
-                        : TerminalForm.Unknown;
-            case "dotnet":
-                var dotnetVerb = FirstVerb(argv);
-                return dotnetVerb is "build" or "test" or "format"
-                    ? TerminalForm.RecognizedSafe
-                    : TerminalForm.Unknown;
-            case "pytest":
-                return TerminalForm.RecognizedSafe;
-            case "python" or "python3" or "py":
-                for (var i = 0; i + 1 < argv.Count; i++)
-                {
-                    if (string.Equals(argv[i], "-m", StringComparison.Ordinal)
-                        && argv[i + 1].StartsWith("pytest", StringComparison.Ordinal))
-                    {
-                        return TerminalForm.RecognizedSafe;
-                    }
-                }
-
-                return TerminalForm.Unknown;
-            default:
-                return TerminalForm.Unknown;
-        }
-    }
-
-    private static readonly HashSet<string> GitReadOnlyVerbs = new(StringComparer.Ordinal)
-    {
-        "status", "log", "diff", "show", "branch", "rev-parse", "describe",
-        "shortlog", "reflog", "ls-files", "grep", "cat-file",
-    };
-
-    private static readonly HashSet<string> GitMutationVerbs = new(StringComparer.Ordinal)
-    {
-        "commit", "push", "pull", "merge", "rebase", "reset", "checkout",
-        "restore", "clean", "stash", "tag", "add", "rm", "mv", "cherry-pick", "revert",
-    };
-
-    private static string? FirstVerb(IReadOnlyList<string> argv)
-    {
-        foreach (var argument in argv)
-        {
-            if (argument.StartsWith("-"))
-            {
-                continue;
-            }
-
-            return argument;
-        }
-
-        return null;
+                    AnalyzerRiskPending: true),
+            TerminalOperationClass.GitMutation => Ask("git_mutation"),
+            TerminalOperationClass.ExternalMutation => Ask("external_mutation"),
+            _ => Ask(analysis.ReasonCode is "unrecognized_executable" or "missing_executable"
+                ? "unknown_executable"
+                : analysis.ReasonCode),
+        };
     }
 
     private static PolicyEvaluation Allow(string reasonCode) =>

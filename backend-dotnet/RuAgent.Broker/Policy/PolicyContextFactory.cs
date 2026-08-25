@@ -27,9 +27,12 @@ public sealed class PolicyContextFactory
 
         var resolver = new CanonicalPathResolver(_canonicalRoot);
         var operationClass = OperationClassFor(toolId);
-        var networkDeclared = arguments["network"] is JsonValue networkValue
-            && networkValue.TryGetValue<bool>(out var declared)
-            && declared;
+        var networkDeclared = IsTrue(arguments, "network_intent") || IsTrue(arguments, "network");
+        int? timeoutMs = null;
+        if (arguments["timeout_ms"] is JsonValue timeoutValue && timeoutValue.TryGetValue<int>(out var parsedTimeout))
+        {
+            timeoutMs = parsedTimeout;
+        }
 
         ResolvedPath? target = null;
         string? canonicalCwd = null;
@@ -114,7 +117,8 @@ public sealed class PolicyContextFactory
                 resolvedExecutable,
                 argv,
                 canonicalCwd,
-                operationClass));
+                operationClass),
+            TimeoutMs: timeoutMs);
     }
 
     private static string OperationClassFor(string toolId) => toolId switch
@@ -139,6 +143,11 @@ public sealed class PolicyContextFactory
         && !string.IsNullOrWhiteSpace(result)
             ? result
             : null;
+
+    private static bool IsTrue(JsonObject arguments, string key) =>
+        arguments[key] is JsonValue value
+        && value.TryGetValue<bool>(out var flag)
+        && flag;
 
     private static string ToRelative(string root, string canonicalPath)
     {

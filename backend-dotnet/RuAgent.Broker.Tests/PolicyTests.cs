@@ -261,6 +261,65 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
+    public void Standard_terminal_fallback_uses_analyzer_classes_for_the_extended_matrix()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
+        var evaluator = new PolicySnapshotEvaluator();
+
+        var gitPush = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "git", "push"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("ask", gitPush.Decision);
+        Assert.Equal("external_mutation", gitPush.ReasonCode);
+
+        var dotnetRestore = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "dotnet", "restore"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("ask", dotnetRestore.Decision);
+        Assert.Equal("external_mutation", dotnetRestore.ReasonCode);
+
+        var ruffCheck = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "ruff", "check", "."), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("allow", ruffCheck.Decision);
+        Assert.True(ruffCheck.AnalyzerRiskPending);
+
+        var pipInstall = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "python", "-m", "pip", "install", "requests"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("ask", pipInstall.Decision);
+        Assert.Equal("external_mutation", pipInstall.ReasonCode);
+
+        var rgReplace = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "rg", "--replace", "x", "pattern"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("ask", rgReplace.Decision);
+        Assert.Equal("ripgrep_replacement_requires_approval", rgReplace.ReasonCode);
+
+        var pythonScript = evaluator.Evaluate(lease.Snapshot, Terminal(factory, "python", "script.py"), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("ask", pythonScript.Decision);
+    }
+
+    [Fact]
+    public void Full_access_allows_well_formed_terminal_calls_but_extended_timeouts_ask()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.FullAccessEmpty());
+        var evaluator = new PolicySnapshotEvaluator();
+        var valid = PolicyRequestInvariants.Valid;
+
+        var standardWindow = evaluator.Evaluate(
+            lease.Snapshot, Terminal(factory, "dotnet", "test", 120_000), valid, Now);
+        Assert.Equal("allow", standardWindow.Decision);
+
+        var extended = evaluator.Evaluate(
+            lease.Snapshot, Terminal(factory, "dotnet", "test", 1_200_000), valid, Now);
+        Assert.Equal("ask", extended.Decision);
+        Assert.Equal("extended_timeout_approval", extended.ReasonCode);
+
+        var overCap = evaluator.Evaluate(
+            lease.Snapshot, Terminal(factory, "dotnet", "test", 1_900_000), valid, Now);
+        AssertDeny(overCap, "timeout_exceeds_hard_max");
+
+        var shell = evaluator.Evaluate(lease.Snapshot, Shell(factory, "Get-Date"), valid, Now);
+        Assert.Equal("allow", shell.Decision);
+
+        var extendedShell = evaluator.Evaluate(
+            lease.Snapshot, Shell(factory, "Get-Date", 1_200_000), valid, Now);
+        Assert.Equal("ask", extendedShell.Decision);
+        Assert.Equal("extended_timeout_approval", extendedShell.ReasonCode);
+    }
+
+    [Fact]
     public void Standard_asks_for_every_terminal_shell_without_an_exact_reusable_rule()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.Empty());
@@ -349,24 +408,51 @@ public sealed class PolicyEvaluationTests
     private static PolicyContext FileCall(PolicyContextFactory factory, string toolId, string path) =>
         factory.Create(toolId, "1.0.0", Args(("path", path)));
 
-    private static PolicyContext Terminal(PolicyContextFactory factory, string executable, params string[] argv)
+    private static PolicyContext Terminal(
+        PolicyContextFactory factory,
+        string executable,
+        params object[] argvAndTimeout)
     {
+        int? timeoutMs = null;
+        var argvList = new List<string>();
+        foreach (var item in argvAndTimeout)
+        {
+            if (item is int timeout)
+            {
+                timeoutMs = timeout;
+            }
+            else
+            {
+                argvList.Add((string)item);
+            }
+        }
+
         var arguments = new JsonObject
         {
             ["executable"] = executable,
-            ["arguments"] = new JsonArray(argv.Select(a => JsonValue.Create(a)).ToArray()),
+            ["arguments"] = new JsonArray(argvList.Select(a => JsonValue.Create(a)).ToArray()),
             ["working_directory"] = ".",
         };
+        if (timeoutMs is not null)
+        {
+            arguments["timeout_ms"] = timeoutMs.Value;
+        }
+
         return factory.Create("terminal.run", "1.0.0", arguments);
     }
 
-    private static PolicyContext Shell(PolicyContextFactory factory, string script)
+    private static PolicyContext Shell(PolicyContextFactory factory, string script, int? timeoutMs = null)
     {
         var arguments = new JsonObject
         {
             ["script"] = script,
             ["working_directory"] = ".",
         };
+        if (timeoutMs is not null)
+        {
+            arguments["timeout_ms"] = timeoutMs.Value;
+        }
+
         return factory.Create("terminal.shell", "1.0.0", arguments);
     }
 

@@ -180,8 +180,7 @@ public sealed class SqliteHarnessEventStore : IHarnessEventStore
         }
     }
 
-    public async Task<HarnessCommitResult> CommitAsync(
-        HarnessCommit commit,
+    public async Task<HarnessCommitResult> CommitAsync(        HarnessCommit commit,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(commit);
@@ -209,6 +208,12 @@ public sealed class SqliteHarnessEventStore : IHarnessEventStore
             }
 
             HarnessSqliteWriteSet.ValidateCommit(current, commit);
+            await VerifyOutboxPayloadsExistAsync(
+                    connection,
+                    transaction,
+                    commit,
+                    cancellationToken)
+                .ConfigureAwait(false);
             if (!await HarnessSqliteWriteSet.UpdateRunAsync(
                     connection,
                     transaction,
@@ -314,6 +319,49 @@ public sealed class SqliteHarnessEventStore : IHarnessEventStore
             yield return new HarnessEventEnvelope(
                 ProtocolVersion,
                 HarnessSqliteMapper.ReadEvent(reader));
+        }
+    }
+
+    /// <summary>
+    /// Outbox intents may deliver a payload created in this commit or one already
+    /// durable from an earlier commit of the same run; anything else is rejected.
+    /// </summary>
+    private static async Task VerifyOutboxPayloadsExistAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        HarnessCommit commit,
+        CancellationToken cancellationToken)
+    {
+        if (commit.ConversationOutbox.Count == 0)
+        {
+            return;
+        }
+
+        var committedHere = commit.Payloads
+            .Select(payload => payload.PayloadId.Value)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var intent in commit.ConversationOutbox)
+        {
+            var payloadId = intent.PayloadId.Value;
+            if (committedHere.Contains(payloadId))
+            {
+                continue;
+            }
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                SELECT COUNT(1)
+                FROM agent_payloads
+                WHERE run_id = $run_id AND payload_id = $payload_id
+                """;
+            command.Parameters.AddWithValue("$run_id", commit.RunId.Value);
+            command.Parameters.AddWithValue("$payload_id", payloadId);
+            var exists = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false));
+            if (exists == 0)
+            {
+                throw new HarnessStoreException("outbox_payload_missing");
+            }
         }
     }
 }

@@ -305,12 +305,21 @@ public sealed class AgentCommands
     {
         try
         {
+            // The challenge must come from the server: fabricating a trust_request_id or
+            // display hash would always fail with trust_stale.
+            var run = await _agentClient.GetRunAsync(cmd.RunId, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(run.TrustRequestId) || string.IsNullOrWhiteSpace(run.DisplayIdentityHash))
+            {
+                await _err.WriteLineAsync("trust_failed: run has no pending trust challenge").ConfigureAwait(false);
+                return 1;
+            }
+
             var url = new Uri(_session.BaseUri, $"agent/v1/runs/{cmd.RunId}/trust");
             var payload = new
             {
                 decision = cmd.Approve ? "approve" : "deny",
-                trust_request_id = "trust_" + new string('a', 32),
-                display_identity_hash = new string('b', 64),
+                trust_request_id = run.TrustRequestId,
+                display_identity_hash = run.DisplayIdentityHash,
             };
             var json = JsonSerializer.Serialize(payload);
             using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(json, Encoding.UTF8, "application/json") };

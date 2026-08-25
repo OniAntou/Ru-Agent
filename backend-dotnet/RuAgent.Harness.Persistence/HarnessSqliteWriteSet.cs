@@ -313,13 +313,14 @@ internal static class HarnessSqliteWriteSet
         }
 
         var payloadIds = payloads.Select(item => item.PayloadId).ToHashSet();
-        if (events.Any(item => item.PayloadId is { } id && !payloadIds.Contains(id))
-            || outbox.Any(item => !payloadIds.Contains(item.PayloadId)))
+        if (events.Any(item => item.PayloadId is { } id && !payloadIds.Contains(id)))
         {
             throw new ArgumentException(
-                "Event and outbox payloads must be in the same write set.",
+                "Event payloads must be in the same write set.",
                 parameterName);
         }
+        // Outbox intents may reference a payload already durable from an earlier commit;
+        // store-level existence is verified in the same transaction before writes.
 
         if (outbox.Any(item => item.SessionId != expectedSessionId))
         {
@@ -369,7 +370,15 @@ internal static class HarnessSqliteWriteSet
             throw new HarnessStoreException("outbox_history_boundary_invalid");
         }
 
-        var payload = payloads.Single(item => item.PayloadId == intent.PayloadId);
+        var payload = payloads.FirstOrDefault(item => item.PayloadId == intent.PayloadId);
+        if (payload is null)
+        {
+            // Outbox may deliver a payload made durable by an earlier commit (for example
+            // the user prompt stored at run creation and delivered after workspace trust
+            // approval). Store-level existence is verified inside the write transaction.
+            return;
+        }
+
         var expectedKind = intent.Role == ConversationOutboxRole.User
             ? HarnessPayloadKind.UserPrompt
             : HarnessPayloadKind.AssistantText;

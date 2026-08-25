@@ -180,14 +180,20 @@ public sealed class HarnessCommitContractTests
     }
 
     [Fact]
-    public void Outbox_requires_payload_in_the_same_atomic_commit()
+    public void Outbox_may_reference_a_payload_from_an_earlier_commit()
     {
+        // The trust-approval flow delivers the user prompt payload created at run
+        // creation, so an outbox intent may point at a previously durable payload.
+        // Existence of referenced payloads is enforced by the store inside the write
+        // transaction ("outbox_payload_missing"), not by the commit contract.
         var missing = new PayloadId("payload_22222222222222222222222222222222");
 
-        Assert.Throws<ArgumentException>(() => Commit(
+        var commit = Commit(
             new[] { Event("evt_11111111111111111111111111111111") },
             new[] { Payload(Encoding.UTF8.GetBytes("private")) },
-            new[] { Outbox("evt_22222222222222222222222222222222", missing) }));
+            new[] { Outbox("evt_22222222222222222222222222222222", missing) });
+
+        Assert.Single(commit.ConversationOutbox);
     }
 
     private static HarnessCommit Commit(

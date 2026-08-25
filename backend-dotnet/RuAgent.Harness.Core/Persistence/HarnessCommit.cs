@@ -41,15 +41,10 @@ public sealed record HarnessCommit
         }
 
         RejectDuplicateIds(copiedEvents, copiedPayloads, copiedOutbox);
-        var committedPayloadIds = copiedPayloads
-            .Select(payload => payload.PayloadId)
-            .ToHashSet();
-        if (copiedOutbox.Any(intent => !committedPayloadIds.Contains(intent.PayloadId)))
-        {
-            throw new ArgumentException(
-                "Conversation outbox payload must be created in the same commit.",
-                nameof(conversationOutbox));
-        }
+        // Outbox intents may reference a payload created in this commit or one already
+        // durable from an earlier commit (e.g. the user prompt created at run creation
+        // and delivered after workspace trust approval). Existence is verified by the
+        // store inside the write transaction.
 
         RunId = runId;
         ExpectedVersion = expectedVersion;

@@ -33,7 +33,9 @@ public sealed record GetAgentRunResponse(
     [property: JsonPropertyName("created_at")] string CreatedAt,
     [property: JsonPropertyName("updated_at")] string UpdatedAt,
     [property: JsonPropertyName("terminal_at")] string? TerminalAt,
-    [property: JsonPropertyName("terminal_error_code")] string? TerminalErrorCode);
+    [property: JsonPropertyName("terminal_error_code")] string? TerminalErrorCode,
+    [property: JsonPropertyName("trust_request_id")] string? TrustRequestId = null,
+    [property: JsonPropertyName("display_identity_hash")] string? DisplayIdentityHash = null);
 
 public sealed record TrustAgentRunRequest(
     [property: JsonPropertyName("trust_request_id")] string TrustRequestId,

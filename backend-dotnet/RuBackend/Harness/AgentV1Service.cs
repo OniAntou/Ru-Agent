@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -166,6 +166,7 @@ public sealed class AgentV1Service
             return BoundedError(400, "invalid_workspace", "workspace_path invalid.");
         }
 
+        WorkspaceTrustRequest? pendingTrustRequest = null;
         try
         {
             var trustReq = await _trustService.EnsureTrustRequestAsync(workspacePath, cancellationToken).ConfigureAwait(false);
@@ -173,6 +174,11 @@ public sealed class AgentV1Service
             if (storedWs is not null)
             {
                 workspaceIdentity = storedWs.Identity;
+                pendingTrustRequest = storedWs.TrustRequest;
+            }
+            else
+            {
+                pendingTrustRequest = trustReq;
             }
         }
         catch (Exception)
@@ -328,13 +334,17 @@ public sealed class AgentV1Service
 
         if (storeResult.Outcome == CreateRunOutcome.Created)
         {
-            var resp = MapRun(storeResult.Run);
+            var resp = isTrusted
+                ? MapRun(storeResult.Run)
+                : MapRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
             return new AgentServiceResult(201, resp);
         }
 
         if (storeResult.Outcome == CreateRunOutcome.AlreadyExists)
         {
-            var resp = MapRun(storeResult.Run);
+            var resp = isTrusted
+                ? MapRun(storeResult.Run)
+                : MapRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
             return new AgentServiceResult(200, resp);
         }
 
@@ -365,7 +375,30 @@ public sealed class AgentV1Service
             return BoundedError(404, "run_not_found", "Run not found.");
         }
 
-        return new AgentServiceResult(200, MapRun(run));
+        var (trustRequestId, displayHash) = await ResolveTrustChallengeAsync(run, cancellationToken).ConfigureAwait(false);
+        return new AgentServiceResult(200, MapRun(run, trustRequestId, displayHash));
+    }
+
+    /// <summary>
+    /// Untrusted runs expose the pending trust challenge so clients can approve the
+    /// workspace they actually created; trusted or terminal runs carry no challenge.
+    /// </summary>
+    private async Task<(string? TrustRequestId, string? DisplayIdentityHash)> ResolveTrustChallengeAsync(
+        AgentRun run,
+        CancellationToken cancellationToken)
+    {
+        if (run.State != HarnessRunState.WaitingWorkspaceTrust)
+        {
+            return (null, null);
+        }
+
+        var registration = await _workspaceStore.GetAsync(run.WorkspaceId, cancellationToken).ConfigureAwait(false);
+        if (registration is null || registration.TrustRequest.AppliedDecision is not null)
+        {
+            return (null, null);
+        }
+
+        return (registration.TrustRequest.RequestId.Value, registration.Identity.DisplayIdentityHash);
     }
 
     public async Task<AgentServiceResult> ListSessionRunsAsync(string sessionIdRaw, int? limitRaw, string? cursor, CancellationToken cancellationToken)
@@ -446,7 +479,7 @@ public sealed class AgentV1Service
             runs = runs.Take(limit).ToList();
         }
 
-        var items = runs.Select(MapRun).ToList();
+        var items = runs.Select(run => MapRun(run)).ToList();
         var resp = new SessionRunsResponse(items, nextCursor);
         return new AgentServiceResult(200, resp);
     }
@@ -524,7 +557,7 @@ public sealed class AgentV1Service
         if (storeResult.Idempotent)
         {
             var currentRun = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
-            var status = currentRun?.State.ToString().ToLowerInvariant() ?? "unknown";
+            var status = currentRun is null ? "unknown" : MapRunState(currentRun.Status);
             return new AgentServiceResult(200, new AgentRunTrustResponse(runIdRaw, req.TrustRequestId, status));
         }
 
@@ -538,7 +571,7 @@ public sealed class AgentV1Service
 
             if (currentRun.State != HarnessRunState.WaitingWorkspaceTrust)
             {
-                return new AgentServiceResult(200, new AgentRunTrustResponse(runIdRaw, req.TrustRequestId, currentRun.State.ToString().ToLowerInvariant()));
+                return new AgentServiceResult(200, new AgentRunTrustResponse(runIdRaw, req.TrustRequestId, MapRunState(currentRun.Status)));
             }
 
             PayloadId? promptPayloadId = null;
@@ -600,7 +633,7 @@ public sealed class AgentV1Service
 
             if (currentRun.State.IsTerminal())
             {
-                return new AgentServiceResult(200, new AgentRunTrustResponse(runIdRaw, req.TrustRequestId, currentRun.State.ToString().ToLowerInvariant()));
+                return new AgentServiceResult(200, new AgentRunTrustResponse(runIdRaw, req.TrustRequestId, MapRunState(currentRun.Status)));
             }
 
             var transition = AgentRunStateMachine.TryTransition(currentRun.Status, HarnessRunTransition.DenyWorkspaceTrust);
@@ -1442,12 +1475,53 @@ public sealed class AgentV1Service
     // Helpers
     private static AgentServiceResult BoundedError(int status, string code, string message) => new(status, new AgentErrorResponse(code, message));
 
-    private static GetAgentRunResponse MapRun(AgentRun run) => new(
+    /// <summary>
+    /// Explicit snake_case state names shared by every API surface; enum ToString would
+    /// collapse word boundaries ("waiting_history" â†’ "waitinghistory").
+    /// </summary>
+    public static string MapHistoryWaitKind(HistoryWaitKind? kind) => kind switch
+    {
+        HistoryWaitKind.UserBeforeFirstStep => "user_before_first_step",
+        HistoryWaitKind.FinalBeforeCompletion => "final_before_completion",
+        null => "none",
+        _ => "unknown",
+    };
+
+    public static string MapRunState(HarnessRunStatus status)
+    {
+        if (status.HistoryWaitKind is not null)
+        {
+            return status.HistoryWaitKind == HistoryWaitKind.UserBeforeFirstStep
+                ? "waiting_history_user"
+                : "waiting_history_final";
+        }
+
+        return status.State switch
+        {
+            HarnessRunState.Created => "created",
+            HarnessRunState.WaitingWorkspaceTrust => "waiting_workspace_trust",
+            HarnessRunState.WaitingHistory => "waiting_history",
+            HarnessRunState.Running => "running",
+            HarnessRunState.WaitingApproval => "waiting_approval",
+            HarnessRunState.WaitingUser => "waiting_user",
+            HarnessRunState.ReconciliationRequired => "reconciliation_required",
+            HarnessRunState.Completed => "completed",
+            HarnessRunState.Failed => "failed",
+            HarnessRunState.Cancelled => "cancelled",
+            HarnessRunState.Interrupted => "interrupted",
+            _ => "unknown",
+        };
+    }
+
+    private static GetAgentRunResponse MapRun(
+        AgentRun run,
+        string? trustRequestId = null,
+        string? displayIdentityHash = null) => new(
         RunId: run.RunId.Value,
         SessionId: run.SessionId.Value,
         WorkspaceId: run.WorkspaceId.Value,
-        Status: run.State.ToString().ToLowerInvariant(),
-        HistoryWaitKind: run.HistoryWaitKind?.ToString().ToLowerInvariant(),
+        Status: MapRunState(run.Status),
+        HistoryWaitKind: MapHistoryWaitKind(run.HistoryWaitKind),
         Preset: run.Preset == AgentPermissionPreset.Standard ? "standard" : "full_access",
         PolicySnapshotVersion: run.PolicySnapshotVersion,
         PolicySnapshotSha256: run.PolicySnapshotSha256,
@@ -1456,7 +1530,9 @@ public sealed class AgentV1Service
         CreatedAt: run.CreatedAt.ToUniversalTime().ToString("O"),
         UpdatedAt: run.UpdatedAt.ToUniversalTime().ToString("O"),
         TerminalAt: run.TerminalAt?.ToUniversalTime().ToString("O"),
-        TerminalErrorCode: run.TerminalErrorCode);
+        TerminalErrorCode: run.TerminalErrorCode,
+        TrustRequestId: trustRequestId,
+        DisplayIdentityHash: displayIdentityHash);
 
     private static string ComputeSha256(string value)
     {
@@ -1526,3 +1602,4 @@ public sealed class AgentV1Service
         }
     }
 }
+

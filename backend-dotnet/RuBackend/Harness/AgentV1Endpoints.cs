@@ -394,17 +394,8 @@ internal static class HarnessEventMapper
         return evt.Kind;
     }
 
-    public static string MapStatus(RuAgent.Harness.Core.AgentRun run)
-    {
-        if (run.Status.HistoryWaitKind is not null)
-        {
-            return run.Status.HistoryWaitKind == RuAgent.Harness.Core.HistoryWaitKind.UserBeforeFirstStep
-                ? "waiting_history_user"
-                : "waiting_history_final";
-        }
-
-        return run.State.ToString().ToLowerInvariant();
-    }
+    public static string MapStatus(RuAgent.Harness.Core.AgentRun run) =>
+        RuBackend.Harness.AgentV1Service.MapRunState(run.Status);
 
     public static RuAgent.Protocol.Harness.HarnessSafeEventEnvelope ToSafeEnvelope(RuAgent.Harness.Core.HarnessEvent evt, RuAgent.Harness.Core.AgentRun run)
     {

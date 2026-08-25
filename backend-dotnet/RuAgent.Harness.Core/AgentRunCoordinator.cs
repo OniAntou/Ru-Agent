@@ -2,6 +2,10 @@ using System.Text;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 
+// Generic preparation payload handling: PreparedPayloads with kind RecoveryOpaque are kept byte-exact
+// and encrypted as InternalOnly/Opaque via HarnessPayloadStore without file-specific branches.
+// The Host gateway maps recovery references to Broker restore content without exposing bytes.
+
 namespace RuAgent.Harness.Core;
 
 public sealed class AgentRunCoordinator

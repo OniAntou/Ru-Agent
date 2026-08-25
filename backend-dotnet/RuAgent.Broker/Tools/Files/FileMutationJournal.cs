@@ -1,0 +1,92 @@
+namespace RuAgent.Broker.Tools.Files;
+
+public sealed class FileMutationJournal : IDisposable
+{
+    public const int MaxEntries = 64;
+    public const int MaxTotalBytes = 16 * 1024 * 1024;
+
+    private readonly List<JournalEntry> _entries = new();
+    private long _totalBytes;
+    private bool _disposed;
+
+    private sealed record JournalEntry(
+        string CanonicalPath,
+        string BeforeHash,
+        byte[]? BeforeBytes,
+        bool WasMissing);
+
+    public int Count => _entries.Count;
+
+    public long TotalBytes => _totalBytes;
+
+    public void Record(string canonicalPath, string beforeHash, byte[]? beforeBytes, bool wasMissing)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(canonicalPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(beforeHash);
+        if (_entries.Count >= MaxEntries)
+        {
+            throw new InvalidOperationException("journal_too_large");
+        }
+
+        var bytesLength = beforeBytes?.Length ?? 0;
+        if (_totalBytes + bytesLength > MaxTotalBytes)
+        {
+            throw new InvalidOperationException("journal_too_large");
+        }
+
+        var copy = beforeBytes is null ? null : (byte[])beforeBytes.Clone();
+        _entries.Add(new JournalEntry(canonicalPath, beforeHash, copy, wasMissing));
+        _totalBytes += bytesLength;
+    }
+
+    public void Commit()
+    {
+        _entries.Clear();
+        _totalBytes = 0;
+    }
+
+    public void Rollback()
+    {
+        for (int i = _entries.Count - 1; i >= 0; i--)
+        {
+            var entry = _entries[i];
+            try
+            {
+                if (entry.WasMissing)
+                {
+                    if (File.Exists(entry.CanonicalPath))
+                    {
+                        File.Delete(entry.CanonicalPath);
+                    }
+                    else if (Directory.Exists(entry.CanonicalPath))
+                    {
+                        throw new IOException("is_directory");
+                    }
+                }
+                else
+                {
+                    var bytes = entry.BeforeBytes ?? Array.Empty<byte>();
+                    AtomicFileReplacement.Replace(entry.CanonicalPath, bytes);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        _entries.Clear();
+        _totalBytes = 0;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _entries.Clear();
+        _totalBytes = 0;
+    }
+}

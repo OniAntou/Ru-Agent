@@ -37,17 +37,20 @@ public sealed class TerminalAdapter
     private readonly ProcessTreeRunner _runner;
     private readonly ShellRuntimeResolver _shells;
     private readonly ApprovalTokenService? _approvalTokens;
+    private readonly AgentCommandEnvironment _environment;
 
     public TerminalAdapter(
         WorkspacePathGuard workspace,
         ProcessTreeRunner runner,
         ShellRuntimeResolver shells,
-        ApprovalTokenService? approvalTokens = null)
+        ApprovalTokenService? approvalTokens = null,
+        AgentCommandEnvironment? commandEnvironment = null)
     {
         _workspace = workspace;
         _runner = runner;
         _shells = shells;
         _approvalTokens = approvalTokens;
+        _environment = commandEnvironment ?? new AgentCommandEnvironment();
     }
 
     public Task<ProcessRunResult> RunAsync(
@@ -71,13 +74,12 @@ public sealed class TerminalAdapter
         }
 
         var workingDirectory = ResolveWorkingDirectory(request.RelativeWorkingDirectory, confineWorkspace);
-        var environment = SafeEnvironment();
         return _runner.RunAsync(
             new ProcessRunSpec(
                 request.Executable,
                 request.Arguments,
                 workingDirectory,
-                environment,
+                _environment.ChildEnvironment,
                 request.TimeoutMs,
                 256 * 1024),
             cancellationToken);
@@ -110,7 +112,7 @@ public sealed class TerminalAdapter
                 shell.Executable,
                 args,
                 workingDirectory,
-                SafeEnvironment(),
+                _environment.ChildEnvironment,
                 request.TimeoutMs,
                 256 * 1024),
             cancellationToken);
@@ -251,20 +253,5 @@ public sealed class TerminalAdapter
     {
         var value = Environment.GetEnvironmentVariable(variable);
         return string.IsNullOrWhiteSpace(value) ? Environment.GetFolderPath(fallback) : value;
-    }
-
-    private static IReadOnlyDictionary<string, string> SafeEnvironment()
-    {
-        var allowed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var key in new[] { "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "TEMP", "TMP" })
-        {
-            var value = Environment.GetEnvironmentVariable(key);
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                allowed[key] = value;
-            }
-        }
-
-        return allowed;
     }
 }

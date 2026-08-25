@@ -1,5 +1,7 @@
+using System.Text.Json;
 using System.Threading.Channels;
 using RuAgent.Harness.Core;
+using RuAgent.Protocol.Harness;
 
 namespace RuBackend.Harness;
 
@@ -20,7 +22,33 @@ public sealed class HarnessLiveEventHub
             SingleWriter = false,
             FullMode = BoundedChannelFullMode.DropOldest,
         };
-        _channel = Channel.CreateBounded<TransientFrame>(options);
+        _channel = Channel.CreateBounded<TransientFrame>(options, _ => Interlocked.Increment(ref _droppedCount));
+    }
+
+    /// <summary>
+    /// Maps one Broker v2 <c>tool.output.delta</c> onto the Core-neutral chunk shape and a
+    /// connection-local transient frame. Transient frames never advance durable cursors
+    /// and are never persisted; bounded loss only increments a safe dropped counter.
+    /// </summary>
+    public bool TryPublishDelta(BrokerToolOutputDeltaWire delta)
+    {
+        ArgumentNullException.ThrowIfNull(delta);
+        BrokerToolOutputDeltaWire.Validate(delta);
+        _ = new ToolOutputChunk(
+            new ExecutionId(delta.ExecutionId),
+            delta.FrameSequence,
+            delta.Stream == "stderr" ? ToolOutputStream.Stderr : ToolOutputStream.Stdout,
+            delta.Text);
+
+        var data = JsonSerializer.Serialize(new
+        {
+            execution_id = delta.ExecutionId,
+            frame_sequence = delta.FrameSequence,
+            stream = delta.Stream,
+            text = delta.Text,
+            redacted = delta.Redacted,
+        });
+        return TryPublish(new RunId(delta.RunId), "tool.output.delta", data);
     }
 
     public bool TryPublish(RunId runId, string kind, string data)

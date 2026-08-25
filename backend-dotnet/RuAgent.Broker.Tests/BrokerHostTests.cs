@@ -1015,7 +1015,15 @@ public sealed class BrokerHostTests
         await SendAsync(
             socket,
             new AgentEnvelope(2, "delta-1", AgentMessageTypes.ToolOutputDelta, "session-reserved", null, 10_000,
-                new System.Text.Json.Nodes.JsonObject { ["execution_id"] = "exec-1", ["text"] = "partial" }),
+                new System.Text.Json.Nodes.JsonObject
+                {
+                    ["run_id"] = "run_77777777777777777777777777777777",
+                    ["tool_call_id"] = "call_77777777777777777777777777777777",
+                    ["execution_id"] = "exec-1",
+                    ["frame_sequence"] = 1,
+                    ["stream"] = "stdout",
+                    ["text"] = "partial",
+                }),
             cts.Token);
         var delta = await ReceiveAsync(socket, cts.Token);
         Assert.Equal(AgentMessageTypes.ToolExecuteResult, delta.MessageType);

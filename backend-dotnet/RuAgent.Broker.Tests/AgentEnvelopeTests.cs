@@ -239,7 +239,17 @@ public sealed class AgentEnvelopeTests
                     "session-1",
                     @"D:\workspace",
                     EnvelopeTestSnapshots.StandardEmpty())
-                : new JsonObject());
+                : messageType == AgentMessageTypes.ToolOutputDelta
+                    ? new JsonObject
+                    {
+                        ["run_id"] = "run_66666666666666666666666666666666",
+                        ["tool_call_id"] = "call_66666666666666666666666666666666",
+                        ["execution_id"] = "exec_66666666666666666666666666666666",
+                        ["frame_sequence"] = 1,
+                        ["stream"] = "stdout",
+                        ["text"] = "partial",
+                    }
+                    : new JsonObject());
 
         Assert.Contains(messageType, AgentMessageTypes.V2Only);
         var parsed = AgentEnvelopeCodec.Parse(AgentEnvelopeCodec.Serialize(envelope));

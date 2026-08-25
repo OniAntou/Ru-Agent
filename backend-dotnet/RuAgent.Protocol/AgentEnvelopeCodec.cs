@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Protocol;
 
@@ -122,6 +123,46 @@ public static class AgentEnvelopeCodec
                 throw new AgentProtocolException("invalid_run_open");
             }
         }
+
+        if (envelope.MessageType == AgentMessageTypes.ToolOutputDelta)
+        {
+            BrokerToolOutputDeltaWire.Validate(new BrokerToolOutputDeltaWire(
+                RequiredText(envelope.Payload, "run_id"),
+                RequiredText(envelope.Payload, "tool_call_id"),
+                RequiredText(envelope.Payload, "execution_id"),
+                RequiredLong(envelope.Payload, "frame_sequence"),
+                RequiredText(envelope.Payload, "stream"),
+                envelope.Payload["text"]?.GetValue<string>() ?? string.Empty,
+                envelope.Payload["redacted"] is JsonValue redacted && redacted.TryGetValue<bool>(out var flag) && flag));
+        }
+    }
+
+    private static string RequiredText(JsonObject payload, string property)
+    {
+        if (payload[property] is not JsonValue value || !value.TryGetValue<string>(out var result))
+        {
+            throw new AgentProtocolException("invalid_output_delta");
+        }
+
+        return result;
+    }
+
+    private static long RequiredLong(JsonObject payload, string property)
+    {
+        if (payload[property] is JsonValue value)
+        {
+            if (value.TryGetValue<long>(out var result))
+            {
+                return result;
+            }
+
+            if (value.TryGetValue<int>(out var asInt))
+            {
+                return asInt;
+            }
+        }
+
+        throw new AgentProtocolException("invalid_output_delta");
     }
 
     private static int ReadInt(JsonObject node, string property, string code)

@@ -327,6 +327,69 @@ public sealed class CommandIntentResolverTests
         }
     }
 
+    [Fact]
+    public void Intent_hash_preserves_argument_boundaries_when_arguments_contain_separator_characters()
+    {
+        var workspace = CreateTemporaryRoot("ru-intent-boundaries-");
+        try
+        {
+            var resolver = CreateResolver(workspace, EmptySearchDirectories);
+            var executable = Path.Combine(Environment.SystemDirectory, "where.exe");
+            var left = resolver.ResolveRun(
+                new CanonicalCommandRequest(executable, ["alpha\u001fbeta", "gamma"]));
+            var right = resolver.ResolveRun(
+                new CanonicalCommandRequest(executable, ["alpha", "beta\u001fgamma"]));
+
+            Assert.NotEqual(left.Arguments, right.Arguments);
+            Assert.NotEqual(left.IntentHash, right.IntentHash);
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Resolved_executable_uses_final_file_identity_through_workspace_junction()
+    {
+        var parent = CreateTemporaryRoot("ru-intent-executable-link-");
+        var workspace = Path.Combine(parent, "workspace");
+        var outside = Path.Combine(parent, "outside");
+        Directory.CreateDirectory(workspace);
+        Directory.CreateDirectory(outside);
+        var outsideTool = Path.Combine(outside, "tool.exe");
+        File.Copy(Path.Combine(Environment.SystemDirectory, "where.exe"), outsideTool);
+        var link = Path.Combine(workspace, "bin");
+        CreateJunction(link, outside);
+        try
+        {
+            var resolver = CreateResolver(workspace, EmptySearchDirectories);
+            var intent = resolver.ResolveRun(new CanonicalCommandRequest("bin/tool.exe", ["cmd.exe"]));
+
+            Assert.Equal(Path.GetFullPath(outsideTool), intent.ResolvedExecutable, ignoreCase: true);
+        }
+        finally
+        {
+            new DirectoryInfo(link).Delete();
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    private static void CreateJunction(string junction, string target)
+    {
+        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe",
+            Arguments = $"/c mklink /J \"{junction}\" \"{target}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        })!;
+        Assert.True(process.WaitForExit(15_000));
+        Assert.Equal(0, process.ExitCode);
+    }
+
     private static CommandIntentResolver CreateTemporaryRootResolver(string workspace) =>
         new(workspace, ["C:\\Windows\\System32"]);
 }

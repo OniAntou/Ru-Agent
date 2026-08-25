@@ -1,7 +1,3 @@
-using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using RuAgent.Broker.Tools.Paths;
 using RuAgent.Protocol;
 
@@ -81,18 +77,104 @@ public sealed record CanonicalCommandIntent(
         int timeoutMs,
         TerminalOperationClass operationClass)
     {
-        var fields = new[]
+        return TerminalIntentFingerprint.Compute(
+            "broker-terminal-intent",
+            resolvedExecutable,
+            arguments,
+            canonicalWorkingDirectory,
+            networkIntent,
+            timeoutMs,
+            operationClass);
+    }
+}
+
+/// <summary>
+/// Resolves an existing path to its final filesystem identity through junctions and
+/// symlinks on Windows; other platforms return the lexical full path.
+/// </summary>
+internal static class FinalPathResolver
+{
+    private const uint QueryOnlyDesiredAccess = 0;
+    private const uint FileShareReadWrite = 0x3;
+    private const uint OpenExisting = 0x3;
+    private const uint BackupSemanticsFlag = 0x02000000;
+
+    [System.Runtime.InteropServices.DllImport(
+        "kernel32.dll", EntryPoint = "CreateFileW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        IntPtr lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        IntPtr hTemplateFile);
+
+    [System.Runtime.InteropServices.DllImport(
+        "kernel32.dll", EntryPoint = "GetFinalPathNameByHandleW", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandle(
+        Microsoft.Win32.SafeHandles.SafeFileHandle hFile,
+        System.Text.StringBuilder lpszFilePath,
+        uint cchFilePath,
+        uint dwFlags);
+
+    internal static string Resolve(string candidate)
+    {
+        if (!OperatingSystem.IsWindows())
         {
-            "v1",
-            JsonSerializer.Serialize(resolvedExecutable),
-            JsonSerializer.Serialize(string.Join('\u001f', arguments)),
-            JsonSerializer.Serialize(canonicalWorkingDirectory),
-            networkIntent ? "true" : "false",
-            timeoutMs.ToString(CultureInfo.InvariantCulture),
-            operationClass.ToString(),
-        };
-        var payload = string.Join('\u001e', fields);
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
-        return Convert.ToHexString(hash).ToLowerInvariant();
+            return Path.GetFullPath(candidate);
+        }
+
+        using var handle = CreateFile(
+            ExtendedDevicePath(candidate),
+            QueryOnlyDesiredAccess,
+            FileShareReadWrite,
+            IntPtr.Zero,
+            OpenExisting,
+            BackupSemanticsFlag,
+            IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            throw new UnauthorizedAccessException("terminal_cwd_not_allowed");
+        }
+
+        var buffer = new System.Text.StringBuilder(1_024);
+        var required = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Capacity, 0);
+        if (required > (uint)buffer.Capacity)
+        {
+            buffer = new System.Text.StringBuilder(checked((int)required));
+            required = GetFinalPathNameByHandle(handle, buffer, required, 0);
+        }
+
+        if (required == 0)
+        {
+            throw new UnauthorizedAccessException("terminal_cwd_not_allowed");
+        }
+
+        return StripDevicePrefix(buffer.ToString());
+    }
+
+    private static string ExtendedDevicePath(string candidate)
+    {
+        if (candidate.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+        {
+            return candidate;
+        }
+
+        return candidate.StartsWith(@"\\", StringComparison.OrdinalIgnoreCase)
+            ? @"\\?\UNC\" + candidate[2..]
+            : @"\\?\" + candidate;
+    }
+
+    private static string StripDevicePrefix(string finalPath)
+    {
+        if (finalPath.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+        {
+            return @"\\" + finalPath[@"\\?\UNC\".Length..];
+        }
+
+        return finalPath.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase)
+            ? finalPath[@"\\?\".Length..]
+            : finalPath;
     }
 }

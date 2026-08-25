@@ -318,6 +318,39 @@ public sealed class HarnessTerminalIntegrationTests
     }
 
     [Fact]
+    public async Task Declared_network_intent_requires_approval_in_standard_but_full_access_allows_it()
+    {
+        var root = CreateWorkspace(out _);
+        try
+        {
+            var standardGateway = NewGateway(root, new[] { "terminal.run" });
+            var arguments = new JsonObject
+            {
+                ["executable"] = "rg",
+                ["arguments"] = new JsonArray("--files"),
+                ["network_intent"] = true,
+            };
+            var standard = await standardGateway.EvaluateAsync(Proposal(arguments), CancellationToken.None);
+            Assert.Equal(PolicyDecision.Ask, standard.Decision);
+
+            var fullAccessRun = FullAccessRunId();
+            var fullAccessGateway = NewGateway(
+                root,
+                new[] { "terminal.run" },
+                fullAccessRun,
+                AgentPermissionPreset.FullAccess);
+            var fullAccess = await fullAccessGateway.EvaluateAsync(
+                Proposal(arguments, fullAccessRun),
+                CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, fullAccess.Decision);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
     public async Task Full_access_unknown_command_executes_and_times_out_with_side_effects_marked()
     {
         var root = CreateWorkspace(out _);
@@ -414,7 +447,7 @@ public sealed class HarnessTerminalIntegrationTests
     }
 
     [Fact]
-    public async Task Protected_and_outside_working_directories_are_denied()
+    public async Task Protected_and_outside_working_directories_require_approval_in_standard()
     {
         var root = CreateWorkspace(out _);
         try
@@ -434,8 +467,7 @@ public sealed class HarnessTerminalIntegrationTests
                         ["working_directory"] = outsideDirectory,
                     }),
                     CancellationToken.None);
-                Assert.Equal(PolicyDecision.Deny, outside.Decision);
-                Assert.Equal("cwd_outside_workspace", outside.SafeCode);
+                Assert.Equal(PolicyDecision.Ask, outside.Decision);
             }
             finally
             {
@@ -456,8 +488,7 @@ public sealed class HarnessTerminalIntegrationTests
                         ["working_directory"] = "windows-link",
                     }),
                     CancellationToken.None);
-                Assert.Equal(PolicyDecision.Deny, protectedDecision.Decision);
-                Assert.Equal("terminal_cwd_not_allowed", protectedDecision.SafeCode);
+                Assert.Equal(PolicyDecision.Ask, protectedDecision.Decision);
             }
             finally
             {
@@ -466,6 +497,69 @@ public sealed class HarnessTerminalIntegrationTests
         }
         finally
         {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task Workspace_junction_to_arbitrary_outside_directory_requires_approval()
+    {
+        var root = CreateWorkspace(out _);
+        var outside = Path.Combine(
+            Directory.GetParent(root)!.FullName,
+            "outside-junction-target-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        var junction = Path.Combine(root, "outside-link");
+        CreateJunction(junction, outside);
+        try
+        {
+            var gateway = NewGateway(root, new[] { "terminal.run" });
+            var decision = await gateway.EvaluateAsync(
+                Proposal(new JsonObject
+                {
+                    ["executable"] = "rg",
+                    ["arguments"] = new JsonArray("--files"),
+                    ["working_directory"] = "outside-link",
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(PolicyDecision.Ask, decision.Decision);
+        }
+        finally
+        {
+            TryRemoveLink(junction);
+            TryDelete(outside);
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task Full_access_allows_well_formed_outside_working_directory_after_trust()
+    {
+        var root = CreateWorkspace(out _);
+        var outside = Path.Combine(
+            Directory.GetParent(root)!.FullName,
+            "outside-full-access-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        try
+        {
+            var runId = FullAccessRunId();
+            var gateway = NewGateway(root, new[] { "terminal.run" }, runId, AgentPermissionPreset.FullAccess);
+            var decision = await gateway.EvaluateAsync(
+                Proposal(new JsonObject
+                {
+                    ["executable"] = "rg",
+                    ["arguments"] = new JsonArray("--files"),
+                    ["working_directory"] = outside,
+                }, runId),
+                CancellationToken.None);
+
+            Assert.Equal(PolicyDecision.Allow, decision.Decision);
+            Assert.False(string.IsNullOrWhiteSpace(decision.CanonicalIntentToken));
+        }
+        finally
+        {
+            TryDelete(outside);
             TryDelete(root);
         }
     }
@@ -534,6 +628,194 @@ public sealed class HarnessTerminalIntegrationTests
                 fresh.CanonicalIntentToken!);
             var prepared = await gateway.PrepareAsync(valid, CancellationToken.None);
             Assert.Equal(ToolAccessKind.ReadOnly, prepared.AccessKind);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task Canonical_intent_token_uses_resolved_executable_identity_and_lossless_argv()
+    {
+        var root = CreateWorkspace(out _);
+        try
+        {
+            var runId = FullAccessRunId();
+            var gateway = NewGateway(root, new[] { "terminal.run" }, runId, AgentPermissionPreset.FullAccess);
+
+            var bare = await gateway.EvaluateAsync(
+                Proposal(new JsonObject
+                {
+                    ["executable"] = "where",
+                    ["arguments"] = new JsonArray("cmd.exe"),
+                }, runId),
+                CancellationToken.None);
+            var absolute = await gateway.EvaluateAsync(
+                Proposal(new JsonObject
+                {
+                    ["executable"] = Path.Combine(Environment.SystemDirectory, "where.exe"),
+                    ["arguments"] = new JsonArray("cmd.exe"),
+                }, runId),
+                CancellationToken.None);
+
+            Assert.Equal(PolicyDecision.Allow, bare.Decision);
+            Assert.Equal(PolicyDecision.Allow, absolute.Decision);
+            Assert.Equal(absolute.CanonicalIntentToken, bare.CanonicalIntentToken);
+
+            var joinedLeft = await gateway.EvaluateAsync(
+                Proposal(new JsonObject
+                {
+                    ["executable"] = "rg",
+                    ["arguments"] = new JsonArray("alpha\u001fbeta", "gamma"),
+                }),
+                CancellationToken.None);
+            var joinedRight = await gateway.EvaluateAsync(
+                Proposal(new JsonObject
+                {
+                    ["executable"] = "rg",
+                    ["arguments"] = new JsonArray("alpha", "beta\u001fgamma"),
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(PolicyDecision.Allow, joinedLeft.Decision);
+            Assert.Equal(PolicyDecision.Allow, joinedRight.Decision);
+            Assert.NotEqual(joinedLeft.CanonicalIntentToken, joinedRight.CanonicalIntentToken);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task Prepared_terminal_execution_rejects_forged_capability_identity()
+    {
+        var root = CreateWorkspace(out _);
+        try
+        {
+            var gateway = NewGateway(root, new[] { "terminal.run" });
+            var proposal = Proposal(new JsonObject
+            {
+                ["executable"] = "rg",
+                ["arguments"] = new JsonArray("--files"),
+            });
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+            var prepared = await gateway.PrepareAsync(
+                new ApprovedToolExecution(
+                    proposal,
+                    new ExecutionId($"exec_{Guid.NewGuid():N}"),
+                    decision.CanonicalIntentToken!),
+                CancellationToken.None);
+            var forged = new PreparedToolExecution(
+                prepared.ExecutionId,
+                new ToolCallId($"call_{Guid.NewGuid():N}"),
+                prepared.ModelOrder,
+                prepared.AccessKind,
+                "prepared-forged",
+                prepared.PreparationPayloads);
+            var chunks = new List<ToolOutputChunk>();
+
+            var receipt = await gateway.ExecuteAsync(
+                forged,
+                chunk =>
+                {
+                    chunks.Add(chunk);
+                    return ValueTask.CompletedTask;
+                },
+                CancellationToken.None);
+
+            Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
+            Assert.Equal("decision_stale", receipt.Code);
+            Assert.Empty(chunks);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task Executable_junction_change_between_prepare_and_execute_is_stale()
+    {
+        var root = CreateWorkspace(out _);
+        var insideBin = Path.Combine(root, "bin");
+        var outsideBin = Path.Combine(
+            Directory.GetParent(root)!.FullName,
+            "outside-executable-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(insideBin);
+        Directory.CreateDirectory(outsideBin);
+        var systemWhere = Path.Combine(Environment.SystemDirectory, "where.exe");
+        File.Copy(systemWhere, Path.Combine(insideBin, "tool.exe"));
+        File.Copy(systemWhere, Path.Combine(outsideBin, "tool.exe"));
+        try
+        {
+            var runId = FullAccessRunId();
+            var gateway = NewGateway(root, new[] { "terminal.run" }, runId, AgentPermissionPreset.FullAccess);
+            var proposal = Proposal(new JsonObject
+            {
+                ["executable"] = "bin/tool.exe",
+                ["arguments"] = new JsonArray("cmd.exe"),
+            }, runId);
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, decision.Decision);
+            var prepared = await gateway.PrepareAsync(
+                new ApprovedToolExecution(
+                    proposal,
+                    new ExecutionId($"exec_{Guid.NewGuid():N}"),
+                    decision.CanonicalIntentToken!),
+                CancellationToken.None);
+
+            Directory.Delete(insideBin, recursive: true);
+            CreateJunction(insideBin, outsideBin);
+
+            var receipt = await gateway.ExecuteAsync(prepared, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+            Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
+            Assert.Equal("decision_stale", receipt.Code);
+        }
+        finally
+        {
+            TryRemoveLink(insideBin);
+            TryDelete(outsideBin);
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task Requested_pwsh_runtime_is_the_runtime_that_executes()
+    {
+        if (!IsPowerShellSevenAvailable())
+        {
+            // Hosts without PowerShell 7 cannot exercise the pwsh runtime identity; the
+            // powershell.exe path is covered by the rest of the suite.
+            return;
+        }
+
+        var root = CreateWorkspace(out _);
+        try
+        {
+            var runId = FullAccessRunId();
+            var gateway = NewGateway(root, new[] { "terminal.shell" }, runId, AgentPermissionPreset.FullAccess);
+            var proposal = Proposal(new JsonObject
+            {
+                ["script"] = "$PSVersionTable.PSEdition",
+                ["shell"] = "pwsh",
+            }, runId);
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, decision.Decision);
+            var prepared = await gateway.PrepareAsync(
+                new ApprovedToolExecution(
+                    proposal,
+                    new ExecutionId($"exec_{Guid.NewGuid():N}"),
+                    decision.CanonicalIntentToken!),
+                CancellationToken.None);
+
+            var receipt = await gateway.ExecuteAsync(prepared, _ => ValueTask.CompletedTask, CancellationToken.None);
+            using var output = JsonDocument.Parse(receipt.ModelContent);
+
+            Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
+            Assert.Contains("Core", output.RootElement.GetProperty("stdout_head").GetString());
         }
         finally
         {
@@ -625,6 +907,38 @@ public sealed class HarnessTerminalIntegrationTests
     }
 
     private static RunId StandardRunId() => new($"run_{Guid.NewGuid():N}");
+
+    private static bool IsPowerShellSevenAvailable()
+    {
+        if (WhereExists("pwsh.exe"))
+        {
+            return true;
+        }
+
+        var programFiles = Environment.GetEnvironmentVariable("ProgramFiles");
+        return !string.IsNullOrWhiteSpace(programFiles)
+            && File.Exists(Path.Combine(programFiles, "PowerShell", "7", "pwsh.exe"));
+    }
+
+    private static bool WhereExists(string fileName)
+    {
+        var path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        foreach (var directory in path.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            try
+            {
+                if (File.Exists(Path.Combine(directory, fileName)))
+                {
+                    return true;
+                }
+            }
+            catch (Exception error) when (error is ArgumentException or IOException)
+            {
+            }
+        }
+
+        return false;
+    }
 
     private static RunId FullAccessRunId() => new($"run_{new string('f', 32)}");
 

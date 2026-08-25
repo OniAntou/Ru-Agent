@@ -35,11 +35,13 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(canonicalRoot);
         ArgumentNullException.ThrowIfNull(advertisedCapabilities);
-        _canonicalRoot = Path.GetFullPath(canonicalRoot);
-        if (!Directory.Exists(_canonicalRoot))
+        var lexicalRoot = Path.GetFullPath(canonicalRoot);
+        if (!Directory.Exists(lexicalRoot))
         {
-            throw new DirectoryNotFoundException(_canonicalRoot);
+            throw new DirectoryNotFoundException(lexicalRoot);
         }
+
+        _canonicalRoot = CanonicalizeExistingDirectory(lexicalRoot);
 
         _advertisedCapabilities = advertisedCapabilities.ToHashSet(StringComparer.Ordinal);
         _presetProvider = presetProvider ?? (_ => AgentPermissionPreset.Standard);
@@ -1008,7 +1010,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
     {
         if (proposal.ToolId is "terminal.run" or "terminal.shell")
         {
-            return ComputeTerminalIntentToken(proposal.ToolId, proposal.Arguments);
+            return ComputeTerminalIntentToken(proposal.ToolId, proposal.ToolVersion, proposal.Arguments);
         }
 
         // Canonical intent token is SHA256 of canonical JSON of tool_id + version + sorted arguments.
@@ -1047,21 +1049,9 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 workingDirectory.ErrorCode);
         }
 
-        if (IsProtectedWorkingDirectory(workingDirectory.CanonicalPath))
-        {
-            return ToolProposalDecision.Deny(
-                MapTerminalAccessKind(request.OperationClass),
-                "terminal_cwd_not_allowed");
-        }
-
         var analysis = HostTerminalClassifier.Analyze(proposal.ToolId, request.Executable, request.RawArgv);
         var operationClass = analysis.OperationClass;
         var accessKind = MapTerminalAccessKind(operationClass);
-        var canonicalIntentToken = ComputeTerminalIntentToken(
-            proposal.ToolId,
-            request,
-            workingDirectory.CanonicalPath,
-            operationClass);
 
         var timeoutAsks = request.TimeoutMs > TerminalLimits.StandardApprovalThresholdMs;
         var fullAccess = _presetProvider(proposal.RunId) == AgentPermissionPreset.FullAccess;
@@ -1069,7 +1059,13 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         string? askReason;
         if (!fullAccess)
         {
-            askReason = proposal.ToolId == "terminal.shell"
+            askReason = workingDirectory.Classification == TerminalWorkingDirectoryClass.Protected
+                ? "protected_path"
+                : workingDirectory.Classification == TerminalWorkingDirectoryClass.OutsideWorkspace
+                    ? "cwd_outside_workspace"
+                    : request.NetworkIntent
+                        ? "declared_network"
+                        : proposal.ToolId == "terminal.shell"
                 ? "terminal_requires_rule"
                 : operationClass switch
                 {
@@ -1093,6 +1089,28 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             return ToolProposalDecision.Ask(accessKind, _ids.NewApprovalId());
         }
 
+        string resolvedExecutable;
+        try
+        {
+            resolvedExecutable = proposal.ToolId == "terminal.run"
+                ? ResolveExecutable(request.Executable!, workingDirectory.CanonicalPath)
+                : ResolveShellExecutable(request.ShellRuntime ?? "powershell");
+        }
+        catch (UnauthorizedAccessException error)
+        {
+            return ToolProposalDecision.Deny(accessKind, error.Message);
+        }
+
+        var canonicalIntentToken = BuildTerminalIntentToken(
+            proposal.ToolId,
+            proposal.ToolVersion,
+            resolvedExecutable,
+            request.ExecutionArgv(),
+            workingDirectory.CanonicalPath,
+            request.NetworkIntent,
+            request.TimeoutMs,
+            operationClass);
+
         return ToolProposalDecision.Allow(accessKind, canonicalIntentToken);
     }
 
@@ -1108,7 +1126,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         // Preparation-time re-resolution: the evaluated intent must still resolve to a
         // legal, existing working directory and executable on this host right now.
         var workingDirectory = ClassifyWorkingDirectory(request.WorkingDirectory);
-        if (workingDirectory.ErrorCode is not null || IsProtectedWorkingDirectory(workingDirectory.CanonicalPath))
+        if (workingDirectory.ErrorCode is not null)
         {
             throw new UnauthorizedAccessException("workspace_changed");
         }
@@ -1116,26 +1134,50 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         var resolvedExecutable = execution.Proposal.ToolId == "terminal.run"
             ? ResolveExecutable(request.Executable!, workingDirectory.CanonicalPath)
             : ResolveShellExecutable(request.ShellRuntime ?? "powershell");
+        var operationClass = HostTerminalClassifier.Analyze(
+            execution.Proposal.ToolId,
+            request.Executable,
+            request.RawArgv).OperationClass;
+        var executionArgv = request.ExecutionArgv();
+        var preparedIntentToken = BuildTerminalIntentToken(
+            execution.Proposal.ToolId,
+            execution.Proposal.ToolVersion,
+            resolvedExecutable,
+            executionArgv,
+            workingDirectory.CanonicalPath,
+            request.NetworkIntent,
+            request.TimeoutMs,
+            operationClass);
+        if (!string.Equals(preparedIntentToken, execution.CanonicalIntentToken, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("canonical_token_mismatch");
+        }
+
+        var preparationToken = $"prepared-{preparedIntentToken}";
 
         _pendingTerminalSpecs[execution.ExecutionId.Value] = new PreparedTerminalSpec(
             execution.Proposal.RunId,
             execution.Proposal.ToolId,
             resolvedExecutable,
-            request.ExecutionArgv(),
+            execution.Proposal.ToolId == "terminal.run"
+                ? request.Executable!
+                : request.ShellRuntime ?? "powershell",
+            executionArgv,
             workingDirectory.CanonicalPath,
+            workingDirectory.Classification,
             request.NetworkIntent,
             request.TimeoutMs,
-            MapTerminalAccessKind(HostTerminalClassifier.Analyze(
-                execution.Proposal.ToolId,
-                request.Executable,
-                request.RawArgv).OperationClass));
+            MapTerminalAccessKind(operationClass),
+            execution.Proposal.ToolCallId,
+            execution.Proposal.ModelOrder,
+            preparationToken);
 
         return new PreparedToolExecution(
             execution.ExecutionId,
             execution.Proposal.ToolCallId,
             execution.Proposal.ModelOrder,
             _pendingTerminalSpecs[execution.ExecutionId.Value].AccessKind,
-            $"prepared-{execution.CanonicalIntentToken}",
+            preparationToken,
             Array.Empty<PreparedPayload>());
     }
 
@@ -1150,12 +1192,20 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             return FailedReceipt(execution, "decision_stale");
         }
 
+        if (execution.ToolCallId != spec.ToolCallId
+            || execution.ModelOrder != spec.ModelOrder
+            || execution.AccessKind != spec.AccessKind
+            || !string.Equals(execution.PreparationToken, spec.PreparationToken, StringComparison.Ordinal))
+        {
+            return FailedReceipt(execution, "decision_stale");
+        }
+
         // Execution-time re-resolution: never start when the prepared identity no longer
         // matches the current filesystem reality.
         var workingDirectory = ClassifyWorkingDirectory(spec.WorkingDirectory);
         if (workingDirectory.ErrorCode is not null
             || !string.Equals(workingDirectory.CanonicalPath, spec.WorkingDirectory, StringComparison.OrdinalIgnoreCase)
-            || IsProtectedWorkingDirectory(spec.WorkingDirectory))
+            || workingDirectory.Classification != spec.WorkingDirectoryClass)
         {
             return FailedReceipt(execution, "decision_stale");
         }
@@ -1164,10 +1214,15 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         try
         {
             resolvedExecutable = spec.ToolId == "terminal.run"
-                ? ResolveExecutable(args["executable"]?.GetValue<string>() ?? string.Empty, spec.WorkingDirectory)
-                : ResolveShellExecutable("powershell");
+                ? ResolveExecutable(spec.ResolutionInput, spec.WorkingDirectory)
+                : ResolveShellExecutable(spec.ResolutionInput);
         }
         catch (UnauthorizedAccessException)
+        {
+            return FailedReceipt(execution, "decision_stale");
+        }
+
+        if (!string.Equals(resolvedExecutable, spec.ResolvedExecutable, StringComparison.OrdinalIgnoreCase))
         {
             return FailedReceipt(execution, "decision_stale");
         }
@@ -1209,7 +1264,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             ToolExecutionOutcome outcome;
             string code;
             var timedOut = false;
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, active.Token);
             timeoutCts.CancelAfter(TimeSpan.FromMilliseconds(Math.Clamp(spec.TimeoutMs, 1, TerminalLimits.HardMaxTimeoutMs)));
             try
             {
@@ -1461,7 +1516,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 throw new UnauthorizedAccessException("executable_not_found");
             }
 
-            return Path.GetFullPath(executable);
+            return CanonicalizeExistingPath(executable);
         }
 
         if (executable.Contains('/') || executable.Contains('\\'))
@@ -1472,7 +1527,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 throw new UnauthorizedAccessException("executable_not_found");
             }
 
-            return combined;
+            return CanonicalizeExistingPath(combined);
         }
 
         foreach (var directory in _sanitizedSearchDirectories)
@@ -1482,7 +1537,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 var candidate = Path.Combine(directory, executable + extension);
                 if (File.Exists(candidate))
                 {
-                    return Path.GetFullPath(candidate);
+                    return CanonicalizeExistingPath(candidate);
                 }
             }
         }
@@ -1500,7 +1555,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             var candidate = Path.Combine(directory, executableName);
             if (File.Exists(candidate))
             {
-                return Path.GetFullPath(candidate);
+                return CanonicalizeExistingPath(candidate);
             }
         }
 
@@ -1514,18 +1569,18 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 : Path.Combine(fallback, "WindowsPowerShell", "v1.0", executableName);
             if (File.Exists(knownPath))
             {
-                return Path.GetFullPath(knownPath);
+                return CanonicalizeExistingPath(knownPath);
             }
         }
 
         throw new UnauthorizedAccessException("executable_not_found");
     }
 
-    private (string CanonicalPath, string? ErrorCode) ClassifyWorkingDirectory(string requested)
+    private TerminalWorkingDirectory ClassifyWorkingDirectory(string requested)
     {
         if (requested.Contains('\0') || requested.Length > TerminalLimits.MaxWorkingDirectoryChars)
         {
-            return (string.Empty, "cwd_invalid");
+            return TerminalWorkingDirectory.Invalid("cwd_invalid");
         }
 
         string candidate;
@@ -1538,20 +1593,74 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         catch (Exception error) when (
             error is ArgumentException or IOException or System.Security.SecurityException)
         {
-            return (string.Empty, "cwd_invalid");
+            return TerminalWorkingDirectory.Invalid("cwd_invalid");
         }
 
         if (!Directory.Exists(candidate))
         {
-            return (candidate, "working_directory_invalid");
+            return TerminalWorkingDirectory.Invalid("working_directory_invalid", candidate);
         }
 
+        string finalPath;
+        try
+        {
+            finalPath = CanonicalizeExistingDirectory(candidate);
+        }
+        catch (Exception error) when (
+            error is UnauthorizedAccessException or IOException or ArgumentException)
+        {
+            return TerminalWorkingDirectory.Invalid("working_directory_invalid", candidate);
+        }
+
+        var classification = IsProtectedWorkingDirectory(finalPath) || IsProtectedWorkspaceDirectory(finalPath)
+            ? TerminalWorkingDirectoryClass.Protected
+            : IsInsideWorkspace(finalPath)
+                ? TerminalWorkingDirectoryClass.InsideWorkspace
+                : TerminalWorkingDirectoryClass.OutsideWorkspace;
+        return new TerminalWorkingDirectory(finalPath, classification, null);
+    }
+
+    private bool IsInsideWorkspace(string canonicalPath)
+    {
         var rootWithSeparator = _canonicalRoot.EndsWith(Path.DirectorySeparatorChar)
             ? _canonicalRoot
             : _canonicalRoot + Path.DirectorySeparatorChar;
-        var inside = candidate.Equals(_canonicalRoot, StringComparison.OrdinalIgnoreCase)
-            || candidate.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
-        return inside ? (candidate, null) : (candidate, "cwd_outside_workspace");
+        return canonicalPath.Equals(_canonicalRoot, StringComparison.OrdinalIgnoreCase)
+            || canonicalPath.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsProtectedWorkspaceDirectory(string canonicalPath)
+    {
+        if (!IsInsideWorkspace(canonicalPath))
+        {
+            return false;
+        }
+
+        var relative = Path.GetRelativePath(_canonicalRoot, canonicalPath);
+        if (relative.Equals(".git", StringComparison.OrdinalIgnoreCase)
+            || relative.StartsWith($".git{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return Path.GetFileName(canonicalPath).StartsWith(".env", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string CanonicalizeExistingDirectory(string path) =>
+        OperatingSystem.IsWindows() ? ResolveFinalPath(path) : Path.GetFullPath(path);
+
+    private static string CanonicalizeExistingPath(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        if (OperatingSystem.IsWindows())
+        {
+            return ResolveFinalPath(fullPath);
+        }
+
+        FileSystemInfo info = Directory.Exists(fullPath)
+            ? new DirectoryInfo(fullPath)
+            : new FileInfo(fullPath);
+        return info.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? fullPath;
     }
 
     private static bool IsProtectedWorkingDirectory(string canonicalPath)
@@ -1683,80 +1792,73 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             ? ToolAccessKind.ReadOnly
             : ToolAccessKind.Mutation;
 
-    private string ComputeTerminalIntentToken(string toolId, JsonElement arguments)
+    private string ComputeTerminalIntentToken(string toolId, string toolVersion, JsonElement arguments)
     {
         var parsed = ParseTerminalArguments(toolId, arguments);
         if (parsed.Request is null)
         {
-            var invalidHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-                Encoding.UTF8.GetBytes($"invalid|{toolId}|{parsed.ErrorCode}"))).ToLowerInvariant();
-            return $"canonical-terminal-{invalidHash}";
+            return ComputeInvalidTerminalIntentToken(toolId, toolVersion, parsed.ErrorCode);
         }
 
         var request = parsed.Request;
-        var workingDirectory = ResolveTokenWorkingDirectory(request.WorkingDirectory);
-        var analysis = HostTerminalClassifier.Analyze(toolId, request.Executable, request.RawArgv);
-        return BuildTerminalIntentToken(
-            toolId,
-            request.Executable ?? string.Empty,
-            request.RawArgv,
-            workingDirectory,
-            request.NetworkIntent,
-            request.TimeoutMs,
-            analysis.OperationClass);
-    }
+        var workingDirectory = ClassifyWorkingDirectory(request.WorkingDirectory);
+        if (workingDirectory.ErrorCode is not null)
+        {
+            return ComputeInvalidTerminalIntentToken(toolId, toolVersion, workingDirectory.ErrorCode);
+        }
 
-    private string ComputeTerminalIntentToken(
-        string toolId,
-        TerminalRequestShape request,
-        string canonicalWorkingDirectory,
-        TerminalOperationClass operationClass) =>
-        BuildTerminalIntentToken(
-            toolId,
-            request.Executable ?? string.Empty,
-            request.RawArgv,
-            canonicalWorkingDirectory,
-            request.NetworkIntent,
-            request.TimeoutMs,
-            operationClass);
+        try
+        {
+            var resolvedExecutable = toolId == "terminal.run"
+                ? ResolveExecutable(request.Executable!, workingDirectory.CanonicalPath)
+                : ResolveShellExecutable(request.ShellRuntime ?? "powershell");
+            var analysis = HostTerminalClassifier.Analyze(toolId, request.Executable, request.RawArgv);
+            return BuildTerminalIntentToken(
+                toolId,
+                toolVersion,
+                resolvedExecutable,
+                request.ExecutionArgv(),
+                workingDirectory.CanonicalPath,
+                request.NetworkIntent,
+                request.TimeoutMs,
+                analysis.OperationClass);
+        }
+        catch (UnauthorizedAccessException error)
+        {
+            return ComputeInvalidTerminalIntentToken(toolId, toolVersion, error.Message);
+        }
+    }
 
     private string BuildTerminalIntentToken(
         string toolId,
-        string executable,
+        string toolVersion,
+        string resolvedExecutable,
         IReadOnlyList<string> argv,
         string canonicalWorkingDirectory,
         bool networkIntent,
         int timeoutMs,
         TerminalOperationClass operationClass)
     {
-        var fields = new[]
-        {
-            "v1",
+        var hash = TerminalIntentFingerprint.ComputeForCapability(
             toolId,
-            JsonSerializer.Serialize(executable),
-            JsonSerializer.Serialize(string.Join('\u001f', argv)),
-            JsonSerializer.Serialize(canonicalWorkingDirectory),
-            networkIntent ? "true" : "false",
-            timeoutMs.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            operationClass.ToString(),
-        };
-        var payload = string.Join('\u001e', fields);
-        var hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(payload));
-        return $"canonical-terminal-{Convert.ToHexString(hash).ToLowerInvariant()}";
+            toolVersion,
+            resolvedExecutable,
+            argv,
+            canonicalWorkingDirectory,
+            networkIntent,
+            timeoutMs,
+            operationClass);
+        return $"canonical-terminal-{hash}";
     }
 
-    private string ResolveTokenWorkingDirectory(string requested)
+    private static string ComputeInvalidTerminalIntentToken(
+        string toolId,
+        string toolVersion,
+        string? errorCode)
     {
-        try
-        {
-            return Path.IsPathRooted(requested)
-                ? Path.GetFullPath(requested)
-                : Path.GetFullPath(Path.Combine(_canonicalRoot, requested));
-        }
-        catch (Exception error) when (error is ArgumentException or IOException)
-        {
-            return requested;
-        }
+        var invalidHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            Encoding.UTF8.GetBytes($"invalid-v2|{toolId}|{toolVersion}|{errorCode}"))).ToLowerInvariant();
+        return $"canonical-terminal-{invalidHash}";
     }
 
     private static TerminalArgumentParseResult ParseTerminalArguments(string toolId, JsonElement arguments)
@@ -2230,11 +2332,32 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         RunId RunId,
         string ToolId,
         string ResolvedExecutable,
+        string ResolutionInput,
         IReadOnlyList<string> Argv,
         string WorkingDirectory,
+        TerminalWorkingDirectoryClass WorkingDirectoryClass,
         bool NetworkIntent,
         int TimeoutMs,
-        ToolAccessKind AccessKind);
+        ToolAccessKind AccessKind,
+        ToolCallId ToolCallId,
+        int ModelOrder,
+        string PreparationToken);
+
+    private enum TerminalWorkingDirectoryClass
+    {
+        InsideWorkspace,
+        OutsideWorkspace,
+        Protected,
+    }
+
+    private sealed record TerminalWorkingDirectory(
+        string CanonicalPath,
+        TerminalWorkingDirectoryClass Classification,
+        string? ErrorCode)
+    {
+        public static TerminalWorkingDirectory Invalid(string errorCode, string canonicalPath = "") =>
+            new(canonicalPath, TerminalWorkingDirectoryClass.InsideWorkspace, errorCode);
+    }
 
     private sealed class ActiveTerminalExecution
     {
@@ -2253,6 +2376,8 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         public System.Diagnostics.Process? Process { get; set; }
 
         public bool CancellationRequested => _cancellation.IsCancellationRequested;
+
+        public CancellationToken Token => _cancellation.Token;
 
         public void Cancel()
         {

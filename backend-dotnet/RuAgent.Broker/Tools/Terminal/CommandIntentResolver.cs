@@ -219,7 +219,7 @@ public sealed class CommandIntentResolver
                 throw new CommandIntentException("executable_not_found");
             }
 
-            return Path.GetFullPath(executable);
+            return CanonicalizeExistingFile(executable);
         }
 
         if (executable.Contains('/') || executable.Contains('\\'))
@@ -230,7 +230,7 @@ public sealed class CommandIntentResolver
                 throw new CommandIntentException("executable_not_found");
             }
 
-            return combined;
+            return CanonicalizeExistingFile(combined);
         }
 
         var hasWindowsExtension = WindowsExecutableExtensions.Contains(
@@ -242,7 +242,7 @@ public sealed class CommandIntentResolver
                 var directCandidate = Path.Combine(directory, executable);
                 if (File.Exists(directCandidate))
                 {
-                    return Path.GetFullPath(directCandidate);
+                    return CanonicalizeExistingFile(directCandidate);
                 }
 
                 continue;
@@ -253,13 +253,19 @@ public sealed class CommandIntentResolver
                 var candidate = Path.Combine(directory, executable + extension);
                 if (File.Exists(candidate))
                 {
-                    return Path.GetFullPath(candidate);
+                    return CanonicalizeExistingFile(candidate);
                 }
             }
         }
 
         throw new CommandIntentException("executable_not_found");
     }
+
+    /// <summary>
+    /// The resolved identity is the final file target: an executable reached through a
+    /// junction or symlink binds to the real file it runs, never to the link path.
+    /// </summary>
+    private static string CanonicalizeExistingFile(string candidate) => FinalPathResolver.Resolve(candidate);
 
     private string ResolvePowerShellExecutable(string runtime)
     {

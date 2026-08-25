@@ -272,7 +272,6 @@ def test_current_docs_describe_deterministic_volume_recovery_truthfully() -> Non
 
 def test_phase2_policy_and_file_tools_are_documented() -> None:
     readme = _text("README.md")
-    backend_readme = _text("backend-dotnet/README.md")
     architecture = _text("docs/architecture.md")
     agent_tools = _text("docs/operations/agent-tools.md")
     docs_index = _text("docs/README.md")

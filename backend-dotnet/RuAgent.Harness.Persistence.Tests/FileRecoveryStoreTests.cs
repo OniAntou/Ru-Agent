@@ -51,7 +51,9 @@ public sealed class FileRecoveryStoreTests
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT protected_content FROM agent_payloads WHERE payload_id = $id";
         cmd.Parameters.AddWithValue("$id", reference.RecoveryId.Value);
-        var ciphertext = (byte[])await cmd.ExecuteScalarAsync()!;
+        var rawCiphertext = await cmd.ExecuteScalarAsync(CancellationToken.None);
+        Assert.NotNull(rawCiphertext);
+        var ciphertext = (byte[])rawCiphertext;
         Assert.NotEqual(content, ciphertext);
         Assert.DoesNotContain(secret, Encoding.UTF8.GetString(ciphertext));
 

@@ -230,7 +230,6 @@ public sealed class FileWriteAdapter
 
         var oldLines = oldContent.Split('\n');
         var newLines = newContent.Split('\n');
-        int maxLines = 20;
         int oldCount = oldLines.Length;
         int newCount = newLines.Length;
         sb.Append($"lines {oldCount}->{newCount} ");

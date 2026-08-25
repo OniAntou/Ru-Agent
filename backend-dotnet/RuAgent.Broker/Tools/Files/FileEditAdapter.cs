@@ -78,8 +78,6 @@ public sealed class FileEditAdapter
             throw new UnauthorizedAccessException("workspace_changed", ex);
         }
 
-        var ctx = (resolved, expected, oldString, newString, expectedOccurrences);
-
         ResolvedPath reResolved;
         try
         {

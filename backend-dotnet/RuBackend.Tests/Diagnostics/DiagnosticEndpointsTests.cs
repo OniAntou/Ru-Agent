@@ -73,7 +73,7 @@ public sealed class DiagnosticEndpointsTests
         {
             """{"event_id":"evt_1","ts":1000.0,"iso":"2026-08-20T00:00:00.000Z","level":"info","component":"host","event_code":"app.start"}""",
         };
-        await File.WriteAllLinesAsync(logFile, lines);
+        await File.AppendAllLinesAsync(logFile, lines);
 
         using var client = factory.CreateAuthenticatedClient();
         var response = await client.GetAsync("/diagnostics/export");

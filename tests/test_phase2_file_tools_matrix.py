@@ -13,12 +13,8 @@ from __future__ import annotations
 
 import hashlib
 import os
-import re
-import shutil
 import tempfile
 from pathlib import Path
-
-import pytest
 
 
 def _sha256_text(text: str) -> str:
@@ -42,12 +38,9 @@ def _is_protected(relative: str) -> bool:
     # mimic ProtectedPathCatalog v1: .git/** and .env*
     if low == ".git" or low.startswith(".git/") or low.startswith(".git\\"):
         return True
-    basename = os.path.basename(low)
-    if basename.startswith(".env"):
-        return True
     # also db/key/descriptor locations are protected but in this matrix we test
     # via .git/.env as representative
-    return False
+    return os.path.basename(low).startswith(".env")
 
 
 def _is_outside(workspace: Path, target: str) -> bool:
@@ -184,7 +177,7 @@ def test_create_write_edit_multi_patch_with_preimage():
             if current_hash != wrong_hash:
                 raise PermissionError("workspace_changed")
             target2.write_text("new", encoding="utf-8")
-            assert False, "should have raised workspace_changed"
+            raise AssertionError("should have raised workspace_changed")
         except PermissionError as e:
             assert str(e) == "workspace_changed"
         assert target2.read_text(encoding="utf-8") == "original"
@@ -199,7 +192,6 @@ def test_create_write_edit_multi_patch_with_preimage():
         # edit exact occurrence
         target3 = ws / "edit.txt"
         target3.write_text("foo foo foo", encoding="utf-8")
-        edit_hash = _sha256_text("foo foo foo")
         old, new = "foo", "bar"
         expected_occ = 3
         text = target3.read_text(encoding="utf-8")
@@ -228,7 +220,6 @@ def test_create_write_edit_multi_patch_with_preimage():
         # create third file and simulate failure on second target
         f3 = ws / "p3.txt"
         f3.write_text("orig", encoding="utf-8")
-        h3 = _sha256_text("orig")
         # if second file hash mismatch, no file should be changed
         expected_map_fail = {"p1.txt": _sha256_text(f1.read_text(encoding="utf-8")), "p3.txt": "badhash"}
         failed = False
@@ -348,7 +339,7 @@ def test_delete_restore_once_and_replay():
                 if consumed2:
                     raise RuntimeError("recovery_consumed")
                 Path(canonical).write_bytes(content)
-                assert False
+                raise AssertionError("consumed recovery must not restore again")
             except RuntimeError as e:
                 assert str(e) == "recovery_consumed"
             # recreated target rejects restore (recovery_target_exists)
@@ -364,7 +355,7 @@ def test_delete_restore_once_and_replay():
             try:
                 if Path(store2[rec2_id][0]).exists():
                     raise RuntimeError("recovery_target_exists")
-                assert False
+                raise AssertionError("recreated target must reject restore")
             except RuntimeError as e:
                 assert str(e) == "recovery_target_exists"
         # ensure recovery bytes never appear in simulated diagnostic log (safe fields only)
@@ -408,7 +399,7 @@ def test_reconnect_and_history_dedupe():
         assert code2 == 200
         try:
             create_run(k, "different prompt")
-            assert False
+            raise AssertionError("idempotency_conflict expected")
         except ValueError as e:
             assert str(e) == "idempotency_conflict"
         # ensure bounded output: events not unbounded

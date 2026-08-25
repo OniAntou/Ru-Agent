@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using RuAgent.Harness.Core;
@@ -185,7 +186,7 @@ public sealed class HarnessReadOnlyTracerTests
     }
 
     [Fact]
-    public void Capability_boundary_excludes_user_control_apis()
+    public async Task Capability_boundary_excludes_user_control_apis()
     {
         var allowed = new[] { "files.list", "files.read" };
         var forbidden = new[] { "trust", "approval", "policy", "session-preset", "cancel", "continue", "payload_fetch", "reconcile" };
@@ -207,7 +208,7 @@ public sealed class HarnessReadOnlyTracerTests
                 "trust",
                 "1.0.0",
                 JsonDocument.Parse("{}").RootElement);
-            var decision = gateway.EvaluateAsync(proposal, CancellationToken.None).Result;
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
             Assert.Equal("phase_not_available", decision.SafeCode);
         }
         finally
@@ -327,7 +328,7 @@ public sealed class HarnessReadOnlyTracerTests
             return Task.FromResult(HarnessCommitResult.Committed(commit.NextRun));
         }
 
-        public async IAsyncEnumerable<HarnessEventEnvelope> ReadEventsAsync(RunId runId, long afterSequence, CancellationToken cancellationToken)
+        public async IAsyncEnumerable<HarnessEventEnvelope> ReadEventsAsync(RunId runId, long afterSequence, [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             if (_events.TryGetValue(runId.Value, out var list))
             {

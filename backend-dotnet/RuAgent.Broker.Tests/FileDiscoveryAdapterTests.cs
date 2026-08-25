@@ -327,7 +327,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         Assert.True(list["count"]!.GetValue<int>() <= 1);
         // Safe fields must not contain file content: check that list output does not contain file content in safe summary? Our adapter's safe fields are count/truncated, entries contain paths only, not content
         var entries = list["entries"]!.AsArray();
-        foreach (var e in entries) Assert.False(e!["path"]!.GetValue<string>().Contains("hello"));
+        foreach (var e in entries) Assert.DoesNotContain("hello", e!["path"]!.GetValue<string>());
 
         var search = _search.Execute(new JsonObject { ["path"] = ".", ["query"] = "hello", ["max_results"] = 1 });
         // search results contain preview which is file content but it's private payload; safe fields count/truncated are separate

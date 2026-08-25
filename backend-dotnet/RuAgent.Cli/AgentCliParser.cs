@@ -281,7 +281,6 @@ public static class AgentCliParser
     {
         bool approveSeen = false;
         bool denySeen = false;
-        bool jsonSeen = false;
         string? runId = null;
 
         for (int i = 2; i < args.Length; i++)

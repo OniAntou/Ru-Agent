@@ -95,35 +95,138 @@ public sealed class ToolCatalogTests
     }
 
     [Fact]
-    public void Terminal_run_schema_requires_the_executor_contract_fields()
+    public void Terminal_run_schema_requires_the_canonical_intent_contract_fields()
     {
         var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
-        var schema = catalog.Registry.Get("terminal.run", "1.0.0").Manifest.InputSchema;
+        var runSchema = catalog.Registry.Get("terminal.run", "1.0.0").Manifest.InputSchema;
+        var runProperties = runSchema["properties"]!.AsObject();
+
+        Assert.True(runProperties.ContainsKey("executable"));
+        Assert.True(runProperties.ContainsKey("arguments"));
+        Assert.True(runProperties.ContainsKey("working_directory"));
+        Assert.True(runProperties.ContainsKey("timeout_ms"));
+        Assert.True(runProperties.ContainsKey("network_intent"));
+        Assert.False(runProperties.ContainsKey("shell"));
+        Assert.False(runProperties.ContainsKey("network"));
+
+        var timeoutSchema = runProperties["timeout_ms"]!.AsObject();
+        Assert.Equal(1, timeoutSchema["minimum"]!.GetValue<int>());
+        Assert.Equal(TerminalLimits.HardMaxTimeoutMs, timeoutSchema["maximum"]!.GetValue<int>());
+        var argumentsSchema = runProperties["arguments"]!.AsObject();
+        Assert.Equal(TerminalLimits.MaxArguments, argumentsSchema["maxItems"]!.GetValue<int>());
+
         var valid = new JsonObject
         {
             ["executable"] = "git",
             ["arguments"] = new JsonArray("status"),
             ["working_directory"] = ".",
-            ["network"] = false,
+            ["timeout_ms"] = TerminalLimits.DefaultTimeoutMs,
+            ["network_intent"] = false,
         };
+        ToolSchemaValidator.Validate(runSchema, valid);
 
-        ToolSchemaValidator.Validate(schema, valid);
         Assert.Equal(
             "invalid_arguments",
             Assert.Throws<ToolSchemaException>(() =>
-                ToolSchemaValidator.Validate(schema, new JsonObject())).Code);
+                ToolSchemaValidator.Validate(runSchema, new JsonObject())).Code);
         Assert.Equal(
             "invalid_arguments",
             Assert.Throws<ToolSchemaException>(() =>
                 ToolSchemaValidator.Validate(
-                    schema,
+                    runSchema,
                     new JsonObject
                     {
                         ["executable"] = "git",
                         ["arguments"] = "status",
-                        ["working_directory"] = ".",
-                        ["network"] = false,
                     })).Code);
+        // The legacy declarative network field no longer exists.
+        Assert.Equal(
+            "invalid_arguments",
+            Assert.Throws<ToolSchemaException>(() =>
+                ToolSchemaValidator.Validate(
+                    runSchema,
+                    new JsonObject
+                    {
+                        ["executable"] = "git",
+                        ["arguments"] = new JsonArray("status"),
+                        ["network"] = true,
+                    })).Code);
+        Assert.Equal(
+            "invalid_arguments",
+            Assert.Throws<ToolSchemaException>(() =>
+                ToolSchemaValidator.Validate(
+                    runSchema,
+                    new JsonObject
+                    {
+                        ["executable"] = "git",
+                        ["timeout_ms"] = TerminalLimits.HardMaxTimeoutMs + 1,
+                    })).Code);
+        Assert.Equal(
+            "invalid_arguments",
+            Assert.Throws<ToolSchemaException>(() =>
+                ToolSchemaValidator.Validate(
+                    runSchema,
+                    new JsonObject
+                    {
+                        ["executable"] = "git",
+                        ["arguments"] = new JsonArray(
+                            Enumerable.Range(0, TerminalLimits.MaxArguments + 1)
+                                .Select(i => (JsonNode?)$"a{i}")
+                                .ToArray()),
+                    })).Code);
+        Assert.Equal(
+            "invalid_arguments",
+            Assert.Throws<ToolSchemaException>(() =>
+                ToolSchemaValidator.Validate(
+                    runSchema,
+                    new JsonObject
+                    {
+                        ["executable"] = "git",
+                        ["arguments"] = new JsonArray(42),
+                    })).Code);
+    }
+
+    [Fact]
+    public void Terminal_shell_schema_is_bounded_powershell_text_without_shell_switching()
+    {
+        var catalog = new ToolCatalog(ToolBindingRegistryTests.ExecutableStubs());
+        var shellSchema = catalog.Registry.Get("terminal.shell", "1.0.0").Manifest.InputSchema;
+        var properties = shellSchema["properties"]!.AsObject();
+
+        Assert.True(properties.ContainsKey("script"));
+        Assert.True(properties.ContainsKey("working_directory"));
+        Assert.True(properties.ContainsKey("timeout_ms"));
+        Assert.True(properties.ContainsKey("network_intent"));
+        Assert.False(properties.ContainsKey("shell"));
+        Assert.Contains("script", shellSchema["required"]!.AsArray().Select(node => node!.GetValue<string>()));
+
+        var scriptSchema = properties["script"]!.AsObject();
+        Assert.Equal(TerminalLimits.MaxScriptChars, scriptSchema["maxLength"]!.GetValue<int>());
+
+        var valid = new JsonObject { ["script"] = "Get-Date" };
+        ToolSchemaValidator.Validate(shellSchema, valid);
+
+        Assert.Equal(
+            "invalid_arguments",
+            Assert.Throws<ToolSchemaException>(() =>
+                ToolSchemaValidator.Validate(
+                    shellSchema,
+                    new JsonObject { ["script"] = new string('x', TerminalLimits.MaxScriptChars + 1) })).Code);
+        Assert.Equal(
+            "invalid_arguments",
+            Assert.Throws<ToolSchemaException>(() =>
+                ToolSchemaValidator.Validate(
+                    shellSchema,
+                    new JsonObject
+                    {
+                        ["script"] = "dir",
+                        ["shell_runtime"] = "cmd",
+                    })).Code);
+
+        var contract = AgentModelToolContractCatalog.Get("terminal.run", "1.0.0");
+        ToolSchemaValidator.Validate(contract.InputSchema, contract.ExampleArguments ?? new JsonObject());
+        var shellContract = AgentModelToolContractCatalog.Get("terminal.shell", "1.0.0");
+        ToolSchemaValidator.Validate(shellContract.InputSchema, shellContract.ExampleArguments ?? new JsonObject());
     }
 
     [Fact]

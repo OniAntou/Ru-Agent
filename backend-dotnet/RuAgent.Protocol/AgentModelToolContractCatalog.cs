@@ -67,13 +67,13 @@ public static class AgentModelToolContractCatalog
             ["executable"] = "git",
             ["arguments"] = new JsonArray("status"),
             ["working_directory"] = ".",
-            ["network"] = false,
+            ["network_intent"] = false,
         }),
         new("terminal.shell", TerminalShellSchema, () => new JsonObject
         {
-            ["script"] = "lenh-shell",
+            ["script"] = "Get-Date",
             ["working_directory"] = ".",
-            ["network"] = false,
+            ["network_intent"] = false,
         }),
         new("notes.create", NotesCreateSchema, () => new JsonObject
         {
@@ -168,21 +168,21 @@ public static class AgentModelToolContractCatalog
         required: ["executable"],
         properties:
         [
-            ("shell", StringSchema()),
-            ("executable", StringSchema()),
-            ("arguments", new JsonObject { ["type"] = "array" }),
-            ("working_directory", StringSchema()),
-            ("network", BooleanSchema()),
+            ("executable", StringSchema(maxLength: TerminalLimits.MaxExecutableChars)),
+            ("arguments", ArraySchema(maxItems: TerminalLimits.MaxArguments, itemMaxLength: TerminalLimits.MaxArgumentChars)),
+            ("working_directory", StringSchema(maxLength: TerminalLimits.MaxWorkingDirectoryChars)),
+            ("timeout_ms", IntegerSchema(minimum: 1, maximum: TerminalLimits.HardMaxTimeoutMs)),
+            ("network_intent", BooleanSchema()),
         ]);
 
     private static JsonObject TerminalShellSchema() => ObjectSchema(
         required: ["script"],
         properties:
         [
-            ("shell", StringSchema()),
-            ("script", StringSchema()),
-            ("working_directory", StringSchema()),
-            ("network", BooleanSchema()),
+            ("script", StringSchema(maxLength: TerminalLimits.MaxScriptChars)),
+            ("working_directory", StringSchema(maxLength: TerminalLimits.MaxWorkingDirectoryChars)),
+            ("timeout_ms", IntegerSchema(minimum: 1, maximum: TerminalLimits.HardMaxTimeoutMs)),
+            ("network_intent", BooleanSchema()),
         ]);
 
     private static JsonObject NotesCreateSchema() => ObjectSchema(
@@ -228,7 +228,31 @@ public static class AgentModelToolContractCatalog
         return schema;
     }
 
-    private static JsonObject StringSchema() => new() { ["type"] = "string" };
+    private static JsonObject StringSchema(int? maxLength = null)
+    {
+        var schema = new JsonObject { ["type"] = "string" };
+        if (maxLength is not null)
+        {
+            schema["maxLength"] = maxLength.Value;
+        }
+
+        return schema;
+    }
+
+    private static JsonObject ArraySchema(int? maxItems = null, int? itemMaxLength = null)
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "array",
+            ["items"] = StringSchema(maxLength: itemMaxLength),
+        };
+        if (maxItems is not null)
+        {
+            schema["maxItems"] = maxItems.Value;
+        }
+
+        return schema;
+    }
 
     private static JsonObject BooleanSchema() => new() { ["type"] = "boolean" };
 

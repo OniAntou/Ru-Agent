@@ -598,7 +598,6 @@ public sealed class BrokerHostTests
                     ["tool_version"] = "1.0.0",
                     ["arguments"] = new System.Text.Json.Nodes.JsonObject
                     {
-                        ["shell"] = "powershell",
                         ["working_directory"] = ".",
                         ["script"] = "Get-Date",
                     },

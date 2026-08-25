@@ -12,8 +12,11 @@ public sealed class ToolSchemaException : Exception
 public static class ToolSchemaValidator
 {
     private static readonly IReadOnlySet<string> SupportedKeywords = new HashSet<string>(
-        ["required", "additionalProperties", "properties", "type", "enum", "const", "minimum", "maximum"],
-        StringComparer.Ordinal);
+    [
+        "required", "additionalProperties", "properties", "type", "enum", "const", "minimum", "maximum",
+        "items", "maxItems", "minItems", "maxLength", "minLength",
+    ],
+    StringComparer.Ordinal);
 
     public static void Validate(JsonObject schema, JsonNode? value, string invalidCode = "invalid_arguments")
     {
@@ -60,6 +63,8 @@ public static class ToolSchemaValidator
         }
 
         ValidateNumericBounds(schema, value, invalidCode);
+        ValidateStringBounds(schema, value, invalidCode);
+        ValidateItemBounds(schema, value, invalidCode);
 
         if (value is not JsonObject objectValue)
         {
@@ -120,6 +125,74 @@ public static class ToolSchemaValidator
             if (objectValue.TryGetPropertyValue(property.Key, out var propertyValue))
             {
                 ValidateSchema(propertySchema, propertyValue, invalidCode);
+            }
+        }
+    }
+
+    private static void ValidateStringBounds(JsonObject schema, JsonNode? value, string invalidCode)
+    {
+        var hasMaxLength = schema.TryGetPropertyValue("maxLength", out var maxLengthNode);
+        var hasMinLength = schema.TryGetPropertyValue("minLength", out var minLengthNode);
+        if (!hasMaxLength && !hasMinLength)
+        {
+            return;
+        }
+
+        if (value is not JsonValue stringValue || !stringValue.TryGetValue<string>(out var text))
+        {
+            throw new ToolSchemaException(invalidCode);
+        }
+
+        if (hasMaxLength
+            && (!TryNumber(maxLengthNode, out var maxLength) || text.Length > maxLength))
+        {
+            throw new ToolSchemaException(invalidCode);
+        }
+
+        if (hasMinLength
+            && (!TryNumber(minLengthNode, out var minLength) || text.Length < minLength))
+        {
+            throw new ToolSchemaException(invalidCode);
+        }
+    }
+
+    private static void ValidateItemBounds(JsonObject schema, JsonNode? value, string invalidCode)
+    {
+        var hasMaxItems = schema.TryGetPropertyValue("maxItems", out var maxItemsNode);
+        var hasMinItems = schema.TryGetPropertyValue("minItems", out var minItemsNode);
+        var hasItemsSchema = schema.TryGetPropertyValue("items", out var itemsNode);
+        if (!hasMaxItems && !hasMinItems && !hasItemsSchema)
+        {
+            return;
+        }
+
+        if (value is not JsonArray arrayValue)
+        {
+            throw new ToolSchemaException(invalidCode);
+        }
+
+        if (hasMaxItems
+            && (!TryNumber(maxItemsNode, out var maxItems) || arrayValue.Count > maxItems))
+        {
+            throw new ToolSchemaException(invalidCode);
+        }
+
+        if (hasMinItems
+            && (!TryNumber(minItemsNode, out var minItems) || arrayValue.Count < minItems))
+        {
+            throw new ToolSchemaException(invalidCode);
+        }
+
+        if (hasItemsSchema)
+        {
+            if (itemsNode is not JsonObject itemSchema)
+            {
+                throw new ToolSchemaException("unsupported_tool_schema");
+            }
+
+            foreach (var item in arrayValue)
+            {
+                ValidateSchema(itemSchema, item, invalidCode);
             }
         }
     }

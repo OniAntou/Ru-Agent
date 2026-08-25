@@ -78,7 +78,7 @@ public sealed class ToolExecutionServiceTests
                         ["executable"] = "python",
                         ["arguments"] = new JsonArray("-c", "print(1)"),
                         ["working_directory"] = outsideDirectory,
-                        ["network"] = true,
+                        ["network_intent"] = true,
                     },
                 });
 
@@ -158,7 +158,6 @@ public sealed class ToolExecutionServiceTests
                     ["capability_class"] = "internal",
                     ["arguments"] = new JsonObject
                     {
-                        ["shell"] = "powershell",
                         ["script"] = "Get-Date",
                         ["working_directory"] = outsideDirectory,
                     },
@@ -218,7 +217,6 @@ public sealed class ToolExecutionServiceTests
                     ["capability_class"] = "internal",
                     ["arguments"] = new JsonObject
                     {
-                        ["shell"] = "powershell",
                         ["script"] = "Get-Date",
                         ["working_directory"] = ".",
                     },

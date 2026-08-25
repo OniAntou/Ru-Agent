@@ -98,7 +98,7 @@ public sealed class AgentModeProfileTests
         var terminal = tools.Single(
             item => item!["tool_id"]!.GetValue<string>() == "terminal.run")!;
         Assert.Equal(
-            """{"executable":"git","arguments":["status"],"working_directory":".","network":false}""",
+            """{"executable":"git","arguments":["status"],"working_directory":".","network_intent":false}""",
             terminal["hint"]!.GetValue<string>());
 
         await CloseAsync(socket);

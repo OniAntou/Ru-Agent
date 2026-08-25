@@ -9,7 +9,10 @@ public sealed record TerminalRunRequest(
     string Executable,
     IReadOnlyList<string> Arguments,
     int TimeoutMs = 30_000,
-    bool Network = false);
+    bool Network = false,
+    string ApprovalToken = "",
+    string RequestId = "",
+    string SessionId = "");
 
 public sealed record TerminalShellRequest(
     string Shell,

@@ -19,7 +19,7 @@ public sealed class TerminalAdapterTests
             {
                 _ = adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
-                    new TerminalRunRequest("powershell", ".", "format.exe", [], 1_000),
+                    new TerminalRunRequest("powershell", ".", "notepad.exe", [], 1_000),
                     confineWorkspace: true,
                     CancellationToken.None);
             });
@@ -32,8 +32,8 @@ public sealed class TerminalAdapterTests
                     new TerminalRunRequest(
                         "powershell",
                         ".",
-                        "python",
-                        ["-c", "print(1)"],
+                        "git",
+                        ["status"],
                         1_000,
                         Network: true),
                     confineWorkspace: true,
@@ -48,6 +48,197 @@ public sealed class TerminalAdapterTests
     }
 
     [Fact]
+    public async Task Recognized_read_only_commands_execute_without_an_approval_token()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-recognized-");
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "seen.txt"), "content");
+            var adapter = CreateAdapter(root);
+            var result = await adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                Request("rg", ["--files"]),
+                confineWorkspace: true,
+                CancellationToken.None);
+            Assert.Equal("succeeded", result.Status);
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("seen.txt", result.StdoutHead);
+            Assert.True(result.StdoutBytes > 0);
+            Assert.Equal(Path.GetFullPath(root), result.WorkingDirectory);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Unrecognized_commands_require_an_intent_bound_one_time_token()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-token-");
+        try
+        {
+            var approvals = new ApprovalTokenService();
+            var adapter = new TerminalAdapter(
+                new WorkspacePathGuard(root),
+                new ShellRuntimeResolver(),
+                approvals);
+
+            var unauthorized = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                adapter.RunAsync(
+                    MakeGrantWithScopes(ToolScope.TerminalExecute),
+                    Request("python", ["-c", "print(1)"]),
+                    confineWorkspace: true,
+                    CancellationToken.None));
+            Assert.Equal("terminal_command_not_allowed", unauthorized.Message);
+
+            // A token bound to a different intent hash never authorizes the call.
+            var wrongBindingToken = approvals.Issue(
+                "request-1",
+                "session-1",
+                "terminal.run",
+                "1.0.0",
+                "not-the-intent-hash",
+                TimeSpan.FromSeconds(60));
+            var stale = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                adapter.RunAsync(
+                    MakeGrantWithScopes(ToolScope.TerminalExecute),
+                    Request(
+                        "python",
+                        ["-c", "print(1)"],
+                        approvalToken: wrongBindingToken,
+                        requestId: "request-1",
+                        sessionId: "session-1"),
+                    confineWorkspace: true,
+                    CancellationToken.None));
+            Assert.Equal("terminal_approval_invalid", stale.Message);
+
+            // A token bound to the exact canonical intent authorizes exactly one call.
+            var intent = adapter.CanonicalizeRun(Request("python", ["-c", "print(1)"]));
+            var token = approvals.Issue(
+                "request-2",
+                "session-1",
+                "terminal.run",
+                "1.0.0",
+                intent.IntentHash,
+                TimeSpan.FromSeconds(60));
+            var result = await adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                Request(
+                    "python",
+                    ["-c", "print(1)"],
+                    approvalToken: token,
+                    requestId: "request-2",
+                    sessionId: "session-1"),
+                confineWorkspace: true,
+                CancellationToken.None);
+            Assert.Equal("succeeded", result.Status);
+
+            var replayed = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                adapter.RunAsync(
+                    MakeGrantWithScopes(ToolScope.TerminalExecute),
+                    Request(
+                        "python",
+                        ["-c", "print(1)"],
+                        approvalToken: token,
+                        requestId: "request-2",
+                        sessionId: "session-1"),
+                    confineWorkspace: true,
+                    CancellationToken.None));
+            Assert.Equal("terminal_approval_invalid", replayed.Message);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Timeout_over_the_hard_maximum_is_denied_before_any_process_work()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-hard-max-");
+        try
+        {
+            var adapter = CreateAdapter(root);
+            var error = Assert.Throws<UnauthorizedAccessException>(() =>
+            {
+                _ = adapter.CanonicalizeRun(Request("rg", ["--files"], timeoutMs: 1_800_001));
+            });
+            Assert.Equal("timeout_exceeds_hard_max", error.Message);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("argument_nul_rejected", "bad\0arg")]
+    [InlineData("interactive_flag_rejected", "--interactive")]
+    [InlineData("background_daemon_rejected", "--daemon")]
+    public void Structural_argument_violations_are_denied_before_execution(string expectedCode, string argument)
+    {
+        var root = CreateTemporaryRoot("ru-terminal-structural-");
+        try
+        {
+            var adapter = CreateAdapter(root);
+            var error = Assert.Throws<UnauthorizedAccessException>(() =>
+            {
+                _ = adapter.CanonicalizeRun(Request("rg", [argument]));
+            });
+            Assert.Equal(expectedCode, error.Message);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Execution_time_reresolution_rejects_when_the_workspace_directory_disappears()
+    {
+        var parent = CreateTemporaryRoot("ru-terminal-reresolve-");
+        var workspaceRoot = Path.Combine(parent, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        try
+        {
+            var approvals = new ApprovalTokenService();
+            var adapter = new TerminalAdapter(
+                new WorkspacePathGuard(workspaceRoot),
+                new ShellRuntimeResolver(),
+                approvals);
+            var request = Request("git", ["status"], workingDirectory: ".");
+            var intent = adapter.CanonicalizeRun(request);
+            var token = approvals.Issue(
+                "request-reresolve",
+                "session-1",
+                "terminal.run",
+                "1.0.0",
+                intent.IntentHash,
+                TimeSpan.FromSeconds(60));
+
+            Directory.Delete(workspaceRoot, recursive: true);
+
+            var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                adapter.RunAsync(
+                    MakeGrantWithScopes(ToolScope.TerminalExecute),
+                    Request(
+                        "git",
+                        ["status"],
+                        approvalToken: token,
+                        requestId: "request-reresolve",
+                        sessionId: "session-1"),
+                    confineWorkspace: true,
+                    CancellationToken.None));
+            Assert.Equal("working_directory_invalid", error.Message);
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task NetworkCommandAllowedWhenGrantIncludesNetworkScope()
     {
         var root = CreateTemporaryRoot("ru-terminal-network-granted-");
@@ -56,7 +247,7 @@ public sealed class TerminalAdapterTests
             var adapter = CreateAdapter(root);
             var result = await adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
-                Request("python", ["-c", "print(1)"], network: true),
+                Request("dotnet", ["--version"], network: true),
                 confineWorkspace: false,
                 CancellationToken.None);
             Assert.Equal("succeeded", result.Status);
@@ -77,7 +268,7 @@ public sealed class TerminalAdapterTests
             var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute),
-                    Request("python", ["-c", "print(1)"], network: true),
+                    Request("dotnet", ["--version"], network: true),
                     confineWorkspace: true,
                     CancellationToken.None));
             Assert.Equal("terminal_network_requires_approval", error.Message);
@@ -96,15 +287,15 @@ public sealed class TerminalAdapterTests
         var outsideDirectory = Path.Combine(parent, "outside");
         Directory.CreateDirectory(workspaceRoot);
         Directory.CreateDirectory(outsideDirectory);
+        File.WriteAllText(Path.Combine(outsideDirectory, "outside-marker.txt"), "x");
         try
         {
             var adapter = CreateAdapter(workspaceRoot);
             var result = await adapter.RunAsync(
                 MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
                 Request(
-                    "python",
-                    ["-c", "print(1)"],
-                    network: true,
+                    "rg",
+                    ["--files"],
                     workingDirectory: Path.Combine("..", "outside")),
                 confineWorkspace: false,
                 CancellationToken.None);
@@ -129,7 +320,7 @@ public sealed class TerminalAdapterTests
             var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
-                    Request("python", ["-c", "print(1)"], workingDirectory: windowsDirectory),
+                    Request("rg", ["--files"], workingDirectory: windowsDirectory),
                     confineWorkspace: false,
                     CancellationToken.None));
             Assert.Equal("terminal_cwd_not_allowed", error.Message);
@@ -157,9 +348,8 @@ public sealed class TerminalAdapterTests
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
                     Request(
-                        "python",
-                        ["-c", "print(1)"],
-                        network: true,
+                        "rg",
+                        ["--files"],
                         workingDirectory: "windows-link"),
                     confineWorkspace: false,
                     CancellationToken.None));
@@ -185,9 +375,8 @@ public sealed class TerminalAdapterTests
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
                     Request(
-                        "python",
-                        ["-c", "print(1)"],
-                        network: true,
+                        "rg",
+                        ["--files"],
                         workingDirectory: $@"\\?\{windowsDirectory}"),
                     confineWorkspace: false,
                     CancellationToken.None));
@@ -210,8 +399,8 @@ public sealed class TerminalAdapterTests
                 adapter.RunAsync(
                     MakeGrantWithScopes(ToolScope.TerminalExecute, ToolScope.TerminalNetwork),
                     Request(
-                        "python",
-                        ["-c", "print(1)"],
+                        "rg",
+                        ["--files"],
                         network: true,
                         workingDirectory: ".."),
                     confineWorkspace: true,
@@ -241,7 +430,6 @@ public sealed class TerminalAdapterTests
                 TimeSpan.FromSeconds(30));
             var adapter = new TerminalAdapter(
                 new WorkspacePathGuard(root),
-                new ProcessTreeRunner(),
                 new ShellRuntimeResolver(),
                 approvals);
 
@@ -332,7 +520,6 @@ public sealed class TerminalAdapterTests
 
     private static TerminalAdapter CreateAdapter(string root) => new(
         new WorkspacePathGuard(root),
-        new ProcessTreeRunner(),
         new ShellRuntimeResolver());
 
     private static PolicyGrant MakeGrantWithScopes(params string[] scopes) => new(
@@ -344,13 +531,20 @@ public sealed class TerminalAdapterTests
         string executable,
         IReadOnlyList<string> arguments,
         bool network = false,
-        string workingDirectory = ".") => new(
+        string workingDirectory = ".",
+        int timeoutMs = 30_000,
+        string approvalToken = "",
+        string requestId = "",
+        string sessionId = "") => new(
         "powershell",
         workingDirectory,
         executable,
         arguments,
-        30_000,
-        network);
+        timeoutMs,
+        network,
+        approvalToken,
+        requestId,
+        sessionId);
 
     private static string CreateTemporaryRoot(string prefix)
     {

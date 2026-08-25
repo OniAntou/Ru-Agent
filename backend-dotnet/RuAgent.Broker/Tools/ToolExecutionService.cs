@@ -55,7 +55,6 @@ public sealed class ToolExecutionService : IToolInvoker
         _notes = new NotesAdapter(_workspace);
         _terminal = new TerminalAdapter(
             _workspace,
-            new ProcessTreeRunner(),
             new ShellRuntimeResolver(),
             _approvalTokens);
         _volume = new Lazy<VolumeTools>(
@@ -159,13 +158,13 @@ public sealed class ToolExecutionService : IToolInvoker
             {
                 var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);
                 var argumentsHash = PendingApprovalStore.ComputeArgumentsHash(toolId, toolVersion, arguments);
-                var terminalApprovalToken = toolId == "terminal.shell"
+                var terminalApprovalToken = toolId is "terminal.shell" or "terminal.run"
                     ? _approvalTokens.Issue(
                         request.RequestId,
                         request.SessionId,
                         toolId,
                         toolVersion,
-                        argumentsHash,
+                        TryComputeTerminalIntentHash(toolId, arguments) ?? argumentsHash,
                         TimeSpan.FromSeconds(60))
                     : null;
                 var approvalId = _approvals.Issue(
@@ -203,8 +202,10 @@ public sealed class ToolExecutionService : IToolInvoker
                 contextRequest: request,
                 binding,
                 arguments,
-                approved: false,
-                approvalToken: null,
+                approved: ReadOptionalString(request.Payload, "authorization_token") is not null
+                    || ReadOptionalString(request.Payload, "preparation_token") is not null,
+                approvalToken: ReadOptionalString(request.Payload, "authorization_token")
+                    ?? ReadOptionalString(request.Payload, "preparation_token"),
                 cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -584,8 +585,11 @@ public sealed class ToolExecutionService : IToolInvoker
                 ReadOptionalString(arguments, "working_directory") ?? ".",
                 ReadString(arguments, "executable"),
                 ReadArguments(arguments["arguments"]),
-                Math.Min(context.DeadlineMs, 120_000),
-                arguments["network"]?.GetValue<bool>() ?? false),
+                ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.DefaultTimeoutMs,
+                IsTrue(arguments, "network_intent") || IsTrue(arguments, "network"),
+                context.ApprovalToken ?? string.Empty,
+                context.RequestId,
+                context.SessionId),
             context.ConfinementRequired,
             cancellationToken).ConfigureAwait(false);
         return ProcessOutcome(result, context.ConfinementRequired);
@@ -602,34 +606,77 @@ public sealed class ToolExecutionService : IToolInvoker
             throw new UnauthorizedAccessException("terminal_shell_approval_invalid");
         }
 
-        var argumentsHash = PendingApprovalStore.ComputeArgumentsHash(
-            "terminal.shell",
-            "1.0.0",
-            arguments);
+        var shellRequest = new TerminalShellRequest(
+            ReadOptionalString(arguments, "shell") ?? "powershell",
+            ReadOptionalString(arguments, "working_directory") ?? ".",
+            ReadString(arguments, "script"),
+            ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.DefaultTimeoutMs,
+            context.ApprovalToken ?? string.Empty,
+            context.RequestId,
+            context.SessionId,
+            TryComputeTerminalIntentHash("terminal.shell", arguments)
+                ?? PendingApprovalStore.ComputeArgumentsHash("terminal.shell", "1.0.0", arguments));
         var result = await _terminal.RunApprovedShellAsync(
-            new TerminalShellRequest(
-                ReadOptionalString(arguments, "shell") ?? "powershell",
-                ReadOptionalString(arguments, "working_directory") ?? ".",
-                ReadString(arguments, "script"),
-                Math.Min(context.DeadlineMs, 120_000),
-                context.ApprovalToken ?? string.Empty,
-                context.RequestId,
-                context.SessionId,
-                    argumentsHash),
+            shellRequest,
             confineWorkspace,
             cancellationToken).ConfigureAwait(false);
         return ProcessOutcome(result, confineWorkspace);
     }
 
-    private ToolExecutionOutcome ProcessOutcome(ProcessRunResult result, bool confineWorkspace)
+    /// <summary>
+    /// Resolves the canonical intent hash for a terminal call without executing it.
+    /// Approval tokens bind to this hash so any change to the resolved executable,
+    /// argv, working directory, operation class, network intent, or timeout between
+    /// approval and execution invalidates the authorization.
+    /// </summary>
+    private string? TryComputeTerminalIntentHash(string toolId, JsonObject arguments)
+    {
+        try
+        {
+            if (toolId == "terminal.shell")
+            {
+                return _terminal.CanonicalizeShell(new TerminalShellRequest(
+                    ReadOptionalString(arguments, "shell") ?? "powershell",
+                    ReadOptionalString(arguments, "working_directory") ?? ".",
+                    ReadString(arguments, "script"),
+                    ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.DefaultTimeoutMs,
+                    string.Empty)).IntentHash;
+            }
+
+            return toolId == "terminal.run"
+                ? _terminal.CanonicalizeRun(new TerminalRunRequest(
+                    "powershell",
+                    ReadOptionalString(arguments, "working_directory") ?? ".",
+                    ReadString(arguments, "executable"),
+                    ReadArguments(arguments["arguments"]),
+                    ReadOptionalInt(arguments, "timeout_ms") ?? TerminalLimits.DefaultTimeoutMs,
+                    IsTrue(arguments, "network_intent") || IsTrue(arguments, "network"))).IntentHash
+                : null;
+        }
+        catch (Exception error) when (
+            error is ArgumentException or UnauthorizedAccessException or KeyNotFoundException
+                or ToolExecutionException)
+        {
+            return null;
+        }
+    }
+
+    private ToolExecutionOutcome ProcessOutcome(StreamingProcessResult result, bool confineWorkspace)
     {
         var output = new JsonObject
         {
             ["exit_code"] = result.ExitCode,
             ["duration_ms"] = result.DurationMs,
-            ["stdout"] = result.Stdout,
-            ["stderr"] = result.Stderr,
-            ["output_truncated"] = result.OutputTruncated,
+            ["stdout_head"] = result.StdoutHead,
+            ["stdout_tail"] = result.StdoutTail,
+            ["stderr_head"] = result.StderrHead,
+            ["stderr_tail"] = result.StderrTail,
+            ["stdout_bytes"] = result.StdoutBytes,
+            ["stderr_bytes"] = result.StderrBytes,
+            ["stdout_dropped_bytes"] = result.StdoutDroppedBytes,
+            ["stderr_dropped_bytes"] = result.StderrDroppedBytes,
+            ["frames_emitted"] = result.FramesEmitted,
+            ["frames_dropped"] = result.FramesDropped,
             ["working_directory"] = confineWorkspace
                 ? _workspace.ToRelative(result.WorkingDirectory)
                 : BoundWorkingDirectory(result.WorkingDirectory),
@@ -907,6 +954,31 @@ public sealed class ToolExecutionService : IToolInvoker
         && value.TryGetValue<bool>(out var result)
             ? result
             : throw new ToolExecutionException("invalid_arguments");
+
+    private static int? ReadOptionalInt(JsonObject payload, string key)
+    {
+        if (payload[key] is not JsonValue value)
+        {
+            return null;
+        }
+
+        if (value.TryGetValue<int>(out var result))
+        {
+            return result;
+        }
+
+        if (value.TryGetValue<long>(out var longResult) && longResult is >= int.MinValue and <= int.MaxValue)
+        {
+            return checked((int)longResult);
+        }
+
+        return null;
+    }
+
+    private static bool IsTrue(JsonObject payload, string key) =>
+        payload[key] is JsonValue value
+        && value.TryGetValue<bool>(out var flag)
+        && flag;
 
     private static string? ReadOptionalString(JsonObject payload, string key) =>
         payload[key] is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result)

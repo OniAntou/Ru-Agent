@@ -417,6 +417,139 @@ public sealed class ToolExecutionServiceTests
     }
 
     [Fact]
+    public async Task Approved_recognized_terminal_run_executes_with_streaming_receipt_fields()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-recognized-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        File.WriteAllText(Path.Combine(workspaceRoot, "listed.txt"), "x");
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(
+            descriptorPath,
+            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        session.Open(
+            "session-terminal-recognized",
+            new HashSet<string>(
+                [RuAgent.Broker.Policy.ToolScope.TerminalExecute, RuAgent.Broker.Policy.ToolScope.TerminalNetwork],
+                StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            var pending = await service.ExecuteAsync(
+                TerminalRequest("session-terminal-recognized", new JsonObject
+                {
+                    ["executable"] = "rg",
+                    ["arguments"] = new JsonArray("--files"),
+                }),
+                CancellationToken.None);
+            Assert.Equal(ToolResultStatuses.ApprovalRequired, pending.Status);
+            Assert.False(pending.AdapterInvoked);
+
+            var result = await service.RespondToApprovalAsync(
+                ApprovalResponse("session-terminal-recognized", pending),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+            Assert.True(result.AdapterInvoked);
+            Assert.Equal(0, result.Output["exit_code"]!.GetValue<int>());
+            Assert.Contains("listed.txt", result.Output["stdout_head"]!.GetValue<string>());
+            Assert.True(result.Output["stdout_bytes"]!.GetValue<long>() > 0);
+            Assert.Equal(
+                Path.GetFullPath(workspaceRoot),
+                result.Output["working_directory"]!.GetValue<string>());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Terminal_timeout_over_the_hard_maximum_denies_before_the_adapter()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-terminal-max-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(
+            descriptorPath,
+            JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        session.Open(
+            "session-terminal-max",
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            // The v1 contract schema caps timeout_ms at the 30-minute hard maximum, so an
+            // over-the-cap request is rejected during validation, before any adapter work.
+            var result = await service.ExecuteAsync(
+                TerminalRequest("session-terminal-max", new JsonObject
+                {
+                    ["executable"] = "rg",
+                    ["arguments"] = new JsonArray("--files"),
+                    ["timeout_ms"] = 1_900_000,
+                }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Failed, result.Status);
+            Assert.False(result.AdapterInvoked);
+            Assert.Equal("invalid_arguments", result.ErrorCode);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static AgentEnvelope TerminalRequest(string sessionId, JsonObject arguments) => new(
+        AgentEnvelopeCodec.ProtocolVersion,
+        "req-" + Guid.NewGuid().ToString("N"),
+        AgentMessageTypes.ToolRequest,
+        sessionId,
+        null,
+        30_000,
+        new JsonObject
+        {
+            ["tool_id"] = "terminal.run",
+            ["tool_version"] = "1.0.0",
+            ["capability_class"] = "internal",
+            ["arguments"] = arguments,
+        });
+
+    private static AgentEnvelope ApprovalResponse(string sessionId, ToolResult pending) => new(
+        AgentEnvelopeCodec.ProtocolVersion,
+        "approval-" + Guid.NewGuid().ToString("N"),
+        AgentMessageTypes.ApprovalResponse,
+        sessionId,
+        null,
+        30_000,
+        new JsonObject
+        {
+            ["approval_id"] = pending.Output["approval_id"]!.GetValue<string>(),
+            ["approved"] = true,
+        });
+
+    [Fact]
     public async Task Tool_execute_without_valid_authorization_is_stale()
     {
         // V2 path: approval token must be valid bound to snapshot+intent; without it tool must not execute.

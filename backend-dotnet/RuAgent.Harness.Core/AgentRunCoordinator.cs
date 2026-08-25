@@ -8,6 +8,16 @@ using RuAgent.Harness.Core.Persistence;
 
 namespace RuAgent.Harness.Core;
 
+/// <summary>
+/// Implemented by gateways that own live tool processes. Lets the coordinator forward
+/// run-scoped cancellation so in-flight terminal executions terminate their whole
+/// process tree and return cancelled receipts instead of being abandoned.
+/// </summary>
+public interface IToolRunCancellation
+{
+    Task CancelRunAsync(RunId runId, CancellationToken cancellationToken);
+}
+
 public sealed class AgentRunCoordinator
 {
     private readonly IModelStepRunner _model;
@@ -18,6 +28,7 @@ public sealed class AgentRunCoordinator
     private readonly TransientFrameBuffer _frames;
     private readonly ITransientContentRedactor _transientRedactor;
     private readonly AgentToolExecutionPipeline _tools;
+    private readonly IToolRunCancellation? _cancellation;
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -47,6 +58,7 @@ public sealed class AgentRunCoordinator
             scheduler ?? throw new ArgumentNullException(nameof(scheduler)),
             frames,
             _transientRedactor);
+        _cancellation = gateway as IToolRunCancellation;
     }
 
     public async Task<AgentRunStepResult> RunOneStepAsync(
@@ -281,6 +293,13 @@ public sealed class AgentRunCoordinator
                 cancellationToken)
             .ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Forwards run-scoped cancellation to the gateway so in-flight terminal processes
+    /// are killed through their Job Object. Safe to call when nothing is running.
+    /// </summary>
+    public Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken) =>
+        _cancellation?.CancelRunAsync(runId, cancellationToken) ?? Task.CompletedTask;
 
     private async Task<AgentRunStepResult> HandleToolStepAsync(
         AgentRun run,

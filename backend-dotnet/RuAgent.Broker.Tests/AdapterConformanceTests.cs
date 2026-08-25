@@ -30,9 +30,8 @@ public sealed class AdapterConformanceTests
                 approved: true);
             var terminal = new TerminalAdapter(
                 guard,
-                new ProcessTreeRunner(),
                 new ShellRuntimeResolver());
-            ProcessRunResult result = await terminal.RunAsync(
+            StreamingProcessResult result = await terminal.RunAsync(
                 MakeGrant(),
                 new TerminalRunRequest("dotnet", ".", "dotnet", ["--version"], 10_000),
                 confineWorkspace: true,

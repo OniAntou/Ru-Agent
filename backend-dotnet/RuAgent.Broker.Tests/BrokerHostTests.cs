@@ -473,7 +473,7 @@ public sealed class BrokerHostTests
 
         Assert.Equal(ToolResultStatuses.Succeeded, result.Payload["status"]!.GetValue<string>());
         Assert.True(result.Payload["adapter_invoked"]!.GetValue<bool>());
-        Assert.Contains("10.", result.Payload["output"]!["stdout"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.Contains("10.", result.Payload["output"]!["stdout_head"]!.GetValue<string>(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -627,7 +627,7 @@ public sealed class BrokerHostTests
         var approved = await ReceiveAsync(socket, cancellation.Token);
 
         Assert.Equal("succeeded", approved.Payload["status"]!.GetValue<string>());
-        Assert.Contains("", approved.Payload["output"]!["stdout"]!.GetValue<string>(), StringComparison.Ordinal);
+        Assert.NotNull(approved.Payload["output"]!["stdout_head"]!.GetValue<string>());
 
         await SendAsync(
             socket,

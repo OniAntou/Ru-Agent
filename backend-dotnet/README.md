@@ -66,11 +66,21 @@ shutdown or failure. `RuApp` and `RuAgent.Cli` never start Worker/Broker
 directly; they validate the descriptor and `GET /status` bearer, and poll for a
 valid descriptor if stale/absent. `RuBackend:AgentHarness:Version` defaults to
 `v1`; Agent v2 (`/worker/v2` one-step, `/agent/v1/*` 13 routes, SSE reconnect
-with durable `id:<sequence>` and `Last-Event-ID`/`after_sequence` cursors) is
-additive and runs only when explicitly set to `v2`. Worker v2 performs exactly
-one `generate_reply` per `agent.step.start` and returns provider-neutral
-`AssistantStep(text, tool_calls, finish_reason)`; phase-1 tracer advertises only
-Broker-backed `files.list`/`files.read`.
+with durable `id:<sequence>` and `Last-Event-ID`/`after_sequence` cursors,
+durable Core + SQLite `agent_harness.db` + AES-GCM payloads, workspace trust,
+session permissions, encrypted policy snapshots) is additive and runs only when
+explicitly set to `v2`. Worker v2 performs exactly one `generate_reply` per
+`agent.step.start` and returns provider-neutral
+`AssistantStep(text, tool_calls, finish_reason)`; Broker-backed file tools at
+this checkpoint are `files.list`/`files.glob`/`files.search`/`files.read`
+(offset/limit, streaming, bounded `truncated`) plus hash-guarded
+`files.write`/`files.edit`/`files.apply_patch` and recoverable
+`files.delete`/`files.restore` (one-time, `recovery_too_large` beyond 1 MiB,
+`recovery_consumed` on replay). Standard allows ordinary trusted-workspace
+reads/creates/edits and asks for delete/protected/outside/network/unknown;
+Full Access changes fallback but never bypasses trust; approvals are durable
+first-writer-wins `approval_stale` with exact scope preview and snapshot
+version ordering.
 
 ## Build and verification
 

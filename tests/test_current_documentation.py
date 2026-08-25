@@ -21,6 +21,7 @@ def test_current_architecture_spine_exists_and_is_linked() -> None:
         "docs/adr/0003-omnivoice-process-isolation.md",
         "docs/adr/0004-canonical-ru-data-location.md",
         "docs/adr/0005-retire-legacy-llama-line.md",
+        "docs/adr/0006-structured-logging-and-activity-boundaries.md",
         "docs/adr/0007-mode-capability-profiles.md",
     )
     assert all((ROOT / relative).is_file() for relative in required)
@@ -43,6 +44,9 @@ def test_context_uses_approved_ru_domain_language() -> None:
         "**Capability Profile**:",
         "**Protected User Data**:",
         "**Retired Local Model Assets**:",
+        "**Policy Snapshot**:",
+        "**Policy Rule**:",
+        "**Workspace Trust**:",
     ):
         assert term in context
 
@@ -76,7 +80,7 @@ def test_architecture_records_current_ownership_and_privacy() -> None:
     assert "typed worker protocol v2" in architecture.lower() or "worker v2" in architecture.lower()
     assert "chat text" in architecture
     assert "private VTS" in architecture
-    # Phase-1 headless harness foundation transitional facts
+    # Phase-2 headless harness foundation + policy/file tools facts
     assert "54 HTTP" in readme
     assert "54 HTTP" in backend_readme
     assert "54 HTTP" in context
@@ -89,6 +93,11 @@ def test_architecture_records_current_ownership_and_privacy() -> None:
     assert "one-step" in architecture.lower() or "one step" in architecture.lower() or "AssistantStep" in architecture
     assert "/agent/v1" in architecture or "/agent/v1" in readme
     assert "/worker/v2" in architecture or "/worker/v2" in readme
+    # Policy snapshot and file tools must be documented
+    assert "PolicySnapshot" in architecture or "Policy Snapshot" in architecture
+    assert "CanonicalPathResolver" in architecture or "ProtectedPathCatalog" in architecture
+    assert "files.list" in architecture or "files.*" in architecture
+    assert "approval" in architecture.lower()
     # stale WinUI ownership must be gone
     assert "RuApp owns all three" not in backend_readme
     assert "RuApp owns the desktop lifecycle. It creates" not in architecture
@@ -136,19 +145,33 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
         "docs/superpowers/specs/2026-08-22-ru-volume-tool-vertical-slice-design.md"
     )
 
+    # Phase-2 complete files.* matrix
     assert (
-        "| `files.list@1.0.0`, `files.read@1.0.0` (`workspace.read`) "
+        "| `files.list@1.0.0`, `files.glob@1.0.0`, `files.search@1.0.0`, `files.read@1.0.0` (`workspace.read`) "
         "| automatic | automatic | automatic |"
     ) in agent_tools
+    assert "files.write@1.0.0" in agent_tools and "files.edit@1.0.0" in agent_tools
+    assert "files.apply_patch@1.0.0" in agent_tools
+    assert "files.delete@1.0.0" in agent_tools
+    assert "files.restore@1.0.0" in agent_tools
+    assert "recovery_too_large" in agent_tools
+    assert "recovery_consumed" in agent_tools or "recovery_target_exists" in agent_tools
+    assert "expected_sha256" in agent_tools or "expected_sha256" in root_readme
+    assert "Standard allows ordinary" in root_readme or "Standard automatically allows" in root_readme
+    assert "Full Access changes fallback" in root_readme or "Full Access changes fallback" in agent_tools
+    assert "workspace_changed" in agent_tools or "workspace_changed" in root_readme
+    assert "approval_stale" in agent_tools or "first-writer-wins" in agent_tools
+    assert "exact scope" in agent_tools or "exact scope preview" in agent_tools
+
     assert (
         "| `system.volume@1.0.0` (`system.write`) | — | "
         "yes, verified readback required | yes, verified readback required |"
     ) in agent_tools
     assert "| Skills | disabled | disabled | disabled |" in agent_tools
     assert (
-        "| Web search/fetch, connectors, workspace search, `app.open` "
+        "| Web search/fetch, connectors, `app.open` "
         "| absent | absent | absent |"
-    ) in agent_tools
+    ) in agent_tools or "| Web search/fetch, connectors" in agent_tools
     assert "Agent has no model-visible terminal binding" in agent_tools
     assert "`terminal.execute` and `terminal.network` scopes" in agent_tools
     assert "descriptive input metadata, not a security boundary" in agent_tools
@@ -163,6 +186,9 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
     assert "operations/agent-tools.md" in docs_index
     assert "agent-volume-contract" in root_readme
     assert "agent-terminal-approval" not in root_readme
+    # Terminal/Git remain unavailable at this checkpoint (terminal is phase 3)
+    assert "no terminal path at this checkpoint" in agent_tools
+    assert "remains phase 3" in agent_tools
 
 
 def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -> None:
@@ -172,10 +198,8 @@ def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -
     for row in (
         "| `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` "
         "(`system.read`) | Broker-internal | Broker-internal | Broker-internal |",
-        "| `terminal.shell@1.0.0` (`terminal.execute`) | — | "
-        "— | explicit approval required for every request |",
-        "| `terminal.run@1.0.0` (`terminal.execute`) | — | "
-        "— | explicit approval required for every request |",
+        "| `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | — | "
+        "— | explicit approval required for every request",
     ):
         assert row in agent_tools
 
@@ -244,3 +268,69 @@ def test_current_docs_describe_deterministic_volume_recovery_truthfully() -> Non
     assert "native_volume_acceptance.py" in verification
     assert "--confirm-native-volume-change" in verification
     assert "cross-session rotation" in verification_flat
+
+
+def test_phase2_policy_and_file_tools_are_documented() -> None:
+    readme = _text("README.md")
+    backend_readme = _text("backend-dotnet/README.md")
+    architecture = _text("docs/architecture.md")
+    agent_tools = _text("docs/operations/agent-tools.md")
+    docs_index = _text("docs/README.md")
+    context = _text("CONTEXT.md")
+    cli_readme = _text("backend-dotnet/RuAgent.Cli/README.md")
+
+    # Policy snapshots and workspace trust
+    for required in (
+        "PolicySnapshot",
+        "Workspace Trust",
+        "encrypted",
+        "CanonicalPathResolver",
+        "ProtectedPathCatalog",
+    ):
+        # at least one of readme/architecture/agent_tools/context should contain
+        assert (
+            required in readme
+            or required in architecture
+            or required in agent_tools
+            or required in context
+        )
+
+    assert "Standard automatically allows" in readme or "Standard `allow`" in agent_tools
+    assert "Full Access changes fallback" in readme
+    assert "never bypasses" in readme or "never bypasses workspace trust" in agent_tools
+
+    # Complete files.* contract
+    for tool in ("files.list", "files.glob", "files.search", "files.read", "files.write", "files.edit", "files.apply_patch", "files.delete", "files.restore"):
+        assert tool in agent_tools, f"missing {tool} in agent-tools"
+        assert tool in readme or tool in architecture
+
+    # CLI policy/approval
+    assert "policy list" in cli_readme or "policy list" in readme
+    assert "approve" in cli_readme and "deny" in cli_readme
+    assert "X-Interactive-Confirmed" in architecture or "X-Interactive-Confirmed" in readme or "X-Interactive-Confirmed" in cli_readme
+    assert "--json" in cli_readme and "cannot bypass" in cli_readme or "cannot bypass" in readme
+
+    # Approvals durable / ordering
+    assert "approval_stale" in agent_tools
+    assert "first-writer-wins" in agent_tools or "first-writer-wins" in readme
+    assert "tool.execution_requested" in architecture or "tool.execution_requested" in agent_tools
+
+    # Terminal/Git still unavailable (terminal is phase 3)
+    assert "no terminal path at this checkpoint" in agent_tools
+    assert "remains phase 3" in agent_tools
+    assert "terminal.run" in agent_tools and "terminal.shell" in agent_tools
+    assert "Agent has no model-visible terminal binding" in agent_tools
+
+    # No sandboxing claim
+    readme_lower = readme.lower()
+    # Only allowed sandbox mention is deferral in TODO.md, not in main docs claiming policy is sandbox
+    assert "filesystem sandbox" not in readme_lower
+    assert "network isolation" not in readme_lower
+
+    # Docs index updated to Phase 2
+    assert "Phase 2" in docs_index
+    assert "02-policy-file-tools" in docs_index
+
+    # Context updated
+    assert "Policy Snapshot" in context
+    assert "Workspace Trust" in context

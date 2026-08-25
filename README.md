@@ -32,12 +32,20 @@ grants are session-scoped and removed during shutdown.
 
 ASP.NET Core is the only public backend. It owns authentication, validation,
 settings and credentials, sessions/history, activity, structured memory, chat
-ordering, public errors, durable Agent harness, and all 54 HTTP plus
+ordering, public errors, durable Agent harness (Core + SQLite
+`agent_harness.db` + AES-GCM payloads, conversation outbox, workspace trust,
+session permissions, encrypted policy snapshots), and all 54 HTTP plus
 2 WebSocket routes (41 pre-existing plus 13 additive `/agent/v1/*`).
 Agent v2 (`/worker/v2` one-step `AssistantStep` and `/agent/v1/*` 13-route
-API/SSE) is additive and feature-flagged behind
-`RuBackend:AgentHarness:Version` (default `v1`); the stable `phase_not_available`
-policy/approval/reconcile routes remain fail-closed until their owning phase.
+API/SSE with bearer auth, `id:<sequence>`/`Last-Event-ID` cursor, idempotency
+409, `workspace_busy` 409, `preset_mismatch` 409) is additive and
+feature-flagged behind `RuBackend:AgentHarness:Version` (default `v1`);
+policy/approval endpoints (`GET`/`POST`/`DELETE /agent/v1/policies`, `POST
+/agent/v1/runs/{runId}/approvals/{approvalId}` with first-writer-wins
+`approval_stale` and exact scope preview) are active with durable
+encrypted-at-rest snapshots and global interactive header
+`X-Interactive-Confirmed: true`; `POST /agent/v1/runs/{runId}/reconcile`
+remains `phase_not_available` until its phase.
 Python is an authenticated private implementation boundary for model generation
 (one-step Worker v2 plus retained v1 Chat), provider adapters, STT execution,
 VTube Studio, observation, and the current voice engine coordination. The CLI
@@ -98,17 +106,37 @@ the Runtime Worker or voice engine as independent public services.
 - VTube Studio actions and lip sync remain private runtime metadata.
   `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
 - Tool capability is an explicit tri-state selector. Chat (default) advertises
-  only workspace list/read tools and declines volume commands with guidance.
-  Agent adds approved file write/edit and notes plus card-free
-  `system.volume` commands with verified readback; Agent has no terminal
-  capability. Full Access additionally advertises `terminal.run` and
-  `terminal.shell`, but each terminal request still requires a fresh approval
-  card. An approved Full Access terminal is not an OS filesystem/network
-  sandbox, while file mutations remain workspace-bounded and manually
-  approved. Modes reset to Chat on every launch and Full Access needs one
-  explicit confirmation per run. WinUI displays typed activity from actual
-  Host events, and a success is visible only after a matching verified Broker
-  receipt.
+  only workspace discovery/read (`files.list`, `files.glob`, `files.search`,
+  `files.read` with offset/limit, streaming enumeration, hidden/binary/
+  protected handling, bounded `truncated` metadata) and declines volume
+  commands with guidance. Agent adds `files.write`, `files.edit`,
+  `files.apply_patch`, `notes.create` and card-free `system.volume` with
+  verified readback; Agent has no model-visible terminal binding and therefore
+  cannot invoke a general-purpose terminal. Standard automatically allows
+  ordinary trusted-workspace reads, creates and edits and asks before delete,
+  protected/outside paths, declared network use, and unknown operations;
+  Full Access changes fallback decisions but never bypasses workspace trust
+  or protocol invariants and remains a current-Windows-user boundary. Allow
+  once/run/project and Deny are durable; rule/snapshot replacement follows
+  approved old-snapshot execution ordering with Broker as authoritative
+  evaluator and Core persisting `tool.execution_requested` before dispatch.
+  Complete `files.*` at this checkpoint: `files.list`/`files.glob`/
+  `files.search`/`files.read` and hash-guarded `files.write`/`files.edit`
+  (`expected_sha256` `missing` or 64-hex)/`files.apply_patch` (bounded unified
+  patch + exact expected-hash per target, multi-file preflight, journal restore
+  on N-th failure) plus `files.delete` (recoverable cap 1 MiB, opaque
+  `recovery_id`) and one-time `files.restore` (`recovery_consumed` on replay).
+  Every mutation uses preimage checks, atomic same-volume replacement where
+  supported, before/after hashes, bounded diff summary, run attribution, and
+  recoverable semantics. CLI exposes `agent approve --scope once|run|project`,
+  `agent deny`, `agent policy list`/`import --global FILE`/`remove`
+  (versioned JSON, `X-Interactive-Confirmed: true`, `--json` cannot bypass),
+  and `agent run --preset full` interactive warning (`--json` cannot confirm).
+  Terminal (`terminal.run`/`terminal.shell`) and Git remain unavailable in
+  Agent v2 at this checkpoint. Modes reset to Chat on every launch and Full
+  Access needs one explicit confirmation per run. WinUI displays typed
+  activity from actual Host events, and a success is visible only after a
+  matching verified Broker receipt.
 - Screen observation is opt-in from Settings. When a Gemini Vision key and a
   supported hosted generation backend are configured, the private worker
   captures bounded JPEG frames and publishes reaction events. WinUI consumes
@@ -146,10 +174,16 @@ requires one intentionally invalid `system.volume` request to end as
 `failed/invalid_arguments` before any native endpoint is opened. Broker
 approval/replay is checked separately with a temporary `notes.create` fixture.
 `--deterministic-chat` remains an alias for the backend mode. At this
-checkpoint the harness also covers the additive Agent v2 read-only tracer
+checkpoint the harness also covers the additive Agent v2 tracer
 (HTTP 201/200/409 idempotency, `workspace_busy`, `preset_mismatch`,
-`phase_not_available`, SSE reconnect `id:<sequence>`/`Last-Event-ID` cursor,
-and encrypted payload binding) via the temp Harness store and fake Worker/Broker.
+`phase_not_available` only for `reconcile`, SSE reconnect
+`id:<sequence>`/`Last-Event-ID` cursor, encrypted payload binding,
+durable `agent_harness.db` policy snapshots/workspace trust/session
+permissions, and first-writer-wins approval) via the temp Harness store and
+fake Worker/Broker, plus deterministic file-tool matrix
+(`files.list`/`glob`/`search`/`read`/`write`/`edit`/`apply_patch`/
+`delete`/`restore` with hash preimage and recovery caps) using a temp
+workspace.
 
 The deterministic GUI voice Harness is manual and interactive on Windows. It
 publishes the real WinUI shell, injects deterministic capture/playback at the

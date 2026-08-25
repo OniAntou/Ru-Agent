@@ -41,11 +41,13 @@ RuApp / RuAgent.Cli  --start-or-attach via RuAgent.Client-->  ASP.NET Core Publi
                                                                         `-- policy, approvals, and local action adapters
 ```
 
-Additional Phase-1 surfaces (additive, feature-flagged `RuBackend:AgentHarness:Version=v1` default):
+Additional Phase-2 surfaces (additive, feature-flagged `RuBackend:AgentHarness:Version=v1` default; durable policy/file-tool slice complete, terminal/Git still phase 3):
 
 - Worker v2: one `agent.step.start` → exactly one `generate_reply` → `AssistantStep(text, tool_calls, finish_reason)`, with braced JSON never streaming as delta and provider errors mapped to bounded `worker.*` codes.
-- Agent API/SSE: 13 `/agent/v1/*` routes plus durable `HarnessEvent` SSE (`id:<sequence>`, `Last-Event-ID`/`after_sequence` cursors, reconnect replay, transient non-durable deltas) with bearer auth, idempotency 409, `workspace_busy` 409, `preset_mismatch` 409, and `phase_not_available` for policy/approval/reconcile until their phase.
-- CLI tracer: thin headless `RuAgent.Cli` delegates start/attach to `RuAgent.Client` and all run behavior to HTTP/SSE; renders only safe envelope fields (NDJSON `v:1` with `--json`, no private payload auto-fetch, no prompt/args/output/secret fields).
+- Agent API/SSE: 13 `/agent/v1/*` routes plus durable `HarnessEvent` SSE (`id:<sequence>`, `Last-Event-ID`/`after_sequence` cursors, reconnect replay, transient non-durable deltas) with bearer auth, idempotency 409, `workspace_busy` 409, `preset_mismatch` 409, active `GET`/`POST`/`DELETE /agent/v1/policies` (global requires `X-Interactive-Confirmed: true`, versioned JSON, encrypted matcher values) and `POST /agent/v1/runs/{runId}/approvals/{approvalId}` (first-writer-wins `approval_stale`, exact scope preview, `approval_cannot_create_global`, 30-min expiry, old-snapshot execution ordering); `reconcile` remains `phase_not_available` until its phase.
+- Broker v2: immutable `PolicySnapshot` (version, preset, workspace identity `VolumeSerial`/`RootFileId`/`DisplayHash` `ws_*`, ordered `PolicyRule`/`PolicyMatcher` with tool/path/executable/argv/cwd/operation/network, SHA-256 canonical JSON), `BrokerRunLease` binding and hash validation, `PolicyContext`/`PolicySnapshotEvaluator` authoritative (invariants first, last-match wins, Standard `allow` for ordinary reads/creates/edits and `ask` for delete/protected/outside/network/unknown, Full `allow` fallback never bypassing trust), `CanonicalPathResolver`/`ProtectedPathCatalog` (DB/key/descriptor/rule locations, credentials, `.git/**`, `.env*`, version `1`), and approval `PendingApprovalStore`/`ApprovalTokenService` (30-min wait, 60-s token, `approval_stale` on replay, old-snapshot execution ordering, `reusable_rule_not_saved` still permits once-only execution).
+- File tools: `files.list`/`files.glob`/`files.search`/`files.read` (streaming enumeration, ordinal relative paths, hidden/binary/protected skip with counts, result/byte/time caps, offset beyond EOF, UTF-8 boundary, bounded `truncated` metadata, junction/symlink containment, no unbounded allocation) plus hash-guarded `files.write`/`files.edit`/`files.apply_patch` (required `expected_sha256` `missing`/64-hex, `workspace_changed` on mismatch, same-volume temp + flush/atomic replacement, 4 MiB cap, UTF-8, exact occurrences, before/after hashes, bounded diff summary, multi-file preflight, `patch_duplicate_path`/escape rejection, journal restore on N-th failure, run-attributed change set) and recoverable `files.delete`/`files.restore` (encrypted recovery copy capped 1 MiB, `recovery_too_large`, opaque `recovery_id`, one-time `recovery_consumed`/`recovery_target_exists`, byte-identity, never in diagnostics).
+- CLI tracer: thin headless `RuAgent.Cli` delegates start/attach to `RuAgent.Client` and all run behavior to HTTP/SSE; renders only safe envelope fields (NDJSON `v:1` with `--json`, no private payload auto-fetch, no prompt/args/output/secret fields) and now exposes `agent approve --scope once|run|project`/`deny`/`policy list`/`import --global FILE`/`remove` plus `run --preset full` interactive warning (`--json` cannot bypass).
 
 The accepted target flow, implemented by later architecture-v2 plans, is:
 
@@ -66,10 +68,13 @@ leases are still held, it prebuilds Broker and edge sequentially; both are then
 started with `--no-build` so their shared `RuAgent.Protocol` output cannot race
 during a cold build. It classifies all 54 HTTP and 2 WebSocket contract entries
 (41 legacy plus 13 additive `/agent/v1/*`), uses deterministic fixtures for safe
-mutations and voice plus additive Agent v2 read-only tracer fixtures
-(idempotency, workspace trust, SSE cursor, payload binding), skips observation
-routes that require hardware or external services, and removes the temporary
-root during idempotent cleanup. An early child exit is recorded only as its
+mutations and voice plus additive Agent v2 tracer fixtures (idempotency,
+workspace trust via `WindowsWorkspaceIdentityResolver` final-path/volume/file
+identity, policy snapshots, SSE cursor, payload binding, file discovery/read
+and hash-guarded mutations/patch/delete/restore with recovery caps, approval
+first-writer-wins and snapshot ordering), skips observation routes that require
+hardware or external services, and removes the temporary root during idempotent
+cleanup. An early child exit is recorded only as its
 role, exit code, and lifecycle classification; raw child output is not copied
 into the public artifact.
 The Harness does not change the Public Host's normal production ownership of
@@ -92,9 +97,9 @@ as connected.
 | Owner | Responsibilities |
 | --- | --- |
 | RuApp / RuAgent.Cli (via RuAgent.Client) | Desktop views (RuApp) or headless rendering (CLI), playback, microphone capture, public client calls via `AgentApiClient`/`SessionApiClient`/`AgentSseClient`, and user-visible state; start-or-attach Public Host through validated descriptor + `GET /status` bearer, but do not directly own Worker/Broker. |
-| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 54 HTTP and 2 WebSocket routes (41 + 13 `/agent/v1/*`), settings transactions, credentials, sessions, history, activity, structured memory, chat ordering, public error mapping, metadata filtering, durable Harness (Core state machines, SQLite WAL + encrypted payloads, conversation outbox, workspace trust, session permissions), Agent SSE (`id:<sequence>` cursors), and Worker/Broker child ownership in one kill-on-close Job Object with 10-min idle lease (active run/approval/long-lived lease suppresses exit). |
+| ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 54 HTTP and 2 WebSocket routes (41 + 13 `/agent/v1/*`), settings transactions, credentials, sessions, history, activity, structured memory, chat ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering `consume → persist reusable rule → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Worker/Broker child ownership in one kill-on-close Job Object with 10-min idle lease (active run/approval/long-lived lease suppresses exit). |
 | Runtime Worker | Provider adapters and device implementations that materially require Python: generation (v1 Chat multi-step + v2 one-step `AssistantStep`), STT execution, VTS, observation, and current OmniVoice coordination; reached via shared `ru_runtime.worker.server` (`/worker/v1` + `/worker/v2`). |
-| RuAgentBroker | Private execution boundary for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; private `run.open` lease advertises phase-1 `files.list`/`files.read` only. It has no public HTTP contract. |
+| RuAgentBroker | Private execution boundary for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; private `run.open` lease binds the immutable `PolicySnapshot` (preset, workspace identity, ordered rules, SHA-256) and canonical workspace root, validates hash before capabilities, and advertises complete `files.*` (`list`/`glob`/`search`/`read`/`write`/`edit`/`apply_patch`/`delete`/`restore` one-time) plus `system.volume`/`notes.create`. It has no public HTTP contract. |
 | Voice Engine | OmniVoice model lifecycle and native WAV synthesis inside its isolated environment; currently reached through Flask and replaced by framed process I/O in a later plan. |
 
 Unknown public paths stop in ASP.NET Core. Python has no public HTTP fallback,

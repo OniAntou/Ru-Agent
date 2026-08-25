@@ -75,6 +75,30 @@ A short-lived, one-time value bound to the exact request identity and
 canonical arguments for an external or destructive action.
 _Avoid_: reusable confirmation flag
 
+**Policy Snapshot**:
+The immutable, versioned, SHA-256-canonical binding of preset, trusted
+workspace identity, ordered `PolicyRule`/`PolicyMatcher` list, and creation
+time that Broker v2 validates before advertising capabilities; a new
+snapshot `N+1` invalidates other pending `N` decisions after the
+authorizing call completes.
+_Avoid_: mutable rule set
+
+**Policy Rule**:
+The `Global|Project|Run|Once` scoped record with stable ID, decision
+`Allow|Ask|Deny`, matcher (tool ID/version, canonical path pattern,
+resolved executable, argv/cwd/operation/network intent), creation order,
+and optional expiry; matcher values with paths/argv/cwd are encrypted at
+rest and only the active decrypted snapshot contains them.
+_Avoid_: repository-stored authority
+
+**Workspace Trust**:
+The binding of a canonical root to its Windows volume serial and root file
+identity (`WorkspaceIdentity` `ws_*` + `DisplayIdentityHash`), persisted as
+one active trusted identity per workspace and validated via final-path
+resolution; a moved identity creates a fresh trust request and Full Access
+never bypasses it.
+_Avoid_: repository-marker trust
+
 **Workspace Terminal**:
 The non-admin terminal adapter constrained to the configured workspace,
 allowlisted executables, bounded output, cancellation, and process-tree

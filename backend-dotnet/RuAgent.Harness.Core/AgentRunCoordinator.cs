@@ -225,6 +225,59 @@ public sealed class AgentRunCoordinator
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Moves a Running run to WaitingApproval without consuming any budget counter.
+    /// </summary>
+    public async Task<AgentRun> EnterApprovalWaitAsync(
+        RunId runId,
+        ApprovalId approvalId,
+        CancellationToken cancellationToken)
+    {
+        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+        var waiting = AgentBudgetPolicy.EnterApprovalWait(run, _time.UtcNow);
+        return await CommitAsync(
+                run,
+                waiting,
+                new[]
+                {
+                    new HarnessEventIntent(
+                        _ids.NewEventId(),
+                        HarnessEventKind.ApprovalRequested,
+                        approvalId: approvalId,
+                        safeCode: "approval_required"),
+                },
+                Array.Empty<HarnessPayloadIntent>(),
+                Array.Empty<ConversationOutboxIntent>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Returns a WaitingApproval run to Running after an approve/deny/typed-expiry
+    /// decision. Budget counters remain untouched: waits never consume budget.
+    /// </summary>
+    public async Task<AgentRun> ResumeAfterApprovalAsync(
+        RunId runId,
+        CancellationToken cancellationToken)
+    {
+        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+        var resumed = AgentBudgetPolicy.ResumeAfterApproval(run, _time.UtcNow);
+        return await CommitAsync(
+                run,
+                resumed,
+                new[]
+                {
+                    new HarnessEventIntent(
+                        _ids.NewEventId(),
+                        HarnessEventKind.RunStateChanged,
+                        safeCode: "approval_resolved"),
+                },
+                Array.Empty<HarnessPayloadIntent>(),
+                Array.Empty<ConversationOutboxIntent>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private async Task<AgentRunStepResult> HandleToolStepAsync(
         AgentRun run,
         ModelStepId modelStepId,

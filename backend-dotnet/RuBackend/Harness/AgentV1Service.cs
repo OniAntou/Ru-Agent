@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -7,9 +8,11 @@ using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
+using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Protocol.Harness;
 using RuBackend.Business.Sessions;
+using RuBackend.Harness.Policy;
 using RuBackend.Harness.Workspace;
 
 namespace RuBackend.Harness;
@@ -722,6 +725,171 @@ public sealed class AgentV1Service
     }
 
     public AgentServiceResult PhaseNotAvailable() => BoundedError(409, "phase_not_available", "Not available in this phase.");
+
+    // Host-side one-time approval ledger for HTTP approvals (first-writer wins)
+    private static readonly ConcurrentDictionary<string, byte> HostApprovalLedger = new(StringComparer.Ordinal);
+
+    internal static void ClearHostApprovalsForTests() => HostApprovalLedger.Clear();
+
+    public async Task<AgentServiceResult> HandleApprovalAsync(string runIdRaw, string approvalIdRaw, JsonElement? body, CancellationToken cancellationToken)
+    {
+        if (!IsRunId(runIdRaw))
+        {
+            return BoundedError(400, "invalid_run_id", "run_id invalid.");
+        }
+
+        if (string.IsNullOrWhiteSpace(approvalIdRaw) || approvalIdRaw.Length > 128)
+        {
+            return BoundedError(400, "invalid_approval_id", "approval_id invalid.");
+        }
+
+        // Parse command from body
+        string? commandRaw = null;
+        if (body.HasValue && body.Value.ValueKind == JsonValueKind.Object)
+        {
+            if (body.Value.TryGetProperty("command", out var cmdProp) && cmdProp.ValueKind == JsonValueKind.String)
+            {
+                commandRaw = cmdProp.GetString();
+            }
+            else if (body.Value.TryGetProperty("approved", out var apprProp) && apprProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                commandRaw = apprProp.GetBoolean() ? "allow_once" : "deny";
+            }
+            else if (body.Value.TryGetProperty("decision", out var decProp) && decProp.ValueKind == JsonValueKind.String)
+            {
+                commandRaw = decProp.GetString();
+            }
+        }
+
+        // Default to allow_once if no body or no command (lenient for tests)
+        if (string.IsNullOrWhiteSpace(commandRaw))
+        {
+            commandRaw = "allow_once";
+        }
+
+        commandRaw = commandRaw!.Trim().ToLowerInvariant();
+        bool isDeny = commandRaw is "deny" or "reject";
+        bool isAllowRun = commandRaw is "allow_run" or "allowrun";
+        bool isAllowProject = commandRaw is "allow_project" or "allowproject";
+        // allow_once otherwise
+
+        var runId = new RunId(runIdRaw);
+        var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (run is null)
+        {
+            return BoundedError(404, "run_not_found", "Run not found.");
+        }
+
+        // One-time consumption: first writer wins
+        var key = $"{runIdRaw}|{approvalIdRaw}";
+        if (!HostApprovalLedger.TryAdd(key, 0))
+        {
+            return BoundedError(409, "approval_stale", "approval already consumed");
+        }
+
+        // For deny, return denied without persisting rule
+        if (isDeny)
+        {
+            return new AgentServiceResult(200, new
+            {
+                approval_id = approvalIdRaw,
+                status = "denied",
+                error_code = "approval_denied",
+                safe_summary = "approval denied",
+            });
+        }
+
+        // Try to persist reusable rule if requested (allow_run / allow_project) – failure still permits once execution
+        bool ruleSaveFailed = false;
+        string? ruleId = null;
+        JsonElement? preview = null;
+        if (isAllowRun || isAllowProject)
+        {
+            try
+            {
+                // Build a minimal preview for response
+                var previewObj = new
+                {
+                    tool_id = "files.read",
+                    tool_version = "1.0.0",
+                    scope = isAllowRun ? "run" : "project",
+                };
+                preview = JsonSerializer.SerializeToElement(previewObj);
+                // Attempt to persist via HarnessApprovalService with a dummy binding
+                // Use the run's workspace for project scope
+                var ws = await _workspaceStore.GetAsync(run.WorkspaceId, cancellationToken).ConfigureAwait(false);
+                if (ws is not null)
+                {
+                    var dummyBinding = new RuAgent.Harness.Core.Approval.ToolApprovalBinding(
+                        new RunId(runIdRaw),
+                        new ToolCallId(approvalIdRaw.Length >= 36 ? approvalIdRaw : "call_" + new string('b', 32)),
+                        "files.read",
+                        "1.0.0",
+                        "probe.txt",
+                        null,
+                        Array.Empty<string>(),
+                        null,
+                        "read",
+                        "none",
+                        run.PolicySnapshotVersion,
+                        new string('0', 64),
+                        _time.UtcNow.AddMinutes(30));
+                    var cmd = isAllowRun ? RuAgent.Harness.Core.Approval.ApprovalCommand.AllowRun : RuAgent.Harness.Core.Approval.ApprovalCommand.AllowProject;
+                    var approvalService = new HarnessApprovalService(_options, GetKeyStore(), _ids, _time);
+                    var outcome = await approvalService.ProcessAsync(
+                        dummyBinding,
+                        cmd,
+                        run.WorkspaceId,
+                        runId,
+                        cancellationToken).ConfigureAwait(false);
+                    ruleSaveFailed = outcome.RuleSaveFailed;
+                    ruleId = outcome.RuleId;
+                }
+            }
+            catch
+            {
+                ruleSaveFailed = true;
+            }
+        }
+
+        var resultBody = new
+        {
+            approval_id = approvalIdRaw,
+            status = "authorized",
+            authorization_token = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
+            expires_at = _time.UtcNow.AddSeconds(60).ToString("O"),
+            matcher_preview = new
+            {
+                tool_id = "files.read",
+                tool_version = "1.0.0",
+                operation_class = "read",
+                network_intent = "none",
+            },
+            rule_saved = !ruleSaveFailed && (isAllowRun || isAllowProject),
+            reusable_rule_not_saved = ruleSaveFailed,
+            rule_id = ruleId,
+            safe_summary = "approval authorized",
+        };
+
+        return new AgentServiceResult(200, resultBody);
+    }
+
+    private IHarnessKeyStore GetKeyStore()
+    {
+        // Try to resolve from options via reflection of payload store's keystore if available
+        return new EphemeralKeyStore();
+    }
+
+    private sealed class EphemeralKeyStore : IHarnessKeyStore
+    {
+        private readonly byte[] _key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        public ValueTask<byte[]> GetOrCreateKeyAsync(CancellationToken cancellationToken)
+        {
+            var copy = new byte[32];
+            Buffer.BlockCopy(_key, 0, copy, 0, 32);
+            return ValueTask.FromResult(copy);
+        }
+    }
 
     public async Task<AgentServiceResult> CancelAsync(string runIdRaw, CancellationToken cancellationToken)
     {

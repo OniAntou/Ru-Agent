@@ -375,4 +375,57 @@ public sealed class ToolExecutionServiceTests
 
         ToolSchemaValidator.Validate(schema, new JsonObject { ["level"] = 2 });
     }
+
+    [Fact]
+    public async Task Approval_respond_with_stale_id_never_invokes_adapter()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-stale-approval-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var workspaceRoot = Path.Combine(root, "workspace");
+        Directory.CreateDirectory(workspaceRoot);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(
+            descriptorPath,
+            System.Text.Json.JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        session.Open("session-stale", new HashSet<string>([RuAgent.Broker.Policy.ToolScope.TerminalExecute], StringComparer.Ordinal), new HashSet<string>(StringComparer.Ordinal));
+        var service = new ToolExecutionService(session, workspaceRoot);
+        try
+        {
+            var result = await service.RespondToApprovalAsync(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "req-stale",
+                    AgentMessageTypes.ApprovalResponse,
+                    "session-stale",
+                    null,
+                    30_000,
+                    new System.Text.Json.Nodes.JsonObject { ["approval_id"] = "nonexistent", ["approved"] = true }),
+                CancellationToken.None);
+            Assert.Equal("approval_stale", result.ErrorCode);
+            Assert.False(result.AdapterInvoked);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Tool_execute_without_valid_authorization_is_stale()
+    {
+        // V2 path: approval token must be valid bound to snapshot+intent; without it tool must not execute.
+        // Here we simulate by trying to consume an ApprovalTokenService token with mismatched intent hash.
+        var service = new RuAgent.Broker.Policy.ApprovalTokenService();
+        var token = service.Issue("run_11111111111111111111111111111111", "session-1", "files.read", "1.0.0", "hash", TimeSpan.FromSeconds(30), snapshotVersion: 5, intentHash: new string('a', 64));
+        var wrong = new RuAgent.Broker.Policy.ApprovalBinding("run_11111111111111111111111111111111", "session-1", "files.read", "1.0.0", "hash", DateTimeOffset.UtcNow.AddMinutes(5), SnapshotVersion: 5, IntentHash: new string('b', 64));
+        Assert.False(service.TryConsume(token, wrong, out _));
+    }
 }

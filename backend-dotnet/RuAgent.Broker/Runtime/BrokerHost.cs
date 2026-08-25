@@ -92,6 +92,7 @@ public sealed class BrokerHost : IAsyncDisposable
         IsReady = false;
         _session.ClearDecisions();
         _tools.ClearPendingApprovals();
+        RuAgent.Broker.Transport.AgentConnection.ClearSharedV2State();
         await _cleanup.RunAsync().ConfigureAwait(false);
         await _application.DisposeAsync().ConfigureAwait(false);
         _shutdown.Dispose();

@@ -252,10 +252,24 @@ public static class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static Task<IResult> PostApprovalAsync(string runId, string approvalId, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> PostApprovalAsync(string runId, string approvalId, HttpContext context, AgentV1Service service, CancellationToken ct)
     {
-        var result = service.PhaseNotAvailable();
-        return Task.FromResult(Results.Json(result.Body, statusCode: result.StatusCode));
+        System.Text.Json.JsonElement body = default;
+        bool hasBody = false;
+        try
+        {
+            using var reader = new System.IO.StreamReader(context.Request.Body);
+            var text = await reader.ReadToEndAsync(ct);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                body = System.Text.Json.JsonDocument.Parse(text).RootElement.Clone();
+                hasBody = true;
+            }
+        }
+        catch { }
+
+        var result = await service.HandleApprovalAsync(runId, approvalId, hasBody ? body : null, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
     private static async Task<IResult> PostTrustAsync(string runId, HttpContext context, AgentV1Service service, CancellationToken ct)

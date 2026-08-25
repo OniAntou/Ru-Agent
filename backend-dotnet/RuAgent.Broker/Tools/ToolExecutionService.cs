@@ -14,6 +14,12 @@ namespace RuAgent.Broker.Tools;
 
 public sealed class ToolExecutionService : IToolInvoker
 {
+    // Dispatch coordination: V2 tool.execute (files.* via policy snapshot) is gated in AgentConnection before dispatch:
+    //  - tool.evaluate (allow) → decision_token → tool.prepare → preparation_token → tool.execute
+    //  - tool.evaluate (ask) → approval_id (30m) → approval.respond → authorization_token (60s) → tool.execute
+    // This service's ExecuteAsync is the v1 terminal/file path (scope grant + optional approval). It never bypasses
+    // the V2 authorization check; AgentConnection consumes the authorization_token BEFORE invoking the tool handler.
+    // V2 approvals never invoke adapters via approval.respond; only tool.execute after token consumption invokes adapters.
     private static readonly Regex StableCodePattern = new("^[a-z][a-z0-9_]{0,63}$", RegexOptions.Compiled);
 
     private readonly BrokerSession _session;

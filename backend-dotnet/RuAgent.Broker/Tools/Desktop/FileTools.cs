@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Nodes;
+using RuAgent.Broker.Tools.Files;
 
 namespace RuAgent.Broker.Tools.Desktop;
 
@@ -23,50 +24,37 @@ public sealed class FileTools
     private const long MaxEditBytes = 4 * 1024 * 1024;
 
     private readonly WorkspacePathGuard _workspace;
+    private readonly FileListAdapter _listAdapter;
+    private readonly FileReadAdapter _readAdapter;
 
-    public FileTools(WorkspacePathGuard workspace) => _workspace = workspace;
+    public FileTools(WorkspacePathGuard workspace)
+    {
+        _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
+        _listAdapter = new FileListAdapter(_workspace.Root);
+        _readAdapter = new FileReadAdapter(_workspace.Root);
+    }
 
     public JsonObject List(string relativePath)
     {
-        var directory = _workspace.Resolve(relativePath);
-        if (!Directory.Exists(directory))
-        {
-            throw new IOException("not_a_directory");
-        }
-
-        var entries = new JsonArray();
-        foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Take(512))
-        {
-            var info = new FileInfo(entry);
-            entries.Add(new JsonObject
-            {
-                ["path"] = _workspace.ToRelative(entry),
-                ["kind"] = Directory.Exists(entry) ? "directory" : "file",
-                ["size"] = Directory.Exists(entry) ? 0 : info.Length,
-            });
-        }
-
-        return new JsonObject { ["entries"] = entries };
+        var args = new JsonObject { ["path"] = relativePath };
+        return _listAdapter.Execute(args);
     }
 
     public JsonObject Read(string relativePath, int maxBytes = 256 * 1024)
     {
-        var path = _workspace.Resolve(relativePath);
         if (maxBytes is < 1 or > 4 * 1024 * 1024)
         {
             throw new ArgumentOutOfRangeException(nameof(maxBytes));
         }
 
-        var observedLength = new FileInfo(path).Length;
-        var read = ReadAtMost(path, maxBytes);
-        var truncated = observedLength > maxBytes || read.Truncated;
-        var content = Encoding.UTF8.GetString(read.Bytes);
-        return new JsonObject
+        var limit = Math.Min(maxBytes, FileToolLimits.MaxReadBytes);
+        var args = new JsonObject
         {
-            ["path"] = _workspace.ToRelative(path),
-            ["content"] = content,
-            ["truncated"] = truncated,
+            ["path"] = relativePath,
+            ["limit"] = limit,
+            ["offset"] = 0,
         };
+        return _readAdapter.Execute(args);
     }
 
     public JsonObject Write(string relativePath, string content, bool overwrite = false)

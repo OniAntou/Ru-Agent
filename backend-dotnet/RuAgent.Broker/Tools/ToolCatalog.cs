@@ -55,6 +55,8 @@ public sealed class ToolCatalog
         yield return VolumeTools.Manifest;
         yield return Manifest("app.list", ToolScope.SystemRead, RiskClass.Read, "desktop");
         yield return Manifest("files.list", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
+        yield return Manifest("files.glob", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
+        yield return Manifest("files.search", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
         yield return Manifest("files.read", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
         yield return Manifest("files.edit", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
         yield return Manifest("files.write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);

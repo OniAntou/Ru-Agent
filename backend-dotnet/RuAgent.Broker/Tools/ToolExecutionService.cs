@@ -6,6 +6,7 @@ using RuAgent.Broker.Policy;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Skills;
 using RuAgent.Broker.Tools.Desktop;
+using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Notes;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
@@ -29,6 +30,10 @@ public sealed class ToolExecutionService : IToolInvoker
     private readonly PendingApprovalStore _approvals = new();
     private readonly WorkspacePathGuard _workspace;
     private readonly FileTools _files;
+    private readonly FileListAdapter _fileList;
+    private readonly FileGlobAdapter _fileGlob;
+    private readonly FileSearchAdapter _fileSearch;
+    private readonly FileReadAdapter _fileRead;
     private readonly AppTools _apps = new();
     private readonly SystemTools _system = new();
     private readonly Lazy<VolumeTools> _volume;
@@ -43,6 +48,10 @@ public sealed class ToolExecutionService : IToolInvoker
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _workspace = new WorkspacePathGuard(workspaceRoot);
         _files = new FileTools(_workspace);
+        _fileList = new FileListAdapter(_workspace.Root);
+        _fileGlob = new FileGlobAdapter(_workspace.Root);
+        _fileSearch = new FileSearchAdapter(_workspace.Root);
+        _fileRead = new FileReadAdapter(_workspace.Root);
         _notes = new NotesAdapter(_workspace);
         _terminal = new TerminalAdapter(
             _workspace,
@@ -377,10 +386,16 @@ public sealed class ToolExecutionService : IToolInvoker
             ["system.volume"] = ExecuteVolumeAsync,
             ["app.list"] = (_, _, _) => Succeeded(_apps.List(), "Application list read."),
             ["files.list"] = (_, arguments, _) => Succeeded(
-                _files.List(ReadOptionalString(arguments, "path") ?? "."),
+                _fileList.Execute(arguments),
                 "Workspace entries listed."),
+            ["files.glob"] = (_, arguments, _) => Succeeded(
+                _fileGlob.Execute(arguments),
+                "Workspace glob completed."),
+            ["files.search"] = (_, arguments, _) => Succeeded(
+                _fileSearch.Execute(arguments),
+                "Workspace search completed."),
             ["files.read"] = (_, arguments, _) => Succeeded(
-                _files.Read(ReadString(arguments, "path")),
+                _fileRead.Execute(arguments),
                 "Workspace file read."),
             ["files.edit"] = (_, arguments, _) => ExecuteFileEdit(arguments),
             ["files.write"] = (_, arguments, _) => Succeeded(

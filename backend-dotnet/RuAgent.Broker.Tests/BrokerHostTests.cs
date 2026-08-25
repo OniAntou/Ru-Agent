@@ -83,7 +83,7 @@ public sealed class BrokerHostTests
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(new[] { "files.list", "files.read" }, ids);
+        Assert.Equal(new[] { "files.glob", "files.list", "files.read", "files.search" }, ids);
         Assert.Empty(hello.Payload["skills"]!.AsArray());
     }
 
@@ -732,7 +732,7 @@ public sealed class BrokerHostTests
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
-        Assert.Equal(new[] { "files.list", "files.read" }, caps);
+        Assert.Equal(new[] { "files.glob", "files.list", "files.read", "files.search" }, caps);
     }
 
     [Fact]
@@ -771,7 +771,7 @@ public sealed class BrokerHostTests
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(new[] { "files.list", "files.read" }, ids);
+        Assert.Equal(new[] { "files.glob", "files.list", "files.read", "files.search" }, ids);
     }
 
     [Fact]

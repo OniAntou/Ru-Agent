@@ -67,11 +67,11 @@ public static class BrokerPolicyContracts
 
     public static IReadOnlyList<string> AuthoritativeFallbackCapabilities()
     {
-        return new[] { "files.list", "files.read" };
+        return new[] { "files.list", "files.glob", "files.search", "files.read" };
     }
 
     public static bool IsReadOnlyTool(string toolId) =>
-        toolId is "files.list" or "files.read";
+        toolId is "files.list" or "files.glob" or "files.search" or "files.read";
 
     public static string CanonicalizePreset(string preset) => preset switch
     {

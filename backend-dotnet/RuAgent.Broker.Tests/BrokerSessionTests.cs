@@ -73,7 +73,7 @@ public sealed class BrokerSessionTests
         Assert.True(session.TryOpenRunLease(lease, out var error));
         Assert.Null(error);
         Assert.NotNull(session.ActiveRunLease);
-        Assert.Equal(new[] { "files.list", "files.read" }, session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
+        Assert.Equal(new[] { "files.glob", "files.list", "files.read", "files.search" }, session.ActiveRunLease!.AdvertisedCapabilities.OrderBy(x => x).ToArray());
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public sealed class BrokerSessionTests
             new string('c', 64),
             Path.GetTempPath(),
             LeaseTestSnapshots.StandardEmpty());
-        Assert.Equal(new[] { "files.list", "files.read" }, lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
+        Assert.Equal(new[] { "files.glob", "files.list", "files.read", "files.search" }, lease.AdvertisedCapabilities.OrderBy(x => x).ToArray());
         Assert.DoesNotContain("files.write", lease.AdvertisedCapabilities);
         Assert.DoesNotContain("terminal.run", lease.AdvertisedCapabilities);
     }

@@ -69,7 +69,7 @@ public sealed class AgentModeProfileTests
         }
 
         Assert.Equal(
-            """{"path":"ten-file-trong-workspace"}""",
+            """{"path":"ten-file-trong-workspace","offset":0,"limit":1024}""",
             tools.Single(item => item!["tool_id"]!.GetValue<string>() == "files.read")!["hint"]!
                 .GetValue<string>());
         Assert.Equal(

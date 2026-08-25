@@ -14,7 +14,7 @@ public sealed class ToolBindingRegistryTests
         var ids = CatalogForTests().ModelCapabilities(CapabilityProfile.Chat)
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
-        Assert.Equal(new HashSet<string> { "files.list", "files.read" }, ids);
+        Assert.Equal(new HashSet<string> { "files.list", "files.glob", "files.search", "files.read" }, ids);
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public sealed class ToolBindingRegistryTests
 
         Assert.Equal(new[]
         {
-            "app.list", "files.edit", "files.list", "files.read", "files.write", "notes.create",
+            "app.list", "files.edit", "files.glob", "files.list", "files.read", "files.search", "files.write", "notes.create",
             "system.status", "system.time", "system.volume", "terminal.run", "terminal.shell",
         }, ids);
         Assert.DoesNotContain("app.open", ids);
@@ -95,6 +95,8 @@ public sealed class ToolBindingRegistryTests
         ["system.volume"] = Succeeded,
         ["app.list"] = Succeeded,
         ["files.list"] = Succeeded,
+        ["files.glob"] = Succeeded,
+        ["files.search"] = Succeeded,
         ["files.read"] = Succeeded,
         ["files.edit"] = Succeeded,
         ["files.write"] = Succeeded,

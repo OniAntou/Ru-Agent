@@ -39,10 +39,23 @@ public static class AgentModelToolContractCatalog
         new("files.list", FileListSchema, () => new JsonObject
         {
             ["path"] = "thu-muc-trong-workspace",
+            ["max_entries"] = 32,
+        }),
+        new("files.glob", FileGlobSchema, () => new JsonObject
+        {
+            ["path"] = "thu-muc-trong-workspace",
+            ["pattern"] = "*.txt",
+        }),
+        new("files.search", FileSearchSchema, () => new JsonObject
+        {
+            ["path"] = "thu-muc-trong-workspace",
+            ["query"] = "tim-kiem",
         }),
         new("files.read", FileReadSchema, () => new JsonObject
         {
             ["path"] = "ten-file-trong-workspace",
+            ["offset"] = 0,
+            ["limit"] = 1024,
         }),
         new("files.write", FileWriteSchema, () => new JsonObject
         {
@@ -106,11 +119,31 @@ public static class AgentModelToolContractCatalog
     private static JsonObject EmptySchema() => ObjectSchema();
 
     private static JsonObject FileListSchema() => ObjectSchema(
-        properties: [("path", StringSchema())]);
+        properties: [("path", StringSchema()), ("max_entries", IntegerSchema(minimum: 1, maximum: 512))]);
+
+    private static JsonObject FileGlobSchema() => ObjectSchema(
+        required: ["pattern"],
+        properties: [("path", StringSchema()), ("pattern", StringSchema()), ("max_results", IntegerSchema(minimum: 1, maximum: 64))]);
+
+    private static JsonObject FileSearchSchema() => ObjectSchema(
+        required: ["query"],
+        properties:
+        [
+            ("path", StringSchema()),
+            ("query", StringSchema()),
+            ("file_glob", StringSchema()),
+            ("case_sensitive", BooleanSchema()),
+            ("max_results", IntegerSchema(minimum: 1, maximum: 64)),
+        ]);
 
     private static JsonObject FileReadSchema() => ObjectSchema(
         required: ["path"],
-        properties: [("path", StringSchema())]);
+        properties:
+        [
+            ("path", StringSchema()),
+            ("offset", IntegerSchema(minimum: 0)),
+            ("limit", IntegerSchema(minimum: 1, maximum: 256 * 1024)),
+        ]);
 
     private static JsonObject FileWriteSchema() => ObjectSchema(
         required: ["path", "content"],

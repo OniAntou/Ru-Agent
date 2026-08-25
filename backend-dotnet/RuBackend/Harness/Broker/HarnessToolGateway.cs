@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using RuAgent.Harness.Core;
 
 namespace RuBackend.Harness.Broker;
@@ -43,7 +44,7 @@ public sealed class HarnessToolGateway : IToolGateway
             return Task.FromResult(ToolProposalDecision.Deny(ToolAccessKind.ReadOnly, "phase_not_available"));
         }
 
-        if (proposal.ToolId is not ("files.list" or "files.read"))
+        if (proposal.ToolId is not ("files.list" or "files.glob" or "files.search" or "files.read"))
         {
             return Task.FromResult(ToolProposalDecision.Deny(MapAccessKind(proposal.ToolId), "phase_not_available"));
         }
@@ -104,6 +105,8 @@ public sealed class HarnessToolGateway : IToolGateway
         // Map execution to tool call via stored proposal? In this tracer, we only handle read-only tools.
         var toolId = _pendingToolIds.TryGetValue(execution.ExecutionId.Value, out var storedToolId) ? storedToolId
             : execution.PreparationToken.Contains("files.list", StringComparison.Ordinal) ? "files.list"
+            : execution.PreparationToken.Contains("files.glob", StringComparison.Ordinal) ? "files.glob"
+            : execution.PreparationToken.Contains("files.search", StringComparison.Ordinal) ? "files.search"
             : execution.PreparationToken.Contains("files.read", StringComparison.Ordinal) ? "files.read"
             : "files.read"; // fallback
 
@@ -150,6 +153,14 @@ public sealed class HarnessToolGateway : IToolGateway
             if (toolId == "files.list")
             {
                 output = ListFiles(path);
+            }
+            else if (toolId == "files.glob")
+            {
+                output = GlobFiles(args);
+            }
+            else if (toolId == "files.search")
+            {
+                output = SearchFiles(args);
             }
             else
             {
@@ -251,6 +262,196 @@ public sealed class HarnessToolGateway : IToolGateway
         };
     }
 
+    private JsonObject GlobFiles(JsonObject args)
+    {
+        var basePath = args["path"] is JsonValue bv && bv.TryGetValue<string>(out var bp) ? bp : ".";
+        var pattern = args["pattern"] is JsonValue pv2 && pv2.TryGetValue<string>(out var pat) ? pat : throw new ArgumentException("missing pattern");
+        var maxResults = args["max_results"] is JsonValue mv && mv.TryGetValue<int>(out var mr) ? mr : 64;
+        var baseDir = ResolveWithinRoot(basePath);
+        if (!Directory.Exists(baseDir))
+        {
+            throw new IOException("not_a_directory");
+        }
+
+        var regex = GlobToRegex(pattern);
+        var results = new List<string>();
+        var stack = new Stack<string>();
+        stack.Push(baseDir);
+        int scanned = 0;
+        while (stack.Count > 0 && results.Count < maxResults && scanned < 2048)
+        {
+            var cur = stack.Pop();
+            IEnumerable<string> entries;
+            try
+            {
+                entries = Directory.EnumerateFileSystemEntries(cur);
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var entry in entries)
+            {
+                if (results.Count >= maxResults || scanned >= 2048)
+                {
+                    break;
+                }
+
+                var lower = entry.ToLowerInvariant();
+                if (lower.Contains(Path.DirectorySeparatorChar + ".git" + Path.DirectorySeparatorChar) || lower.EndsWith(Path.DirectorySeparatorChar + ".git") || Path.GetFileName(entry).StartsWith(".env", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var rel = Path.GetRelativePath(_canonicalRoot, entry).Replace(Path.DirectorySeparatorChar, '/');
+                bool matches = false;
+                try
+                {
+                    matches = regex.IsMatch(rel) || regex.IsMatch(Path.GetFileName(rel));
+                }
+                catch
+                {
+                    matches = false;
+                }
+
+                if (matches)
+                {
+                    results.Add(rel);
+                }
+
+                if (Directory.Exists(entry))
+                {
+                    stack.Push(entry);
+                }
+
+                scanned++;
+            }
+        }
+
+        results.Sort(StringComparer.Ordinal);
+        var final = results.Count > maxResults ? results.Take(maxResults).ToList() : results;
+        var truncated = results.Count > maxResults;
+        var arr = new JsonArray(final.Select(r => (JsonNode)JsonValue.Create(r)).ToArray());
+        return new JsonObject { ["results"] = arr, ["count"] = final.Count, ["truncated"] = truncated };
+    }
+
+    private JsonObject SearchFiles(JsonObject args)
+    {
+        var basePath = args["path"] is JsonValue bv && bv.TryGetValue<string>(out var bp) ? bp : ".";
+        var query = args["query"] is JsonValue qv && qv.TryGetValue<string>(out var q) ? q : throw new ArgumentException("missing query");
+        var fileGlob = args["file_glob"] is JsonValue fg && fg.TryGetValue<string>(out var fgStr) ? fgStr : null;
+        var caseSensitive = args["case_sensitive"] is JsonValue csv && csv.TryGetValue<bool>(out var cs) ? cs : false;
+        var maxResults = args["max_results"] is JsonValue mv && mv.TryGetValue<int>(out var mr) ? mr : 64;
+        var baseDir = ResolveWithinRoot(basePath);
+        if (!Directory.Exists(baseDir))
+        {
+            throw new IOException("not_a_directory");
+        }
+
+        Regex? fileGlobRegex = fileGlob is not null ? GlobToRegex(fileGlob) : null;
+        var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var results = new List<JsonObject>();
+        var stack = new Stack<string>();
+        stack.Push(baseDir);
+        int scannedFiles = 0;
+        while (stack.Count > 0 && results.Count < maxResults && scannedFiles < 1024)
+        {
+            var cur = stack.Pop();
+            IEnumerable<string> entries;
+            try
+            {
+                entries = Directory.EnumerateFileSystemEntries(cur);
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var entry in entries)
+            {
+                if (results.Count >= maxResults || scannedFiles >= 1024)
+                {
+                    break;
+                }
+
+                var lower = entry.ToLowerInvariant();
+                if (lower.Contains(Path.DirectorySeparatorChar + ".git" + Path.DirectorySeparatorChar) || lower.EndsWith(Path.DirectorySeparatorChar + ".git") || Path.GetFileName(entry).StartsWith(".env", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (Directory.Exists(entry))
+                {
+                    stack.Push(entry);
+                    continue;
+                }
+
+                var rel = Path.GetRelativePath(_canonicalRoot, entry).Replace(Path.DirectorySeparatorChar, '/');
+                if (fileGlobRegex is not null)
+                {
+                    bool m = false;
+                    try { m = fileGlobRegex.IsMatch(rel) || fileGlobRegex.IsMatch(Path.GetFileName(rel)); } catch { m = false; }
+                    if (!m) continue;
+                }
+
+                FileInfo info;
+                try { info = new FileInfo(entry); if (!info.Exists || info.Length > 1 * 1024 * 1024) continue; } catch { continue; }
+                // binary check
+                bool isBinary = false;
+                try
+                {
+                    using var s = new FileStream(entry, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan);
+                    var buf = new byte[Math.Min(8000, (int)Math.Min(s.Length, 8000))];
+                    var read = s.Read(buf, 0, buf.Length);
+                    for (int i = 0; i < read; i++) if (buf[i] == 0) { isBinary = true; break; }
+                }
+                catch { continue; }
+                if (isBinary) continue;
+
+                try
+                {
+                    using var stream = new FileStream(entry, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan);
+                    using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 4096);
+                    string? line;
+                    int lineNum = 0;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        lineNum++;
+                        if (line.Length > 8192) line = line.Substring(0, 8192);
+                        int idx = line.IndexOf(query, comparison);
+                        if (idx >= 0 && results.Count < maxResults)
+                        {
+                            var preview = line.Length > 512 ? line.Substring(0, 512) : line;
+                            results.Add(new JsonObject { ["path"] = rel, ["line"] = lineNum, ["column"] = idx + 1, ["preview"] = preview, ["line_text"] = preview });
+                        }
+                        if (results.Count >= maxResults) break;
+                    }
+                }
+                catch { continue; }
+                scannedFiles++;
+            }
+        }
+
+        var sorted = results.OrderBy(r => r["path"]!.GetValue<string>(), StringComparer.Ordinal).ThenBy(r => r["line"]!.GetValue<int>()).ToList();
+        var final = sorted.Count > maxResults ? sorted.Take(maxResults).ToList() : sorted;
+        var truncated = sorted.Count > maxResults || final.Count == maxResults;
+        if (final.Count < maxResults) truncated = false;
+        var arr = new JsonArray(final.Select(r => (JsonNode)r.DeepClone()).ToArray());
+        return new JsonObject { ["results"] = arr, ["count"] = final.Count, ["truncated"] = truncated, ["scanned_files"] = scannedFiles };
+    }
+
+    private static Regex GlobToRegex(string pattern)
+    {
+        var normalized = pattern.Replace('\\', '/');
+        var escaped = Regex.Escape(normalized);
+        escaped = escaped.Replace(@"\*\*", "___DOUBLESTAR___");
+        escaped = escaped.Replace(@"\*", "[^/]*");
+        escaped = escaped.Replace(@"\?", "[^/]");
+        escaped = escaped.Replace("___DOUBLESTAR___", ".*");
+        return new Regex("^" + escaped + "$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
     private string ResolveWithinRoot(string relativePath)
     {
         if (string.IsNullOrWhiteSpace(relativePath) || Path.IsPathRooted(relativePath) || relativePath.Contains('\0'))
@@ -272,6 +473,8 @@ public sealed class HarnessToolGateway : IToolGateway
     private static ToolAccessKind MapAccessKind(string toolId) => toolId switch
     {
         "files.list" => ToolAccessKind.ReadOnly,
+        "files.glob" => ToolAccessKind.ReadOnly,
+        "files.search" => ToolAccessKind.ReadOnly,
         "files.read" => ToolAccessKind.ReadOnly,
         _ => ToolAccessKind.Mutation,
     };
@@ -284,25 +487,54 @@ public sealed class HarnessToolGateway : IToolGateway
             throw new ArgumentException("arguments must be object");
         }
 
-        // Minimal validation: check required path field for list/read.
-        if (proposal.ToolId is "files.list" or "files.read")
+        // Minimal validation: check required fields for discovery/read.
+        if (proposal.ToolId is "files.list" or "files.read" or "files.glob" or "files.search")
         {
-            if (!args.TryGetProperty("path", out var pathProp) && proposal.ToolId == "files.read")
+            if (proposal.ToolId == "files.read" && !args.TryGetProperty("path", out var pathPropRead))
             {
                 throw new ArgumentException("missing path");
             }
 
-            if (pathProp.ValueKind == JsonValueKind.String)
+            if (proposal.ToolId == "files.glob" && !args.TryGetProperty("pattern", out var patProp))
+            {
+                throw new ArgumentException("missing pattern");
+            }
+
+            if (proposal.ToolId == "files.search" && !args.TryGetProperty("query", out var queryProp))
+            {
+                throw new ArgumentException("missing query");
+            }
+
+            // Validate path if present
+            if (args.TryGetProperty("path", out var pathProp) && pathProp.ValueKind == JsonValueKind.String)
             {
                 var path = pathProp.GetString();
-                if (string.IsNullOrWhiteSpace(path) || path!.Length > 1024)
+                if (string.IsNullOrWhiteSpace(path) || path!.Length > 4096)
                 {
                     throw new ArgumentException("invalid path");
                 }
             }
-            else if (proposal.ToolId == "files.read")
+            else if (proposal.ToolId == "files.read" && args.TryGetProperty("path", out var missingPath) && missingPath.ValueKind != JsonValueKind.String)
             {
                 throw new ArgumentException("invalid path");
+            }
+
+            if (proposal.ToolId == "files.glob" && args.TryGetProperty("pattern", out var patternProp) && patternProp.ValueKind == JsonValueKind.String)
+            {
+                var pat = patternProp.GetString();
+                if (string.IsNullOrWhiteSpace(pat) || pat!.Length > 512)
+                {
+                    throw new ArgumentException("invalid pattern");
+                }
+            }
+
+            if (proposal.ToolId == "files.search" && args.TryGetProperty("query", out var qProp) && qProp.ValueKind == JsonValueKind.String)
+            {
+                var q = qProp.GetString();
+                if (string.IsNullOrWhiteSpace(q) || q!.Length > 1024)
+                {
+                    throw new ArgumentException("invalid query");
+                }
             }
         }
     }

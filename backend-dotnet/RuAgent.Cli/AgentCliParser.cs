@@ -10,6 +10,18 @@ public enum AgentCommandKind
     Cancel,
     Continue,
     Status,
+    Approve,
+    Deny,
+    PolicyList,
+    PolicyImport,
+    PolicyRemove,
+}
+
+public enum ApprovalScope
+{
+    Once,
+    Run,
+    Project,
 }
 
 public abstract record AgentCommand(AgentCommandKind Kind, bool Json);
@@ -39,6 +51,31 @@ public sealed record StatusCommand(
     string RunId,
     bool Json) : AgentCommand(AgentCommandKind.Status, Json);
 
+public sealed record ApproveCommand(
+    string RunId,
+    string ApprovalId,
+    ApprovalScope Scope,
+    bool Json) : AgentCommand(AgentCommandKind.Approve, Json);
+
+public sealed record DenyCommand(
+    string RunId,
+    string ApprovalId,
+    bool Json) : AgentCommand(AgentCommandKind.Deny, Json);
+
+public sealed record PolicyListCommand(
+    bool Global,
+    string? WorkspacePath,
+    bool Json) : AgentCommand(AgentCommandKind.PolicyList, Json);
+
+public sealed record PolicyImportCommand(
+    bool Global,
+    string FilePath,
+    bool Json) : AgentCommand(AgentCommandKind.PolicyImport, Json);
+
+public sealed record PolicyRemoveCommand(
+    string RuleId,
+    bool Json) : AgentCommand(AgentCommandKind.PolicyRemove, Json);
+
 public sealed record AgentCliParseResult(
     bool Success,
     AgentCommand? Command,
@@ -53,10 +90,14 @@ public static class AgentCliParser
     public const int MaxSessionIdLength = 64;
     public const int MaxRunIdLength = 36;
     public const int MaxPresetLength = 16;
+    public const int MaxApprovalIdLength = 128;
+    public const int MaxRuleIdLength = 37;
+    public const int MaxFilePathLength = 4096;
 
     private static readonly Regex RunIdRegex = new(@"^run_[0-9a-f]{32}$", RegexOptions.Compiled);
+    private static readonly Regex ApprovalIdRegex = new(@"^apr_[0-9a-f]{32}$", RegexOptions.Compiled);
+    private static readonly Regex RuleIdRegex = new(@"^rule_[0-9a-f]{32}$", RegexOptions.Compiled);
     private static readonly Regex SessionIdLooseRegex = new(@"^[A-Za-z0-9_-]{1,64}$", RegexOptions.Compiled);
-    private static readonly Regex SessionIdStrictHexRegex = new(@"^[0-9a-f]{32}$", RegexOptions.Compiled);
 
     public static AgentCliParseResult Parse(string[] args)
     {
@@ -66,14 +107,10 @@ public static class AgentCliParser
         if (args.Length > MaxArgCount)
             return Fail("too_many_arguments", $"Argument count {args.Length} exceeds maximum {MaxArgCount}.");
 
-        // Also bound each argument length to avoid huge allocations
         foreach (var a in args)
         {
             if (a is not null && a.Length > MaxPromptLength)
             {
-                // Workspace/prompt specific bounds will be checked later, but cap overall arg length
-                // Keep as invalid_argument if any arg absurdly long
-                // For prompt, we already have MaxPromptLength, for others smaller, but this catches generic oversize
                 if (a.Length > 8192)
                     return Fail("argument_too_long", $"Argument too long ({a.Length}).");
             }
@@ -86,7 +123,7 @@ public static class AgentCliParser
             return Fail("unknown_command", $"Unknown command '{args[0]}'. Expected 'agent'.");
 
         if (args.Length < 2)
-            return Fail("missing_subcommand", "Missing agent subcommand. Expected run|attach|trust|cancel|continue|status.");
+            return Fail("missing_subcommand", "Missing agent subcommand. Expected run|attach|trust|cancel|continue|status|approve|deny|policy.");
 
         var sub = args[1];
         return sub switch
@@ -97,13 +134,15 @@ public static class AgentCliParser
             "cancel" => ParseCancel(args),
             "continue" => ParseContinue(args),
             "status" => ParseStatus(args),
+            "approve" => ParseApprove(args),
+            "deny" => ParseDeny(args),
+            "policy" => ParsePolicy(args),
             _ => Fail("unknown_subcommand", $"Unknown agent subcommand '{sub}'.")
         };
     }
 
     private static AgentCliParseResult ParseRun(string[] args)
     {
-        // args[0]=agent, [1]=run, [2..] options + prompt
         string? workspace = null;
         bool workspaceSeen = false;
         string preset = "standard";
@@ -147,9 +186,9 @@ public static class AgentCliParser
                 if (val.Length == 0 || val.Length > MaxPresetLength)
                     return Fail("invalid_preset", "Preset too long.");
                 if (val == "full")
-                    return Fail("phase_not_available", "Preset 'full' is not available in this phase (only 'standard' allowed).");
-                if (val != "standard")
-                    return Fail("invalid_preset", $"Unknown preset '{val}'. Expected 'standard'.");
+                    val = "full_access";
+                if (val != "standard" && val != "full_access")
+                    return Fail("invalid_preset", $"Unknown preset '{val}'. Expected 'standard' or 'full_access'.");
                 preset = val;
                 presetSeen = true;
                 i++;
@@ -168,7 +207,6 @@ public static class AgentCliParser
                     return Fail("invalid_session_id", $"Session id length must be 1..{MaxSessionIdLength}.");
                 if (!SessionIdLooseRegex.IsMatch(val))
                     return Fail("invalid_session_id", $"Session id contains invalid characters.");
-                // Additional strict check if 32 hex? allow loose for flexibility but bound already
                 sessionId = val;
                 sessionSeen = true;
                 i++;
@@ -186,7 +224,6 @@ public static class AgentCliParser
             {
                 return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent run'.");
             }
-            // positional prompt
             if (prompt is not null)
                 return Fail("too_many_arguments", "Multiple prompt arguments. Expected single prompt.");
             if (token.Length == 0)
@@ -202,12 +239,14 @@ public static class AgentCliParser
         if (prompt is null)
             return Fail("missing_prompt", "Missing required prompt argument for 'agent run'.");
 
+        if (preset == "full_access" && json)
+            return Fail("interactive_required", "--json cannot be used with --preset full_access; interactive confirmation required.");
+
         return Success(new RunCommand(workspace, prompt, sessionId, preset, json));
     }
 
     private static AgentCliParseResult ParseAttach(string[] args)
     {
-        // agent attach <run-id> [--json]
         bool json = false;
         bool jsonSeen = false;
         string? runId = null;
@@ -240,9 +279,9 @@ public static class AgentCliParser
 
     private static AgentCliParseResult ParseTrust(string[] args)
     {
-        // agent trust <run-id> --approve|--deny
         bool approveSeen = false;
         bool denySeen = false;
+        bool jsonSeen = false;
         string? runId = null;
 
         for (int i = 2; i < args.Length; i++)
@@ -266,6 +305,10 @@ public static class AgentCliParser
                 denySeen = true;
                 continue;
             }
+            if (token == "--json")
+            {
+                return Fail("interactive_required", "--json cannot confirm workspace trust; interactive required.");
+            }
             if (token.StartsWith("-", StringComparison.Ordinal))
                 return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent trust'.");
             if (runId is not null)
@@ -279,14 +322,294 @@ public static class AgentCliParser
             return Fail("missing_run_id", "Missing required <run-id> for 'agent trust'.");
         if (!approveSeen && !denySeen)
             return Fail("missing_decision", "Missing required --approve or --deny for 'agent trust'.");
-        // exactly one of approve/deny
         bool approve = approveSeen;
         return Success(new TrustCommand(runId, approve));
     }
 
+    private static AgentCliParseResult ParseApprove(string[] args)
+    {
+        // agent approve <run-id> <approval-id> --scope once|run|project [--json]
+        bool json = false;
+        bool jsonSeen = false;
+        bool scopeSeen = false;
+        string? scopeRaw = null;
+        string? runId = null;
+        string? approvalId = null;
+
+        for (int i = 2; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--scope")
+            {
+                if (scopeSeen)
+                    return Fail("duplicate_switch", "Duplicate --scope.");
+                if (i + 1 >= args.Length)
+                    return Fail("missing_value", "Missing value for --scope.");
+                var val = args[i + 1];
+                if (val.StartsWith("-", StringComparison.Ordinal))
+                    return Fail("missing_value", "Missing value for --scope.");
+                if (val != "once" && val != "run" && val != "project")
+                    return Fail("invalid_scope", $"Unknown scope '{val}'. Expected once|run|project.");
+                scopeRaw = val;
+                scopeSeen = true;
+                i++;
+                continue;
+            }
+            if (token == "--json")
+            {
+                if (jsonSeen)
+                    return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent approve'.");
+            if (runId is null)
+            {
+                var validation = ValidateRunId(token);
+                if (validation is not null) return validation;
+                runId = token;
+                continue;
+            }
+            if (approvalId is null)
+            {
+                var validation = ValidateApprovalId(token);
+                if (validation is not null) return validation;
+                approvalId = token;
+                continue;
+            }
+            return Fail("too_many_arguments", "Too many positional arguments for 'agent approve'.");
+        }
+
+        if (runId is null)
+            return Fail("missing_run_id", "Missing required <run-id> for 'agent approve'.");
+        if (approvalId is null)
+            return Fail("missing_approval_id", "Missing required <approval-id> for 'agent approve'.");
+        if (!scopeSeen || scopeRaw is null)
+            return Fail("missing_scope", "Missing required --scope for 'agent approve' (once|run|project).");
+
+        if (json)
+            return Fail("interactive_required", "--json cannot confirm approval; interactive required.");
+
+        var scope = scopeRaw switch
+        {
+            "once" => ApprovalScope.Once,
+            "run" => ApprovalScope.Run,
+            "project" => ApprovalScope.Project,
+            _ => ApprovalScope.Once
+        };
+        return Success(new ApproveCommand(runId, approvalId, scope, json));
+    }
+
+    private static AgentCliParseResult ParseDeny(string[] args)
+    {
+        // agent deny <run-id> <approval-id> [--json]
+        bool json = false;
+        bool jsonSeen = false;
+        string? runId = null;
+        string? approvalId = null;
+
+        for (int i = 2; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--json")
+            {
+                if (jsonSeen)
+                    return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent deny'.");
+            if (runId is null)
+            {
+                var validation = ValidateRunId(token);
+                if (validation is not null) return validation;
+                runId = token;
+                continue;
+            }
+            if (approvalId is null)
+            {
+                var validation = ValidateApprovalId(token);
+                if (validation is not null) return validation;
+                approvalId = token;
+                continue;
+            }
+            return Fail("too_many_arguments", "Too many positional arguments for 'agent deny'.");
+        }
+
+        if (runId is null)
+            return Fail("missing_run_id", "Missing required <run-id> for 'agent deny'.");
+        if (approvalId is null)
+            return Fail("missing_approval_id", "Missing required <approval-id> for 'agent deny'.");
+
+        if (json)
+            return Fail("interactive_required", "--json cannot confirm approval denial; interactive required.");
+
+        return Success(new DenyCommand(runId, approvalId, json));
+    }
+
+    private static AgentCliParseResult ParsePolicy(string[] args)
+    {
+        // agent policy <subcommand> ...
+        if (args.Length < 3)
+            return Fail("missing_policy_subcommand", "Missing policy subcommand. Expected list|import|remove.");
+
+        var sub = args[2];
+        return sub switch
+        {
+            "list" => ParsePolicyList(args),
+            "import" => ParsePolicyImport(args),
+            "remove" => ParsePolicyRemove(args),
+            _ => Fail("unknown_subcommand", $"Unknown policy subcommand '{sub}'.")
+        };
+    }
+
+    private static AgentCliParseResult ParsePolicyList(string[] args)
+    {
+        // agent policy list [--global | --workspace PATH] [--json]
+        bool global = false;
+        bool globalSeen = false;
+        string? workspace = null;
+        bool workspaceSeen = false;
+        bool json = false;
+        bool jsonSeen = false;
+
+        for (int i = 3; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--global")
+            {
+                if (globalSeen)
+                    return Fail("duplicate_switch", "Duplicate --global.");
+                if (workspaceSeen)
+                    return Fail("duplicate_switch", "Cannot specify both --global and --workspace.");
+                global = true;
+                globalSeen = true;
+                continue;
+            }
+            if (token == "--workspace")
+            {
+                if (workspaceSeen)
+                    return Fail("duplicate_switch", "Duplicate --workspace.");
+                if (globalSeen)
+                    return Fail("duplicate_switch", "Cannot specify both --global and --workspace.");
+                if (i + 1 >= args.Length)
+                    return Fail("missing_value", "Missing value for --workspace.");
+                var val = args[i + 1];
+                if (val.StartsWith("-", StringComparison.Ordinal))
+                    return Fail("missing_value", "Missing value for --workspace.");
+                if (val.Length == 0 || val.Length > MaxWorkspacePathLength)
+                    return Fail("invalid_workspace", $"Workspace path length must be 1..{MaxWorkspacePathLength}.");
+                workspace = val;
+                workspaceSeen = true;
+                i++;
+                continue;
+            }
+            if (token == "--json")
+            {
+                if (jsonSeen)
+                    return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent policy list'.");
+            return Fail("too_many_arguments", $"Unexpected argument '{token}' for 'agent policy list'.");
+        }
+
+        return Success(new PolicyListCommand(global, workspace, json));
+    }
+
+    private static AgentCliParseResult ParsePolicyImport(string[] args)
+    {
+        // agent policy import --global FILE [--json]
+        bool global = false;
+        bool globalSeen = false;
+        string? filePath = null;
+        bool json = false;
+        bool jsonSeen = false;
+
+        for (int i = 3; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--global")
+            {
+                if (globalSeen)
+                    return Fail("duplicate_switch", "Duplicate --global.");
+                global = true;
+                globalSeen = true;
+                continue;
+            }
+            if (token == "--json")
+            {
+                if (jsonSeen)
+                    return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent policy import'.");
+            if (filePath is not null)
+                return Fail("too_many_arguments", "Multiple file arguments for 'agent policy import'. Expected single FILE.");
+            if (token.Length == 0 || token.Length > MaxFilePathLength)
+                return Fail("invalid_file_path", "File path invalid.");
+            filePath = token;
+        }
+
+        if (!global)
+            return Fail("missing_scope", "Missing required --global for 'agent policy import' (only global import supported).");
+        if (filePath is null)
+            return Fail("missing_file", "Missing required FILE for 'agent policy import'.");
+
+        if (json)
+            return Fail("interactive_required", "--json cannot confirm global policy import; interactive required.");
+
+        return Success(new PolicyImportCommand(global, filePath, json));
+    }
+
+    private static AgentCliParseResult ParsePolicyRemove(string[] args)
+    {
+        // agent policy remove <rule-id> [--json]
+        bool json = false;
+        bool jsonSeen = false;
+        string? ruleId = null;
+
+        for (int i = 3; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--json")
+            {
+                if (jsonSeen)
+                    return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent policy remove'.");
+            if (ruleId is not null)
+                return Fail("too_many_arguments", "Too many positional arguments for 'agent policy remove'.");
+            var validation = ValidateRuleId(token);
+            if (validation is not null) return validation;
+            ruleId = token;
+        }
+
+        if (ruleId is null)
+            return Fail("missing_rule_id", "Missing required <rule-id> for 'agent policy remove'.");
+
+        if (json)
+            return Fail("interactive_required", "--json cannot confirm policy removal interactively; use without --json.");
+
+        return Success(new PolicyRemoveCommand(ruleId, json));
+    }
+
     private static AgentCliParseResult ParseCancel(string[] args)
     {
-        // agent cancel <run-id>
         string? runId = null;
         for (int i = 2; i < args.Length; i++)
         {
@@ -306,7 +629,6 @@ public static class AgentCliParser
 
     private static AgentCliParseResult ParseContinue(string[] args)
     {
-        // agent continue <run-id>
         string? runId = null;
         for (int i = 2; i < args.Length; i++)
         {
@@ -326,7 +648,6 @@ public static class AgentCliParser
 
     private static AgentCliParseResult ParseStatus(string[] args)
     {
-        // agent status <run-id> [--json]
         bool json = false;
         bool jsonSeen = false;
         string? runId = null;
@@ -363,6 +684,24 @@ public static class AgentCliParser
             return Fail("invalid_run_id", $"Run id must be length {MaxRunIdLength} (run_ + 32 hex). Got {runId.Length}.");
         if (!RunIdRegex.IsMatch(runId))
             return Fail("invalid_run_id", $"Run id must match run_[0-9a-f]{{32}}. Got '{runId}'.");
+        return null;
+    }
+
+    private static AgentCliParseResult? ValidateApprovalId(string approvalId)
+    {
+        if (approvalId.Length > MaxApprovalIdLength || approvalId.Length < 4)
+            return Fail("invalid_approval_id", $"Approval id length must be 1..{MaxApprovalIdLength}.");
+        if (!ApprovalIdRegex.IsMatch(approvalId) && !approvalId.StartsWith("apr_", StringComparison.Ordinal))
+            return Fail("invalid_approval_id", $"Approval id must match apr_[0-9a-f]{{32}} or be apr_ prefixed. Got '{approvalId}'.");
+        return null;
+    }
+
+    private static AgentCliParseResult? ValidateRuleId(string ruleId)
+    {
+        if (ruleId.Length != MaxRuleIdLength)
+            return Fail("invalid_rule_id", $"Rule id must be length {MaxRuleIdLength} (rule_ + 32 hex). Got {ruleId.Length}.");
+        if (!RuleIdRegex.IsMatch(ruleId))
+            return Fail("invalid_rule_id", $"Rule id must match rule_[0-9a-f]{{32}}. Got '{ruleId}'.");
         return null;
     }
 

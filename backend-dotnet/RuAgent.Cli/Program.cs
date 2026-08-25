@@ -60,6 +60,11 @@ public static class Program
                 CancelCommand cancel => await commands.CancelAsync(cancel, cts.Token).ConfigureAwait(false),
                 ContinueCommand cont => await commands.ContinueAsync(cont, cts.Token).ConfigureAwait(false),
                 StatusCommand status => await commands.StatusAsync(status, cts.Token).ConfigureAwait(false),
+                ApproveCommand approve => await commands.ApproveAsync(approve, cts.Token).ConfigureAwait(false),
+                DenyCommand deny => await commands.DenyAsync(deny, cts.Token).ConfigureAwait(false),
+                PolicyListCommand list => await commands.PolicyListAsync(list, cts.Token).ConfigureAwait(false),
+                PolicyImportCommand import => await commands.PolicyImportAsync(import, cts.Token).ConfigureAwait(false),
+                PolicyRemoveCommand remove => await commands.PolicyRemoveAsync(remove, cts.Token).ConfigureAwait(false),
                 _ => 1
             };
         }
@@ -94,11 +99,16 @@ public static class Program
     private static void PrintUsage()
     {
         Console.Error.WriteLine("Usage:");
-        Console.Error.WriteLine("  agent run [--preset standard] --workspace PATH \"prompt\" [--session <id>] [--json]");
+        Console.Error.WriteLine("  agent run [--preset standard|full_access] --workspace PATH \"prompt\" [--session <id>] [--json]");
         Console.Error.WriteLine("  agent attach <run-id> [--json]");
         Console.Error.WriteLine("  agent trust <run-id> --approve|--deny");
+        Console.Error.WriteLine("  agent approve <run-id> <approval-id> --scope once|run|project");
+        Console.Error.WriteLine("  agent deny <run-id> <approval-id>");
         Console.Error.WriteLine("  agent cancel <run-id>");
         Console.Error.WriteLine("  agent continue <run-id>");
         Console.Error.WriteLine("  agent status <run-id> [--json]");
+        Console.Error.WriteLine("  agent policy list [--global | --workspace PATH] [--json]");
+        Console.Error.WriteLine("  agent policy import --global FILE");
+        Console.Error.WriteLine("  agent policy remove <rule-id>");
     }
 }

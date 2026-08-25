@@ -335,22 +335,45 @@ public static class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static Task<IResult> GetPoliciesAsync(AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> GetPoliciesAsync(HttpContext context, AgentV1Service service, CancellationToken ct)
     {
-        var result = service.PhaseNotAvailable();
-        return Task.FromResult(Results.Json(result.Body, statusCode: result.StatusCode));
+        var scope = context.Request.Query["scope"].ToString();
+        if (string.IsNullOrWhiteSpace(scope)) scope = null;
+        var workspaceId = context.Request.Query["workspace_id"].ToString();
+        if (string.IsNullOrWhiteSpace(workspaceId)) workspaceId = null;
+        var result = await service.ListPoliciesAsync(scope, workspaceId, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static Task<IResult> PostPolicyAsync(AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> PostPolicyAsync(HttpContext context, AgentV1Service service, CancellationToken ct)
     {
-        var result = service.PhaseNotAvailable();
-        return Task.FromResult(Results.Json(result.Body, statusCode: result.StatusCode));
+        bool isInteractive = string.Equals(context.Request.Headers["X-Interactive-Confirmed"].ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        JsonElement body;
+        try
+        {
+            using var reader = new System.IO.StreamReader(context.Request.Body);
+            var text = await reader.ReadToEndAsync(ct);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+            }
+
+            body = JsonDocument.Parse(text).RootElement.Clone();
+        }
+        catch
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+
+        var result = await service.CreatePolicyAsync(body, isInteractive, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static Task<IResult> DeletePolicyAsync(string ruleId, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> DeletePolicyAsync(string ruleId, HttpContext context, AgentV1Service service, CancellationToken ct)
     {
-        var result = service.PhaseNotAvailable();
-        return Task.FromResult(Results.Json(result.Body, statusCode: result.StatusCode));
+        bool isInteractive = string.Equals(context.Request.Headers["X-Interactive-Confirmed"].ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        var result = await service.DeletePolicyAsync(ruleId, isInteractive, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 }
 

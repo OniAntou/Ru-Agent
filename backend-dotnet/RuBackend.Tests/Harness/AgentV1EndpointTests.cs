@@ -102,22 +102,26 @@ public sealed class AgentV1EndpointTests
     {
         using var factory = new BackendWebApplicationFactory();
         using var client = factory.CreateAuthenticatedClient();
+        // Task 9: policies are now active – GET should return 200 (empty list), not 409
         using var getPol = await client.GetAsync("/agent/v1/policies");
-        Assert.Equal(409, (int)getPol.StatusCode);
+        Assert.Equal(200, (int)getPol.StatusCode);
         var getJson = await getPol.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("phase_not_available", getJson.GetProperty("error_code").GetString());
+        Assert.True(getJson.TryGetProperty("items", out var items));
+        Assert.Equal(JsonValueKind.Array, items.ValueKind);
 
+        // POST with invalid body should return 400, not 409
         using var postPol = await client.PostAsJsonAsync("/agent/v1/policies", new { rule = new { } });
-        Assert.Equal(409, (int)postPol.StatusCode);
+        Assert.NotEqual(409, (int)postPol.StatusCode);
+        Assert.True(postPol.StatusCode == HttpStatusCode.BadRequest || postPol.StatusCode == HttpStatusCode.Forbidden);
 
+        // DELETE with well-formed id should not be 409 (either 200/404/403)
         using var delPol = await client.DeleteAsync("/agent/v1/policies/rule_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-        Assert.Equal(409, (int)delPol.StatusCode);
+        Assert.NotEqual(409, (int)delPol.StatusCode);
 
-        // Approvals are now wired (Task 5) – dummy run returns run_not_found, not phase_not_available
+        // Approvals are wired – dummy run returns run_not_found, not phase_not_available
         using var appr = await client.PostAsJsonAsync("/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/approvals/apr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", new { });
         Assert.NotEqual(409, (int)appr.StatusCode);
         var apprJson = await appr.Content.ReadFromJsonAsync<JsonElement>();
-        // Should be run_not_found for unknown run, not phase_not_available
         if (apprJson.TryGetProperty("error_code", out var code))
         {
             Assert.NotEqual("phase_not_available", code.GetString());
@@ -128,16 +132,19 @@ public sealed class AgentV1EndpointTests
     }
 
     [Fact]
-    public async Task Policy_routes_remain_phase_not_available_until_task_9()
+    public async Task Policy_routes_are_active_after_task_9()
     {
         using var factory = new BackendWebApplicationFactory();
         using var client = factory.CreateAuthenticatedClient();
         using var getPol = await client.GetAsync("/agent/v1/policies");
-        Assert.Equal(409, (int)getPol.StatusCode);
-        using var postPol = await client.PostAsJsonAsync("/agent/v1/policies", new { rule = new { } });
-        Assert.Equal(409, (int)postPol.StatusCode);
-        using var delPol = await client.DeleteAsync("/agent/v1/policies/rule_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-        Assert.Equal(409, (int)delPol.StatusCode);
+        Assert.Equal(200, (int)getPol.StatusCode);
+        var json = await getPol.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(json.TryGetProperty("items", out _));
+        // POST with valid global rule but without interactive should be 403, not 409
+        using var postPol = await client.PostAsJsonAsync("/agent/v1/policies", new { scope = "global", decision = "allow", matcher = new { tool_id = "files.read" } });
+        Assert.Equal((int)HttpStatusCode.Forbidden, (int)postPol.StatusCode);
+        var postJson = await postPol.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("interactive_required", postJson.GetProperty("error_code").GetString());
     }
 
     private static string FindContractPath()

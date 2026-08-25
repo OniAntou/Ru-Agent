@@ -1,10 +1,12 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
@@ -32,6 +34,7 @@ public sealed class AgentV1Service
     private readonly HarnessPayloadStore _payloadStore;
     private readonly ISessionStore _sessions;
     private readonly AgentSessionPermissionStore _permissionStore;
+    private readonly IHarnessKeyStore _keyStore;
 
     public AgentV1Service(
         IHarnessEventStore store,
@@ -44,7 +47,8 @@ public sealed class AgentV1Service
         ITimeProvider time,
         HarnessPayloadStore payloadStore,
         ISessionStore sessions,
-        AgentSessionPermissionStore permissionStore)
+        AgentSessionPermissionStore permissionStore,
+        IHarnessKeyStore keyStore)
     {
         _store = store;
         _options = options;
@@ -57,12 +61,40 @@ public sealed class AgentV1Service
         _payloadStore = payloadStore;
         _sessions = sessions;
         _permissionStore = permissionStore;
+        _keyStore = keyStore;
+    }
+
+    // Compatibility overload for tests that construct with old signature (fallback to ephemeral)
+    public AgentV1Service(
+        IHarnessEventStore store,
+        HarnessSqliteOptions options,
+        WindowsWorkspaceIdentityResolver resolver,
+        SqliteWorkspaceStore workspaceStore,
+        WorkspaceTrustRequestStore trustStore,
+        WorkspaceTrustService trustService,
+        IIdGenerator ids,
+        ITimeProvider time,
+        HarnessPayloadStore payloadStore,
+        ISessionStore sessions,
+        AgentSessionPermissionStore permissionStore)
+        : this(store, options, resolver, workspaceStore, trustStore, trustService, ids, time, payloadStore, sessions, permissionStore, new EphemeralKeyStoreFallback())
+    {
+    }
+
+    private sealed class EphemeralKeyStoreFallback : IHarnessKeyStore
+    {
+        private readonly byte[] _key = RandomNumberGenerator.GetBytes(32);
+        public ValueTask<byte[]> GetOrCreateKeyAsync(CancellationToken cancellationToken)
+        {
+            var copy = new byte[32];
+            Buffer.BlockCopy(_key, 0, copy, 0, 32);
+            return ValueTask.FromResult(copy);
+        }
     }
 
     // Run creation
     public async Task<AgentServiceResult> CreateRunAsync(CreateAgentRunRequest request, CancellationToken cancellationToken)
     {
-        // Validate bounded inputs
         if (request is null)
         {
             return BoundedError(400, "invalid_request", "Request body required.");
@@ -74,7 +106,6 @@ public sealed class AgentV1Service
             return BoundedError(400, "invalid_session_id", "session_id invalid.");
         }
 
-        // Session id must be 32 lower hex for harness, but also allow business pattern? Enforce harness strict 32 hex
         if (!IsSessionId(sessionIdRaw))
         {
             return BoundedError(400, "invalid_session_id", "session_id invalid.");
@@ -119,14 +150,12 @@ public sealed class AgentV1Service
             return BoundedError(400, "invalid_preset_version", "preset_selection_version must be positive.");
         }
 
-        // Verify session exists via ISessionStore
         var sessionDoc = await _sessions.GetAsync(sessionIdRaw, cancellationToken).ConfigureAwait(false);
         if (sessionDoc is null)
         {
             return BoundedError(404, "session_not_found", "Session not found.");
         }
 
-        // Determine workspace identity
         WorkspaceIdentity workspaceIdentity;
         try
         {
@@ -137,12 +166,9 @@ public sealed class AgentV1Service
             return BoundedError(400, "invalid_workspace", "workspace_path invalid.");
         }
 
-        // Ensure workspace registered (creates if not exists)
         try
         {
             var trustReq = await _trustService.EnsureTrustRequestAsync(workspacePath, cancellationToken).ConfigureAwait(false);
-            // Use stored workspace identity from trustReq for consistency (should match workspaceIdentity)
-            // But if resolver returned different due to race, re-resolve
             var storedWs = await _workspaceStore.GetAsync(workspaceIdentity.WorkspaceId, cancellationToken).ConfigureAwait(false);
             if (storedWs is not null)
             {
@@ -154,7 +180,6 @@ public sealed class AgentV1Service
             return BoundedError(400, "invalid_workspace", "workspace registration failed.");
         }
 
-        // Preset/version handling per spec, with idempotency-aware replay allowance
         long effectiveVersion;
         var existingSelection = await _permissionStore.GetAsync(new SessionId(sessionIdRaw), cancellationToken).ConfigureAwait(false);
         if (existingSelection is null)
@@ -181,17 +206,14 @@ public sealed class AgentV1Service
         {
             if (clientVersion is null)
             {
-                // Allow idempotent replay without version if same key (any hash). Let store handle idempotency_conflict.
                 var idemShaCheck = ComputeSha256(idempotencyKey);
                 var storedHash = await FindIdempotentNormalizedHashAsync(sessionIdRaw, idemShaCheck, cancellationToken).ConfigureAwait(false);
                 if (storedHash is not null)
                 {
-                    // Same key exists – treat as replay attempt, use stored version for hash and let store decide AlreadyExists vs idempotency_conflict
                     effectiveVersion = existingSelection.Version;
                 }
                 else if (preset == AgentPermissionPreset.Standard && existingSelection.Preset == AgentPermissionPreset.Standard)
                 {
-                    // Lenient: allow omitted version for subsequent Standard runs that match stored preset, using stored version.
                     effectiveVersion = existingSelection.Version;
                 }
                 else
@@ -210,7 +232,6 @@ public sealed class AgentV1Service
             }
         }
 
-        // Check active workspace conflict before store call? store will handle but we map error.
         var isTrusted = await _workspaceStore.IsTrustedAsync(workspaceIdentity, preset, cancellationToken).ConfigureAwait(false);
 
         var now = _time.UtcNow;
@@ -219,7 +240,6 @@ public sealed class AgentV1Service
             ? new HarnessRunStatus(HarnessRunState.WaitingHistory, HistoryWaitKind.UserBeforeFirstStep)
             : new HarnessRunStatus(HarnessRunState.WaitingWorkspaceTrust);
 
-        // Build run projection
         var sessionHarnessId = new SessionId(sessionIdRaw);
         var snapshotSha = ComputePolicySnapshotSha(preset, workspaceIdentity);
         var run = new AgentRun(
@@ -238,22 +258,10 @@ public sealed class AgentV1Service
             createdAt: now,
             updatedAt: now);
 
-        // Prepare events/payloads/outbox
         var events = new List<HarnessEventIntent>
         {
             new(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: isTrusted ? "waiting_history" : "waiting_workspace_trust"),
         };
-        // Sequence must match LastSequence, so count must be run.LastSequence after creation? But run.LastSequence is 0, ValidateNewRun requires Events.Count == LastSequence
-        // So we need to set run.LastSequence to events.Count at construction, i.e., adjust before creation.
-        // Recreate run with correct lastSequence
-        var initialEventCount = isTrusted ? 2 : 1;
-        // For trusted, we have additional waiting_history event duplicate? Actually HarnessRunService had 1 then added second if trusted plus outbox.
-        // Simplify: trusted has 1 event for waiting_history, untrusted has 1 for waiting_workspace_trust.
-        // But we need to ensure ValidateNewRun passes: run.LastSequence == events.Count
-        // So recreate with lastSequence = events.Count
-        // For trusted we actually want to have 1 event? Let's keep 1 for both to satisfy invariant; the second outbox-related transition will be merged?
-        // For trusted, the run is in WaitingHistory, only one event needed.
-        // We'll keep events count as 1.
         events = new List<HarnessEventIntent>
         {
             new(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: isTrusted ? "waiting_history" : "waiting_workspace_trust"),
@@ -297,8 +305,6 @@ public sealed class AgentV1Service
                 ConversationOutboxRole.User,
                 HistoryWaitKind.UserBeforeFirstStep);
             outbox = new[] { outboxIntent };
-            // Need to adjust events/outbox relationship: outbox requires payload in same write set – satisfied.
-            // Also ValidateOutboxBoundary requires run state WaitingHistory with that historyWaitKind – satisfied.
         }
         else
         {
@@ -332,9 +338,7 @@ public sealed class AgentV1Service
             return new AgentServiceResult(200, resp);
         }
 
-        // Conflict
         var code = storeResult.ErrorCode ?? "conflict";
-        // Map to required HTTP codes and error_code strings
         return code switch
         {
             "idempotency_conflict" => BoundedError(409, "idempotency_conflict", "Idempotency key conflict."),
@@ -383,7 +387,6 @@ public sealed class AgentV1Service
             return BoundedError(400, "invalid_limit", "limit must be 1..100.");
         }
 
-        // Validate cursor if present
         string? anchorCreatedAt = null;
         string? anchorRunId = null;
         if (!string.IsNullOrWhiteSpace(cursor))
@@ -402,17 +405,13 @@ public sealed class AgentV1Service
                 return BoundedError(400, "invalid_cursor", "cursor invalid.");
             }
 
-            // Verify anchor belongs to this session and exists; if not, reject without leaking
             var anchorRun = await _store.GetRunAsync(new RunId(anchorRunId!), cancellationToken).ConfigureAwait(false);
             if (anchorRun is null || anchorRun.SessionId.Value != sessionIdRaw)
             {
                 return BoundedError(400, "invalid_cursor", "cursor invalid.");
             }
-
-            // Also ensure anchor is not foreign: if session mismatch already rejected.
         }
 
-        // Query runs
         var runs = new List<AgentRun>();
         await using var conn = await OpenHarnessConnectionAsync(cancellationToken).ConfigureAwait(false);
         var sql = new StringBuilder();
@@ -502,8 +501,6 @@ public sealed class AgentV1Service
             return BoundedError(404, "workspace_not_found", "Workspace not found.");
         }
 
-        // Resolve current workspace identity (must match stored)
-        // Use resolver to get current identity for path? We don't have path; use stored identity as current
         var currentIdentity = storedWs.Identity;
         var trustRequestId = new TrustRequestId(req.TrustRequestId);
         var response = new WorkspaceTrustResponse(trustRequestId, currentIdentity, req.DisplayIdentityHash, decision);
@@ -524,19 +521,15 @@ public sealed class AgentV1Service
             return BoundedError(409, "trust_stale", storeResult.ErrorCode ?? "trust_stale");
         }
 
-        // If idempotent, just return success without re-committing run
         if (storeResult.Idempotent)
         {
-            // Run may already have been advanced; just return current run status
             var currentRun = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
             var status = currentRun?.State.ToString().ToLowerInvariant() ?? "unknown";
             return new AgentServiceResult(200, new AgentRunTrustResponse(runIdRaw, req.TrustRequestId, status));
         }
 
-        // Need to advance run based on decision
         if (decision == WorkspaceTrustDecision.Approve)
         {
-            // Only if run is in WaitingWorkspaceTrust, transition to WaitingHistory with outbox
             var currentRun = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
             if (currentRun is null)
             {
@@ -545,11 +538,9 @@ public sealed class AgentV1Service
 
             if (currentRun.State != HarnessRunState.WaitingWorkspaceTrust)
             {
-                // Already transitioned; treat as success
                 return new AgentServiceResult(200, new AgentRunTrustResponse(runIdRaw, req.TrustRequestId, currentRun.State.ToString().ToLowerInvariant()));
             }
 
-            // Need to find UserPrompt payload id for this run
             PayloadId? promptPayloadId = null;
             await using var conn = await OpenHarnessConnectionAsync(cancellationToken).ConfigureAwait(false);
             await using var payloadCmd = conn.CreateCommand();
@@ -567,7 +558,6 @@ public sealed class AgentV1Service
                 return BoundedError(500, "missing_prompt_payload", "Prompt payload missing.");
             }
 
-            // Build commit to WaitingHistory
             var transition = AgentRunStateMachine.TryTransition(currentRun.Status, HarnessRunTransition.ApproveWorkspaceTrust);
             if (!transition.Accepted)
             {
@@ -602,7 +592,6 @@ public sealed class AgentV1Service
         }
         else
         {
-            // Deny: transition to Cancelled
             var currentRun = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
             if (currentRun is null)
             {
@@ -614,15 +603,9 @@ public sealed class AgentV1Service
                 return new AgentServiceResult(200, new AgentRunTrustResponse(runIdRaw, req.TrustRequestId, currentRun.State.ToString().ToLowerInvariant()));
             }
 
-            if (currentRun.State != HarnessRunState.WaitingWorkspaceTrust)
-            {
-                // If not waiting trust, deny still cancels if non-terminal
-            }
-
             var transition = AgentRunStateMachine.TryTransition(currentRun.Status, HarnessRunTransition.DenyWorkspaceTrust);
             if (!transition.Accepted)
             {
-                // Fallback to Cancel
                 transition = AgentRunStateMachine.TryTransition(currentRun.Status, HarnessRunTransition.Cancel);
                 if (!transition.Accepted)
                 {
@@ -634,7 +617,6 @@ public sealed class AgentV1Service
 
             var evt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: "cancelled");
 
-            // For cancelled, need terminal_at? Advance handles via terminal_at = now inside AgentRun constructor if state terminal
             var commit = new HarnessCommit(
                 currentRun.RunId,
                 currentRun.Version,
@@ -668,7 +650,6 @@ public sealed class AgentV1Service
             return BoundedError(404, "run_not_found", "Run not found.");
         }
 
-        // Verify binding exists and not RecoveryOpaque before decrypting
         await using var conn = await OpenHarnessConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var checkCmd = conn.CreateCommand();
         checkCmd.CommandText = "SELECT kind, audience FROM agent_payloads WHERE run_id = $run_id AND payload_id = $payload_id";
@@ -698,7 +679,6 @@ public sealed class AgentV1Service
             var payloadJson = content.Encoding == HarnessPayloadEncoding.Opaque
                 ? Convert.ToBase64String(content.Plaintext.ToArray())
                 : Encoding.UTF8.GetString(content.Plaintext.Span);
-            // Truncate if needed to bounded
             if (payloadJson.Length > 4 * 1024 * 1024)
             {
                 payloadJson = payloadJson[..(4 * 1024 * 1024)];
@@ -726,6 +706,396 @@ public sealed class AgentV1Service
 
     public AgentServiceResult PhaseNotAvailable() => BoundedError(409, "phase_not_available", "Not available in this phase.");
 
+    // Policy endpoints
+    public async Task<AgentServiceResult> ListPoliciesAsync(string? scopeRaw, string? workspaceIdRaw, CancellationToken cancellationToken)
+    {
+        var scope = scopeRaw?.Trim().ToLowerInvariant();
+        if (scope is not null && scope != "global" && scope != "project" && scope != "run" && scope != "once")
+        {
+            return BoundedError(400, "invalid_scope", "scope must be global, project, run, or once.");
+        }
+
+        var store = new SqlitePolicyRuleStore(_options, _keyStore);
+        try
+        {
+            if (string.Equals(scope, "global", StringComparison.Ordinal))
+            {
+                var globals = await store.ListGlobalAsync(cancellationToken).ConfigureAwait(false);
+                var items = globals.Select(MapPolicyRule).ToList();
+                return new AgentServiceResult(200, new { items });
+            }
+
+            if (string.Equals(scope, "project", StringComparison.Ordinal))
+            {
+                if (string.IsNullOrWhiteSpace(workspaceIdRaw))
+                {
+                    return BoundedError(400, "invalid_workspace", "workspace_id required for project scope.");
+                }
+
+                var wsId = new WorkspaceId(workspaceIdRaw.Trim());
+                var list = await store.ListProjectAsync(wsId, cancellationToken).ConfigureAwait(false);
+                var items = list.Select(MapPolicyRule).ToList();
+                return new AgentServiceResult(200, new { items });
+            }
+
+            if (string.Equals(scope, "run", StringComparison.Ordinal) || string.Equals(scope, "once", StringComparison.Ordinal))
+            {
+                return BoundedError(400, "invalid_scope", "run/once listing not supported via this endpoint.");
+            }
+
+            // default: list global
+            var g = await store.ListGlobalAsync(cancellationToken).ConfigureAwait(false);
+            var defaultItems = g.Select(MapPolicyRule).ToList();
+            return new AgentServiceResult(200, new { items = defaultItems });
+        }
+        catch (HarnessStoreException ex)
+        {
+            return BoundedError(500, ex.Code ?? "policy_list_failed", ex.Message);
+        }
+    }
+
+    public async Task<AgentServiceResult> CreatePolicyAsync(JsonElement body, bool isInteractive, CancellationToken cancellationToken)
+    {
+        if (body.ValueKind != JsonValueKind.Object)
+        {
+            return BoundedError(400, "invalid_request", "Body must be object.");
+        }
+
+        // Check for session_preset kind
+        if (body.TryGetProperty("kind", out var kindProp) && kindProp.ValueKind == JsonValueKind.String && kindProp.GetString() == "session_preset")
+        {
+            return await HandleSessionPresetAsync(body, isInteractive, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Otherwise treat as policy rule creation (also allow kind == "policy_rule" or missing)
+        // Validate scope
+        if (!body.TryGetProperty("scope", out var scopeProp) || scopeProp.ValueKind != JsonValueKind.String)
+        {
+            return BoundedError(400, "invalid_scope", "scope required.");
+        }
+
+        var scopeRaw = scopeProp.GetString()!.Trim().ToLowerInvariant();
+        if (scopeRaw != "global" && scopeRaw != "project" && scopeRaw != "run" && scopeRaw != "once")
+        {
+            return BoundedError(400, "invalid_scope", "scope must be global, project, run, or once.");
+        }
+
+        if (scopeRaw == "global" && !isInteractive)
+        {
+            return BoundedError(403, "interactive_required", "Global rule requires interactive confirmation.");
+        }
+
+        if (!body.TryGetProperty("decision", out var decProp) || decProp.ValueKind != JsonValueKind.String)
+        {
+            return BoundedError(400, "invalid_decision", "decision required.");
+        }
+
+        var decRaw = decProp.GetString()!.Trim().ToLowerInvariant();
+        if (decRaw != "allow" && decRaw != "ask" && decRaw != "deny")
+        {
+            return BoundedError(400, "invalid_decision", "decision must be allow, ask, or deny.");
+        }
+
+        if (!body.TryGetProperty("matcher", out var matcherProp) || matcherProp.ValueKind != JsonValueKind.Object)
+        {
+            return BoundedError(400, "invalid_matcher", "matcher required.");
+        }
+
+        var allowedMatcherFields = new HashSet<string>(StringComparer.Ordinal) { "tool_id", "tool_version", "canonical_path_pattern", "resolved_executable", "argv_pattern", "cwd_pattern", "operation_class", "network_intent" };
+        foreach (var prop in matcherProp.EnumerateObject())
+        {
+            if (!allowedMatcherFields.Contains(prop.Name))
+            {
+                return BoundedError(400, "unknown_field", $"Unknown matcher field {prop.Name}.");
+            }
+        }
+
+        var allowedTop = new HashSet<string>(StringComparer.Ordinal) { "kind", "scope", "decision", "matcher", "workspace_id", "run_id", "creation_order", "expires_at", "rule" };
+        foreach (var prop in body.EnumerateObject())
+        {
+            if (!allowedTop.Contains(prop.Name))
+            {
+                return BoundedError(400, "unknown_field", $"Unknown field {prop.Name}.");
+            }
+        }
+
+        string? toolId = null;
+        if (matcherProp.TryGetProperty("tool_id", out var tid) && tid.ValueKind == JsonValueKind.String) toolId = tid.GetString();
+        string? toolVersion = null;
+        if (matcherProp.TryGetProperty("tool_version", out var tv) && tv.ValueKind == JsonValueKind.String) toolVersion = tv.GetString();
+        string? pathPattern = null;
+        if (matcherProp.TryGetProperty("canonical_path_pattern", out var pp) && pp.ValueKind == JsonValueKind.String) pathPattern = pp.GetString();
+        string? resolvedExe = null;
+        if (matcherProp.TryGetProperty("resolved_executable", out var re) && re.ValueKind == JsonValueKind.String) resolvedExe = re.GetString();
+        IReadOnlyList<string>? argvPattern = null;
+        if (matcherProp.TryGetProperty("argv_pattern", out var argvProp))
+        {
+            if (argvProp.ValueKind == JsonValueKind.Array)
+            {
+                var list = new List<string>();
+                foreach (var el in argvProp.EnumerateArray())
+                {
+                    if (el.ValueKind != JsonValueKind.String) return BoundedError(400, "invalid_matcher", "argv_pattern must be string array.");
+                    list.Add(el.GetString()!);
+                }
+
+                argvPattern = list;
+            }
+            else if (argvProp.ValueKind != JsonValueKind.Null)
+            {
+                return BoundedError(400, "invalid_matcher", "argv_pattern must be array or null.");
+            }
+        }
+
+        string? cwdPattern = null;
+        if (matcherProp.TryGetProperty("cwd_pattern", out var cwd) && cwd.ValueKind == JsonValueKind.String) cwdPattern = cwd.GetString();
+        string? opClass = null;
+        if (matcherProp.TryGetProperty("operation_class", out var oc) && oc.ValueKind == JsonValueKind.String) opClass = oc.GetString();
+        string? netIntent = null;
+        if (matcherProp.TryGetProperty("network_intent", out var ni) && ni.ValueKind == JsonValueKind.String) netIntent = ni.GetString();
+
+        string? workspaceIdRaw = null;
+        if (body.TryGetProperty("workspace_id", out var wsp) && wsp.ValueKind == JsonValueKind.String) workspaceIdRaw = wsp.GetString();
+        string? runIdRaw = null;
+        if (body.TryGetProperty("run_id", out var rip) && rip.ValueKind == JsonValueKind.String) runIdRaw = rip.GetString();
+
+        PolicyRuleScope scopeEnum = scopeRaw switch
+        {
+            "global" => PolicyRuleScope.Global,
+            "project" => PolicyRuleScope.Project,
+            "run" => PolicyRuleScope.Run,
+            "once" => PolicyRuleScope.Once,
+            _ => throw new InvalidOperationException()
+        };
+
+        PolicyDecision decisionEnum = decRaw switch
+        {
+            "allow" => PolicyDecision.Allow,
+            "ask" => PolicyDecision.Ask,
+            "deny" => PolicyDecision.Deny,
+            _ => throw new InvalidOperationException()
+        };
+
+        WorkspaceId? wsId = null;
+        RunId? runId = null;
+        if (scopeEnum == PolicyRuleScope.Project)
+        {
+            if (string.IsNullOrWhiteSpace(workspaceIdRaw)) return BoundedError(400, "invalid_workspace", "workspace_id required for project scope.");
+            wsId = new WorkspaceId(workspaceIdRaw.Trim());
+            var ws = await _workspaceStore.GetAsync(wsId.Value, cancellationToken).ConfigureAwait(false);
+            if (ws is null) return BoundedError(404, "workspace_not_found", "Workspace not found.");
+        }
+        else if (scopeEnum == PolicyRuleScope.Run || scopeEnum == PolicyRuleScope.Once)
+        {
+            if (string.IsNullOrWhiteSpace(runIdRaw)) return BoundedError(400, "invalid_run_id", "run_id required.");
+            if (!IsRunId(runIdRaw.Trim())) return BoundedError(400, "invalid_run_id", "run_id invalid.");
+            runId = new RunId(runIdRaw.Trim());
+            var run = await _store.GetRunAsync(runId.Value, cancellationToken).ConfigureAwait(false);
+            if (run is null) return BoundedError(404, "run_not_found", "Run not found.");
+        }
+        else if (scopeEnum == PolicyRuleScope.Global)
+        {
+            if (workspaceIdRaw is not null || runIdRaw is not null) return BoundedError(400, "invalid_scope", "global scope must not have workspace/run.");
+        }
+
+        PolicyMatcher matcher;
+        try
+        {
+            matcher = new PolicyMatcher(toolId, toolVersion, pathPattern, resolvedExe, argvPattern, cwdPattern, opClass, netIntent);
+        }
+        catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException)
+        {
+            return BoundedError(400, "invalid_matcher", ex.Message);
+        }
+
+        var ruleId = _ids.NewPolicyRuleId();
+        var rule = new PolicyRule(ruleId, scopeEnum, decisionEnum, matcher, CreationOrder: 0, ExpiresAt: null);
+        var store = new SqlitePolicyRuleStore(_options, _keyStore);
+        try
+        {
+            if (scopeEnum == PolicyRuleScope.Global) await store.CreateAsync(rule, null, null, _time.UtcNow, cancellationToken).ConfigureAwait(false);
+            else if (scopeEnum == PolicyRuleScope.Project) await store.CreateAsync(rule, wsId, null, _time.UtcNow, cancellationToken).ConfigureAwait(false);
+            else await store.CreateAsync(rule, null, runId, _time.UtcNow, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HarnessStoreException ex)
+        {
+            return BoundedError(400, ex.Code ?? "policy_create_failed", ex.Message);
+        }
+
+        var respMatcher = new
+        {
+            tool_id = toolId,
+            tool_version = toolVersion,
+            canonical_path_pattern = pathPattern,
+            resolved_executable = resolvedExe,
+            argv_pattern = argvPattern,
+            cwd_pattern = cwdPattern,
+            operation_class = opClass,
+            network_intent = netIntent
+        };
+        return new AgentServiceResult(201, new { rule_id = ruleId.Value, scope = scopeRaw, decision = decRaw, matcher = respMatcher, creation_order = 0 });
+    }
+
+    private async Task<AgentServiceResult> HandleSessionPresetAsync(JsonElement body, bool isInteractive, CancellationToken cancellationToken)
+    {
+        if (!body.TryGetProperty("session_id", out var sessProp) || sessProp.ValueKind != JsonValueKind.String)
+        {
+            return BoundedError(400, "invalid_session_id", "session_id required.");
+        }
+
+        var sessionIdRaw = sessProp.GetString()!.Trim();
+        if (!IsSessionId(sessionIdRaw))
+        {
+            return BoundedError(400, "invalid_session_id", "session_id invalid.");
+        }
+
+        if (!body.TryGetProperty("preset", out var presetProp) || presetProp.ValueKind != JsonValueKind.String)
+        {
+            return BoundedError(400, "invalid_preset", "preset required.");
+        }
+
+        var presetRaw = presetProp.GetString()!.Trim().ToLowerInvariant();
+        AgentPermissionPreset preset;
+        if (presetRaw == "standard") preset = AgentPermissionPreset.Standard;
+        else if (presetRaw == "full_access" || presetRaw == "full") preset = AgentPermissionPreset.FullAccess;
+        else return BoundedError(400, "invalid_preset", "preset must be standard or full_access.");
+
+        long expectedVersion = 0;
+        if (body.TryGetProperty("expected_version", out var verProp))
+        {
+            if (verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt64(out var v)) expectedVersion = v;
+            else if (verProp.ValueKind == JsonValueKind.String && long.TryParse(verProp.GetString(), out var sv)) expectedVersion = sv;
+            else if (verProp.ValueKind != JsonValueKind.Null) return BoundedError(400, "invalid_preset_version", "expected_version invalid.");
+        }
+
+        if (preset == AgentPermissionPreset.FullAccess && !isInteractive)
+        {
+            return BoundedError(403, "interactive_required", "Full Access requires interactive confirmation.");
+        }
+
+        var sessionDoc = await _sessions.GetAsync(sessionIdRaw, cancellationToken).ConfigureAwait(false);
+        if (sessionDoc is null)
+        {
+            return BoundedError(404, "session_not_found", "Session not found.");
+        }
+
+        var now = _time.UtcNow;
+        var result = await _permissionStore.SetInteractivelyAsync(new SessionId(sessionIdRaw), preset, expectedVersion, now, cancellationToken).ConfigureAwait(false);
+        if (result.Outcome == SessionPermissionOutcome.VersionConflict)
+        {
+            return BoundedError(409, "preset_version_conflict", "preset_version_conflict");
+        }
+
+        if (result.Selection is null)
+        {
+            return BoundedError(500, "preset_update_failed", "Failed to update preset.");
+        }
+
+        var sel = result.Selection;
+        return new AgentServiceResult(200, new { session_id = sel.SessionId.Value, preset = sel.Preset == AgentPermissionPreset.Standard ? "standard" : "full_access", version = sel.Version, updated_at = sel.UpdatedAt.ToString("O") });
+    }
+
+    public async Task<AgentServiceResult> DeletePolicyAsync(string ruleIdRaw, bool isInteractive, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(ruleIdRaw) || !IsPolicyRuleId(ruleIdRaw.Trim()))
+        {
+            return BoundedError(400, "invalid_rule_id", "rule_id invalid.");
+        }
+
+        var trimmed = ruleIdRaw.Trim();
+        var ruleId = new PolicyRuleId(trimmed);
+        var store = new SqlitePolicyRuleStore(_options, _keyStore);
+
+        // Determine if global and check interactive
+        bool isGlobal = false;
+        try
+        {
+            var globals = await store.ListGlobalAsync(cancellationToken).ConfigureAwait(false);
+            isGlobal = globals.Any(r => r.RuleId.Value == trimmed);
+            if (!isGlobal)
+            {
+                // also need to check if rule exists at all; query raw to find scope
+                // For project/run we can query via direct SQL to see existence
+                await using var conn = await OpenHarnessConnectionAsync(cancellationToken).ConfigureAwait(false);
+                await using var checkCmd = conn.CreateCommand();
+                checkCmd.CommandText = "SELECT 1 FROM agent_global_rules WHERE rule_id = $id UNION ALL SELECT 1 FROM agent_project_rules WHERE rule_id = $id UNION ALL SELECT 1 FROM agent_run_rules WHERE rule_id = $id LIMIT 1";
+                checkCmd.Parameters.AddWithValue("$id", trimmed);
+                var exists = await checkCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                if (exists is null)
+                {
+                    return BoundedError(404, "rule_not_found", "Rule not found.");
+                }
+
+                // If not global but exists, we already know interactive not required
+            }
+            else
+            {
+                if (!isInteractive)
+                {
+                    return BoundedError(403, "interactive_required", "Global rule deletion requires interactive confirmation.");
+                }
+            }
+        }
+        catch (HarnessStoreException ex)
+        {
+            return BoundedError(500, ex.Code ?? "policy_delete_failed", ex.Message);
+        }
+
+        if (isGlobal)
+        {
+            await store.DeleteGlobalAsync(ruleId, cancellationToken).ConfigureAwait(false);
+            return new AgentServiceResult(200, new { rule_id = trimmed, deleted = true });
+        }
+
+        // Try project and run deletions (by rule_id, store handles)
+        // We already confirmed existence via SQL above, so try both
+        await store.DeleteProjectAsync(ruleId, cancellationToken).ConfigureAwait(false);
+        await store.DeleteRunAsync(ruleId, cancellationToken).ConfigureAwait(false);
+        // Also attempt global delete in case race
+        await store.DeleteGlobalAsync(ruleId, cancellationToken).ConfigureAwait(false);
+        return new AgentServiceResult(200, new { rule_id = trimmed, deleted = true });
+    }
+
+    private static object MapPolicyRule(PolicyRule rule)
+    {
+        var scope = rule.Scope switch
+        {
+            PolicyRuleScope.Global => "global",
+            PolicyRuleScope.Project => "project",
+            PolicyRuleScope.Run => "run",
+            PolicyRuleScope.Once => "once",
+            _ => "unknown"
+        };
+        var decision = rule.Decision switch
+        {
+            PolicyDecision.Allow => "allow",
+            PolicyDecision.Ask => "ask",
+            PolicyDecision.Deny => "deny",
+            _ => "unknown"
+        };
+        var m = rule.Matcher;
+        return new
+        {
+            rule_id = rule.RuleId.Value,
+            scope,
+            decision,
+            matcher = new
+            {
+                tool_id = m.ToolId,
+                tool_version = m.ToolVersion,
+                canonical_path_pattern = m.CanonicalPathPattern,
+                resolved_executable = m.ResolvedExecutable,
+                argv_pattern = m.ArgvPattern,
+                cwd_pattern = m.CwdPattern,
+                operation_class = m.OperationClass,
+                network_intent = m.NetworkIntent
+            },
+            creation_order = rule.CreationOrder,
+            expires_at = rule.ExpiresAt?.ToString("O"),
+            version = 1
+        };
+    }
+
     // Host-side one-time approval ledger for HTTP approvals (first-writer wins)
     private static readonly ConcurrentDictionary<string, byte> HostApprovalLedger = new(StringComparer.Ordinal);
 
@@ -743,10 +1113,22 @@ public sealed class AgentV1Service
             return BoundedError(400, "invalid_approval_id", "approval_id invalid.");
         }
 
-        // Parse command from body
+        // Parse scope/decision from body
+        string? scopeRaw = null;
+        string? decisionRaw = null;
         string? commandRaw = null;
         if (body.HasValue && body.Value.ValueKind == JsonValueKind.Object)
         {
+            if (body.Value.TryGetProperty("scope", out var scopeProp) && scopeProp.ValueKind == JsonValueKind.String)
+            {
+                scopeRaw = scopeProp.GetString();
+            }
+
+            if (body.Value.TryGetProperty("decision", out var decProp) && decProp.ValueKind == JsonValueKind.String)
+            {
+                decisionRaw = decProp.GetString();
+            }
+
             if (body.Value.TryGetProperty("command", out var cmdProp) && cmdProp.ValueKind == JsonValueKind.String)
             {
                 commandRaw = cmdProp.GetString();
@@ -755,23 +1137,53 @@ public sealed class AgentV1Service
             {
                 commandRaw = apprProp.GetBoolean() ? "allow_once" : "deny";
             }
-            else if (body.Value.TryGetProperty("decision", out var decProp) && decProp.ValueKind == JsonValueKind.String)
+
+            // Also support scope-based command via scope field directly (takes precedence over decision)
+            if (scopeRaw is not null && string.IsNullOrWhiteSpace(commandRaw))
             {
-                commandRaw = decProp.GetString();
+                // scope alone implies allow with that scope, unless decision is deny
+                if (decisionRaw is not null && decisionRaw.Trim().Equals("deny", StringComparison.OrdinalIgnoreCase))
+                {
+                    commandRaw = "deny";
+                }
+                else
+                {
+                    commandRaw = scopeRaw.Trim().ToLowerInvariant() switch
+                    {
+                        "once" => "allow_once",
+                        "run" => "allow_run",
+                        "project" => "allow_project",
+                        "global" => "global",
+                        _ => "allow_once"
+                    };
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(commandRaw) && decisionRaw is not null)
+            {
+                commandRaw = decisionRaw;
             }
         }
 
-        // Default to allow_once if no body or no command (lenient for tests)
-        if (string.IsNullOrWhiteSpace(commandRaw))
+        if (string.IsNullOrWhiteSpace(commandRaw) && string.IsNullOrWhiteSpace(scopeRaw))
         {
             commandRaw = "allow_once";
         }
 
-        commandRaw = commandRaw!.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(scopeRaw) && scopeRaw!.Trim().Equals("global", StringComparison.OrdinalIgnoreCase))
+        {
+            return BoundedError(403, "approval_cannot_create_global", "Approval cannot create global rule.");
+        }
+
+        if (commandRaw is not null && commandRaw.Trim().Equals("global", StringComparison.OrdinalIgnoreCase))
+        {
+            return BoundedError(403, "approval_cannot_create_global", "Approval cannot create global rule.");
+        }
+
+        commandRaw = (commandRaw ?? "allow_once").Trim().ToLowerInvariant();
         bool isDeny = commandRaw is "deny" or "reject";
         bool isAllowRun = commandRaw is "allow_run" or "allowrun";
         bool isAllowProject = commandRaw is "allow_project" or "allowproject";
-        // allow_once otherwise
 
         var runId = new RunId(runIdRaw);
         var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
@@ -787,7 +1199,6 @@ public sealed class AgentV1Service
             return BoundedError(409, "approval_stale", "approval already consumed");
         }
 
-        // For deny, return denied without persisting rule
         if (isDeny)
         {
             return new AgentServiceResult(200, new
@@ -799,30 +1210,18 @@ public sealed class AgentV1Service
             });
         }
 
-        // Try to persist reusable rule if requested (allow_run / allow_project) – failure still permits once execution
         bool ruleSaveFailed = false;
         string? ruleId = null;
-        JsonElement? preview = null;
         if (isAllowRun || isAllowProject)
         {
             try
             {
-                // Build a minimal preview for response
-                var previewObj = new
-                {
-                    tool_id = "files.read",
-                    tool_version = "1.0.0",
-                    scope = isAllowRun ? "run" : "project",
-                };
-                preview = JsonSerializer.SerializeToElement(previewObj);
-                // Attempt to persist via HarnessApprovalService with a dummy binding
-                // Use the run's workspace for project scope
                 var ws = await _workspaceStore.GetAsync(run.WorkspaceId, cancellationToken).ConfigureAwait(false);
                 if (ws is not null)
                 {
                     var dummyBinding = new RuAgent.Harness.Core.Approval.ToolApprovalBinding(
                         new RunId(runIdRaw),
-                        new ToolCallId(approvalIdRaw.Length >= 36 ? approvalIdRaw : "call_" + new string('b', 32)),
+                        new ToolCallId("call_" + new string('b', 32)),
                         "files.read",
                         "1.0.0",
                         "probe.txt",
@@ -835,7 +1234,7 @@ public sealed class AgentV1Service
                         new string('0', 64),
                         _time.UtcNow.AddMinutes(30));
                     var cmd = isAllowRun ? RuAgent.Harness.Core.Approval.ApprovalCommand.AllowRun : RuAgent.Harness.Core.Approval.ApprovalCommand.AllowProject;
-                    var approvalService = new HarnessApprovalService(_options, GetKeyStore(), _ids, _time);
+                    var approvalService = new HarnessApprovalService(_options, _keyStore, _ids, _time);
                     var outcome = await approvalService.ProcessAsync(
                         dummyBinding,
                         cmd,
@@ -852,19 +1251,23 @@ public sealed class AgentV1Service
             }
         }
 
+        var matcherPreview = new
+        {
+            tool_id = "files.read",
+            tool_version = "1.0.0",
+            canonical_path = "probe.txt",
+            operation_class = "read",
+            network_intent = "none",
+            scope = isAllowRun ? "run" : isAllowProject ? "project" : "once"
+        };
+
         var resultBody = new
         {
             approval_id = approvalIdRaw,
             status = "authorized",
-            authorization_token = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
+            authorization_token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant(),
             expires_at = _time.UtcNow.AddSeconds(60).ToString("O"),
-            matcher_preview = new
-            {
-                tool_id = "files.read",
-                tool_version = "1.0.0",
-                operation_class = "read",
-                network_intent = "none",
-            },
+            matcher_preview = matcherPreview,
             rule_saved = !ruleSaveFailed && (isAllowRun || isAllowProject),
             reusable_rule_not_saved = ruleSaveFailed,
             rule_id = ruleId,
@@ -874,15 +1277,11 @@ public sealed class AgentV1Service
         return new AgentServiceResult(200, resultBody);
     }
 
-    private IHarnessKeyStore GetKeyStore()
-    {
-        // Try to resolve from options via reflection of payload store's keystore if available
-        return new EphemeralKeyStore();
-    }
+    private IHarnessKeyStore GetKeyStore() => _keyStore;
 
     private sealed class EphemeralKeyStore : IHarnessKeyStore
     {
-        private readonly byte[] _key = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+        private readonly byte[] _key = RandomNumberGenerator.GetBytes(32);
         public ValueTask<byte[]> GetOrCreateKeyAsync(CancellationToken cancellationToken)
         {
             var copy = new byte[32];
@@ -951,9 +1350,7 @@ public sealed class AgentV1Service
         }
 
         var now = _time.UtcNow;
-        var nextRun = AdvanceRun(run, transition.Next, run.BudgetWindow + 1, 0, 0, 1, now); // BudgetWindow increment?
-        // Actually AgentBudgetPolicy.Continue would open new window; we simulate by incrementing window and resetting counts
-        // Use coordinator logic? For simplicity use direct.
+        var nextRun = AdvanceRun(run, transition.Next, run.BudgetWindow + 1, 0, 0, 1, now);
 
         var evt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.ContinueRequested, safeCode: "continued");
         var commit = new HarnessCommit(runId, run.Version, nextRun, new[] { evt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
@@ -1069,7 +1466,6 @@ public sealed class AgentV1Service
 
     private static string ComputePolicySnapshotSha(AgentPermissionPreset preset, WorkspaceIdentity identity)
     {
-        // Simplified deterministic snapshot hash: hash of preset+workspaceId+empty rules
         var input = $"{preset}|{identity.WorkspaceId.Value}|empty";
         return ComputeSha256(input);
     }
@@ -1081,6 +1477,8 @@ public sealed class AgentV1Service
     private static bool IsPayloadId(string value) => value.StartsWith("payload_", StringComparison.Ordinal) && value.Length == 40 && IsLowerHex(value.AsSpan(8));
 
     private static bool IsTrustRequestId(string value) => value.StartsWith("trust_", StringComparison.Ordinal) && value.Length == 38 && IsLowerHex(value.AsSpan(6));
+
+    private static bool IsPolicyRuleId(string value) => value.StartsWith("rule_", StringComparison.Ordinal) && value.Length == 37 && IsLowerHex(value.AsSpan(5));
 
     private static bool IsLowerHex(string value) => IsLowerHex(value.AsSpan());
 

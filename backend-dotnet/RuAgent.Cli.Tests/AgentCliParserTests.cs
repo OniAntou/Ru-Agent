@@ -37,12 +37,33 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
-    public void ParseRun_RejectsPresetFullWithPhaseNotAvailable()
+    public void ParseRun_AcceptsPresetFull_AsFullAccess()
     {
         var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "full", "prompt" };
         var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        var cmd = Assert.IsType<RunCommand>(res.Command);
+        Assert.Equal("full_access", cmd.Preset);
+        Assert.False(cmd.Json);
+    }
+
+    [Fact]
+    public void ParseRun_AcceptsPresetFullAccess_AsFullAccess()
+    {
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "full_access", "prompt" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        var cmd = Assert.IsType<RunCommand>(res.Command);
+        Assert.Equal("full_access", cmd.Preset);
+    }
+
+    [Fact]
+    public void ParseRun_RejectsFullWithJson_InteractiveRequired()
+    {
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "full_access", "--json", "prompt" };
+        var res = AgentCliParser.Parse(args);
         Assert.False(res.Success);
-        Assert.Equal("phase_not_available", res.ErrorCode);
+        Assert.Equal("interactive_required", res.ErrorCode);
     }
 
     [Fact]
@@ -365,5 +386,170 @@ public sealed class AgentCliParserTests
         var res = AgentCliParser.Parse(args);
         Assert.False(res.Success);
         Assert.Equal("invalid_workspace", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseApprove_SucceedsWithScopeOnce()
+    {
+        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--scope", "once" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        var cmd = Assert.IsType<ApproveCommand>(res.Command);
+        Assert.Equal(ApprovalScope.Once, cmd.Scope);
+    }
+
+    [Fact]
+    public void ParseApprove_SucceedsWithScopeRun()
+    {
+        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('b', 32), "--scope", "run" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        Assert.Equal(ApprovalScope.Run, Assert.IsType<ApproveCommand>(res.Command).Scope);
+    }
+
+    [Fact]
+    public void ParseApprove_SucceedsWithScopeProject()
+    {
+        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('c', 32), "--scope", "project" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        Assert.Equal(ApprovalScope.Project, Assert.IsType<ApproveCommand>(res.Command).Scope);
+    }
+
+    [Fact]
+    public void ParseApprove_RejectsMissingScope()
+    {
+        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32) };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("missing_scope", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseApprove_RejectsJson_InteractiveRequired()
+    {
+        var args = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--scope", "once", "--json" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("interactive_required", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseDeny_Succeeds()
+    {
+        var args = new[] { "agent", "deny", ValidRunId, "apr_" + new string('d', 32) };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        Assert.IsType<DenyCommand>(res.Command);
+    }
+
+    [Fact]
+    public void ParseDeny_RejectsJson_InteractiveRequired()
+    {
+        var args = new[] { "agent", "deny", ValidRunId, "apr_" + new string('d', 32), "--json" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("interactive_required", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParseTrust_RejectsJson_InteractiveRequired()
+    {
+        var args = new[] { "agent", "trust", ValidRunId, "--approve", "--json" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("interactive_required", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParsePolicyList_Succeeds()
+    {
+        var args = new[] { "agent", "policy", "list" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        Assert.IsType<PolicyListCommand>(res.Command);
+    }
+
+    [Fact]
+    public void ParsePolicyList_Global()
+    {
+        var args = new[] { "agent", "policy", "list", "--global" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        var cmd = Assert.IsType<PolicyListCommand>(res.Command);
+        Assert.True(cmd.Global);
+    }
+
+    [Fact]
+    public void ParsePolicyImport_GlobalRequiresFile()
+    {
+        var args = new[] { "agent", "policy", "import", "--global", "C:\\temp\\policy.json" };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        var cmd = Assert.IsType<PolicyImportCommand>(res.Command);
+        Assert.True(cmd.Global);
+        Assert.Equal("C:\\temp\\policy.json", cmd.FilePath);
+    }
+
+    [Fact]
+    public void ParsePolicyImport_RejectsMissingGlobal()
+    {
+        var args = new[] { "agent", "policy", "import", "C:\\temp\\policy.json" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("missing_scope", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParsePolicyImport_RejectsJson_InteractiveRequired()
+    {
+        var args = new[] { "agent", "policy", "import", "--global", "C:\\temp\\policy.json", "--json" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("interactive_required", res.ErrorCode);
+    }
+
+    [Fact]
+    public void ParsePolicyRemove_Succeeds()
+    {
+        var ruleId = "rule_" + new string('a', 32);
+        var args = new[] { "agent", "policy", "remove", ruleId };
+        var res = AgentCliParser.Parse(args);
+        Assert.True(res.Success);
+        Assert.IsType<PolicyRemoveCommand>(res.Command);
+    }
+
+    [Fact]
+    public void ParsePolicyRemove_RejectsJson_InteractiveRequired()
+    {
+        var ruleId = "rule_" + new string('a', 32);
+        var args = new[] { "agent", "policy", "remove", ruleId, "--json" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("interactive_required", res.ErrorCode);
+    }
+
+    [Fact]
+    public void Parser_RejectsUnknownPolicySubcommand()
+    {
+        var args = new[] { "agent", "policy", "unknown" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("unknown_subcommand", res.ErrorCode);
+    }
+
+    [Fact]
+    public void NoSwitchCombination_BypassesInteractiveRequired()
+    {
+        // Even with multiple switches, json still requires interactive for sensitive
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace, "--preset", "full_access", "--session", new string('a', 32), "--json", "prompt" };
+        var res = AgentCliParser.Parse(args);
+        Assert.False(res.Success);
+        Assert.Equal("interactive_required", res.ErrorCode);
+
+        var args2 = new[] { "agent", "approve", ValidRunId, "apr_" + new string('a', 32), "--scope", "project", "--json" };
+        var res2 = AgentCliParser.Parse(args2);
+        Assert.False(res2.Success);
+        Assert.Equal("interactive_required", res2.ErrorCode);
     }
 }

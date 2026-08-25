@@ -312,4 +312,25 @@ public sealed class ReadOnlyTracerTests
             return 0;
         }
     }
+
+    [Fact]
+    public void JsonCannotBypassInteractiveRequirements()
+    {
+        // Policy per Task 9: --json cannot confirm Full Access, trust, approval, or global policy import
+        var runJson = AgentCliParser.Parse(new[] { "agent", "run", "--workspace", Path.GetTempPath(), "--preset", "full_access", "--json", "prompt" });
+        Assert.False(runJson.Success);
+        Assert.Equal("interactive_required", runJson.ErrorCode);
+
+        var trustJson = AgentCliParser.Parse(new[] { "agent", "trust", "run_" + new string('a', 32), "--approve", "--json" });
+        Assert.False(trustJson.Success);
+        Assert.Equal("interactive_required", trustJson.ErrorCode);
+
+        var approveJson = AgentCliParser.Parse(new[] { "agent", "approve", "run_" + new string('a', 32), "apr_" + new string('b', 32), "--scope", "once", "--json" });
+        Assert.False(approveJson.Success);
+        Assert.Equal("interactive_required", approveJson.ErrorCode);
+
+        var importJson = AgentCliParser.Parse(new[] { "agent", "policy", "import", "--global", "file.json", "--json" });
+        Assert.False(importJson.Success);
+        Assert.Equal("interactive_required", importJson.ErrorCode);
+    }
 }

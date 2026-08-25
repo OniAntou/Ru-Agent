@@ -149,7 +149,6 @@ public sealed class HarnessApprovalService
             }
             catch (Exception ex) when (ex is HarnessStoreException or InvalidOperationException or System.Data.Common.DbException or Microsoft.Data.Sqlite.SqliteException)
             {
-                // Rule persistence failure still permits once-only execution
                 ruleSaveFailed = true;
             }
         }

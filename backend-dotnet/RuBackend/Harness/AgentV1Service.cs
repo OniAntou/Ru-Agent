@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -7,6 +7,7 @@ using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
+using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
@@ -36,6 +37,8 @@ public sealed class AgentV1Service
     private readonly AgentSessionPermissionStore _permissionStore;
     private readonly IHarnessKeyStore _keyStore;
     private readonly IAgentRuntimeRootRegistry? _runtimeRoots;
+    private readonly RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService? _snapshots;
+    private readonly ReconciliationInspectionGate? _inspectionGate;
 
     public AgentV1Service(
         IHarnessEventStore store,
@@ -50,7 +53,9 @@ public sealed class AgentV1Service
         ISessionStore sessions,
         AgentSessionPermissionStore permissionStore,
         IHarnessKeyStore keyStore,
-        IAgentRuntimeRootRegistry? runtimeRoots = null)
+        IAgentRuntimeRootRegistry? runtimeRoots = null,
+        RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService? snapshots = null,
+        ReconciliationInspectionGate? inspectionGate = null)
     {
         _store = store;
         _options = options;
@@ -65,6 +70,8 @@ public sealed class AgentV1Service
         _permissionStore = permissionStore;
         _keyStore = keyStore;
         _runtimeRoots = runtimeRoots;
+        _snapshots = snapshots;
+        _inspectionGate = inspectionGate;
     }
 
     // Compatibility overload for tests that construct with old signature (fallback to ephemeral)
@@ -1367,6 +1374,99 @@ public sealed class AgentV1Service
         return new AgentServiceResult(200, MapRun(result.Run!));
     }
 
+    /// <summary>
+    /// Applies the typed user reconciliation decision. The snapshot hash the client
+    /// presents must equal this host's freshly computed workspace/Git hash; anything
+    /// else fails closed with reconcile_stale and leaves the run untouched.
+    /// </summary>
+    public async Task<AgentServiceResult> ReconcileAsync(
+        string runIdRaw,
+        string? outcome,
+        string? snapshotHash,
+        CancellationToken cancellationToken)
+    {
+        if (!IsRunId(runIdRaw))
+        {
+            return BoundedError(400, "invalid_run_id", "run_id invalid.");
+        }
+
+        if (!ReconciliationCommand.TryParse(outcome, out var command))
+        {
+            return BoundedError(400, "invalid_outcome", "outcome must be applied, not_applied, or unknown_continue.");
+        }
+
+        if (string.IsNullOrWhiteSpace(snapshotHash)
+            || snapshotHash.Length != 64
+            || !snapshotHash.All(char.IsAsciiHexDigit))
+        {
+            return BoundedError(400, "invalid_snapshot_hash", "snapshot_hash must be a sha-256 hex digest.");
+        }
+
+        if (_snapshots is null || _inspectionGate is null)
+        {
+            return BoundedError(409, "reconciliation_unavailable", "Reconciliation services are not available.");
+        }
+
+        var runId = new RunId(runIdRaw);
+        var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (run is null)
+        {
+            return BoundedError(404, "run_not_found", "Run not found.");
+        }
+
+        if (run.State != HarnessRunState.ReconciliationRequired)
+        {
+            return BoundedError(409, "invalid_run_state", "Run is not awaiting reconciliation.");
+        }
+
+        var freshHash = await _snapshots.ComputeFreshHashAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (freshHash is null || !string.Equals(freshHash, snapshotHash, StringComparison.Ordinal))
+        {
+            return BoundedError(409, "reconcile_stale", "Workspace snapshot changed; re-read before deciding.");
+        }
+
+        string? intentCode = null;
+        await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
+        {
+            if (envelope.Event.Kind == "reconciliation.required"
+                && envelope.Event.SafeCode is { } code)
+            {
+                intentCode = code;
+            }
+        }
+
+        var transition = AgentRunStateMachine.TryTransition(
+            run.Status,
+            HarnessRunTransition.ApplyReconciliation);
+        if (!transition.Accepted)
+        {
+            return BoundedError(409, transition.ErrorCode ?? "invalid_transition", "Reconcile rejected.");
+        }
+
+        if (command.Kind == ReconciliationCommandKind.UnknownContinue)
+        {
+            _inspectionGate.Activate(runId);
+        }
+
+        var now = _time.UtcNow;
+        var nextRun = AdvanceRun(run, transition.Next, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, 1, now);
+        var evt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.ReconciliationResolved, safeCode: command.ToWireToken());
+        var commit = new HarnessCommit(runId, run.Version, nextRun, new[] { evt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
+        var result = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
+        if (result.Outcome != HarnessCommitOutcome.Committed)
+        {
+            return BoundedError(409, "commit_conflict", "Commit conflict.");
+        }
+
+        return new AgentServiceResult(200, new
+        {
+            run_id = runIdRaw,
+            state = MapRunState(result.Run!.Status),
+            resolution = command.ToWireToken(),
+            intent_code = intentCode,
+        });
+    }
+
     public async Task<AgentServiceResult> ContinueAsync(string runIdRaw, CancellationToken cancellationToken)
     {
         if (!IsRunId(runIdRaw))
@@ -1482,7 +1582,7 @@ public sealed class AgentV1Service
 
     /// <summary>
     /// Explicit snake_case state names shared by every API surface; enum ToString would
-    /// collapse word boundaries ("waiting_history" â†’ "waitinghistory").
+    /// collapse word boundaries ("waiting_history" → "waitinghistory").
     /// </summary>
     public static string MapHistoryWaitKind(HistoryWaitKind? kind) => kind switch
     {

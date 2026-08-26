@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Text.Json;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
+using RuAgent.Harness.Core.Reconciliation;
 
 namespace RuAgent.Harness.Core;
 
@@ -14,6 +15,7 @@ internal sealed class AgentToolExecutionPipeline
     private readonly ToolCallScheduler _scheduler;
     private readonly TransientFrameBuffer _frames;
     private readonly ITransientContentRedactor _transientRedactor;
+    private readonly ReconciliationInspectionGate? _inspectionGate;
 
     internal AgentToolExecutionPipeline(
         IToolGateway gateway,
@@ -22,7 +24,8 @@ internal sealed class AgentToolExecutionPipeline
         ITimeProvider time,
         ToolCallScheduler scheduler,
         TransientFrameBuffer frames,
-        ITransientContentRedactor transientRedactor)
+        ITransientContentRedactor transientRedactor,
+        ReconciliationInspectionGate? inspectionGate = null)
     {
         _gateway = gateway;
         _store = store;
@@ -31,6 +34,7 @@ internal sealed class AgentToolExecutionPipeline
         _scheduler = scheduler;
         _frames = frames;
         _transientRedactor = transientRedactor;
+        _inspectionGate = inspectionGate;
     }
 
     internal async Task<AgentToolPipelineResult> ExecuteAsync(
@@ -124,31 +128,20 @@ internal sealed class AgentToolExecutionPipeline
             {
                 var deniedExecutionId = _ids.NewExecutionId();
                 var code = decision.SafeCode ?? "policy_denied";
-                var modelContent = JsonSerializer.SerializeToUtf8Bytes(new
-                {
-                    error = "tool_denied",
-                    code,
-                });
-                var resultPayloadId = _ids.NewPayloadId();
-                var resultPayload = new HarnessPayloadIntent(
-                    resultPayloadId,
-                    HarnessPayloadKind.ToolOutput,
-                    HarnessPayloadAudience.AuthenticatedClient
-                        | HarnessPayloadAudience.ModelContext,
-                    HarnessPayloadEncoding.Json,
-                    modelContent.Length,
-                    modelContent);
-                var receipt = new ToolExecutionReceipt(
-                    deniedExecutionId,
-                    proposal.ToolCallId,
-                    ToolExecutionOutcome.Failed,
-                    code,
-                    resultPayloadId,
-                    sideEffectsPossible: false,
-                    contentEncoding: HarnessPayloadEncoding.Json);
                 denied.Add(
                     proposal.ModelOrder,
-                    new DeniedToolExecution(resultPayload, receipt));
+                    CreateDeniedExecution(proposal, deniedExecutionId, code));
+                continue;
+            }
+
+            if (_inspectionGate is { } gate
+                && gate.IsMutationDenied(run.RunId)
+                && decision.AccessKind != ToolAccessKind.ReadOnly)
+            {
+                var gatedExecutionId = _ids.NewExecutionId();
+                denied.Add(
+                    proposal.ModelOrder,
+                    CreateDeniedExecution(proposal, gatedExecutionId, "inspection_required"));
                 continue;
             }
 
@@ -184,7 +177,10 @@ internal sealed class AgentToolExecutionPipeline
                         HarnessEventKind.ToolExecutionRequested,
                         modelStepId: modelStepId,
                         toolCallId: call.ToolCallId,
-                        executionId: call.ExecutionId),
+                        executionId: call.ExecutionId,
+                        safeCode: call.AccessKind == ToolAccessKind.ReadOnly
+                            ? "read_only"
+                            : "side_effects_possible"),
                     preparationPayloads,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -272,8 +268,11 @@ internal sealed class AgentToolExecutionPipeline
             }
 
             var nextStatus = run.Status;
-            if (receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown
-                && call.AccessKind != ToolAccessKind.ReadOnly)
+            var ambiguousSideEffects = receipt.SideEffectsPossible
+                && receipt.Outcome is ToolExecutionOutcome.Cancelled or ToolExecutionOutcome.TimedOut;
+            if ((receipt.Outcome == ToolExecutionOutcome.OutcomeUnknown
+                    && call.AccessKind != ToolAccessKind.ReadOnly)
+                || ambiguousSideEffects)
             {
                 var transition = AgentRunStateMachine.TryTransition(
                     run.Status,
@@ -290,6 +289,13 @@ internal sealed class AgentToolExecutionPipeline
                     toolCallId: receipt.ToolCallId,
                     executionId: receipt.ExecutionId,
                     safeCode: receipt.Code));
+            }
+            else if (call.AccessKind == ToolAccessKind.ReadOnly
+                     && receipt.Outcome == ToolExecutionOutcome.Succeeded)
+            {
+                // A durable read-only inspection receipt is what clears the
+                // UnknownContinue mutation gate.
+                _inspectionGate?.RecordInspection(run.RunId);
             }
 
             var next = run.Advance(
@@ -315,6 +321,36 @@ internal sealed class AgentToolExecutionPipeline
                 .Select(item => item.Receipt)
                 .ToArray(),
             null);
+    }
+
+    private DeniedToolExecution CreateDeniedExecution(
+        ToolProposal proposal,
+        ExecutionId executionId,
+        string code)
+    {
+        var modelContent = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            error = "tool_denied",
+            code,
+        });
+        var resultPayloadId = _ids.NewPayloadId();
+        var resultPayload = new HarnessPayloadIntent(
+            resultPayloadId,
+            HarnessPayloadKind.ToolOutput,
+            HarnessPayloadAudience.AuthenticatedClient
+                | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Json,
+            modelContent.Length,
+            modelContent);
+        var receipt = new ToolExecutionReceipt(
+            executionId,
+            proposal.ToolCallId,
+            ToolExecutionOutcome.Failed,
+            code,
+            resultPayloadId,
+            sideEffectsPossible: false,
+            contentEncoding: HarnessPayloadEncoding.Json);
+        return new DeniedToolExecution(resultPayload, receipt);
     }
 
     private sealed record DeniedToolExecution(

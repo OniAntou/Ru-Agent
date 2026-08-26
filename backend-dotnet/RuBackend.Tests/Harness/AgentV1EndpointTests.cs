@@ -128,7 +128,11 @@ public sealed class AgentV1EndpointTests
         }
 
         using var rec = await client.PostAsJsonAsync("/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile", new { outcome = "applied" });
-        Assert.Equal(409, (int)rec.StatusCode);
+        // The reconcile endpoint is live since Task 8: a missing snapshot_hash fails
+        // validation before any run lookup, never with a phase stub.
+        Assert.Equal(400, (int)rec.StatusCode);
+        var recJson = await rec.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("invalid_snapshot_hash", recJson.GetProperty("error_code").GetString());
     }
 
     [Fact]

@@ -225,7 +225,20 @@ builder.Services.AddSingleton<IHarnessEventStore>(services =>
 builder.Services.AddSingleton<HarnessLiveEventHub>();
 // Headless runtime loop: per-run coordinators, outbox delivery, and model/tool driving.
 builder.Services.AddSingleton<IAgentRuntimeRootRegistry, AgentRuntimeRootRegistry>();
+builder.Services.AddSingleton<RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate>();
 builder.Services.AddSingleton<IAgentRuntimeCoordinatorFactory, AgentRuntimeCoordinatorFactory>();
+builder.Services.AddSingleton(sp => new RuBackend.Harness.Git.SqliteRunGitStateStore(
+    Path.Combine(
+        Path.GetDirectoryName(sp.GetRequiredService<HarnessSqliteOptions>().DatabasePath)!,
+        "agent_git_state.db")));
+builder.Services.AddSingleton(sp => new RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService(
+    sp.GetRequiredService<RuBackend.Harness.Git.SqliteRunGitStateStore>(),
+    runId => sp.GetRequiredService<IAgentRuntimeRootRegistry>()
+        .Snapshot()
+        .Where(pair => string.Equals(pair.RunId, runId.Value, StringComparison.Ordinal))
+        .Select(pair => pair.WorkspaceRoot)
+        .FirstOrDefault()));
+builder.Services.AddHostedService<RuBackend.Harness.Reconciliation.HarnessRecoveryStartupService>();
 builder.Services.AddSingleton<HarnessOutboxStore>();
 builder.Services.AddSingleton<RuBackend.Harness.IHarnessModelContextBootstrapper, RuBackend.Harness.HarnessModelContextBootstrapper>();
 builder.Services.AddSingleton<AgentRunHistoryTransitionSink>();

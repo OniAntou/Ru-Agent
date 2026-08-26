@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Context;
 
@@ -72,17 +73,20 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly IHarnessEventStore _store;
     private readonly HarnessSqliteOptions _sqliteOptions;
     private readonly HarnessPayloadStore _payloadStore;
+    private readonly ReconciliationInspectionGate? _inspectionGate;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
         IHarnessEventStore store,
         HarnessSqliteOptions sqliteOptions,
-        HarnessPayloadStore payloadStore)
+        HarnessPayloadStore payloadStore,
+        ReconciliationInspectionGate? inspectionGate = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _sqliteOptions = sqliteOptions ?? throw new ArgumentNullException(nameof(sqliteOptions));
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
+        _inspectionGate = inspectionGate;
     }
 
     public AgentRunCoordinator Create(string workspaceRoot)
@@ -100,7 +104,10 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             new CryptographicIdGenerator(),
             new SystemTimeProvider(),
             new ToolCallScheduler(),
-            new TransientFrameBuffer(64 * 1024));
+            new TransientFrameBuffer(64 * 1024),
+            null,
+            null,
+            _inspectionGate);
     }
 }
 

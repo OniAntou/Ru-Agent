@@ -12,6 +12,7 @@ public enum HarnessEventKind
     ApprovalRequested,
     ContinueRequested,
     ReconciliationRequired,
+    ReconciliationResolved,
     TransientFramesDropped,
 }
 

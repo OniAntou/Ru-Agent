@@ -19,6 +19,9 @@ public sealed class FakeToolGateway : IToolGateway
 
     public ToolAccessKind AccessKind { get; }
 
+    /// <summary>Overrides the access kind stamped onto prepared executions when set.</summary>
+    public ToolAccessKind? PreparedKind { get; set; }
+
     public IReadOnlyList<PreparedPayload> PreparationPayloads { get; set; } =
         Array.Empty<PreparedPayload>();
 
@@ -30,6 +33,9 @@ public sealed class FakeToolGateway : IToolGateway
 
     public Func<ToolProposal, ToolProposalDecision>? DecisionFactory { get; set; }
 
+    /// <summary>When set, returned from every ExecuteAsync call with the live identities.</summary>
+    public ToolExecutionReceipt? ForcedReceipt { get; set; }
+
     public Task<ToolProposalDecision> EvaluateAsync(
         ToolProposal proposal,
         CancellationToken cancellationToken)
@@ -38,7 +44,7 @@ public sealed class FakeToolGateway : IToolGateway
         _trace?.Add("evaluate");
         return Task.FromResult(DecisionFactory?.Invoke(proposal)
             ?? ToolProposalDecision.Allow(
-                AccessKind,
+                PreparedKind ?? AccessKind,
                 $"canonical-{proposal.ModelOrder}"));
     }
 
@@ -51,7 +57,7 @@ public sealed class FakeToolGateway : IToolGateway
             execution.ExecutionId,
             execution.Proposal.ToolCallId,
             execution.Proposal.ModelOrder,
-            AccessKind,
+            PreparedKind ?? AccessKind,
             $"prepared-{execution.Proposal.ModelOrder}",
             PreparationPayloads));
     }
@@ -63,6 +69,18 @@ public sealed class FakeToolGateway : IToolGateway
     {
         ExecuteAttempts.Add(execution.ExecutionId);
         _trace?.Add("execute");
+        if (ForcedReceipt is { } forced)
+        {
+            return new ToolExecutionReceipt(
+                execution.ExecutionId,
+                execution.ToolCallId,
+                forced.Outcome,
+                forced.Code,
+                forced.ResultPayloadId,
+                forced.SideEffectsPossible,
+                forced.ModelContent,
+                forced.ContentEncoding);
+        }
         if (_remainingTransportFailures > 0)
         {
             _remainingTransportFailures--;

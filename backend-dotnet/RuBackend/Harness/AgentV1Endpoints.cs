@@ -312,10 +312,35 @@ public static class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static Task<IResult> PostReconcileAsync(string runId, AgentV1Service service, CancellationToken ct)
+    private static async Task<IResult> PostReconcileAsync(string runId, HttpContext context, AgentV1Service service, CancellationToken ct)
     {
-        var result = service.PhaseNotAvailable();
-        return Task.FromResult(Results.Json(result.Body, statusCode: result.StatusCode));
+        string? outcome = null;
+        string? snapshotHash = null;
+        try
+        {
+            using var document = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: ct);
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                if (document.RootElement.TryGetProperty("outcome", out var outcomeElement)
+                    && outcomeElement.ValueKind == JsonValueKind.String)
+                {
+                    outcome = outcomeElement.GetString();
+                }
+
+                if (document.RootElement.TryGetProperty("snapshot_hash", out var hashElement)
+                    && hashElement.ValueKind == JsonValueKind.String)
+                {
+                    snapshotHash = hashElement.GetString();
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+
+        var result = await service.ReconcileAsync(runId, outcome, snapshotHash, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
     private static async Task<IResult> GetSessionRunsAsync(string sessionId, HttpContext context, AgentV1Service service, CancellationToken ct)

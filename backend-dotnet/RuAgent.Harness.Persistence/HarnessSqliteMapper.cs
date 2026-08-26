@@ -112,6 +112,7 @@ internal static class HarnessSqliteMapper
         HarnessEventKind.ApprovalRequested => "approval.requested",
         HarnessEventKind.ContinueRequested => "continue.requested",
         HarnessEventKind.ReconciliationRequired => "reconciliation.required",
+        HarnessEventKind.ReconciliationResolved => "reconciliation.resolved",
         HarnessEventKind.TransientFramesDropped => "transient.frames_dropped",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };

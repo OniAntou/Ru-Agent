@@ -1,6 +1,7 @@
 using System.Text;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Reconciliation;
 
 // Generic preparation payload handling: PreparedPayloads with kind RecoveryOpaque are kept byte-exact
 // and encrypted as InternalOnly/Opaque via HarnessPayloadStore without file-specific branches.
@@ -29,6 +30,8 @@ public sealed class AgentRunCoordinator
     private readonly ITransientContentRedactor _transientRedactor;
     private readonly AgentToolExecutionPipeline _tools;
     private readonly IToolRunCancellation? _cancellation;
+    private readonly ReconciliationInspectionGate? _inspectionGate;
+    private readonly IModelContextLimitProvider? _contextLimit;
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -39,7 +42,9 @@ public sealed class AgentRunCoordinator
         ITimeProvider time,
         ToolCallScheduler scheduler,
         TransientFrameBuffer frames,
-        ITransientContentRedactor? transientRedactor = null)
+        ITransientContentRedactor? transientRedactor = null,
+        IModelContextLimitProvider? contextLimit = null,
+        ReconciliationInspectionGate? inspectionGate = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -50,6 +55,8 @@ public sealed class AgentRunCoordinator
         _frames = frames ?? throw new ArgumentNullException(nameof(frames));
         _transientRedactor = transientRedactor
             ?? PassthroughTransientContentRedactor.Instance;
+        _contextLimit = contextLimit;
+        _inspectionGate = inspectionGate;
         _tools = new AgentToolExecutionPipeline(
             gateway ?? throw new ArgumentNullException(nameof(gateway)),
             store,
@@ -57,7 +64,8 @@ public sealed class AgentRunCoordinator
             time,
             scheduler ?? throw new ArgumentNullException(nameof(scheduler)),
             frames,
-            _transientRedactor);
+            _transientRedactor,
+            inspectionGate);
         _cancellation = gateway as IToolRunCancellation;
     }
 
@@ -75,6 +83,59 @@ public sealed class AgentRunCoordinator
             .AssembleAsync(runId, cancellationToken)
             .ConfigureAwait(false);
         var modelStepId = _ids.NewModelStepId();
+
+        var providerLimit = _contextLimit?.MaxPromptTokens(runId);
+        if (providerLimit is { } limitTokens
+            && ModelContextSizeEstimator.EstimateTokens(context) > limitTokens)
+        {
+            // Never silently drop earlier results: the bounded continuation summary is
+            // stored as a private payload and referenced from a safe event. Continue can
+            // retry, but while the assembled context still exceeds the true provider
+            // limit the step stays blocked.
+            var summary = ContinuationSummaryBuilder.Build(
+                context,
+                ContinuationSummaryBuilder.DefaultMaxChars);
+            var summaryBytes = Encoding.UTF8.GetBytes(summary.Text);
+            var summaryPayloadId = _ids.NewPayloadId();
+            var summaryPayload = new HarnessPayloadIntent(
+                summaryPayloadId,
+                HarnessPayloadKind.ContinuationSummary,
+                HarnessPayloadAudience.InternalOnly,
+                HarnessPayloadEncoding.Utf8Text,
+                Math.Max(summaryBytes.Length, 1),
+                summaryBytes);
+            var limitEvent = new HarnessEventIntent(
+                _ids.NewEventId(),
+                HarnessEventKind.ModelStepStarted,
+                modelStepId: modelStepId,
+                payloadId: summaryPayloadId,
+                safeCode: "context_limit_reached");
+            var limitTransition = AgentRunStateMachine.TryTransition(
+                run.Status,
+                HarnessRunTransition.ExhaustBudget);
+            if (!limitTransition.Accepted)
+            {
+                throw new InvalidOperationException(limitTransition.ErrorCode);
+            }
+
+            var limitedNext = run.Advance(
+                limitTransition.Next,
+                run.BudgetWindow,
+                run.ModelStepsInWindow,
+                run.ToolCallsInWindow,
+                1,
+                _time.UtcNow);
+            run = await CommitAsync(
+                    run,
+                    limitedNext,
+                    new[] { limitEvent },
+                    new[] { summaryPayload },
+                    Array.Empty<ConversationOutboxIntent>(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return AgentRunStepResult.Blocked(run, "context_limit_reached");
+        }
+
         var reservation = AgentBudgetPolicy.ReserveModelStep(run, _time.UtcNow);
         var startEvent = new HarnessEventIntent(
             _ids.NewEventId(),
@@ -300,6 +361,59 @@ public sealed class AgentRunCoordinator
     /// </summary>
     public Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken) =>
         _cancellation?.CancelRunAsync(runId, cancellationToken) ?? Task.CompletedTask;
+
+    /// <summary>
+    /// Applies the typed user reconciliation decision to a run in the
+    /// ReconciliationRequired state. Applied/NotApplied resolve directly; UnknownContinue
+    /// resumes evaluation while the mutation gate denies non-read-only calls until one
+    /// durable read-only inspection receipt is committed.
+    /// </summary>
+    public async Task<AgentRun> ApplyReconciliationAsync(
+        RunId runId,
+        ReconciliationCommand command,
+        CancellationToken cancellationToken)
+    {
+        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (run.State != HarnessRunState.ReconciliationRequired)
+        {
+            throw new InvalidOperationException("invalid_run_state");
+        }
+
+        var stateChange = AgentRunStateMachine.TryTransition(
+            run.Status,
+            HarnessRunTransition.ApplyReconciliation);
+        if (!stateChange.Accepted)
+        {
+            throw new InvalidOperationException(stateChange.ErrorCode);
+        }
+
+        if (command.Kind == ReconciliationCommandKind.UnknownContinue)
+        {
+            _inspectionGate?.Activate(runId);
+        }
+
+        var next = run.Advance(
+            stateChange.Next,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            1,
+            _time.UtcNow);
+        return await CommitAsync(
+                run,
+                next,
+                new[]
+                {
+                    new HarnessEventIntent(
+                        _ids.NewEventId(),
+                        HarnessEventKind.ReconciliationResolved,
+                        safeCode: command.ToWireToken()),
+                },
+                Array.Empty<HarnessPayloadIntent>(),
+                Array.Empty<ConversationOutboxIntent>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     private async Task<AgentRunStepResult> HandleToolStepAsync(
         AgentRun run,

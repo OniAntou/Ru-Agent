@@ -99,6 +99,22 @@ public sealed class AgentBudgetTests
             AgentBudgetPolicy.Continue(Run(), Now));
     }
 
+    [Fact]
+    public void Reconciliation_required_runs_are_not_runnable_for_budget_reservations()
+    {
+        // A run awaiting reconciliation must never reserve budget: only an explicit
+        // ApplyReconciliation transition returns it to the runnable Running state.
+        Assert.Throws<InvalidOperationException>(() =>
+            AgentBudgetPolicy.ReserveModelStep(
+                Run(status: HarnessRunState.ReconciliationRequired),
+                Now));
+        Assert.Throws<InvalidOperationException>(() =>
+            AgentBudgetPolicy.ReserveToolCalls(
+                Run(status: HarnessRunState.ReconciliationRequired),
+                1,
+                Now));
+    }
+
     private static AgentRun Run(
         HarnessRunState status = HarnessRunState.Running,
         int budgetWindow = 1,

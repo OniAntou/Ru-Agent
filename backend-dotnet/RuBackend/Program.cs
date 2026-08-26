@@ -227,6 +227,16 @@ builder.Services.AddSingleton<IHarnessEventStore>(services =>
         services.GetRequiredService<HarnessSqliteOptions>(),
         services.GetRequiredService<HarnessPayloadStore>()));
 builder.Services.AddSingleton<HarnessLiveEventHub>();
+// Headless runtime loop: per-run coordinators, outbox delivery, and model/tool driving.
+builder.Services.AddSingleton<IAgentRuntimeRootRegistry, AgentRuntimeRootRegistry>();
+builder.Services.AddSingleton<IAgentRuntimeCoordinatorFactory, AgentRuntimeCoordinatorFactory>();
+builder.Services.AddSingleton<HarnessOutboxStore>();
+builder.Services.AddSingleton<RuBackend.Harness.IHarnessModelContextBootstrapper, RuBackend.Harness.HarnessModelContextBootstrapper>();
+builder.Services.AddSingleton<AgentRunHistoryTransitionSink>();
+builder.Services.AddSingleton<IAgentHistoryTransitionSink>(services =>
+    services.GetRequiredService<AgentRunHistoryTransitionSink>());
+builder.Services.AddSingleton<AgentConversationOutboxDispatcher>();
+builder.Services.AddHostedService<AgentRuntimeLoopService>();
 builder.Services.AddSingleton<AgentV1Service>();
 // Harness Core adapters: Worker v2 and ToolGateway via factory
 builder.Services.AddSingleton<LoopbackModelStepRunner>(services =>

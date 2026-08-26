@@ -46,7 +46,8 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         IVoiceProtocolClient? voiceProtocolClient = null,
         IAgentBrokerClient? agentBrokerClient = null,
         IDiagnosticEmitter? diagnosticEmitter = null,
-        IWorkerClient? workerClient = null)
+        IWorkerClient? workerClient = null,
+        RuAgent.Harness.Core.IModelStepRunner? modelStepRunner = null)
     {
         _ownedDataRoot = dataPaths is null
             ? Path.Combine(Path.GetTempPath(), "ru-backend-test-" + Guid.NewGuid().ToString("N"))
@@ -64,7 +65,10 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _agentBrokerClient = agentBrokerClient;
         _diagnosticEmitter = diagnosticEmitter;
         _workerClient = workerClient;
+        ModelStepRunnerOverride = modelStepRunner;
     }
+
+    internal RuAgent.Harness.Core.IModelStepRunner? ModelStepRunnerOverride { get; }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -85,6 +89,12 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
 
             services.RemoveAll<IRuntimeWorkerClient>();
             services.AddSingleton(_runtimeWorkerClient);
+
+            if (ModelStepRunnerOverride is not null)
+            {
+                services.RemoveAll<RuAgent.Harness.Core.IModelStepRunner>();
+                services.AddSingleton(ModelStepRunnerOverride);
+            }
 
             if (_dataPaths is not null)
             {

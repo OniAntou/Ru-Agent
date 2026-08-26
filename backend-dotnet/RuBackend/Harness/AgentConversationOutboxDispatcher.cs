@@ -37,27 +37,51 @@ public interface IAgentHistoryTransitionSink
 
 public sealed class AgentRunHistoryTransitionSink : IAgentHistoryTransitionSink
 {
-    private readonly AgentRunCoordinator _coordinator;
+    private readonly IAgentRuntimeCoordinatorFactory _factory;
+    private readonly IAgentRuntimeRootRegistry _roots;
 
-    public AgentRunHistoryTransitionSink(AgentRunCoordinator coordinator) =>
-        _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+    public AgentRunHistoryTransitionSink(
+        IAgentRuntimeCoordinatorFactory factory,
+        IAgentRuntimeRootRegistry roots)
+    {
+        _factory = factory ?? throw new ArgumentNullException(nameof(factory));
+        _roots = roots ?? throw new ArgumentNullException(nameof(roots));
+    }
 
     public async Task AcknowledgeAsync(
         RunId runId,
         HistoryWaitKind historyWaitKind,
-        CancellationToken cancellationToken) =>
-        _ = await _coordinator.AcknowledgeHistoryAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!_roots.TryGetRoot(runId, out var workspaceRoot) || workspaceRoot is null)
+        {
+            // The transition stays durable in the outbox transition table and is retried
+            // after reconciliation once this host holds the run's workspace root again.
+            throw new InvalidOperationException("runtime_root_unknown");
+        }
+
+        var coordinator = _factory.Create(workspaceRoot);
+        _ = await coordinator.AcknowledgeHistoryAsync(
                 runId,
                 historyWaitKind,
                 cancellationToken)
             .ConfigureAwait(false);
+    }
 
     public async Task FailAsync(
         RunId runId,
         string errorCode,
-        CancellationToken cancellationToken) =>
-        _ = await _coordinator.FailAsync(runId, errorCode, cancellationToken)
+        CancellationToken cancellationToken)
+    {
+        if (!_roots.TryGetRoot(runId, out var workspaceRoot) || workspaceRoot is null)
+        {
+            throw new InvalidOperationException("runtime_root_unknown");
+        }
+
+        var coordinator = _factory.Create(workspaceRoot);
+        _ = await coordinator.FailAsync(runId, errorCode, cancellationToken)
             .ConfigureAwait(false);
+    }
 }
 
 public sealed class AgentConversationOutboxDispatcher

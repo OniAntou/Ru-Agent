@@ -76,6 +76,108 @@ public sealed class Phase1RemediationTests
         Assert.Equal("user_before_first_step", getJson.GetProperty("history_wait_kind").GetString());
     }
 
+    [Fact]
+    public async Task Runtime_loop_delivers_prompt_and_drives_run_to_completed()
+    {
+        var steps = new Queue<RuAgent.Harness.Core.AssistantStep>();
+        steps.Enqueue(new RuAgent.Harness.Core.AssistantStep(
+            null,
+            new[]
+            {
+                new RuAgent.Harness.Core.ModelToolCall(
+                    null,
+                    "files.list",
+                    "1.0.0",
+                    JsonDocument.Parse("{\"path\":\".\"}").RootElement),
+            },
+            RuAgent.Harness.Core.AssistantFinishReason.ToolCalls,
+            0));
+        steps.Enqueue(new RuAgent.Harness.Core.AssistantStep(
+            "runtime loop done",
+            Array.Empty<RuAgent.Harness.Core.ModelToolCall>(),
+            RuAgent.Harness.Core.AssistantFinishReason.Stop,
+            0));
+        var fakeRunner = new ScriptedStepRunner(steps);
+
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(
+            dataPaths: tmp.DataPaths,
+            modelStepRunner: fakeRunner);
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+        var created = await CreateRunAsync(client, sessionId, tmp.Path, "drive me", "key-" + Guid.NewGuid().ToString("N"));
+        var runId = created.GetProperty("run_id").GetString()!;
+
+        var trustPayload = new
+        {
+            trust_request_id = created.GetProperty("trust_request_id").GetString(),
+            display_identity_hash = created.GetProperty("display_identity_hash").GetString(),
+            decision = "approve",
+        };
+        using var trustResp = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/trust", trustPayload);
+        trustResp.EnsureSuccessStatusCode();
+
+        string? status = null;
+        string lastBody = string.Empty;
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(200);
+            using var getResp = await client.GetAsync($"/agent/v1/runs/{runId}");
+            lastBody = await getResp.Content.ReadAsStringAsync();
+            try
+            {
+                using var doc = JsonDocument.Parse(lastBody);
+                status = doc.RootElement.GetProperty("status").GetString();
+            }
+            catch (JsonException)
+            {
+                status = "unparseable:" + lastBody[..Math.Min(120, lastBody.Length)];
+            }
+
+            if (status is "completed" or "failed")
+            {
+                break;
+            }
+        }
+
+        Assert.True(
+            status == "completed",
+            $"final status={status} last_body={lastBody[..Math.Min(300, lastBody.Length)]}");
+
+        using var eventsResp = await client.GetAsync($"/agent/v1/runs/{runId}/events");
+        var eventsBody = await eventsResp.Content.ReadAsStringAsync();
+        Assert.True(
+            eventsResp.IsSuccessStatusCode,
+            $"events returned {(int)eventsResp.StatusCode}: {eventsBody[..Math.Min(200, eventsBody.Length)]}");
+        var kinds = eventsBody
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line => line.StartsWith("data: ", StringComparison.Ordinal))
+            .Select(line => JsonDocument.Parse(line["data: ".Length..]).RootElement.GetProperty("event_type").GetString())
+            .ToArray();
+        Assert.Contains("tool.execution_completed", kinds);
+        Assert.Equal(2, kinds.Count(kind => kind == "model.step_completed"));
+    }
+
+    private sealed class ScriptedStepRunner : RuAgent.Harness.Core.IModelStepRunner
+    {
+        private readonly Queue<RuAgent.Harness.Core.AssistantStep> _steps;
+        public ScriptedStepRunner(Queue<RuAgent.Harness.Core.AssistantStep> steps) => _steps = steps;
+
+        public Task<RuAgent.Harness.Core.AssistantStep> RunStepAsync(
+            RuAgent.Harness.Core.ModelStepRequest request,
+            Func<RuAgent.Harness.Core.AssistantDelta, ValueTask> publishDelta,
+            CancellationToken cancellationToken)
+        {
+            if (_steps.Count == 0)
+            {
+                throw new InvalidOperationException("no scripted step left");
+            }
+
+            return Task.FromResult(_steps.Dequeue());
+        }
+    }
+
     private static async Task<string> CreateSessionAsync(HttpClient client)
     {
         using var resp = await client.PostAsync("/sessions/new", null);

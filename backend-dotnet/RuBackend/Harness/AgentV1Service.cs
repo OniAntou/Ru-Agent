@@ -35,6 +35,7 @@ public sealed class AgentV1Service
     private readonly ISessionStore _sessions;
     private readonly AgentSessionPermissionStore _permissionStore;
     private readonly IHarnessKeyStore _keyStore;
+    private readonly IAgentRuntimeRootRegistry? _runtimeRoots;
 
     public AgentV1Service(
         IHarnessEventStore store,
@@ -48,7 +49,8 @@ public sealed class AgentV1Service
         HarnessPayloadStore payloadStore,
         ISessionStore sessions,
         AgentSessionPermissionStore permissionStore,
-        IHarnessKeyStore keyStore)
+        IHarnessKeyStore keyStore,
+        IAgentRuntimeRootRegistry? runtimeRoots = null)
     {
         _store = store;
         _options = options;
@@ -62,6 +64,7 @@ public sealed class AgentV1Service
         _sessions = sessions;
         _permissionStore = permissionStore;
         _keyStore = keyStore;
+        _runtimeRoots = runtimeRoots;
     }
 
     // Compatibility overload for tests that construct with old signature (fallback to ephemeral)
@@ -334,6 +337,7 @@ public sealed class AgentV1Service
 
         if (storeResult.Outcome == CreateRunOutcome.Created)
         {
+            RegisterRuntimeRoot(storeResult.Run, workspacePath);
             var resp = isTrusted
                 ? MapRun(storeResult.Run)
                 : MapRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
@@ -342,6 +346,7 @@ public sealed class AgentV1Service
 
         if (storeResult.Outcome == CreateRunOutcome.AlreadyExists)
         {
+            RegisterRuntimeRoot(storeResult.Run, workspacePath);
             var resp = isTrusted
                 ? MapRun(storeResult.Run)
                 : MapRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
@@ -1513,6 +1518,14 @@ public sealed class AgentV1Service
         };
     }
 
+    /// <summary>
+    /// Registers the run's workspace root with the runtime loop so the headless driver
+    /// can execute model/tool steps for it on this host process. Untrusted runs are
+    /// registered too but only start driving once trust approval moves them to running.
+    /// </summary>
+    private void RegisterRuntimeRoot(AgentRun run, string workspacePath) =>
+        _runtimeRoots?.Register(run.RunId, workspacePath);
+
     private static GetAgentRunResponse MapRun(
         AgentRun run,
         string? trustRequestId = null,
@@ -1602,4 +1615,5 @@ public sealed class AgentV1Service
         }
     }
 }
+
 

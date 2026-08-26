@@ -19,21 +19,24 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
     public LoopbackModelStepRunner(WorkerClientOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        options.Validate();
+        // Validation happens lazily at connect time so the runner can sit in DI on
+        // hosts that never drive model steps (tests, diagnostics-only processes).
         // Transform v1 URI to v2: replace /worker/v1 with /worker/v2
-        var uriString = options.Uri.ToString();
+        var uriString = options.Uri?.ToString() ?? string.Empty;
         if (uriString.Contains("/worker/v1", StringComparison.Ordinal))
         {
             uriString = uriString.Replace("/worker/v1", "/worker/v2", StringComparison.Ordinal);
         }
-        else if (!uriString.Contains("/worker/v2", StringComparison.Ordinal))
+        else if (!uriString.Contains("/worker/v2", StringComparison.Ordinal) && uriString.Length > 0)
         {
             uriString = uriString.TrimEnd('/') + "/worker/v2";
         }
 
         _options = new WorkerClientOptions
         {
-            Uri = new Uri(uriString, UriKind.Absolute),
+            Uri = Uri.TryCreate(uriString, UriKind.Absolute, out var parsedUri)
+                ? parsedUri
+                : new Uri("ws://127.0.0.1:8005/worker/v2", UriKind.Absolute),
             Token = options.Token,
             ProtocolVersion = options.ProtocolVersion,
             MaxMessageBytes = options.MaxMessageBytes,
@@ -58,6 +61,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(publishDelta);
+        _options.Validate();
 
         using var socket = CreateSocket();
         socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);

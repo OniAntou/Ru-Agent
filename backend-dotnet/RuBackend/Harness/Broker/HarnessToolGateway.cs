@@ -21,6 +21,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
     private readonly IReadOnlyList<string> _sanitizedSearchDirectories;
     private readonly ConcurrentDictionary<string, ActiveTerminalExecution> _activeTerminalExecutions = new();
     private readonly ConcurrentDictionary<string, PreparedTerminalSpec> _pendingTerminalSpecs = new();
+    private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
 
     public HarnessToolGateway(string canonicalRoot, IReadOnlyList<string> advertisedCapabilities)
         : this(canonicalRoot, advertisedCapabilities, presetProvider: null, idGenerator: null)
@@ -31,7 +32,8 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         string canonicalRoot,
         IReadOnlyList<string> advertisedCapabilities,
         Func<RunId, AgentPermissionPreset>? presetProvider,
-        IIdGenerator? idGenerator)
+        IIdGenerator? idGenerator,
+        RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(canonicalRoot);
         ArgumentNullException.ThrowIfNull(advertisedCapabilities);
@@ -46,6 +48,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         _advertisedCapabilities = advertisedCapabilities.ToHashSet(StringComparer.Ordinal);
         _presetProvider = presetProvider ?? (_ => AgentPermissionPreset.Standard);
         _ids = idGenerator ?? new GatewayIdGenerator();
+        _approvalGrants = approvalGrants;
         _sanitizedSearchDirectories = SanitizeSearchDirectories();
     }
 
@@ -1086,7 +1089,13 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
 
         if (askReason is not null)
         {
-            return ToolProposalDecision.Ask(accessKind, _ids.NewApprovalId());
+            // An explicit user approval from the V1 endpoint consumes one pending ask for
+            // this run; evaluation then continues to a normal Allow with the real
+            // canonical intent token.
+            if (!(_approvalGrants is { } grants && grants.TryConsume(proposal.RunId.Value)))
+            {
+                return ToolProposalDecision.Ask(accessKind, _ids.NewApprovalId());
+            }
         }
 
         string resolvedExecutable;

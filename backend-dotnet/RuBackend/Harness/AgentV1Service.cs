@@ -39,6 +39,7 @@ public sealed class AgentV1Service
     private readonly IAgentRuntimeRootRegistry? _runtimeRoots;
     private readonly RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService? _snapshots;
     private readonly ReconciliationInspectionGate? _inspectionGate;
+    private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
 
     public AgentV1Service(
         IHarnessEventStore store,
@@ -55,7 +56,8 @@ public sealed class AgentV1Service
         IHarnessKeyStore keyStore,
         IAgentRuntimeRootRegistry? runtimeRoots = null,
         RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService? snapshots = null,
-        ReconciliationInspectionGate? inspectionGate = null)
+        ReconciliationInspectionGate? inspectionGate = null,
+        RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null)
     {
         _store = store;
         _options = options;
@@ -72,6 +74,7 @@ public sealed class AgentV1Service
         _runtimeRoots = runtimeRoots;
         _snapshots = snapshots;
         _inspectionGate = inspectionGate;
+        _approvalGrants = approvalGrants;
     }
 
     // Compatibility overload for tests that construct with old signature (fallback to ephemeral)
@@ -1237,7 +1240,28 @@ public sealed class AgentV1Service
             return BoundedError(404, "run_not_found", "Run not found.");
         }
 
+        // The approval ID must correspond to a persisted approval.requested event for this
+        // run while it is actually waiting; fabricated or mismatched IDs are rejected as
+        // approval_stale. This check is authoritative and survives process restarts because
+        // the event stream is durable. HostApprovalLedger below is only the atomic
+        // first-writer-wins guard for HTTP retries.
+        ApprovalId? latestPendingId = null;
+        await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
+        {
+            if (envelope.Event.Kind == "approval.requested"
+                && envelope.Event.ApprovalId is { } id)
+            {
+                latestPendingId = id;
+            }
+        }
+
+        if (latestPendingId is null || !string.Equals(latestPendingId.Value.Value, approvalIdRaw, StringComparison.Ordinal))
+        {
+            return BoundedError(409, "approval_stale", "Approval is missing, expired, or already used.");
+        }
+
         // One-time consumption: first writer wins
+
         var key = $"{runIdRaw}|{approvalIdRaw}";
         if (!HostApprovalLedger.TryAdd(key, 0))
         {
@@ -1246,12 +1270,29 @@ public sealed class AgentV1Service
 
         if (isDeny)
         {
+            var denyTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveApproval);
+            if (!denyTransition.Accepted)
+            {
+                return BoundedError(409, denyTransition.ErrorCode ?? "invalid_transition", "Approval resolve rejected.");
+            }
+
+            var denyNow = _time.UtcNow;
+            var deniedRun = AdvanceRun(run, denyTransition.Next, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, 1, denyNow);
+            var denyEvt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: "approval_resolved");
+            var denyCommit = new HarnessCommit(runId, run.Version, deniedRun, new[] { denyEvt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
+            var denyResult = await _store.CommitAsync(denyCommit, cancellationToken).ConfigureAwait(false);
+            if (denyResult.Outcome != HarnessCommitOutcome.Committed)
+            {
+                return BoundedError(409, "commit_conflict", "Commit conflict.");
+            }
+
             return new AgentServiceResult(200, new
             {
                 approval_id = approvalIdRaw,
                 status = "denied",
                 error_code = "approval_denied",
                 safe_summary = "approval denied",
+                run_state = MapRunState(denyResult.Run!.Status),
             });
         }
 
@@ -1296,6 +1337,24 @@ public sealed class AgentV1Service
             }
         }
 
+        var allowTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveApproval);
+        if (!allowTransition.Accepted)
+        {
+            return BoundedError(409, allowTransition.ErrorCode ?? "invalid_transition", "Approval resolve rejected.");
+        }
+
+        var allowNow = _time.UtcNow;
+        var nextRun = AdvanceRun(run, allowTransition.Next, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, 1, allowNow);
+        var evt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: "approval_resolved");
+        var commit = new HarnessCommit(runId, run.Version, nextRun, new[] { evt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
+        var commitResult = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
+        if (commitResult.Outcome != HarnessCommitOutcome.Committed)
+        {
+            return BoundedError(409, "commit_conflict", "Commit conflict.");
+        }
+
+        _approvalGrants?.GrantNext(runId.Value);
+
         var matcherPreview = new
         {
             tool_id = "files.read",
@@ -1317,6 +1376,7 @@ public sealed class AgentV1Service
             reusable_rule_not_saved = ruleSaveFailed,
             rule_id = ruleId,
             safe_summary = "approval authorized",
+            run_state = MapRunState(commitResult.Run!.Status),
         };
 
         return new AgentServiceResult(200, resultBody);
@@ -1419,12 +1479,6 @@ public sealed class AgentV1Service
             return BoundedError(409, "invalid_run_state", "Run is not awaiting reconciliation.");
         }
 
-        var freshHash = await _snapshots.ComputeFreshHashAsync(runId, cancellationToken).ConfigureAwait(false);
-        if (freshHash is null || !string.Equals(freshHash, snapshotHash, StringComparison.Ordinal))
-        {
-            return BoundedError(409, "reconcile_stale", "Workspace snapshot changed; re-read before deciding.");
-        }
-
         string? intentCode = null;
         await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
         {
@@ -1433,6 +1487,18 @@ public sealed class AgentV1Service
             {
                 intentCode = code;
             }
+        }
+
+        var freshHash = await _snapshots.ComputeFreshHashAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (freshHash is null || !string.Equals(freshHash, snapshotHash, StringComparison.Ordinal))
+        {
+            return new AgentServiceResult(409, new
+            {
+                error_code = "reconcile_stale",
+                message = "Workspace snapshot changed; re-read before deciding.",
+                snapshot_hash = freshHash,
+                intent_code = intentCode,
+            });
         }
 
         var transition = AgentRunStateMachine.TryTransition(

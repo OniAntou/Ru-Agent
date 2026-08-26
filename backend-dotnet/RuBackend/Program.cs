@@ -226,6 +226,7 @@ builder.Services.AddSingleton<HarnessLiveEventHub>();
 // Headless runtime loop: per-run coordinators, outbox delivery, and model/tool driving.
 builder.Services.AddSingleton<IAgentRuntimeRootRegistry, AgentRuntimeRootRegistry>();
 builder.Services.AddSingleton<RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate>();
+builder.Services.AddSingleton<RuBackend.Harness.Reconciliation.IAgentApprovalGrants, RuBackend.Harness.Reconciliation.InMemoryAgentApprovalGrants>();
 builder.Services.AddSingleton<IAgentRuntimeCoordinatorFactory, AgentRuntimeCoordinatorFactory>();
 builder.Services.AddSingleton(sp => new RuBackend.Harness.Git.SqliteRunGitStateStore(
     Path.Combine(

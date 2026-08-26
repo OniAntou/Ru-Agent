@@ -11,8 +11,18 @@ public static class SafeEventRenderer
         ArgumentNullException.ThrowIfNull(writer);
 
         // Display only safe event fields. Never include prompt/command/output/secret.
-        // Format is human-readable bounded safe summary.
-        // Example: [1] run.state_changed (running) ok - payload:payload_...?...
+        if (envelope.EventType == "transient.frames_dropped")
+        {
+            writer.WriteLine($"[{envelope.Sequence}] WARNING dropped-frames: {Escape(envelope.SafeSummary)} id={envelope.EventId}");
+            return;
+        }
+
+        if (envelope.EventType is "reconciliation.required" or "reconciliation.resolved")
+        {
+            writer.WriteLine($"[{envelope.Sequence}] {envelope.EventType} intent={Escape(envelope.SafeSummary)} status={envelope.Status} id={envelope.EventId}");
+            return;
+        }
+
         var payloadPart = envelope.PayloadRef is not null ? $" payload_ref:{envelope.PayloadRef}" : string.Empty;
         writer.WriteLine($"[{envelope.Sequence}] {envelope.EventType} status={envelope.Status} summary={Escape(envelope.SafeSummary)}{payloadPart} id={envelope.EventId}");
     }

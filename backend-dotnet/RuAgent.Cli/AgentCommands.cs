@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using RuAgent.Client;
@@ -292,6 +293,181 @@ public sealed class AgentCommands
         {
             await _agentClient.ContinueAsync(cmd.RunId, cancellationToken).ConfigureAwait(false);
             await _out.WriteLineAsync($"continued {cmd.RunId}").ConfigureAwait(false);
+            return 0;
+        }
+        catch (AgentApiException ex)
+        {
+            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// Reconciliation UX. Without an explicit --outcome the command only fetches the
+    /// reconciliation info (intent code + fresh snapshot hash). With an outcome it
+    /// applies the decision; a stale hash surfaces reconcile_stale and never mutates.
+    /// </summary>
+    public async Task<int> ReconcileAsync(ReconcileCommand cmd, CancellationToken cancellationToken)
+    {
+        string? infoSnapshotHash = null;
+        string? intentCode = null;
+
+        if (cmd.Json && cmd.OutcomeToken is not null && cmd.SnapshotHash is null)
+        {
+            // --json must never prompt: applying without a fetched hash is impossible.
+            await _err.WriteLineAsync("interactive_required: --json requires --hash to apply an outcome.").ConfigureAwait(false);
+            return 1;
+        }
+
+        if (cmd.SnapshotHash is null)
+        {
+            // Info round-trip: the host answers invalid_snapshot_hash together with the
+            // fresh hash and the safe intent code for the awaiting execution.
+            var (infoExit, infoHash, infoIntent) = await PostReconcileInfoAsync(
+                cmd.RunId,
+                cancellationToken).ConfigureAwait(false);
+            if (infoExit != 0)
+            {
+                return infoExit;
+            }
+
+            infoSnapshotHash = infoHash;
+            intentCode = infoIntent;
+        }
+
+        if (cmd.OutcomeToken is null)
+        {
+            if (infoSnapshotHash is null || intentCode is null)
+            {
+                await _err.WriteLineAsync("reconcile_unavailable: no pending reconciliation").ConfigureAwait(false);
+                return 1;
+            }
+
+            if (cmd.Json)
+            {
+                await _out.WriteLineAsync(JsonSerializer.Serialize(new
+                {
+                    v = 1,
+                    type = "reconcile_info",
+                    run_id = cmd.RunId,
+                    intent_code = intentCode,
+                    snapshot_hash = infoSnapshotHash,
+                })).ConfigureAwait(false);
+                return 0;
+            }
+
+            await _out.WriteLineAsync($"intent: {intentCode}").ConfigureAwait(false);
+            await _out.WriteLineAsync($"snapshot: {infoSnapshotHash}").ConfigureAwait(false);
+            await _out.WriteAsync("Outcome applied|not-applied|unknown (a/n/u): ").ConfigureAwait(false);
+            await _out.FlushAsync().ConfigureAwait(false);
+            var answer = await _in.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            var mapped = answer?.Trim().ToLowerInvariant() switch
+            {
+                "a" or "applied" => "applied",
+                "n" or "not-applied" => "not_applied",
+                "u" or "unknown" => "unknown_continue",
+                _ => null,
+            };
+            if (mapped is null)
+            {
+                await _err.WriteLineAsync("cancelled: no outcome chosen.").ConfigureAwait(false);
+                return 1;
+            }
+
+            return await PostReconcileDecisionAsync(cmd, mapped, infoSnapshotHash, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (cmd.Json && cmd.SnapshotHash is null)
+        {
+            // --json must never prompt: applying without a fetched hash is impossible.
+            await _err.WriteLineAsync("interactive_required: --json requires --hash to apply an outcome.").ConfigureAwait(false);
+            return 1;
+        }
+
+        return await PostReconcileDecisionAsync(
+            cmd,
+            cmd.ToWireOutcome(),
+            cmd.SnapshotHash ?? infoSnapshotHash,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<(int Exit, string? SnapshotHash, string? IntentCode)> PostReconcileInfoAsync(
+        string runId,
+        CancellationToken cancellationToken)
+    {
+        using var content = new StringContent(
+            JsonSerializer.Serialize(new { outcome = "applied", snapshot_hash = new string('0', 64) }),
+            Encoding.UTF8,
+            "application/json");
+        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/reconcile");
+        using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if ((response.StatusCode == HttpStatusCode.BadRequest
+                && body.Contains("invalid_snapshot_hash", StringComparison.Ordinal))
+            || (response.StatusCode == HttpStatusCode.Conflict
+                && body.Contains("reconcile_stale", StringComparison.Ordinal)))
+        {
+            JsonElement doc;
+            try { doc = JsonDocument.Parse(body).RootElement.Clone(); }
+            catch (JsonException)
+            {
+                await _err.WriteLineAsync("reconcile_unavailable: malformed host response").ConfigureAwait(false);
+                return (1, null, null);
+            }
+
+            var hash = doc.TryGetProperty("snapshot_hash", out var h) && h.ValueKind == JsonValueKind.String ? h.GetString() : null;
+            var intent = doc.TryGetProperty("intent_code", out var ic) && ic.ValueKind == JsonValueKind.String ? ic.GetString() : null;
+            if (hash is not null)
+            {
+                return (0, hash, intent);
+            }
+        }
+
+        await _err.WriteLineAsync($"reconcile_failed: {body}").ConfigureAwait(false);
+        return (1, null, null);
+    }
+
+    private async Task<int> PostReconcileDecisionAsync(
+        ReconcileCommand cmd,
+        string wireOutcome,
+        string? snapshotHash,
+        CancellationToken cancellationToken)
+    {
+        if (snapshotHash is null)
+        {
+            await _err.WriteLineAsync("interactive_required: snapshot hash required to apply.").ConfigureAwait(false);
+            return 1;
+        }
+
+        using var content = new StringContent(
+            JsonSerializer.Serialize(new { outcome = wireOutcome, snapshot_hash = snapshotHash }),
+            Encoding.UTF8,
+            "application/json");
+        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{cmd.RunId}/reconcile");
+        using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _session.BearerToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            await _err.WriteLineAsync(body.Contains("reconcile_stale", StringComparison.Ordinal)
+                ? $"reconcile_stale: workspace changed since inspection; rerun 'agent reconcile' to refresh."
+                : $"reconcile_failed: {body}");
+            return 1;
+        }
+
+        await _out.WriteLineAsync($"reconciled {cmd.RunId}: {body}").ConfigureAwait(false);
+        return 0;
+    }
+
+    public async Task<int> OutputAsync(OutputCommand cmd, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var content = await _agentClient.GetPayloadAsync(cmd.RunId, cmd.PayloadId, cancellationToken).ConfigureAwait(false);
+            await _out.WriteLineAsync(content).ConfigureAwait(false);
             return 0;
         }
         catch (AgentApiException ex)

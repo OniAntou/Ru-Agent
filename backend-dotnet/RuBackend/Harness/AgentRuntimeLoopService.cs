@@ -74,19 +74,22 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly HarnessSqliteOptions _sqliteOptions;
     private readonly HarnessPayloadStore _payloadStore;
     private readonly ReconciliationInspectionGate? _inspectionGate;
+    private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
         IHarnessEventStore store,
         HarnessSqliteOptions sqliteOptions,
         HarnessPayloadStore payloadStore,
-        ReconciliationInspectionGate? inspectionGate = null)
+        ReconciliationInspectionGate? inspectionGate = null,
+        RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _sqliteOptions = sqliteOptions ?? throw new ArgumentNullException(nameof(sqliteOptions));
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
         _inspectionGate = inspectionGate;
+        _approvalGrants = approvalGrants;
     }
 
     public AgentRunCoordinator Create(string workspaceRoot)
@@ -95,7 +98,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             workspaceRoot,
             RuntimeCapabilities,
             presetProvider: _ => AgentPermissionPreset.Standard,
-            idGenerator: new CryptographicIdGenerator());
+            idGenerator: new CryptographicIdGenerator(),
+            approvalGrants: _approvalGrants);
         return new AgentRunCoordinator(
             _model,
             gateway,
@@ -164,14 +168,16 @@ public sealed class AgentRuntimeLoopService : BackgroundService
 
     private async Task StepOnceAsync(CancellationToken cancellationToken)
     {
+        // Outbox delivery first so history transitions land before any new model step.
         var dispatch = await _dispatcher.DispatchOnceAsync(cancellationToken).ConfigureAwait(false);
-        if (dispatch.Outcome is AgentOutboxDispatchOutcome.Delivered
-            or AgentOutboxDispatchOutcome.TransitionRecovered)
+
+        // Drive every registered running run on every iteration: state can become
+        // runnable without an outbox write too (e.g. approval_resolved after a V1
+        // approve), so delivery alone is not a sufficient trigger.
+        _ = dispatch;
+        foreach (var (runId, workspaceRoot) in _roots.Snapshot())
         {
-            foreach (var (runId, workspaceRoot) in _roots.Snapshot())
-            {
-                await DriveRunIfRunningAsync(runId, workspaceRoot, cancellationToken).ConfigureAwait(false);
-            }
+            await DriveRunIfRunningAsync(runId, workspaceRoot, cancellationToken).ConfigureAwait(false);
         }
     }
 

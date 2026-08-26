@@ -1,6 +1,6 @@
-# RuAgent CLI — Policy-Aware Tracer (Phase 2)
+# RuAgent CLI — Headless Coding-Loop Tracer (Phase 3)
 
-Thin headless client for Agent v2. Delegates runtime to the Public Host over authenticated HTTP/SSE; contains no Worker, Broker, model-loop, or adapter code.
+Thin headless client for the Agent v2 headless coding loop (Phase 3). Delegates runtime to the Public Host over authenticated HTTP/SSE; contains no Worker, Broker, model-loop, policy, or adapter code.
 
 ## Commands
 
@@ -12,6 +12,8 @@ agent approve <run-id> <approval-id> --scope once|run|project
 agent deny <run-id> <approval-id>
 agent cancel <run-id>
 agent continue <run-id>
+agent reconcile <run-id> [--outcome applied|not-applied|unknown] [--hash SHA256] [--json]
+agent output <run-id> <payload-id> [--json]
 agent status <run-id> [--json]
 agent policy list [--global | --workspace PATH] [--json]
 agent policy import --global FILE
@@ -25,6 +27,8 @@ agent policy remove <rule-id>
 - `approve` and `deny` wrap `POST /agent/v1/runs/{runId}/approvals/{approvalId}` with `--scope once|run|project`. Approval is first-writer wins; second concurrent response returns `approval_stale` (409). Exact scope preview strips globs and is displayed before confirmation. `global` scope via approval is rejected (`approval_cannot_create_global`). `--json` cannot confirm approval.
 - `policy list` wraps `GET /agent/v1/policies` (scope filter). `policy import --global FILE` validates versioned JSON (rejects unknown version/fields, normalizes and displays matchers/decision before confirmation) and posts each rule with `X-Interactive-Confirmed: true`; sensitive matcher values are encrypted at rest via Host API. `--json` cannot bypass confirmation. `policy remove` wraps `DELETE /agent/v1/policies/{ruleId}` and requires interactive confirmation for global rules.
 - `cancel`/`continue`/`status` are thin HTTP wrappers.
+- `reconcile` wraps `POST /agent/v1/runs/{runId}/reconcile`. Without `--outcome` it fetches the run (showing the `intent_code` and a fresh `snapshot_hash`), prompts for `applied|not-applied|unknown`, then posts the decision with the freshly read hash. `--outcome applied|not-applied|unknown` maps to wire tokens `applied`/`not_applied`/`unknown_continue`. `--hash` must be a 64-char hex SHA-256; a stale `--hash` returns `reconcile_stale` and exits non-zero. `--json` never prompts: it prints the info payload and exits without sending a decision; an `--outcome` given without `--hash` in `--json` mode fails locally (exit 1) and sends no request.
+- `output` wraps `GET /agent/v1/runs/{runId}/payloads/{payloadId}` — the explicit user action that fetches final head/tail tool output bytes. Nothing in the tracer fetches private payloads implicitly; the event stream only references payloads by opaque `payload_ref`. `--json` prints the versioned payload envelope.
 
 All commands ensure the Public Host is running via `PublicHostStarter.GetOrStartAsync` before any API call and use `PublicHostSession` bearer auth.
 
@@ -32,6 +36,7 @@ All commands ensure the Public Host is running via `PublicHostStarter.GetOrStart
 
 - **Interactive** (`SafeEventRenderer`): displays only safe envelope fields (`protocol_version`, `event_id`, `run_id`, `session_id`, `sequence`, `event_type`, `occurred_at`, `status`, `safe_summary`, `payload_ref`). Never fetches private payloads; `payload_ref` is shown opaque.
 - **JSON** (`NdjsonEventRenderer` with `--json`): versioned NDJSON `{"v":1,"type":"event",...safe fields}`. Never prompts, never auto-approves, never auto-fetches private payload, and never emits `prompt`/`command`/`argv`/`path`/`code`/`diff`/`output`/`secret`/`stdout`/`stderr`/`environment` fields. Interactive confirmations (Full Access, trust, approval, global policy) are rejected when `--json` is set.
+- **Live terminal frames**: transient `tool.output.delta` frames render as `[transient:<seq>] <type> <preview>` with the preview bounded to 200 chars; any forbidden field (`command`/`output`/`secret`/...) is replaced with `[redacted]`. A `transient.frames_dropped` event renders an explicit `WARNING dropped-frames` notice. Final tool output is referenced only by opaque `payload_ref`; the actual head/tail bytes are fetched solely by the explicit `agent output` command.
 
 ## Cancellation
 

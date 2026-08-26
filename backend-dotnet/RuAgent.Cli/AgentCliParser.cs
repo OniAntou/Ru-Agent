@@ -15,6 +15,8 @@ public enum AgentCommandKind
     PolicyList,
     PolicyImport,
     PolicyRemove,
+    Reconcile,
+    Output,
 }
 
 public enum ApprovalScope
@@ -75,6 +77,34 @@ public sealed record PolicyImportCommand(
 public sealed record PolicyRemoveCommand(
     string RuleId,
     bool Json) : AgentCommand(AgentCommandKind.PolicyRemove, Json);
+
+/// <summary>
+/// `agent reconcile <run-id> [--outcome applied|not-applied|unknown] [--hash SHA256]
+/// [--json]`. Without --outcome the command only fetches the reconciliation info.
+/// </summary>
+public sealed record ReconcileCommand(
+    string RunId,
+    string? OutcomeToken,
+    string? SnapshotHash,
+    bool Json) : AgentCommand(AgentCommandKind.Reconcile, Json)
+{
+    public string ToWireOutcome() => OutcomeToken switch
+    {
+        "applied" => "applied",
+        "not-applied" => "not_applied",
+        "unknown" => "unknown_continue",
+        _ => throw new InvalidOperationException("invalid_outcome"),
+    };
+}
+
+/// <summary>
+/// `agent output <run-id> <payload-id> [--json]` — the explicit user action that
+/// fetches final head/tail tool output bytes; nothing fetches them implicitly.
+/// </summary>
+public sealed record OutputCommand(
+    string RunId,
+    string PayloadId,
+    bool Json) : AgentCommand(AgentCommandKind.Output, Json);
 
 public sealed record AgentCliParseResult(
     bool Success,
@@ -137,8 +167,125 @@ public static class AgentCliParser
             "approve" => ParseApprove(args),
             "deny" => ParseDeny(args),
             "policy" => ParsePolicy(args),
+            "reconcile" => ParseReconcile(args),
+            "output" => ParseOutput(args),
             _ => Fail("unknown_subcommand", $"Unknown agent subcommand '{sub}'.")
         };
+    }
+
+    private static AgentCliParseResult ParseReconcile(string[] args)
+    {
+        // agent reconcile <run-id> [--outcome applied|not-applied|unknown] [--hash SHA256] [--json]
+        bool json = false;
+        bool jsonSeen = false;
+        bool outcomeSeen = false;
+        string? outcome = null;
+        bool hashSeen = false;
+        string? hash = null;
+        string? runId = null;
+
+        for (int i = 2; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--outcome")
+            {
+                if (outcomeSeen)
+                    return Fail("duplicate_switch", "Duplicate --outcome.");
+                if (i + 1 >= args.Length)
+                    return Fail("missing_value", "Missing value for --outcome.");
+                var val = args[i + 1];
+                if (val.StartsWith("-", StringComparison.Ordinal))
+                    return Fail("missing_value", "Missing value for --outcome.");
+                if (val != "applied" && val != "not-applied" && val != "unknown")
+                    return Fail("invalid_outcome", $"Unknown outcome '{val}'. Expected applied|not-applied|unknown.");
+                outcome = val;
+                outcomeSeen = true;
+                i++;
+                continue;
+            }
+            if (token == "--hash")
+            {
+                if (hashSeen)
+                    return Fail("duplicate_switch", "Duplicate --hash.");
+                if (i + 1 >= args.Length)
+                    return Fail("missing_value", "Missing value for --hash.");
+                var val = args[i + 1];
+                if (val.StartsWith("-", StringComparison.Ordinal))
+                    return Fail("missing_value", "Missing value for --hash.");
+                if (val.Length != 64 || !val.All(char.IsAsciiHexDigit))
+                    return Fail("invalid_snapshot_hash", "Snapshot hash must be a 64-character hex digest.");
+                hash = val;
+                hashSeen = true;
+                i++;
+                continue;
+            }
+            if (token == "--json")
+            {
+                if (jsonSeen)
+                    return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent reconcile'.");
+            if (runId is not null)
+                return Fail("too_many_arguments", "Too many positional arguments for 'agent reconcile'.");
+            var validation = ValidateRunId(token);
+            if (validation is not null) return validation;
+            runId = token;
+        }
+
+        if (runId is null)
+            return Fail("missing_run_id", "Missing required <run-id> for 'agent reconcile'.");
+
+        return Success(new ReconcileCommand(runId, outcome, hash, json));
+    }
+
+    private static AgentCliParseResult ParseOutput(string[] args)
+    {
+        // agent output <run-id> <payload-id> [--json]
+        bool json = false;
+        bool jsonSeen = false;
+        string? runId = null;
+        string? payloadId = null;
+
+        for (int i = 2; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--json")
+            {
+                if (jsonSeen)
+                    return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent output'.");
+            if (runId is null)
+            {
+                var validation = ValidateRunId(token);
+                if (validation is not null) return validation;
+                runId = token;
+                continue;
+            }
+            if (payloadId is null)
+            {
+                if (token.Length == 0 || token.Length > 64 || !token.StartsWith("payload_", StringComparison.Ordinal))
+                    return Fail("invalid_payload_id", "Payload id must start with 'payload_'.");
+                payloadId = token;
+                continue;
+            }
+            return Fail("too_many_arguments", "Too many positional arguments for 'agent output'.");
+        }
+
+        if (runId is null)
+            return Fail("missing_run_id", "Missing required <run-id> for 'agent output'.");
+        if (payloadId is null)
+            return Fail("missing_payload_id", "Missing required <payload-id> for 'agent output'.");
+
+        return Success(new OutputCommand(runId, payloadId, json));
     }
 
     private static AgentCliParseResult ParseRun(string[] args)

@@ -65,6 +65,8 @@ public static class Program
                 PolicyListCommand list => await commands.PolicyListAsync(list, cts.Token).ConfigureAwait(false),
                 PolicyImportCommand import => await commands.PolicyImportAsync(import, cts.Token).ConfigureAwait(false),
                 PolicyRemoveCommand remove => await commands.PolicyRemoveAsync(remove, cts.Token).ConfigureAwait(false),
+                ReconcileCommand reconcile => await commands.ReconcileAsync(reconcile, cts.Token).ConfigureAwait(false),
+                OutputCommand output => await commands.OutputAsync(output, cts.Token).ConfigureAwait(false),
                 _ => 1
             };
         }

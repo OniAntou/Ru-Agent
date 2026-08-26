@@ -12,7 +12,8 @@ public sealed record HarnessSafeEventEnvelope(
     [property: JsonPropertyName("occurred_at")] string OccurredAt,
     [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("safe_summary")] string SafeSummary,
-    [property: JsonPropertyName("payload_ref")] string? PayloadRef = null)
+    [property: JsonPropertyName("payload_ref")] string? PayloadRef = null,
+    [property: JsonPropertyName("approval_id")] string? ApprovalId = null)
 {
     public const int CurrentProtocolVersion = 1;
 

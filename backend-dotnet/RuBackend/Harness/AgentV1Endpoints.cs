@@ -442,6 +442,7 @@ internal static class HarnessEventMapper
             OccurredAt: evt.OccurredAt.ToUniversalTime().ToString("O"),
             Status: MapStatus(run),
             SafeSummary: ToSafeSummary(evt),
-            PayloadRef: payloadRef);
+            PayloadRef: payloadRef,
+            ApprovalId: evt.ApprovalId?.Value);
     }
 }

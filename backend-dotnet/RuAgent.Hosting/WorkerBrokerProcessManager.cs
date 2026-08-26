@@ -45,7 +45,7 @@ public sealed class WorkerBrokerProcessManager : IDisposable
     {
         _processFactory = processFactory ?? new WindowsWorkerBrokerProcessFactory();
         _jobFactory = jobFactory ?? new WindowsWorkerBrokerJobFactory();
-        _readinessProbe = readinessProbe ?? new NoopReadinessProbe();
+        _readinessProbe = readinessProbe ?? new TcpReadinessProbe();
     }
 
     public int WorkerPort { get; private set; }
@@ -250,6 +250,50 @@ public sealed class WindowsWorkerBrokerProcessHandle : IWorkerBrokerProcessHandl
 public sealed class WindowsWorkerBrokerJobFactory : IWorkerBrokerJobFactory
 {
     public OwnedProcessTree Create() => new OwnedProcessTree();
+}
+
+/// <summary>
+/// Probes both child endpoints with real TCP connects; the host must not publish a
+/// runtime descriptor while a child has died or never started listening.
+/// </summary>
+public sealed class TcpReadinessProbe : IWorkerBrokerReadinessProbe
+{
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan TotalBudget = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan PollGap = TimeSpan.FromMilliseconds(250);
+
+    public async Task<bool> WaitUntilReadyAsync(int workerPort, int brokerPort, CancellationToken cancellationToken)
+    {
+        var budget = Stopwatch.StartNew();
+        while (!cancellationToken.IsCancellationRequested && budget.Elapsed < TotalBudget)
+        {
+            if (await CanConnectAsync(workerPort, cancellationToken).ConfigureAwait(false)
+                && await CanConnectAsync(brokerPort, cancellationToken).ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            await Task.Delay(PollGap, cancellationToken).ConfigureAwait(false);
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> CanConnectAsync(int port, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var client = new System.Net.Sockets.TcpClient();
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(ConnectTimeout);
+            await client.ConnectAsync(System.Net.IPAddress.Loopback, port, timeout.Token).ConfigureAwait(false);
+            return client.Connected;
+        }
+        catch (Exception error) when (error is System.Net.Sockets.SocketException or OperationCanceledException or ObjectDisposedException)
+        {
+            return false;
+        }
+    }
 }
 
 public sealed class NoopReadinessProbe : IWorkerBrokerReadinessProbe

@@ -23,6 +23,17 @@ public sealed class HarnessSseWriter
         await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public static async Task WriteFinalSnapshotAsync(
+        HttpResponse response,
+        string status,
+        CancellationToken cancellationToken)
+    {
+        var json = JsonSerializer.Serialize(new { status });
+        await response.WriteAsync($"event: final_snapshot\n", cancellationToken).ConfigureAwait(false);
+        await response.WriteAsync($"data: {json}\n\n", cancellationToken).ConfigureAwait(false);
+        await response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public static async Task WriteTransientAsync(
         HttpResponse response,
         long localSequence,

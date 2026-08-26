@@ -186,21 +186,31 @@ public static class AgentV1Endpoints
                 await StreamDurablesAsync();
             }
 
+            await HarnessSseWriter.WriteFinalSnapshotAsync(context.Response, AgentV1Service.MapRunState(run.Status), ct);
             await context.Response.Body.FlushAsync(ct);
             return;
         }
 
-        // Live tail: poll briefly for new durables/transient, then close. Keeps reconnect tests fast while still proving live behavior.
-        var start = DateTimeOffset.UtcNow;
-        var maxDuration = TimeSpan.FromSeconds(1);
+        // Live tail: stream durables and this run's transient frames until the run
+        // reaches a terminal state, the client disconnects, or the server shuts down.
+        // `live=0` keeps the legacy snapshot-then-close behavior for replay/cursor checks.
+        var liveRaw = context.Request.Query["live"].ToString();
+        var live = liveRaw != "0";
         var pollInterval = TimeSpan.FromMilliseconds(100);
         long localTransientSeq = 0;
 
+        if (!live || isTerminal)
+        {
+            await context.Response.Body.FlushAsync(ct);
+            return;
+        }
+
+        await using var hubLease = hub.Subscribe(runIdObj);
+
         try
         {
-            while (!ct.IsCancellationRequested && DateTimeOffset.UtcNow - start < maxDuration)
+            while (!ct.IsCancellationRequested && !isTerminal)
             {
-                // Check for new durable events
                 var reloadedRun = await store.GetRunAsync(runIdObj, ct);
                 if (reloadedRun is not null)
                 {
@@ -208,37 +218,34 @@ public static class AgentV1Endpoints
                     isTerminal = run.State.IsTerminal();
                 }
 
-                // Stream any new durables after lastSent
-                var hadNew = false;
-                await foreach (var envelope in store.ReadEventsAsync(runIdObj, lastSent, ct))
-                {
-                    hadNew = true;
-                    var safe = HarnessEventMapper.ToSafeEnvelope(envelope.Event, run);
-                    await HarnessSseWriter.WriteDurableAsync(context.Response, safe, ct);
-                    lastSent = envelope.Event.Sequence;
-                }
+                await StreamDurablesAsync();
 
                 if (isTerminal)
                 {
                     break;
                 }
 
-                // Check transient frames for this run
-                while (hub.Reader.TryRead(out var frame))
+                while (hubLease.Reader.TryRead(out var frame))
                 {
-                    if (frame.RunId.Value != runId) continue;
                     localTransientSeq++;
                     var payload = new { kind = frame.Kind, data = frame.Data };
                     await HarnessSseWriter.WriteTransientAsync(context.Response, localTransientSeq, frame.Kind, payload, ct);
                     // transient does not advance lastSent (durable cursor)
                 }
 
-                // If no new data, wait
-                if (!hadNew)
+                if (!ct.IsCancellationRequested && !isTerminal)
                 {
                     await Task.Delay(pollInterval, ct);
                 }
             }
+
+            await StreamDurablesAsync();
+            if (isTerminal)
+            {
+                await HarnessSseWriter.WriteFinalSnapshotAsync(context.Response, AgentV1Service.MapRunState(run.Status), ct);
+            }
+
+            await context.Response.Body.FlushAsync(ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

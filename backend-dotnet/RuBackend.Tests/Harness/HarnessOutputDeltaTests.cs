@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Threading.Channels;
 using RuAgent.Harness.Core;
 using RuAgent.Protocol;
@@ -50,9 +50,10 @@ public sealed class HarnessOutputDeltaTests
             root.GetProperty("redacted").GetBoolean());
 
         var hub = new HarnessLiveEventHub();
+        await using var lease = hub.Subscribe(new RunId(RunId));
         Assert.True(hub.TryPublishDelta(delta));
 
-        var frame = await hub.Reader.ReadAsync(CancellationToken.None);
+        var frame = await lease.Reader.ReadAsync(CancellationToken.None);
         Assert.Equal("tool.output.delta", frame.Kind);
         Assert.Equal(new RunId(RunId), frame.RunId);
         Assert.Equal(1, frame.LocalSequence);
@@ -64,6 +65,7 @@ public sealed class HarnessOutputDeltaTests
     public async Task Bounded_channel_drops_oldest_frames_and_counts_them_safely()
     {
         var hub = new HarnessLiveEventHub();
+        await using var lease = hub.Subscribe(new RunId(RunId));
         for (var i = 1; i <= 200; i++)
         {
             var delta = new BrokerToolOutputDeltaWire(
@@ -78,7 +80,7 @@ public sealed class HarnessOutputDeltaTests
         }
 
         var received = 0;
-        await foreach (var _ in hub.Reader.ReadAllAsync().ConfigureAwait(false))
+        await foreach (var _ in lease.Reader.ReadAllAsync().ConfigureAwait(false))
         {
             received++;
             if (received >= 64)
@@ -102,3 +104,4 @@ public sealed class HarnessOutputDeltaTests
             string.Empty, ToolCallId, ExecutionId, FrameSequence: 1, "stdout", "text", Redacted: false)));
     }
 }
+

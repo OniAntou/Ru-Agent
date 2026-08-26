@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -21,7 +21,7 @@ public sealed class AgentSseReconnectTests
         var runId = await CreateRunAsync(client, session, tmp.Path, "prompt", "sse-1-" + Guid.NewGuid().ToString("N"));
 
         // After creation, run has at least one durable event (sequence 1)
-        var sse = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?after_sequence=0");
+        var sse = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?live=0&after_sequence=0");
         Assert.Contains("id: 1", sse);
         Assert.Contains("\"protocol_version\":1", sse);
         Assert.DoesNotContain("command", sse, StringComparison.OrdinalIgnoreCase);
@@ -37,7 +37,7 @@ public sealed class AgentSseReconnectTests
         var session = await CreateSessionAsync(client);
         var runId = await CreateRunAsync(client, session, tmp.Path, "prompt", "sse-2-" + Guid.NewGuid().ToString("N"));
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/agent/v1/runs/{runId}/events?after_sequence=1");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/agent/v1/runs/{runId}/events?live=0&after_sequence=1");
         request.Headers.Add("Last-Event-ID", "2");
         using var resp = await client.SendAsync(request);
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
@@ -58,7 +58,7 @@ public sealed class AgentSseReconnectTests
         var runId = await CreateRunAsync(client, session, ws, "prompt reconnect", "key-reconnect-" + Guid.NewGuid().ToString("N"));
 
         // Initially after_sequence=0 should give 1 event (waiting_workspace_trust or waiting_history)
-        var sse0 = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?after_sequence=0");
+        var sse0 = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?live=0&after_sequence=0");
         Assert.Contains("id: 1", sse0);
 
         // Cancel to generate second durable event
@@ -66,12 +66,12 @@ public sealed class AgentSseReconnectTests
         await Task.Delay(50);
 
         // Now after_sequence=1 should give second event
-        var sse1 = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?after_sequence=1");
+        var sse1 = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?live=0&after_sequence=1");
         Assert.Contains("id: 2", sse1);
         Assert.DoesNotContain("id: 1\n", sse1); // should not contain first
 
         // after_sequence=0 should give both 1 and 2
-        var sseAll = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?after_sequence=0");
+        var sseAll = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?live=0&after_sequence=0");
         Assert.Contains("id: 1", sseAll);
         Assert.Contains("id: 2", sseAll);
 
@@ -97,12 +97,12 @@ public sealed class AgentSseReconnectTests
         hub.TryPublish(runIdObj, "assistant.delta", "hello chunk");
 
         // SSE should include transient? Our implementation may include transient frames with event: transient and id: t<num>
-        var sse = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?after_sequence=0");
+        var sse = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?live=0&after_sequence=0");
         // Durable should still be present
         Assert.Contains("id: 1", sse);
         // Transient may be present as event: transient but not required to block
         // Crucially, durable cursor still 1, so requesting after_sequence=1 again should not yield transient as durable
-        var sseAfter = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?after_sequence=1");
+        var sseAfter = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?live=0&after_sequence=1");
         // Should not contain id:1 (already consumed) and should not have durable id advanced due to transient
         Assert.DoesNotContain("id: 1\n", sseAfter);
         // The transient id is t1, not 2, so durable sequence remains same
@@ -131,7 +131,7 @@ public sealed class AgentSseReconnectTests
         Assert.True(hub.DroppedCount >= 0);
 
         // Verify durable still readable and not blocked
-        var sse = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?after_sequence=0");
+        var sse = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?live=0&after_sequence=0");
         Assert.Contains("id: 1", sse);
 
         // Verify we can still cancel run (which persists final receipt) despite loss
@@ -151,7 +151,7 @@ public sealed class AgentSseReconnectTests
         // Cancel to make terminal
         await client.PostAsync($"/agent/v1/runs/{runId}/cancel", null);
 
-        var sse = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?after_sequence=0");
+        var sse = await GetSseAsync(client, $"/agent/v1/runs/{runId}/events?live=0&after_sequence=0");
         // Should contain both initial and cancelled events, and then close without error
         Assert.Contains("id: 1", sse);
         // Terminal run should have last_sequence at least 2 (cancel event)
@@ -226,3 +226,4 @@ public sealed class AgentSseReconnectTests
         }
     }
 }
+

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading.Channels;
 using RuAgent.Harness.Core;
@@ -7,28 +8,56 @@ namespace RuBackend.Harness;
 
 public sealed record TransientFrame(long LocalSequence, RunId RunId, string Kind, string Data);
 
+/// <summary>
+/// Fans transient frames out to per-connection subscribers so one client can no longer
+/// consume or drop another client's frames. Every subscriber has a private bounded
+/// channel; loss on any subscriber increments that subscription's dropped counter.
+/// </summary>
 public sealed class HarnessLiveEventHub
 {
     private const int Capacity = 64;
-    private readonly Channel<TransientFrame> _channel;
+    private readonly ConcurrentDictionary<Guid, Subscription> _subscriptions = new();
     private long _localSequence;
     private long _droppedCount;
 
-    public HarnessLiveEventHub()
+    private sealed class Subscription
     {
+        public Subscription(RunId runId, Channel<TransientFrame> channel)
+        {
+            RunId = runId;
+            Channel = channel;
+        }
+
+        public RunId RunId { get; }
+
+        public Channel<TransientFrame> Channel { get; set; }
+
+        public long Dropped;
+    }
+
+    public HubLease Subscribe(RunId runId)
+    {
+        var id = Guid.NewGuid();
+        var subscription = new Subscription(runId, null!);
         var options = new BoundedChannelOptions(Capacity)
         {
-            SingleReader = false,
-            SingleWriter = false,
+            SingleReader = true,
+            SingleWriter = true,
             FullMode = BoundedChannelFullMode.DropOldest,
         };
-        _channel = Channel.CreateBounded<TransientFrame>(options, _ => Interlocked.Increment(ref _droppedCount));
+        subscription.Channel = Channel.CreateBounded<TransientFrame>(options, _ =>
+        {
+            Interlocked.Increment(ref subscription.Dropped);
+            Interlocked.Increment(ref _droppedCount);
+        });
+        _subscriptions[id] = subscription;
+        return new HubLease(this, id, subscription.Channel.Reader);
     }
 
     /// <summary>
     /// Maps one Broker v2 <c>tool.output.delta</c> onto the Core-neutral chunk shape and a
     /// connection-local transient frame. Transient frames never advance durable cursors
-    /// and are never persisted; bounded loss only increments a safe dropped counter.
+    /// and are never persisted.
     /// </summary>
     public bool TryPublishDelta(BrokerToolOutputDeltaWire delta)
     {
@@ -53,22 +82,56 @@ public sealed class HarnessLiveEventHub
 
     public bool TryPublish(RunId runId, string kind, string data)
     {
-        var seq = Interlocked.Increment(ref _localSequence);
-        var frame = new TransientFrame(seq, runId, kind, data);
-        if (_channel.Writer.TryWrite(frame))
+        if (_subscriptions.IsEmpty)
         {
+            // No live subscribers: nothing to deliver, nothing to count as lost for a client.
             return true;
         }
 
-        Interlocked.Increment(ref _droppedCount);
-        // With DropOldest, TryWrite should succeed after dropping; but if still fails count as dropped
-        return false;
+        var seq = Interlocked.Increment(ref _localSequence);
+        var frame = new TransientFrame(seq, runId, kind, data);
+        var delivered = true;
+        foreach (var pair in _subscriptions)
+        {
+            if (pair.Value.RunId.Value != runId.Value)
+            {
+                continue;
+            }
+
+            if (!pair.Value.Channel.Writer.TryWrite(frame))
+            {
+                var subscription = pair.Value;
+                Interlocked.Increment(ref subscription.Dropped);
+                _subscriptions[pair.Key] = subscription;
+                Interlocked.Increment(ref _droppedCount);
+                delivered = false;
+            }
+        }
+
+        return delivered;
     }
 
     public long DroppedCount => Volatile.Read(ref _droppedCount);
 
-    public ChannelReader<TransientFrame> Reader => _channel.Reader;
+    internal int SubscriberCount => _subscriptions.Count;
 
-    // Durable events are not published via this hub; they are persisted to SQLite. This hub only manages transient frames.
-    // Bounded loss does not block persistence: callers that persist durable receipts do not await hub.
+    public readonly struct HubLease : IAsyncDisposable
+    {
+        private readonly HarnessLiveEventHub _hub;
+        private readonly Guid _id;
+        public ChannelReader<TransientFrame> Reader { get; }
+
+        internal HubLease(HarnessLiveEventHub hub, Guid id, ChannelReader<TransientFrame> reader)
+        {
+            _hub = hub;
+            _id = id;
+            Reader = reader;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            _hub._subscriptions.TryRemove(_id, out _);
+            return ValueTask.CompletedTask;
+        }
+    }
 }

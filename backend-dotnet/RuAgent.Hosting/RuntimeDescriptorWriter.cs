@@ -163,21 +163,18 @@ public sealed class RuntimeDescriptorWriter
     private static void RestrictToCurrentUser(string path)
     {
         if (!OperatingSystem.IsWindows()) return;
-        try
+        // Fail closed: a descriptor we cannot protect must not be published.
+        var fileInfo = new FileInfo(path);
+        var security = fileInfo.GetAccessControl();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        var identity = WindowsIdentity.GetCurrent().User;
+        if (identity is not null)
         {
-            var fileInfo = new FileInfo(path);
-            var security = fileInfo.GetAccessControl();
-            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-            var identity = WindowsIdentity.GetCurrent().User;
-            if (identity is not null)
-            {
-                var rule = new FileSystemAccessRule(identity, FileSystemRights.FullControl, AccessControlType.Allow);
-                security.SetAccessRule(rule);
-            }
-            // Remove other rules implicitly by protection; ensure no Everyone write.
-            fileInfo.SetAccessControl(security);
+            var rule = new FileSystemAccessRule(identity, FileSystemRights.FullControl, AccessControlType.Allow);
+            security.SetAccessRule(rule);
         }
-        catch { }
+
+        fileInfo.SetAccessControl(security);
     }
 }
 

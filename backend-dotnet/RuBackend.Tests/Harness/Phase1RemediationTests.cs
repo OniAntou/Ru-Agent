@@ -153,10 +153,13 @@ public sealed class Phase1RemediationTests
         var kinds = eventsBody
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(line => line.StartsWith("data: ", StringComparison.Ordinal))
-            .Select(line => JsonDocument.Parse(line["data: ".Length..]).RootElement.GetProperty("event_type").GetString())
+            .Select(line => JsonDocument.Parse(line["data: ".Length..]).RootElement)
+            .Where(root => root.TryGetProperty("event_type", out _))
+            .Select(root => root.GetProperty("event_type").GetString())
             .ToArray();
         Assert.Contains("tool.execution_completed", kinds);
         Assert.Equal(2, kinds.Count(kind => kind == "model.step_completed"));
+        Assert.Contains("event: final_snapshot", eventsBody, StringComparison.Ordinal);
     }
 
     private sealed class ScriptedStepRunner : RuAgent.Harness.Core.IModelStepRunner

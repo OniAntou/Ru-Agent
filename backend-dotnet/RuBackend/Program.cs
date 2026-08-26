@@ -202,19 +202,15 @@ builder.Services.AddSingleton<IHarnessKeyStore>(services =>
     var keyPath = Path.Combine(Path.GetDirectoryName(options.DatabasePath) ?? paths.BusinessDataRoot, "harness_key.dat");
     if (OperatingSystem.IsWindows())
     {
-        try
-        {
-            return new WindowsDpapiKeyStore(keyPath, options.DatabasePath);
-        }
-        catch
-        {
-            return new EphemeralHarnessKeyStore();
-        }
+        // Fail closed: a broken DPAPI key store must disable the Agent store instead of
+        // silently switching to an ephemeral key that cannot decrypt existing payloads.
+        return new WindowsDpapiKeyStore(keyPath, options.DatabasePath);
     }
 
+    // Development-only platforms; Windows is the supported production host.
     return new EphemeralHarnessKeyStore();
 });
-builder.Services.AddSingleton<KnownSecretRedactor>(KnownSecretRedactor.Empty);
+builder.Services.AddSingleton<KnownSecretRedactor>(_ => BuildKnownSecretRedactor());
 builder.Services.AddSingleton<HarnessPayloadCryptography>(services =>
     new HarnessPayloadCryptography(services.GetRequiredService<IHarnessKeyStore>()));
 builder.Services.AddSingleton<HarnessPayloadStore>(services =>
@@ -395,8 +391,38 @@ static MemorySqliteOptions BuildMemorySqliteOptions(IConfiguration configuration
     };
 }
 
-static WorkerClientOptions BuildWorkerClientOptions(IConfiguration configuration)
+static KnownSecretRedactor BuildKnownSecretRedactor()
 {
+    // Seed the runtime redactor with values of process environment variables whose
+    // names look secret-bearing, so known credentials never leak into payloads or
+    // transient SSE frames. Names only decide membership; values become seeds.
+    var secrets = new List<string>();
+    foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
+    {
+        if (entry.Key is not string name || entry.Value is not string value || value.Length == 0)
+        {
+            continue;
+        }
+
+        var flattened = name.Replace("_", string.Empty).Replace("-", string.Empty);
+        if (flattened.Contains("token", StringComparison.OrdinalIgnoreCase)
+            || flattened.Contains("secret", StringComparison.OrdinalIgnoreCase)
+            || flattened.Contains("password", StringComparison.OrdinalIgnoreCase)
+            || flattened.Contains("passwd", StringComparison.OrdinalIgnoreCase)
+            || flattened.Contains("apikey", StringComparison.OrdinalIgnoreCase)
+            || flattened.Contains("credential", StringComparison.OrdinalIgnoreCase)
+            || flattened.Contains("privatekey", StringComparison.OrdinalIgnoreCase)
+            || flattened.Contains("accesskey", StringComparison.OrdinalIgnoreCase)
+            || flattened.Contains("authkey", StringComparison.OrdinalIgnoreCase))
+        {
+            secrets.Add(value);
+        }
+    }
+
+    return new KnownSecretRedactor(secrets);
+}
+
+static WorkerClientOptions BuildWorkerClientOptions(IConfiguration configuration){
     var workerUrl = configuration["RuBackend:WorkerUrl"];
     var workerToken = configuration["RU_WORKER_TOKEN"]
         ?? Environment.GetEnvironmentVariable("RU_WORKER_TOKEN")

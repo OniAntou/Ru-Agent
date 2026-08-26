@@ -172,7 +172,10 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
         "| Web search/fetch, connectors, `app.open` "
         "| absent | absent | absent |"
     ) in agent_tools or "| Web search/fetch, connectors" in agent_tools
-    assert "Agent has no model-visible terminal binding" in agent_tools
+    assert "terminal.run" in agent_tools and "terminal.shell" in agent_tools
+    assert "open sockets" in agent_tools
+    assert "arbitrary host code" in agent_tools
+    assert "network_intent" in agent_tools
     assert "`terminal.execute` and `terminal.network` scopes" in agent_tools
     assert "descriptive input metadata, not a security boundary" in agent_tools
     assert "files.edit@1.0.0" in agent_tools
@@ -186,9 +189,9 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
     assert "operations/agent-tools.md" in docs_index
     assert "agent-volume-contract" in root_readme
     assert "agent-terminal-approval" not in root_readme
-    # Terminal/Git remain unavailable at this checkpoint (terminal is phase 3)
-    assert "no terminal path at this checkpoint" in agent_tools
-    assert "remains phase 3" in agent_tools
+    # Terminal/Git/reconciliation now available on Agent v2 headless path (Phase 3)
+    assert "Agent v2 headless path" in agent_tools
+    assert "reconcile" in agent_tools
 
 
 def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -> None:
@@ -314,11 +317,10 @@ def test_phase2_policy_and_file_tools_are_documented() -> None:
     assert "first-writer-wins" in agent_tools or "first-writer-wins" in readme
     assert "tool.execution_requested" in architecture or "tool.execution_requested" in agent_tools
 
-    # Terminal/Git still unavailable (terminal is phase 3)
-    assert "no terminal path at this checkpoint" in agent_tools
-    assert "remains phase 3" in agent_tools
+    # Terminal/Git/reconciliation now available on Agent v2 headless path (Phase 3)
     assert "terminal.run" in agent_tools and "terminal.shell" in agent_tools
-    assert "Agent has no model-visible terminal binding" in agent_tools
+    assert "open sockets" in agent_tools
+    assert "network_intent" in agent_tools
 
     # No sandboxing claim
     readme_lower = readme.lower()

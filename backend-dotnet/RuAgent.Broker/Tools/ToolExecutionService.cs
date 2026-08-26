@@ -795,6 +795,7 @@ public sealed class ToolExecutionService : IToolInvoker
                 "files.write" => ReadOptionalString(arguments, "content") ?? string.Empty,
                 "files.edit" => EditPreview(arguments, fileText),
                 "terminal.shell" => ReadOptionalString(arguments, "script") ?? string.Empty,
+                "terminal.run" => TerminalRunPreview(arguments),
                 _ => string.Empty,
             };
             return preview.Length <= ApprovalPreviewFields.MaxLength
@@ -805,6 +806,29 @@ public sealed class ToolExecutionService : IToolInvoker
         {
             return string.Empty;
         }
+    }
+
+    private static string TerminalRunPreview(JsonObject arguments)
+    {
+        var executable = ReadOptionalString(arguments, "executable");
+        if (string.IsNullOrWhiteSpace(executable))
+        {
+            return string.Empty;
+        }
+
+        var parts = new List<string> { executable };
+        if (arguments["arguments"] is JsonArray list)
+        {
+            foreach (var item in list)
+            {
+                if (item is { } node && node.GetValueKind() == System.Text.Json.JsonValueKind.String)
+                {
+                    parts.Add(node.GetValue<string>());
+                }
+            }
+        }
+
+        return string.Join(' ', parts);
     }
 
     private static string EditPreview(JsonObject arguments, string? fileText)

@@ -20,7 +20,8 @@ public interface IGitCli
     Task<GitCliResult> RunAsync(
         IReadOnlyList<string> arguments,
         string workingDirectory,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? additionalEnvironment = null);
 }
 
 public sealed class StreamingGitCli : IGitCli
@@ -42,7 +43,8 @@ public sealed class StreamingGitCli : IGitCli
     public async Task<GitCliResult> RunAsync(
         IReadOnlyList<string> arguments,
         string workingDirectory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? additionalEnvironment = null)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         if (arguments.Count == 0)
@@ -56,11 +58,23 @@ public sealed class StreamingGitCli : IGitCli
             argv.Add(argument);
         }
 
+        var environment = _environment;
+        if (additionalEnvironment is { Count: > 0 })
+        {
+            var merged = new Dictionary<string, string>(_environment, StringComparer.OrdinalIgnoreCase);
+            foreach (var pair in additionalEnvironment)
+            {
+                merged[pair.Key] = pair.Value;
+            }
+
+            environment = merged;
+        }
+
         var spec = new ProcessRunSpec(
             "git",
             argv,
             workingDirectory,
-            _environment,
+            environment,
             TimeoutMs,
             OutputLimitBytes);
         var result = await _runner.RunAsync(spec, onDelta: null, cancellationToken);

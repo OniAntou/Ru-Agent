@@ -36,6 +36,32 @@ public sealed class PendingApprovalPreviewTests
     }
 
     [Fact]
+    public void Terminal_run_preview_is_the_bounded_command_head()
+    {
+        var args = new JsonObject
+        {
+            ["executable"] = "git",
+            ["arguments"] = new JsonArray("commit", "-m", new string('m', 800)),
+        };
+
+        var preview = ToolExecutionService.BuildPreview("terminal.run", args);
+
+        Assert.True(preview.Length <= MaxPreviewLength);
+        Assert.StartsWith("git commit", preview, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Terminal_run_preview_without_an_executable_is_empty()
+    {
+        Assert.Equal(
+            string.Empty,
+            ToolExecutionService.BuildPreview("terminal.run", new JsonObject { ["arguments"] = new JsonArray("x") }));
+        Assert.Equal(
+            "git",
+            ToolExecutionService.BuildPreview("terminal.run", new JsonObject { ["executable"] = "git" }));
+    }
+
+    [Fact]
     public void Files_edit_preview_shows_inline_markers_centered_on_first_match()
     {
         var before = new string('b', 300);

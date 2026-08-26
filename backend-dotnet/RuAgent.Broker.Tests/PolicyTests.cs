@@ -348,6 +348,24 @@ public sealed class PolicyEvaluationTests
     }
 
     [Fact]
+    public void Standard_asks_for_git_commit_but_full_access_allows_it_outside_the_managed_path()
+    {
+        var evaluator = new PolicySnapshotEvaluator();
+        var valid = PolicyRequestInvariants.Valid;
+
+        var (standardLease, standardFactory) = Bind(PolicyEvalSnapshots.Empty());
+        var ask = evaluator.Evaluate(
+            standardLease.Snapshot, Terminal(standardFactory, "git", "commit", "-m", "x"), valid, Now);
+        Assert.Equal("ask", ask.Decision);
+        Assert.Equal("git_mutation", ask.ReasonCode);
+
+        var (fullLease, fullFactory) = Bind(PolicyEvalSnapshots.FullAccessEmpty());
+        var allow = evaluator.Evaluate(
+            fullLease.Snapshot, Terminal(fullFactory, "git", "commit", "-m", "x"), valid, Now);
+        Assert.Equal("allow", allow.Decision);
+    }
+
+    [Fact]
     public void Full_access_fallback_allows_well_formed_calls_but_not_invariant_violations()
     {
         var (lease, factory) = Bind(PolicyEvalSnapshots.FullAccessEmpty());

@@ -25,7 +25,15 @@ public sealed class GitCommandAnalyzer : ICommandAnalyzer
             if (string.Equals(argv[index], "--no-optional-locks", StringComparison.Ordinal))
             {
                 index++;
-                break;
+                continue;
+            }
+
+            if ((string.Equals(argv[index], "-c", StringComparison.Ordinal)
+                 || string.Equals(argv[index], "-C", StringComparison.Ordinal))
+                && index + 1 < argv.Count)
+            {
+                index += 2;
+                continue;
             }
 
             return Unknown("unsupported_global_flags");

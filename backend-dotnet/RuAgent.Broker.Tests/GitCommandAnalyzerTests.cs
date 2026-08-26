@@ -97,4 +97,19 @@ public sealed class GitCommandAnalyzerTests
     {
         Assert.Equal(TerminalOperationClass.Unknown, _analyzer.Analyze(@"C:\tools\git.exe", []).OperationClass);
     }
+
+    [Fact]
+    public void Commit_forms_stay_git_mutations_regardless_of_flags_or_position()
+    {
+        Assert.Equal(
+            TerminalOperationClass.GitMutation,
+            _analyzer.Analyze(@"C:\tools\git.exe", ["commit", "-m", "message"]).OperationClass);
+        Assert.Equal(
+            TerminalOperationClass.GitMutation,
+            _analyzer.Analyze(@"C:\tools\git.exe", ["--no-optional-locks", "commit"]).OperationClass);
+        Assert.Equal(
+            TerminalOperationClass.GitMutation,
+            _analyzer.Analyze(@"C:\tools\git.exe", ["-c", "user.name=x", "commit"]).OperationClass);
+        Assert.Equal("none", _analyzer.Analyze(@"C:\tools\git.exe", ["commit", "-m", "m"]).NetworkIntent);
+    }
 }

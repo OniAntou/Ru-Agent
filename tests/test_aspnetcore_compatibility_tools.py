@@ -38,7 +38,7 @@ def test_safe_probe_classifies_mutating_routes() -> None:
         {"method": "GET", "transport": "http", "path": "/status"}
     ) == "probe"
     assert classify_route_for_safe_probe(
-        {"method": "WS", "transport": "websocket", "path": "/chat"}
+        {"method": "WS", "transport": "websocket", "path": "/voice/stream"}
     ) == "websocket"
 
 

@@ -61,13 +61,13 @@ EXPECTED_HTTP_ROUTES = {
     ("DELETE", "/agent/v1/policies/{ruleId}"),
 }
 
-EXPECTED_WEBSOCKET_ROUTES = {("WS", "/chat"), ("WS", "/voice/stream")}
+EXPECTED_WEBSOCKET_ROUTES = {("WS", "/voice/stream")}
 
 
 def test_public_route_contract_matches_the_final_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    assert validate_route_contract(repo_root) == (54, 2)
+    assert validate_route_contract(repo_root) == (54, 1)
     contract = load_route_contract(repo_root)
 
     assert {
@@ -98,7 +98,6 @@ def test_every_public_route_has_one_final_aspnet_execution_class() -> None:
         "/sessions/new",
         "/sessions/{sessionId}/activate",
         "/sessions/{sessionId}",
-        "/chat",
         "/agent/v1/runs",
         "/agent/v1/runs/{runId}",
         "/agent/v1/runs/{runId}/events",

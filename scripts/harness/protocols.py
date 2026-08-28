@@ -101,7 +101,7 @@ def safe_probe_status_ok(entry: RouteEntry, status_code: int) -> bool:
         return True
     if status_code == 503 and entry.optional_device_unavailable:
         return True
-    # Agent v2 routes are feature-flagged read-only tracer at Phase 1: generic synthetic probe
+    # Agent v2 routes use the authenticated synthetic probe in the deterministic Harness.
     # may receive deterministic 400/404/409 (invalid workspace, unknown run, phase_not_available)
     # and still proves route existence + bearer auth.
     return entry.path.startswith("/agent/v1/") and status_code in {400, 404, 409}

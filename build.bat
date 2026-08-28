@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 echo ============================================
 echo  Ru Desktop - Build + PRI Generation Script
 echo  .NET 10 + ASP.NET Core + WinUI 3 (Unpackaged Self-Contained)
-echo  Headless Harness Foundation (54 HTTP + 2 WS, Worker v2, Agent v2 flagged v1, CLI tracer)
+echo  Agent-only runtime (54 HTTP + 1 WS, Worker v1 device/runtime, Worker v2 Agent, CLI tracer)
 echo ============================================
 echo.
 

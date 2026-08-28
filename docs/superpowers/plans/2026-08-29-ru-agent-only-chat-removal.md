@@ -726,7 +726,7 @@ voice/STT, VTS, observation, health, and the Worker v2 Agent step protocol remai
 
 ### 9.1 Deterministic release gates
 
-- [ ] Restore every .NET project listed in `docs/operations/verification.md` one at a
+- [x] Restore every .NET project listed in `docs/operations/verification.md` one at a
   time, then run the Release test/build matrix sequentially. Use the repository’s
   exact commands, including:
 
@@ -750,15 +750,15 @@ voice/STT, VTS, observation, health, and the Worker v2 Agent step protocol remai
   cmd /c D:\LLM\build.bat
   ```
 
-- [ ] Require the route checker output to say exactly `54 HTTP + 1 WebSocket`, the
+- [x] Require the route checker output to say exactly `54 HTTP + 1 WebSocket`, the
   Python suite and all .NET/WinUI projects to exit 0, `git diff --check` to be clean,
   and the Release artifact to be
   `D:\LLM\gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe`.
-- [ ] Run a final production/static inventory:
+- [x] Run a final production/static inventory:
   `rg -n "ChatWebSocket|IConversationCoordinator|GenerateChatAsync|WorkerChatRequest|CHAT_START|CHAT_DONE|/chat|ChatUri|_agentMode" backend-dotnet/RuBackend gui-winui3 src/ru_runtime/worker/v1 scripts`.
   Require zero production matches; allow only explicitly named negative tests outside
   production code.
-- [ ] Inspect `git status --short` and every diff. Confirm no unrelated dirty file was
+- [x] Inspect `git status --short` and every diff. Confirm no unrelated dirty file was
   staged or changed. Keep the approved spec, plan, and implementation commits separate
   from pre-existing user edits.
 
@@ -782,7 +782,7 @@ voice/STT, VTS, observation, health, and the Worker v2 Agent step protocol remai
 
 ### 9.3 Completion report
 
-- [ ] Report the exact commit hashes, route count, deterministic suite summaries,
+- [x] Report the exact commit hashes, route count, deterministic suite summaries,
   remaining manual checks, and any intentionally retained historical/negative Chat
   strings. Do not report “fixed” or “complete” without the release matrix and final
   inventory evidence.

@@ -39,6 +39,7 @@ an operating contract.
 
 ## Approved future work (remaining Phase 3 work, Phase 4, and follow-up projects)
 
+- [OpenCode-style system-prompt composer design](superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md) — proposed Agent-only prompt composition with one deterministic system message per model step, root-only Ru instruction files, and digest-only receipts; implementation is not started.
 - [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md)
 - [OpenCode/Pi coding-loop parity implementation program](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity.md)
 

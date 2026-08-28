@@ -59,8 +59,10 @@ Runtime Worker -> model adapters / Voice Engine / STT / VTS / observation
 
 The typed Worker protocol v2 is the active Agent execution path. The framed
 Voice Engine remains an accepted future target, not a claim about the current
-Flask-backed implementation. OpenCode-style system-prompt composition remains
-a separate follow-up and must not reintroduce a second conversation transport.
+Flask-backed implementation. The proposed [OpenCode-style system-prompt
+composer](superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md)
+remains a separate follow-up and must not reintroduce a second conversation
+transport; it is not implemented in this architecture snapshot yet.
 
 ## Harness ownership
 

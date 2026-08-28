@@ -2,9 +2,11 @@
 
 ## Status
 
-Draft for specification review. The product direction and high-level design
-were approved in the preceding conversation; this document is the
-implementation contract to review before a coding plan is written.
+Superseded by
+`docs/superpowers/specs/2026-08-29-ru-agent-only-chat-removal-design.md`.
+This earlier umbrella document records the broader Agent-only and
+OpenCode-style prompt direction for later reference. The current implementation
+cut deliberately narrows the scope to Chat removal and voice migration.
 
 ## Date
 

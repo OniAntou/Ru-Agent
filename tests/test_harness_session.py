@@ -31,14 +31,14 @@ def test_session_cleanup_runs_after_readiness_failure() -> None:
     }
 
 
-def test_deterministic_chat_requires_order_privacy_and_one_terminal_event() -> None:
+def test_deterministic_agent_requires_tool_loop_privacy_and_voice_checks() -> None:
     session = HarnessSession.for_test(readiness=True)
 
     result = session.run(mode="backend-deterministic")
     statuses = {item["id"]: item["status"] for item in result["checks"]}
 
-    assert statuses["chat.synthetic_order"] == "passed"
-    assert statuses["chat.private_metadata"] == "passed"
+    assert statuses["agent.synthetic_tool_loop"] == "passed"
+    assert statuses["agent.private_metadata"] == "passed"
     assert statuses["voice.synthetic_stt"] == "passed"
     assert statuses["voice.synthetic_tts"] == "passed"
 
@@ -96,7 +96,7 @@ def test_agent_tool_loop_rejects_ambiguous_or_mismatched_sequences(
     assert not agent_tool_loop_completed(events, expected_status="failed")
 
 
-def test_broker_approval_lifecycle_is_separate_from_chat_completion() -> None:
+def test_broker_approval_lifecycle_is_separate_from_agent_completion() -> None:
     lifecycle = {
         "approval_required": True,
         "approval_dispatch": True,

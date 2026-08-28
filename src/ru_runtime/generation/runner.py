@@ -1,7 +1,6 @@
 import logging
 from collections.abc import Sequence
 
-from ru_runtime.generation.chat import ChatTurn
 from ru_runtime.generation.openai import (
     KILO_GATEWAY_BASE_URL,
     LMSTUDIO_BASE_URL,
@@ -12,6 +11,7 @@ from ru_runtime.generation.openai import (
 )
 from ru_runtime.generation.orchestration import execute_reply
 from ru_runtime.generation.search import perform_web_search
+from ru_runtime.generation.turns import ConversationTurn
 from ru_runtime.policy.style import (
     RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT,
     RU_CLOUD_SYSTEM_PROMPT,
@@ -146,7 +146,7 @@ class ModelRunner:
         max_new_tokens: int,
         temperature: float,
         top_k: int,
-        turns_history: Sequence[ChatTurn] | None = None,
+        turns_history: Sequence[ConversationTurn] | None = None,
         memory_context: str | None = None,
         mood_context: str | None = None,
         allow_web_search: bool = False,

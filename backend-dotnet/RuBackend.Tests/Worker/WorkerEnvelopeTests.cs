@@ -18,18 +18,17 @@ public sealed class WorkerEnvelopeTests
             {
                 ["token"] = "opaque-secret",
                 ["text"] = "Em nghe đây.",
-                ["capabilities"] = new JsonArray("chat", "voice"),
+                ["capabilities"] = new JsonArray("runtime", "voice", "vts"),
             });
 
-        var encoded = WorkerEnvelopeCodec.Serialize(source);
-        var decoded = WorkerEnvelopeCodec.Parse(encoded);
+        var decoded = WorkerEnvelopeCodec.Parse(WorkerEnvelopeCodec.Serialize(source));
 
         Assert.Equal(source.V, decoded.V);
         Assert.Equal(source.Id, decoded.Id);
         Assert.Equal(source.Type, decoded.Type);
         Assert.Null(decoded.Seq);
         Assert.Equal("Em nghe đây.", decoded.Payload["text"]!.GetValue<string>());
-        Assert.Equal(["chat", "voice"], decoded.Payload["capabilities"]!.AsArray()
+        Assert.Equal(["runtime", "voice", "vts"], decoded.Payload["capabilities"]!.AsArray()
             .Select(item => item!.GetValue<string>()));
     }
 
@@ -39,7 +38,12 @@ public sealed class WorkerEnvelopeTests
     [InlineData("{\"v\":1,\"id\":\"x\",\"type\":\"unknown\",\"payload\":{}}", "unknown_type")]
     [InlineData("{\"v\":1,\"id\":\"x\",\"type\":\"hello.ok\",\"seq\":-1,\"payload\":{}}", "invalid_sequence")]
     [InlineData("{\"v\":1,\"id\":\"x\",\"type\":\"hello\",\"payload\":[]}", "invalid_payload")]
-    public void Parse_rejects_invalid_envelopes_with_stable_codes(string json, string expectedCode)
+    [InlineData("{\"v\":1,\"id\":\"x\",\"type\":\"chat.start\",\"payload\":{}}", "unknown_type")]
+    [InlineData("{\"v\":1,\"id\":\"x\",\"type\":\"chat.done\",\"seq\":0,\"payload\":{}}", "unknown_type")]
+    [InlineData("{\"v\":1,\"id\":\"x\",\"type\":\"memory.extract\",\"payload\":{}}", "unknown_type")]
+    public void Parse_rejects_invalid_or_retired_envelopes_with_stable_codes(
+        string json,
+        string expectedCode)
     {
         var error = Assert.Throws<WorkerProtocolException>(() => WorkerEnvelopeCodec.Parse(json));
 
@@ -60,10 +64,6 @@ public sealed class WorkerEnvelopeTests
 
     [Theory]
     [InlineData("hello.ok")]
-    [InlineData("chat.reset")]
-    [InlineData("chat.chunk")]
-    [InlineData("chat.done")]
-    [InlineData("memory.facts")]
     [InlineData("runtime.state")]
     [InlineData("runtime.response")]
     [InlineData("voice.control")]
@@ -71,95 +71,12 @@ public sealed class WorkerEnvelopeTests
     [InlineData("worker.health.ok")]
     public void Ordered_response_types_require_a_sequence(string messageType)
     {
-        var payload = messageType == WorkerMessageTypes.ChatDone
-            ? "{\"raw_reply\":\"Em nghe đây.\"}"
-            : "{}";
         var json =
-            $"{{\"v\":1,\"id\":\"req-1\",\"type\":\"{messageType}\",\"payload\":{payload}}}";
+            $"{{\"v\":1,\"id\":\"req-1\",\"type\":\"{messageType}\",\"payload\":{{}}}}";
 
         var error = Assert.Throws<WorkerProtocolException>(() => WorkerEnvelopeCodec.Parse(json));
 
         Assert.Equal("missing_sequence", error.Code);
-    }
-
-    [Fact]
-    public void Chat_done_accepts_one_bounded_action_outcome()
-    {
-        var envelope = new WorkerEnvelope(
-            1,
-            "chat-1",
-            WorkerMessageTypes.ChatDone,
-            2,
-            new JsonObject
-            {
-                ["raw_reply"] = "Windows không chấp nhận thay đổi âm lượng.",
-                ["action_outcome"] = new JsonObject
-                {
-                    ["schema_version"] = 1,
-                    ["tool_id"] = "system.volume",
-                    ["tool_version"] = "1.0.0",
-                    ["status"] = "failed",
-                    ["reason_code"] = "write_failed",
-                },
-            });
-
-        WorkerEnvelopeCodec.Validate(envelope);
-
-        Assert.Equal(
-            "write_failed",
-            envelope.Payload["action_outcome"]!["reason_code"]!.GetValue<string>());
-    }
-
-    [Fact]
-    public void Chat_done_rejects_a_malformed_action_outcome()
-    {
-        var envelope = new WorkerEnvelope(
-            1,
-            "chat-1",
-            WorkerMessageTypes.ChatDone,
-            2,
-            new JsonObject
-            {
-                ["raw_reply"] = "bounded reply",
-                ["action_outcome"] = new JsonObject
-                {
-                    ["schema_version"] = 1,
-                    ["tool_id"] = "system.volume",
-                    ["tool_version"] = "1.0.0",
-                    ["status"] = "failed",
-                    ["reason_code"] = null,
-                },
-            });
-
-        var error = Assert.Throws<WorkerProtocolException>(() =>
-            WorkerEnvelopeCodec.Validate(envelope));
-
-        Assert.Equal("invalid_action_outcome", error.Code);
-    }
-
-    [Theory]
-    [InlineData("", false)]
-    [InlineData("bounded", true)]
-    public void Chat_done_rejects_unbounded_or_unknown_payload(
-        string rawReply,
-        bool addUnknownField)
-    {
-        var payload = new JsonObject { ["raw_reply"] = rawReply };
-        if (addUnknownField)
-        {
-            payload["output"] = new JsonObject { ["level"] = 2 };
-        }
-        var envelope = new WorkerEnvelope(
-            1,
-            "chat-1",
-            WorkerMessageTypes.ChatDone,
-            2,
-            payload);
-
-        var error = Assert.Throws<WorkerProtocolException>(() =>
-            WorkerEnvelopeCodec.Validate(envelope));
-
-        Assert.Equal("invalid_chat_done", error.Code);
     }
 
     [Fact]
@@ -191,70 +108,8 @@ public sealed class WorkerEnvelopeTests
             new JsonObject(),
             "c_1234567890abcdef");
 
-        var json = WorkerEnvelopeCodec.Serialize(envelope);
-        Assert.Contains("\"correlation_id\":\"c_1234567890abcdef\"", json);
+        var parsed = WorkerEnvelopeCodec.Parse(WorkerEnvelopeCodec.Serialize(envelope));
 
-        var parsed = WorkerEnvelopeCodec.Parse(json);
         Assert.Equal("c_1234567890abcdef", parsed.CorrelationId);
-    }
-
-    [Fact]
-    public void Tool_request_requires_a_bounded_capability_class()
-    {
-        var envelope = new WorkerEnvelope(
-            1,
-            "chat-1",
-            WorkerMessageTypes.ChatToolRequest,
-            0,
-            new JsonObject
-            {
-                ["request_id"] = "tool-1",
-                ["session_id"] = "session-1",
-                ["correlation_id"] = "corr-1",
-                ["tool_id"] = "system.volume",
-                ["tool_version"] = "1.0.0",
-                ["capability_class"] = "native_mutation",
-                ["arguments"] = new JsonObject { ["operation"] = "mute" },
-                ["deadline_ms"] = 30_000,
-            });
-
-        WorkerEnvelopeCodec.Validate(envelope);
-        envelope.Payload.Remove("capability_class");
-
-        var error = Assert.Throws<WorkerProtocolException>(() => WorkerEnvelopeCodec.Validate(envelope));
-        Assert.Equal("invalid_tool_request", error.Code);
-    }
-
-    [Theory]
-    [InlineData(-1, "verified", "0123456789abcdef")]
-    [InlineData(300001, "verified", "0123456789abcdef")]
-    [InlineData(12, "unknown", "0123456789abcdef")]
-    [InlineData(12, "verified", "ABCDEF0123456789")]
-    public void Tool_result_rejects_invalid_receipt_metadata(
-        int durationMs,
-        string verificationState,
-        string endpointHash)
-    {
-        var envelope = new WorkerEnvelope(
-            1,
-            "chat-1",
-            WorkerMessageTypes.ChatToolResult,
-            null,
-            new JsonObject
-            {
-                ["request_id"] = "tool-1",
-                ["status"] = "succeeded",
-                ["output"] = new JsonObject(),
-                ["error_code"] = null,
-                ["safe_summary"] = "completed",
-                ["duration_ms"] = durationMs,
-                ["verification_state"] = verificationState,
-                ["endpoint_role"] = "default_render_multimedia",
-                ["endpoint_hash"] = endpointHash,
-            });
-
-        var error = Assert.Throws<WorkerProtocolException>(() => WorkerEnvelopeCodec.Validate(envelope));
-
-        Assert.Equal("invalid_tool_result", error.Code);
     }
 }

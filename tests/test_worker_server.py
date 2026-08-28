@@ -11,14 +11,8 @@ from websockets.exceptions import ConnectionClosed
 
 from ru_runtime.worker.server import serve_worker
 from ru_runtime.worker.v1.protocol import (
-    CHAT_CHUNK,
-    CHAT_DONE,
-    CHAT_RESET,
-    CHAT_TOOL_REQUEST,
-    CHAT_TOOL_RESULT,
     ERROR,
     HELLO,
-    MEMORY_FACTS,
     RUNTIME_REQUEST,
     RUNTIME_RESPONSE,
     VOICE_CONTROL,
@@ -27,11 +21,7 @@ from ru_runtime.worker.v1.protocol import (
     encode_envelope,
     validate_envelope,
 )
-from ru_runtime.worker.v1.server import (
-    WorkerHandlers,
-    WorkerReply,
-    serve_runtime_worker,
-)
+from ru_runtime.worker.v1.server import WorkerHandlers, WorkerReply, serve_runtime_worker
 
 
 def test_handshake_and_health_are_token_protected() -> None:
@@ -45,6 +35,12 @@ def test_handshake_and_health_are_token_protected() -> None:
             assert hello["type"] == "hello.ok"
             assert hello["seq"] == 0
             assert hello["payload"]["version"] == 1
+            assert hello["payload"]["capabilities"] == [
+                "runtime",
+                "voice",
+                "vts",
+                "observation",
+            ]
 
             await websocket.send(
                 encode_envelope({"v": 1, "id": "health-1", "type": WORKER_HEALTH, "payload": {}})
@@ -71,114 +67,19 @@ def test_bad_token_closes_before_accepting_work() -> None:
     asyncio.run(scenario())
 
 
-def test_chat_handler_streams_reset_chunk_done_with_monotonic_sequences() -> None:
-    async def chat(_payload: dict, _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
-        yield WorkerReply(CHAT_RESET, {})
-        yield WorkerReply(CHAT_CHUNK, {"text": "Em nghe đây."})
-        yield WorkerReply(CHAT_DONE, {"raw_reply": "Em nghe đây."})
-
+def test_retired_chat_message_is_rejected_before_dispatch() -> None:
     async def scenario() -> None:
-        handlers = default_handlers(chat=chat)
-        async with running_server(handlers) as uri, connect(uri) as websocket:
+        async with running_server(default_handlers()) as uri, connect(uri) as websocket:
             await send_hello(websocket, "worker-secret")
             await websocket.recv()
             await websocket.send(
-                encode_envelope({"v": 1, "id": "chat-1", "type": "chat.start", "payload": {}})
-            )
-            events = [validate_envelope(json.loads(await websocket.recv())) for _ in range(3)]
-
-            assert [event["type"] for event in events] == [CHAT_RESET, CHAT_CHUNK, CHAT_DONE]
-            assert [event["seq"] for event in events] == [0, 1, 2]
-            assert events[1]["payload"]["text"] == "Em nghe đây."
-
-    asyncio.run(scenario())
-
-
-def test_chat_tool_result_is_routed_to_the_pending_chat_turn() -> None:
-    async def chat(payload: dict, _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
-        yield WorkerReply(
-            CHAT_TOOL_REQUEST,
-            {
-                "request_id": "tool-request-1",
-                "session_id": payload["session_id"],
-                "correlation_id": "corr-1",
-                "tool_id": "files.list",
-                "tool_version": "1.0.0",
-                "capability_class": "internal",
-                "arguments": {"path": "src"},
-                "deadline_ms": 30_000,
-            },
-        )
-        result = await payload["__worker_tool_result_queue"].get()
-        assert result["request_id"] == "tool-request-1"
-        yield WorkerReply(CHAT_DONE, {"raw_reply": result["safe_summary"]})
-
-    async def scenario() -> None:
-        async with running_server(default_handlers(chat=chat)) as uri, connect(uri) as websocket:
-            await send_hello(websocket, "worker-secret")
-            await websocket.recv()
-            await websocket.send(
-                encode_envelope(
-                    {
-                        "v": 1,
-                        "id": "chat-tool-1",
-                        "type": "chat.start",
-                        "correlation_id": "corr-1",
-                        "payload": {"session_id": "session-1"},
-                    }
+                json.dumps(
+                    {"v": 1, "id": "retired-1", "type": "chat.start", "payload": {}}
                 )
             )
-            request = validate_envelope(json.loads(await websocket.recv()))
-            assert request["type"] == CHAT_TOOL_REQUEST
-            assert request["seq"] == 0
-            await websocket.send(
-                encode_envelope(
-                    {
-                        "v": 1,
-                        "id": "chat-tool-1",
-                        "type": CHAT_TOOL_RESULT,
-                        "payload": {
-                            "request_id": "tool-request-1",
-                            "session_id": "session-1",
-                            "correlation_id": "corr-1",
-                            "status": "succeeded",
-                            "output": {"entries": []},
-                            "error_code": None,
-                            "safe_summary": "Tool result received.",
-                            "duration_ms": 4,
-                            "verification_state": "not_required",
-                            "endpoint_role": None,
-                            "endpoint_hash": None,
-                        },
-                    }
-                )
-            )
-            done = validate_envelope(json.loads(await websocket.recv()))
-            assert done["type"] == CHAT_DONE
-            assert done["seq"] == 1
-            assert done["payload"]["raw_reply"] == "Tool result received."
-
-    asyncio.run(scenario())
-
-
-def test_memory_handler_returns_one_facts_event() -> None:
-    async def memory(_payload: dict, _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
-        yield WorkerReply(MEMORY_FACTS, {"facts": []})
-
-    async def scenario() -> None:
-        async with (
-            running_server(default_handlers(memory=memory)) as uri,
-            connect(uri) as websocket,
-        ):
-            await send_hello(websocket, "worker-secret")
-            await websocket.recv()
-            await websocket.send(
-                encode_envelope({"v": 1, "id": "memory-1", "type": "memory.extract", "payload": {}})
-            )
-            event = validate_envelope(json.loads(await websocket.recv()))
-            assert event["type"] == MEMORY_FACTS
-            assert event["seq"] == 0
-            assert event["payload"] == {"facts": []}
+            error = validate_envelope(json.loads(await websocket.recv()))
+            assert error["type"] == ERROR
+            assert error["payload"] == {"code": "unknown_type", "retryable": False}
 
     asyncio.run(scenario())
 
@@ -261,37 +162,6 @@ def test_unknown_version_returns_redacted_error_then_closes() -> None:
     asyncio.run(scenario())
 
 
-def test_cancel_stops_the_matching_request_and_emits_one_terminal_error() -> None:
-    started = asyncio.Event()
-    stopped = asyncio.Event()
-
-    async def chat(_payload: dict, _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
-        started.set()
-        try:
-            await asyncio.Future()
-            yield WorkerReply(CHAT_DONE, {})
-        finally:
-            stopped.set()
-
-    async def scenario() -> None:
-        async with running_server(default_handlers(chat=chat)) as uri, connect(uri) as websocket:
-            await send_hello(websocket, "worker-secret")
-            await websocket.recv()
-            await websocket.send(
-                encode_envelope({"v": 1, "id": "chat-cancel", "type": "chat.start", "payload": {}})
-            )
-            await asyncio.wait_for(started.wait(), timeout=2)
-            await websocket.send(
-                encode_envelope({"v": 1, "id": "chat-cancel", "type": "chat.cancel", "payload": {}})
-            )
-            terminal = validate_envelope(json.loads(await websocket.recv()))
-            assert terminal["type"] == ERROR
-            assert terminal["payload"]["code"] == "cancelled"
-            await asyncio.wait_for(stopped.wait(), timeout=2)
-
-    asyncio.run(scenario())
-
-
 def test_voice_audio_control_is_immediately_followed_by_non_empty_binary() -> None:
     async def voice(_payload: dict, _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
         yield WorkerReply(
@@ -343,7 +213,6 @@ def test_server_shutdown_closes_connections_and_request_tasks() -> None:
 
         stop.set()
         await asyncio.wait_for(task, timeout=2)
-
         assert websocket.state.name == "CLOSED"
 
     asyncio.run(scenario())
@@ -356,10 +225,7 @@ def test_runtime_server_binds_the_runtime_handler_factory(monkeypatch) -> None:
         observed.append("created")
         return default_handlers()
 
-    monkeypatch.setattr(
-        "ru_runtime.worker.v1.handlers.create_runtime_handlers",
-        fake_factory,
-    )
+    monkeypatch.setattr("ru_runtime.worker.v1.handlers.create_runtime_handlers", fake_factory)
 
     async def scenario() -> None:
         port = unused_port()
@@ -425,18 +291,11 @@ async def empty_handler(
 
 def default_handlers(
     *,
-    chat=empty_handler,
-    memory=empty_handler,
     runtime=empty_handler,
     voice=empty_handler,
+    vts=empty_handler,
 ) -> WorkerHandlers:
-    return WorkerHandlers(
-        chat=chat,
-        memory_extract=memory,
-        runtime=runtime,
-        voice=voice,
-        vts=empty_handler,
-    )
+    return WorkerHandlers(runtime=runtime, voice=voice, vts=vts)
 
 
 async def send_hello(websocket, token: str) -> None:
@@ -446,7 +305,7 @@ async def send_hello(websocket, token: str) -> None:
                 "v": 1,
                 "id": "conn-1",
                 "type": HELLO,
-                "payload": {"token": token, "capabilities": ["chat", "voice"]},
+                "payload": {"token": token, "capabilities": ["runtime", "voice"]},
             }
         )
     )

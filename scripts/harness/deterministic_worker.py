@@ -17,12 +17,7 @@ from typing import Any
 
 from ru_runtime.worker.server import serve_worker
 from ru_runtime.worker.v1.protocol import (
-    CHAT_CHUNK,
-    CHAT_DONE,
-    CHAT_RESET,
-    CHAT_TOOL_REQUEST,
     ERROR,
-    MEMORY_FACTS,
     RUNTIME_RESPONSE,
     RUNTIME_STATE,
     VOICE_CONTROL,
@@ -61,86 +56,6 @@ def _harness_delay_seconds(name: str) -> float:
     except (TypeError, ValueError):
         milliseconds = 0
     return milliseconds / 1000.0
-
-
-async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
-    settings = _payload.get("settings")
-    tool_queue = _payload.get("__worker_tool_result_queue")
-    # Agent v2 carries both an explicit mode bit and a non-empty executable
-    # model-tool surface. Accept either marker so the deterministic fixture
-    # continues to exercise the headless loop while remaining compatible with
-    # older Worker payloads that only supplied model_tools.
-    agent_mode = isinstance(settings, Mapping) and (
-        settings.get("agent_mode") is True
-        or bool(settings.get("model_tools"))
-    )
-    if agent_mode and isinstance(tool_queue, asyncio.Queue):
-        session_id = str(_payload.get("session_id") or "harness-agent-session")
-        correlation_id = str(
-            _payload.get("__worker_correlation_id") or "harness-agent-correlation"
-        )
-        tool_request_id = "harness-tool-volume-invalid"
-        yield WorkerReply(CHAT_RESET, {})
-        yield WorkerReply(
-            CHAT_TOOL_REQUEST,
-            {
-                "request_id": tool_request_id,
-                "session_id": session_id,
-                "correlation_id": correlation_id,
-                "tool_id": "system.volume",
-                "tool_version": "1.0.0",
-                "capability_class": "native_mutation",
-                "arguments": {"operation": "set", "level": 101},
-                "deadline_ms": 30_000,
-            },
-        )
-        scenario = os.environ.get("RU_HARNESS_SCENARIO", "")
-        if scenario in {"agent-cancel", "agent-stale-result"}:
-            # Keep the turn in flight long enough for UI session replacement
-            # to prove cancellation and stale-result suppression.
-            await asyncio.sleep(1.5)
-        try:
-            result = await asyncio.wait_for(tool_queue.get(), timeout=30.0)
-        except TimeoutError:
-            result = {"status": "timed_out", "safe_summary": "Tool timed out."}
-        valid_result = (
-            isinstance(result, Mapping)
-            and result.get("request_id") == tool_request_id
-            and result.get("session_id") == session_id
-            and result.get("correlation_id") == correlation_id
-            and result.get("status") == "failed"
-        )
-        if not valid_result:
-            # The visible fixture remains truthful even if the private receipt is malformed.
-            result = None
-        yield WorkerReply(
-            CHAT_DONE,
-            {
-                "raw_reply": (
-                    "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows."
-                ),
-                "action_outcome": {
-                    "schema_version": 1,
-                    "tool_id": "system.volume",
-                    "tool_version": "1.0.0",
-                    "status": "failed",
-                    "reason_code": "invalid_arguments",
-                },
-            },
-        )
-        return
-
-    yield WorkerReply(CHAT_RESET, {})
-    yield WorkerReply(CHAT_CHUNK, {"text": "Em nghe đây. [[VT"})
-    yield WorkerReply(
-        CHAT_DONE,
-        {
-            "raw_reply": (
-                "Em nghe đây. [[EMO:joy]] [[VTS:vts_01]] "
-                "[[VOICE_PACE:quick]]"
-            )
-        },
-    )
 
 
 _agent_step_counts: dict[str, int] = {}
@@ -188,6 +103,11 @@ async def _agent_step(
         for tool in model_tools
     )
     if count == 0 and has_read:
+        scenario = os.environ.get("RU_HARNESS_SCENARIO", "")
+        if scenario in {"agent-cancel", "agent-stale-result"}:
+            # Keep the first Agent step in flight long enough for UI session
+            # replacement to prove cancellation and stale-result suppression.
+            await asyncio.sleep(1.5)
         yield StepReply(
             AGENT_STEP_DONE,
             {
@@ -213,10 +133,6 @@ async def _agent_step(
             "finish_reason": "stop",
         },
     )
-
-
-async def _memory(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
-    yield WorkerReply(MEMORY_FACTS, {"facts": []})
 
 
 def _json_response(payload: Mapping[str, object], status_code: int = 200) -> WorkerReply:
@@ -375,8 +291,6 @@ async def _vts(payload: Mapping[str, Any], _cancelled: asyncio.Event) -> AsyncIt
 
 def create_deterministic_handlers() -> WorkerHandlers:
     return WorkerHandlers(
-        chat=_chat,
-        memory_extract=_memory,
         runtime=_runtime,
         voice=_voice,
         vts=_vts,

@@ -6,8 +6,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import Any, Protocol
 
-from ru_runtime.generation.chat import ChatTurn
 from ru_runtime.generation.tool_calls import ToolCallParseError, parse_tool_call
+from ru_runtime.generation.turns import ConversationTurn
 from ru_runtime.worker.v1.action_loop import (
     ActionProtocolError,
     ModelCapability,
@@ -38,7 +38,7 @@ class RuntimeRunner(Protocol):
         max_new_tokens: int,
         temperature: float,
         top_k: int,
-        turns_history: Sequence[ChatTurn] | None = None,
+        turns_history: Sequence[ConversationTurn] | None = None,
         memory_context: str | None = None,
         mood_context: str | None = None,
         allow_web_search: bool = False,
@@ -167,7 +167,7 @@ class _StepRequest:
     def __init__(
         self,
         prompt: str,
-        turns: tuple[ChatTurn, ...],
+        turns: tuple[ConversationTurn, ...],
         memory_context: str | None,
         max_tokens: int,
         temperature: float,
@@ -194,7 +194,7 @@ def _parse_step_request(payload: Mapping[str, Any]) -> _StepRequest:
     raw_turns = payload.get("turns", [])
     if not isinstance(raw_turns, list) or len(raw_turns) > 8:
         raise StepGenerationError("invalid_request")
-    turns: list[ChatTurn] = []
+    turns: list[ConversationTurn] = []
     for item in raw_turns:
         if not isinstance(item, Mapping):
             raise StepGenerationError("invalid_request")
@@ -210,7 +210,7 @@ def _parse_step_request(payload: Mapping[str, Any]) -> _StepRequest:
         ):
             raise StepGenerationError("invalid_request")
         try:
-            turns.append(ChatTurn(turn_prompt, turn_response))
+            turns.append(ConversationTurn(turn_prompt, turn_response))
         except ValueError:
             raise StepGenerationError("invalid_request") from None
 

@@ -23,19 +23,20 @@ validates an ACL-restricted loopback descriptor (`protocol_version`, `base_url`,
 bearer, PID/start-time/nonce) and `GET /status` bearer. On first start the
 Public Host creates per-run secrets, starts the private Runtime Worker on
 loopback port 8005 via the shared `ru_runtime.worker.server` multiplexer
-(`/worker/v1` Chat and `/worker/v2` one-step Agent), starts the isolated
+(`/worker/v1` runtime/voice/VTS adapters and `/worker/v2` one-step Agent), starts the isolated
 `RuAgentBroker` on a dynamic loopback port, binds the ASP.NET Core Public Host
 on port 8000, waits for public readiness, and assigns Worker/Broker to one Job
 Object. Idle Public Host exits after 10 minutes without an active Agent run,
-approval, or long-lived Chat WebSocket/Agent SSE lease. Broker descriptors and
+approval, or long-lived Agent SSE lease. Broker descriptors and
 grants are session-scoped and removed during shutdown.
 
 ASP.NET Core is the only public backend. It owns authentication, validation,
-settings and credentials, sessions/history, activity, structured memory, chat
-ordering, public errors, durable Agent harness (Core + SQLite
+settings and credentials, sessions/history, activity, structured memory, Agent
+run ordering, public errors, durable Agent harness (Core + SQLite
 `agent_harness.db` + AES-GCM payloads, conversation outbox, workspace trust,
 session permissions, encrypted policy snapshots), and all 54 HTTP plus
-2 WebSocket routes (41 pre-existing plus 13 additive `/agent/v1/*`).
+1 WebSocket route (`/voice/stream`; 41 pre-existing HTTP routes plus 13 additive
+`/agent/v1/*`).
 Agent v2 (`/worker/v2` one-step `AssistantStep` and `/agent/v1/*` 13-route
 API/SSE with bearer auth, `id:<sequence>`/`Last-Event-ID` cursor, idempotency
 409, `workspace_busy` 409, `preset_mismatch` 409) is additive and
@@ -47,8 +48,8 @@ encrypted-at-rest snapshots and global interactive header
 `X-Interactive-Confirmed: true`; `POST /agent/v1/runs/{runId}/reconcile`
 is active on the headless Agent v2 path and resolves an ambiguous dispatch
 outcome before the run continues.
-Python is an authenticated private implementation boundary for model generation
-(one-step Worker v2 plus retained v1 Chat), provider adapters, STT execution,
+Python is an authenticated private implementation boundary for Agent model
+steps (Worker v2), provider adapters, STT execution,
 VTube Studio, observation, and the current voice engine coordination. The CLI
 tracer `RuAgent.Cli` is a thin headless client: it delegates start/attach to
 `RuAgent.Client` and all run behavior to authenticated HTTP/SSE.
@@ -93,7 +94,7 @@ the Runtime Worker or voice engine as independent public services.
 
 ## Current behavior
 
-- Chat preserves bounded context, bilingual routing, natural Vietnamese
+- Agent preserves bounded context, bilingual routing, natural Vietnamese
   `anh`/`em`, streamed visible text, private control-metadata filtering, and
   correlation-aware FIFO turns that drop stale socket frames instead of
   attaching them to a newer bubble.
@@ -105,7 +106,7 @@ the Runtime Worker or voice engine as independent public services.
 - OmniVoice is the local TTS engine. The accepted quality baseline is the
   original voice at native 1.00x speed; non-1.00x native speed still requires
   listening acceptance.
-- In Chat, click the microphone once to start an explicit half-duplex voice
+- Click the microphone once to start an explicit half-duplex voice
   conversation. Ru detects each bounded turn locally, sends it through the
   existing Google `vi-VN` STT path, submits a non-empty transcript
   automatically, waits for the current reply audio to finish, and listens for
@@ -113,27 +114,26 @@ the Runtime Worker or voice engine as independent public services.
   available when voice mode is idle.
 - VTube Studio actions and lip sync remain private runtime metadata.
   `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
-- In the WinUI shell, Chat and Voice are the primary navigation surfaces. Log,
+- In the WinUI shell, conversation and Voice are the primary navigation surfaces. Log,
    Diagnostics, Policy, and Audit are grouped under `Công cụ`; Coding Agent is
-   selected from the compact mode pill inside the Chat composer. That mode
-   dropdown contains only Chat and Agent; selecting Agent reveals one compact
-   preset dropdown with `Standard` and `Full Access`. The UI always uses the
+   selected from the compact preset control inside the composer. Agent is the
+   only generation mode and exposes one compact preset dropdown with `Standard`
+   and `Full Access`. The UI always uses the
    known project root as the initial Agent workspace; workspace selection is
    not exposed in the composer, while the authenticated API still validates
-   the canonical path. If the app has not opened a chat session yet, the first
+   the canonical path. If the app has not opened a session yet, the first
    Agent prompt creates a fresh session before applying the selected preset.
-   Agent prompts use the
-   authenticated `/agent/v1/*` API/SSE path, while ordinary Chat keeps the
-   Chat WebSocket path. The composer shows bounded Agent status, workspace
-   trust, approval, Stop, and Continue controls; the Chat transcript can show
+    All prompts use the authenticated `/agent/v1/*` API/SSE path. The composer
+    shows bounded Agent status, workspace trust, approval, Stop, and Continue controls;
+    the conversation transcript can show
    a transient safe activity feed for the current run. The feed is separate
    from durable messages and never places raw tool payloads in the transcript.
-- Tool capability is an explicit tri-state selector. Chat (default) advertises
-  only workspace discovery/read (`files.list`, `files.glob`, `files.search`,
-  `files.read` with offset/limit, streaming enumeration, hidden/binary/
-  protected handling, bounded `truncated` metadata) and declines volume
-  commands with guidance. Agent adds `files.write`, `files.edit`,
-  `notes.create` and card-free `system.volume` with verified readback. The
+- Tool capability is an Agent preset selector. Standard advertises workspace
+  discovery/read (`files.list`, `files.glob`, `files.search`, `files.read` with
+  offset/limit, streaming enumeration, hidden/binary/protected handling,
+  bounded `truncated` metadata), plus the approved Agent mutation and device
+  tools. Full Access broadens policy fallbacks without bypassing trust or
+  approval. The
   headless Agent v2 worker also advertises `terminal.run` and `terminal.shell`;
   both are policy-evaluated and require explicit approval before execution.
   `files.apply_patch` is not advertised or model-usable in the current runtime.
@@ -161,7 +161,7 @@ the Runtime Worker or voice engine as independent public services.
   Terminal (`terminal.run`/`terminal.shell`) is available only on the headless
   Agent v2 path, under policy and per-request approval; it runs as the current
   Windows user and can execute host code or open sockets. The managed Git commit
-  workflow (Phase 3 Task 6) is not shipped yet. Modes reset to Chat on every launch and Full
+  workflow (Phase 3 Task 6) is not shipped yet. The preset resets to Standard on every launch and Full
   Access needs one explicit confirmation per run. WinUI displays typed
   activity from actual Host events, and a success is visible only after a
   matching verified Broker receipt.
@@ -193,15 +193,13 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 cmd /c D:\LLM\build.bat
 ```
 
-The backend artifact covers 54 HTTP routes and 2 WebSocket routes (41 legacy
+The backend artifact covers 54 HTTP routes and 1 WebSocket route (`/voice/stream`; 41 legacy
 plus 13 `/agent/v1/*`), requires correct-bearer success plus
 wrong/missing-bearer rejection, and records observation routes as explicit
 hardware/external skips. It uses synthetic STT/TTS and records only statuses,
 timings, counts, event types, and cleanup state. In deterministic mode it also
-requires one intentionally invalid `system.volume` request to end as
-`failed/invalid_arguments` before any native endpoint is opened. Broker
-approval/replay is checked separately with a temporary `notes.create` fixture.
-`--deterministic-chat` remains an alias for the backend mode. At this
+exercises one read-only `files.read` Agent tool loop. Broker approval/replay is
+checked separately with a temporary `notes.create` fixture. At this
 checkpoint the harness also covers the additive Agent v2 tracer
 (HTTP 201/200/409 idempotency, `workspace_busy`, `preset_mismatch`,
 unsupported capabilities return bounded `phase_not_available` errors, while
@@ -264,7 +262,7 @@ application-data location completed on 2026-08-17; see
 [ADR 0004](docs/adr/0004-canonical-ru-data-location.md).
 Existing data is protected and must not be manually moved or deleted.
 
-Visible chat text may cross the private generation boundary. Credentials,
+Visible assistant text may cross the private generation boundary. Credentials,
 audio bytes, VTS actions, voice timing/control metadata, and transcripts must
 not enter logs, cleanup manifests, memory, history, or reviewed examples.
 

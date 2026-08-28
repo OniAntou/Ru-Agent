@@ -13,12 +13,6 @@ from ru_runtime.worker.v1.action_outcome import (
     VolumeReadback,
     parse_volume_readback,
 )
-from ru_runtime.worker.v1.protocol import (
-    MAX_TOOL_ARGUMENTS_BYTES,
-    MAX_TOOL_OUTPUT_BYTES,
-    MAX_TOOL_SUMMARY_CHARS,
-    TOOL_RESULT_STATUSES,
-)
 
 _MAX_CAPABILITIES = 16
 _MAX_SCOPES = 16
@@ -63,6 +57,12 @@ _RECEIPT_FIELDS = frozenset(
 )
 _ENDPOINT_HASH = re.compile(r"^[0-9a-f]{16}$")
 _ERROR_CODE = re.compile(r"^[a-z0-9][a-z0-9_.-]*$")
+MAX_TOOL_SUMMARY_CHARS = 4096
+MAX_TOOL_ARGUMENTS_BYTES = 64 * 1024
+MAX_TOOL_OUTPUT_BYTES = 256 * 1024
+TOOL_RESULT_STATUSES = frozenset(
+    {"succeeded", "failed", "denied", "approval_required", "cancelled", "timed_out"}
+)
 
 
 class ActionProtocolError(ValueError):

@@ -7,8 +7,6 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using RuAgent.Protocol;
-using RuBackend.Diagnostics;
 using RuBackend.Worker;
 using Xunit;
 
@@ -17,14 +15,14 @@ namespace RuBackend.Tests.Worker;
 public sealed class LoopbackWorkerClientTests
 {
     [Fact]
-    public async Task Connect_sends_the_token_and_returns_negotiated_capabilities()
+    public async Task Connect_sends_the_token_and_returns_agent_capabilities()
     {
         string? observedToken = null;
         await using var server = await FakeWorkerServer.StartAsync(async socket =>
         {
             var hello = await ReceiveEnvelopeAsync(socket);
             observedToken = hello.Payload["token"]!.GetValue<string>();
-            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "chat", "memory.extract"));
+            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "runtime", "voice", "vts", "observation"));
         });
         await using var client = CreateClient(server.Uri, "worker-secret");
 
@@ -32,360 +30,9 @@ public sealed class LoopbackWorkerClientTests
 
         Assert.Equal("worker-secret", observedToken);
         Assert.Equal(1, hello.Version);
-        Assert.Equal(new HashSet<string> { "chat", "memory.extract" }, hello.Capabilities);
-    }
-
-    [Fact]
-    public async Task GenerateChat_preserves_reset_chunk_done_order_and_UTF8_text()
-    {
-        WorkerEnvelope? observedStart = null;
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            await CompleteHandshakeAsync(socket);
-            observedStart = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, Event(observedStart.Id, WorkerMessageTypes.ChatReset, 0, []));
-            await SendEnvelopeAsync(socket, Event(
-                observedStart.Id,
-                WorkerMessageTypes.ChatChunk,
-                1,
-                new JsonObject { ["text"] = "Em nghe đây." }));
-            await SendEnvelopeAsync(socket, Event(
-                observedStart.Id,
-                WorkerMessageTypes.ChatDone,
-                2,
-                new JsonObject { ["raw_reply"] = "Em nghe đây." }));
-        });
-        await using var client = CreateClient(server.Uri);
-        var request = new WorkerChatRequest(
-            "chat-1",
-            "synthetic prompt",
-            "session-1",
-            [new WorkerTurn("earlier", "turn")],
-            "memory context",
-            string.Empty,
-            []);
-
-        var events = await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None));
-
-        Assert.Equal(WorkerMessageTypes.ChatStart, observedStart!.Type);
-        Assert.Equal("synthetic prompt", observedStart.Payload["prompt"]!.GetValue<string>());
-        Assert.False(observedStart.Payload.ContainsKey("last_action_outcome"));
         Assert.Equal(
-            [WorkerMessageTypes.ChatReset, WorkerMessageTypes.ChatChunk, WorkerMessageTypes.ChatDone],
-            events.Select(item => item.Type));
-        Assert.Equal([0L, 1L, 2L], events.Select(item => item.Sequence));
-        Assert.Equal("Em nghe đây.", events[1].Payload["text"]!.GetValue<string>());
-    }
-
-    [Fact]
-    public async Task GenerateChat_sends_one_bounded_last_action_outcome_when_present()
-    {
-        WorkerEnvelope? observedStart = null;
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            await CompleteHandshakeAsync(socket);
-            observedStart = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(
-                socket,
-                Event(observedStart.Id, WorkerMessageTypes.ChatReset, 0, []));
-            await SendEnvelopeAsync(
-                socket,
-                Event(
-                    observedStart.Id,
-                    WorkerMessageTypes.ChatDone,
-                    1,
-                    new JsonObject { ["raw_reply"] = "Vì thao tác thất bại." }));
-        });
-        await using var client = CreateClient(server.Uri);
-        var request = EmptyChatRequest("chat-outcome") with
-        {
-            LastActionOutcome = WorkerActionOutcome.Parse(new JsonObject
-            {
-                ["schema_version"] = 1,
-                ["tool_id"] = "system.volume",
-                ["tool_version"] = "1.0.0",
-                ["status"] = "failed",
-                ["reason_code"] = "write_failed",
-            }, new WorkerAdvertisedTools(
-                new HashSet<(string ToolId, string ToolVersion)>
-                {
-                    ("system.volume", "1.0.0"),
-                })),
-        };
-
-        await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None));
-
-        var outcome = observedStart!.Payload["last_action_outcome"]!.AsObject();
-        Assert.Equal(
-            ["reason_code", "schema_version", "status", "tool_id", "tool_version"],
-            outcome.Select(pair => pair.Key).Order(StringComparer.Ordinal));
-        Assert.Equal("write_failed", outcome["reason_code"]!.GetValue<string>());
-    }
-
-    [Fact]
-    public async Task GenerateChat_returns_tool_request_and_sends_typed_result()
-    {
-        WorkerEnvelope? observedResult = null;
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            await CompleteHandshakeAsync(socket);
-            var request = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(
-                socket,
-                Event(
-                    request.Id,
-                    WorkerMessageTypes.ChatToolRequest,
-                    0,
-                    new JsonObject
-                    {
-                        ["request_id"] = "tool-request-1",
-                        ["session_id"] = "session",
-                        ["correlation_id"] = "corr-1",
-                        ["tool_id"] = "files.list",
-                        ["tool_version"] = "1.0.0",
-                        ["capability_class"] = "internal",
-                        ["arguments"] = new JsonObject { ["path"] = "src" },
-                        ["deadline_ms"] = 30_000,
-                    }));
-            observedResult = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(
-                socket,
-                Event(
-                    request.Id,
-                    WorkerMessageTypes.ChatDone,
-                    1,
-                    new JsonObject { ["raw_reply"] = "Đã xong." }));
-        });
-
-        await using var client = CreateClient(server.Uri);
-        var request = EmptyChatRequest("chat-tool") with
-        {
-            ToolHandler = (tool, _) => Task.FromResult(
-                new WorkerToolResult(
-                    tool.RequestId,
-                    "succeeded",
-                    new JsonObject { ["entries"] = new JsonArray() },
-                    null,
-                    "Listed 0 entries.",
-                    12,
-                    "not_required",
-                    null,
-                    null))
-        };
-
-        var events = await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None));
-
-        Assert.Equal(WorkerMessageTypes.ChatToolRequest, events[0].Type);
-        Assert.NotNull(observedResult);
-        Assert.Equal(WorkerMessageTypes.ChatToolResult, observedResult!.Type);
-        Assert.Equal("tool-request-1", observedResult.Payload["request_id"]!.GetValue<string>());
-        Assert.Equal("session", observedResult.Payload["session_id"]!.GetValue<string>());
-        Assert.Equal("corr-1", observedResult.Payload["correlation_id"]!.GetValue<string>());
-        Assert.Equal("succeeded", observedResult.Payload["status"]!.GetValue<string>());
-        Assert.Equal(12, observedResult.Payload["duration_ms"]!.GetValue<int>());
-        Assert.Equal("not_required", observedResult.Payload["verification_state"]!.GetValue<string>());
-        Assert.Null(observedResult.Payload["endpoint_role"]);
-        Assert.Null(observedResult.Payload["endpoint_hash"]);
-    }
-
-    [Fact]
-    public async Task GenerateChat_sends_approval_required_tool_result()
-    {
-        WorkerEnvelope? observedResult = null;
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            await CompleteHandshakeAsync(socket);
-            var request = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(
-                socket,
-                Event(
-                    request.Id,
-                    WorkerMessageTypes.ChatToolRequest,
-                    0,
-                    new JsonObject
-                    {
-                        ["request_id"] = "tool-request-approval",
-                        ["session_id"] = "session",
-                        ["correlation_id"] = "corr-approval",
-                        ["tool_id"] = "web.search",
-                        ["tool_version"] = "1.0.0",
-                        ["capability_class"] = "internal",
-                        ["arguments"] = new JsonObject { ["query"] = "Ru" },
-                        ["deadline_ms"] = 30_000,
-                    }));
-            observedResult = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(
-                socket,
-                Event(
-                    request.Id,
-                    WorkerMessageTypes.ChatDone,
-                    1,
-                    new JsonObject { ["raw_reply"] = "Đang chờ duyệt." }));
-        });
-
-        await using var client = CreateClient(server.Uri);
-        var request = EmptyChatRequest("chat-tool-approval") with
-        {
-            ToolHandler = (tool, _) => Task.FromResult(
-                new WorkerToolResult(
-                    tool.RequestId,
-                    "approval_required",
-                    new JsonObject { ["approval_id"] = "approval-1" },
-                    "approval_required",
-                    "Approval required.",
-                    0,
-                    "pending",
-                    null,
-                    null))
-        };
-
-        var events = await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None));
-
-        Assert.Equal(WorkerMessageTypes.ChatToolRequest, events[0].Type);
-        Assert.Equal(WorkerMessageTypes.ChatDone, events[1].Type);
-        Assert.NotNull(observedResult);
-        Assert.Equal("approval_required", observedResult!.Payload["status"]!.GetValue<string>());
-        Assert.Equal("approval-1", observedResult.Payload["output"]!["approval_id"]!.GetValue<string>());
-    }
-
-    [Fact]
-    public async Task Receipt_delivery_is_emitted_once_only_after_result_send_returns()
-    {
-        var sendEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var releaseSend = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var diagnostics = new RecordingEmitter();
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            await CompleteHandshakeAsync(socket);
-            var request = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, VolumeToolRequest(request.Id));
-            _ = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(
-                socket,
-                Event(
-                    request.Id,
-                    WorkerMessageTypes.ChatDone,
-                    1,
-                    new JsonObject { ["raw_reply"] = "Đã xong." }));
-        });
-        await using var client = new LoopbackWorkerClient(
-            new WorkerClientOptions { Uri = server.Uri, Token = "worker-secret" },
-            diagnostics,
-            async (connection, envelope, cancellationToken) =>
-            {
-                sendEntered.TrySetResult();
-                await releaseSend.Task.WaitAsync(cancellationToken);
-                await connection.SendEnvelopeAsync(envelope, cancellationToken);
-            });
-        var request = EmptyChatRequest("chat-delivery-order") with
-        {
-            ToolHandler = SuccessfulVolumeResult,
-        };
-
-        var collection = CollectAsync(client.GenerateChatAsync(request, CancellationToken.None));
-        await sendEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.DoesNotContain(
-            diagnostics.Events,
-            item => item.EventCode == DiagnosticCodes.ToolReceiptDelivered);
-
-        releaseSend.TrySetResult();
-        _ = await collection;
-
-        var delivered = Assert.Single(
-            diagnostics.Events,
-            item => item.EventCode == DiagnosticCodes.ToolReceiptDelivered);
-        Assert.Equal("corr-volume", delivered.CorrelationId);
-        Assert.Equal("system.volume", delivered.ToolId);
-        Assert.Equal("1.0.0", delivered.ToolVersion);
-        Assert.Equal("succeeded", delivered.Status);
-    }
-
-    [Fact]
-    public async Task Throwing_result_send_never_emits_receipt_delivery()
-    {
-        var diagnostics = new RecordingEmitter();
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            await CompleteHandshakeAsync(socket);
-            var request = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, VolumeToolRequest(request.Id));
-        });
-        await using var client = new LoopbackWorkerClient(
-            new WorkerClientOptions { Uri = server.Uri, Token = "worker-secret" },
-            diagnostics,
-            (_, _, _) => Task.FromException(new InvalidOperationException("synthetic send failure")));
-        var request = EmptyChatRequest("chat-delivery-failure") with
-        {
-            ToolHandler = SuccessfulVolumeResult,
-        };
-
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None)));
-
-        Assert.DoesNotContain(
-            diagnostics.Events,
-            item => item.EventCode == DiagnosticCodes.ToolReceiptDelivered);
-    }
-
-    [Fact]
-    public async Task GenerateChat_rejects_non_monotonic_sequences()
-    {
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            await CompleteHandshakeAsync(socket);
-            var request = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, Event(request.Id, WorkerMessageTypes.ChatReset, 0, []));
-            await SendEnvelopeAsync(socket, Event(request.Id, WorkerMessageTypes.ChatChunk, 2, []));
-        });
-        await using var client = CreateClient(server.Uri);
-        var request = EmptyChatRequest("chat-order");
-
-        var error = await Assert.ThrowsAsync<WorkerProtocolException>(async () =>
-            await CollectAsync(client.GenerateChatAsync(request, CancellationToken.None)));
-
-        Assert.Equal("invalid_sequence", error.Code);
-    }
-
-    [Fact]
-    public async Task ExtractFacts_maps_the_typed_memory_response()
-    {
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            await CompleteHandshakeAsync(socket);
-            var request = await ReceiveEnvelopeAsync(socket);
-            await SendEnvelopeAsync(socket, Event(
-                request.Id,
-                WorkerMessageTypes.MemoryFacts,
-                0,
-                new JsonObject
-                {
-                    ["facts"] = new JsonArray
-                    {
-                        new JsonObject
-                        {
-                            ["kind"] = "preference",
-                            ["content"] = "prefers concise replies",
-                            ["scope"] = "D:/LLM",
-                            ["confidence"] = 0.9,
-                            ["importance"] = 0.7,
-                        },
-                    },
-                }));
-        });
-        await using var client = CreateClient(server.Uri);
-
-        var facts = await client.ExtractFactsAsync(
-            "memory-1",
-            "synthetic prompt",
-            "synthetic response",
-            CancellationToken.None);
-
-        var fact = Assert.Single(facts);
-        Assert.Equal("preference", fact.Kind);
-        Assert.Equal("prefers concise replies", fact.Content);
-        Assert.Equal("D:/LLM", fact.Scope);
-        Assert.Equal(0.9, fact.Confidence);
-        Assert.Equal(0.7, fact.Importance);
+            new HashSet<string> { "runtime", "voice", "vts", "observation" },
+            hello.Capabilities);
     }
 
     [Fact]
@@ -403,8 +50,6 @@ public sealed class LoopbackWorkerClientTests
                 0,
                 new JsonObject
                 {
-                    ["model_id"] = "model-private",
-                    ["model_name"] = "Ru",
                     ["hotkey_codes"] = new JsonArray("vts_01", "vts_02"),
                     ["expression_codes"] = new JsonArray("expr_01"),
                 }));
@@ -432,11 +77,7 @@ public sealed class LoopbackWorkerClientTests
                 request.Id,
                 WorkerMessageTypes.Error,
                 0,
-                new JsonObject
-                {
-                    ["code"] = "vts_unavailable",
-                    ["retryable"] = true,
-                }));
+                new JsonObject { ["code"] = "vts_unavailable", ["retryable"] = true }));
         });
         await using var client = CreateClient(server.Uri);
 
@@ -464,7 +105,7 @@ public sealed class LoopbackWorkerClientTests
 
         await client.TriggerVtsActionsAsync(
             "vts-action-1",
-            ["vts_01", "expr_01"],
+            ["VTS_01", "expr_01"],
             CancellationToken.None);
 
         Assert.Equal(WorkerMessageTypes.VtsAction, observed!.Type);
@@ -517,6 +158,39 @@ public sealed class LoopbackWorkerClientTests
     }
 
     [Fact]
+    public async Task InvokeRuntime_maps_binary_responses_without_decoding_them()
+    {
+        var binary = Encoding.UTF8.GetBytes("{\"audio\":true}");
+        await using var server = await FakeWorkerServer.StartAsync(async socket =>
+        {
+            var hello = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "runtime"));
+            var request = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, Event(
+                request.Id,
+                WorkerMessageTypes.RuntimeResponse,
+                0,
+                new JsonObject
+                {
+                    ["status_code"] = 200,
+                    ["content_type"] = "application/octet-stream",
+                    ["binary"] = true,
+                    ["byte_length"] = binary.Length,
+                    ["body"] = "",
+                }));
+            await socket.SendAsync(binary, WebSocketMessageType.Binary, true, CancellationToken.None);
+        });
+        await using var client = CreateClient(server.Uri);
+
+        var response = await client.InvokeRuntimeAsync(
+            new WorkerRuntimeRequest("runtime-binary", "GET", "/health", null, []),
+            CancellationToken.None);
+
+        Assert.Equal(binary, response.Body);
+        Assert.Equal("application/octet-stream", response.ContentType);
+    }
+
+    [Fact]
     public async Task GetVtsCatalog_rejects_a_malformed_private_response()
     {
         await using var server = await FakeWorkerServer.StartAsync(async socket =>
@@ -544,38 +218,12 @@ public sealed class LoopbackWorkerClientTests
     }
 
     [Fact]
-    public async Task Cancelling_chat_sends_chat_cancel_for_the_same_request()
-    {
-        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var cancelled = new TaskCompletionSource<WorkerEnvelope>(TaskCreationOptions.RunContinuationsAsynchronously);
-        await using var server = await FakeWorkerServer.StartAsync(async socket =>
-        {
-            await CompleteHandshakeAsync(socket);
-            await ReceiveEnvelopeAsync(socket);
-            started.SetResult();
-            cancelled.SetResult(await ReceiveEnvelopeAsync(socket));
-        });
-        await using var client = CreateClient(server.Uri);
-        using var cancellation = new CancellationTokenSource();
-        var collect = CollectAsync(client.GenerateChatAsync(
-            EmptyChatRequest("chat-cancel"),
-            cancellation.Token));
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(2));
-
-        cancellation.Cancel();
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => collect);
-        var cancelEnvelope = await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(WorkerMessageTypes.ChatCancel, cancelEnvelope.Type);
-        Assert.Equal("chat-cancel", cancelEnvelope.Id);
-    }
-
-    [Fact]
-    public async Task GetHealth_returns_ready_version_and_capabilities()
+    public async Task GetHealth_returns_ready_version_and_agent_capabilities()
     {
         await using var server = await FakeWorkerServer.StartAsync(async socket =>
         {
-            await CompleteHandshakeAsync(socket);
+            var hello = await ReceiveEnvelopeAsync(socket);
+            await SendEnvelopeAsync(socket, HelloOk(hello.Id, "runtime", "voice", "vts", "observation"));
             var request = await ReceiveEnvelopeAsync(socket);
             await SendEnvelopeAsync(socket, Event(
                 request.Id,
@@ -585,7 +233,7 @@ public sealed class LoopbackWorkerClientTests
                 {
                     ["ready"] = true,
                     ["version"] = 1,
-                    ["capabilities"] = new JsonArray("chat", "voice"),
+                    ["capabilities"] = new JsonArray("runtime", "voice", "vts", "observation"),
                 }));
         });
         await using var client = CreateClient(server.Uri);
@@ -594,7 +242,9 @@ public sealed class LoopbackWorkerClientTests
 
         Assert.True(health.Ready);
         Assert.Equal(1, health.Version);
-        Assert.Equal(new HashSet<string> { "chat", "voice" }, health.Capabilities);
+        Assert.Equal(
+            new HashSet<string> { "runtime", "voice", "vts", "observation" },
+            health.Capabilities);
     }
 
     [Fact]
@@ -608,11 +258,7 @@ public sealed class LoopbackWorkerClientTests
                 request.Id,
                 WorkerMessageTypes.VoiceControl,
                 0,
-                new JsonObject
-                {
-                    ["state"] = "audio_ready",
-                    ["byte_length"] = 4,
-                }));
+                new JsonObject { ["state"] = "audio_ready", ["byte_length"] = 4 }));
             await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "no binary", CancellationToken.None);
         });
         await using var connection = new WorkerConnection(new WorkerClientOptions
@@ -621,12 +267,7 @@ public sealed class LoopbackWorkerClientTests
             Token = "worker-secret",
         });
         await connection.ConnectAsync(CancellationToken.None);
-        var request = new WorkerEnvelope(
-            1,
-            "voice-missing",
-            WorkerMessageTypes.VoiceStart,
-            null,
-            []);
+        var request = new WorkerEnvelope(1, "voice-missing", WorkerMessageTypes.VoiceStart, null, []);
 
         var error = await Assert.ThrowsAsync<WorkerProtocolException>(async () =>
             await CollectAsync(connection.SendRequestAsync(request, CancellationToken.None)));
@@ -644,7 +285,7 @@ public sealed class LoopbackWorkerClientTests
     }
 
     [Fact]
-    public async Task Cancelling_voice_stream_sends_voice_cancel_signal_not_chat_cancel()
+    public async Task Cancelling_voice_stream_sends_voice_cancel_signal()
     {
         var signalSeen = new TaskCompletionSource<(string PathAndQuery, JsonObject Payload)>(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -669,12 +310,7 @@ public sealed class LoopbackWorkerClientTests
                 request.Id,
                 WorkerMessageTypes.RuntimeResponse,
                 0,
-                new JsonObject
-                {
-                    ["status_code"] = 200,
-                    ["content_type"] = "application/json",
-                    ["body"] = "{}",
-                }));
+                new JsonObject { ["status_code"] = 200, ["content_type"] = "application/json", ["body"] = "{}" }));
         });
         await using var client = CreateClient(server.Uri);
         using var cancellation = new CancellationTokenSource();
@@ -682,7 +318,7 @@ public sealed class LoopbackWorkerClientTests
             new WorkerVoiceStreamRequest("voice-cancel", "text", null, 1.0, "original"),
             cancellation.Token);
 
-        var enumerator = stream.GetAsyncEnumerator();
+        await using var enumerator = stream.GetAsyncEnumerator();
         var moving = enumerator.MoveNextAsync().AsTask();
         await Task.Delay(100);
         cancellation.Cancel();
@@ -696,38 +332,6 @@ public sealed class LoopbackWorkerClientTests
     private static LoopbackWorkerClient CreateClient(Uri uri, string token = "worker-secret") =>
         new(new WorkerClientOptions { Uri = uri, Token = token });
 
-    private static WorkerChatRequest EmptyChatRequest(string requestId) =>
-        new(requestId, "prompt", "session", [], string.Empty, string.Empty, []);
-
-    private static Task<WorkerToolResult> SuccessfulVolumeResult(
-        WorkerToolRequest tool,
-        CancellationToken cancellationToken) => Task.FromResult(new WorkerToolResult(
-            tool.RequestId,
-            ToolResultStatuses.Succeeded,
-            new JsonObject(),
-            null,
-            "Volume change verified.",
-            12,
-            ToolVerificationStates.Verified,
-            "default_render_multimedia",
-            "0123456789abcdef"));
-
-    private static WorkerEnvelope VolumeToolRequest(string parentRequestId) => Event(
-        parentRequestId,
-        WorkerMessageTypes.ChatToolRequest,
-        0,
-        new JsonObject
-        {
-            ["request_id"] = "tool-volume-1",
-            ["session_id"] = "session",
-            ["correlation_id"] = "corr-volume",
-            ["tool_id"] = "system.volume",
-            ["tool_version"] = "1.0.0",
-            ["capability_class"] = "native_mutation",
-            ["arguments"] = new JsonObject { ["operation"] = "set", ["level"] = 2 },
-            ["deadline_ms"] = 30_000,
-        });
-
     private static WorkerEnvelope HelloOk(string requestId, params string[] capabilities) =>
         Event(
             requestId,
@@ -736,7 +340,8 @@ public sealed class LoopbackWorkerClientTests
             new JsonObject
             {
                 ["version"] = 1,
-                ["capabilities"] = new JsonArray(capabilities.Select(value => (JsonNode?)value).ToArray()),
+                ["capabilities"] = new JsonArray(
+                    capabilities.Select(value => (JsonNode?)value).ToArray()),
             });
 
     private static WorkerEnvelope Event(
@@ -751,7 +356,7 @@ public sealed class LoopbackWorkerClientTests
         Assert.Equal(WorkerMessageTypes.Hello, hello.Type);
         await SendEnvelopeAsync(
             socket,
-            HelloOk(hello.Id, "chat", "memory.extract", "runtime", "voice"));
+            HelloOk(hello.Id, "runtime", "voice", "vts", "observation"));
     }
 
     private static async Task<WorkerEnvelope> ReceiveEnvelopeAsync(WebSocket socket)
@@ -836,35 +441,4 @@ public sealed class LoopbackWorkerClientTests
             await _application.DisposeAsync();
         }
     }
-
-    private sealed class RecordingEmitter : IDiagnosticEmitter
-    {
-        public List<EmittedEvent> Events { get; } = [];
-
-        public bool TryEmit(
-            string level,
-            string component,
-            string eventCode,
-            string? correlationId = null,
-            double? durationMs = null,
-            string? status = null,
-            string? errorCode = null,
-            string? exceptionKind = null,
-            string? toolId = null,
-            string? toolVersion = null,
-            string? verificationState = null,
-            string? endpointRole = null,
-            string? endpointHash = null)
-        {
-            Events.Add(new EmittedEvent(eventCode, correlationId, status, toolId, toolVersion));
-            return true;
-        }
-    }
-
-    private sealed record EmittedEvent(
-        string EventCode,
-        string? CorrelationId,
-        string? Status,
-        string? ToolId,
-        string? ToolVersion);
 }

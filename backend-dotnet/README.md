@@ -2,8 +2,9 @@
 
 `RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
 when started as `RuBackend.exe --managed-runtime` and owns all 54 HTTP routes
-plus 2 WebSocket routes: `/chat` and `/voice/stream` plus 13 additive
-`/agent/v1/*` (Agent v2 feature-flagged, default `v1`).
+plus the single `/voice/stream` WebSocket (41 legacy routes plus 13 additive
+`/agent/v1/*`; Agent v2 is feature-flagged, default `v1`). Text turns use the
+authenticated Agent HTTP/SSE contract; no Chat WebSocket is exposed.
 
 ```text
 RuApp / RuAgent.Cli (thin client via RuAgent.Client start-or-attach)
@@ -13,7 +14,7 @@ RuApp / RuAgent.Cli (thin client via RuAgent.Client start-or-attach)
 ASP.NET Core Public Host :8000 (RuBackend.exe --managed-runtime)
         |\
         | \-- owned Worker/Broker in one kill-on-close Job Object
-        |      |-- Python runtime worker :8005 (ru_runtime.worker.server multiplex: /worker/v1 Chat, /worker/v2 one-step AssistantStep)
+        |      |-- Python runtime worker :8005 (ru_runtime.worker.server multiplex: /worker/v1 runtime/voice/VTS, /worker/v2 one-step AssistantStep)
         |      |     +-- hosted / external OpenAI-compatible provider adapters
         |      |     +-- OmniVoice and Google STT
         |      |     +-- VTube Studio and observation runtime
@@ -31,17 +32,17 @@ pre-decommission rollback checkpoint if repository-level recovery is required.
 ## Ownership
 
 ASP.NET Core directly owns authentication, request-size boundaries, settings,
-credentials, sessions, history, activity, structured memory, chat ordering,
+credentials, sessions, history, activity, structured memory, Agent run ordering,
 metadata filtering, and every public endpoint contract. Runtime-dependent work
 uses the authenticated `ws://127.0.0.1:8005/worker/v1` protocol:
 
-- model generation and runtime transitions;
+- runtime transitions (Agent model steps use the typed `/worker/v2` adapter);
 - TTS, streaming voice, STT, and GPU lifecycle calls;
 - VTube Studio connection, motion, catalog, action, and overlay state;
 - structured observation reactions and model/provider status.
 
 The worker is private implementation code, not another public framework. WAV
-payloads stay binary instead of being expanded into base64. Chat, TTS, history,
+payloads stay binary instead of being expanded into base64. Agent replies, TTS, history,
 memory, activity, and logs keep private voice/VTS metadata out of visible and
 persistent text.
 

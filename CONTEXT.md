@@ -29,9 +29,10 @@ over a private lifecycle/TTS contract.
 _Avoid_: TTS web server, Flask voice server
 
 **Public Contract**:
-The stable authenticated surface of 54 HTTP method/path pairs plus `/chat` and
-`/voice/stream` (41 legacy plus 13 additive `/agent/v1/*`; Agent v2 feature-flagged at
-`/worker/v2` and `/agent/v1/*`, default `v1`).
+The stable authenticated surface of 54 HTTP method/path pairs plus the single
+`/voice/stream` WebSocket (41 legacy plus 13 additive `/agent/v1/*`; Agent v2 is
+feature-flagged at `/worker/v2` and `/agent/v1/*`, default `v1`). Text turns use
+the authenticated Agent HTTP/SSE path; there is no public Chat transport.
 _Avoid_: Compatibility routes
 
 **Worker Contract**:
@@ -65,9 +66,9 @@ It does not grant arbitrary filesystem paths, domains, credentials, or apps.
 _Avoid_: global allowlist
 
 **Capability Profile**:
-The Chat, Agent, or Full Access session-scoped advertisement of
-model-visible tool bindings; Chat is read-only, Full Access only loosens
-execution policy, and every launch resets to Chat.
+The Agent or Full Access session-scoped advertisement of model-visible tool
+bindings; Full Access only loosens execution policy, and every launch starts
+with the Agent Standard preset.
 _Avoid_: permanent permission
 
 **Approval Token**:

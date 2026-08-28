@@ -7,7 +7,9 @@ MAX_TURN_LENGTH = 50_000
 
 
 @dataclass(slots=True)
-class ChatTurn:
+class ConversationTurn:
+    """A bounded user/assistant pair retained for prompt history."""
+
     prompt: str
     response: str
 

@@ -2,12 +2,11 @@
 
 The canonical public surface is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-54 HTTP method/path pairs and two WebSocket routes. ASP.NET Core is the only
-public owner. The 13 Agent v1 routes under `/agent/v1/*` are additive and
-feature-flagged: `RuBackend:AgentHarness:Version` defaults to `v1`, and Agent v2
-runs only when explicitly enabled with `v2`. The routes are active for the
-headless tracer, including run creation, policy/approval/trust, cancellation,
-SSE replay, and reconciliation; this is not a read-only tracer surface.
+54 HTTP method/path pairs and one WebSocket route (`/voice/stream`). ASP.NET Core
+is the only public owner. The 13 Agent v1 routes under `/agent/v1/*` are active
+alongside the settings, session, history, activity, memory, runtime, and voice
+routes. They cover run creation, policy/approval/trust, cancellation, SSE replay,
+and reconciliation; this is not a read-only tracer surface.
 
 Each entry contains:
 
@@ -19,7 +18,7 @@ Each entry contains:
 
 `aspnet-direct` means ASP.NET performs the business operation itself. The
 current direct groups are settings, credentials, sessions, history, activity,
-memory, and chat orchestration. `runtime-worker` means ASP.NET still owns the
+memory, and Agent orchestration. `runtime-worker` means ASP.NET still owns the
 public request/response or WebSocket contract but delegates model/device work
 over authenticated private protocol v1. This covers status/models, voice, STT,
 VTS, and observation.

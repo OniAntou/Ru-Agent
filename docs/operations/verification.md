@@ -37,8 +37,8 @@ cmd /c D:\LLM\build.bat
 ```
 
 This is the local equivalent of the CI release gates and must run
-sequentially. The route checker must remain at 54 HTTP routes and 2 WebSocket
-routes (41 legacy plus 13 additive `/agent/v1/*`). The compatibility Harness is
+sequentially. The route checker must remain at 54 HTTP routes and 1 WebSocket
+route (`/voice/stream`; 41 legacy plus 13 additive `/agent/v1/*`). The compatibility Harness is
 deterministic contract evidence. A successful build proves only compilation,
 publish output, and the incremental native overlay build/test invocation; it
 does not prove that a GUI, microphone, speaker, VTube Studio model, or Windows
@@ -69,14 +69,11 @@ if ($report.summary.status -ne 'passed') { throw 'contract Harness failed' }
 ```
 
 The Harness owns temporary Worker, Broker, Public Host, credentials, loopback
-ports, data root, and workspace. Its synthetic Worker requests
-`system.volume@1.0.0` with an intentionally out-of-range level. The canonical
-binding must return one outer `failed/invalid_arguments` activity before chat
-completion and must not acquire Core Audio. The synthetic Worker completion
-contains the fixed reply `Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi
-tới Windows.` and one bounded failed `action_outcome`. The visible sentence may
-enter chat history; the structured outcome remains in memory only and is absent
-from persisted history, memory extraction, and Harness artifacts.
+ports, data root, and workspace. Its synthetic Worker exercises a read-only
+`files.read` Agent step against the temporary fixture. The canonical binding
+must emit one bounded tool activity before the Agent completion and must not
+open a native device endpoint. The artifact contains statuses and safe reason
+codes only; raw tool arguments, receipts, prompts, and replies remain absent.
 
 A separate authenticated private-Broker probe opens only `workspace.write`,
 requests `notes.create` in the temporary workspace, approves once, expects the
@@ -178,16 +175,13 @@ the visible approval card remains covered by `AgentApprovalTests` and
 `AgentApprovalUiContractTests`. GUI Harness scenarios do not claim that
 terminal, files, Web, connectors, or skills are model-usable.
 
-For manual Chat visual acceptance, open the composer mode control: its compact
-Ru flyout contains only `Trò chuyện` and `Coding Agent`. Select `Coding Agent`
-and verify that the composer reveals one compact preset selector with only
-`Standard` and `Full Access`; no workspace editor or separate settings button
-appears. Grow a transcript until scrolling is needed and verify messages stay
-centered while the native vertical scrollbar sits at the far-right edge of the
-Chat viewport. Horizontal scrolling must remain disabled.
-Also verify that selecting Coding Agent from the empty welcome screen and
-sending the first prompt creates a session automatically; no preliminary Chat
-turn is required.
+Agent-only visual acceptance is the next GUI cleanup task (Task 7 in the
+approved plan). It must leave one compact preset selector (`Standard`/`Full
+Access`) in the composer, keep the welcome layout fixed, and use the Agent
+HTTP/SSE path for every prompt. Grow a transcript until scrolling is needed and
+verify messages stay centered while the native vertical scrollbar sits at the
+far-right edge; horizontal scrolling must remain disabled. Until Task 7 lands,
+the existing mode-switch UI is transitional and is not release evidence.
 
 A passing deterministic GUI result does not claim an audible Windows volume
 change and does not accept live microphone capture, audible OmniVoice,

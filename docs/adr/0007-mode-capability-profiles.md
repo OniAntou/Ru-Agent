@@ -1,40 +1,32 @@
 ---
 status: accepted
-date: 2026-08-23
+date: 2026-08-29
 ---
 
-# Mode capability profiles (Chat / Agent / Full Access)
+# Agent capability profiles (Standard / Full Access)
 
-Ru replaces the single model-visible volume binding with three session
-capability profiles. Chat is read-only workspace access (`files.list`,
-`files.read`, automatic); Agent adds write/edit, notes, and two-tier terminal
-work behind previewed approvals; Full Access advertises the same tool ids as
-Agent but loosens execution policy — shell and run without cards,
-outside-workspace paths, and network. Filesystem mutations (`files.write`,
-`files.edit`) never lose their manual approval card, even in Full Access:
-silent content mutation on disk stays the highest-trust action Ru can take.
+Ru exposes one generation mode: Agent. The Standard preset advertises bounded
+workspace reads/writes and device tools; Full Access adds the terminal
+bindings and broadens policy fallbacks. Filesystem mutations, external paths,
+destructive actions, and terminal requests retain their trust and approval
+gates in both presets.
 
-Grants remain session-scoped. Every launch starts in Chat, Full Access
-requires one explicit confirmation per app run, and no grant survives session
-replacement or restart. Terminal networking changes from blanket rejection to
-policy gating: the adapter rejects network use only when the active grant
-lacks the `terminal.network` scope, which only Full Access confers.
-Elevation, admin, registry, and service installation stay out of scope with
-no adapters.
+Grants remain session-scoped. Every launch starts in Agent Standard, Full
+Access requires one explicit confirmation per run, and no grant survives
+session replacement or restart. There is no Chat compatibility transport or
+read-only generation profile. Elevation, admin, registry, and service
+installation stay out of scope with no adapters.
 
 ## Recorded limitations and decisions
 
-- Network isolation in v1 is intent-level, not OS-enforced: the model-declared
+- Network isolation is intent-level, not OS-enforced: the model-declared
   `network` flag is checked against the session grant's `terminal.network`
   scope before a process starts, but nothing at the operating-system layer
   prevents a spawned process from reaching the network. OS-level enforcement
-  is deferred to a later revision.
-- Deterministic volume intent in Chat is declined by design (product ruling):
-  Chat is read-only, so explicit volume commands fail typed
-  (`capability_unavailable`) with bounded copy that points the user to the
-  Agent-mode toggle ("Chế độ Chat chỉ đọc dữ liệu. Bật Agent mode để em điều
-  khiển âm lượng nha.").
-- Tool-selection follow-up is closed: the bounded model selection loop ships
-  activated in every profile (budget 10 per turn; approvals still gate
-  mutations) per
-  docs/superpowers/specs/2026-08-23-tool-selection-channel-design.md.
+  is deferred to the separate sandbox project.
+- Deterministic volume intent is available in Agent Standard and Full Access;
+  explicit commands produce a typed, readback-verified request before model
+  selection.
+- The bounded model selection loop allows at most ten sequential tool calls;
+  approvals still gate mutations. The Worker v1 Chat protocol and generation
+  branch are retired; Worker v1 now carries only runtime/device adapters.

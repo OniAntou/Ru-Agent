@@ -16,27 +16,23 @@ normalization, and public error mapping by ASP.NET Core. Stale `llama.cpp` or
 GGUF settings migrate to the cloud default and cannot select a removed runtime.
 
 Ru mirrors Vietnamese, English, and mixed-language turns. In Vietnamese Ru
-calls the user `anh` and itself `em`. Chat contains no Unicode emoji or ASCII
+calls the user `anh` and itself `em`. Agent replies contain no Unicode emoji or ASCII
 emoticons. Search commands, model controls, voice pace, VTS actions, segment
 identifiers, and transport timings are private metadata and must be removed
 before display, TTS, history, memory, logs, or reviewed examples.
 
-Each Chat turn carries a bounded `correlation_id` on the wire and a separate
-GUI-only `turn_id`. The composer keeps one active turn and a FIFO queue of up
-to eight active/pending turns; the WebSocket endpoint buffers up to eight
-deferred requests per connection and returns `chat_queue_full` with the
-overflowing correlation when that buffer is full. A keyed backend session gate
-prevents concurrent history writes. Frames whose correlation is missing,
-malformed, stale, or no longer active are ignored by the presenter, so a late
-reply cannot update a newer bubble. A disconnect marks streaming bubbles as a
-bounded retryable connection error and invalidates the queue; Ru does not
-automatically replay an ambiguous request and risk duplicate history.
+Each Agent turn carries a bounded `correlation_id` and a durable run/session
+identity. The composer keeps one active run; reconnecting to the Agent SSE
+stream replays only durable events and never duplicates a committed history
+entry. Stale or malformed events are ignored by the presenter, so a late reply
+cannot update a newer bubble. A disconnect marks the active run as a bounded
+retryable connection error; Ru does not automatically replay an ambiguous
+request and risk duplicate history.
 
-Short, allowlisted greetings and acknowledgements use a high-confidence local
-reply after the same session gate and still append ordered history. Corrections
-and all uncertain, path, search, filesystem, network, or current-fact requests
-retain the full model context; the local resolver never chooses Agent tools or
-an execution path.
+The private Worker v1 protocol is now a runtime/device adapter boundary for
+runtime load/request, voice/STT, VTS, observation, and health. It rejects the
+retired conversation message types as `unknown_type`; Agent generation is
+owned by the typed Worker v2 step protocol.
 
 ## Voice output
 
@@ -63,12 +59,12 @@ reported as unavailable and never silently changes the saved engine/profile.
 
 ## Speech input and VTube Studio
 
-Microphone capture is bounded 16 kHz mono PCM WAV. In WinUI Chat the primary
+Microphone capture is bounded 16 kHz mono PCM WAV. In WinUI the primary
 microphone button starts an explicit, user-controlled half-duplex conversation:
 the local AudioGraph/VAD capture waits for one turn, normalizes variable
 AudioGraph quantum sizes into the detector frame size, sends only a non-empty
 transcript through the existing `/voice/transcribe` Google `vi-VN` path, submits
-it to the active WebSocket session, and waits for the existing reply-completion
+it to the Agent HTTP/SSE path, and waits for the existing reply-completion
 boundary before opening the microphone again. The button, typed Send, session
 switch, and view shutdown cancel the loop; cancellation is idempotent and a
 late STT result cannot create a prompt. The microphone remains closed while Ru
@@ -87,7 +83,7 @@ manual acceptance gates.
 
 VTube Studio hotkeys and expressions are resolved from the connected model's
 current catalog. The runtime revalidates catalog codes before dispatch and
-removes private action suffixes before chat, TTS, history, memory, and approved
+removes private action suffixes before TTS, history, memory, and approved
 examples. `VoiceVolume` is the lip-sync input. `LLM_MouthOpen` must not be
 mapped or recreated. Live model connection, action, lip-sync, and subtitle
 appearance remain user-run acceptance checks.
@@ -100,7 +96,7 @@ them to the configured Gemini model, and publishes a reaction event containing
 real counters, a reaction ID, and an acknowledgement boundary. WinUI polls the
 bounded status contract and passes each event through `VoicePlaybackService`,
 so MediaPlayer playback, subtitles, VTS speaking state, and acknowledgement
-share the normal voice path. Missing credentials, stale events, or a busy chat
+share the normal voice path. Missing credentials, stale events, or a busy Agent run
 must report a skip/error and must not pretend that capture, reaction, or audio
 playback occurred.
 
@@ -122,7 +118,7 @@ Automated tests cover policy boundaries, XAML state markers, vertical-only list
 surfaces, and build correctness. Visual resizing at representative window sizes
 remains a user-run acceptance check.
 
-The phase-one Chat redesign uses the same tiers. The shell and Chat use the
+The current Agent composer uses the same tiers. The shell and conversation view use the
 Editorial reading room presentation: the approved light mineral palette as the
 baseline, a flat sidebar, and a centered document-style reading column.
 Voice/VTS, Log, Diagnostics, Settings, and Memory retain their existing layout
@@ -142,26 +138,24 @@ manual acceptance checks.
 
 The current Ru signature layer is also presentation-only: a quiet title-bar
 wordmark, an editorial welcome eyebrow, message edge rules, and a GPU-accelerated
-Composition visual field in the empty Chat state. The background features
+Composition visual field in the empty conversation state. The background features
 gentle twinkling starlight points and periodic shooting star streaks rendered directly
 via `Microsoft.UI.Composition` (`SpriteVisual`, `CompositionLinearGradientBrush` with
 soft halo glow and core beam), runs only while `Messages.Count == 0`, and stops and
 clears every visual element as soon as the first message exists. The composer keeps the
-native TextBox caret/focus behavior and now contains an explicit compact `Chat` /
-`Coding Agent` mode pill. The mode dropdown contains only those two choices;
-selecting Agent reveals a compact `Standard`/`Full Access` preset selector.
+native TextBox caret/focus behavior and contains a compact Agent preset selector
+with `Standard` and `Full Access`.
 The UI uses the known project root as the initial Agent workspace and does not
 expose a workspace editor, while the authenticated API still validates the
-canonical path. Chat
-submissions still use the Chat WebSocket; Agent submissions use the authenticated
-`/agent/v1/*` API/SSE path. Workspace trust, approval, Stop, Continue, and bounded
+canonical path. All submissions use the authenticated `/agent/v1/*` API/SSE path.
+Workspace trust, approval, Stop, Continue, and bounded
 Agent status remain inline above the input. While a run is active, the transcript
 may also show a separate transient activity feed driven by typed `agent.activity`
 SSE frames. It renders only safe state, basename/line-range, symbol/count,
 edit-count, duration, and safe-code fields; it is cleared on terminal,
 cancellation, failure, disconnect, session replacement, or reset. Activity
 frames do not enter durable history or audit. Agent payloads and raw tool output
-never enter Chat, TTS, VTS metadata, memory, or automation names.
+never enter TTS, VTS metadata, memory, or automation names.
 Assistant text is delivered separately as a typed `assistant.delta` transient
 frame. The client validates the outer kind, bounded UTF-8 text, model-step id,
 optional execution id, and positive transient sequence before dispatching it;
@@ -174,8 +168,8 @@ Validated VTS effects and the safe assistant activity projection run after that
 commit, so a non-critical effect failure cannot roll back a completed Agent run.
 Agent user/assistant activity records use the `agent` activity type and remain
 preview-sanitized at the activity-store boundary.
-When no chat session has been opened yet, the first Agent prompt creates a fresh
-session before the preset call; Agent does not require a preliminary Chat turn.
+When no session has been opened yet, the first Agent prompt creates a fresh
+session before the preset call.
 If an Agent API call reports `session_not_found` or `invalid_session_id`, the
 desktop creates one replacement session and retries once only before a run is
 created. A second recovery failure is shown as a bounded error and is never
@@ -183,10 +177,10 @@ looped or filled with an earlier response.
 
 ## Action execution kernel v1
 
-Capability profiles gate everything: Chat advertises workspace discovery/read
-tools (`files.list`, `files.glob`, `files.search`, and `files.read`); Agent adds
-workspace mutation tools, `notes.create`, and `system.volume`. On the headless
-Agent v2 path, `terminal.run` and `terminal.shell` are also advertised and
+Capability profiles gate everything: Agent Standard advertises workspace
+discovery/read tools (`files.list`, `files.glob`, `files.search`, and `files.read`)
+plus approved workspace mutation/device tools. On the headless Agent v2 path,
+`terminal.run` and `terminal.shell` are also advertised and
 require a fresh per-request approval. Full Access retains that approval
 requirement. After approval, the terminal runs as the current Windows user and
 is intentionally not an OS-enforced filesystem/network sandbox. File tools may
@@ -196,14 +190,13 @@ directory's read/create/edit operations only; protected and destructive
 operations keep their own approval gates. `files.apply_patch`
 is not advertised or model-usable in the current runtime.
 Explicit, unambiguous volume commands use a deterministic parser before
-generation in Agent and Full mode; in Chat mode the same intent is declined
-with copy that points at the Agent mode selector. The parser creates one typed
+generation in Agent Standard and Full Access. The parser creates one typed
 `system.volume@1.0.0` request and does not call the configured model for action
 selection. Ambiguous volume wording returns a bounded clarification.
 
-The model selection channel is active in every mode: each chat turn allows up
-to ten model-initiated tool calls through the existing
-`chat.tool.request`/receipt pipeline. Selection JSON is never streamed into
+The model selection channel is active for every Agent run: each step allows up
+to ten model-initiated tool calls through the Agent Broker pipeline. Selection
+JSON is never streamed into
 the visible transcript, history, mood state, or diagnostics; a malformed
 selection ends the turn with fixed copy and one bounded diagnostic.
 Mutating tools (`files.write`, `files.edit`, `files.delete`, `files.restore`,
@@ -217,14 +210,12 @@ tool-class successes require an invoked adapter without readback. Python does
 not own desktop side effects.
 
 The Host serializes one active Broker grant: a matching valid session is reused;
-a replacement chat session closes the old grant before open. Failure is
+a replacement Agent session closes the old grant before open. Failure is
 fail-closed and never reaches the native adapter.
 
-Non-success outcomes, including failures and clarifications, cross the Worker
-boundary as a bounded `action_outcome`. The Public Host keeps at most one such
-outcome in a one-shot, in-memory, session-isolated store. It is consumed by the
-next turn and cleared on replacement, disconnect, or deletion; it is not
-persisted to history, memory, reviewed examples, TTS, or VTS metadata.
+Non-success tool outcomes are represented as bounded Agent activity and durable
+run state. Raw tool receipts never cross into the visible transcript, history,
+memory, reviewed examples, TTS, or VTS metadata.
 
 Model-enabled bindings follow the capability profiles above; `files.edit@1.0.0`
 and `notes.create@1.0.0` join the Agent/Full catalog, while read-only system
@@ -233,19 +224,19 @@ disabled. The managed Git commit workflow (Phase 3 Task 6) is not shipped;
 Git commands are ordinary explicitly approved terminal requests. The GUI
 renders the actual `agent.session` grant received from the Host.
 
-Selecting Agent while idle does not add a composer status row, so the empty
-Chat welcome content keeps its position. The Agent inline status appears only
+Selecting a preset while idle does not add a composer status row, so the empty
+conversation welcome content keeps its position. The Agent inline status appears only
 after a request or another activity that needs user interaction; a typed
 request starts with `Đang chuẩn bị thao tác…`. Subsequent status and event
 summaries are bounded safe copy, while verified completion and failure remain
 fixed or safe-reason states. Malformed or stale-session activity is ignored.
-Returning to Chat, disconnect, and session replacement clear the visible state
+Disconnect and session replacement clear the visible state
 and pending approval.
 
-The populated Chat transcript keeps its reading column centered and capped at
-820 px, while `ChatScrollHost` spans the full Chat viewport so its native
+The populated conversation transcript keeps its reading column centered and capped at
+820 px, while the scroll host spans the full conversation viewport so its native
 vertical scrollbar sits at the far-right edge. Horizontal scrolling remains
-disabled; the scrollbar styling is scoped to Chat and does not alter message
+disabled and does not alter message
 width or composer alignment.
 
 ## Persistence and privacy
@@ -260,7 +251,7 @@ Manager remains the secret store.
 Logs, telemetry, manifests, and automated evidence may contain fixed event
 types, counts, durations, hashes, and statuses only. They must not contain
 credentials, bearer values, request bodies, user/session identifiers,
-transcripts, raw audio, chat responses, or private VTS/voice metadata.
+transcripts, raw audio, assistant responses, or private VTS/voice metadata.
 
 Technical diagnostics are structured JSONL under `RU_LOG_ROOT` (defaulting to
 `%LOCALAPPDATA%\Ru\logs`) with bounded ASP.NET, Python-worker, and WinUI

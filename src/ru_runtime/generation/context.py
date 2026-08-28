@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from .chat import ChatTurn
+from .turns import ConversationTurn
 
 
-def _truncate_turn(turn: ChatTurn, max_chars: int) -> ChatTurn | None:
+def _truncate_turn(turn: ConversationTurn, max_chars: int) -> ConversationTurn | None:
     """Cut a too-large turn down to *max_chars*, keeping the response first."""
     if max_chars <= 0:
         return None
@@ -13,13 +13,13 @@ def _truncate_turn(turn: ChatTurn, max_chars: int) -> ChatTurn | None:
     prompt = turn.prompt[: max_chars - len(response)]
     if not prompt or not response:
         return None
-    return ChatTurn(prompt=prompt, response=response)
+    return ConversationTurn(prompt=prompt, response=response)
 
 
 def build_conversation_messages(
     system_prompt: str,
     prompt: str,
-    turns: Sequence[ChatTurn],
+    turns: Sequence[ConversationTurn],
     *,
     memory_context: str | None = None,
     mood_context: str | None = None,
@@ -55,7 +55,7 @@ def build_conversation_messages(
             )
         )
 
-    retained: list[ChatTurn] = []
+    retained: list[ConversationTurn] = []
     used_chars = 0
     for turn in reversed(turns):
         turn_chars = len(turn.prompt) + len(turn.response)

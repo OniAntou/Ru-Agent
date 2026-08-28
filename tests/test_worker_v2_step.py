@@ -81,6 +81,32 @@ def test_one_step_calls_runner_once_and_converts_selection_to_one_tool_call() ->
     asyncio.run(scenario())
 
 
+def test_runtime_step_handler_waits_for_and_releases_generation_locks() -> None:
+    async def scenario() -> None:
+        generation_lock = threading.Lock()
+        generation_lock.acquire()
+        runner = FakeRunner("Em đã kiểm tra.")
+        cancelled = asyncio.Event()
+        stream = build_step_handler(
+            StepDependencies(runner, generation_locks=(generation_lock,))
+        )({"prompt": "x", "settings": {"model_tools": []}}, cancelled)
+
+        pending = asyncio.create_task(anext(stream))
+        await asyncio.sleep(0.03)
+        assert runner.calls == []
+
+        generation_lock.release()
+        first = await asyncio.wait_for(pending, timeout=2)
+        assert first.type == AGENT_STEP_DELTA
+        done = await asyncio.wait_for(anext(stream), timeout=2)
+        assert done.type == AGENT_STEP_DONE
+        with pytest.raises(StopAsyncIteration):
+            await anext(stream)
+        assert not generation_lock.locked()
+
+    asyncio.run(scenario())
+
+
 def test_prose_is_text_and_braced_selection_never_reaches_delta_sink() -> None:
     async def scenario() -> None:
         prose_deltas: list[str] = []

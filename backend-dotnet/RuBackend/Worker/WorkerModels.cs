@@ -2,43 +2,6 @@ using System.Text.Json.Nodes;
 
 namespace RuBackend.Worker;
 
-public sealed record WorkerChatRequest(
-    string RequestId,
-    string Prompt,
-    string SessionId,
-    IReadOnlyList<WorkerTurn> Turns,
-    string MemoryContext,
-    string VtsInstruction,
-    JsonObject Settings)
-{
-    public Func<WorkerToolRequest, CancellationToken, Task<WorkerToolResult>>? ToolHandler { get; init; }
-
-    public WorkerActionOutcome? LastActionOutcome { get; init; }
-}
-
-public sealed record WorkerTurn(string Prompt, string Response);
-
-public sealed record WorkerToolRequest(
-    string RequestId,
-    string SessionId,
-    string CorrelationId,
-    string ToolId,
-    string ToolVersion,
-    string CapabilityClass,
-    JsonObject Arguments,
-    int DeadlineMs);
-
-public sealed record WorkerToolResult(
-    string RequestId,
-    string Status,
-    JsonObject Output,
-    string? ErrorCode,
-    string SafeSummary,
-    int DurationMs,
-    string VerificationState,
-    string? EndpointRole,
-    string? EndpointHash);
-
 public sealed record WorkerEvent(
     string RequestId,
     string Type,
@@ -58,13 +21,6 @@ public sealed record WorkerHealth(
 public sealed record VtsCatalog(
     IReadOnlySet<string> HotkeyCodes,
     IReadOnlySet<string> ExpressionCodes);
-
-public sealed record WorkerFact(
-    string Kind,
-    string Content,
-    string? Scope,
-    double Confidence,
-    double Importance);
 
 public sealed record WorkerRuntimeRequest(
     string RequestId,

@@ -7,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using RuBackend.Business;
 using RuBackend.Business.Settings;
 using RuBackend.Agent;
-using RuBackend.Conversation;
 using RuBackend.Diagnostics;
 using RuBackend.Memory;
 using RuBackend.Runtime;
@@ -25,11 +24,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly ICredentialStore? _credentialStore;
     private readonly IRuntimeSettingsLoader? _runtimeSettingsLoader;
     private readonly ISettingsStore? _settingsStore;
-    private readonly IActionOutcomeContextStore? _actionOutcomeContextStore;
     private readonly IVoiceProtocolClient? _voiceProtocolClient;
     private readonly IAgentBrokerClient? _agentBrokerClient;
     private readonly IDiagnosticEmitter? _diagnosticEmitter;
-    private readonly IWorkerClient? _workerClient;
 
     public BackendWebApplicationFactory(
         IMemoryService? memoryService = null,
@@ -38,11 +35,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         ICredentialStore? credentialStore = null,
         IRuntimeSettingsLoader? runtimeSettingsLoader = null,
         ISettingsStore? settingsStore = null,
-        IActionOutcomeContextStore? actionOutcomeContextStore = null,
         IVoiceProtocolClient? voiceProtocolClient = null,
         IAgentBrokerClient? agentBrokerClient = null,
         IDiagnosticEmitter? diagnosticEmitter = null,
-        IWorkerClient? workerClient = null,
         RuAgent.Harness.Core.IModelStepRunner? modelStepRunner = null)
     {
         _ownedDataRoot = dataPaths is null
@@ -54,11 +49,9 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _credentialStore = credentialStore;
         _runtimeSettingsLoader = runtimeSettingsLoader;
         _settingsStore = settingsStore;
-        _actionOutcomeContextStore = actionOutcomeContextStore;
         _voiceProtocolClient = voiceProtocolClient;
         _agentBrokerClient = agentBrokerClient;
         _diagnosticEmitter = diagnosticEmitter;
-        _workerClient = workerClient;
         ModelStepRunnerOverride = modelStepRunner;
     }
 
@@ -72,6 +65,14 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         {
             builder.UseSetting("RU_DATA_ROOT", _ownedDataRoot);
             builder.UseSetting("RU_LOG_ROOT", Path.Combine(_ownedDataRoot, "logs"));
+        }
+        else if (_dataPaths is not null)
+        {
+            // A caller-supplied DataPaths is already isolated per test.  Keep
+            // the structured logger on that same root; otherwise parallel
+            // WebApplicationFactory instances all append to the user's daily
+            // %LOCALAPPDATA%\Ru\logs file and teardown races on its handle.
+            builder.UseSetting("RU_LOG_ROOT", _dataPaths.LogRoot);
         }
 
         builder.ConfigureTestServices(services =>
@@ -115,13 +116,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
                 services.AddSingleton(_settingsStore);
             }
 
-            if (_actionOutcomeContextStore is not null)
-            {
-                services.RemoveAll<IActionOutcomeContextStore>();
-                services.AddSingleton(_actionOutcomeContextStore);
-            }
-
-
             if (_voiceProtocolClient is not null)
             {
                 services.RemoveAll<IVoiceProtocolClient>();
@@ -140,11 +134,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
                 services.AddSingleton(_diagnosticEmitter);
             }
 
-            if (_workerClient is not null)
-            {
-                services.RemoveAll<IWorkerClient>();
-                services.AddSingleton(_workerClient);
-            }
         });
     }
 

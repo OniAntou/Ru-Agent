@@ -77,9 +77,9 @@ def test_architecture_records_current_ownership_and_privacy() -> None:
     cli_readme = _text("backend-dotnet/RuAgent.Cli/README.md")
     assert "ASP.NET Core" in architecture
     assert "54 HTTP" in architecture
-    assert "2 WebSocket" in architecture
+    assert "1 WebSocket" in architecture
     assert "typed worker protocol v2" in architecture.lower() or "worker v2" in architecture.lower()
-    assert "chat text" in architecture
+    assert "assistant text" in architecture
     assert "private VTS" in architecture
     # Phase-2 headless harness foundation + policy/file tools facts
     assert "54 HTTP" in readme
@@ -104,10 +104,10 @@ def test_architecture_records_current_ownership_and_privacy() -> None:
     # stale WinUI ownership must be gone
     assert "RuApp owns all three" not in backend_readme
     assert "RuApp owns the desktop lifecycle. It creates" not in architecture
-    # public contract is 54+2
+    # public contract is 54+1
     contract = _text("backend-dotnet/public-route-contract.json")
     assert '"/agent/v1/runs"' in contract
-    assert contract.count('"method"') == 56
+    assert contract.count('"method"') == 55
 
 
 def test_current_docs_do_not_publish_retired_operating_instructions() -> None:
@@ -151,7 +151,7 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
     # Phase-2 complete files.* matrix
     assert (
         "| `files.list@1.0.0`, `files.glob@1.0.0`, `files.search@1.0.0`, `files.read@1.0.0` (`workspace.read`) "
-        "| automatic | automatic | automatic |"
+        "| automatic | automatic |"
     ) in agent_tools
     assert "files.write@1.0.0" in agent_tools and "files.edit@1.0.0" in agent_tools
     assert "files.apply_patch@1.0.0" not in agent_tools
@@ -168,13 +168,13 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
     assert "exact scope" in agent_tools or "exact scope preview" in agent_tools
 
     assert (
-        "| `system.volume@1.0.0` (`system.write`) | — | "
+        "| `system.volume@1.0.0` (`system.write`) | "
         "yes, verified readback required | yes, verified readback required |"
     ) in agent_tools
-    assert "| Skills | disabled | disabled | disabled |" in agent_tools
+    assert "| Skills | disabled | disabled |" in agent_tools
     assert (
         "| Web search/fetch, connectors, `app.open` "
-        "| absent | absent | absent |"
+        "| absent | absent |"
     ) in agent_tools or "| Web search/fetch, connectors" in agent_tools
     assert "terminal.run" in agent_tools and "terminal.shell" in agent_tools
     assert "open sockets" in agent_tools
@@ -204,13 +204,13 @@ def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -
 
     for row in (
         "| `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` "
-        "(`system.read`) | Broker-internal | Broker-internal | Broker-internal |",
-        "| `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | — | "
-        "headless Agent v2: explicit approval for every request",
+        "(`system.read`) | Broker-internal | Broker-internal |",
+        "| `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | "
+        "not advertised | explicit approval for every request",
     ):
         assert row in agent_tools
 
-    assert "tri-state selector" in root_readme
+    assert "one compact preset dropdown" in root_readme
     assert "The first usable tool set" not in agent_tools
     assert "Skill packages are declarative" not in agent_tools
     assert "gives Ru bounded workspace" not in root_readme
@@ -221,33 +221,29 @@ def test_current_docs_describe_the_compact_desktop_agent_entry_point() -> None:
     runtime = _text("docs/operations/runtime-behavior.md")
     agent_tools = _text("docs/operations/agent-tools.md")
 
-    assert "compact mode pill inside the Chat composer" in root_readme
-    assert "dropdown contains only Chat and Agent" in root_readme
+    assert "Agent is" in root_readme and "only generation mode" in root_readme
+    assert "one compact preset dropdown" in root_readme
     root_flat = " ".join(root_readme.split())
     assert "first Agent prompt creates a fresh session" in root_flat
     assert "correlation-aware FIFO turns" in root_flat
     assert "Công cụ" in root_readme
     runtime_flat = " ".join(runtime.split())
-    assert "Chat submissions still use the Chat WebSocket" in runtime_flat
-    assert "Agent submissions use the authenticated `/agent/v1/*` API/SSE path" in runtime_flat
-    assert "selecting Agent reveals a compact `Standard`/`Full Access` preset selector" in runtime_flat
+    assert "All submissions use the authenticated `/agent/v1/*` API/SSE path" in runtime_flat
+    assert "compact Agent preset selector" in runtime_flat
     assert "does not expose a workspace editor" in runtime_flat
     assert "first Agent prompt creates a fresh session" in runtime_flat
     assert "bounded `correlation_id`" in runtime_flat
-    assert "chat_queue_full" in runtime_flat
     assert "does not automatically replay" in runtime_flat
-    assert "high-confidence local reply" in runtime_flat
     assert "creates one replacement session and retries once" in runtime_flat
     assert "separate Agent configuration button owns workspace and preset fields" not in runtime_flat
     assert "transient activity feed driven by typed `agent.activity`" in runtime_flat
     assert "do not enter durable history or audit" in runtime_flat
-    assert "raw commands, arguments, stdout, or private" in agent_tools
+    assert "never displays raw" in agent_tools
     agent_tools_flat = " ".join(agent_tools.split())
     assert "connection-local and transient" in agent_tools_flat
     assert "basename/line range" in agent_tools_flat
     assert "cleared on terminal completion, cancellation, failure, disconnect" in agent_tools_flat
-    assert "Chat requests use an opaque `correlation_id`" in agent_tools_flat
-    assert "chat_queue_full" in agent_tools_flat
+    assert "Agent requests use an opaque `correlation_id`" in agent_tools_flat
     assert "retrying at most once" in agent_tools_flat
     assert "outside the transcript" not in runtime_flat
 
@@ -260,10 +256,7 @@ def test_agent_tools_close_the_model_selection_channel() -> None:
     assert "at most 10" in agent_tools
     assert "static usage" in agent_tools
     assert "Approvals still gate mutating tools" in agent_tools
-    assert (
-        "docs/superpowers/specs/2026-08-23-tool-selection-channel-design.md"
-        in adr_0007
-    )
+    assert "no Chat compatibility transport" in adr_0007
     assert "immediate follow-up plan" not in adr_0007
 
 
@@ -282,20 +275,17 @@ def test_current_docs_describe_deterministic_volume_recovery_truthfully() -> Non
     assert "closes the previous lease before opening" in agent_tools_flat
     assert "tăng âm lượng lên N" in agent_tools
     assert "tăng âm lượng thêm N" in agent_tools
-    assert "ordinary normal-chat and Agent-mode turns" in runtime_flat or (
-        "model selection channel is active in every mode" in runtime_flat)
+    assert "generation in Agent Standard and Full Access" in runtime_flat
     assert "up to ten model-initiated tool calls" in runtime_flat
     assert "never streamed into the visible transcript" in runtime_flat
-    assert "one-shot" in runtime_flat
-    assert "session-isolated" in runtime_flat
-    assert "consumed by the next turn" in runtime_flat
+    assert "bounded Agent activity" in runtime_flat
+    assert "replacement Agent session closes the old grant" in runtime_flat
 
     for event_code in (
         "tool.intent.resolved",
         "tool.intent.clarification",
         "tool.intent.rejected",
         "selection_invalid",
-        "mode_clamped",
     ):
         assert event_code in logging
 

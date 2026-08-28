@@ -50,7 +50,7 @@ def agent_tool_loop_completed(
     *,
     expected_status: str,
 ) -> bool:
-    """Require one unambiguous volume receipt before one chat completion."""
+    """Require one unambiguous tool receipt before one Agent completion."""
 
     terminal_statuses = {
         "succeeded",
@@ -91,7 +91,7 @@ def agent_tool_loop_completed(
 
 
 def broker_approval_lifecycle_completed(summary: dict[str, object]) -> bool:
-    """Validate the private Broker approval fixture independently of chat."""
+    """Validate the private Broker approval fixture independently of an Agent run."""
 
     return (
         summary.get("approval_required") is True
@@ -633,15 +633,14 @@ class HarnessSession:
         checks.extend(
             [
                 CheckResult(
-                    "chat.synthetic_order",
+                    "agent.synthetic_tool_loop",
                     "passed",
                     0.1,
                     details={"event_count": 4, "terminal_events": 1},
                 ),
-                CheckResult("chat.private_metadata", "passed", 0.1),
+                CheckResult("agent.private_metadata", "passed", 0.1),
                 CheckResult("voice.synthetic_stt", "passed", 0.1, details={"status": "ok"}),
                 CheckResult("voice.synthetic_tts", "passed", 0.1, details={"valid_wav": True}),
-                CheckResult("route.websocket.ws./chat", "passed", 0.1),
                 CheckResult("route.websocket.ws./voice/stream", "passed", 0.1),
             ]
         )
@@ -698,15 +697,14 @@ class HarnessSession:
             checks.extend(self._probe_voice_http(client))
         if deterministic:
             checks.extend(asyncio.run(self._probe_broker_approval_lifecycle()))
-        chat_checks = asyncio.run(self._probe_chat_websocket())
+        agent_checks: list[CheckResult] = []
         if deterministic:
-            chat_checks.extend(asyncio.run(self._probe_agent_api()))
+            agent_checks.extend(asyncio.run(self._probe_agent_api()))
         voice_checks = asyncio.run(self._probe_voice_websocket())
-        checks.extend(chat_checks)
+        checks.extend(agent_checks)
         checks.extend(voice_checks)
         checks.extend(
             [
-                CheckResult("route.websocket.ws./chat", "passed", 0.0),
                 CheckResult("route.websocket.ws./voice/stream", "passed", 0.0),
             ]
         )
@@ -1200,50 +1198,6 @@ class HarnessSession:
             )
         return checks
 
-    async def _probe_chat_websocket(self) -> list[CheckResult]:
-        uri = self._websocket_url("/chat", self._desktop_token)
-        events: list[dict[str, Any]] = []
-        try:
-            async with connect(uri, proxy=None, open_timeout=10, close_timeout=2) as socket:
-                await socket.send(json.dumps({"prompt": "Harness chat turn"}))
-                deadline = time.monotonic() + 15
-                while time.monotonic() < deadline:
-                    message = await asyncio.wait_for(socket.recv(), timeout=max(0.1, deadline - time.monotonic()))
-                    if not isinstance(message, str):
-                        continue
-                    payload = json.loads(message)
-                    if isinstance(payload, dict):
-                        events.append(payload)
-                    if isinstance(payload, dict) and payload.get("type") in {"done", "error"}:
-                        break
-        except Exception as error:
-            reason = "request_error"
-            details = {"error_type": type(error).__name__}
-            return [
-                CheckResult("chat.synthetic_order", "failed", 0.0, reason=reason, details=details),
-                CheckResult("chat.private_metadata", "failed", 0.0, reason=reason, details=details),
-            ]
-        event_types = [str(event.get("type") or "") for event in events]
-        serialized = json.dumps(events, ensure_ascii=False).casefold()
-        terminal_events = sum(event_type in {"done", "error"} for event_type in event_types)
-        ordered = event_types in (["session", "reset", "chunk", "done"], ["reset", "chunk", "done"])
-        private_absent = not any(marker in serialized for marker in ("[[vts:", "[[voice_pace:", "[[emo:", "[[search:"))
-        return [
-            CheckResult(
-                "chat.synthetic_order",
-                "passed" if ordered and terminal_events == 1 else "failed",
-                0.0,
-                reason=None if ordered and terminal_events == 1 else "unordered_chat_events",
-                details={"event_count": len(events), "terminal_events": terminal_events},
-            ),
-            CheckResult(
-                "chat.private_metadata",
-                "passed" if private_absent else "failed",
-                0.0,
-                reason=None if private_absent else "private_metadata_visible",
-            ),
-        ]
-
     async def _probe_voice_websocket(self) -> list[CheckResult]:
         uri = self._websocket_url("/voice/stream", self._desktop_token)
         valid_audio = False
@@ -1313,7 +1267,7 @@ class HarnessSession:
                 "skipped": sum(check.status == "skipped" for check in values),
             }
 
-        return {"http": group("route.http.", None), "websocket": group("route.websocket.", 2)}
+        return {"http": group("route.http.", None), "websocket": group("route.websocket.", 1)}
 
     def _edge_ready(self) -> bool:
         return bool(self._children and self._children[-1].ready) or self._test_mode and bool(self._readiness_override)

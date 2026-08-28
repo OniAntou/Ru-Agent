@@ -73,7 +73,7 @@ async def _measure_websocket_once(uri: str) -> float:
 
 def measure_websockets(base_url: str, token: str, samples: int) -> dict[str, dict[str, float | int | None]]:
     result: dict[str, dict[str, float | int | None]] = {}
-    for path in ("/chat", "/voice/stream"):
+    for path in ("/voice/stream",):
         timings: list[float] = []
         failures = 0
         uri = _websocket_url(base_url, path, token)

@@ -18,9 +18,9 @@ public interface IAgentVtsClient
 
 public sealed class WorkerAgentVtsClient : IAgentVtsClient
 {
-    private readonly IWorkerClient _worker;
+    private readonly IVtsProtocolClient _worker;
 
-    public WorkerAgentVtsClient(IWorkerClient worker)
+    public WorkerAgentVtsClient(IVtsProtocolClient worker)
     {
         _worker = worker ?? throw new ArgumentNullException(nameof(worker));
     }

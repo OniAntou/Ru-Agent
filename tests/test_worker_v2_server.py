@@ -48,8 +48,6 @@ async def empty_handler(_payload: dict, _cancelled: asyncio.Event):
 
 def v1_handlers() -> WorkerHandlers:
     return WorkerHandlers(
-        chat=empty_handler,
-        memory_extract=empty_handler,
         runtime=empty_handler,
         voice=empty_handler,
         vts=empty_handler,
@@ -134,7 +132,7 @@ def test_authenticated_v2_hello_emits_versioned_step_done() -> None:
     asyncio.run(scenario())
 
 
-def test_v2_rejects_chat_tool_result_without_affecting_v1_chat_route() -> None:
+def test_v2_rejects_retired_chat_tool_result_without_affecting_v1_runtime_route() -> None:
     async def scenario() -> None:
         async with running_server(FakeRunner()) as uri:
             async with connect(uri + "/worker/v2") as websocket:

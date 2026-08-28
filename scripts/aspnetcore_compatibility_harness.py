@@ -98,7 +98,7 @@ def _contains_private_metadata(value: object) -> bool:
     return False
 
 
-def summarize_chat_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+def summarize_agent_events(events: list[dict[str, Any]]) -> dict[str, Any]:
     event_types = [str(event.get("type") or "") for event in events]
     expected_orders = (
         ["session", "reset", "chunk", "done"],
@@ -114,7 +114,7 @@ def summarize_chat_events(events: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def inspect_chat_state(data_root: Path) -> dict[str, Any]:
+def inspect_agent_state(data_root: Path) -> dict[str, Any]:
     session_files = sorted((data_root / "sessions").glob("*.json"))
     messages: list[dict[str, Any]] = []
     for path in session_files:
@@ -207,7 +207,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout-seconds", type=float, default=180.0)
     parser.add_argument("--require-voice-audio", action="store_true")
     parser.add_argument("--benchmark-samples", type=int, default=0)
-    parser.add_argument("--deterministic-chat", action="store_true")
+    parser.add_argument(
+        "--deterministic-agent",
+        action="store_true",
+        help="run the deterministic Agent backend mode",
+    )
     parser.add_argument(
         "--mode",
         choices=("backend-deterministic", "gui-deterministic", "runtime-live"),
@@ -223,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--benchmark-samples cannot be negative")
     if args.timeout_seconds <= 0 or args.timeout_seconds > 300:
         parser.error("--timeout-seconds must be between 0 and 300")
-    mode = "backend-deterministic" if args.deterministic_chat else args.mode
+    mode = "backend-deterministic" if args.deterministic_agent else args.mode
     if args.require_voice_audio and mode != "runtime-live":
         parser.error("--require-voice-audio is only valid with --mode runtime-live")
     if args.benchmark_samples and mode != "runtime-live":

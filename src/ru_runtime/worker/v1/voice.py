@@ -120,7 +120,7 @@ def voice_tts(payload: object) -> dict[str, str] | RuntimeHttpResponse:
     text = shared._strip_voice_markers(text)
     text = normalize_vietnamese_tts_text(text)
     try:
-        if shared._TURN_LOCK.locked() and not _hosted_chat_is_active(shared):
+        if shared._TURN_LOCK.locked() and not _hosted_generation_is_active(shared):
             return {
                 "status": "error",
                 "message": "Ru is generating a reply; try voice again after it finishes.",
@@ -230,7 +230,7 @@ def voice_transcribe(payload: object) -> dict[str, str]:
         return {"status": "error", "message": "Speech recognition failed."}
 
 
-def _hosted_chat_is_active(shared: Any) -> bool:
+def _hosted_generation_is_active(shared: Any) -> bool:
     from ru_runtime.generation.runner import BACKEND_KILO, BACKEND_OPENCODE
 
     return (

@@ -4,16 +4,6 @@ public static class WorkerMessageTypes
 {
     public const string Hello = "hello";
     public const string HelloOk = "hello.ok";
-    public const string ChatStart = "chat.start";
-    public const string ChatReset = "chat.reset";
-    public const string ChatChunk = "chat.chunk";
-    public const string ChatDone = "chat.done";
-    public const string ChatCancel = "chat.cancel";
-    public const string ChatToolRequest = "chat.tool.request";
-    public const string ChatToolResult = "chat.tool.result";
-    public const string ChatToolCancel = "chat.tool.cancel";
-    public const string MemoryExtract = "memory.extract";
-    public const string MemoryFacts = "memory.facts";
     public const string RuntimeLoad = "runtime.load";
     public const string RuntimeState = "runtime.state";
     public const string RuntimeRequest = "runtime.request";
@@ -31,16 +21,6 @@ public static class WorkerMessageTypes
         [
             Hello,
             HelloOk,
-            ChatStart,
-            ChatReset,
-            ChatChunk,
-            ChatDone,
-            ChatCancel,
-            ChatToolRequest,
-            ChatToolResult,
-            ChatToolCancel,
-            MemoryExtract,
-            MemoryFacts,
             RuntimeLoad,
             RuntimeState,
             RuntimeRequest,
@@ -59,10 +39,6 @@ public static class WorkerMessageTypes
     public static IReadOnlySet<string> OrderedResponses { get; } = new HashSet<string>(
         [
             HelloOk,
-            ChatReset,
-            ChatChunk,
-            ChatDone,
-            MemoryFacts,
             RuntimeState,
             RuntimeResponse,
             VoiceControl,

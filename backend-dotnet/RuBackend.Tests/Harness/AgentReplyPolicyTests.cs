@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuBackend.Business.Activity;
@@ -302,29 +301,11 @@ public sealed class AgentReplyPolicyTests
         "active",
         false);
 
-    private sealed class FakeWorker : IWorkerClient
+    private sealed class FakeWorker : IVtsProtocolClient
     {
         public VtsCatalog? Catalog { get; init; }
         public Exception? CatalogError { get; init; }
         public IReadOnlyList<string> TriggeredCodes { get; private set; } = [];
-
-        public Task<WorkerHello> ConnectAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new WorkerHello(1, new HashSet<string>(["vts"])));
-
-        public async IAsyncEnumerable<WorkerEvent> GenerateChatAsync(
-            WorkerChatRequest request,
-            [EnumeratorCancellation] CancellationToken cancellationToken)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-
-        public Task<IReadOnlyList<WorkerFact>> ExtractFactsAsync(
-            string requestId,
-            string prompt,
-            string response,
-            CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<WorkerFact>>([]);
 
         public Task<VtsCatalog?> GetVtsCatalogAsync(
             string requestId,
@@ -342,13 +323,6 @@ public sealed class AgentReplyPolicyTests
             return Task.CompletedTask;
         }
 
-        public Task CancelAsync(string requestId, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
-
-        public Task<WorkerHealth> GetHealthAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new WorkerHealth(true, 1, new HashSet<string>()));
-
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class FakeActivityLogStore : IActivityLogStore

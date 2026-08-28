@@ -60,7 +60,7 @@ class RuntimeVoiceBridge:
             payload.get("voice_style_id")
             or settings.get("voice_style_id")
         )
-        hosted_chat_active = (
+        hosted_generation_active = (
             self._shared.core.runner.backend in OPENAI_COMPATIBLE_BACKENDS
             and self._shared._TURN_LOCK.locked()
         )
@@ -69,7 +69,7 @@ class RuntimeVoiceBridge:
                 selection
             ),
             request_audio=self._shared.request_voice_audio,
-            memory_lock=None if hosted_chat_active else self._shared._MEMORY_TURN_LOCK,
+            memory_lock=None if hosted_generation_active else self._shared._MEMORY_TURN_LOCK,
             lock_timeout=self._shared._MEMORY_LOCK_TIMEOUT_SECONDS,
         )
         with self._lock:

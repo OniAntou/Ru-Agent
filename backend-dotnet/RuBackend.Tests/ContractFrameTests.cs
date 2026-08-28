@@ -7,16 +7,6 @@ namespace RuBackend.Tests;
 public sealed class ContractFrameTests
 {
     [Fact]
-    public void ChatEnvelopeUsesStableFieldNames()
-    {
-        var json = JsonSerializer.Serialize(new ChatFrame("chunk", "hello", "s1"));
-
-        Assert.Equal(
-            "{\"type\":\"chunk\",\"content\":\"hello\",\"session_id\":\"s1\"}",
-            json);
-    }
-
-    [Fact]
     public void VoiceAudioEnvelopeUsesStableFieldNames()
     {
         var json = JsonSerializer.Serialize(new VoiceFrame(

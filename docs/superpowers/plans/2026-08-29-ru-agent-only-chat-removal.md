@@ -542,19 +542,19 @@ voice/STT, VTS, observation, health, and the Worker v2 Agent step protocol remai
 
 ### 6.1 Remove the C# Chat surface
 
-- [ ] Remove `WorkerChatRequest`, `WorkerTurn`, Chat tool request/result/cancel records,
+- [x] Remove `WorkerChatRequest`, `WorkerTurn`, Chat tool request/result/cancel records,
   `GenerateChatAsync`, `ChatStart/Reset/Chunk/Done/Cancel/Tool*`, and Chat-only
   `ChatDoneFields` validation. Keep `ConnectAsync`, health, runtime, voice, VTS, and
   the interfaces consumed by `LoopbackRuntimeWorkerClient`/`VoiceStreamEndpoint`.
-- [ ] Remove `MemoryExtract`/`ExtractFactsAsync` only after `rg -n
+- [x] Remove `MemoryExtract`/`ExtractFactsAsync` only after `rg -n
   "ExtractFactsAsync|memory\.extract|MemoryFacts" backend-dotnet src tests` proves no
   surviving caller. Memory learning now belongs to `AgentMemoryProjection`.
-- [ ] If `IWorkerClient` still mixes unrelated capabilities after deletion, split it
+- [x] If `IWorkerClient` still mixes unrelated capabilities after deletion, split it
   into `IWorkerConnectionClient`, `IVtsProtocolClient`, and the already existing
   `IRuntimeProtocolClient`/`IVoiceProtocolClient`; register the smallest interface at
   each injection point. `LoopbackWorkerClient` may implement multiple interfaces, but
   no interface may contain a Chat-named method.
-- [ ] Remove Chat capability advertisement and validation from `WorkerConnection`;
+- [x] Remove Chat capability advertisement and validation from `WorkerConnection`;
   preserve `runtime`, `voice`, `vts`, `observation`, and health capabilities. A v1
   `chat.start` request now receives `unsupported_operation` from the generic unknown
   operation path only if protocol validation accepts it; the preferred behavior is
@@ -563,44 +563,44 @@ voice/STT, VTS, observation, health, and the Worker v2 Agent step protocol remai
 
 ### 6.2 Remove the Python v1 Chat branch
 
-- [ ] Delete `CHAT_START`, `CHAT_RESET`, `CHAT_CHUNK`, `CHAT_DONE`, `CHAT_CANCEL`,
+- [x] Delete `CHAT_START`, `CHAT_RESET`, `CHAT_CHUNK`, `CHAT_DONE`, `CHAT_CANCEL`,
   `CHAT_TOOL_REQUEST`, `CHAT_TOOL_RESULT`, `CHAT_TOOL_CANCEL`, `MEMORY_EXTRACT`, and
   `MEMORY_FACTS` from `protocol.py`’s known/ordered sets and validators. Keep
   runtime/voice/VTS/health constants and action-outcome validation used by surviving
   device endpoints.
-- [ ] Change `WorkerHandlers` to contain only `runtime`, `voice`, and `vts` handlers.
+- [x] Change `WorkerHandlers` to contain only `runtime`, `voice`, and `vts` handlers.
   Remove the Chat tool-result queues, Chat cancellation branch, and Chat-specific
   session/correlation plumbing from `server.py`; keep generic request cancellation
   for runtime/voice/VTS operations.
-- [ ] Remove `_chat_handler`, `_parse_chat_request`, Chat action selection/follow-up
+- [x] Remove `_chat_handler`, `_parse_chat_request`, Chat action selection/follow-up
   code, and `memory_extract` handler construction from `handlers.py`. Retain the
   runtime handler’s generation helper where observation/device behavior still calls
   `runner.generate_reply`.
-- [ ] Change the hello capability list to omit `chat` and `memory.extract`; retain
+- [x] Change the hello capability list to omit `chat` and `memory.extract`; retain
   `runtime`, `voice`, `vts`, and `observation`. Update the Python protocol fixture to
   assert the exact surviving set.
-- [ ] Update `serve_runtime_worker` shutdown imports only if `generation.search` is no
+- [x] Update `serve_runtime_worker` shutdown imports only if `generation.search` is no
   longer used by a surviving runtime path; otherwise retain it. Do not delete search
   merely because Chat was deleted.
 
 ### 6.3 Rename the shared internal turn type and test
 
-- [ ] Add `ConversationTurn` to `src/ru_runtime/generation/turns.py` with the exact
+- [x] Add `ConversationTurn` to `src/ru_runtime/generation/turns.py` with the exact
   two fields/validation previously provided by `ChatTurn`; update all four generation
   consumers and type annotations.
-- [ ] Move direct `ChatTurn` tests to `tests/test_generation_turns.py` and update
+- [x] Move direct `ChatTurn` tests to `tests/test_generation_turns.py` and update
   `tests/test_worker_v2_step.py`, `tests/test_worker_v2_server.py`, and
   `tests/test_agent_harness.py` to drive Worker v2 Agent step messages rather than
   v1 `chat.done` fixtures.
-- [ ] Run sequentially:
+- [x] Run sequentially:
 
   ```powershell
   & D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_worker_protocol.py tests/test_worker_server.py tests/test_worker_runtime_handlers.py tests/test_worker_v2_protocol.py tests/test_worker_v2_step.py tests/test_worker_v2_server.py tests/test_agent_harness.py -q
   dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Release --no-restore --nologo --filter "FullyQualifiedName~Worker"
   ```
 
-- [ ] Run `rg -n "GenerateChatAsync|WorkerChatRequest|CHAT_START|CHAT_DONE|MEMORY_EXTRACT|chat\.start|chat\.done" backend-dotnet/RuBackend src/ru_runtime/worker/v1` and require zero production matches. Keep explicit negative tests in test files only if they assert the retirement code.
-- [ ] Commit explicit Worker/Python/test paths with `refactor: retire Worker v1 Chat protocol`.
+- [x] Run `rg -n "GenerateChatAsync|WorkerChatRequest|CHAT_START|CHAT_DONE|MEMORY_EXTRACT|chat\.start|chat\.done" backend-dotnet/RuBackend src/ru_runtime/worker/v1` and require zero production matches. Keep explicit negative tests in test files only if they assert the retirement code.
+- [x] Commit explicit Worker/Python/test paths with `refactor: retire Worker v1 Chat protocol`.
 
 ## Task 7: Remove the GUI Chat transport and mode branch
 

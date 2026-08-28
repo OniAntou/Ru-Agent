@@ -6,12 +6,11 @@ v2 surfaces (2026-08-29).
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
-> **Current checkpoint (Phases 1–3 selected surfaces, 2026-08-29):**
+> **Current checkpoint (Agent-only generation, 2026-08-29):**
 > - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
 >   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
->   `RuAgent.Client`. Normal Chat remains on Worker v1; harness runs are
->   feature-flagged at `RuBackend:AgentHarness:Version` (default `v1`), with
->   additive Agent v2 at `/worker/v2` (one-step `AssistantStep`) and
+>   `RuAgent.Client`. Worker v1 is a device/runtime adapter only; Agent
+>   generation runs on the v2 one-step protocol at `/worker/v2` and the
 >   `/agent/v1/*` (13 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
 >   `id:<sequence>`/`Last-Event-ID`/`after_sequence` cursor, reconnect replay).
 >   This checkpoint exposes Broker-backed model tools (`files.list`,
@@ -35,7 +34,8 @@ is actually allowed to select. Those states are not interchangeable.
 >   cannot create global rules or confirm trust/approval.
 >   Headless terminal requests are available under the same policy/approval
 >   boundary; the managed Git commit workflow (Phase 3 Task 6) is not shipped.
-> - Public Contract is now **54 HTTP plus 2 WebSocket** (41 + 13 `/agent/v1/*`).
+> - Public Contract is now **54 HTTP plus 1 WebSocket** (41 + 13 `/agent/v1/*`;
+>   `/voice/stream` is the only public WebSocket).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,
 >   `FileRecoveryStore`), `RuAgent.Hosting`, `RuAgent.Client`, `RuAgent.Broker`
@@ -49,26 +49,25 @@ is actually allowed to select. Those states are not interchangeable.
 
 ## Current capability matrix
 
-Model advertisement derives from the session capability profile: a binding is
-visible to the model exactly when its manifest scopes fit the active profile's
-scope set. Chat grants `{workspace.read}`; Agent adds `{workspace.write}` and
-`system.write`. The headless Agent v2 path also advertises the
-`terminal.execute`/`terminal.network` scopes; Full Access adds those scopes.
-The `network` argument on a
+Model advertisement derives from the Agent session capability profile: a
+binding is visible to the model exactly when its manifest scopes fit the
+active profile's scope set. Standard grants the read/write/device scopes;
+Full Access broadens policy fallbacks and also advertises the
+`terminal.execute`/`terminal.network` scopes. The `network` argument on a
 terminal request is descriptive input metadata, not a security boundary.
 
-| Capability | Chat | Agent | Full Access |
-| --- | --- | --- | --- |
-| `files.list@1.0.0`, `files.glob@1.0.0`, `files.search@1.0.0`, `files.read@1.0.0` (`workspace.read`) | automatic | automatic | automatic |
-| `files.write@1.0.0`, `files.edit@1.0.0` (`workspace.write`) | — | Standard `allow` for ordinary trusted-workspace create/edit; an absolute path outside the workspace asks with `external_directory_required` and may be granted for one call, the current run, or the project; `workspace_changed` on preimage mismatch, `invalid_utf8`/`content_too_large` before dispatch | Full Access `allow` fallback (never bypasses trust); protected paths and destructive/network/unknown actions still follow their own approval gates |
-| `files.delete@1.0.0` (`workspace.write`, recoverable) | — | `ask` → approval card + preview, including after an external-directory grant; `recovery_too_large` beyond 1 MiB remains intact, opaque `recovery_id` | `ask` → same; Full Access never bypasses `recovery_too_large` or workspace trust |
-| `files.restore@1.0.0` (`workspace.write`, one-time) | — | advertised only while active run owns valid `recovery_id`; success consumes once (`recovery_consumed` on replay, `recovery_target_exists` if recreated) | same |
-| `notes.create@1.0.0` (`workspace.write`) | — | approval card + one-time token | approval card + one-time token |
-| `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | — | headless Agent v2: explicit approval for every request; current Windows user; arbitrary host code/sockets | explicit approval required for every request (same boundary) |
-| `system.volume@1.0.0` (`system.write`) | — | yes, verified readback required | yes, verified readback required |
-| `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` (`system.read`) | Broker-internal | Broker-internal | Broker-internal |
-| Web search/fetch, connectors, `app.open` | absent | absent | absent |
-| Skills | disabled | disabled | disabled |
+| Capability | Agent (Standard) | Agent (Full Access) |
+| --- | --- | --- |
+| `files.list@1.0.0`, `files.glob@1.0.0`, `files.search@1.0.0`, `files.read@1.0.0` (`workspace.read`) | automatic | automatic |
+| `files.write@1.0.0`, `files.edit@1.0.0` (`workspace.write`) | `allow` for ordinary trusted-workspace create/edit; outside paths ask with `external_directory_required`; `workspace_changed` on preimage mismatch | `allow` fallback (never bypasses trust); protected/destructive/network/unknown actions retain approval |
+| `files.delete@1.0.0` (`workspace.write`, recoverable) | `ask` → approval card + preview; `recovery_too_large` beyond 1 MiB; opaque `recovery_id` | `ask` → same; Full Access never bypasses recovery or trust |
+| `files.restore@1.0.0` (`workspace.write`, one-time) | advertised only while the active run owns a valid `recovery_id`; replay returns `recovery_consumed` | same |
+| `notes.create@1.0.0` (`workspace.write`) | approval card + one-time token | approval card + one-time token |
+| `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | not advertised | explicit approval for every request; current Windows user; arbitrary host code/sockets |
+| `system.volume@1.0.0` (`system.write`) | yes, verified readback required | yes, verified readback required |
+| `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` (`system.read`) | Broker-internal | Broker-internal |
+| Web search/fetch, connectors, `app.open` | absent | absent |
+| Skills | disabled | disabled |
 
 Standard allows ordinary trusted-workspace reads/creates/edits. An explicit
 absolute path outside that root is not silently rejected: the first request
@@ -106,9 +105,9 @@ for patch application does not create a public model capability.
 ## Model selection channel
 
 The model invokes its advertised bindings through a structured selection
-loop, activated in all modes: Chat for its read-only set, Agent for its
-workspace/system set, and Full Access for the terminal plus the rest of the
-matrix above. Each turn allows at most 10
+loop on every Agent run. Standard exposes the bounded workspace/device set;
+Full Access additionally exposes terminal bindings and broader policy
+fallbacks. Each step allows at most 10
 sequential tool selections; exhausting that budget forces one final wrap-up
 answer without tools. Approvals still gate mutating tools — a card with a
 bounded preview and an explicit user decision precede every side effect, in
@@ -120,10 +119,10 @@ shapes: prompt material for the model, never executable schemas.
 An explicit, unambiguous volume command uses the deterministic volume parser
 before conversational generation. That parser creates the typed
 `system.volume@1.0.0` request directly and does not invoke model selection.
-Normal chat and Agent mode share the same execution ownership chain:
+Agent text and voice turns share the same execution ownership chain:
 
 ```text
-WinUI authenticated chat
+WinUI authenticated Agent composer
         -> ASP.NET Core Public Host and session grant
         -> Runtime Worker deterministic volume parser
         -> private RuAgentBroker policy and canonical binding
@@ -133,14 +132,13 @@ WinUI authenticated chat
 ```
 
 The Public Host keeps one active Broker lease. It reuses a valid matching
-session, and closes the previous lease before opening a different chat session.
-Close or open failure stops before adapter execution; the Broker continues to
-reject concurrent owners with `session_conflict`.
+session, and closes the previous lease before opening a different Agent
+session. Close or open failure stops before adapter execution; the Broker
+continues to reject concurrent owners with `session_conflict`.
 
-Ordinary turns in both normal chat and Agent mode continue through normal
-streamed generation. Ambiguous volume wording produces deterministic
-clarification instead of an inferred action; unrelated conversation is never
-forced through the action parser.
+Agent turns continue through normal streamed generation. Ambiguous volume
+wording produces deterministic clarification instead of an inferred action;
+unrelated conversation is never forced through the action parser.
 
 The Public Host derives `model_tools` from the active capability profile,
 requests one session grant covering that profile's scope set, and publishes
@@ -158,10 +156,11 @@ readback all terminate that action with a deterministic failure receipt.
 
 A non-success outcome, including a failure or clarification, is also kept as
 one bounded in-memory value. It is isolated by session, consumed once by the
-next turn, and removed on session replacement, disconnect, or deletion. It is
-never written to chat history, memory extraction, reviewed examples, TTS, or
-VTS metadata. This lets Ru answer an immediate “why?” from the verified reason
-without asking the model to reconstruct or invent the previous action state.
+next Agent turn, and removed on session replacement, disconnect, or deletion.
+It is never written to conversation history, memory extraction, reviewed
+examples, TTS, or VTS metadata. This lets Ru answer an immediate “why?” from
+the verified reason without asking the model to reconstruct or invent the
+previous action state.
 
 Legacy `[VOLUME: ...]`, `[SEARCH: ...]`, and app-open markers are stripped
 from visible output and never translated into desktop side effects; structured
@@ -207,16 +206,15 @@ or application launcher is advertised to the model.
 
 ## Agent activity shown in WinUI
 
-Coding Agent is selected explicitly from the compact mode pill inside the Chat
-composer; that dropdown contains only Chat and Coding Agent. Selecting Agent
-reveals one compact preset selector with `Standard` and `Full Access`; the UI
-uses the known project root and does not expose a workspace editor. The
-sidebar keeps only primary conversation surfaces; Log,
-Diagnostics, Policy, and Audit remain reachable from the `Công cụ` flyout.
-Ordinary Chat prompts continue through the Chat WebSocket, while Agent prompts
-are created through the authenticated `/agent/v1/*` API and observed over SSE.
-The inline surface never displays raw commands, arguments, stdout, or private
-payload content.
+Agent is the only supported generation path. The desktop composer uses the
+known project root and exposes one compact preset selector with `Standard` and
+`Full Access`; it does not expose a workspace editor. The current shell may
+still render a legacy mode control until the GUI cleanup task lands, but that
+control has no Chat transport behind it. The sidebar keeps only primary
+conversation surfaces; Log, Diagnostics, Policy, and Audit remain reachable
+from the `Công cụ` flyout. Agent prompts are created through the authenticated
+`/agent/v1/*` API and observed over SSE. The inline surface never displays raw
+commands, arguments, stdout, or private payload content.
 
 The transcript activity feed is connection-local and transient. Runtime maps the
 Core projection to an `agent.activity` SSE frame whose inner JSON contains only
@@ -252,20 +250,17 @@ terminal completion, cancellation, failure, disconnect, session replacement,
 or reset. The inline surface still owns bounded status, workspace trust,
 approval, Stop, and Continue controls. Malformed, unknown, stale, or other
 content-bearing transient frames are ignored. Raw commands, arguments, stdout,
-or private payload content never reach the feed, durable audit, Chat history,
-TTS, VTS metadata, or memory.
+or private payload content never reach the feed, durable audit, conversation
+history, TTS, VTS metadata, or memory.
 The desktop entry point also creates a real 32-character session automatically
-for the first Agent prompt when the empty Chat surface has no active session;
-users do not need to send a preliminary Chat message.
+for the first Agent prompt when the empty conversation surface has no active
+session; users do not need to send a preliminary message.
 
-Chat and Agent have separate transport contracts. Chat requests use an opaque
-`correlation_id` plus a GUI-only `turn_id`; the GUI presents one active Chat
-turn in FIFO order and ignores stale or uncorrelated frames. The bounded
-connection queue accepts eight deferred requests and reports
-`chat_queue_full` on the correlation that cannot be retained. A backend
-session gate serializes history writes, and a disconnect invalidates pending
-turns without automatic replay. This protects ordered history when a socket
-dies after the server may already have appended a request.
+Agent requests use an opaque `correlation_id`, durable run identity, and SSE
+cursor. The UI presents one active run, ignores stale or uncorrelated frames,
+and reconnects by replaying durable events without duplicating history. A
+disconnect marks an ambiguous request as a bounded retryable error; it never
+silently replays a request that might already have committed.
 
 The short-intent resolver may answer only an exact, high-confidence greeting
 or acknowledgement locally. Corrections, filesystem/path, search, network,

@@ -15,7 +15,7 @@ def test_registry_covers_the_current_contract_without_silent_skips() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     registry = build_route_registry(load_contract(repo_root))
 
-    assert len(registry) == 56
+    assert len(registry) == 55
     assert all(
         entry.safety
         in {

@@ -96,11 +96,11 @@ def observation_react(payload: object) -> dict[str, object]:
         return {"status": "skipped", "reason": decision.reason}
     if not shared._TURN_LOCK.acquire(blocking=False):
         shared._SCREEN_REACTIONS.fail(observation_id)
-        return {"status": "skipped", "reason": "chat_busy"}
+        return {"status": "skipped", "reason": "generation_busy"}
     if not shared._MEMORY_TURN_LOCK.acquire(blocking=False):
         shared._TURN_LOCK.release()
         shared._SCREEN_REACTIONS.fail(observation_id)
-        return {"status": "skipped", "reason": "chat_busy"}
+        return {"status": "skipped", "reason": "generation_busy"}
 
     manager = None
     try:

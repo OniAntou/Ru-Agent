@@ -13,7 +13,7 @@ from ru_runtime.persistence.diagnostic_log import DiagnosticLogWriter
 from ru_runtime.persistence.diagnostic_schema import DiagnosticEvent
 from ru_runtime.voice.vietnamese_tts_normalizer import normalize_vietnamese_tts_text
 from ru_runtime.worker.v1.protocol import (
-    CHAT_START,
+    RUNTIME_REQUEST,
     VOICE_START,
     VTS_ACTION,
     encode_envelope,
@@ -36,7 +36,7 @@ def run_benchmark(samples: int = 30, output_path: str = None):
         activity_writer = ActivityOutboxWriter(log_dir=str(activity_dir), batch_size=100)
 
         paths = [
-            "chat_pipeline",
+            "agent_pipeline",
             "voice_pipeline",
             "stt_pipeline",
             "vts_pipeline",
@@ -46,18 +46,19 @@ def run_benchmark(samples: int = 30, output_path: str = None):
 
         for path in paths:
             # Baseline work functions representing the typical CPU cycle of each pipeline (~15 ms)
-            def do_chat_work():
+            def do_agent_work():
                 total = 0
                 for _ in range(1500):
                     payload = {
                         "v": 1,
-                        "id": "req-chat-01",
-                        "type": CHAT_START,
+                        "id": "req-agent-01",
+                        "type": RUNTIME_REQUEST,
                         "seq": 0,
                         "payload": {
-                            "prompt": "Chào Ru, hôm nay em thế nào rồi? Có chuyện gì vui không kể anh nghe với nha!",
-                            "session_id": "session-123",
-                            "history": [{"role": "user", "text": "Hi"}],
+                            "method": "POST",
+                            "path_and_query": "/agent/v1/runs",
+                            "content_type": "application/json",
+                            "body": "{}",
                         },
                     }
                     encoded = encode_envelope(payload)
@@ -116,7 +117,7 @@ def run_benchmark(samples: int = 30, output_path: str = None):
                 return total
 
             work_map = {
-                "chat_pipeline": do_chat_work,
+                "agent_pipeline": do_agent_work,
                 "voice_pipeline": do_voice_work,
                 "stt_pipeline": do_stt_work,
                 "vts_pipeline": do_vts_work,
@@ -125,22 +126,22 @@ def run_benchmark(samples: int = 30, output_path: str = None):
             work_fn = work_map[path]
 
             def emit_logging_event(event_index, benchmark_path=path):
-                if benchmark_path == "chat_pipeline":
+                if benchmark_path == "agent_pipeline":
                     activity_writer.try_enqueue(
                         {
-                            "type": "chat",
+                            "type": "agent",
                             "data": {"role": "user", "preview": "test message"},
                             "session_id": "s_1",
                         }
                     )
                     diag_writer.try_enqueue(
                         DiagnosticEvent(
-                            event_id=f"evt_chat_{event_index}",
+                            event_id=f"evt_agent_{event_index}",
                             ts=time.time(),
                             iso="2026-08-20T12:00:00.000Z",
                             level="info",
-                            component="worker.chat",
-                            event_code="chat_completed",
+                            component="agent.runtime",
+                            event_code="agent_step_completed",
                             duration_ms=0.2,
                         )
                     )

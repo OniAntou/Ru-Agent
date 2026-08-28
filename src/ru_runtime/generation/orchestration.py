@@ -6,9 +6,9 @@ from collections.abc import Callable, Sequence
 
 from ru_runtime.policy.text import strip_emojis_and_emoticons
 
-from .chat import ChatTurn
 from .context import build_conversation_messages
 from .search import perform_web_search
+from .turns import ConversationTurn
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ def execute_reply(
     max_new_tokens: int,
     temperature: float,
     top_k: int,
-    turns_history: Sequence[ChatTurn] = (),
+    turns_history: Sequence[ConversationTurn] = (),
     memory_context: str | None = None,
     mood_context: str | None = None,
     allow_web_search: bool = False,

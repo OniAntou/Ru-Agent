@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextlib
+import threading
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, TypeAlias
@@ -23,6 +24,10 @@ StepHandler: TypeAlias = Callable[[dict[str, Any], asyncio.Event], AsyncIterator
 @dataclass(frozen=True, slots=True)
 class StepDependencies:
     runner: RuntimeRunner
+    # The v1 voice/observation adapters consult this shared lock before using
+    # the GPU.  Agent v2 generation must hold it for the whole provider call so
+    # retiring the v1 generation handler does not silently reintroduce overlap.
+    generation_locks: tuple[threading.Lock, ...] = ()
 
 
 def build_step_handler(dependencies: StepDependencies):
@@ -51,7 +56,14 @@ def build_step_handler(dependencies: StepDependencies):
             pending.cancel()
 
         async def generate() -> None:
+            acquired_locks: list[threading.Lock] = []
             try:
+                for lock in dependencies.generation_locks:
+                    while not lock.acquire(blocking=False):
+                        if cancelled.is_set():
+                            raise asyncio.CancelledError
+                        await asyncio.sleep(0.01)
+                    acquired_locks.append(lock)
                 step = await run_model_step(
                     dependencies.runner,
                     payload,
@@ -60,6 +72,8 @@ def build_step_handler(dependencies: StepDependencies):
                 )
                 await queue.put(StepReply(AGENT_STEP_DONE, step_to_payload(step)))
             finally:
+                for lock in reversed(acquired_locks):
+                    lock.release()
                 current_task = asyncio.current_task()
                 if current_task is not None and current_task.cancelling():
                     # The consumer is closing, so nobody may be left to drain a
@@ -109,7 +123,15 @@ def create_runtime_step_handler():
     """Bind v2 to the existing model runner without importing runtime state at import time."""
     from ru_runtime.worker.v1 import runtime_services
 
-    return build_step_handler(StepDependencies(runtime_services.core.runner))
+    return build_step_handler(
+        StepDependencies(
+            runtime_services.core.runner,
+            generation_locks=(
+                runtime_services._TURN_LOCK,
+                runtime_services._MEMORY_TURN_LOCK,
+            ),
+        )
+    )
 
 
 async def run_step_handler(

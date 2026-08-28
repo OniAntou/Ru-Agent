@@ -6,11 +6,11 @@ import sqlite3
 from aspnetcore_compatibility_harness import (
     build_runtime_environment,
     classify_route_for_safe_probe,
-    inspect_chat_state,
+    inspect_agent_state,
     is_valid_wav,
     redact_secrets,
     safe_probe_status_ok,
-    summarize_chat_events,
+    summarize_agent_events,
 )
 from benchmark_aspnetcore_compat import percentile, summarize_samples
 from harness.routes import RouteSafety
@@ -92,7 +92,7 @@ def test_redaction_removes_secrets_without_retaining_body_text() -> None:
     assert "[REDACTED]" in text
 
 
-def test_chat_summary_records_order_and_privacy_without_retaining_content() -> None:
+def test_agent_summary_records_order_and_privacy_without_retaining_content() -> None:
     events = [
         {"type": "session", "session_id": "private-session"},
         {"type": "reset"},
@@ -100,7 +100,7 @@ def test_chat_summary_records_order_and_privacy_without_retaining_content() -> N
         {"type": "done", "content": "Em nghe đây."},
     ]
 
-    summary = summarize_chat_events(events)
+    summary = summarize_agent_events(events)
 
     assert summary == {
         "event_types": ["session", "reset", "chunk", "done"],
@@ -116,7 +116,7 @@ def test_chat_summary_records_order_and_privacy_without_retaining_content() -> N
     assert "Em nghe" not in serialized
 
 
-def test_chat_state_inspection_returns_only_counts_and_privacy_flags(tmp_path) -> None:
+def test_agent_state_inspection_returns_only_counts_and_privacy_flags(tmp_path) -> None:
     data_root = tmp_path / "data"
     sessions = data_root / "sessions"
     sessions.mkdir(parents=True)
@@ -142,7 +142,7 @@ def test_chat_state_inspection_returns_only_counts_and_privacy_flags(tmp_path) -
         database.execute("CREATE TABLE memory_records (status TEXT)")
         database.execute("INSERT INTO memory_records(status) VALUES ('active')")
 
-    summary = inspect_chat_state(data_root)
+    summary = inspect_agent_state(data_root)
 
     assert summary == {
         "session_files": 1,

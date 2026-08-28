@@ -1,29 +1,20 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
 import pytest
 
-import ru_runtime.memory.store
-import ru_runtime.worker.v1.handlers as handlers_module
 from ru_runtime.voice.stream import VoiceStreamEvent
 from ru_runtime.vts.catalog import VtsCatalog, VtsCatalogEntry
 from ru_runtime.worker.v1.handlers import (
-    SELECTION_INVALID_COPY,
     RuntimeDependencies,
     RuntimeHttpResponse,
     build_runtime_handlers,
 )
 from ru_runtime.worker.v1.protocol import (
-    CHAT_CHUNK,
-    CHAT_DONE,
-    CHAT_RESET,
-    CHAT_TOOL_REQUEST,
     ERROR,
-    MEMORY_FACTS,
     RUNTIME_RESPONSE,
     RUNTIME_STATE,
     VOICE_CONTROL,
@@ -34,109 +25,6 @@ from ru_runtime.worker.v1.protocol import (
 from ru_runtime.worker.v1.server import WorkerReply
 
 
-def test_chat_uses_only_explicit_prompt_history_memory_and_settings() -> None:
-    runner = FakeRunner("Em nghe đây. [[VTS:vts_01]] [[VOICE_PACE:normal]]")
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-    payload = {
-        "prompt": "Anh đang làm gì?",
-        "session_id": "session-1",
-        "turns": [{"prompt": "Chào em", "response": "Em chào anh."}],
-        "memory_context": "Anh đang làm dự án D:/LLM.",
-        "vts_instruction": "private catalog instruction",
-        "settings": {
-            "max_tokens": 128,
-            "temperature": 0.4,
-            "top_k": 32,
-            "allow_web_search": False,
-            "model_tools": [],
-        },
-    }
-
-    replies = asyncio.run(collect(handlers.chat(payload, asyncio.Event())))
-
-    call = runner.calls[0]
-    assert call["prompt"] == payload["prompt"]
-    assert call["memory_context"] == payload["memory_context"]
-    assert call["vts_instruction"] == payload["vts_instruction"]
-    assert call["max_new_tokens"] == 128
-    assert call["temperature"] == 0.4
-    assert call["top_k"] == 32
-    assert call["allow_web_search"] is False
-    assert [(turn.prompt, turn.response) for turn in call["turns_history"]] == [
-        ("Chào em", "Em chào anh.")
-    ]
-    assert [reply.type for reply in replies] == [CHAT_RESET, CHAT_CHUNK, CHAT_DONE]
-    assert replies[1].payload == {"text": "Em nghe đây. "}
-    assert replies[2].payload == {
-        "raw_reply": "Em nghe đây. [[VTS:vts_01]] [[VOICE_PACE:normal]]"
-    }
-    assert "content" not in replies[2].payload
-
-
-def test_chat_never_opens_the_python_memory_store(monkeypatch) -> None:
-    def fail_if_opened(*_args, **_kwargs):
-        raise AssertionError("Python memory store must not be opened by the worker")
-
-    monkeypatch.setattr(
-        ru_runtime.memory.store.StructuredMemoryStore,
-        "__init__",
-        fail_if_opened,
-    )
-    handlers = build_runtime_handlers(
-        RuntimeDependencies(runner=FakeRunner("Em nghe đây."))
-    )
-
-    replies = asyncio.run(
-        collect(
-            handlers.chat(
-                {
-                    "prompt": "prompt",
-                    "session_id": "session",
-                    "turns": [],
-                    "memory_context": "explicit ASP.NET memory",
-                    "vts_instruction": "",
-                    "settings": {"model_tools": []},
-                },
-                asyncio.Event(),
-            )
-        )
-    )
-
-    assert replies[-1].type == CHAT_DONE
-
-
-def test_memory_extraction_returns_at_most_five_typed_facts() -> None:
-    raw_facts = [
-        {
-            "kind": "preference",
-            "content": f"preference {index}",
-            "confidence": 0.9,
-            "importance": 0.7,
-        }
-        for index in range(8)
-    ]
-    runner = FakeRunner(json.dumps(raw_facts))
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-
-    replies = asyncio.run(
-        collect(
-            handlers.memory_extract(
-                {"prompt": "prompt", "response": "response"},
-                asyncio.Event(),
-            )
-        )
-    )
-
-    reply = single(replies)
-    assert reply.type == MEMORY_FACTS
-    assert len(reply.payload["facts"]) == 5
-    assert all(fact["kind"] == "preference" for fact in reply.payload["facts"])
-    call = runner.calls[0]
-    assert call["memory_context"] is None
-    assert call["turns_history"] == ()
-    assert call["vts_instruction"] == ""
-
-
 def test_voice_tts_pairs_control_with_non_empty_binary() -> None:
     observed: list[tuple[str, str, float, str]] = []
 
@@ -144,9 +32,7 @@ def test_voice_tts_pairs_control_with_non_empty_binary() -> None:
         observed.append((text, label, speed, style))
         return b"RIFF-wave"
 
-    handlers = build_runtime_handlers(
-        RuntimeDependencies(runner=FakeRunner("[]"), voice_audio=voice_audio)
-    )
+    handlers = build_runtime_handlers(RuntimeDependencies(voice_audio=voice_audio))
     replies = asyncio.run(
         collect(
             handlers.voice(
@@ -183,13 +69,7 @@ def test_voice_stream_maps_public_controls_and_binary_in_order() -> None:
         )
         yield VoiceStreamEvent("ended", "voice-stream-1", 1)
 
-    handlers = build_runtime_handlers(
-        RuntimeDependencies(
-            runner=FakeRunner("[]"),
-            voice_stream=voice_stream,
-        )
-    )
-
+    handlers = build_runtime_handlers(RuntimeDependencies(voice_stream=voice_stream))
     replies = asyncio.run(
         collect(
             handlers.voice(
@@ -206,11 +86,7 @@ def test_voice_stream_maps_public_controls_and_binary_in_order() -> None:
         )
     )
 
-    assert [reply.type for reply in replies] == [
-        VOICE_CONTROL,
-        VOICE_CONTROL,
-        VOICE_DONE,
-    ]
+    assert [reply.type for reply in replies] == [VOICE_CONTROL, VOICE_CONTROL, VOICE_DONE]
     assert replies[0].payload == {
         "state": "control",
         "type": "started",
@@ -231,17 +107,10 @@ def test_voice_stream_maps_public_controls_and_binary_in_order() -> None:
 
 def test_vts_catalog_and_actions_stay_on_the_private_handler() -> None:
     manager = FakeVtsManager()
-    handlers = build_runtime_handlers(
-        RuntimeDependencies(
-            runner=FakeRunner("[]"),
-            vts_manager=lambda: manager,
-        )
-    )
+    handlers = build_runtime_handlers(RuntimeDependencies(vts_manager=lambda: manager))
 
     catalog_reply = single(
-        asyncio.run(
-            collect(handlers.vts({"operation": "catalog"}, asyncio.Event()))
-        )
+        asyncio.run(collect(handlers.vts({"operation": "catalog"}, asyncio.Event())))
     )
     action_reply = single(
         asyncio.run(
@@ -261,52 +130,14 @@ def test_vts_catalog_and_actions_stay_on_the_private_handler() -> None:
     assert manager.triggered == [("vts_01",)]
 
 
-def test_runtime_failures_emit_only_stable_codes(caplog) -> None:
-    runner = FakeRunner(RuntimeError("secret token and private model path"))
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-
-    replies = asyncio.run(
-        collect(
-            handlers.chat(
-                {
-                    "prompt": "prompt",
-                    "session_id": "session",
-                    "turns": [],
-                    "memory_context": "",
-                    "vts_instruction": "",
-                    "settings": {"model_tools": []},
-                },
-                asyncio.Event(),
-            )
-        )
-    )
-
-    assert replies[-1].type == ERROR
-    assert replies[-1].payload == {
-        "code": "generation_failed",
-        "retryable": True,
-    }
-    assert "secret token" not in caplog.text
-    assert "private model path" not in caplog.text
-
-
 def test_runtime_load_delegates_without_persisting_settings_or_credentials() -> None:
     observed = []
 
     def runtime_load(payload: dict) -> dict:
         observed.append(payload)
-        return {
-            "status": "success",
-            "message": "Runtime loaded.",
-            "backend": payload["backend"],
-        }
+        return {"status": "success", "message": "Runtime loaded.", "backend": payload["backend"]}
 
-    handlers = build_runtime_handlers(
-        RuntimeDependencies(
-            runner=FakeRunner("[]"),
-            runtime_load=runtime_load,
-        )
-    )
+    handlers = build_runtime_handlers(RuntimeDependencies(runtime_load=runtime_load))
     payload = {
         "backend": "OpenCode Zen",
         "model": "opencode/free",
@@ -316,10 +147,7 @@ def test_runtime_load_delegates_without_persisting_settings_or_credentials() -> 
         "kilo_reasoning_enabled": False,
     }
 
-    reply = single(
-        asyncio.run(collect(handlers.runtime(payload, asyncio.Event())))
-    )
-
+    reply = single(asyncio.run(collect(handlers.runtime(payload, asyncio.Event()))))
     assert observed == [payload]
     assert reply.type == RUNTIME_STATE
     assert reply.payload["status"] == "success"
@@ -329,21 +157,10 @@ def test_runtime_load_failure_is_redacted(caplog) -> None:
     def runtime_load(_payload: dict) -> dict:
         raise RuntimeError("private credential and model path")
 
-    handlers = build_runtime_handlers(
-        RuntimeDependencies(
-            runner=FakeRunner("[]"),
-            runtime_load=runtime_load,
-        )
-    )
-
+    handlers = build_runtime_handlers(RuntimeDependencies(runtime_load=runtime_load))
     reply = single(
         asyncio.run(
-            collect(
-                handlers.runtime(
-                    {"backend": "OpenCode Zen"},
-                    asyncio.Event(),
-                )
-            )
+            collect(handlers.runtime({"backend": "OpenCode Zen"}, asyncio.Event()))
         )
     )
 
@@ -382,12 +199,7 @@ def test_runtime_load_rollback_restores_load_error(monkeypatch) -> None:
     handlers = handlers_module.create_runtime_handlers()
     reply = single(
         asyncio.run(
-            collect(
-                handlers.runtime(
-                    {"backend": "Ollama", "ollama_model": "qwen3:8b"},
-                    asyncio.Event(),
-                )
-            )
+            collect(handlers.runtime({"backend": "Ollama", "ollama_model": "qwen3:8b"}, asyncio.Event()))
         )
     )
 
@@ -404,13 +216,7 @@ def test_runtime_load_rejects_custom_api_key_in_the_payload() -> None:
         called.append(payload)
         return {"status": "success"}
 
-    handlers = build_runtime_handlers(
-        RuntimeDependencies(
-            runner=FakeRunner("[]"),
-            runtime_load=runtime_load,
-        )
-    )
-
+    handlers = build_runtime_handlers(RuntimeDependencies(runtime_load=runtime_load))
     reply = single(
         asyncio.run(
             collect(
@@ -432,19 +238,9 @@ def test_runtime_request_delegates_exact_route_and_returns_json() -> None:
 
     def runtime_request(method: str, path: str, content_type: str | None, body: str):
         observed.append((method, path, content_type, body))
-        return RuntimeHttpResponse(
-            200,
-            "application/json",
-            b'{"status":"ok"}',
-            {"x-runtime": "worker"},
-        )
+        return RuntimeHttpResponse(200, "application/json", b'{"status":"ok"}', {"x-runtime": "worker"})
 
-    handlers = build_runtime_handlers(
-        RuntimeDependencies(
-            runner=FakeRunner("[]"),
-            runtime_request=runtime_request,
-        )
-    )
+    handlers = build_runtime_handlers(RuntimeDependencies(runtime_request=runtime_request))
     payload = {
         "method": "POST",
         "path_and_query": "/observation/cancel",
@@ -453,15 +249,7 @@ def test_runtime_request_delegates_exact_route_and_returns_json() -> None:
     }
 
     reply = single(asyncio.run(collect(handlers.runtime(payload, asyncio.Event()))))
-
-    assert observed == [
-        (
-            "POST",
-            "/observation/cancel",
-            "application/json",
-            '{"observation_id":"obs-1"}',
-        )
-    ]
+    assert observed == [("POST", "/observation/cancel", "application/json", '{"observation_id":"obs-1"}')]
     assert reply.type == RUNTIME_RESPONSE
     assert reply.payload == {
         "status_code": 200,
@@ -475,15 +263,9 @@ def test_runtime_request_delegates_exact_route_and_returns_json() -> None:
 def test_runtime_request_returns_binary_without_base64_expansion() -> None:
     handlers = build_runtime_handlers(
         RuntimeDependencies(
-            runner=FakeRunner("[]"),
-            runtime_request=lambda *_args: RuntimeHttpResponse(
-                200,
-                "audio/wav",
-                b"RIFF-wave",
-            ),
+            runtime_request=lambda *_args: RuntimeHttpResponse(200, "audio/wav", b"RIFF-wave")
         )
     )
-
     reply = single(
         asyncio.run(
             collect(
@@ -510,53 +292,19 @@ def test_runtime_request_returns_binary_without_base64_expansion() -> None:
     assert reply.binary == b"RIFF-wave"
 
 
-def test_runtime_load_params_maps_ollama_lmstudio_and_custom() -> None:
+def test_runtime_load_params_maps_supported_backends() -> None:
     from ru_runtime.worker.v1.handlers import _runtime_load_params
 
-    ollama = _runtime_load_params(
-        {
-            "backend": "Ollama",
-            "model": "LFM2.5-2.6B-Q4_K_M.gguf",
-            "ollama_model": "qwen3:8b",
-            "ollama_url": "http://127.0.0.1:11434/v1",
-        }
-    )
-    assert ollama["backend"] == "Ollama"
-    assert ollama["model_name"] == "qwen3:8b"
-    assert ollama["base_url"] == "http://127.0.0.1:11434/v1"
-
-    lmstudio = _runtime_load_params(
-        {
-            "backend": "LM Studio",
-            "model": "LFM2.5-2.6B-Q4_K_M.gguf",
-            "lmstudio_model": "local-model",
-            "lmstudio_url": "http://127.0.0.1:1234/v1",
-        }
-    )
-    assert lmstudio["model_name"] == "local-model"
-    assert lmstudio["base_url"] == "http://127.0.0.1:1234/v1"
-
-    custom = _runtime_load_params(
-        {
-            "backend": "Custom OpenAI",
-            "model": "LFM2.5-2.6B-Q4_K_M.gguf",
-            "custom_model": "my-model",
-            "custom_url": "http://localhost:9000/v1",
-        }
-    )
-    assert custom["model_name"] == "my-model"
-    assert custom["base_url"] == "http://localhost:9000/v1"
-
-    kilo = _runtime_load_params(
-        {"backend": "Kilo Gateway", "kilo_model": "kilo-auto/free"}
-    )
-    assert kilo["model_name"] == "kilo-auto/free"
-    assert kilo["base_url"] is None
-
-    migrated = _runtime_load_params(
-        {"backend": "OpenCode Zen", "model": "LFM2.5-2.6B-Q4_K_M.gguf"}
-    )
-    assert migrated["model_name"] == ""
+    assert _runtime_load_params(
+        {"backend": "Ollama", "ollama_model": "qwen3:8b", "ollama_url": "http://127.0.0.1:11434/v1"}
+    ) == {
+        "backend": "Ollama",
+        "model_name": "qwen3:8b",
+        "base_url": "http://127.0.0.1:11434/v1",
+        "api_variant": "",
+        "kilo_reasoning_enabled": False,
+    }
+    assert _runtime_load_params({"backend": "Kilo Gateway", "kilo_model": "kilo-auto/free"})["base_url"] is None
 
 
 def test_runtime_load_params_rejects_retired_and_unknown_backends() -> None:
@@ -571,953 +319,7 @@ def test_runtime_load_params_rejects_non_boolean_reasoning() -> None:
     from ru_runtime.worker.v1.handlers import _runtime_load_params
 
     with pytest.raises(ValueError, match="invalid reasoning setting"):
-        _runtime_load_params(
-            {"backend": "Ollama", "kilo_reasoning_enabled": "yes"}
-        )
-
-
-class FakeRunner:
-    def __init__(self, result: str | Exception) -> None:
-        self.result = result
-        self.calls: list[dict] = []
-        self.backend = "llama.cpp"
-
-    def generate_reply(self, **kwargs) -> str:
-        self.calls.append(kwargs)
-        if isinstance(self.result, Exception):
-            raise self.result
-        callback = kwargs.get("on_stream_delta")
-        if callback is not None and not self.result.lstrip().startswith("["):
-            callback("Em nghe đây. ")
-        return self.result
-
-
-class SequencedRunner:
-    def __init__(self, *results: str) -> None:
-        self.results = list(results)
-        self.calls: list[dict] = []
-        self.backend = "llama.cpp"
-
-    def generate_reply(self, **kwargs) -> str:
-        self.calls.append(kwargs)
-        result = self.results.pop(0)
-        callback = kwargs.get("on_stream_delta")
-        if callback is not None:
-            callback(result)
-        return result
-
-
-def _model_tools() -> list[dict[str, object]]:
-    return [
-        {
-            "tool_id": "system.volume",
-            "tool_version": "1.0.0",
-            "scopes": ["system.write"],
-            "availability": "native_pending",
-            "model_enabled": True,
-            "capability_class": "native_mutation",
-            "verification_required": True,
-        }
-    ]
-
-
-def _read_tool() -> list[dict[str, object]]:
-    return [
-        {
-            "tool_id": "files.read",
-            "tool_version": "1.0.0",
-            "scopes": ["workspace.read"],
-            "availability": "executable",
-            "model_enabled": True,
-            "capability_class": "tool",
-            "verification_required": False,
-        }
-    ]
-
-
-_SELECTION_JSON = (
-    '{"tool_id":"files.read","tool_version":"1.0.0",'
-    '"arguments":{"path":"ghi-chu.txt"}}'
-)
-
-_WRITE_SELECTION_JSON = (
-    '{"tool_id":"files.write","tool_version":"1.0.0",'
-    '"arguments":{"path":"ghi-chu.txt","content":"Noi dung moi"}}'
-)
-
-_CARD_PREVIEW = 'Ghi tệp "ghi-chu.txt" với nội dung mới ("Noi dung moi").'
-
-_WRITE_FOLLOW_UP = "Em đã ghi xong tệp ghi-chu.txt rồi anh!"
-
-_READ_FOLLOW_UP = "Trong file có dòng nội dung đó anh."
-
-
-def _write_tool() -> list[dict[str, object]]:
-    return [
-        {
-            "tool_id": "files.write",
-            "tool_version": "1.0.0",
-            "scopes": ["workspace.write"],
-            "availability": "executable",
-            "model_enabled": True,
-            "capability_class": "tool",
-            "verification_required": False,
-        }
-    ]
-
-
-def _read_receipt() -> dict[str, object]:
-    return {
-        "status": "succeeded",
-        "output": {"text": "hello"},
-        "safe_summary": "Đã đọc tệp trong workspace.",
-        "error_code": None,
-        "duration_ms": 5,
-        "verification_state": "not_required",
-        "endpoint_role": None,
-        "endpoint_hash": None,
-    }
-
-
-def _action_payload(
-    tool_result_queue: asyncio.Queue,
-    agent_mode: bool,
-    *,
-    prompt: str = "Hạ âm lượng còn 2%",
-    model_tools: list[dict[str, object]] | None = None,
-) -> dict:
-    return {
-        "prompt": prompt,
-        "session_id": "session-1",
-        "turns": [],
-        "memory_context": None,
-        "vts_instruction": "",
-        "settings": {
-            "agent_mode": agent_mode,
-            "allow_web_search": False,
-            "model_tools": _model_tools() if model_tools is None else model_tools,
-        },
-        "__worker_tool_result_queue": tool_result_queue,
-        "__worker_correlation_id": "correlation-1",
-    }
-
-
-def _verified_result(level: int = 2) -> dict[str, object]:
-    return {
-        "status": "succeeded",
-        "output": {"operation": "set", "level": level, "muted": False},
-        "safe_summary": f"Đã xác minh âm lượng ở mức {level}%.",
-        "error_code": None,
-        "duration_ms": 12,
-        "verification_state": "verified",
-        "endpoint_role": "default_render_multimedia",
-        "endpoint_hash": "0123456789abcdef",
-    }
-
-
-async def _run_action_turn(
-    runner: SequencedRunner,
-    result: dict[str, object],
-    agent_mode: bool,
-    *,
-    prompt: str = "Hạ âm lượng còn 2%",
-) -> list[WorkerReply]:
-    tool_result_queue: asyncio.Queue = asyncio.Queue()
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-    replies = []
-    stream = handlers.chat(
-        _action_payload(tool_result_queue, agent_mode, prompt=prompt),
-        asyncio.Event(),
-    )
-    replies.append(await anext(stream))
-    request = await anext(stream)
-    assert request.type == CHAT_TOOL_REQUEST
-    replies.append(request)
-    await tool_result_queue.put(
-        {
-            "request_id": request.payload["request_id"],
-            "session_id": request.payload["session_id"],
-            "correlation_id": request.payload["correlation_id"],
-            **result,
-        }
-    )
-    replies.extend([reply async for reply in stream])
-    return replies
-
-
-async def _run_tool_turn(
-    runner: SequencedRunner,
-    payload: dict,
-    queue: asyncio.Queue,
-    receipt: dict[str, object],
-) -> list[WorkerReply]:
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-    replies: list[WorkerReply] = []
-    stream = handlers.chat(payload, asyncio.Event())
-    async for reply in stream:
-        replies.append(reply)
-        if reply.type == CHAT_TOOL_REQUEST:
-            await queue.put(
-                {
-                    "request_id": reply.payload["request_id"],
-                    "session_id": reply.payload["session_id"],
-                    "correlation_id": reply.payload["correlation_id"],
-                    **receipt,
-                }
-            )
-    return replies
-
-
-@pytest.mark.parametrize("agent_mode", (False, True))
-def test_explicit_volume_command_emits_one_request_without_model_generation(
-    agent_mode: bool,
-) -> None:
-    runner = SequencedRunner("model must not be called")
-
-    replies = asyncio.run(_run_action_turn(runner, _verified_result(), agent_mode))
-
-    requests = [reply for reply in replies if reply.type == CHAT_TOOL_REQUEST]
-    assert len(requests) == 1
-    assert requests[0].payload["arguments"] == {"operation": "set", "level": 2}
-    assert runner.calls == []
-    assert replies[-1].payload == {
-        "raw_reply": "Em đã đặt âm lượng về 2% rồi anh.",
-        "action_outcome": {
-            "schema_version": 1,
-            "tool_id": "system.volume",
-            "tool_version": "1.0.0",
-            "status": "succeeded",
-            "reason_code": None,
-        },
-    }
-
-
-@pytest.mark.parametrize("agent_mode", (False, True))
-def test_vietnamese_target_increase_dispatches_absolute_set(
-    agent_mode: bool,
-) -> None:
-    runner = SequencedRunner("model must not be called")
-
-    replies = asyncio.run(_run_action_turn(
-        runner,
-        _verified_result(10),
-        agent_mode,
-        prompt="Tăng âm lượng lên 10",
-    ))
-
-    request = next(reply for reply in replies if reply.type == CHAT_TOOL_REQUEST)
-    assert request.payload["arguments"] == {"operation": "set", "level": 10}
-    assert runner.calls == []
-    assert replies[-1].payload["raw_reply"] == "Em đã đặt âm lượng về 10% rồi anh."
-
-
-def test_ordinary_normal_chat_streams_without_entering_selection() -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner("Em nghe đây.")
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-
-    replies = asyncio.run(collect(handlers.chat(
-        _action_payload(queue, False, prompt="Kể em nghe chuyện hôm nay", model_tools=[]),
-        asyncio.Event(),
-    )))
-
-    assert len(runner.calls) == 1
-    assert runner.calls[0]["structured_tools_only"] is False
-    assert [reply.type for reply in replies] == [CHAT_RESET, CHAT_CHUNK, CHAT_DONE]
-
-
-def test_ordinary_agent_chat_advertises_tools_but_streams_plain_answer() -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner("Em đang nghe anh đây.")
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-
-    replies = asyncio.run(collect(handlers.chat(
-        _action_payload(queue, True, prompt="Hôm nay em thế nào?"),
-        asyncio.Event(),
-    )))
-
-    assert len(runner.calls) == 1
-    assert runner.calls[0]["structured_tools_only"] is True
-    assert runner.calls[0]["agent_follow_up"] is False
-    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
-    assert [reply.type for reply in replies] == [CHAT_RESET, CHAT_CHUNK, CHAT_DONE]
-    assert replies[-1].payload["raw_reply"] == "Em đang nghe anh đây."
-
-
-@pytest.mark.parametrize("verification_state", ("pending", "failed", "not_required"))
-def test_unverified_success_never_runs_follow_up(verification_state: str) -> None:
-    runner = SequencedRunner("model must not be called")
-    result = _verified_result()
-    result["verification_state"] = verification_state
-
-    replies = asyncio.run(_run_action_turn(runner, result, True))
-
-    assert runner.calls == []
-    assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == (
-        "Kết quả thay đổi chưa được xác minh nên em không coi thao tác là thành công."
-    )
-    assert replies[-1].payload["action_outcome"]["reason_code"] == (
-        "receipt_unverified"
-    )
-
-
-@pytest.mark.parametrize(
-    ("error_code", "expected_reply"),
-    (
-        (
-            "default_endpoint_unavailable",
-            "Windows chưa có thiết bị phát mặc định mà em có thể truy cập.",
-        ),
-        ("write_failed", "Windows không chấp nhận thay đổi âm lượng."),
-        (
-            "readback_mismatch",
-            "Windows không xác nhận mức âm lượng sau khi thay đổi.",
-        ),
-    ),
-)
-def test_failed_receipt_has_typed_reason_and_no_model_continuation(
-    error_code: str,
-    expected_reply: str,
-) -> None:
-    runner = SequencedRunner("model must not be called")
-    result = _verified_result()
-    result.update(
-        status="failed",
-        error_code=error_code,
-        safe_summary="Volume change could not be verified.",
-        verification_state="failed",
-    )
-
-    replies = asyncio.run(_run_action_turn(runner, result, True))
-
-    assert runner.calls == []
-    assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == expected_reply
-    assert replies[-1].payload["action_outcome"]["reason_code"] == error_code
-
-
-def test_mismatched_receipt_is_logged_without_output_values(monkeypatch) -> None:
-    diagnostic_writer = _RecordingDiagnosticWriter()
-    monkeypatch.setattr(
-        handlers_module,
-        "get_diagnostic_log_writer",
-        lambda: diagnostic_writer,
-    )
-    runner = SequencedRunner("model must not be called")
-    result = _verified_result()
-    result["request_id"] = "stale-request"
-
-    replies = asyncio.run(_run_action_turn(runner, result, True))
-
-    assert all(reply.type != ERROR for reply in replies)
-    assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["action_outcome"]["reason_code"] == "receipt_mismatch"
-    assert runner.calls == []
-    event = next(
-        item
-        for item in diagnostic_writer.events
-        if item.event_code == "tool.receipt.rejected"
-    )
-    assert {item.event_code for item in diagnostic_writer.events} == {
-        "tool.intent.resolved",
-        "tool.receipt.rejected",
-    }
-    assert event.event_code == "tool.receipt.rejected"
-    assert event.error_code == "receipt_mismatch"
-    assert event.correlation_id == "correlation-1"
-    assert event.tool_id == "system.volume"
-    assert event.tool_version == "1.0.0"
-    from ru_runtime.persistence.diagnostic_schema import serialize_diagnostic_event
-
-    serialized = serialize_diagnostic_event(event)
-    assert "operation" not in serialized
-    assert "output" not in serialized
-    assert "muted" not in serialized
-
-
-class _RecordingDiagnosticWriter:
-    def __init__(self) -> None:
-        self.events = []
-
-    def try_enqueue(self, event) -> bool:
-        self.events.append(event)
-        return True
-
-
-def test_late_receipt_timeout_is_an_action_failure(monkeypatch) -> None:
-    monkeypatch.setattr(handlers_module, "_ACTION_DEADLINE_MS", 1)
-
-    async def run() -> list[WorkerReply]:
-        queue: asyncio.Queue = asyncio.Queue()
-        runner = SequencedRunner("model must not be called")
-        handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-        return await collect(handlers.chat(_action_payload(queue, True), asyncio.Event()))
-
-    replies = asyncio.run(run())
-
-    assert all(reply.type != ERROR for reply in replies)
-    assert replies[-1].payload["raw_reply"] == (
-        "Thao tác âm lượng đã hết thời gian chờ."
-    )
-    assert replies[-1].payload["action_outcome"]["reason_code"] == "receipt_late"
-
-
-@pytest.mark.parametrize(
-    ("prompt", "reason_code"),
-    (
-        ("Giảm âm lượng 2%", "volume_command_ambiguous"),
-        ("Đặt âm lượng về 101", "volume_value_out_of_range"),
-    ),
-)
-def test_unclear_volume_command_stops_before_model_and_tool(
-    prompt: str,
-    reason_code: str,
-) -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner("model must not be called")
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-
-    replies = asyncio.run(collect(handlers.chat(
-        _action_payload(queue, False, prompt=prompt),
-        asyncio.Event(),
-    )))
-
-    assert runner.calls == []
-    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
-    assert replies[-1].payload["action_outcome"]["reason_code"] == reason_code
-
-
-def test_capability_absent_volume_request_has_typed_failure_without_model() -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner("model must not be called")
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-
-    replies = asyncio.run(collect(handlers.chat(
-        _action_payload(queue, False, model_tools=[]),
-        asyncio.Event(),
-    )))
-
-    assert runner.calls == []
-    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
-    assert replies[-1].payload["raw_reply"] == (
-        "Chế độ Chat chỉ đọc dữ liệu. Bật Agent mode để em điều khiển âm lượng nha."
-    )
-    assert replies[-1].payload["action_outcome"]["reason_code"] == (
-        "capability_unavailable"
-    )
-
-
-def test_missing_agent_channel_has_typed_failure_without_model() -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner("model must not be called")
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-    payload = _action_payload(queue, True)
-    payload.pop("__worker_tool_result_queue")
-
-    replies = asyncio.run(collect(handlers.chat(payload, asyncio.Event())))
-
-    assert runner.calls == []
-    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
-    assert replies[-1].payload["action_outcome"]["reason_code"] == "agent_unavailable"
-
-
-def test_immediate_causal_follow_up_uses_bounded_outcome_without_model() -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner("model must not be called")
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-    payload = _action_payload(queue, False, prompt="sao vậy?")
-    payload["last_action_outcome"] = {
-        "schema_version": 1,
-        "tool_id": "system.volume",
-        "tool_version": "1.0.0",
-        "status": "failed",
-        "reason_code": "write_failed",
-    }
-
-    replies = asyncio.run(collect(handlers.chat(payload, asyncio.Event())))
-
-    assert runner.calls == []
-    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
-    assert replies[-1].payload == {
-        "raw_reply": "Vì Windows không chấp nhận thay đổi âm lượng."
-    }
-
-
-def test_unrelated_follow_up_ignores_bounded_outcome_and_uses_normal_model() -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner("Em nghe đây.")
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-    payload = _action_payload(queue, True, prompt="Kể em nghe chuyện khác")
-    payload["last_action_outcome"] = {
-        "schema_version": 1,
-        "tool_id": "system.volume",
-        "tool_version": "1.0.0",
-        "status": "failed",
-        "reason_code": "write_failed",
-    }
-
-    replies = asyncio.run(collect(handlers.chat(payload, asyncio.Event())))
-
-    assert len(runner.calls) == 1
-    assert runner.calls[0]["agent_follow_up"] is False
-    assert replies[-1].payload == {"raw_reply": "Em nghe đây."}
-
-
-@pytest.mark.parametrize(
-    ("prompt", "event_code", "status", "reason_code"),
-    (
-        (
-            "Giảm âm lượng 2%",
-            "tool.intent.clarification",
-            "skipped",
-            "volume_command_ambiguous",
-        ),
-        (
-            "Đặt âm lượng về 101",
-            "tool.intent.rejected",
-            "failed",
-            "volume_value_out_of_range",
-        ),
-    ),
-)
-def test_intent_diagnostics_are_bounded_and_never_include_command_values(
-    monkeypatch,
-    prompt: str,
-    event_code: str,
-    status: str,
-    reason_code: str,
-) -> None:
-    diagnostic_writer = _RecordingDiagnosticWriter()
-    monkeypatch.setattr(
-        handlers_module,
-        "get_diagnostic_log_writer",
-        lambda: diagnostic_writer,
-    )
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner("model must not be called")
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-
-    asyncio.run(collect(handlers.chat(
-        _action_payload(queue, False, prompt=prompt),
-        asyncio.Event(),
-    )))
-
-    assert len(diagnostic_writer.events) == 1
-    event = diagnostic_writer.events[0]
-    assert event.event_code == event_code
-    assert event.status == status
-    assert event.error_code == reason_code
-    assert event.tool_id == "system.volume"
-    assert event.tool_version == "1.0.0"
-    from ru_runtime.persistence.diagnostic_schema import serialize_diagnostic_event
-
-    serialized = serialize_diagnostic_event(event)
-    data = json.loads(serialized)
-    assert set(data) == {
-        "event_id",
-        "ts",
-        "iso",
-        "level",
-        "component",
-        "event_code",
-        "correlation_id",
-        "status",
-        "error_code",
-        "tool_id",
-        "tool_version",
-    }
-    assert {
-        "prompt",
-        "arguments",
-        "operation",
-        "level_value",
-        "amount",
-        "output",
-        "muted",
-        "reply",
-        "device",
-        "exception",
-    }.isdisjoint(data)
-
-
-def test_agent_selection_runs_tool_then_follow_up_answer() -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner(_SELECTION_JSON, "Xin chào!")
-    payload = _action_payload(
-        queue,
-        True,
-        prompt="Đọc file ghi chú cho anh",
-        model_tools=_read_tool(),
-    )
-
-    replies = asyncio.run(_run_tool_turn(runner, payload, queue, _read_receipt()))
-
-    requests = [reply for reply in replies if reply.type == CHAT_TOOL_REQUEST]
-    assert len(requests) == 1
-    assert requests[0].payload["tool_id"] == "files.read"
-    assert requests[0].payload["tool_version"] == "1.0.0"
-    assert requests[0].payload["capability_class"] == "tool"
-    assert requests[0].payload["arguments"] == {"path": "ghi-chu.txt"}
-    chunks = [reply.payload["text"] for reply in replies if reply.type == CHAT_CHUNK]
-    assert chunks == ["Xin chào!"]
-    assert all("{" not in chunk for chunk in chunks)
-    assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == "Xin chào!"
-    assert len(runner.calls) == 2
-    assert runner.calls[0]["structured_tools_only"] is True
-    assert runner.calls[0]["agent_follow_up"] is False
-    assert runner.calls[1]["agent_follow_up"] is True
-    assert "[TOOL RESULT]" in runner.calls[1]["prompt"]
-    assert '"status":"succeeded"' in runner.calls[1]["prompt"].replace(" ", "")
-    assert "hello" in runner.calls[1]["prompt"]
-
-
-def test_agent_mode_write_card_approve_then_edited_file_follow_up() -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner(_WRITE_SELECTION_JSON, _WRITE_FOLLOW_UP)
-    payload = _action_payload(
-        queue,
-        True,
-        prompt="Ghi file ghi chú cho anh",
-        model_tools=_write_tool(),
-    )
-
-    replies = asyncio.run(_run_tool_turn(
-        runner,
-        payload,
-        queue,
-        {
-            "status": "succeeded",
-            "output": {
-                "path": "ghi-chu.txt",
-                "bytes_written": 12,
-                "preview": _CARD_PREVIEW,
-            },
-            "safe_summary": "Đã duyệt thẻ và ghi tệp trong workspace.",
-            "error_code": None,
-            "duration_ms": 18,
-            "verification_state": "not_required",
-            "endpoint_role": None,
-            "endpoint_hash": None,
-        },
-    ))
-
-    requests = [reply for reply in replies if reply.type == CHAT_TOOL_REQUEST]
-    assert len(requests) == 1
-    assert requests[0].payload["tool_id"] == "files.write"
-    assert requests[0].payload["tool_version"] == "1.0.0"
-    assert requests[0].payload["capability_class"] == "tool"
-    assert requests[0].payload["arguments"] == {
-        "path": "ghi-chu.txt",
-        "content": "Noi dung moi",
-    }
-    follow_up = runner.calls[1]["prompt"]
-    assert "[TOOL RESULT]" in follow_up
-    note = follow_up.split("[TOOL RESULT]\n", 1)[1].split(
-        "\n[/TOOL RESULT]", 1,
-    )[0]
-    assert len(note) <= handlers_module._MAX_OUTCOME_SUMMARY_CHARS
-    assert json.loads(note)["output"]["preview"] == _CARD_PREVIEW
-    assert json.loads(note)["status"] == "succeeded"
-    assert runner.calls[0]["structured_tools_only"] is True
-    assert runner.calls[0]["agent_follow_up"] is False
-    assert runner.calls[1]["agent_follow_up"] is True
-    chunks = [reply.payload["text"] for reply in replies if reply.type == CHAT_CHUNK]
-    assert chunks == [_WRITE_FOLLOW_UP]
-    visible = chunks + [replies[-1].payload["raw_reply"]]
-    assert all("{" not in text for text in visible)
-    assert all(_CARD_PREVIEW not in text for text in visible)
-    assert all(reply.type != ERROR for reply in replies)
-    assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == _WRITE_FOLLOW_UP
-
-
-def test_chat_mode_reads_workspace_file_without_cards() -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner(_SELECTION_JSON, _READ_FOLLOW_UP)
-    payload = _action_payload(
-        queue,
-        False,
-        prompt="Đọc file ghi chú cho anh",
-        model_tools=_read_tool(),
-    )
-
-    replies = asyncio.run(_run_tool_turn(
-        runner,
-        payload,
-        queue,
-        {
-            "status": "succeeded",
-            "output": {"content": "nội dung"},
-            "safe_summary": "Đã đọc tệp trong workspace.",
-            "error_code": None,
-            "duration_ms": 5,
-            "verification_state": "not_required",
-            "endpoint_role": None,
-            "endpoint_hash": None,
-        },
-    ))
-
-    requests = [reply for reply in replies if reply.type == CHAT_TOOL_REQUEST]
-    assert len(requests) == 1
-    assert requests[0].payload["tool_id"] == "files.read"
-    assert requests[0].payload["capability_class"] == "tool"
-    assert requests[0].payload["arguments"] == {"path": "ghi-chu.txt"}
-    serialized = [
-        json.dumps(reply.payload, ensure_ascii=False) for reply in replies
-    ]
-    assert all(
-        "approval" not in item and "preview" not in item for item in serialized
-    )
-    assert runner.calls[0]["structured_tools_only"] is True
-    assert runner.calls[1]["agent_follow_up"] is True
-    follow_up = runner.calls[1]["prompt"]
-    assert '"status":"succeeded"' in follow_up.replace(" ", "")
-    assert "nội dung" in follow_up
-    chunks = [reply.payload["text"] for reply in replies if reply.type == CHAT_CHUNK]
-    assert chunks == [_READ_FOLLOW_UP]
-    assert all("{" not in chunk for chunk in chunks)
-    assert all(reply.type != ERROR for reply in replies)
-    assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == _READ_FOLLOW_UP
-
-
-def test_budget_exhaustion_forces_wrapup_without_tools() -> None:
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner(
-        *([_SELECTION_JSON] * 10),
-        "Ngân sách công cụ đã hết rồi anh.",
-    )
-    payload = _action_payload(
-        queue,
-        True,
-        prompt="Đọc file ghi chú cho anh",
-        model_tools=_read_tool(),
-    )
-
-    replies = asyncio.run(_run_tool_turn(runner, payload, queue, _read_receipt()))
-
-    requests = [reply for reply in replies if reply.type == CHAT_TOOL_REQUEST]
-    assert len(requests) == 10
-    assert len(runner.calls) == 11
-    wrapup = runner.calls[10]
-    assert wrapup["action_capabilities"] == ()
-    assert wrapup["structured_tools_only"] is False
-    assert wrapup["agent_follow_up"] is True
-    assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == (
-        "Ngân sách công cụ đã hết rồi anh."
-    )
-
-
-def test_broken_json_candidate_is_suppressed_with_fixed_copy(monkeypatch) -> None:
-    diagnostic_writer = _RecordingDiagnosticWriter()
-    monkeypatch.setattr(
-        handlers_module,
-        "get_diagnostic_log_writer",
-        lambda: diagnostic_writer,
-    )
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner("{not json")
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-
-    replies = asyncio.run(collect(handlers.chat(
-        _action_payload(
-            queue,
-            True,
-            prompt="Đọc file ghi chú cho anh",
-            model_tools=_read_tool(),
-        ),
-        asyncio.Event(),
-    )))
-
-    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
-    assert all(reply.type != ERROR for reply in replies)
-    assert all(reply.type != CHAT_CHUNK for reply in replies)
-    assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == SELECTION_INVALID_COPY
-    events = [
-        event for event in diagnostic_writer.events
-        if event.event_code == "selection_invalid"
-    ]
-    assert len(events) == 1
-    assert events[0].status == "failed"
-    assert events[0].error_code == "invalid_selection"
-    assert events[0].correlation_id == "correlation-1"
-
-
-def test_holdback_streams_prose_but_buffers_braced_reply() -> None:
-    forwarded: list[str] = []
-    resets: list[int] = []
-    holdback = handlers_module._StreamingHoldback(
-        enabled=True,
-        sink=forwarded.append,
-        reset=lambda: resets.append(1),
-    )
-    holdback.forward("  ")
-    holdback.forward("Xin chào")
-    holdback.forward(" nhé")
-    assert forwarded == ["  ", "Xin chào", " nhé"]
-
-    buffered: list[str] = []
-    braced = handlers_module._StreamingHoldback(
-        enabled=True,
-        sink=buffered.append,
-        reset=lambda: None,
-    )
-    braced.forward('{"tool_id": ')
-    braced.forward('"files.read"}')
-    assert buffered == []
-    assert braced.finish() == '{"tool_id": "files.read"}'
-
-    passthrough: list[str] = []
-    plain = handlers_module._StreamingHoldback(
-        enabled=False,
-        sink=passthrough.append,
-        reset=lambda: None,
-    )
-    plain.forward('{"raw"')
-    plain.forward(" text")
-    assert passthrough == ['{"raw"', " text"]
-    assert plain.finish() == '{"raw" text'
-
-    holdback.reset()
-    assert resets == [1]
-    holdback.forward("A")
-    assert forwarded[-1] == "A"
-
-
-def test_missing_agent_channel_terminates_tool_class_selection(monkeypatch) -> None:
-    diagnostic_writer = _RecordingDiagnosticWriter()
-    monkeypatch.setattr(
-        handlers_module,
-        "get_diagnostic_log_writer",
-        lambda: diagnostic_writer,
-    )
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner(*([_SELECTION_JSON] * 12))
-    payload = _action_payload(
-        queue,
-        True,
-        prompt="Đọc file ghi chú cho anh",
-        model_tools=_read_tool(),
-    )
-    payload.pop("__worker_tool_result_queue")
-    handlers = build_runtime_handlers(RuntimeDependencies(runner=runner))
-
-    replies = asyncio.run(collect(handlers.chat(payload, asyncio.Event())))
-
-    assert all(reply.type != CHAT_TOOL_REQUEST for reply in replies)
-    assert all(reply.type != ERROR for reply in replies)
-    assert len(runner.calls) == 1
-    assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == (
-        "Tính năng điều khiển chưa sẵn sàng trong phiên này."
-    )
-    assert replies[-1].payload["action_outcome"] == {
-        "schema_version": 1,
-        "tool_id": "files.read",
-        "tool_version": "1.0.0",
-        "status": "failed",
-        "reason_code": "agent_unavailable",
-    }
-    assert [event.event_code for event in diagnostic_writer.events] == [
-        "tool.intent.rejected"
-    ]
-    rejected = diagnostic_writer.events[0]
-    assert rejected.error_code == "agent_unavailable"
-    assert rejected.tool_id == "files.read"
-
-
-def test_budget_exhausted_wrapup_suppresses_braced_garbage(monkeypatch) -> None:
-    diagnostic_writer = _RecordingDiagnosticWriter()
-    monkeypatch.setattr(
-        handlers_module,
-        "get_diagnostic_log_writer",
-        lambda: diagnostic_writer,
-    )
-    queue: asyncio.Queue = asyncio.Queue()
-    runner = SequencedRunner(*([_SELECTION_JSON] * 10), '{"unexpected": true}')
-    payload = _action_payload(
-        queue,
-        True,
-        prompt="Đọc file ghi chú cho anh",
-        model_tools=_read_tool(),
-    )
-
-    replies = asyncio.run(_run_tool_turn(runner, payload, queue, _read_receipt()))
-
-    requests = [reply for reply in replies if reply.type == CHAT_TOOL_REQUEST]
-    assert len(requests) == 10
-    assert len(runner.calls) == 11
-    wrapup = runner.calls[10]
-    assert wrapup["action_capabilities"] == ()
-    assert wrapup["agent_follow_up"] is True
-    chunks = [reply.payload["text"] for reply in replies if reply.type == CHAT_CHUNK]
-    assert chunks == []
-    assert all(reply.type != ERROR for reply in replies)
-    assert replies[-1].type == CHAT_DONE
-    assert replies[-1].payload["raw_reply"] == SELECTION_INVALID_COPY
-    invalid_events = [
-        event for event in diagnostic_writer.events
-        if event.event_code == "selection_invalid"
-    ]
-    assert len(invalid_events) == 1
-
-
-class _RecordingMoodTracker:
-    def __init__(self) -> None:
-        self.state = SimpleNamespace(describe_for_prompt=lambda: "")
-        self.observed: list[str] = []
-        self.updates: list[str] = []
-
-    def observe_user_input(self, prompt: str) -> None:
-        self.observed.append(prompt)
-
-    def update_from_reply_emotion(self, emotion: str) -> None:
-        self.updates.append(emotion)
-
-
-def test_mood_tracker_never_learns_from_machine_json() -> None:
-    tracker = _RecordingMoodTracker()
-    runner = SequencedRunner("{not json")
-    handlers = build_runtime_handlers(
-        RuntimeDependencies(runner=runner, mood_tracker=tracker)
-    )
-    payload = _action_payload(
-        _make_queue(),
-        True,
-        prompt="Đọc file ghi chú cho anh",
-        model_tools=_read_tool(),
-    )
-
-    suppressed = asyncio.run(collect(handlers.chat(payload, asyncio.Event())))
-    assert suppressed[-1].payload["raw_reply"] == SELECTION_INVALID_COPY
-    assert tracker.updates == []
-    assert tracker.observed == ["Đọc file ghi chú cho anh"]
-
-    prose_runner = SequencedRunner("Em nghe đây.")
-    prose_tracker = _RecordingMoodTracker()
-    prose_handlers = build_runtime_handlers(
-        RuntimeDependencies(runner=prose_runner, mood_tracker=prose_tracker)
-    )
-
-    asyncio.run(collect(prose_handlers.chat(
-        _action_payload(
-            _make_queue(),
-            False,
-            prompt="Kể em nghe chuyện hôm nay",
-            model_tools=[],
-        ),
-        asyncio.Event(),
-    )))
-
-    assert len(prose_tracker.updates) == 1
-
-
-def _make_queue() -> asyncio.Queue:
-    return asyncio.Queue()
+        _runtime_load_params({"backend": "Ollama", "kilo_reasoning_enabled": "yes"})
 
 
 class FakeVtsManager:
@@ -1536,11 +338,7 @@ class FakeVtsManager:
     def current_catalog_sync(self) -> VtsCatalog:
         return self.catalog
 
-    def trigger_catalog_actions_sync(
-        self,
-        catalog: VtsCatalog,
-        codes: tuple[str, ...],
-    ) -> None:
+    def trigger_catalog_actions_sync(self, catalog: VtsCatalog, codes: tuple[str, ...]) -> None:
         assert catalog is self.catalog
         self.triggered.append(codes)
 

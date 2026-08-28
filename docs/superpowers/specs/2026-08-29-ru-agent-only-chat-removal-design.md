@@ -314,6 +314,14 @@ can retry; it does not fall back to a deleted protocol.
 - `git diff --check` and a scoped status review prove unrelated dirty files are
   not staged by the migration.
 
+### Implementation retirement boundary (2026-08-29)
+
+Tasks 5–6 implement the public and Worker-side retirement boundary: the
+ASP.NET host has no `/chat` route, Worker v1 retains runtime/voice/VTS/
+observation adapters only, and Agent generation uses Worker v2 plus the
+authenticated HTTP/SSE contract. GUI mode cleanup and any future OS-enforced
+filesystem/network sandbox remain separate follow-up work.
+
 ## Rollback and follow-up
 
 Rollback is a versioned build/release rollback to the last known-good Agent

@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 
 import pytest
-from harness.deterministic_worker import _chat
 from harness.session import HarnessSession
-
-from ru_runtime.worker.v1.protocol import CHAT_DONE
-from ru_runtime.worker.v1.server import WorkerReply
 
 AGENT_SCENARIOS = (
     "agent-volume-contract",
@@ -17,52 +12,6 @@ AGENT_SCENARIOS = (
     "agent-stale-result",
     "agent-private-metadata",
 )
-
-
-def test_failed_volume_fixture_returns_exact_bounded_action_outcome() -> None:
-    async def collect_replies() -> list[WorkerReply]:
-        tool_results: asyncio.Queue[dict[str, object]] = asyncio.Queue()
-        await tool_results.put(
-            {
-                "request_id": "harness-tool-volume-invalid",
-                "session_id": "session-1",
-                "correlation_id": "correlation-1",
-                "status": "failed",
-            }
-        )
-        return [
-            reply
-            async for reply in _chat(
-                {
-                    "session_id": "session-1",
-                    "settings": {"agent_mode": True},
-                    "__worker_correlation_id": "correlation-1",
-                    "__worker_tool_result_queue": tool_results,
-                },
-                asyncio.Event(),
-            )
-        ]
-
-    replies = asyncio.run(collect_replies())
-    done = next(reply for reply in replies if reply.type == CHAT_DONE)
-
-    assert done.payload == {
-        "raw_reply": "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows.",
-        "action_outcome": {
-            "schema_version": 1,
-            "tool_id": "system.volume",
-            "tool_version": "1.0.0",
-            "status": "failed",
-            "reason_code": "invalid_arguments",
-        },
-    }
-    assert set(done.payload["action_outcome"]) == {
-        "schema_version",
-        "tool_id",
-        "tool_version",
-        "status",
-        "reason_code",
-    }
 
 
 @pytest.mark.parametrize("scenario", AGENT_SCENARIOS)
@@ -113,8 +62,8 @@ def test_backend_agent_probe_covers_broker_approval_and_v2_tool_loop() -> None:
     ui_driver_source = Path("gui-winui3.Harness/UiAutomationScenario.cs").read_text(
         encoding="utf-8"
     )
-    assert '"tool_id": "system.volume"' in worker_source
-    assert '"operation": "set", "level": 101' in worker_source
+    assert '"tool_id": "files.read"' in worker_source
+    assert '"path": "harness-agent.txt"' in worker_source
     assert "_probe_agent_api" in session_source
     assert '"tool.proposed"' in session_source
     assert '"tool.execution_completed"' in session_source
@@ -131,11 +80,12 @@ def test_backend_agent_probe_covers_broker_approval_and_v2_tool_loop() -> None:
     assert "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows." in ui_driver_source
 
 
-def test_deterministic_worker_uses_only_the_non_native_volume_contract() -> None:
+def test_deterministic_worker_uses_only_the_read_only_agent_contract() -> None:
     source = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
 
-    assert '"system.volume"' in source
-    assert '"capability_class": "native_mutation"' in source
+    assert '"files.read"' in source
+    assert '"path": "harness-agent.txt"' in source
+    assert '"capability_class": "native_mutation"' not in source
     assert '"web.search"' not in source
     assert '"files.list"' not in source
     assert "Get-Date" not in source
@@ -148,6 +98,7 @@ def test_retired_gui_agent_scenarios_are_absent_from_all_harness_entrypoints() -
         Path("scripts/harness/session.py").read_text(encoding="utf-8"),
         Path("gui-winui3.Harness/Program.cs").read_text(encoding="utf-8"),
         Path("gui-winui3.Harness/UiAutomationScenario.cs").read_text(encoding="utf-8"),
+        Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8"),
     ]
 
     for source in sources:
@@ -191,5 +142,5 @@ def test_deterministic_agent_harness_keeps_volume_metadata_only() -> None:
     )
     assert 'new HashSet<string>([ToolScope.SystemWrite]' in volume_tool
     assert 'RiskClass.Reversible' in volume_tool
-    assert '"system.volume"' in deterministic_worker
+    assert '"files.read"' in deterministic_worker
     assert "keybd_event" not in deterministic_worker

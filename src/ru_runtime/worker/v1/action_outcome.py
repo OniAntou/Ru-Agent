@@ -39,8 +39,7 @@ _MAX_TOOL_VERSION_CHARS = 32
 _ACTION_NOUNS = {"system.volume": "âm lượng"}
 _FAILURES = {
     "capability_unavailable": (
-        "Chế độ Chat chỉ đọc dữ liệu. "
-        "Bật Agent mode để em điều khiển {action} nha."
+        "Công cụ điều khiển {action} chưa sẵn sàng trong phiên này."
     ),
     "agent_unavailable": (
         "Tính năng điều khiển {action} chưa sẵn sàng trong phiên này."

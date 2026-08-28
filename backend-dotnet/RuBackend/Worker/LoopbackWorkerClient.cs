@@ -7,37 +7,22 @@ using RuBackend.Diagnostics;
 
 namespace RuBackend.Worker;
 
-public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient, IVoiceProtocolClient
+public sealed class LoopbackWorkerClient :
+    IWorkerConnectionClient,
+    IRuntimeProtocolClient,
+    IVoiceProtocolClient,
+    IVtsProtocolClient
 {
     private readonly WorkerClientOptions _options;
     private readonly ConcurrentDictionary<string, WorkerConnection> _activeRequests =
         new(StringComparer.Ordinal);
-    private readonly IDiagnosticEmitter? _diagnostics;
-    private readonly Func<WorkerConnection, WorkerEnvelope, CancellationToken, Task> _sendToolResultAsync;
     private int _disposed;
 
-    public LoopbackWorkerClient(
-        WorkerClientOptions options,
-        IDiagnosticEmitter? diagnostics = null)
-        : this(
-            options,
-            diagnostics,
-            static (connection, envelope, cancellationToken) =>
-                connection.SendEnvelopeAsync(envelope, cancellationToken))
-    {
-    }
-
-    internal LoopbackWorkerClient(
-        WorkerClientOptions options,
-        IDiagnosticEmitter? diagnostics,
-        Func<WorkerConnection, WorkerEnvelope, CancellationToken, Task> sendToolResultAsync)
+    public LoopbackWorkerClient(WorkerClientOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(sendToolResultAsync);
         options.Validate();
         _options = options;
-        _diagnostics = diagnostics;
-        _sendToolResultAsync = sendToolResultAsync;
     }
 
     public async Task<WorkerHello> ConnectAsync(CancellationToken cancellationToken)
@@ -45,127 +30,6 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
         ThrowIfDisposed();
         await using var connection = new WorkerConnection(_options);
         return await connection.ConnectAsync(cancellationToken);
-    }
-
-    public async IAsyncEnumerable<WorkerEvent> GenerateChatAsync(
-        WorkerChatRequest request,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        ThrowIfDisposed();
-        ArgumentNullException.ThrowIfNull(request);
-        WorkerEnvelopeCodec.Validate(new WorkerEnvelope(
-            _options.ProtocolVersion,
-            request.RequestId,
-            WorkerMessageTypes.ChatStart,
-            null,
-            [],
-            CorrelationContext.Current));
-
-        await using var connection = new WorkerConnection(_options);
-        var hello = await connection.ConnectAsync(cancellationToken);
-        EnsureCapability(hello.Capabilities, "chat");
-        if (!_activeRequests.TryAdd(request.RequestId, connection))
-        {
-            throw new WorkerProtocolException("duplicate_request");
-        }
-
-        using var receiveCancellation = new CancellationTokenSource();
-        try
-        {
-            var envelope = new WorkerEnvelope(
-                _options.ProtocolVersion,
-                request.RequestId,
-                WorkerMessageTypes.ChatStart,
-                null,
-                BuildChatPayload(request),
-                CorrelationContext.Current);
-            await using var enumerator = connection
-                .SendRequestAsync(envelope, receiveCancellation.Token)
-                .GetAsyncEnumerator();
-
-            while (true)
-            {
-                var moveNext = enumerator.MoveNextAsync().AsTask();
-                bool hasNext;
-                try
-                {
-                    hasNext = await moveNext.WaitAsync(cancellationToken);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    await TrySendCancellationAsync(connection, request.RequestId);
-                    receiveCancellation.Cancel();
-                    await IgnoreCancellationAsync(moveNext);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    throw;
-                }
-
-                if (!hasNext)
-                {
-                    yield break;
-                }
-
-                var item = enumerator.Current;
-                if (item.Type == WorkerMessageTypes.ChatToolRequest
-                    && request.ToolHandler is not null)
-                {
-                    var toolRequest = ParseToolRequest(item.Payload);
-                    var result = await request.ToolHandler(toolRequest, cancellationToken);
-                    await _sendToolResultAsync(
-                        connection,
-                        ToolResultEnvelope(request.RequestId, toolRequest, result),
-                        cancellationToken);
-                    ReceiptDelivered(toolRequest, result);
-                }
-
-                yield return item;
-            }
-        }
-        finally
-        {
-            receiveCancellation.Cancel();
-            RemoveActiveRequest(request.RequestId, connection);
-        }
-    }
-
-    public async Task<IReadOnlyList<WorkerFact>> ExtractFactsAsync(
-        string requestId,
-        string prompt,
-        string response,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfDisposed();
-        await using var connection = new WorkerConnection(_options);
-        var hello = await connection.ConnectAsync(cancellationToken);
-        EnsureCapability(hello.Capabilities, "memory.extract");
-        var request = new WorkerEnvelope(
-            _options.ProtocolVersion,
-            requestId,
-            WorkerMessageTypes.MemoryExtract,
-            null,
-            new JsonObject
-            {
-                ["prompt"] = prompt,
-                ["response"] = response,
-            },
-            CorrelationContext.Current);
-
-        await foreach (var item in connection.SendRequestAsync(request, cancellationToken))
-        {
-            if (item.Type == WorkerMessageTypes.Error)
-            {
-                throw RemoteError(item.Payload);
-            }
-
-            if (item.Type != WorkerMessageTypes.MemoryFacts)
-            {
-                throw new WorkerProtocolException("unexpected_type");
-            }
-
-            return ParseFacts(item.Payload);
-        }
-
-        throw new WorkerProtocolException("missing_response");
     }
 
     public async Task<VtsCatalog?> GetVtsCatalogAsync(
@@ -253,17 +117,6 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
         }
 
         throw new WorkerProtocolException("missing_response");
-    }
-
-    public async Task CancelAsync(string requestId, CancellationToken cancellationToken)
-    {
-        ThrowIfDisposed();
-        if (_activeRequests.TryGetValue(requestId, out var connection))
-        {
-            await connection.SendEnvelopeAsync(
-                CancellationEnvelope(requestId),
-                cancellationToken);
-        }
     }
 
     public async Task<WorkerHealth> GetHealthAsync(CancellationToken cancellationToken)
@@ -484,152 +337,6 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
         }
     }
 
-    private static JsonObject BuildChatPayload(WorkerChatRequest request)
-    {
-        var turns = new JsonArray();
-        foreach (var turn in request.Turns)
-        {
-            turns.Add(new JsonObject
-            {
-                ["prompt"] = turn.Prompt,
-                ["response"] = turn.Response,
-            });
-        }
-
-        var payload = new JsonObject
-        {
-            ["prompt"] = request.Prompt,
-            ["session_id"] = request.SessionId,
-            ["turns"] = turns,
-            ["memory_context"] = request.MemoryContext,
-            ["vts_instruction"] = request.VtsInstruction,
-            ["settings"] = request.Settings.DeepClone(),
-        };
-        if (request.LastActionOutcome is not null)
-        {
-            payload["last_action_outcome"] = request.LastActionOutcome.ToJson();
-        }
-
-        return payload;
-    }
-
-    private static IReadOnlyList<WorkerFact> ParseFacts(JsonObject payload)
-    {
-        if (payload["facts"] is not JsonArray values)
-        {
-            throw new WorkerProtocolException("invalid_memory_facts");
-        }
-
-        var result = new List<WorkerFact>(values.Count);
-        foreach (var value in values)
-        {
-            if (value is not JsonObject fact)
-            {
-                throw new WorkerProtocolException("invalid_memory_facts");
-            }
-
-            result.Add(new WorkerFact(
-                ReadString(fact["kind"], "invalid_memory_facts"),
-                ReadString(fact["content"], "invalid_memory_facts"),
-                ReadOptionalString(fact["scope"], "invalid_memory_facts"),
-                ReadDouble(fact["confidence"], "invalid_memory_facts"),
-                ReadDouble(fact["importance"], "invalid_memory_facts")));
-        }
-
-        return result;
-    }
-
-    private static WorkerEnvelope CancellationEnvelope(string requestId) =>
-        new(
-            WorkerClientOptions.CurrentProtocolVersion,
-            requestId,
-            WorkerMessageTypes.ChatCancel,
-            null,
-            []);
-
-    private static WorkerEnvelope ToolResultEnvelope(
-        string parentRequestId,
-        WorkerToolRequest request,
-        WorkerToolResult result) =>
-        new(
-            WorkerClientOptions.CurrentProtocolVersion,
-            parentRequestId,
-            WorkerMessageTypes.ChatToolResult,
-            null,
-            new JsonObject
-            {
-                ["request_id"] = result.RequestId,
-                ["session_id"] = request.SessionId,
-                ["correlation_id"] = request.CorrelationId,
-                ["status"] = result.Status,
-                ["output"] = result.Output.DeepClone(),
-                ["error_code"] = result.ErrorCode,
-                ["safe_summary"] = result.SafeSummary,
-                ["duration_ms"] = result.DurationMs,
-                ["verification_state"] = result.VerificationState,
-                ["endpoint_role"] = result.EndpointRole,
-                ["endpoint_hash"] = result.EndpointHash,
-            });
-
-    private static WorkerToolRequest ParseToolRequest(JsonObject payload)
-    {
-        if (payload["arguments"] is not JsonObject arguments)
-        {
-            throw new WorkerProtocolException("invalid_tool_request");
-        }
-
-        return new WorkerToolRequest(
-            ReadString(payload["request_id"], "invalid_tool_request"),
-            ReadString(payload["session_id"], "invalid_tool_request"),
-            ReadString(payload["correlation_id"], "invalid_tool_request"),
-            ReadString(payload["tool_id"], "invalid_tool_request"),
-            ReadString(payload["tool_version"], "invalid_tool_request"),
-            ReadString(payload["capability_class"], "invalid_tool_request"),
-            arguments.DeepClone().AsObject(),
-            ReadInt32(payload["deadline_ms"], "invalid_tool_request"));
-    }
-
-    private void ReceiptDelivered(WorkerToolRequest request, WorkerToolResult result)
-    {
-        try
-        {
-            _diagnostics?.TryEmit(
-                "info",
-                "host.worker",
-                DiagnosticCodes.ToolReceiptDelivered,
-                request.CorrelationId,
-                result.DurationMs,
-                result.Status,
-                result.ErrorCode,
-                toolId: request.ToolId,
-                toolVersion: request.ToolVersion,
-                verificationState: result.VerificationState,
-                endpointRole: result.EndpointRole,
-                endpointHash: result.EndpointHash);
-        }
-        catch
-        {
-            // Receipt delivery remains authoritative even if diagnostics fail.
-        }
-    }
-
-    private static async Task TrySendCancellationAsync(
-        WorkerConnection connection,
-        string requestId)
-    {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        try
-        {
-            await connection.SendEnvelopeAsync(CancellationEnvelope(requestId), timeout.Token);
-        }
-        catch (Exception error) when (error is WorkerUnavailableException
-            or WorkerProtocolException
-            or OperationCanceledException)
-        {
-            // The caller's cancellation remains authoritative.
-        }
-    }
-
     private async Task TrySendVoiceCancelAsync(string requestId)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(1));
@@ -737,16 +444,6 @@ public sealed class LoopbackWorkerClient : IWorkerClient, IRuntimeProtocolClient
     private static int ReadInt32(JsonNode? node, string errorCode)
     {
         if (node is JsonValue value && value.TryGetValue<int>(out var result))
-        {
-            return result;
-        }
-
-        throw new WorkerProtocolException(errorCode);
-    }
-
-    private static double ReadDouble(JsonNode? node, string errorCode)
-    {
-        if (node is JsonValue value && value.TryGetValue<double>(out var result))
         {
             return result;
         }

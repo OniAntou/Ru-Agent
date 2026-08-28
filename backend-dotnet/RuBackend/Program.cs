@@ -153,23 +153,24 @@ builder.Services.Configure<BackendOptions>(options =>
 builder.Services.AddSingleton(BuildDataPaths(builder.Configuration));
 builder.Services.AddSingleton(BuildWorkerClientOptions(builder.Configuration));
 builder.Services.AddSingleton<LoopbackWorkerClient>();
-builder.Services.AddSingleton<IWorkerClient>(services =>
+builder.Services.AddSingleton<IWorkerConnectionClient>(services =>
     services.GetRequiredService<LoopbackWorkerClient>());
 builder.Services.AddSingleton<IRuntimeProtocolClient>(services =>
     services.GetRequiredService<LoopbackWorkerClient>());
-    builder.Services.AddSingleton<IVoiceProtocolClient>(services =>
-        services.GetRequiredService<LoopbackWorkerClient>());
-    builder.Services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
-    builder.Services.AddSingleton<IAgentVtsClient, WorkerAgentVtsClient>();
-    builder.Services.AddSingleton<AgentReplyPolicy>();
-    builder.Services.AddSingleton<IAgentReplyPolicy>(services =>
-        services.GetRequiredService<AgentReplyPolicy>());
-    builder.Services.AddSingleton<AgentReplyEffectSink>();
-    builder.Services.AddSingleton<IAgentReplyEffectSink>(services =>
-        services.GetRequiredService<AgentReplyEffectSink>());
-    builder.Services.AddSingleton<IMetadataPolicy, MetadataPolicy>();
-    builder.Services.AddSingleton<IStreamSanitizer, StreamSanitizer>();
-    builder.Services.AddSingleton<IActionOutcomeContextStore, ActionOutcomeContextStore>();
+builder.Services.AddSingleton<IVoiceProtocolClient>(services =>
+    services.GetRequiredService<LoopbackWorkerClient>());
+builder.Services.AddSingleton<IVtsProtocolClient>(services =>
+    services.GetRequiredService<LoopbackWorkerClient>());
+builder.Services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
+builder.Services.AddSingleton<IAgentVtsClient, WorkerAgentVtsClient>();
+builder.Services.AddSingleton<AgentReplyPolicy>();
+builder.Services.AddSingleton<IAgentReplyPolicy>(services =>
+    services.GetRequiredService<AgentReplyPolicy>());
+builder.Services.AddSingleton<AgentReplyEffectSink>();
+builder.Services.AddSingleton<IAgentReplyEffectSink>(services =>
+    services.GetRequiredService<AgentReplyEffectSink>());
+builder.Services.AddSingleton<IMetadataPolicy, MetadataPolicy>();
+builder.Services.AddSingleton<IStreamSanitizer, StreamSanitizer>();
 
 
 var brokerDescriptor = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR");

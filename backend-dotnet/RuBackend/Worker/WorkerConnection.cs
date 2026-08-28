@@ -10,11 +10,6 @@ public sealed class WorkerConnection : IAsyncDisposable
 {
     private static readonly IReadOnlySet<string> ResponseTypes = new HashSet<string>(
         [
-            WorkerMessageTypes.ChatReset,
-            WorkerMessageTypes.ChatChunk,
-            WorkerMessageTypes.ChatDone,
-            WorkerMessageTypes.ChatToolRequest,
-            WorkerMessageTypes.MemoryFacts,
             WorkerMessageTypes.RuntimeState,
             WorkerMessageTypes.RuntimeResponse,
             WorkerMessageTypes.VoiceControl,
@@ -28,8 +23,6 @@ public sealed class WorkerConnection : IAsyncDisposable
 
     private static readonly IReadOnlySet<string> TerminalTypes = new HashSet<string>(
         [
-            WorkerMessageTypes.ChatDone,
-            WorkerMessageTypes.MemoryFacts,
             WorkerMessageTypes.RuntimeState,
             WorkerMessageTypes.RuntimeResponse,
             WorkerMessageTypes.VoiceDone,
@@ -76,8 +69,6 @@ public sealed class WorkerConnection : IAsyncDisposable
                     ["token"] = _options.Token,
                     ["version"] = _options.ProtocolVersion,
                     ["capabilities"] = new JsonArray(
-                        "chat",
-                        "memory.extract",
                         "runtime",
                         "voice",
                         "vts",

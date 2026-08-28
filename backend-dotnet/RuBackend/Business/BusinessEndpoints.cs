@@ -204,7 +204,6 @@ public static class BusinessEndpoints
     private static async Task<IResult> DeleteSessionAsync(
         string sessionId,
         IHarnessSessionDeletionCoordinator deletion,
-        IActionOutcomeContextStore actionOutcomes,
         ILoggerFactory loggers,
         CancellationToken cancellationToken)
     {
@@ -213,11 +212,6 @@ public static class BusinessEndpoints
             var outcome = await deletion.DeleteAsync(sessionId, cancellationToken)
                 .ConfigureAwait(false);
             var deleted = outcome == HarnessSessionDeletionOutcome.Deleted;
-            if (deleted)
-            {
-                actionOutcomes.Remove(sessionId);
-            }
-
             return deleted
                 ? Results.Ok(new { status = "ok" })
                 : Results.Ok(new { status = "error", message = "Session không tồn tại." });

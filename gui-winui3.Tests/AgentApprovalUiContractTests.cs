@@ -45,13 +45,15 @@ public sealed class AgentApprovalUiContractTests
     }
 
     [Fact]
-    public void Agent_transport_client_remains_chat_only()
+    public void Agent_transport_client_owns_the_agent_api_and_sse_path()
     {
-        string client = File.ReadAllText(FindSource("Services", "ChatWebSocketClient.cs"));
+        string client = File.ReadAllText(FindSource("Services", "AgentRunClientAdapter.cs"));
 
-        Assert.DoesNotContain("mode =", client, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("agent.approval", client, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("SendAgentApprovalAsync", client, StringComparison.Ordinal);
+        Assert.Contains("AgentApiClient", client, StringComparison.Ordinal);
+        Assert.Contains("AgentSseClient", client, StringComparison.Ordinal);
+        Assert.Contains("SubscribeEventsAsync", client, StringComparison.Ordinal);
+        Assert.DoesNotContain("ChatWebSocketClient", client, StringComparison.Ordinal);
+        Assert.DoesNotContain("/chat", client, StringComparison.Ordinal);
     }
 
     private static string FindSource(params string[] parts)

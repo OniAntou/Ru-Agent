@@ -158,7 +158,7 @@ synthetic tool request is still in flight, wait beyond the delayed result, and
 fail if a user/assistant message, private marker, or enabled Agent mode leaks
 back into the replacement session.
 
-The UI driver verifies the Agent mode pill without requiring an idle status row;
+The UI driver verifies the static Agent indicator without requiring an idle status row;
 `AgentStatusText` is expected only after an Agent request or another activity
 that needs user interaction. Typed requested, granted, verified, and failed
 copy is covered by WinUI contract tests. Agent artifacts and event-sink records
@@ -175,13 +175,14 @@ the visible approval card remains covered by `AgentApprovalTests` and
 `AgentApprovalUiContractTests`. GUI Harness scenarios do not claim that
 terminal, files, Web, connectors, or skills are model-usable.
 
-Agent-only visual acceptance is the next GUI cleanup task (Task 7 in the
-approved plan). It must leave one compact preset selector (`Standard`/`Full
-Access`) in the composer, keep the welcome layout fixed, and use the Agent
-HTTP/SSE path for every prompt. Grow a transcript until scrolling is needed and
-verify messages stay centered while the native vertical scrollbar sits at the
-far-right edge; horizontal scrolling must remain disabled. Until Task 7 lands,
-the existing mode-switch UI is transitional and is not release evidence.
+Agent-only visual acceptance covers the GUI cleanup in Task 7 of the approved
+plan. The composer leaves one static Agent indicator and one compact preset
+selector (`Standard`/`Full Access`), keeps the welcome layout fixed, and uses
+the Agent HTTP/SSE path for every prompt. Grow a transcript until scrolling is
+needed and verify messages stay centered while the native vertical scrollbar
+sits at the far-right edge; horizontal scrolling must remain disabled. These
+remain manual release checks; deterministic tests cover the source and layout
+contract but do not replace visual inspection.
 
 A passing deterministic GUI result does not claim an audible Windows volume
 change and does not accept live microphone capture, audible OmniVoice,

@@ -494,173 +494,36 @@
                     </TextBox>
 
                     <Grid Grid.Row="1"
-                          ColumnDefinitions="Auto,*,Auto,Auto"
+                          ColumnDefinitions="Auto,Auto,*,Auto,Auto"
                           Margin="0,4,0,0">
                         <Button x:Name="AgentModeButton"
                                 Grid.Column="0"
-                                Click="OnAgentModeButtonClick"
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Padding="6,4"
                                 CornerRadius="{StaticResource RuControlCornerRadius}"
                                 HorizontalAlignment="Left"
                                 HorizontalContentAlignment="Left"
+                                IsTabStop="False"
                                 AutomationProperties.AutomationId="AgentModeButton"
-                                AutomationProperties.Name="Chọn chế độ Chat hoặc Coding Agent"
-                                ToolTipService.ToolTip="Chọn chế độ Chat hoặc Coding Agent">
-                             <Button.Flyout>
-                                  <Flyout x:Name="AgentModeFlyout" Placement="Top">
-                                      <Flyout.FlyoutPresenterStyle>
-                                          <Style TargetType="FlyoutPresenter">
-                                              <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
-                                              <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
-                                              <Setter Property="BorderThickness" Value="1" />
-                                              <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
-                                              <Setter Property="Padding" Value="4" />
-                                              <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                          </Style>
-                                      </Flyout.FlyoutPresenterStyle>
-                                      <StackPanel Width="208" Spacing="2" Padding="0">
-                                          <StackPanel.Resources>
-                                              <SolidColorBrush x:Key="RadioButtonForeground" Color="{ThemeResource RuInkColor}" />
-                                              <SolidColorBrush x:Key="RadioButtonForegroundPointerOver" Color="{ThemeResource RuInkColor}" />
-                                              <SolidColorBrush x:Key="RadioButtonForegroundPressed" Color="{ThemeResource RuInkColor}" />
-                                              <SolidColorBrush x:Key="RadioButtonBackground" Color="Transparent" />
-                                              <StaticResource x:Key="RadioButtonBackgroundPointerOver" ResourceKey="RuAccentSoftBrush" />
-                                              <StaticResource x:Key="RadioButtonBackgroundPressed" ResourceKey="RuAccentSoftBrush" />
-                                              <StaticResource x:Key="RadioButtonOuterEllipseStroke" ResourceKey="RuMutedBrush" />
-                                              <StaticResource x:Key="RadioButtonOuterEllipseStrokePointerOver" ResourceKey="RuAccentBrush" />
-                                              <StaticResource x:Key="RadioButtonOuterEllipseCheckedStroke" ResourceKey="RuAccentBrush" />
-                                              <StaticResource x:Key="RadioButtonOuterEllipseCheckedFill" ResourceKey="RuAccentBrush" />
-                                              <Style TargetType="RadioButton">
-                                                  <Setter Property="Background" Value="Transparent" />
-                                                  <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
-                                                  <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
-                                                  <Setter Property="FontSize" Value="13" />
-                                                  <Setter Property="Padding" Value="10,8" />
-                                                  <Setter Property="MinHeight" Value="38" />
-                                                  <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
-                                                  <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                                  <Setter Property="Template">
-                                                      <Setter.Value>
-                                                          <ControlTemplate TargetType="RadioButton">
-                                                              <Grid x:Name="RootGrid"
-                                                                    Background="Transparent"
-                                                                    CornerRadius="{TemplateBinding CornerRadius}"
-                                                                    Padding="{TemplateBinding Padding}">
-                                                                  <VisualStateManager.VisualStateGroups>
-                                                                      <VisualStateGroup x:Name="CommonStates">
-                                                                          <VisualState x:Name="Normal">
-                                                                              <Storyboard>
-                                                                                  <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootGrid" Storyboard.TargetProperty="Background">
-                                                                                      <DiscreteObjectKeyFrame KeyTime="0" Value="Transparent" />
-                                                                                  </ObjectAnimationUsingKeyFrames>
-                                                                              </Storyboard>
-                                                                          </VisualState>
-                                                                          <VisualState x:Name="PointerOver">
-                                                                              <Storyboard>
-                                                                                  <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootGrid" Storyboard.TargetProperty="Background">
-                                                                                      <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuAccentSoftBrush}" />
-                                                                                  </ObjectAnimationUsingKeyFrames>
-                                                                              </Storyboard>
-                                                                          </VisualState>
-                                                                          <VisualState x:Name="Pressed">
-                                                                              <Storyboard>
-                                                                                  <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootGrid" Storyboard.TargetProperty="Background">
-                                                                                      <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuAccentSoftBrush}" />
-                                                                                  </ObjectAnimationUsingKeyFrames>
-                                                                              </Storyboard>
-                                                                          </VisualState>
-                                                                          <VisualState x:Name="Disabled" />
-                                                                      </VisualStateGroup>
-                                                                      <VisualStateGroup x:Name="CheckStates">
-                                                                          <VisualState x:Name="Checked">
-                                                                              <Storyboard>
-                                                                                  <DoubleAnimation Storyboard.TargetName="CheckMark" Storyboard.TargetProperty="Opacity" To="1" Duration="0" />
-                                                                              </Storyboard>
-                                                                          </VisualState>
-                                                                          <VisualState x:Name="Unchecked">
-                                                                              <Storyboard>
-                                                                                  <DoubleAnimation Storyboard.TargetName="CheckMark" Storyboard.TargetProperty="Opacity" To="0" Duration="0" />
-                                                                              </Storyboard>
-                                                                          </VisualState>
-                                                                          <VisualState x:Name="Indeterminate" />
-                                                                      </VisualStateGroup>
-                                                                  </VisualStateManager.VisualStateGroups>
-                                                                  <Grid ColumnDefinitions="*,Auto">
-                                                                      <TextBlock Grid.Column="0"
-                                                                                 Text="{TemplateBinding Content}"
-                                                                                 FontFamily="{TemplateBinding FontFamily}"
-                                                                                 FontSize="{TemplateBinding FontSize}"
-                                                                                 Foreground="{TemplateBinding Foreground}"
-                                                                                 VerticalAlignment="Center" />
-                                                                      <FontIcon x:Name="CheckMark"
-                                                                                Grid.Column="1"
-                                                                                Glyph="&#xE73E;"
-                                                                                FontSize="12"
-                                                                                Foreground="{StaticResource RuAccentBrush}"
-                                                                                Opacity="0"
-                                                                                VerticalAlignment="Center"
-                                                                                Margin="12,0,2,0" />
-                                                                  </Grid>
-                                                              </Grid>
-                                                          </ControlTemplate>
-                                                      </Setter.Value>
-                                                  </Setter>
-                                              </Style>
-                                          </StackPanel.Resources>
-                                          <RadioButton x:Name="AgentModeChatOption"
-                                                       Content="Trò chuyện"
-                                                       Tag="chat"
-                                                       GroupName="RuResponseMode"
-                                                       IsChecked="True"
-                                                       Click="OnAgentModeOptionClick"
-                                                       Padding="10,8"
-                                                       MinHeight="38"
-                                                       Margin="0"
-                                                       HorizontalContentAlignment="Stretch"
-                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                       FontSize="13"
-                                                       Foreground="{StaticResource RuInkBrush}"
-                                                       AutomationProperties.AutomationId="AgentModeChatOption"
-                                                       AutomationProperties.Name="Chế độ Trò chuyện" />
-                                          <RadioButton x:Name="AgentModeAgentOption"
-                                                       Content="Coding Agent"
-                                                       Tag="agent"
-                                                       GroupName="RuResponseMode"
-                                                       Click="OnAgentModeOptionClick"
-                                                       Padding="10,8"
-                                                       MinHeight="38"
-                                                       Margin="0"
-                                                       HorizontalContentAlignment="Stretch"
-                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                       FontSize="13"
-                                                       Foreground="{StaticResource RuInkBrush}"
-                                                       AutomationProperties.AutomationId="AgentModeAgentOption"
-                                                       AutomationProperties.Name="Chế độ Coding Agent" />
-                                      </StackPanel>
-                                  </Flyout>
-                              </Button.Flyout>
+                                AutomationProperties.Name="Coding Agent"
+                                ToolTipService.ToolTip="Agent · chế độ duy nhất">
                             <StackPanel Orientation="Horizontal" Spacing="5">
                                 <FontIcon x:Name="AgentModeIcon"
-                                          Glyph="&#xE8F2;"
+                                          Glyph="&#xEC25;"
                                           FontSize="12"
                                           Foreground="{StaticResource RuMutedBrush}" />
                                 <TextBlock x:Name="AgentModeLabel"
-                                           Text="Chat"
+                                           Text="Agent"
                                            FontSize="12"
                                            Foreground="{StaticResource RuMutedBrush}"
                                            VerticalAlignment="Center" />
-                                <FontIcon Glyph="&#xE70D;"
-                                          FontSize="10"
-                                          Foreground="{StaticResource RuMutedBrush}"
-                                          VerticalAlignment="Center" />
-                             </StackPanel>
-                         </Button>
+                            </StackPanel>
+                        </Button>
 
                         <ComboBox x:Name="AgentPresetBox"
                                   Grid.Column="1"
-                                  Visibility="Collapsed"
+                                  Visibility="Visible"
                                   SelectedIndex="0"
                                   SelectionChanged="OnAgentPresetChanged"
                                   AutomationProperties.AutomationId="AgentPresetBox"
@@ -845,7 +708,7 @@
                         </ComboBox>
 
                         <Button x:Name="MicButton"
-                                Grid.Column="2"
+                                Grid.Column="3"
                                 Click="OnMicClick"
                                 Width="32"
                                 Height="32"
@@ -868,7 +731,7 @@
 
 
                         <Button x:Name="SendButton"
-                                Grid.Column="3"
+                                Grid.Column="4"
                                 AutomationProperties.AutomationId="SendButton"
                                 Click="OnSendClick"
                                 Width="32"

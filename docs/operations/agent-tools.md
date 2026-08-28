@@ -207,12 +207,11 @@ or application launcher is advertised to the model.
 ## Agent activity shown in WinUI
 
 Agent is the only supported generation path. The desktop composer uses the
-known project root and exposes one compact preset selector with `Standard` and
-`Full Access`; it does not expose a workspace editor. The current shell may
-still render a legacy mode control until the GUI cleanup task lands, but that
-control has no Chat transport behind it. The sidebar keeps only primary
-conversation surfaces; Log, Diagnostics, Policy, and Audit remain reachable
-from the `Công cụ` flyout. Agent prompts are created through the authenticated
+known project root and exposes one static Agent indicator plus one compact
+preset selector with `Standard` and `Full Access`; it does not expose a Chat
+mode switch or workspace editor. The sidebar keeps only primary conversation
+surfaces; Log, Diagnostics, Policy, and Audit remain reachable from the
+`Công cụ` flyout. Agent prompts are created through the authenticated
 `/agent/v1/*` API and observed over SSE. The inline surface never displays raw
 commands, arguments, stdout, or private payload content.
 

@@ -38,11 +38,11 @@ public sealed class ChatViewVoiceContractTests
     }
 
     [Fact]
-    public void Agent_mode_keeps_microphone_enabled_and_uses_the_same_turn_path()
+    public void Agent_composer_keeps_microphone_enabled_and_uses_the_same_turn_path()
     {
         string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
         Assert.Contains("MicButton.IsEnabled = true", code, StringComparison.Ordinal);
-        Assert.DoesNotContain("if (_agentMode)\n            {\n                ShowAgentInlineStatus", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("_agentMode", code, StringComparison.Ordinal);
         Assert.Contains("AgentTurnSource.Typed", code, StringComparison.Ordinal);
         Assert.Contains("AgentTurnSource.Voice", code, StringComparison.Ordinal);
     }

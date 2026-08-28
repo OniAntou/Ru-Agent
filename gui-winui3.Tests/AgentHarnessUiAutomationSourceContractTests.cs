@@ -5,19 +5,20 @@ namespace RuApp.Tests;
 public sealed class AgentHarnessUiAutomationSourceContractTests
 {
     [Fact]
-    public void Agent_mode_uses_the_flyout_radio_automation_contract()
+    public void Agent_scenarios_use_the_static_agent_indicator_without_mode_selection()
     {
         string source = File.ReadAllText(FindHarnessSource("UiAutomationScenario.cs"));
 
-        Assert.Contains("Invoke(mode);", source, StringComparison.Ordinal);
-        Assert.Contains("AgentModeAgentOptionAutomationId", source, StringComparison.Ordinal);
-        Assert.Contains("Invoke(agentOption);", source, StringComparison.Ordinal);
-        Assert.Contains("SelectModeAsync(", source, StringComparison.Ordinal);
-        Assert.Contains("AgentModeChatOptionAutomationId", source, StringComparison.Ordinal);
-        Assert.Contains("SelectionItemPattern.Pattern", source, StringComparison.Ordinal);
+        Assert.Contains("AgentModeAutomationId", source, StringComparison.Ordinal);
+        Assert.Contains("IsAgentModeActive(mode)", source, StringComparison.Ordinal);
+        Assert.Contains("RunAgentScenarioAsync", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentModeAgentOptionAutomationId", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentModeChatOptionAutomationId", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("SelectModeAsync(", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Invoke(mode);", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("SelectionItemPattern.Pattern", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Toggle(mode);", source, StringComparison.Ordinal);
         Assert.DoesNotContain("togglePattern.Toggle();", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("EnsureToggleOff(mode);", source, StringComparison.Ordinal);
     }
 
     private static string FindHarnessSource(params string[] parts)
@@ -33,6 +34,6 @@ public sealed class AgentHarnessUiAutomationSourceContractTests
             }
         }
 
-        throw new DirectoryNotFoundException("gui-winui3.Harness source root was not found.");
+        throw new DirectoryNotFoundException("gui-winui3 harness source root was not found.");
     }
 }

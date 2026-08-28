@@ -619,46 +619,46 @@ voice/STT, VTS, observation, health, and the Worker v2 Agent step protocol remai
 
 ### 7.1 Remove socket construction and route state
 
-- [ ] Remove the `_wsClient` field, `new ChatWebSocketClient(backendSession)`,
+- [x] Remove the `_wsClient` field, `new ChatWebSocketClient(backendSession)`,
   `Start/NotifyBackendStopped/Dispose`, event subscriptions, and constructor argument
   from `MainWindow.xaml.cs` and `ChatView` composition. Keep the Agent client/controller
   and VoiceConversationService lifetime/disposal.
-- [ ] Remove `BackendSession.ChatUri`; keep `BaseUri`, bearer, `/voice/stream`, and
+- [x] Remove `BackendSession.ChatUri`; keep `BaseUri`, bearer, `/voice/stream`, and
   Agent HTTP construction. `rg -n "ChatUri|/chat|ChatWebSocketClient" gui-winui3` must
   show only negative tests/docs until final cleanup.
-- [ ] Remove mode-specific `_agentMode` branches from `ChatView.xaml.cs`. The view
+- [x] Remove mode-specific `_agentMode` branches from `ChatView.xaml.cs`. The view
   starts in Agent mode, `SetAgentMode`/Chat option handlers disappear, and all sends
   call the consolidated Agent helper from Task 4.
-- [ ] Keep the existing `ChatView` class/automation IDs in this cut to avoid a broad
+- [x] Keep the existing `ChatView` class/automation IDs in this cut to avoid a broad
   visual rename. Remove the mode flyout/radio buttons from `ChatView.xaml`; show a
   static compact `Agent` label and retain only `AgentPresetBox` with `Standard` and
   `Full Access`. No workspace editor/settings flyout is reintroduced.
-- [ ] Make the Agent preset selector visible whenever the composer is visible, with
+- [x] Make the Agent preset selector visible whenever the composer is visible, with
   Standard selected by default. Preserve Full Access confirmation, session preset
   versioning, and the current workspace-resolution policy; this task does not broaden
   filesystem authority.
-- [ ] Keep the existing centered transcript and `ChatScrollHost` right-edge scrollbar
+- [x] Keep the existing centered transcript and `ChatScrollHost` right-edge scrollbar
   layout. Remove only code that was required to stream Chat WebSocket frames.
 
 ### 7.2 Update UI contract tests and build
 
-- [ ] Replace mode-dropdown assertions in `ChatShellUiContractTests.cs` with exact
+- [x] Replace mode-dropdown assertions in `ChatShellUiContractTests.cs` with exact
   assertions for one Agent label, one preset ComboBox, two preset items, no Chat radio,
   no workspace editor in the composer, and an enabled microphone button.
-- [ ] Replace `ChatWebSocketClientContractTests` with a negative static contract test
+- [x] Replace `ChatWebSocketClientContractTests` with a negative static contract test
   that the production project has no Chat WebSocket type/URI and a positive test that
   the Agent client is composed.
-- [ ] Update `ChatViewNoEmojiContractTests`, scroll tests, and welcome stability tests
+- [x] Update `ChatViewNoEmojiContractTests`, scroll tests, and welcome stability tests
   only where their fixture names refer to the removed mode; preserve their behavioral
   assertions.
-- [ ] Run:
+- [x] Run:
 
   ```powershell
   dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj -c Release --no-restore --nologo
   dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --no-restore --nologo
   ```
 
-- [ ] Commit explicit GUI/test paths with `refactor: make Agent the only GUI mode`.
+- [x] Commit explicit GUI/test paths with `refactor: make Agent the only GUI mode`.
 
 ## Task 8: Update route tools, docs, examples, and operator contract
 

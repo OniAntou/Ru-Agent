@@ -64,7 +64,6 @@ namespace RuApp.Views
         private AgentRunController? _agentController;
         private CancellationTokenSource? _agentMonitorCts;
         private readonly AgentSessionRecovery _agentSessionRecovery = new();
-        private bool _agentMode = true;
         private bool _agentActivityVisible;
         private AgentPermissionPreset _agentPreset = AgentPermissionPreset.Standard;
         private string? _agentPresetSessionId;
@@ -150,7 +149,7 @@ namespace RuApp.Views
             _agentController?.ActivityReceived += OnAgentActivityReceived;
             _agentController?.SummaryReceived += OnAgentSummaryReceived;
             _agentController?.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
-            UpdateAgentModeVisuals();
+            UpdateAgentComposerVisuals();
             UpdateAgentInlineState();
             _voiceCapture = new VoiceTurnCaptureService(voiceSourceFactory);
             _voiceConversation = new VoiceConversationService(
@@ -213,8 +212,7 @@ namespace RuApp.Views
 
         private void ApplyAgentActivity(AgentActivityModel activity)
         {
-            if (!_agentMode
-                || _agentController?.IsBusy != true
+            if (_agentController?.IsBusy != true
                 || string.IsNullOrWhiteSpace(activity.ActivityId))
             {
                 return;
@@ -248,7 +246,7 @@ namespace RuApp.Views
 
         private void ApplyAgentRunSummary(AgentRunSummaryModel summary)
         {
-            if (!_agentMode || _agentController?.IsBusy != true)
+            if (_agentController?.IsBusy != true)
             {
                 return;
             }
@@ -332,60 +330,9 @@ namespace RuApp.Views
             }
         }
 
-        private void OnAgentModeButtonClick(object sender, RoutedEventArgs e)
-        {
-            UpdateAgentModeVisuals();
-        }
-
-        private void OnAgentModeOptionClick(object sender, RoutedEventArgs e)
-        {
-            if (sender is not RadioButton option || option.Tag is not string tag)
-            {
-                return;
-            }
-
-            SetAgentMode(string.Equals(tag, "agent", StringComparison.Ordinal));
-        }
-
         private void OnAgentPresetChanged(object sender, SelectionChangedEventArgs e)
         {
             _agentPreset = SelectedAgentPreset();
-            UpdateAgentInlineState();
-        }
-
-        private void SetAgentMode(bool enabled)
-        {
-            if (!enabled
-                && IsActiveAgentRunPending())
-            {
-                _agentMode = true;
-                AgentModeAgentOption.IsChecked = true;
-                ShowAgentInlineStatus("Coding Agent đang có phiên chạy. Hãy Dừng hoặc hoàn tất phiên trước.");
-                UpdateAgentModeVisuals();
-                UpdateAgentInlineState();
-                return;
-            }
-
-            _agentMode = enabled;
-            _agentActivityVisible = enabled && IsActiveAgentRunPending();
-            if (!enabled)
-            {
-                ClearAgentActivities();
-                ClearAgentRunSummary();
-                _agentActivityVisible = false;
-                _agentPreset = AgentPermissionPreset.Standard;
-                _agentPresetSessionId = null;
-                _agentPresetVersion = null;
-                AgentPresetBox.SelectedIndex = 0;
-                AgentInlinePanel.Visibility = Visibility.Collapsed;
-            }
-            else if (!_agentActivityVisible)
-            {
-                AgentStatusText.Text = string.Empty;
-                AgentInlinePanel.Visibility = Visibility.Collapsed;
-            }
-
-            UpdateAgentModeVisuals();
             UpdateAgentInlineState();
         }
 
@@ -396,26 +343,22 @@ namespace RuApp.Views
             AgentStatusText.Text = status;
         }
 
-        private void UpdateAgentModeVisuals()
+        private void UpdateAgentComposerVisuals()
         {
-            if (AgentModeChatOption is null)
+            if (AgentModeLabel is null)
             {
                 return;
             }
 
-            AgentModeChatOption.IsChecked = !_agentMode;
-            AgentModeAgentOption.IsChecked = _agentMode;
-            AgentModeLabel.Text = _agentMode ? "Agent" : "Chat";
-            AgentModeIcon.Glyph = _agentMode ? "\uEC25" : "\uE8F2";
-            AgentPresetBox.Visibility = _agentMode ? Visibility.Visible : Visibility.Collapsed;
+            AgentModeLabel.Text = "Agent";
+            AgentModeIcon.Glyph = "\uEC25";
+            AgentPresetBox.Visibility = Visibility.Visible;
             AutomationProperties.SetName(
                 AgentModeButton,
-                _agentMode ? "Đang ở chế độ Coding Agent" : "Đang ở chế độ Trò chuyện");
+                "Coding Agent");
             ToolTipService.SetToolTip(
                 AgentModeButton,
-                _agentMode ? "Coding Agent · mở để đổi chế độ" : "Chat · mở để bật Coding Agent");
-            // Voice capture is part of the single Agent turn path. It must remain
-            // available regardless of the legacy mode selector state.
+                "Agent · chế độ duy nhất");
             MicButton.IsEnabled = true;
             AutomationProperties.SetName(
                 MicButton,
@@ -602,7 +545,7 @@ namespace RuApp.Views
                 AgentPresetBox.SelectedIndex = 0;
             }
 
-            UpdateAgentModeVisuals();
+            UpdateAgentComposerVisuals();
             AgentInlinePanel.Visibility = Visibility.Collapsed;
             AgentTrustPanel.Visibility = Visibility.Collapsed;
             AgentApprovalPanel.Visibility = Visibility.Collapsed;
@@ -650,16 +593,6 @@ namespace RuApp.Views
         {
             try
             {
-                var ctrlDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
-                    .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
-
-                if (ctrlDown && e.Key == Windows.System.VirtualKey.M)
-                {
-                    e.Handled = true;
-                    SetAgentMode(!_agentMode);
-                    return;
-                }
-
                 if (e.Key == Windows.System.VirtualKey.Enter)
                 {
                     var shiftDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift)
@@ -684,18 +617,10 @@ namespace RuApp.Views
                 string text = ChatInputTextBox.Text.Trim();
                 if (string.IsNullOrEmpty(text)) return;
 
-                if (string.Equals(text, "/agent", StringComparison.OrdinalIgnoreCase))
-                {
-                    ChatInputTextBox.Text = string.Empty;
-                    SetAgentMode(true);
-                    return;
-                }
-
                 if (string.Equals(text, "/full", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(text, "/fullaccess", StringComparison.OrdinalIgnoreCase))
                 {
                     ChatInputTextBox.Text = string.Empty;
-                    if (!_agentMode) SetAgentMode(true);
                     AgentPresetBox.SelectedIndex = 1;
                     return;
                 }
@@ -704,7 +629,6 @@ namespace RuApp.Views
                     || string.Equals(text, "/standard", StringComparison.OrdinalIgnoreCase))
                 {
                     ChatInputTextBox.Text = string.Empty;
-                    if (!_agentMode) SetAgentMode(true);
                     AgentPresetBox.SelectedIndex = 0;
                     return;
                 }

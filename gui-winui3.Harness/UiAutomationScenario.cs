@@ -15,8 +15,6 @@ public sealed class UiAutomationScenario : IDisposable
     private const string ChatMessagesAutomationId = "ChatMessages";
     private const string NewSessionAutomationId = "NewSessionButton";
     private const string AgentModeAutomationId = "AgentModeButton";
-    private const string AgentModeChatOptionAutomationId = "AgentModeChatOption";
-    private const string AgentModeAgentOptionAutomationId = "AgentModeAgentOption";
     private const string AgentActivityAutomationId = "AgentStatusText";
     private const string ChatInputAutomationId = "ChatInput";
     private const string SendButtonAutomationId = "SendButton";
@@ -214,27 +212,20 @@ public sealed class UiAutomationScenario : IDisposable
         TimeSpan timeout)
     {
         DateTimeOffset started = DateTimeOffset.UtcNow;
-        string stage = "find_agent_mode";
+        string stage = "find_agent_indicator";
         try
         {
             AutomationElement mode = await WaitForElementAsync(AgentModeAutomationId, timeout);
-            stage = $"open_agent_mode_"
+            stage = $"verify_agent_indicator_"
                 + $"{(mode.Current.IsEnabled ? "enabled" : "disabled")}_"
                 + $"{(mode.Current.IsOffscreen ? "offscreen" : "onscreen")}";
-            Invoke(mode);
-            stage = "find_agent_mode_option";
-            AutomationElement agentOption = await WaitForElementAsync(
-                AgentModeAgentOptionAutomationId,
-                timeout);
-            stage = "select_agent_mode";
-            Invoke(agentOption);
-            stage = "wait_agent_mode_on";
+            stage = "wait_agent_indicator";
             bool enabled = await WaitUntilAsync(
                 () => IsAgentModeActive(mode),
                 timeout);
             if (!enabled)
             {
-                return Check("gui.agent_enable", false, started, "Agent mode did not enable for the session");
+                return Check("gui.agent_enable", false, started, "Agent indicator did not show the active session mode");
             }
 
             stage = "find_chat_input";
@@ -257,15 +248,13 @@ public sealed class UiAutomationScenario : IDisposable
                 bool noLateAgentUpdate = !HasUserAndAssistantMessages()
                     && !VisibleMessageContainsPrivateMarker()
                     && !AgentSurfaceContainsPrivateMarker();
-                stage = "select_chat_mode_after_replacement";
-                bool disabledAfterReplacement = await SelectModeAsync(
-                    mode,
-                    AgentModeChatOptionAutomationId,
+                stage = "verify_agent_indicator_after_replacement";
+                bool agentStillVisible = await WaitUntilAsync(
+                    () => IsAgentModeActive(mode),
                     timeout);
-                stage = "wait_agent_mode_off_after_replacement";
                 bool lifecyclePassed = replaced.Status == "passed"
                     && noLateAgentUpdate
-                    && disabledAfterReplacement;
+                    && agentStillVisible;
                 return Check(
                     "gui." + scenario,
                     lifecyclePassed,
@@ -286,13 +275,6 @@ public sealed class UiAutomationScenario : IDisposable
                 && truthfulVolumeFailure
                 && privateAbsent;
 
-            stage = "select_chat_mode";
-            bool disabled = await SelectModeAsync(
-                mode,
-                AgentModeChatOptionAutomationId,
-                timeout);
-            stage = "wait_agent_mode_off";
-            passed &= disabled;
             return Check(
                 "gui." + scenario,
                 passed,
@@ -302,7 +284,7 @@ public sealed class UiAutomationScenario : IDisposable
                     : $"agent_assertions_failed:activity={activity};"
                         + $"message_items={CountVisibleMessageItems()};"
                         + $"truthful_failure={truthfulVolumeFailure};"
-                        + $"private_absent={privateAbsent};disabled={disabled}");
+                        + $"private_absent={privateAbsent}");
         }
         catch (Exception ex)
         {
@@ -507,41 +489,8 @@ public sealed class UiAutomationScenario : IDisposable
         return forbidden.Any(marker => activity.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool IsModeSelected(AutomationElement element)
-    {
-        if (element.TryGetCurrentPattern(TogglePattern.Pattern, out object togglePattern)
-            && togglePattern is TogglePattern toggle
-            && toggle.Current.ToggleState == ToggleState.On)
-        {
-            return true;
-        }
-
-        return element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object pattern)
-            && pattern is SelectionItemPattern selection
-            && selection.Current.IsSelected;
-    }
-
     private static bool IsAgentModeActive(AutomationElement element)
         => ContainsIgnoreCase(GetName(element), "Coding Agent");
-
-    private async Task<bool> SelectModeAsync(
-        AutomationElement mode,
-        string optionAutomationId,
-        TimeSpan timeout)
-    {
-        Invoke(mode);
-        AutomationElement option = await WaitForElementAsync(optionAutomationId, timeout);
-        Invoke(option);
-
-        bool expectAgent = optionAutomationId == AgentModeAgentOptionAutomationId;
-        return await WaitUntilAsync(
-            () => (expectAgent
-                    ? IsAgentModeActive(mode)
-                    : ContainsIgnoreCase(GetName(mode), "Trò chuyện"))
-                || (FindByAutomationId(optionAutomationId) is { } current
-                    && IsModeSelected(current)),
-            timeout);
-    }
 
     private static void SetValue(AutomationElement element, string value)
     {

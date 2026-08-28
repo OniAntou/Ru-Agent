@@ -19,13 +19,14 @@ an operating contract.
 
 ## Implemented checkpoints (Phases 1–3 selected surfaces, 2026-08-29)
 
-- [Phase 1: Harness Foundation and Headless Read-Only Tracer](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-01-harness-foundation.md) — Public Host owns Worker/Broker in one Job Object, Worker v2 one-step `AssistantStep`, 54 HTTP + 1 WS (`/voice/stream`; 13 `/agent/v1/*` additive), encrypted SQLite harness store, SSE reconnect with durable `id:<sequence>`, and thin `RuAgent.Cli` tracer (safe NDJSON, no private payload auto-fetch). The current Agent-only cut routes text and microphone turns through the Agent API/SSE path and retires Worker v1 Chat generation; the GUI mode cleanup remains Task 7 in the active plan.
+- [Phase 1: Harness Foundation and Headless Read-Only Tracer](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-01-harness-foundation.md) — Public Host owns Worker/Broker in one Job Object, Worker v2 one-step `AssistantStep`, 54 HTTP + 1 WS (`/voice/stream`; 13 `/agent/v1/*` additive), encrypted SQLite harness store, SSE reconnect with durable `id:<sequence>`, and thin `RuAgent.Cli` tracer (safe NDJSON, no private payload auto-fetch). The current Agent-only cut routes text and microphone turns through the Agent API/SSE path, retires Worker v1 Chat generation, and exposes the same Agent path in the WinUI composer.
 - [Phase 2: Policy Authority and File Tools](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-02-policy-file-tools.md) — Standard allows ordinary trusted-workspace reads/creates/edits and asks for delete/protected/network/unknown; explicit absolute paths outside the root use `external_directory_required` and can be granted for the current run or project, while Full Access changes fallback but never bypasses trust; immutable encrypted-at-rest `PolicySnapshot`/`WorkspaceTrust` snapshots, `CanonicalPathResolver`/`ProtectedPathCatalog` `v1`, Broker v2 `PolicyContext`/`PolicySnapshotEvaluator`, durable approvals first-writer-wins `approval_stale` with exact scope preview and old-snapshot execution ordering, model-usable file tools (`list`/`glob`/`search`/`read`, hash-guarded `write`/`edit`, recoverable `delete`/`restore` one-time), CLI `policy list`/`import`/`remove` and `approve`/`deny` plus `run --preset full` interactive. `files.apply_patch` is not advertised or model-usable in the current runtime.
 - [Phase 3: Terminal and Git](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-03-terminal-git.md) — The headless Agent v2 path exposes policy-evaluated `terminal.run`/`terminal.shell` with explicit per-request approval, and the run reconciliation route is active. The managed Git commit workflow (Task 6) is not shipped; Git commands remain ordinary terminal requests and are not a managed commit capability.
-- Desktop entry point — the current WinUI build still exposes an explicit
-  Chat/Coding Agent mode pill plus a compact Agent preset selector while the
-  Task 7 GUI cleanup is pending. Technical Agent surfaces remain available
-  under `Công cụ`, while Agent turns use the shared `/agent/v1/*` API/SSE path.
+- Desktop entry point — the current WinUI build exposes one static Agent
+  indicator and a compact Agent preset selector (`Standard`/`Full Access`) in
+  the composer; there is no Chat mode switch or workspace editor there.
+  Technical Agent surfaces remain available under `Công cụ`, while Agent turns
+  use the shared `/agent/v1/*` API/SSE path.
   The current run also gets a transient, safe-summary-only
   activity feed inside the Chat transcript; it is separate from durable
   history and clears on terminal, cancellation, disconnect, or reset.

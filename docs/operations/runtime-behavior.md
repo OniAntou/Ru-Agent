@@ -143,8 +143,9 @@ gentle twinkling starlight points and periodic shooting star streaks rendered di
 via `Microsoft.UI.Composition` (`SpriteVisual`, `CompositionLinearGradientBrush` with
 soft halo glow and core beam), runs only while `Messages.Count == 0`, and stops and
 clears every visual element as soon as the first message exists. The composer keeps the
-native TextBox caret/focus behavior and contains a compact Agent preset selector
-with `Standard` and `Full Access`.
+native TextBox caret/focus behavior and contains one static Agent indicator plus
+a compact Agent preset selector with `Standard` and `Full Access`; there is no
+Chat mode switch or workspace editor in the composer.
 The UI uses the known project root as the initial Agent workspace and does not
 expose a workspace editor, while the authenticated API still validates the
 canonical path. All submissions use the authenticated `/agent/v1/*` API/SSE path.

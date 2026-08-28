@@ -28,5 +28,6 @@ installation stay out of scope with no adapters.
   explicit commands produce a typed, readback-verified request before model
   selection.
 - The bounded model selection loop allows at most ten sequential tool calls;
-  approvals still gate mutations. The Worker v1 Chat protocol and generation
-  branch are retired; Worker v1 now carries only runtime/device adapters.
+  approvals still gate mutations. The former Worker v1 conversational
+  generation branch is retired; Worker v1 now carries only runtime/device
+  adapters.

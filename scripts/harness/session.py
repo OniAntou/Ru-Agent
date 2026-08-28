@@ -1258,7 +1258,7 @@ class HarnessSession:
         def group(prefix: str, total: int | None) -> dict[str, int]:
             values = [check for check in checks if check.check_id.startswith(prefix)]
             if total is None:
-                # Dynamic total from registry – preserves 54+2 after Phase 1
+                # Dynamic total from the canonical route registry.
                 total = len([e for e in self._registry if e.check_id.startswith(prefix)])
             return {
                 "total": total,

@@ -1,6 +1,6 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, 2026-08-28.
+Status: current ownership plus accepted architecture-v2 targets, 2026-08-29.
 
 Operational invariants for generation, voice, STT, VTS, observation, and live
 acceptance are maintained in
@@ -50,15 +50,17 @@ Additional harness surfaces (additive, feature-flagged `RuBackend:AgentHarness:V
 - Headless Agent v2 terminal: `terminal.run`/`terminal.shell` are policy-evaluated and require explicit approval for every request; they run as the current Windows user and can execute host code or open sockets. The managed Git commit workflow (Phase 3 Task 6) is not shipped; Git commands are not a separate managed capability.
 - CLI tracer: thin headless `RuAgent.Cli` delegates start/attach to `RuAgent.Client` and all run behavior to HTTP/SSE; renders only safe envelope fields (NDJSON `v:1` with `--json`, no private payload auto-fetch, no prompt/args/output/secret fields) and now exposes `agent approve --scope once|run|project`/`deny`/`policy list`/`import --global FILE`/`remove` plus `run --preset full` interactive warning (`--json` cannot bypass).
 
-The accepted target flow, implemented by later architecture-v2 plans, is:
+The current Agent flow is:
 
 ```text
 RuApp -> ASP.NET Core public contract -> typed worker protocol v2 -> Runtime Worker
 Runtime Worker -> model adapters / Voice Engine / STT / VTS / observation
 ```
 
-The typed worker protocol v2 and framed Voice Engine are accepted decisions,
-not claims about the currently running v1/Flask implementation.
+The typed Worker protocol v2 is the active Agent execution path. The framed
+Voice Engine remains an accepted future target, not a claim about the current
+Flask-backed implementation. OpenCode-style system-prompt composition remains
+a separate follow-up and must not reintroduce a second conversation transport.
 
 ## Harness ownership
 

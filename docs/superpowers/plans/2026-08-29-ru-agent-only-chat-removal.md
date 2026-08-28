@@ -680,14 +680,14 @@ voice/STT, VTS, observation, health, and the Worker v2 Agent step protocol remai
 
 ### 8.1 Make all tooling Agent-only
 
-- [ ] Remove `("/chat", ...)` from the compatibility benchmark and retain the
+- [x] Remove `("/chat", ...)` from the compatibility benchmark and retain the
   `/voice/stream` probe plus all 54 HTTP probes.
-- [ ] Remove `_websocket_url("/chat", ...)`, Chat send helpers, and Chat route fixtures
+- [x] Remove `_websocket_url("/chat", ...)`, Chat send helpers, and Chat route fixtures
   from `scripts/harness/session.py` and its tests. Keep the private Worker v1 URL only
   for device/runtime probes and the Worker v2 URL for Agent model steps.
-- [ ] Update every route count/summary from `54 HTTP + 2 WebSocket` to
+- [x] Update every route count/summary from `54 HTTP + 2 WebSocket` to
   `54 HTTP + 1 WebSocket`; list `/voice/stream` as the only public WebSocket.
-- [ ] Update examples so text and voice both show `POST /agent/v1/runs` plus SSE
+- [x] Update examples so text and voice both show `POST /agent/v1/runs` plus SSE
   `GET /agent/v1/runs/{runId}/events`; remove all `/chat` send examples and
   `--deterministic-chat` aliases. If a CLI flag must remain for parser compatibility,
   rename its help text to Agent-only and make the old token return a clear
@@ -695,31 +695,31 @@ voice/STT, VTS, observation, health, and the Worker v2 Agent step protocol remai
 
 ### 8.2 Rewrite architecture/operations/ADR language
 
-- [ ] In `docs/architecture.md`, change the ownership table from “v1 Chat + v2
+- [x] In `docs/architecture.md`, change the ownership table from “v1 Chat + v2
   Agent” to “v1 device/runtime + v2 Agent”, describe the single Agent text/voice
   path, remove the `/chat` endpoint and Chat coordinator module, and retain the
   explicit note that prompt-composer parity is a follow-up.
-- [ ] In `docs/operations/runtime-behavior.md`, replace Chat turn ordering/queue
+- [x] In `docs/operations/runtime-behavior.md`, replace Chat turn ordering/queue
   paragraphs with Agent run/SSE ordering, document typed assistant deltas and voice
   transcription→Agent flow, and keep metadata privacy/TTS/VTS/memory/approval and
   right-edge scrollbar behavior accurate.
-- [ ] In `docs/operations/agent-tools.md`, remove the Chat/Agent capability matrix;
+- [x] In `docs/operations/agent-tools.md`, remove the Chat/Agent capability matrix;
   document Agent Standard and Full Access only, with session-scoped workspace policy,
   approval, trust, cancel, reconnect, and external-directory behavior. Keep the
   future OS sandbox deferral.
-- [ ] In `CONTEXT.md` and ADR 0007, change the default/only generation mode to Agent,
+- [x] In `CONTEXT.md` and ADR 0007, change the default/only generation mode to Agent,
   remove the Chat read-only profile, keep Full Access as the explicit loosening of
   policy, and state that no Chat compatibility shim exists.
-- [ ] Update root/backend/docs READMEs and verification prose so commands, route
+- [x] Update root/backend/docs READMEs and verification prose so commands, route
   counts, startup descriptions, and screenshots cannot imply a Chat transport.
-- [ ] Add a short “retirement boundary” paragraph to the approved spec noting the
+- [x] Add a short “retirement boundary” paragraph to the approved spec noting the
   implementation date and the preserved non-conversation Worker v1 responsibilities.
 
 ### 8.3 Run documentation and static-contract checks
 
-- [ ] Run `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_current_documentation.py tests/test_legacy_retirement.py tests/test_aspnetcore_route_matrix.py tests/test_harness_session.py tests/test_harness_routes.py -q`.
-- [ ] Run `rg -n -i "54 HTTP.*2 WebSocket|/chat|ChatWebSocket|GenerateChatAsync|Worker v1 Chat|normal Chat|Chat mode|starts in Chat" README.md backend-dotnet docs CONTEXT.md scripts tests -g "*.md" -g "*.py" -g "*.json" -g "*.cs" -g "*.xaml"`. Remaining matches must be either the explicit negative retirement test or historical/spec text that is clearly marked superseded; fix every active-operator claim.
-- [ ] Inspect all changed docs for outdated links and commit explicit docs/tool paths
+- [x] Run `& D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_current_documentation.py tests/test_legacy_retirement.py tests/test_aspnetcore_route_matrix.py tests/test_harness_session.py tests/test_harness_routes.py -q`.
+- [x] Run `rg -n -i "54 HTTP.*2 WebSocket|/chat|ChatWebSocket|GenerateChatAsync|Worker v1 Chat|normal Chat|Chat mode|starts in Chat" README.md backend-dotnet docs CONTEXT.md scripts tests -g "*.md" -g "*.py" -g "*.json" -g "*.cs" -g "*.xaml"`. Remaining matches must be either the explicit negative retirement test or historical/spec text that is clearly marked superseded; fix every active-operator claim.
+- [x] Inspect all changed docs for outdated links and commit explicit docs/tool paths
   with `docs: document Agent-only runtime contract`.
 
 ## Task 9: Full sequential verification and user-owned acceptance

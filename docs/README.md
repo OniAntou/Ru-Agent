@@ -30,13 +30,17 @@ an operating contract.
   The current run also gets a transient, safe-summary-only
   activity feed inside the Chat transcript; it is separate from durable
   history and clears on terminal, cancellation, disconnect, or reset.
+- Agent-only transport retirement (2026-08-29) — the [approved design](superpowers/specs/2026-08-29-ru-agent-only-chat-removal-design.md)
+  and [implementation plan](superpowers/plans/2026-08-29-ru-agent-only-chat-removal.md)
+  are now implemented through the deterministic release gates: the public host
+  exposes one `/voice/stream` WebSocket, Worker v1 is runtime/device-only, and
+  text and microphone turns share the authenticated Agent HTTP/SSE path. GUI,
+  audio, and VTube Studio smoke checks remain explicit user-owned acceptance.
 
-## Approved future work (remaining Phase 3 work and Phase 4)
+## Approved future work (remaining Phase 3 work, Phase 4, and follow-up projects)
 
 - [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md)
 - [OpenCode/Pi coding-loop parity implementation program](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity.md)
-- [Agent-only Chat removal design](superpowers/specs/2026-08-29-ru-agent-only-chat-removal-design.md)
-- [Agent-only Chat removal implementation plan](superpowers/plans/2026-08-29-ru-agent-only-chat-removal.md)
 
 ## Historical implementation records
 

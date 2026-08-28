@@ -114,20 +114,19 @@ the Runtime Worker or voice engine as independent public services.
   available when voice mode is idle.
 - VTube Studio actions and lip sync remain private runtime metadata.
   `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
-- In the WinUI shell, conversation and Voice are the primary navigation surfaces. Log,
-   Diagnostics, Policy, and Audit are grouped under `Công cụ`; Coding Agent is
-   selected from the compact preset control inside the composer. Agent is the
-   only generation mode and exposes one compact preset dropdown with `Standard`
-   and `Full Access`. The UI always uses the
-   known project root as the initial Agent workspace; workspace selection is
-   not exposed in the composer, while the authenticated API still validates
-   the canonical path. If the app has not opened a session yet, the first
-   Agent prompt creates a fresh session before applying the selected preset.
-    All prompts use the authenticated `/agent/v1/*` API/SSE path. The composer
-    shows bounded Agent status, workspace trust, approval, Stop, and Continue controls;
-    the conversation transcript can show
-   a transient safe activity feed for the current run. The feed is separate
-   from durable messages and never places raw tool payloads in the transcript.
+- In the WinUI shell, conversation and Voice are the primary navigation surfaces.
+  Log, Diagnostics, Policy, and Audit are grouped under `Công cụ`; the composer
+  shows one static Agent indicator and one compact preset dropdown with
+  `Standard` and `Full Access`. Agent is the only generation mode. The UI always
+  uses the known project root as the initial Agent workspace; workspace selection
+  is not exposed in the composer, while the authenticated API still validates
+  the canonical path. If the app has not opened a session yet, the first Agent
+  prompt creates a fresh session before applying the selected preset. All
+  prompts use the authenticated `/agent/v1/*` API/SSE path. The composer shows
+  bounded Agent status, workspace trust, approval, Stop, and Continue controls;
+  the conversation transcript can show a transient safe activity feed for the
+  current run. The feed is separate from durable messages and never places raw
+  tool payloads in the transcript.
 - Tool capability is an Agent preset selector. Standard advertises workspace
   discovery/read (`files.list`, `files.glob`, `files.search`, `files.read` with
   offset/limit, streaming enumeration, hidden/binary/protected handling,

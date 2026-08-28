@@ -28,5 +28,6 @@ public interface IAgentRunClient
         Func<AgentEventModel, Task> onEvent,
         CancellationToken cancellationToken = default,
         Func<AgentActivityModel, Task>? onActivity = null,
-        Func<AgentRunSummaryModel, Task>? onSummary = null);
+        Func<AgentRunSummaryModel, Task>? onSummary = null,
+        Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null);
 }

@@ -39,12 +39,14 @@ public sealed class AgentRunControllerTests
         public List<AgentEventModel> Stream { get; } = new();
         public List<AgentActivityModel> ActivityStream { get; } = new();
         public List<AgentRunSummaryModel> SummaryStream { get; } = new();
+        public List<AgentAssistantDeltaModel> AssistantDeltaStream { get; } = new();
         public bool CancelCalled;
         public bool ContinueCalled;
         public bool TrustCalled;
         public bool PresetCalled;
         public bool ApproveCalled;
         public bool DenyCalled;
+        public TaskCompletionSource<bool>? SubscriptionGate;
         public Task<AgentRunModel> CreateRunAsync(CreateAgentRunRequest r, CancellationToken ct = default)
             => Task.FromResult(Run!);
 
@@ -105,11 +107,25 @@ public sealed class AgentRunControllerTests
             Func<AgentEventModel, Task> onEvent,
             CancellationToken ct = default,
             Func<AgentActivityModel, Task>? onActivity = null,
-            Func<AgentRunSummaryModel, Task>? onSummary = null)
+            Func<AgentRunSummaryModel, Task>? onSummary = null,
+            Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null)
         {
+            if (SubscriptionGate is not null)
+            {
+                await SubscriptionGate.Task.ConfigureAwait(false);
+            }
+
             foreach (var e in Stream)
             {
                 await onEvent(e).ConfigureAwait(false);
+            }
+
+            if (onAssistantDelta is not null)
+            {
+                foreach (var delta in AssistantDeltaStream)
+                {
+                    await onAssistantDelta(delta).ConfigureAwait(false);
+                }
             }
 
             if (onActivity is not null)
@@ -127,6 +143,7 @@ public sealed class AgentRunControllerTests
                     await onSummary(summary).ConfigureAwait(false);
                 }
             }
+
         }
     }
 
@@ -185,6 +202,81 @@ public sealed class AgentRunControllerTests
         var summary = Assert.Single(received);
         Assert.Equal("verified", summary.VerificationState);
         Assert.Empty(controller.Events);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_delivers_typed_assistant_deltas_once_per_transient_frame()
+    {
+        var fake = new FakeClient { Run = MakeRun() };
+        var delta = new AgentAssistantDeltaModel(
+            "Xin chào",
+            "step_0123456789abcdef0123456789abcdef",
+            null,
+            7);
+        fake.AssistantDeltaStream.Add(delta);
+        fake.AssistantDeltaStream.Add(delta);
+        var received = new List<AgentAssistantDeltaModel>();
+        var dispatches = 0;
+        var controller = new AgentRunController(
+            fake,
+            synchronize: action =>
+            {
+                dispatches++;
+                action();
+            });
+        controller.AssistantDeltaReceived += (_, item) => received.Add(item);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1",
+            "C:\\work",
+            "do it",
+            "standard",
+            null,
+            "idem-delta"));
+
+        var item = Assert.Single(received);
+        Assert.Equal("Xin chào", item.Text);
+        Assert.Equal(7, item.TransientSequence);
+        Assert.True(dispatches > 0);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_ignores_assistant_delta_after_cancellation()
+    {
+        var fake = new FakeClient
+        {
+            Run = MakeRun(),
+            SubscriptionGate = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        fake.AssistantDeltaStream.Add(new AgentAssistantDeltaModel(
+            "late",
+            "step_0123456789abcdef0123456789abcdef",
+            null,
+            1));
+        var received = new List<AgentAssistantDeltaModel>();
+        var controller = new AgentRunController(fake);
+        controller.AssistantDeltaReceived += (_, item) => received.Add(item);
+        var runTask = controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1",
+            "C:\\work",
+            "do it",
+            "standard",
+            null,
+            "idem-late-delta"));
+
+        for (var attempt = 0; attempt < 100 && controller.CurrentRun is null; attempt++)
+        {
+            await Task.Delay(1);
+        }
+
+        Assert.NotNull(controller.CurrentRun);
+        var cancelTask = controller.CancelAsync();
+        fake.SubscriptionGate.SetResult(true);
+        await cancelTask;
+        await runTask;
+
+        Assert.Empty(received);
     }
 
     [Fact]

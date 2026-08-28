@@ -225,6 +225,12 @@ the typed fields `activity_id`, `kind`, `state`, optional safe `file_name`
 `duration_ms`, and bounded `safe_code`. It does not advance the durable event
 cursor, append to the Harness event store, or enter session history.
 
+Assistant text uses a separate typed `assistant.delta` transient frame. The
+client validates its bounded UTF-8 text and step/execution identities, then
+delivers it on the UI dispatcher with `(run, model_step, transient_sequence)`
+deduplication. Raw transient JSON and tool-output deltas are never exposed to
+the UI or durable audit.
+
 Each activity item exposes one of four visual states: a spinner while started,
 a check when completed, an error mark when failed, and an ellipsis while waiting
 for approval or continuation. Thinking items may show only their elapsed

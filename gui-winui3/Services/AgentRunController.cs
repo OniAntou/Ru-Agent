@@ -16,6 +16,7 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     private readonly Action<Action>? _synchronize;
     private readonly Action<AgentEventModel>? _auditSink;
     private readonly object _gate = new();
+    private readonly HashSet<string> _assistantDeltaKeys = new(StringComparer.Ordinal);
 
     private AgentRunModel? _currentRun;
     private string _statusText = "Sẵn sàng";
@@ -142,6 +143,10 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
             PendingApprovalId = null;
             PendingApprovalSummary = null;
             Events.Clear();
+            lock (_gate)
+            {
+                _assistantDeltaKeys.Clear();
+            }
             RefreshCommands();
         });
 
@@ -163,7 +168,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                     OnEventAsync,
                     token,
                     OnActivityAsync,
-                    OnSummaryAsync)
+                    OnSummaryAsync,
+                    OnAssistantDeltaAsync)
                 .ConfigureAwait(false);
             // The SSE stream ends after the terminal snapshot, but the create response
             // may be stale (or the stream may have disconnected). Refresh the durable
@@ -531,6 +537,51 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         return Task.CompletedTask;
     }
 
+    private Task OnAssistantDeltaAsync(AgentAssistantDeltaModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        string? runId;
+        lock (_gate)
+        {
+            if (!_isBusy || _isCancelRequested || _currentRunId is null)
+            {
+                return Task.CompletedTask;
+            }
+
+            runId = _currentRunId;
+        }
+
+        RunOnUi(() =>
+        {
+            try
+            {
+                lock (_gate)
+                {
+                    if (!_isBusy
+                        || _isCancelRequested
+                        || !string.Equals(_currentRunId, runId, StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    var key = $"{runId}:{model.ModelStepId}:{model.TransientSequence}";
+                    if (!_assistantDeltaKeys.Add(key))
+                    {
+                        return;
+                    }
+                }
+
+                AssistantDeltaReceived?.Invoke(this, model);
+            }
+            catch
+            {
+                // A visual delta subscriber is observational and must not fail the
+                // Agent SSE subscription or its durable run state.
+            }
+        });
+        return Task.CompletedTask;
+    }
+
     private void WriteSink(AgentEventModel model)
     {
         if (_sink is null)
@@ -583,6 +634,8 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     public event EventHandler<AgentActivityModel>? ActivityReceived;
 
     public event EventHandler<AgentRunSummaryModel>? SummaryReceived;
+
+    public event EventHandler<AgentAssistantDeltaModel>? AssistantDeltaReceived;
 
     private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 

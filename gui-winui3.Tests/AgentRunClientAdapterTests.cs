@@ -165,6 +165,43 @@ public sealed class AgentRunClientAdapterTests
     }
 
     [Fact]
+    public async Task SubscribeEvents_delivers_typed_assistant_delta_and_drops_raw_tool_data()
+    {
+        var inner = "{\"text\":\"Xin chào anh\",\"model_step_id\":\"step_0123456789abcdef0123456789abcdef\",\"execution_id\":null}";
+        var assistant = JsonSerializer.Serialize(new { kind = "assistant.delta", data = inner });
+        var rawTool = JsonSerializer.Serialize(new { kind = "tool.output.delta", data = "secret command" });
+        var malformed = JsonSerializer.Serialize(new { kind = "assistant.delta", data = "{\"text\":\"leak\"}" });
+        var sse =
+            $"event: transient\nid: t10\ndata: {assistant}\n\n" +
+            $"event: transient\nid: t11\ndata: {rawTool}\n\n" +
+            $"event: transient\nid: t12\ndata: {malformed}\n\n";
+        var handler = new FakeHttpHandler
+        {
+            Responder = _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+            },
+        };
+        using var http = new HttpClient(handler);
+        var adapter = new AgentRunClientAdapter(MakeSession(), http);
+        var received = new List<AgentAssistantDeltaModel>();
+
+        await adapter.SubscribeEventsAsync(
+            RunId,
+            0,
+            _ => Task.CompletedTask,
+            onAssistantDelta: delta =>
+            {
+                received.Add(delta);
+                return Task.CompletedTask;
+            });
+
+        var delta = Assert.Single(received);
+        Assert.Equal("Xin chào anh", delta.Text);
+        Assert.Equal(10, delta.TransientSequence);
+    }
+
+    [Fact]
     public async Task SubscribeEvents_unknown_version_fails_closed()
     {
         var sse =

@@ -162,6 +162,11 @@ edit-count, duration, and safe-code fields; it is cleared on terminal,
 cancellation, failure, disconnect, session replacement, or reset. Activity
 frames do not enter durable history or audit. Agent payloads and raw tool output
 never enter Chat, TTS, VTS metadata, memory, or automation names.
+Assistant text is delivered separately as a typed `assistant.delta` transient
+frame. The client validates the outer kind, bounded UTF-8 text, model-step id,
+optional execution id, and positive transient sequence before dispatching it;
+unknown fields, malformed JSON, raw tool output, and replayed sequence keys are
+dropped without changing the durable cursor.
 Agent final replies are normalized through the metadata policy before the
 authenticated payload and conversation outbox are committed; private VTS,
 voice, and action markers therefore never enter history or model context.

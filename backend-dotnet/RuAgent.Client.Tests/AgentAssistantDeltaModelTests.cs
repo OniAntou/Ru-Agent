@@ -1,0 +1,120 @@
+using System.Text.Json;
+using RuAgent.Client;
+using Xunit;
+
+namespace RuAgent.Client.Tests;
+
+public sealed class AgentAssistantDeltaModelTests
+{
+    private const string StepId = "step_0123456789abcdef0123456789abcdef";
+    private const string ExecutionId = "exec_abcdef0123456789abcdef0123456789";
+
+    [Fact]
+    public void TryParse_accepts_bounded_utf8_delta_with_optional_execution_id()
+    {
+        var frame = Frame(
+            7,
+            new
+            {
+                text = "Xin chào anh",
+                model_step_id = StepId,
+                execution_id = ExecutionId,
+            });
+
+        Assert.True(AgentAssistantDeltaModel.TryParse(frame, out var delta));
+        Assert.NotNull(delta);
+        Assert.Equal("Xin chào anh", delta.Text);
+        Assert.Equal(StepId, delta.ModelStepId);
+        Assert.Equal(ExecutionId, delta.ExecutionId);
+        Assert.Equal(7, delta.TransientSequence);
+    }
+
+    [Fact]
+    public void TryParse_accepts_model_delta_without_execution_id()
+    {
+        var frame = Frame(1, new { text = "hello", model_step_id = StepId, execution_id = (string?)null });
+
+        Assert.True(AgentAssistantDeltaModel.TryParse(frame, out var delta));
+        Assert.Null(delta!.ExecutionId);
+    }
+
+    [Theory]
+    [InlineData(false, "assistant.delta", 1, "{\"text\":\"hello\",\"model_step_id\":\"step_0123456789abcdef0123456789abcdef\"}")]
+    [InlineData(true, "tool.output.delta", 1, "{\"text\":\"hello\",\"model_step_id\":\"step_0123456789abcdef0123456789abcdef\"}")]
+    [InlineData(true, "assistant.delta", 0, "{\"text\":\"hello\",\"model_step_id\":\"step_0123456789abcdef0123456789abcdef\"}")]
+    [InlineData(true, "assistant.delta", 1, "{\"model_step_id\":\"step_0123456789abcdef0123456789abcdef\"}")]
+    [InlineData(true, "assistant.delta", 1, "{\"text\":\"\",\"model_step_id\":\"step_0123456789abcdef0123456789abcdef\"}")]
+    [InlineData(true, "assistant.delta", 1, "{\"text\":\"hello\",\"model_step_id\":\"step_bad\"}")]
+    [InlineData(true, "assistant.delta", 1, "{\"text\":\"hello\",\"model_step_id\":\"step_0123456789abcdef0123456789abcdef\",\"extra\":true}")]
+    public void TryParse_rejects_invalid_or_untrusted_frames(
+        bool isTransient,
+        string eventType,
+        long sequence,
+        string inner)
+    {
+        var frame = new SseFrame(
+            null,
+            eventType,
+            JsonSerializer.Serialize(new { kind = "assistant.delta", data = inner }),
+            isTransient,
+            sequence);
+
+        Assert.False(AgentAssistantDeltaModel.TryParse(frame, out var delta));
+        Assert.Null(delta);
+    }
+
+    [Fact]
+    public void TryParse_rejects_over_limit_text_and_missing_transient_sequence()
+    {
+        var overLimit = Frame(
+            2,
+            new
+            {
+                text = new string('x', AgentAssistantDeltaModel.MaximumTextCharacters + 1),
+                model_step_id = StepId,
+            });
+        var missingSequence = new SseFrame(
+            null,
+            "assistant.delta",
+            overLimit.Data,
+            true,
+            null);
+
+        Assert.False(AgentAssistantDeltaModel.TryParse(overLimit, out _));
+        Assert.False(AgentAssistantDeltaModel.TryParse(missingSequence, out _));
+    }
+
+    [Fact]
+    public void TryParse_rejects_invalid_execution_id_and_duplicate_fields()
+    {
+        var invalidExecution = Frame(
+            3,
+            new
+            {
+                text = "hello",
+                model_step_id = StepId,
+                execution_id = "exec_bad",
+            });
+        var duplicate = new SseFrame(
+            null,
+            "assistant.delta",
+            "{\"kind\":\"assistant.delta\",\"data\":\"{\\\"text\\\":\\\"hello\\\",\\\"text\\\":\\\"again\\\",\\\"model_step_id\\\":\\\"" + StepId + "\\\"}\"}",
+            true,
+            4);
+
+        Assert.False(AgentAssistantDeltaModel.TryParse(invalidExecution, out _));
+        Assert.False(AgentAssistantDeltaModel.TryParse(duplicate, out _));
+    }
+
+    private static SseFrame Frame(long sequence, object inner) =>
+        new(
+            null,
+            "assistant.delta",
+            JsonSerializer.Serialize(new
+            {
+                kind = "assistant.delta",
+                data = JsonSerializer.Serialize(inner),
+            }),
+            true,
+            sequence);
+}

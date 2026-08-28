@@ -25,7 +25,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly ICredentialStore? _credentialStore;
     private readonly IRuntimeSettingsLoader? _runtimeSettingsLoader;
     private readonly ISettingsStore? _settingsStore;
-    private readonly IConversationCoordinator? _conversationCoordinator;
     private readonly IActionOutcomeContextStore? _actionOutcomeContextStore;
     private readonly IVoiceProtocolClient? _voiceProtocolClient;
     private readonly IAgentBrokerClient? _agentBrokerClient;
@@ -39,7 +38,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         ICredentialStore? credentialStore = null,
         IRuntimeSettingsLoader? runtimeSettingsLoader = null,
         ISettingsStore? settingsStore = null,
-        IConversationCoordinator? conversationCoordinator = null,
         IActionOutcomeContextStore? actionOutcomeContextStore = null,
         IVoiceProtocolClient? voiceProtocolClient = null,
         IAgentBrokerClient? agentBrokerClient = null,
@@ -56,7 +54,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _credentialStore = credentialStore;
         _runtimeSettingsLoader = runtimeSettingsLoader;
         _settingsStore = settingsStore;
-        _conversationCoordinator = conversationCoordinator;
         _actionOutcomeContextStore = actionOutcomeContextStore;
         _voiceProtocolClient = voiceProtocolClient;
         _agentBrokerClient = agentBrokerClient;
@@ -70,6 +67,7 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("RU_DESKTOP_TOKEN", "test-secret");
+        builder.UseSetting("RU_WORKER_TOKEN", "test-worker-secret");
         if (_ownedDataRoot is not null)
         {
             builder.UseSetting("RU_DATA_ROOT", _ownedDataRoot);
@@ -115,12 +113,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
             {
                 services.RemoveAll<ISettingsStore>();
                 services.AddSingleton(_settingsStore);
-            }
-
-            if (_conversationCoordinator is not null)
-            {
-                services.RemoveAll<IConversationCoordinator>();
-                services.AddSingleton(_conversationCoordinator);
             }
 
             if (_actionOutcomeContextStore is not null)

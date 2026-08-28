@@ -53,6 +53,5 @@
   {"method":"GET","path":"/agent/v1/policies","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"POST","path":"/agent/v1/policies","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"DELETE","path":"/agent/v1/policies/{ruleId}","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
-  {"method":"WS","path":"/chat","transport":"websocket","source":"backend-dotnet/RuBackend/Conversation/ChatWebSocketEndpoint.cs","classification":"aspnet-direct","winui_callers":["ChatWebSocketClient"]},
   {"method":"WS","path":"/voice/stream","transport":"websocket","source":"backend-dotnet/RuBackend/Runtime/VoiceStreamEndpoint.cs","classification":"runtime-worker","winui_callers":["VoiceStreamClient"]}
 ]

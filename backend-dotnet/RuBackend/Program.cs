@@ -167,16 +167,9 @@ builder.Services.AddSingleton<IRuntimeProtocolClient>(services =>
     builder.Services.AddSingleton<AgentReplyEffectSink>();
     builder.Services.AddSingleton<IAgentReplyEffectSink>(services =>
         services.GetRequiredService<AgentReplyEffectSink>());
-    builder.Services.AddSingleton<ConversationTurnGate>();
-    builder.Services.AddSingleton<ConversationSessionGate>();
-    builder.Services.AddSingleton<IConversationIntentResolver, ConversationIntentResolver>();
     builder.Services.AddSingleton<IMetadataPolicy, MetadataPolicy>();
     builder.Services.AddSingleton<IStreamSanitizer, StreamSanitizer>();
-    // Phase-4 cutover: Chat WebSocket is read-only and never drives Agent
-    // tools. AgentTurnCoordinator / AgentApprovalCoordinator are removed;
-    // Agent traffic uses the authenticated /agent/v1/* API.
     builder.Services.AddSingleton<IActionOutcomeContextStore, ActionOutcomeContextStore>();
-    builder.Services.AddSingleton<IConversationCoordinator, ConversationCoordinator>();
 
 
 var brokerDescriptor = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR");
@@ -369,7 +362,6 @@ app.Use(async (context, next) =>
 });
 
 app.MapMethods("/{**path}", new[] { HttpMethods.Options }, () => Results.NoContent());
-ChatWebSocketEndpoint.Map(app);
 VoiceStreamEndpoint.Map(app);
 BusinessEndpoints.Map(app);
 AgentV1Endpoints.Map(app);

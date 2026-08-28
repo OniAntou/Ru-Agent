@@ -108,11 +108,6 @@ public sealed class DiagnosticRequestMiddleware
             return "http.status";
         }
 
-        if (value.StartsWith("/chat", StringComparison.OrdinalIgnoreCase))
-        {
-            return "http.chat";
-        }
-
         return "http.request";
     }
 

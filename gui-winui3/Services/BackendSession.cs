@@ -11,7 +11,6 @@ public sealed record BackendSession
     public Uri HttpBaseUri { get; }
     public string AuthSecret { get; }
 
-    public Uri ChatUri => BuildWebSocketUri("/chat");
     public Uri VoiceStreamUri => BuildWebSocketUri("/voice/stream");
 
     public static BackendSession FromLoopback(int port, string authSecret)

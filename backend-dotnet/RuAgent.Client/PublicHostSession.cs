@@ -25,7 +25,6 @@ public sealed record PublicHostSession(
         return new Uri(BaseUri, path.TrimStart('/'));
     }
 
-    public Uri ChatUri => BuildWebSocketUri("/chat");
     public Uri VoiceStreamUri => BuildWebSocketUri("/voice/stream");
 
     private Uri BuildWebSocketUri(string path)

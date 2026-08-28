@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -36,6 +37,17 @@ public sealed class PublicRouteContractTests
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), actual.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task Retired_chat_route_is_not_exposed()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.GetAsync("/chat");
+
+        Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
     }
 
     private static string RouteKey(string method, string path) =>

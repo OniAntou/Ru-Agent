@@ -28,17 +28,20 @@ public sealed class HarnessModelContextBootstrapper : IHarnessModelContextBootst
     private readonly HarnessPayloadStore _payloads;
     private readonly IIdGenerator _ids;
     private readonly TimeProvider _clock;
+    private readonly IAgentMemoryContextProvider? _memoryContext;
 
     public HarnessModelContextBootstrapper(
         ISessionStore sessions,
         HarnessPayloadStore payloads,
         IIdGenerator ids,
-        TimeProvider clock)
+        TimeProvider clock,
+        IAgentMemoryContextProvider? memoryContext = null)
     {
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _payloads = payloads ?? throw new ArgumentNullException(nameof(payloads));
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _memoryContext = memoryContext;
     }
 
     public async Task<ContextBootstrapOutcome> CaptureAsync(
@@ -72,6 +75,21 @@ public sealed class HarnessModelContextBootstrapper : IHarnessModelContextBootst
                 sequence++,
                 ModelContextRole.Assistant,
                 turn.Response));
+        }
+
+        if (_memoryContext is not null)
+        {
+            var memory = await _memoryContext.BuildAsync(session, cancellationToken)
+                .ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(memory))
+            {
+                entries.Add(new HarnessBaseContextEntry(
+                    _ids.NewPayloadId(),
+                    "base:memory",
+                    sequence,
+                    ModelContextRole.System,
+                    memory));
+            }
         }
 
         var outcome = await _payloads.CaptureBaseContextAsync(

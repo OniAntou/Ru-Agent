@@ -162,6 +162,13 @@ edit-count, duration, and safe-code fields; it is cleared on terminal,
 cancellation, failure, disconnect, session replacement, or reset. Activity
 frames do not enter durable history or audit. Agent payloads and raw tool output
 never enter Chat, TTS, VTS metadata, memory, or automation names.
+Agent final replies are normalized through the metadata policy before the
+authenticated payload and conversation outbox are committed; private VTS,
+voice, and action markers therefore never enter history or model context.
+Validated VTS effects and the safe assistant activity projection run after that
+commit, so a non-critical effect failure cannot roll back a completed Agent run.
+Agent user/assistant activity records use the `agent` activity type and remain
+preview-sanitized at the activity-store boundary.
 When no chat session has been opened yet, the first Agent prompt creates a fresh
 session before the preset call; Agent does not require a preliminary Chat turn.
 If an Agent API call reports `session_not_found` or `invalid_session_id`, the

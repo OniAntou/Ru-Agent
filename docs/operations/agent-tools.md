@@ -233,6 +233,14 @@ line range; search and exploration show bounded symbols or counts. The temporary
 user prompt and activity items use separate collections, so durable assistant
 history remains unchanged when the feed is cleared.
 
+Before an Agent final reply is persisted, the reply policy strips private
+metadata and accepts VTS codes only from the current catalog. The resulting
+visible text is the only assistant payload sent to the authenticated client,
+model context, and conversation outbox. VTS actions and `agent` assistant
+activity are post-commit effects; failures are bounded observations and do not
+turn a committed run into a failed run. User activity is projected from its
+outbox intent with the same preview-sanitized `agent` shape.
+
 The feed is shown only after the first valid activity frame and is cleared on
 terminal completion, cancellation, failure, disconnect, session replacement,
 or reset. The inline surface still owns bounded status, workspace trust,

@@ -144,9 +144,11 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly HarnessPayloadStore _payloadStore;
     private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
-    private readonly KnownSecretRedactor? _transientRedactor;
+    private readonly ITransientContentRedactor? _transientRedactor;
     private readonly HarnessLiveEventHub? _liveEvents;
     private readonly AgentRunSummaryLivePublisher? _summaryPublisher;
+    private readonly IAgentReplyPolicy? _replyPolicy;
+    private readonly IAgentReplyEffectSink? _replyEffects;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -155,9 +157,11 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         HarnessPayloadStore payloadStore,
         ReconciliationInspectionGate? inspectionGate = null,
         RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null,
-        KnownSecretRedactor? transientRedactor = null,
+        ITransientContentRedactor? transientRedactor = null,
         HarnessLiveEventHub? liveEvents = null,
-        AgentRunSummaryLivePublisher? summaryPublisher = null)
+        AgentRunSummaryLivePublisher? summaryPublisher = null,
+        IAgentReplyPolicy? replyPolicy = null,
+        IAgentReplyEffectSink? replyEffects = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -168,6 +172,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _transientRedactor = transientRedactor;
         _liveEvents = liveEvents;
         _summaryPublisher = summaryPublisher;
+        _replyPolicy = replyPolicy;
+        _replyEffects = replyEffects;
     }
 
     public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null)
@@ -199,7 +205,9 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             _transientRedactor ?? KnownSecretRedactor.Empty,
             null,
             _inspectionGate,
-            activitySink);
+            activitySink,
+            _replyPolicy,
+            _replyEffects);
     }
 
     private static void PublishLiveFrame(HarnessLiveEventHub hub, HarnessTransientFrame frame)

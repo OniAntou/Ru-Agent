@@ -160,6 +160,13 @@ builder.Services.AddSingleton<IRuntimeProtocolClient>(services =>
     builder.Services.AddSingleton<IVoiceProtocolClient>(services =>
         services.GetRequiredService<LoopbackWorkerClient>());
     builder.Services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
+    builder.Services.AddSingleton<IAgentVtsClient, WorkerAgentVtsClient>();
+    builder.Services.AddSingleton<AgentReplyPolicy>();
+    builder.Services.AddSingleton<IAgentReplyPolicy>(services =>
+        services.GetRequiredService<AgentReplyPolicy>());
+    builder.Services.AddSingleton<AgentReplyEffectSink>();
+    builder.Services.AddSingleton<IAgentReplyEffectSink>(services =>
+        services.GetRequiredService<AgentReplyEffectSink>());
     builder.Services.AddSingleton<ConversationTurnGate>();
     builder.Services.AddSingleton<ConversationSessionGate>();
     builder.Services.AddSingleton<IConversationIntentResolver, ConversationIntentResolver>();
@@ -216,6 +223,9 @@ builder.Services.AddSingleton<IHarnessKeyStore>(services =>
     return new EphemeralHarnessKeyStore();
 });
 builder.Services.AddSingleton<KnownSecretRedactor>(_ => BuildKnownSecretRedactor());
+builder.Services.AddSingleton<AgentReplyTransientRedactor>();
+builder.Services.AddSingleton<ITransientContentRedactor>(services =>
+    services.GetRequiredService<AgentReplyTransientRedactor>());
 builder.Services.AddSingleton<HarnessPayloadCryptography>(services =>
     new HarnessPayloadCryptography(services.GetRequiredService<IHarnessKeyStore>()));
 builder.Services.AddSingleton<HarnessPayloadStore>(services =>
@@ -249,6 +259,11 @@ builder.Services.AddSingleton(sp => new RuBackend.Harness.Reconciliation.Workspa
 builder.Services.AddHostedService<RuBackend.Harness.Reconciliation.HarnessRecoveryStartupService>();
 builder.Services.AddSingleton<HarnessOutboxStore>();
 builder.Services.AddSingleton<RuBackend.Harness.IHarnessModelContextBootstrapper, RuBackend.Harness.HarnessModelContextBootstrapper>();
+builder.Services.AddSingleton<AgentMemoryContextProvider>();
+builder.Services.AddSingleton<IAgentMemoryContextProvider>(services =>
+    services.GetRequiredService<AgentMemoryContextProvider>());
+builder.Services.AddSingleton<AgentConversationMemoryProjector>();
+builder.Services.AddSingleton<AgentConversationActivityProjector>();
 builder.Services.AddSingleton<AgentRunHistoryTransitionSink>();
 builder.Services.AddSingleton<IAgentHistoryTransitionSink>(services =>
     services.GetRequiredService<AgentRunHistoryTransitionSink>());

@@ -88,7 +88,7 @@ public static class ActivityPreview
         var sanitizedData = new JsonObject();
         var rawData = evt.Data ?? new JsonObject();
 
-        if (type == "chat")
+        if (type is "chat" or "agent")
         {
             var role = rawData.TryGetPropertyValue("role", out var r) && r is JsonValue rv
                 ? rv.GetValue<string>()

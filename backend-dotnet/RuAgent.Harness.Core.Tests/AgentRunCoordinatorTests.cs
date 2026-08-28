@@ -59,6 +59,78 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Final_reply_persists_policy_visible_text_and_runs_effects_after_commit()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("raw [[VTS:smile]]"));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var policy = new RecordingReplyPolicy(
+            new AgentReplyPresentation("visible", ["smile"], "joy"));
+        var effects = new RecordingReplyEffects();
+        var coordinator = Coordinator(
+            model,
+            new FakeToolGateway(),
+            store,
+            replyPolicy: policy,
+            replyEffects: effects);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingHistory, result.Run.State);
+        var commit = Assert.Single(
+            store.Commits,
+            item => item.ConversationOutbox.Count == 1);
+        Assert.Equal(
+            "visible",
+            Encoding.UTF8.GetString(Assert.Single(commit.Payloads).Plaintext.Span));
+        Assert.Equal("visible", effects.Reply?.VisibleText);
+        Assert.Equal(2, effects.RunVersionAtCall);
+    }
+
+    [Fact]
+    public async Task Final_reply_policy_failure_prevents_final_commit()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("raw"));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(
+            model,
+            new FakeToolGateway(),
+            store,
+            replyPolicy: new ThrowingReplyPolicy());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            coordinator.RunOneStepAsync(RunId(), CancellationToken.None));
+
+        Assert.DoesNotContain(
+            store.Commits,
+            commit => commit.ConversationOutbox.Count > 0);
+    }
+
+    [Fact]
+    public async Task Final_reply_effect_failure_does_not_fail_committed_run()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(FinalStep("visible"));
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(
+            model,
+            new FakeToolGateway(),
+            store,
+            replyEffects: new ThrowingReplyEffects());
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingHistory, result.Run.State);
+        Assert.Single(
+            store.Commits,
+            commit => commit.ConversationOutbox.Count == 1);
+    }
+
+    [Fact]
     public async Task Permanent_history_failure_terminates_the_run_with_a_safe_error()
     {
         var store = new InMemoryHarnessEventStore();
@@ -448,7 +520,9 @@ public sealed class AgentRunCoordinatorTests
         FakeToolGateway gateway,
         InMemoryHarnessEventStore store,
         TransientFrameBuffer? frames = null,
-        ITransientContentRedactor? redactor = null) =>
+        ITransientContentRedactor? redactor = null,
+        IAgentReplyPolicy? replyPolicy = null,
+        IAgentReplyEffectSink? replyEffects = null) =>
         new(
             model,
             gateway,
@@ -458,7 +532,9 @@ public sealed class AgentRunCoordinatorTests
             new IncrementingTimeProvider(Epoch),
             new ToolCallScheduler(),
             frames ?? new TransientFrameBuffer(32),
-            redactor);
+            redactor,
+            replyPolicy: replyPolicy,
+            replyEffects: replyEffects);
 
     private static async Task<HarnessTransientFrame> ReadOneFrameAsync(
         TransientFrameBuffer frames)
@@ -548,6 +624,51 @@ public sealed class AgentRunCoordinatorTests
                 "[REDACTED]",
                 StringComparison.Ordinal);
         }
+    }
+
+    private sealed class RecordingReplyPolicy(AgentReplyPresentation reply) : IAgentReplyPolicy
+    {
+        public ValueTask<AgentReplyPresentation> PrepareAsync(
+            AgentRun run,
+            string rawText,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(reply);
+    }
+
+    private sealed class ThrowingReplyPolicy : IAgentReplyPolicy
+    {
+        public ValueTask<AgentReplyPresentation> PrepareAsync(
+            AgentRun run,
+            string rawText,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("reply_policy_failed");
+    }
+
+    private sealed class RecordingReplyEffects : IAgentReplyEffectSink
+    {
+        public AgentReplyPresentation? Reply { get; private set; }
+        public long RunVersionAtCall { get; private set; }
+
+        public ValueTask ApplyAsync(
+            AgentRun run,
+            AgentReplyPresentation reply,
+            ModelStepId modelStepId,
+            CancellationToken cancellationToken)
+        {
+            Reply = reply;
+            RunVersionAtCall = run.Version;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingReplyEffects : IAgentReplyEffectSink
+    {
+        public ValueTask ApplyAsync(
+            AgentRun run,
+            AgentReplyPresentation reply,
+            ModelStepId modelStepId,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("reply_effect_failed");
     }
 
     private sealed class SequenceIdGenerator : IIdGenerator

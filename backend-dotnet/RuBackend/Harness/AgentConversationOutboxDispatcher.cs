@@ -96,6 +96,8 @@ public sealed class AgentConversationOutboxDispatcher
     private readonly IHarnessModelContextBootstrapper _contextBootstrapper;
     private readonly IAgentHistoryTransitionSink _transitions;
     private readonly TimeProvider _clock;
+    private readonly AgentConversationMemoryProjector? _memoryProjector;
+    private readonly AgentConversationActivityProjector? _activityProjector;
 
     public AgentConversationOutboxDispatcher(
         HarnessOutboxStore outbox,
@@ -103,7 +105,9 @@ public sealed class AgentConversationOutboxDispatcher
         ISessionStore sessions,
         IHarnessModelContextBootstrapper contextBootstrapper,
         IAgentHistoryTransitionSink transitions,
-        TimeProvider clock)
+        TimeProvider clock,
+        AgentConversationMemoryProjector? memoryProjector = null,
+        AgentConversationActivityProjector? activityProjector = null)
     {
         _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
         _payloads = payloads ?? throw new ArgumentNullException(nameof(payloads));
@@ -112,6 +116,8 @@ public sealed class AgentConversationOutboxDispatcher
             ?? throw new ArgumentNullException(nameof(contextBootstrapper));
         _transitions = transitions ?? throw new ArgumentNullException(nameof(transitions));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _memoryProjector = memoryProjector;
+        _activityProjector = activityProjector;
     }
 
     public async Task<AgentOutboxDispatchResult> DispatchOnceAsync(
@@ -224,10 +230,29 @@ public sealed class AgentConversationOutboxDispatcher
                 return await FailAsync(
                         claim,
                         "session_not_found",
-                        now,
+                    now,
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (_activityProjector is not null)
+            {
+                await _activityProjector.ProjectUserAsync(
+                        claim.IntentId,
+                        claim.RunId,
+                        claim.SessionId.Value,
+                        content,
                         cancellationToken)
                     .ConfigureAwait(false);
             }
+        }
+        else if (_memoryProjector is not null)
+        {
+            await _memoryProjector.ProjectAsync(
+                    claim.IntentId,
+                    claim.SessionId.Value,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var acknowledged = await _outbox.AcknowledgeAsync(

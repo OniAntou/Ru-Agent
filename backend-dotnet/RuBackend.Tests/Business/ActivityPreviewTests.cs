@@ -63,6 +63,29 @@ public sealed class ActivityPreviewTests
     }
 
     [Fact]
+    public void SanitizeEvent_converts_agent_reply_to_the_same_safe_preview_shape()
+    {
+        var sanitized = ActivityPreview.SanitizeEvent(
+            new ActivityEvent(
+                "agent:run:step:assistant",
+                100,
+                "2026-08-20T00:00:00Z",
+                "agent",
+                "s1",
+                new JsonObject
+                {
+                    ["role"] = "assistant",
+                    ["content"] = "Visible reply [[VTS:smile]]",
+                    ["emotion"] = "joy",
+                }));
+
+        Assert.Equal("agent", sanitized.Type);
+        Assert.Equal("assistant", sanitized.Data["role"]!.GetValue<string>());
+        Assert.Equal("Visible reply", sanitized.Data["preview"]!.GetValue<string>());
+        Assert.False(sanitized.Data.ContainsKey("content"));
+    }
+
+    [Fact]
     public void SanitizeEvent_allows_safe_emotion_vts_and_observation_fields()
     {
         var emotionEvt = new ActivityEvent(null, 100, "2026-08-20T00:00:00Z", "emotion", null, new JsonObject
@@ -141,7 +164,12 @@ public sealed class ActivityPreviewTests
             _ => throw new ArgumentOutOfRangeException(nameof(metadataKind)),
         };
 
-        foreach (var (type, textKey) in new[] { ("chat", "content"), ("observation_reaction", "text") })
+        foreach (var (type, textKey) in new[]
+        {
+            ("chat", "content"),
+            ("agent", "content"),
+            ("observation_reaction", "text"),
+        })
         {
             var rawEvent = new ActivityEvent(null, 100, "2026-08-20T00:00:00Z", type, "s1", new JsonObject
             {

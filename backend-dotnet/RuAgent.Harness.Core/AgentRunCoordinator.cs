@@ -33,6 +33,8 @@ public sealed class AgentRunCoordinator
     private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly IModelContextLimitProvider? _contextLimit;
     private readonly IAgentActivitySink? _activitySink;
+    private readonly IAgentReplyPolicy _replyPolicy;
+    private readonly IAgentReplyEffectSink _replyEffects;
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -46,7 +48,9 @@ public sealed class AgentRunCoordinator
         ITransientContentRedactor? transientRedactor = null,
         IModelContextLimitProvider? contextLimit = null,
         ReconciliationInspectionGate? inspectionGate = null,
-        IAgentActivitySink? activitySink = null)
+        IAgentActivitySink? activitySink = null,
+        IAgentReplyPolicy? replyPolicy = null,
+        IAgentReplyEffectSink? replyEffects = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -60,6 +64,8 @@ public sealed class AgentRunCoordinator
         _contextLimit = contextLimit;
         _inspectionGate = inspectionGate;
         _activitySink = activitySink;
+        _replyPolicy = replyPolicy ?? new PassthroughAgentReplyPolicy();
+        _replyEffects = replyEffects ?? new NoopAgentReplyEffectSink();
         _tools = new AgentToolExecutionPipeline(
             gateway ?? throw new ArgumentNullException(nameof(gateway)),
             store,
@@ -552,8 +558,11 @@ public sealed class AgentRunCoordinator
             throw new InvalidOperationException(stateChange.ErrorCode);
         }
 
+        var reply = await _replyPolicy
+            .PrepareAsync(run, step.Text, cancellationToken)
+            .ConfigureAwait(false);
         var payloadId = _ids.NewPayloadId();
-        var bytes = Encoding.UTF8.GetBytes(step.Text);
+        var bytes = Encoding.UTF8.GetBytes(reply.VisibleText);
         var payload = new HarnessPayloadIntent(
             payloadId,
             HarnessPayloadKind.AssistantText,
@@ -600,7 +609,23 @@ public sealed class AgentRunCoordinator
                         HistoryWaitKind.FinalBeforeCompletion),
                 },
                 cancellationToken)
-            .ConfigureAwait(false);
+                .ConfigureAwait(false);
+        try
+        {
+            await _replyEffects
+                .ApplyAsync(run, reply, modelStepId, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            AgentActivityProjector.PublishSafe(
+                _activitySink,
+                run.RunId,
+                AgentActivityProjector.ProjectModelStep(
+                    modelStepId,
+                    AgentActivityState.Failed,
+                    safeCode: "reply_effect_failed"));
+        }
         return new AgentRunStepResult(run, Array.Empty<ToolExecutionReceipt>());
     }
 

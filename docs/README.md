@@ -34,6 +34,8 @@ an operating contract.
 
 - [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md)
 - [OpenCode/Pi coding-loop parity implementation program](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity.md)
+- [Agent-only Chat removal design](superpowers/specs/2026-08-29-ru-agent-only-chat-removal-design.md)
+- [Agent-only Chat removal implementation plan](superpowers/plans/2026-08-29-ru-agent-only-chat-removal.md)
 
 ## Historical implementation records
 

@@ -161,6 +161,7 @@ builder.Services.AddSingleton<IRuntimeProtocolClient>(services =>
         services.GetRequiredService<LoopbackWorkerClient>());
     builder.Services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
     builder.Services.AddSingleton<ConversationTurnGate>();
+    builder.Services.AddSingleton<ConversationSessionGate>();
     builder.Services.AddSingleton<IMetadataPolicy, MetadataPolicy>();
     builder.Services.AddSingleton<IStreamSanitizer, StreamSanitizer>();
     // Phase-4 cutover: Chat WebSocket is read-only and never drives Agent

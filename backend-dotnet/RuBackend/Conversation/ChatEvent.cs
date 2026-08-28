@@ -19,7 +19,8 @@ public sealed record ChatEvent
         string? Scope = null,
         DateTimeOffset? ExpiresAt = null,
         IReadOnlyList<string>? Scopes = null,
-        string? Preview = null)
+        string? Preview = null,
+        string? CorrelationId = null)
     {
         this.Type = Type;
         this.Content = Content;
@@ -32,6 +33,7 @@ public sealed record ChatEvent
         this.ExpiresAt = ExpiresAt;
         this.Scopes = ValidateScopes(Scopes);
         this.Preview = Preview;
+        this.CorrelationId = CorrelationId;
     }
 
     [JsonPropertyName("type")]
@@ -76,6 +78,10 @@ public sealed record ChatEvent
     [JsonPropertyName(ApprovalPreviewFields.Field)]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Preview { get; init; }
+
+    [JsonPropertyName("correlation_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CorrelationId { get; init; }
 
     private static IReadOnlyList<string>? ValidateScopes(IReadOnlyList<string>? scopes)
     {

@@ -37,6 +37,47 @@ public sealed class ChatWebSocketEndpointTests
     }
 
     [Fact]
+    public async Task Correlation_id_is_echoed_on_every_event_in_the_turn()
+    {
+        var coordinator = new FakeCoordinator();
+        using var factory = Factory(coordinator);
+        using var socket = await ConnectAsync(factory, "?token=test-secret");
+
+        await SendTextAsync(
+            socket,
+            "{\"prompt\":\"Xin chào\",\"session_id\":\"session-1\",\"correlation_id\":\"c_12345678\"}");
+        var events = new List<JsonElement>();
+        for (var index = 0; index < 4; index++)
+        {
+            events.Add(JsonDocument.Parse(await ReceiveTextAsync(socket)).RootElement.Clone());
+        }
+
+        Assert.All(
+            events,
+            item => Assert.Equal("c_12345678", item.GetProperty("correlation_id").GetString()));
+        Assert.Equal("c_12345678", Assert.Single(coordinator.Requests).CorrelationId);
+    }
+
+    [Theory]
+    [InlineData("bad id")]
+    [InlineData("short")]
+    public async Task Invalid_correlation_id_is_rejected_before_coordinator_processing(string correlationId)
+    {
+        var coordinator = new FakeCoordinator();
+        using var factory = Factory(coordinator);
+        using var socket = await ConnectAsync(factory, "?token=test-secret");
+
+        await SendTextAsync(
+            socket,
+            JsonSerializer.Serialize(new { prompt = "Xin chào", correlation_id = correlationId }));
+        using var response = JsonDocument.Parse(await ReceiveTextAsync(socket));
+
+        Assert.Equal("invalid_correlation_id", response.RootElement.GetProperty("error_code").GetString());
+        Assert.False(response.RootElement.TryGetProperty("correlation_id", out _));
+        Assert.Empty(coordinator.Requests);
+    }
+
+    [Fact]
     public async Task Sequential_requests_after_done_are_not_consumed_by_disconnect_monitor()
     {
         var coordinator = new FakeCoordinator();
@@ -216,6 +257,36 @@ public sealed class ChatWebSocketEndpointTests
     }
 
     [Fact]
+    public async Task Requests_received_during_a_turn_are_drained_in_fifo_order()
+    {
+        var coordinator = new FakeCoordinator { HoldBeforeEvents = true };
+        using var factory = Factory(coordinator);
+        using var socket = await ConnectAsync(factory, "?token=test-secret");
+
+        await SendTextAsync(
+            socket,
+            "{\"prompt\":\"Lượt một\",\"correlation_id\":\"c_first123\"}");
+        await coordinator.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await SendTextAsync(
+            socket,
+            "{\"prompt\":\"Lượt hai\",\"correlation_id\":\"c_second12\"}");
+        coordinator.Release.TrySetResult();
+
+        var events = new List<JsonElement>();
+        for (var index = 0; index < 8; index++)
+        {
+            events.Add(JsonDocument.Parse(
+                await ReceiveTextAsync(socket).WaitAsync(TimeSpan.FromSeconds(2))).RootElement.Clone());
+        }
+
+        Assert.Equal(2, coordinator.Requests.Count);
+        Assert.Equal(["Lượt một", "Lượt hai"], coordinator.Requests.Select(item => item.Prompt));
+        Assert.Equal(
+            ["c_first123", "c_first123", "c_first123", "c_first123", "c_second12", "c_second12", "c_second12", "c_second12"],
+            events.Select(item => item.GetProperty("correlation_id").GetString()));
+    }
+
+    [Fact]
     public async Task Approval_control_message_is_rejected_on_chat_websocket()
     {
         // Phase-4 cutover: agent.approval.response is handled by the
@@ -360,10 +431,12 @@ public sealed class ChatWebSocketEndpointTests
     private sealed class FakeCoordinator : IConversationCoordinator
     {
         public bool Block { get; init; }
+        public bool HoldBeforeEvents { get; init; }
         public List<ChatRequest> Requests { get; } = [];
         public Queue<ChatEvent> ExtraEvents { get; } = new();
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public async IAsyncEnumerable<ChatEvent> HandleAsync(
             ChatRequest request,
@@ -384,6 +457,11 @@ public sealed class ChatWebSocketEndpointTests
                         Cancelled.TrySetResult();
                     }
                 }
+            }
+
+            if (HoldBeforeEvents)
+            {
+                await Release.Task.WaitAsync(cancellationToken);
             }
 
             var sessionId = request.SessionId ?? "session-created";

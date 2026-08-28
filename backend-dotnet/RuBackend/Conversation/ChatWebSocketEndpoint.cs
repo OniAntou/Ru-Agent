@@ -49,6 +49,7 @@ public static class ChatWebSocketEndpoint
             socket,
             inbound.Writer,
             connectionCancellation.Token);
+        var deferred = new DeferredInboundBuffer();
         string? activeSessionId = null;
 
         void ObserveSession(string? candidate)
@@ -69,9 +70,11 @@ public static class ChatWebSocketEndpoint
 
         try
         {
-            await foreach (var message in inbound.Reader
-                .ReadAllAsync(connectionCancellation.Token)
-                .ConfigureAwait(false))
+            while (await TryReadNextAsync(
+                       inbound.Reader,
+                       deferred,
+                       connectionCancellation.Token)
+                   .ConfigureAwait(false) is { } message)
             {
                 if (message.Closed)
                 {
@@ -147,7 +150,10 @@ public static class ChatWebSocketEndpoint
                     await SendAsync(
                         socket,
                         sendLock,
-                        Error(rejectedCode, rejectedReason ?? "Agent requests must use the Agent API."),
+                        Error(
+                            rejectedCode,
+                            rejectedReason ?? "Agent requests must use the Agent API.",
+                            correlationId: request?.CorrelationId),
                         connectionCancellation.Token).ConfigureAwait(false);
                     continue;
                 }
@@ -165,7 +171,8 @@ public static class ChatWebSocketEndpoint
                         sendLock,
                         Error(
                             "prompt_too_long",
-                            $"Prompt too long (max {ChatRequest.MaxPromptCharacters} characters)."),
+                            $"Prompt too long (max {ChatRequest.MaxPromptCharacters} characters).",
+                            correlationId: request.CorrelationId),
                         connectionCancellation.Token).ConfigureAwait(false);
                     continue;
                 }
@@ -182,6 +189,7 @@ public static class ChatWebSocketEndpoint
                         request.CorrelationId,
                         request.Profile),
                     inbound.Reader,
+                    deferred,
                     ObserveSession,
                     connectionCancellation.Token).ConfigureAwait(false);
                 if (closed)
@@ -275,6 +283,7 @@ public static class ChatWebSocketEndpoint
         IConversationCoordinator coordinator,
         ChatRequest request,
         ChannelReader<InboundMessage> inbound,
+        DeferredInboundBuffer deferred,
         Action<string?> observeSession,
         CancellationToken connectionCancellation)
     {
@@ -286,6 +295,7 @@ public static class ChatWebSocketEndpoint
         var monitor = MonitorDisconnectAsync(
             socket,
             inbound,
+            deferred,
             sendLock,
             turnCancellation,
             monitorCancellation.Token);
@@ -295,19 +305,22 @@ public static class ChatWebSocketEndpoint
             await foreach (var item in coordinator.HandleAsync(request, turnCancellation.Token)
                 .WithCancellation(turnCancellation.Token).ConfigureAwait(false))
             {
-                observeSession(item.SessionId);
-                if (item.Type is "done" or "error")
+                var publicItem = item.CorrelationId is null && request.CorrelationId is not null
+                    ? item with { CorrelationId = request.CorrelationId }
+                    : item;
+                observeSession(publicItem.SessionId);
+                if (publicItem.Type is "done" or "error")
                 {
                     // Stop the disconnect reader before publishing the terminal
                     // event. Otherwise it can consume the next request after
                     // the client observes this event, racing the main reader.
                     monitorCancellation.Cancel();
-                    await SendAsync(socket, sendLock, item, connectionCancellation)
+                    await SendAsync(socket, sendLock, publicItem, connectionCancellation)
                         .ConfigureAwait(false);
                     break;
                 }
 
-                await SendAsync(socket, sendLock, item, turnCancellation.Token)
+                await SendAsync(socket, sendLock, publicItem, turnCancellation.Token)
                     .ConfigureAwait(false);
             }
         }
@@ -342,6 +355,7 @@ public static class ChatWebSocketEndpoint
     private static async Task<bool> MonitorDisconnectAsync(
         WebSocket socket,
         ChannelReader<InboundMessage> inbound,
+        DeferredInboundBuffer deferred,
         SemaphoreSlim sendLock,
         CancellationTokenSource turnCancellation,
         CancellationToken monitorCancellation)
@@ -358,12 +372,20 @@ public static class ChatWebSocketEndpoint
                     return true;
                 }
 
+                if (deferred.TryEnqueue(message))
+                {
+                    continue;
+                }
+
                 try
                 {
                     await SendAsync(
                         socket,
                         sendLock,
-                        Error("busy", "Turn is already in progress."),
+                        Error(
+                            "busy",
+                            "Turn is already in progress.",
+                            correlationId: ReadCorrelationId(message.Bytes)),
                         monitorCancellation).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (monitorCancellation.IsCancellationRequested)
@@ -381,6 +403,44 @@ public static class ChatWebSocketEndpoint
         }
 
         return false;
+    }
+
+    private static async ValueTask<InboundMessage?> TryReadNextAsync(
+        ChannelReader<InboundMessage> inbound,
+        DeferredInboundBuffer deferred,
+        CancellationToken cancellationToken)
+    {
+        if (deferred.TryDequeue(out var queued))
+        {
+            return queued;
+        }
+
+        if (!await inbound.WaitToReadAsync(cancellationToken).ConfigureAwait(false)
+            || !inbound.TryRead(out var message))
+        {
+            return null;
+        }
+
+        return message;
+    }
+
+    private static string? ReadCorrelationId(byte[] bytes)
+    {
+        try
+        {
+            if (JsonNode.Parse(StrictUtf8.GetString(bytes)) is not JsonObject root
+                || root["correlation_id"] is not JsonValue value
+                || !value.TryGetValue<string>(out var correlationId))
+            {
+                return null;
+            }
+
+            return ChatCorrelation.Normalize(correlationId);
+        }
+        catch (Exception error) when (error is JsonException or DecoderFallbackException)
+        {
+            return null;
+        }
     }
 
     private static async Task<InboundMessage> ReceiveMessageAsync(
@@ -460,9 +520,24 @@ public static class ChatWebSocketEndpoint
             }
 
             string? correlationId = null;
-            if (root["correlation_id"] is JsonValue corrValue && corrValue.TryGetValue<string>(out var parsedCorr))
+            if (root["correlation_id"] is JsonNode correlationNode)
             {
-                correlationId = parsedCorr;
+                if (correlationNode is not JsonValue corrValue
+                    || !corrValue.TryGetValue<string>(out var parsedCorr))
+                {
+                    error = Error("malformed_message", "Malformed message.");
+                    return false;
+                }
+
+                correlationId = ChatCorrelation.Normalize(parsedCorr);
+                if (correlationId is null)
+                {
+                    request = new ChatRequest(prompt, sessionId, null, CapabilityProfile.Chat);
+                    rejectedCode = "invalid_correlation_id";
+                    rejectedReason = "correlation_id is invalid.";
+                    error = Error(rejectedCode, rejectedReason);
+                    return false;
+                }
             }
 
             string? mode = null;
@@ -601,8 +676,12 @@ public static class ChatWebSocketEndpoint
         }
     }
 
-    private static ChatEvent Error(string code, string content) =>
-        new("error", content, ErrorCode: code);
+    private static ChatEvent Error(
+        string code,
+        string content,
+        string? sessionId = null,
+        string? correlationId = null) =>
+        new("error", content, sessionId, code, CorrelationId: correlationId);
 
     private static void EmitChatRejected(
         IDiagnosticEmitter? diagnostics,
@@ -657,4 +736,40 @@ public static class ChatWebSocketEndpoint
         byte[] Bytes,
         bool TooLarge,
         bool Closed);
+
+    private sealed class DeferredInboundBuffer
+    {
+        private const int Capacity = 8;
+        private readonly Queue<InboundMessage> _items = new();
+        private readonly object _sync = new();
+
+        public bool TryEnqueue(InboundMessage message)
+        {
+            lock (_sync)
+            {
+                if (_items.Count >= Capacity)
+                {
+                    return false;
+                }
+
+                _items.Enqueue(message);
+                return true;
+            }
+        }
+
+        public bool TryDequeue(out InboundMessage message)
+        {
+            lock (_sync)
+            {
+                if (_items.Count == 0)
+                {
+                    message = default!;
+                    return false;
+                }
+
+                message = _items.Dequeue();
+                return true;
+            }
+        }
+    }
 }

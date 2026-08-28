@@ -40,6 +40,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
     private readonly IMetadataPolicy _metadata;
     private readonly IStreamSanitizer _sanitizer;
     private readonly ConversationTurnGate _gate;
+    private readonly ConversationSessionGate _sessionGate;
     private readonly IDiagnosticEmitter? _diagnosticEmitter;
 
 
@@ -53,7 +54,8 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         IMetadataPolicy metadata,
         IStreamSanitizer sanitizer,
         ConversationTurnGate gate,
-        IDiagnosticEmitter? diagnosticEmitter = null)
+        IDiagnosticEmitter? diagnosticEmitter = null,
+        ConversationSessionGate? sessionGate = null)
     {
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _memory = memory ?? throw new ArgumentNullException(nameof(memory));
@@ -64,6 +66,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         _metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
         _sanitizer = sanitizer ?? throw new ArgumentNullException(nameof(sanitizer));
         _gate = gate ?? throw new ArgumentNullException(nameof(gate));
+        _sessionGate = sessionGate ?? new ConversationSessionGate();
         _diagnosticEmitter = diagnosticEmitter;
     }
 
@@ -79,7 +82,11 @@ public sealed class ConversationCoordinator : IConversationCoordinator
             AllowSynchronousContinuations = false,
         });
         var producer = ProduceAsync(request, channel.Writer, cancellationToken);
-        return ReadEventsAsync(channel.Reader, producer, cancellationToken);
+        return ReadEventsAsync(
+            channel.Reader,
+            producer,
+            cancellationToken,
+            ChatCorrelation.Normalize(request.CorrelationId));
     }
 
     private async Task ProduceAsync(
@@ -105,6 +112,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
 
             var resolved = await ResolveSessionAsync(
                 request.SessionId,
+                request.CorrelationId,
                 writer,
                 cancellationToken).ConfigureAwait(false);
             if (resolved is null)
@@ -114,12 +122,22 @@ public sealed class ConversationCoordinator : IConversationCoordinator
 
             sessionId = resolved.Value.SessionId;
             var lastActionOutcome = _actionOutcomes.Take(sessionId);
+            using var sessionTurnLease = _sessionGate.TryEnter(sessionId);
+            if (sessionTurnLease is null)
+            {
+                await WriteAsync(
+                    writer,
+                    Error("busy", BusyText, sessionId, request.CorrelationId),
+                    cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             using var turnLease = _gate.TryEnterTurn();
             if (turnLease is null)
             {
                 await WriteAsync(
                     writer,
-                    Error("busy", BusyText, sessionId),
+                    Error("busy", BusyText, sessionId, request.CorrelationId),
                     cancellationToken).ConfigureAwait(false);
                 return;
             }
@@ -130,7 +148,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
             {
                 await WriteAsync(
                     writer,
-                    Error("memory_busy", MemoryBusyText, sessionId),
+                    Error("memory_busy", MemoryBusyText, sessionId, request.CorrelationId),
                     cancellationToken).ConfigureAwait(false);
                 return;
             }
@@ -187,7 +205,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                         visibleStream = string.Empty;
                         await WriteAsync(
                             writer,
-                            new ChatEvent("reset"),
+                            new ChatEvent("reset", CorrelationId: request.CorrelationId),
                             cancellationToken).ConfigureAwait(false);
                         break;
                     case WorkerMessageTypes.ChatChunk:
@@ -248,7 +266,11 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                             emotion);
                         await WriteAsync(
                             writer,
-                            new ChatEvent("done", fullReply, sessionId),
+                            new ChatEvent(
+                                "done",
+                                fullReply,
+                                sessionId,
+                                CorrelationId: request.CorrelationId),
                             cancellationToken).ConfigureAwait(false);
 
                         _diagnosticEmitter?.TryEmit(
@@ -314,6 +336,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
 
     private async Task<(string SessionId, bool Created)?> ResolveSessionAsync(
         string? requestedSessionId,
+        string? correlationId,
         ChannelWriter<ChatEvent> writer,
         CancellationToken cancellationToken)
     {
@@ -329,14 +352,20 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         {
             await WriteAsync(
                 writer,
-                Error("session_create_failed", "Không tạo được session mới."),
+                Error(
+                    "session_create_failed",
+                    "Không tạo được session mới.",
+                    correlationId: correlationId),
                 cancellationToken).ConfigureAwait(false);
             return null;
         }
 
         await WriteAsync(
             writer,
-            new ChatEvent("session", SessionId: created),
+            new ChatEvent(
+                "session",
+                SessionId: created,
+                CorrelationId: correlationId),
             cancellationToken).ConfigureAwait(false);
         return (created, true);
     }
@@ -660,8 +689,12 @@ public sealed class ConversationCoordinator : IConversationCoordinator
             ? code
             : "worker_error";
 
-    private static ChatEvent Error(string code, string content, string? sessionId = null) =>
-        new("error", content, sessionId, code);
+    private static ChatEvent Error(
+        string code,
+        string content,
+        string? sessionId = null,
+        string? correlationId = null) =>
+        new("error", content, sessionId, code, CorrelationId: correlationId);
 
     private static ValueTask WriteAsync(
         ChannelWriter<ChatEvent> writer,
@@ -672,14 +705,17 @@ public sealed class ConversationCoordinator : IConversationCoordinator
     private static async IAsyncEnumerable<ChatEvent> ReadEventsAsync(
         ChannelReader<ChatEvent> reader,
         Task producer,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        string? correlationId)
     {
         try
         {
             await foreach (var item in reader.ReadAllAsync(cancellationToken)
                 .ConfigureAwait(false))
             {
-                yield return item;
+                yield return item.CorrelationId is null && correlationId is not null
+                    ? item with { CorrelationId = correlationId }
+                    : item;
             }
         }
         finally

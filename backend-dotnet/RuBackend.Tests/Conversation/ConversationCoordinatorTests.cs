@@ -15,6 +15,28 @@ namespace RuBackend.Tests.Conversation;
 public sealed class ConversationCoordinatorTests
 {
     [Fact]
+    public async Task Correlation_id_is_preserved_on_every_coordinator_event()
+    {
+        var log = new List<string>();
+        var coordinator = CreateCoordinator(
+            log,
+            new FakeSessionStore(log),
+            new FakeMemoryService(log),
+            SuccessfulWorker(log));
+
+        var events = await CollectAsync(coordinator.HandleAsync(
+            new ChatRequest(
+                "Xin chào",
+                "session-1",
+                CorrelationId: "c_12345678",
+                Profile: CapabilityProfile.Chat),
+            CancellationToken.None));
+
+        Assert.NotEmpty(events);
+        Assert.All(events, item => Assert.Equal("c_12345678", item.CorrelationId));
+    }
+
+    [Fact]
     public async Task Successful_turn_preserves_order_and_never_publishes_private_metadata()
     {
         var log = new List<string>();
@@ -114,12 +136,13 @@ public sealed class ConversationCoordinatorTests
             gate);
 
         var events = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Xin chào", "session-1"),
+            new ChatRequest("Xin chào", "session-1", CorrelationId: "c_busy123"),
             CancellationToken.None));
 
         var error = Assert.Single(events);
         Assert.Equal("error", error.Type);
         Assert.Equal("busy", error.ErrorCode);
+        Assert.Equal("c_busy123", error.CorrelationId);
         Assert.Empty(sessions.Messages);
     }
 

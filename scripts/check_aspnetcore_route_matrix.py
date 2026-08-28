@@ -102,7 +102,7 @@ def main() -> int:
         return 1
     print(
         "Public route contract OK: "
-        f"{http_count} HTTP routes, {websocket_count} WebSocket routes"
+        f"{http_count} HTTP + {websocket_count} WebSocket (/voice/stream)"
     )
     return 0
 

@@ -15,6 +15,13 @@ public sealed class ChatViewVoiceContractTests
         Assert.Contains("TranscribeAudioAsync(wavBytes, cancellationToken)", code, StringComparison.Ordinal);
         Assert.Contains("NotifyReplyCompleted", code, StringComparison.Ordinal);
         Assert.Contains("NotifyReplyError", code, StringComparison.Ordinal);
+        Assert.Contains("SendAgentTurnAsync(text, AgentTurnSource.Voice, cancellationToken)", code, StringComparison.Ordinal);
+        Assert.Contains("BeginReplyStream()", code, StringComparison.Ordinal);
+        Assert.Contains("AppendReplyDelta", code, StringComparison.Ordinal);
+        Assert.Contains("CompleteReplyStreamAsync", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("ChatWebSocketClient", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("_voiceTurnPending", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("/chat", code, StringComparison.Ordinal);
         Assert.Contains("Nói chuyện với Ru bằng giọng nói", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("MicRecorderService", code, StringComparison.Ordinal);
@@ -28,6 +35,16 @@ public sealed class ChatViewVoiceContractTests
 
         Assert.Contains("Func<IVoiceFrameSource>?", code, StringComparison.Ordinal);
         Assert.Contains("new VoiceTurnCaptureService(voiceSourceFactory)", code, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Agent_mode_keeps_microphone_enabled_and_uses_the_same_turn_path()
+    {
+        string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+        Assert.Contains("MicButton.IsEnabled = true", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("if (_agentMode)\n            {\n                ShowAgentInlineStatus", code, StringComparison.Ordinal);
+        Assert.Contains("AgentTurnSource.Typed", code, StringComparison.Ordinal);
+        Assert.Contains("AgentTurnSource.Voice", code, StringComparison.Ordinal);
     }
 
     [Fact]

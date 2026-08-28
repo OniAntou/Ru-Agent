@@ -55,7 +55,6 @@ namespace RuApp.Views
         private const double ReadingColumnMaxWidth = 820;
 
         private ApiService? _apiService;
-        private ChatWebSocketClient? _wsClient;
         private VoicePlaybackService? _voicePlayback;
         private VoiceTurnCaptureService? _voiceCapture;
         private VoiceConversationService? _voiceConversation;
@@ -64,10 +63,8 @@ namespace RuApp.Views
         private string _activeSessionId = "default";
         private AgentRunController? _agentController;
         private CancellationTokenSource? _agentMonitorCts;
-        private readonly ChatTurnQueue _chatTurnQueue = new();
-        private readonly ChatTurnPresenter _chatTurnPresenter;
         private readonly AgentSessionRecovery _agentSessionRecovery = new();
-        private bool _agentMode;
+        private bool _agentMode = true;
         private bool _agentActivityVisible;
         private AgentPermissionPreset _agentPreset = AgentPermissionPreset.Standard;
         private string? _agentPresetSessionId;
@@ -82,12 +79,22 @@ namespace RuApp.Views
         private readonly Dictionary<string, AgentActivityItem> _agentActivityById = new(StringComparer.Ordinal);
         private DispatcherTimer? _typingDebounce;
         private bool _typingPushed;
-        private bool _voiceTurnPending;
+        private enum AgentTurnSource
+        {
+            Typed,
+            Voice,
+        }
+
+        private AgentTurnSource _activeAgentTurnSource;
+        private ChatMessageItem? _activeAgentAssistantMessage;
+        private string? _activeAgentRunId;
+        private bool _activeAgentReplyReceived;
+        private bool _activeAgentReplyCompleted;
+        private readonly HashSet<string> _agentDeltaKeys = new(StringComparer.Ordinal);
 
         public ChatView()
         {
             this.InitializeComponent();
-            _chatTurnPresenter = new ChatTurnPresenter(_chatTurnQueue);
             ChatListView.ItemsSource = Messages;
             AgentActivityFeed.ItemsSource = AgentActivities;
             Messages.CollectionChanged += (s, e) => UpdateViewMode();
@@ -122,7 +129,6 @@ namespace RuApp.Views
 
         public void Initialize(
             ApiService apiService,
-            ChatWebSocketClient wsClient,
             VoicePlaybackService voicePlayback,
             Func<IVoiceFrameSource>? voiceSourceFactory = null,
             HarnessEventSink? harnessEvents = null,
@@ -131,7 +137,6 @@ namespace RuApp.Views
             string? defaultAgentWorkspace = null)
         {
             _apiService = apiService;
-            _wsClient = wsClient;
             _voicePlayback = voicePlayback;
             _harnessEvents = harnessEvents;
             _harnessScenario = harnessScenario;
@@ -144,6 +149,7 @@ namespace RuApp.Views
             _agentController?.PropertyChanged += OnAgentControllerChanged;
             _agentController?.ActivityReceived += OnAgentActivityReceived;
             _agentController?.SummaryReceived += OnAgentSummaryReceived;
+            _agentController?.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
             UpdateAgentModeVisuals();
             UpdateAgentInlineState();
             _voiceCapture = new VoiceTurnCaptureService(voiceSourceFactory);
@@ -153,9 +159,6 @@ namespace RuApp.Views
                 SendVoiceMessageAsync,
                 harnessEvents);
             _voiceConversation.StatusChanged += OnVoiceConversationStatusChanged;
-
-            _wsClient.OnFrameReceived += OnWsFrameReceived;
-            _wsClient.OnDisconnected += OnWsDisconnected;
 
             ChatInputTextBox.TextChanged += OnChatInputTyping;
             _typingDebounce = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
@@ -263,6 +266,51 @@ namespace RuApp.Views
             ScrollChatToBottom();
         }
 
+        private void OnAgentAssistantDeltaReceived(object? sender, AgentAssistantDeltaModel delta)
+        {
+            if (!DispatcherQueue.HasThreadAccess)
+            {
+                DispatcherQueue.TryEnqueue(() => OnAgentAssistantDeltaReceived(sender, delta));
+                return;
+            }
+
+            AgentRunModel? run = _agentController?.CurrentRun;
+            if (run is null || _agentController?.IsBusy != true)
+            {
+                return;
+            }
+
+            // The controller correlates the SSE callback with its current run. Bind
+            // the placeholder lazily because the run id is only known after create.
+            if (_activeAgentAssistantMessage is null)
+            {
+                return;
+            }
+
+            _activeAgentRunId ??= run.RunId;
+            if (!string.Equals(_activeAgentRunId, run.RunId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            string key = $"{run.RunId}:{delta.ModelStepId}:{delta.TransientSequence}";
+            if (!_agentDeltaKeys.Add(key))
+            {
+                return;
+            }
+
+            _activeAgentReplyReceived = true;
+            _activeAgentAssistantMessage.Content += delta.Text;
+            _activeAgentAssistantMessage.IsStreaming = true;
+            if (_activeAgentTurnSource == AgentTurnSource.Voice
+                && _voicePlayback?.AutoReadReplies == true)
+            {
+                _voicePlayback.AppendReplyDelta(delta.Text);
+            }
+
+            ScrollChatToBottom();
+        }
+
         private void ClearAgentActivities()
         {
             _agentActivityById.Clear();
@@ -366,12 +414,12 @@ namespace RuApp.Views
             ToolTipService.SetToolTip(
                 AgentModeButton,
                 _agentMode ? "Coding Agent · mở để đổi chế độ" : "Chat · mở để bật Coding Agent");
-            MicButton.IsEnabled = !_agentMode;
+            // Voice capture is part of the single Agent turn path. It must remain
+            // available regardless of the legacy mode selector state.
+            MicButton.IsEnabled = true;
             AutomationProperties.SetName(
                 MicButton,
-                _agentMode
-                    ? "Micro bị tắt trong Coding Agent; hãy nhập chỉ thị bằng bàn phím"
-                    : "Bắt đầu trò chuyện bằng giọng nói");
+                "Bắt đầu trò chuyện bằng giọng nói");
         }
 
         private void UpdateAgentInlineState()
@@ -529,59 +577,6 @@ namespace RuApp.Views
                     || _agentController.NeedsWorkspaceTrust);
         }
 
-
-        private void OnWsSessionReceived(string sessionId)
-        {
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                if (string.IsNullOrWhiteSpace(sessionId))
-                {
-                    return;
-                }
-
-                _activeSessionId = sessionId;
-                ResetAgentState();
-            });
-        }
-
-        private void OnWsDisconnected()
-        {
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                MarkStreamingChatMessagesAsError(
-                    "**LỖI KẾT NỐI:** Backend đã ngắt kết nối. Hãy gửi lại lượt này.");
-                _voicePlayback?.FailReplyStream();
-                _voiceTurnPending = false;
-                _voiceConversation?.NotifyReplyError(
-                    new InvalidOperationException("Chat backend disconnected."));
-                ClearAgentActivities();
-                ClearAgentRunSummary();
-                ResetAgentState();
-                ShowAgentInlineStatus("Mất kết nối backend. Coding Agent đã tạm dừng giao diện.");
-            });
-        }
-
-
-        private void OnWsResetReceived()
-        {
-            if (_voicePlayback?.AutoReadReplies == true)
-            {
-                _voicePlayback.ResetReplyStreamForRetry();
-            }
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                ClearAgentActivities();
-                ClearAgentRunSummary();
-                ResetAgentState();
-                _chatTurnQueue.Invalidate();
-                foreach (var message in Messages.Where(item => item.Role == "assistant" && item.IsStreaming))
-                {
-                    message.IsStreaming = false;
-                    message.IsError = true;
-                }
-            });
-        }
-
         private void ResetAgentState()
         {
             ClearAgentActivities();
@@ -595,13 +590,13 @@ namespace RuApp.Views
             _agentMonitorCts = null;
             monitor?.Cancel();
             monitor?.Dispose();
-            _agentMode = false;
             _agentActivityVisible = false;
             _agentPreset = AgentPermissionPreset.Standard;
             _agentPresetSessionId = null;
             _agentPresetVersion = null;
             _agentApprovalScopeApprovalId = null;
             _agentActionPending = false;
+            AbandonActiveAgentReply(notifyVoice: true);
             if (AgentPresetBox is not null)
             {
                 AgentPresetBox.SelectedIndex = 0;
@@ -689,13 +684,6 @@ namespace RuApp.Views
                 string text = ChatInputTextBox.Text.Trim();
                 if (string.IsNullOrEmpty(text)) return;
 
-                if (string.Equals(text, "/chat", StringComparison.OrdinalIgnoreCase))
-                {
-                    ChatInputTextBox.Text = string.Empty;
-                    SetAgentMode(false);
-                    return;
-                }
-
                 if (string.Equals(text, "/agent", StringComparison.OrdinalIgnoreCase))
                 {
                     ChatInputTextBox.Text = string.Empty;
@@ -721,29 +709,6 @@ namespace RuApp.Views
                     return;
                 }
 
-                if (_agentMode)
-                {
-                    if (_agentController is null)
-                    {
-                        ShowAgentInlineStatus("Coding Agent chưa sẵn sàng.");
-                        return;
-                    }
-
-                    ChatInputTextBox.Text = string.Empty;
-                    if (_typingPushed)
-                    {
-                        _typingPushed = false;
-                        _ = _apiService?.PushVtsActivityAsync(false);
-                    }
-
-                    await SendAgentMessageAsync(text, CancellationToken.None);
-                    return;
-                }
-
-                if (_wsClient == null) return;
-
-                await StopVoiceConversationAsync();
-
                 ChatInputTextBox.Text = string.Empty;
                 if (_typingPushed)
                 {
@@ -751,23 +716,18 @@ namespace RuApp.Views
                     _ = _apiService?.PushVtsActivityAsync(false);
                 }
 
-                await SendMessageTextAsync(text, CancellationToken.None);
+                await SendAgentTurnAsync(text, AgentTurnSource.Typed, CancellationToken.None);
             }
             catch (Exception ex)
             {
-                if (_agentMode)
-                {
-                    ShowAgentError(ex);
-                }
-                else
-                {
-                    HandleSendError(ex, "SendCurrentMessageAsync");
-                }
+                FailActiveAgentReply(ex);
+                ShowAgentError(ex);
             }
         }
 
-        private async Task SendAgentMessageAsync(
+        private async Task SendAgentTurnAsync(
             string text,
+            AgentTurnSource source,
             CancellationToken cancellationToken,
             bool allowSessionRecovery = true)
         {
@@ -784,7 +744,17 @@ namespace RuApp.Views
             if (IsActiveAgentRunPending())
             {
                 ShowAgentInlineStatus("Coding Agent đang có phiên chạy. Hãy hoàn tất phiên hiện tại trước.");
+                if (source == AgentTurnSource.Voice)
+                {
+                    throw new InvalidOperationException("Coding Agent đang xử lý lượt trước.");
+                }
+
                 return;
+            }
+
+            if (source == AgentTurnSource.Typed && _voiceConversation?.IsRunning == true)
+            {
+                await StopVoiceConversationAsync();
             }
 
             await EnsureAgentSessionAsync(cancellationToken);
@@ -800,6 +770,11 @@ namespace RuApp.Views
                 AgentPresetBox.SelectedIndex = 0;
                 _agentPreset = AgentPermissionPreset.Standard;
                 UpdateAgentInlineState();
+                if (source == AgentTurnSource.Voice)
+                {
+                    throw new OperationCanceledException("Đã hủy lựa chọn Full Access.");
+                }
+
                 return;
             }
 
@@ -818,7 +793,7 @@ namespace RuApp.Views
 
                 ClearAgentActivities();
                 ClearAgentRunSummary();
-                Messages.Add(new ChatMessageItem { Role = "user", Content = text });
+                BeginAgentReply(source, text);
                 ScrollChatToBottom();
                 ShowAgentInlineStatus("Đang chuẩn bị thao tác…");
                 AgentStopButton.Visibility = Visibility.Collapsed;
@@ -830,21 +805,147 @@ namespace RuApp.Views
                 && AgentSessionRecovery.IsRecoverable(error)
                 && _agentSessionRecovery.TryBegin(_activeSessionId))
             {
+                // Preserve the voice completion gate while replacing the stale
+                // session and retrying this same logical turn once.
+                AbandonActiveAgentReply(notifyVoice: false);
                 await RecoverAgentSessionAsync(cancellationToken);
-                await SendAgentMessageAsync(text, cancellationToken, allowSessionRecovery: false);
+                await SendAgentTurnAsync(
+                    text,
+                    source,
+                    cancellationToken,
+                    allowSessionRecovery: false);
                 return;
             }
 
             if (IsTerminalStatus(_agentController.CurrentRun?.Status))
             {
                 ClearAgentActivities();
-                await ReloadSessionHistoryAsync(cancellationToken);
+                await CompleteActiveAgentTurnAsync(cancellationToken);
             }
             else
             {
                 StartAgentMonitor();
             }
             UpdateAgentInlineState();
+        }
+
+        private void BeginAgentReply(AgentTurnSource source, string text)
+        {
+            _activeAgentTurnSource = source;
+            _activeAgentRunId = null;
+            _activeAgentReplyReceived = false;
+            _activeAgentReplyCompleted = false;
+            _agentDeltaKeys.Clear();
+
+            Messages.Add(new ChatMessageItem
+            {
+                Role = "user",
+                Content = text,
+                SessionId = _activeSessionId,
+            });
+            _activeAgentAssistantMessage = new ChatMessageItem
+            {
+                Role = "assistant",
+                Content = string.Empty,
+                IsStreaming = true,
+                SessionId = _activeSessionId,
+            };
+            Messages.Add(_activeAgentAssistantMessage);
+
+            if (source == AgentTurnSource.Voice)
+            {
+                _harnessEvents?.Write("voice.agent.sent");
+            }
+
+            if (_voicePlayback?.AutoReadReplies == true)
+            {
+                _voicePlayback.BeginReplyStream();
+            }
+        }
+
+        private async Task CompleteActiveAgentTurnAsync(CancellationToken cancellationToken)
+        {
+            if (_activeAgentReplyCompleted)
+            {
+                return;
+            }
+
+            _activeAgentReplyCompleted = true;
+            ChatMessageItem? placeholder = _activeAgentAssistantMessage;
+            if (placeholder is not null)
+            {
+                placeholder.IsStreaming = false;
+            }
+
+            string? latestAssistant = await ReloadSessionHistoryAsync(cancellationToken);
+            string fallbackText = latestAssistant
+                ?? StripDisplayMarkers(placeholder?.Content ?? string.Empty);
+            if (_activeAgentTurnSource == AgentTurnSource.Voice)
+            {
+                _harnessEvents?.Write("voice.reply.received");
+                if (_voicePlayback?.AutoReadReplies == true)
+                {
+                    // A streamed reply already entered the voice pipeline through
+                    // OnAgentAssistantDeltaReceived. CompleteReplyStreamAsync only
+                    // uses fallback text when no typed delta arrived.
+                    await _voicePlayback.CompleteReplyStreamAsync(
+                        _activeAgentReplyReceived ? string.Empty : fallbackText);
+                }
+
+                _harnessEvents?.Write("voice.reply.completed");
+                _voiceConversation?.NotifyReplyCompleted();
+            }
+
+            _activeAgentAssistantMessage = null;
+            _activeAgentRunId = null;
+            _agentDeltaKeys.Clear();
+            _activeAgentTurnSource = AgentTurnSource.Typed;
+        }
+
+        private void FailActiveAgentReply(Exception exception)
+        {
+            if (_activeAgentAssistantMessage is not null)
+            {
+                _activeAgentAssistantMessage.Content = string.IsNullOrWhiteSpace(
+                    _activeAgentAssistantMessage.Content)
+                    ? "Coding Agent không thể hoàn thành lượt này. Hãy thử lại sau."
+                    : $"{_activeAgentAssistantMessage.Content}\n\nCoding Agent không thể hoàn thành lượt này.";
+                _activeAgentAssistantMessage.IsStreaming = false;
+                _activeAgentAssistantMessage.IsError = true;
+            }
+
+            if (_activeAgentTurnSource == AgentTurnSource.Voice)
+            {
+                _voicePlayback?.FailReplyStream();
+                _voiceConversation?.NotifyReplyError(exception);
+            }
+
+            _activeAgentAssistantMessage = null;
+            _activeAgentRunId = null;
+            _agentDeltaKeys.Clear();
+            _activeAgentTurnSource = AgentTurnSource.Typed;
+        }
+
+        private void AbandonActiveAgentReply(bool notifyVoice)
+        {
+            _voicePlayback?.StopVoice();
+            if (notifyVoice && _activeAgentTurnSource == AgentTurnSource.Voice)
+            {
+                _voiceConversation?.NotifyReplyError(
+                    new OperationCanceledException("Agent turn was replaced or cancelled."));
+            }
+
+            if (_activeAgentAssistantMessage is not null)
+            {
+                _activeAgentAssistantMessage.IsStreaming = false;
+            }
+
+            _activeAgentAssistantMessage = null;
+            _activeAgentRunId = null;
+            _activeAgentReplyReceived = false;
+            _activeAgentReplyCompleted = false;
+            _agentDeltaKeys.Clear();
+            _activeAgentTurnSource = AgentTurnSource.Typed;
         }
 
         private async Task RecoverAgentSessionAsync(CancellationToken cancellationToken)
@@ -1023,7 +1124,7 @@ namespace RuApp.Views
                     if (IsTerminalStatus(_agentController.CurrentRun.Status))
                     {
                         ClearAgentActivities();
-                        await ReloadSessionHistoryAsync(cancellationToken);
+                        await CompleteActiveAgentTurnAsync(cancellationToken);
                         return;
                     }
 
@@ -1040,22 +1141,26 @@ namespace RuApp.Views
             }
         }
 
-        private async Task ReloadSessionHistoryAsync(CancellationToken cancellationToken)
+        private async Task<string?> ReloadSessionHistoryAsync(CancellationToken cancellationToken)
         {
             if (_apiService is null)
             {
-                return;
+                return null;
             }
 
             var history = await _apiService.GetSessionMessagesAsync(_activeSessionId);
             if (history is null || cancellationToken.IsCancellationRequested)
             {
-                return;
+                return null;
             }
+
+            string? latestAssistant = history
+                .LastOrDefault(item => string.Equals(item.Role, "assistant", StringComparison.Ordinal))
+                .Content;
+            latestAssistant = StripDisplayMarkers(latestAssistant ?? string.Empty);
 
             void Apply()
             {
-                _chatTurnQueue.Invalidate();
                 ClearAgentActivities();
                 Messages.Clear();
                 foreach (var (role, content) in history)
@@ -1081,8 +1186,28 @@ namespace RuApp.Views
             }
             else
             {
-                DispatcherQueue.TryEnqueue(Apply);
+                var applied = new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                if (!DispatcherQueue.TryEnqueue(() =>
+                {
+                    try
+                    {
+                        Apply();
+                        applied.TrySetResult(true);
+                    }
+                    catch (Exception error)
+                    {
+                        applied.TrySetException(error);
+                    }
+                }))
+                {
+                    return null;
+                }
+
+                await applied.Task.ConfigureAwait(false);
             }
+
+            return latestAssistant;
         }
 
         private async Task SendVoiceMessageAsync(string text, CancellationToken cancellationToken)
@@ -1119,125 +1244,14 @@ namespace RuApp.Views
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                _voiceTurnPending = true;
-                await SendMessageTextAsync(text, cancellationToken);
+                await SendAgentTurnAsync(text, AgentTurnSource.Voice, cancellationToken);
             }
             catch (Exception ex)
             {
-                _voiceTurnPending = false;
-                HandleSendError(ex, "SendVoiceMessageAsync");
+                FailActiveAgentReply(ex);
+                ShowAgentError(ex);
                 throw;
             }
-        }
-
-        private async Task SendMessageTextAsync(string text, CancellationToken cancellationToken)
-        {
-            if (_wsClient == null)
-            {
-                throw new InvalidOperationException("Chat WebSocket chưa sẵn sàng.");
-            }
-
-            _voicePlayback?.StopVoice();
-            var correlationId = $"c_{Guid.NewGuid():N}";
-            if (!_chatTurnQueue.TryEnqueue(_activeSessionId, correlationId, out var turn))
-            {
-                throw new InvalidOperationException("Đang có quá nhiều lượt Chat chờ xử lý.");
-            }
-
-            Messages.Add(new ChatMessageItem
-            {
-                Role = "user",
-                Content = text,
-                TurnId = turn.TurnId,
-                SessionId = turn.SessionId,
-            });
-            Messages.Add(new ChatMessageItem
-            {
-                Role = "assistant",
-                Content = "",
-                IsStreaming = true,
-                TurnId = turn.TurnId,
-                SessionId = turn.SessionId,
-            });
-            if (_voicePlayback?.AutoReadReplies == true)
-            {
-                _voicePlayback.BeginReplyStream();
-            }
-
-            if (_voiceTurnPending)
-            {
-                _harnessEvents?.Write("voice.chat.sent");
-            }
-
-            ScrollChatToBottom();
-            try
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                await _wsClient.SendMessageAsync(
-                    text,
-                    _activeSessionId,
-                    turn.CorrelationId,
-                    cancellationToken);
-            }
-            catch (Exception error)
-            {
-                _chatTurnQueue.Remove(turn.CorrelationId);
-                throw new ChatTurnSendException(turn, error);
-            }
-        }
-
-        private void HandleSendError(Exception exception, string operation)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error in {operation}: {exception.Message}");
-            _voicePlayback?.StopVoice();
-            var failedSend = exception as ChatTurnSendException;
-            var turn = failedSend is null ? _chatTurnQueue.ActiveTurn : null;
-            var message = turn is null
-                ? failedSend is null
-                    ? null
-                    : Messages.FirstOrDefault(item =>
-                        string.Equals(item.TurnId, failedSend.TurnId, StringComparison.Ordinal)
-                        && item.Role == "assistant")
-                : Messages.FirstOrDefault(item =>
-                    string.Equals(item.TurnId, turn.TurnId, StringComparison.Ordinal)
-                    && item.Role == "assistant");
-            if (message is not null)
-            {
-                message.Content = "**LỖI GỬI:** Không thể gửi lượt này. Hãy kiểm tra kết nối backend rồi thử lại.";
-                message.IsStreaming = false;
-                message.IsError = true;
-            }
-            else
-            {
-                Messages.Add(new ChatMessageItem
-                {
-                    Role = "assistant",
-                    Content = "**LỖI GỬI:** Không thể gửi lượt này. Hãy kiểm tra kết nối backend rồi thử lại.",
-                    IsStreaming = false,
-                    IsError = true
-                });
-            }
-
-            // A generic send failure can happen after the placeholder was removed
-            // by a session reload. Always release the exact active turn so a hidden
-            // queue entry cannot block every subsequent Chat submission.
-            if (turn is not null)
-            {
-                _chatTurnQueue.Remove(turn.CorrelationId);
-            }
-        }
-
-        private void MarkStreamingChatMessagesAsError(string content)
-        {
-            foreach (var message in Messages.Where(item =>
-                         item.Role == "assistant" && item.IsStreaming))
-            {
-                message.Content = content;
-                message.IsStreaming = false;
-                message.IsError = true;
-            }
-
-            _chatTurnQueue.Invalidate();
         }
 
         private void ApplyInputWidth()
@@ -1298,210 +1312,13 @@ namespace RuApp.Views
             }
         }
 
-        private void OnWsFrameReceived(ChatEventFrame frame)
-        {
-            try
-            {
-                var update = _chatTurnPresenter.Apply(frame);
-                if (update.Kind == ChatTurnUpdateKind.Ignored)
-                {
-                    return;
-                }
-
-                if (update.Kind == ChatTurnUpdateKind.Delta
-                    && _voicePlayback?.AutoReadReplies == true)
-                {
-                    _voicePlayback.AppendReplyDelta(update.Content ?? string.Empty);
-                }
-                else if (update.Kind == ChatTurnUpdateKind.Error)
-                {
-                    _voicePlayback?.FailReplyStream();
-                    _voiceTurnPending = false;
-                    _voiceConversation?.NotifyReplyError(
-                        new InvalidOperationException(update.Content ?? "Lỗi không xác định"));
-                }
-
-                if (!DispatcherQueue.TryEnqueue(() =>
-                {
-                    _ = ApplyChatTurnUpdateAsync(update);
-                }))
-                {
-                    System.Diagnostics.Debug.WriteLine("Could not enqueue Chat event on UI dispatcher.");
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error in OnWsFrameReceived: {ex.Message}");
-            }
-        }
-
-        private async Task ApplyChatTurnUpdateAsync(ChatTurnUpdate update)
-        {
-            if (update.Turn is null)
-            {
-                return;
-            }
-
-            var message = Messages.FirstOrDefault(item =>
-                item.Role == "assistant" &&
-                string.Equals(item.TurnId, update.Turn.TurnId, StringComparison.Ordinal));
-            switch (update.Kind)
-            {
-                case ChatTurnUpdateKind.Session:
-                    if (!string.IsNullOrWhiteSpace(update.SessionId))
-                    {
-                        _activeSessionId = update.SessionId;
-                        ResetAgentState();
-                        if (message is not null)
-                        {
-                            message.SessionId = update.SessionId;
-                        }
-                    }
-                    break;
-                case ChatTurnUpdateKind.Reset:
-                    if (message is not null)
-                    {
-                        message.Content = string.Empty;
-                        message.IsStreaming = true;
-                    }
-                    break;
-                case ChatTurnUpdateKind.Delta:
-                    if (message is not null)
-                    {
-                        message.Content += update.Content ?? string.Empty;
-                        ScrollChatToBottom();
-                    }
-                    break;
-                case ChatTurnUpdateKind.Done:
-                    await CompleteChatTurnAsync(message, update).ConfigureAwait(true);
-                    break;
-                case ChatTurnUpdateKind.Error:
-                    ApplyChatTurnError(message, update);
-                    break;
-            }
-        }
-
-        private async Task CompleteChatTurnAsync(ChatMessageItem? message, ChatTurnUpdate update)
-        {
-            string final = update.Content ?? message?.Content ?? string.Empty;
-            string finalVoiceText = StripDisplayMarkers(final);
-            if (message is null)
-            {
-                message = new ChatMessageItem
-                {
-                    Role = "assistant",
-                    TurnId = update.Turn?.TurnId,
-                    SessionId = update.SessionId,
-                    Content = finalVoiceText,
-                    IsStreaming = false,
-                };
-                Messages.Add(message);
-            }
-            else
-            {
-                message.Content = finalVoiceText;
-                message.IsStreaming = false;
-                if (!string.IsNullOrWhiteSpace(update.SessionId))
-                {
-                    message.SessionId = update.SessionId;
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(update.SessionId))
-            {
-                _activeSessionId = update.SessionId;
-            }
-
-            if (_voiceTurnPending)
-            {
-                _harnessEvents?.Write("voice.reply.received");
-            }
-
-            if (_voicePlayback?.AutoReadReplies == true)
-            {
-                await _voicePlayback.CompleteReplyStreamAsync(finalVoiceText);
-            }
-
-            if (_voiceTurnPending)
-            {
-                _harnessEvents?.Write("voice.reply.completed");
-                _voiceTurnPending = false;
-            }
-
-            _voiceConversation?.NotifyReplyCompleted();
-        }
-
-        private void ApplyChatTurnError(ChatMessageItem? message, ChatTurnUpdate update)
-        {
-            string error = update.Content ?? "Lỗi không xác định";
-            string detailedError = $"**LỖI: {error}**\n\n**Gợi ý sửa:** {GetErrorDetails(error)}";
-            if (message is null)
-            {
-                Messages.Add(new ChatMessageItem
-                {
-                    Role = "assistant",
-                    TurnId = update.Turn?.TurnId,
-                    SessionId = update.SessionId,
-                    Content = detailedError,
-                    IsStreaming = false,
-                    IsError = true,
-                });
-                return;
-            }
-
-            message.Content = string.IsNullOrEmpty(message.Content)
-                ? detailedError
-                : $"{message.Content}\n\n{detailedError}";
-            message.IsStreaming = false;
-            message.IsError = true;
-        }
-
-        private string GetErrorDetails(string error)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(error))
-                {
-                    return "Error message is empty";
-                }
-
-                if (error.Contains("timeout") || error.Contains("time out"))
-                {
-                    return "Backend phản hồi quá chậm. Kiểm tra: Backend đang chạy? Model có quá nặng? GPU có đủ bộ nhớ?";
-                }
-                else if (error.Contains("connection") || error.Contains("connect"))
-                {
-                    return "Không thể kết nối đến backend. Kiểm tra: Server có chạy (127.0.0.1:8000)? Token có đúng?";
-                }
-                else if (error.Contains("model") || error.Contains("load"))
-                {
-                    return "Lỗi kết nối provider. Kiểm tra model name, endpoint và credential trong Settings.";
-                }
-                else if (error.Contains("memory") || error.Contains("GPU"))
-                {
-                    return "Lỗi bộ nhớ GPU. Kiểm tra: GPU có đủ VRAM? Có process khác đang dùng GPU?";
-                }
-                else if (error.Contains("API") || error.Contains("key"))
-                {
-                    return "Lỗi API key. Kiểm tra: API key có đúng? Có quota còn lại? Network có ổn định?";
-                }
-                else
-                {
-                    return "Vui lòng kiểm tra nhật ký trong tab Nhật ký hoặc file log hệ thống.";
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error in GetErrorDetails: {ex.Message}");
-                return "Error details unavailable";
-            }
-        }
 
         private async void OnAgentStopClick(object sender, RoutedEventArgs e)
         {
             await RunAgentActionAsync(
                 () => _agentController?.CancelAsync() ?? Task.CompletedTask,
                 "Đang dừng Coding Agent…");
+            AbandonActiveAgentReply(notifyVoice: true);
             ClearAgentActivities();
             ClearAgentRunSummary();
         }
@@ -1588,7 +1405,6 @@ namespace RuApp.Views
                 if (_apiService == null) return;
                 await ReplaceVoiceSessionAsync();
                 _activeSessionId = sessionId;
-                _chatTurnQueue.Invalidate();
                 ResetAgentState();
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
                 Messages.Clear();
@@ -1624,12 +1440,6 @@ namespace RuApp.Views
 
         private async void OnMicClick(object sender, RoutedEventArgs e)
         {
-            if (_agentMode)
-            {
-                ShowAgentInlineStatus("Coding Agent nhận chỉ thị bằng bàn phím; micro đang tắt.");
-                return;
-            }
-
             if (_voiceConversation == null)
             {
                 return;
@@ -1665,7 +1475,7 @@ namespace RuApp.Views
             }
 
             await _voiceConversation.StopAsync();
-            _voiceTurnPending = false;
+            AbandonActiveAgentReply(notifyVoice: false);
             _harnessEvents?.Write(
                 string.Equals(_harnessScenario, "cancel", StringComparison.OrdinalIgnoreCase)
                     ? "voice.conversation.cancelled"
@@ -1681,8 +1491,7 @@ namespace RuApp.Views
                 await _voiceConversation.ReplaceSessionAsync();
             }
 
-            _voiceTurnPending = false;
-            _voicePlayback?.StopVoice();
+            AbandonActiveAgentReply(notifyVoice: false);
             SetVoiceButtonState(false);
         }
 
@@ -1770,11 +1579,6 @@ namespace RuApp.Views
 
         public void Dispose()
         {
-            if (_wsClient != null)
-            {
-                _wsClient.OnFrameReceived -= OnWsFrameReceived;
-                _wsClient.OnDisconnected -= OnWsDisconnected;
-            }
             _agentMonitorCts?.Cancel();
             _agentMonitorCts?.Dispose();
             _agentMonitorCts = null;
@@ -1783,6 +1587,7 @@ namespace RuApp.Views
                 _agentController.PropertyChanged -= OnAgentControllerChanged;
                 _agentController.ActivityReceived -= OnAgentActivityReceived;
                 _agentController.SummaryReceived -= OnAgentSummaryReceived;
+                _agentController.AssistantDeltaReceived -= OnAgentAssistantDeltaReceived;
             }
             ClearAgentActivities();
             ClearAgentRunSummary();

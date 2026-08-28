@@ -120,8 +120,8 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.DoesNotContain("AgentStatusText.Text = \"Coding Agent sẵn sàng.\"", setModeBody, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentInlinePanel.Visibility = Visibility.Visible", setModeBody, StringComparison.Ordinal);
 
-        int sendStart = codeBehind.IndexOf("private async Task SendAgentMessageAsync", StringComparison.Ordinal);
-        Assert.True(sendStart >= 0, "SendAgentMessageAsync is missing.");
+        int sendStart = codeBehind.IndexOf("private async Task SendAgentTurnAsync", StringComparison.Ordinal);
+        Assert.True(sendStart >= 0, "SendAgentTurnAsync is missing.");
         int nextSendMethod = codeBehind.IndexOf("\n        private async", sendStart + 1, StringComparison.Ordinal);
         string sendBody = nextSendMethod > sendStart
             ? codeBehind[sendStart..nextSendMethod]
@@ -146,7 +146,7 @@ public sealed class AgentSessionUiSourceContractTests
 
         Assert.Contains("AgentRunController", codeBehind, StringComparison.Ordinal);
         Assert.Contains("CreateAgentRunRequest", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("SendAgentMessageAsync", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("SendAgentTurnAsync", codeBehind, StringComparison.Ordinal);
         Assert.Contains("_agentController.CreateAndRunAsync", codeBehind, StringComparison.Ordinal);
         Assert.Contains("_agentWorkspace = workspace;", codeBehind, StringComparison.Ordinal);
         Assert.Contains("AgentWorkspaceSelection.Resolve(null, _defaultAgentWorkspace)", codeBehind, StringComparison.Ordinal);
@@ -161,12 +161,13 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.DoesNotContain("Để trống để dùng project root", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AgentPresetBox\"", xaml, StringComparison.Ordinal);
 
-        int agentSend = codeBehind.IndexOf("private async Task SendAgentMessageAsync", StringComparison.Ordinal);
+        int agentSend = codeBehind.IndexOf("private async Task SendAgentTurnAsync", StringComparison.Ordinal);
         Assert.True(agentSend >= 0);
         int nextMethod = codeBehind.IndexOf("private async Task SendVoiceMessageAsync", agentSend, StringComparison.Ordinal);
         Assert.True(nextMethod > agentSend);
         string agentBody = codeBehind[agentSend..nextMethod];
-        Assert.DoesNotContain("_wsClient.SendMessageAsync", agentBody, StringComparison.Ordinal);
+        Assert.Contains("_agentController.CreateAndRunAsync", agentBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("SendMessageAsync", agentBody, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -174,8 +175,8 @@ public sealed class AgentSessionUiSourceContractTests
     {
         string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
 
-        int sendStart = codeBehind.IndexOf("private async Task SendAgentMessageAsync", StringComparison.Ordinal);
-        Assert.True(sendStart >= 0, "SendAgentMessageAsync is missing.");
+        int sendStart = codeBehind.IndexOf("private async Task SendAgentTurnAsync", StringComparison.Ordinal);
+        Assert.True(sendStart >= 0, "SendAgentTurnAsync is missing.");
         int nextMethod = codeBehind.IndexOf("private async Task<long> EnsureAgentPresetAsync", sendStart, StringComparison.Ordinal);
         Assert.True(nextMethod > sendStart, "EnsureAgentPresetAsync must remain a separate helper.");
 
@@ -209,7 +210,7 @@ public sealed class AgentSessionUiSourceContractTests
     {
         string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
 
-        foreach (string method in new[] { "OnWsSessionReceived", "OnWsResetReceived", "OnWsDisconnected", "OpenSessionAsync" })
+        foreach (string method in new[] { "ResetAgentState", "OpenSessionAsync" })
         {
             string signature = method == "OpenSessionAsync"
                 ? "public async Task OpenSessionAsync"
@@ -218,7 +219,14 @@ public sealed class AgentSessionUiSourceContractTests
             Assert.True(start >= 0, $"Missing {method} handler.");
             int next = codeBehind.IndexOf("\n        private", start + method.Length, StringComparison.Ordinal);
             string body = next > start ? codeBehind[start..next] : codeBehind[start..];
-            Assert.Contains("ResetAgentState", body, StringComparison.Ordinal);
+            if (method == "OpenSessionAsync")
+            {
+                Assert.Contains("ResetAgentState", body, StringComparison.Ordinal);
+            }
+            else
+            {
+                Assert.Contains("AbandonActiveAgentReply", body, StringComparison.Ordinal);
+            }
         }
     }
 

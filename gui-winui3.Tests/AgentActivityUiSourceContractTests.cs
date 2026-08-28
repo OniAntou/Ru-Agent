@@ -52,14 +52,18 @@ public sealed class AgentActivityUiSourceContractTests
     public void Agent_send_adds_a_temporary_user_message_and_activity_lifecycle_clears()
     {
         var codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-        var sendStart = codeBehind.IndexOf("private async Task SendAgentMessageAsync", StringComparison.Ordinal);
-        var sendEnd = codeBehind.IndexOf("private async Task<long> EnsureAgentPresetAsync", sendStart, StringComparison.Ordinal);
-        Assert.True(sendStart >= 0 && sendEnd > sendStart, "SendAgentMessageAsync is missing.");
+        var sendStart = codeBehind.IndexOf("private async Task SendAgentTurnAsync", StringComparison.Ordinal);
+        var sendEnd = codeBehind.IndexOf("private void BeginAgentReply", sendStart, StringComparison.Ordinal);
+        Assert.True(sendStart >= 0 && sendEnd > sendStart, "SendAgentTurnAsync is missing.");
         var sendBlock = codeBehind[sendStart..sendEnd];
-        Assert.Contains("Messages.Add(new ChatMessageItem", sendBlock, StringComparison.Ordinal);
         Assert.Contains("ClearAgentActivities()", sendBlock, StringComparison.Ordinal);
 
-        foreach (var method in new[] { "private async Task ReloadSessionHistoryAsync", "private void ResetAgentState", "private void OnWsDisconnected", "private void OnWsResetReceived" })
+        var replyEnd = codeBehind.IndexOf("private async Task CompleteActiveAgentTurnAsync", sendEnd, StringComparison.Ordinal);
+        Assert.True(replyEnd > sendEnd, "BeginAgentReply must remain a separate helper.");
+        var replyBlock = codeBehind[sendEnd..replyEnd];
+        Assert.Contains("Messages.Add(new ChatMessageItem", replyBlock, StringComparison.Ordinal);
+
+        foreach (var method in new[] { "private async Task<string?> ReloadSessionHistoryAsync", "private void ResetAgentState" })
         {
             var start = codeBehind.IndexOf(method, StringComparison.Ordinal);
             Assert.True(start >= 0, $"Missing {method}.");

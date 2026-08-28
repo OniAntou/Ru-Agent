@@ -20,7 +20,6 @@ namespace RuApp
         private readonly RuAppComposition _composition;
         private readonly IRuBackendSessionProvider _backendProvider;
         private ApiService? _apiService;
-        private ChatWebSocketClient? _wsClient;
         private VoicePlaybackService? _voicePlayback;
         private SubtitleOverlayService? _subtitleOverlay;
         private SubtitlePresenter? _subtitlePresenter;
@@ -190,8 +189,6 @@ namespace RuApp
                 _backendProvider.BackendExited += OnBackendExited;
 
                 _apiService = new ApiService(backendSession);
-                _wsClient = new ChatWebSocketClient(backendSession);
-                _wsClient.Start();
                 _voicePlayback = new VoicePlaybackService(
                     _apiService,
                     _composition.PlaybackDeviceFactory?.Invoke());
@@ -230,7 +227,6 @@ namespace RuApp
                 _chatView = new ChatView();
                 _chatView.Initialize(
                     _apiService,
-                    _wsClient,
                     _voicePlayback,
                     _composition.VoiceSourceFactory,
                     _composition.HarnessEvents,
@@ -259,7 +255,7 @@ namespace RuApp
 
                 _auditPanel = new AuditLogPanel { Log = _composition.AuditLog };
 
-                // Default: Chat
+                // The conversation surface is Agent-only.
                 ContentFrame.Content = _chatView;
                 SetActiveNav(NavChat);
                 
@@ -396,7 +392,6 @@ namespace RuApp
                 TextWorker.Text = "AI Worker: Đã dừng";
                 TextVts.Text = "VTS: Đã ngắt";
                 UpdateShellStatusTooltip();
-                _wsClient?.NotifyBackendStopped();
             });
         }
 
@@ -422,7 +417,6 @@ namespace RuApp
                     System.Diagnostics.Debug.WriteLine($"[MainWindow] Voice shutdown failed: {ex.Message}");
                 }
             }
-            _wsClient?.Dispose();
             _apiService?.Dispose();
             _backendProvider.BackendExited -= OnBackendExited;
             _agentController?.Dispose();

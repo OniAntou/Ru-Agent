@@ -83,13 +83,20 @@ Run the desktop-owned stack:
 & D:\LLM\start_dev.bat
 ```
 
+`build.bat` publishes the canonical self-contained Release GUI at
+`gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe`
+and stops with an error if that artifact is missing. `start_dev.bat` launches
+only that Release publish output; it never falls back to a Debug build, so a
+successful build must reach `[12/12] Build complete!` before using a shortcut.
 These commands produce and start `RuApp.exe` plus `RuBackend.exe`. Do not start
 the Runtime Worker or voice engine as independent public services.
 
 ## Current behavior
 
 - Chat preserves bounded context, bilingual routing, natural Vietnamese
-  `anh`/`em`, streamed visible text, and private control-metadata filtering.
+  `anh`/`em`, streamed visible text, private control-metadata filtering, and
+  correlation-aware FIFO turns that drop stale socket frames instead of
+  attaching them to a newer bubble.
 - Hosted OpenCode Zen and Kilo Gateway adapters are optional. OpenAI-compatible
   external adapters remain available for explicitly configured services.
   Credentials are stored through Windows Credential Manager.
@@ -109,14 +116,18 @@ the Runtime Worker or voice engine as independent public services.
 - In the WinUI shell, Chat and Voice are the primary navigation surfaces. Log,
    Diagnostics, Policy, and Audit are grouped under `Công cụ`; Coding Agent is
    selected from the compact mode pill inside the Chat composer. That mode
-   dropdown contains only Chat and Agent; a separate Agent configuration
-   button holds workspace and preset choices. The workspace field is optional:
-   when empty, the UI uses the known project root while the authenticated API
-   still validates the canonical path. Agent prompts use the
+   dropdown contains only Chat and Agent; selecting Agent reveals one compact
+   preset dropdown with `Standard` and `Full Access`. The UI always uses the
+   known project root as the initial Agent workspace; workspace selection is
+   not exposed in the composer, while the authenticated API still validates
+   the canonical path. If the app has not opened a chat session yet, the first
+   Agent prompt creates a fresh session before applying the selected preset.
+   Agent prompts use the
    authenticated `/agent/v1/*` API/SSE path, while ordinary Chat keeps the
    Chat WebSocket path. The composer shows bounded Agent status, workspace
-   trust, approval, Stop, and Continue controls without placing tool payloads
-   in the Chat transcript.
+   trust, approval, Stop, and Continue controls; the Chat transcript can show
+   a transient safe activity feed for the current run. The feed is separate
+   from durable messages and never places raw tool payloads in the transcript.
 - Tool capability is an explicit tri-state selector. Chat (default) advertises
   only workspace discovery/read (`files.list`, `files.glob`, `files.search`,
   `files.read` with offset/limit, streaming enumeration, hidden/binary/

@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-
 namespace RuBackend.Conversation;
 
 /// <summary>
@@ -8,57 +6,86 @@ namespace RuBackend.Conversation;
 /// </summary>
 public sealed class ConversationSessionGate : IDisposable
 {
-    private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+    private readonly object _sync = new();
+    private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private int _disposed;
 
-    public int ActiveSessionCount => _entries.Count;
+    public int ActiveSessionCount
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _entries.Count;
+            }
+        }
+    }
 
     public IDisposable? TryEnter(string sessionId)
     {
-        ObjectDisposedException.ThrowIf(_disposed != 0, this);
         if (string.IsNullOrWhiteSpace(sessionId))
         {
             throw new ArgumentException("A session id is required.", nameof(sessionId));
         }
 
         var key = sessionId.Trim();
-        var entry = _entries.GetOrAdd(key, static _ => new Entry());
-        Interlocked.Increment(ref entry.References);
-        if (!entry.Semaphore.Wait(0))
+        lock (_sync)
         {
-            ReleaseReference(key, entry);
-            return null;
-        }
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
+            if (!_entries.TryGetValue(key, out var entry))
+            {
+                entry = new Entry();
+                _entries.Add(key, entry);
+            }
 
-        return new Lease(this, key, entry);
+            entry.References++;
+            if (!entry.Semaphore.Wait(0))
+            {
+                ReleaseReferenceUnsafe(key, entry);
+                return null;
+            }
+
+            return new Lease(this, key, entry);
+        }
     }
 
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        lock (_sync)
         {
-            return;
-        }
+            if (_disposed != 0)
+            {
+                return;
+            }
 
-        foreach (var entry in _entries.Values)
-        {
-            entry.Semaphore.Dispose();
+            _disposed = 1;
+            // Active leases own their semaphore until they are released. Clearing
+            // the lookup table prevents new callers while allowing those leases to
+            // finish without racing disposal of a semaphore they still use.
+            _entries.Clear();
         }
-
-        _entries.Clear();
     }
 
     private void Release(string key, Entry entry)
     {
-        entry.Semaphore.Release();
-        ReleaseReference(key, entry);
+        lock (_sync)
+        {
+            entry.Semaphore.Release();
+            ReleaseReferenceUnsafe(key, entry);
+        }
     }
 
-    private void ReleaseReference(string key, Entry entry)
+    private void ReleaseReferenceUnsafe(string key, Entry entry)
     {
-        if (Interlocked.Decrement(ref entry.References) == 0)
+        entry.References--;
+        if (entry.References == 0)
         {
-            _entries.TryRemove(new KeyValuePair<string, Entry>(key, entry));
+            if (_entries.TryGetValue(key, out var current)
+                && ReferenceEquals(current, entry))
+            {
+                _entries.Remove(key);
+            }
+
             entry.Semaphore.Dispose();
         }
     }

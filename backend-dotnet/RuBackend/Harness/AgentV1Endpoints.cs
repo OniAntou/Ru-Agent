@@ -66,7 +66,7 @@ public static class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task GetEventsAsync(string runId, HttpContext context, AgentV1Service service, IHarnessEventStore store, HarnessLiveEventHub hub, RuAgent.Hosting.RuntimeClientLeaseRegistry leaseRegistry, CancellationToken ct)
+    private static async Task GetEventsAsync(string runId, HttpContext context, AgentV1Service service, IHarnessEventStore store, HarnessLiveEventHub hub, AgentRunSummaryLivePublisher summaryPublisher, RuAgent.Hosting.RuntimeClientLeaseRegistry leaseRegistry, CancellationToken ct)
     {
         // cursor handling: Last-Event-ID header and after_sequence query param
         var afterSequenceRaw = context.Request.Query["after_sequence"].ToString();
@@ -177,6 +177,8 @@ public static class AgentV1Endpoints
 
         // Streaming durable events without materializing
         long lastSent = effectiveAfter;
+        long localTransientSeq = 0;
+        var summaryWritten = false;
         var isTerminal = run.State.IsTerminal();
         var liveRaw = context.Request.Query["live"].ToString();
         var live = liveRaw != "0";
@@ -214,6 +216,36 @@ public static class AgentV1Endpoints
             return any;
         }
 
+        async Task WriteTerminalSummaryAsync(AgentRun terminalRun)
+        {
+            if (!terminalRun.State.IsTerminal() || summaryWritten)
+            {
+                return;
+            }
+
+            // Reserve before writing so a runtime publisher racing this endpoint cannot
+            // enqueue a duplicate hub frame after the direct connection-local frame.
+            summaryPublisher.TryReserveSummary(terminalRun, out _);
+            var summary = summaryPublisher.BuildSummary(terminalRun);
+            var wire = new AgentRunSummaryWire(
+                summary.Status,
+                summary.VerificationState,
+                summary.WorkspaceLabel,
+                summary.FilesScanned,
+                summary.FilesChanged,
+                summary.FilesCreated,
+                summary.FilesDeleted);
+            localTransientSeq++;
+            await HarnessSseWriter.WriteTransientAsync(
+                    context.Response,
+                    localTransientSeq,
+                    "agent.summary",
+                    new { kind = "agent.summary", data = AgentRunSummaryWireCodec.Serialize(wire) },
+                    ct)
+                .ConfigureAwait(false);
+            summaryWritten = true;
+        }
+
         await StreamDurablesAsync();
 
         // If terminal, send final snapshot and close cleanly
@@ -225,6 +257,7 @@ public static class AgentV1Endpoints
                 await StreamDurablesAsync();
             }
 
+            await WriteTerminalSummaryAsync(run);
             await HarnessSseWriter.WriteFinalSnapshotAsync(context.Response, AgentV1Service.MapRunState(run.Status), ct);
             await context.Response.Body.FlushAsync(ct);
             if (hubLease is { } terminalLease)
@@ -238,8 +271,6 @@ public static class AgentV1Endpoints
         // reaches a terminal state, the client disconnects, or the server shuts down.
         // `live=0` keeps the legacy snapshot-then-close behavior for replay/cursor checks.
         var pollInterval = TimeSpan.FromMilliseconds(100);
-        long localTransientSeq = 0;
-
         if (!live || isTerminal)
         {
             await context.Response.Body.FlushAsync(ct);
@@ -263,17 +294,21 @@ public static class AgentV1Endpoints
 
                 await StreamDurablesAsync();
 
-                if (isTerminal)
-                {
-                    break;
-                }
-
                 while (hubLease is { } activeLease && activeLease.Reader.TryRead(out var frame))
                 {
                     localTransientSeq++;
+                    if (frame.Kind == "agent.summary")
+                    {
+                        summaryWritten = true;
+                    }
                     var payload = new { kind = frame.Kind, data = frame.Data };
                     await HarnessSseWriter.WriteTransientAsync(context.Response, localTransientSeq, frame.Kind, payload, ct);
                     // transient does not advance lastSent (durable cursor)
+                }
+
+                if (isTerminal)
+                {
+                    break;
                 }
 
                 if (!ct.IsCancellationRequested && !isTerminal)
@@ -285,6 +320,7 @@ public static class AgentV1Endpoints
             await StreamDurablesAsync();
             if (isTerminal)
             {
+                await WriteTerminalSummaryAsync(run);
                 await HarnessSseWriter.WriteFinalSnapshotAsync(context.Response, AgentV1Service.MapRunState(run.Status), ct);
             }
 

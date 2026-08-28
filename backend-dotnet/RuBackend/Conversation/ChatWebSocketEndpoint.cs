@@ -383,8 +383,8 @@ public static class ChatWebSocketEndpoint
                         socket,
                         sendLock,
                         Error(
-                            "busy",
-                            "Turn is already in progress.",
+                            "chat_queue_full",
+                            "Chat queue is full. Try again after the current turn finishes.",
                             correlationId: ReadCorrelationId(message.Bytes)),
                         monitorCancellation).ConfigureAwait(false);
                 }

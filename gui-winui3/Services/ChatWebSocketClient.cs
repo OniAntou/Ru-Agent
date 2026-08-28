@@ -15,6 +15,7 @@ namespace RuApp.Services
 
         private ClientWebSocket? _webSocket;
         private CancellationTokenSource? _cts;
+        private readonly SemaphoreSlim _sendLock = new(1, 1);
         private readonly BackendSession _session;
         private bool _disposed;
         private bool _backendStopped;
@@ -26,6 +27,7 @@ namespace RuApp.Services
         public event Action? OnResetReceived;
         public event Action<string, string>? OnDoneReceived;
         public event Action<string>? OnErrorReceived;
+        internal event Action<ChatEventFrame>? OnFrameReceived;
         public bool IsConnected => _webSocket != null && _webSocket.State == WebSocketState.Open;
 
         public ChatWebSocketClient(string authSecret, int port = 8000)
@@ -132,33 +134,28 @@ namespace RuApp.Services
             try
             {
                 System.Diagnostics.Debug.WriteLine($"WebSocket received: {json.Length} chars");
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-                if (!root.TryGetProperty("type", out var typeProp))
+                if (!TryParseFrame(json, out var frame) || frame is null)
                 {
                     return;
                 }
-                string msgType = typeProp.GetString() ?? "";
+                OnFrameReceived?.Invoke(frame);
+                string msgType = frame.Type;
                 System.Diagnostics.Debug.WriteLine($"Message type: {msgType}");
 
-                if (msgType == "session" && root.TryGetProperty("session_id", out var sessionProp))
+                if (msgType == "session" && frame.SessionId is not null)
                 {
-                    OnSessionReceived?.Invoke(sessionProp.GetString() ?? "");
+                    OnSessionReceived?.Invoke(frame.SessionId);
                 }
-                else if (msgType == "chunk" && root.TryGetProperty("content", out var textProp))
+                else if (msgType == "chunk" && frame.Content is not null)
                 {
-                    string content = textProp.GetString() ?? "";
+                    string content = frame.Content;
                     System.Diagnostics.Debug.WriteLine($"Chunk received: {content.Length} chars");
                     OnDeltaReceived?.Invoke(content);
                 }
                 else if (msgType == "done")
                 {
-                    string content = root.TryGetProperty("content", out var doneProp)
-                        ? doneProp.GetString() ?? ""
-                        : "";
-                    string sessionId = root.TryGetProperty("session_id", out var sidProp)
-                        ? sidProp.GetString() ?? ""
-                        : "";
+                    string content = frame.Content ?? "";
+                    string sessionId = frame.SessionId ?? "";
                     System.Diagnostics.Debug.WriteLine($"Done message received, content length: {content.Length}");
                     OnDoneReceived?.Invoke(content, sessionId);
                 }
@@ -169,9 +166,7 @@ namespace RuApp.Services
                 }
                 else if (msgType == "error")
                 {
-                    string content = root.TryGetProperty("content", out var errProp)
-                        ? errProp.GetString() ?? "Lỗi không xác định"
-                        : "Lỗi không xác định";
+                    string content = frame.Content ?? "Lỗi không xác định";
                     System.Diagnostics.Debug.WriteLine($"Error frame received: {content.Length} chars");
                     OnErrorReceived?.Invoke(content);
                 }
@@ -182,6 +177,37 @@ namespace RuApp.Services
                 System.Diagnostics.Debug.WriteLine($"JSON parse error: {ex.Message}");
                 // Ignore malformed frames.
             }
+        }
+
+        internal static bool TryParseFrame(string json, out ChatEventFrame? frame) =>
+            ChatEventFrameParser.TryParse(json, out frame);
+
+        internal static string SerializeRequest(
+            string messageText,
+            string sessionId,
+            string correlationId)
+        {
+            if (string.IsNullOrWhiteSpace(messageText))
+            {
+                throw new ArgumentException("A message is required.", nameof(messageText));
+            }
+
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                throw new ArgumentException("A session id is required.", nameof(sessionId));
+            }
+
+            if (string.IsNullOrWhiteSpace(correlationId))
+            {
+                throw new ArgumentException("A correlation id is required.", nameof(correlationId));
+            }
+
+            return JsonSerializer.Serialize(new
+            {
+                prompt = messageText,
+                session_id = sessionId,
+                correlation_id = correlationId,
+            });
         }
 
 
@@ -196,18 +222,33 @@ namespace RuApp.Services
             string sessionId,
             CancellationToken cancellationToken)
         {
-            var socket = await WaitForSocketAsync(cancellationToken);
-
             var correlationId = $"c_{Guid.NewGuid():N}";
-            var payload = new
+            await SendMessageAsync(messageText, sessionId, correlationId, cancellationToken);
+        }
+
+        public async Task SendMessageAsync(
+            string messageText,
+            string sessionId,
+            string correlationId,
+            CancellationToken cancellationToken = default)
+        {
+            await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                prompt = messageText,
-                session_id = sessionId,
-                correlation_id = correlationId,
-            };
-            string json = JsonSerializer.Serialize(payload);
-            byte[] bytes = Encoding.UTF8.GetBytes(json);
-            await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
+                var socket = await WaitForSocketAsync(cancellationToken).ConfigureAwait(false);
+                string json = SerializeRequest(messageText, sessionId, correlationId);
+                byte[] bytes = Encoding.UTF8.GetBytes(json);
+                await socket.SendAsync(
+                        new ArraySegment<byte>(bytes),
+                        WebSocketMessageType.Text,
+                        true,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                _sendLock.Release();
+            }
         }
 
 

@@ -8,7 +8,7 @@
         <MicaBackdrop Kind="Base" />
     </Window.SystemBackdrop>
 
-    <Grid x:Name="ShellRoot" Background="{StaticResource RuCanvasBrush}">
+    <Grid x:Name="ShellRoot" Background="{StaticResource RuCanvasBrush}" PreviewKeyDown="OnShellPreviewKeyDown">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -125,9 +125,9 @@
                         <StackPanel Grid.Row="0" Padding="14,16,14,0" Spacing="2">
                             <!-- New Chat Button -->
                             <Button x:Name="NavNewChat" Click="OnNewChatClick" HorizontalAlignment="Stretch" Margin="0,0,0,8"
-                                    Background="Transparent" BorderBrush="Transparent"
-                                    BorderThickness="0" Foreground="{StaticResource RuAccentBrush}" Padding="10,8"
-                                    CornerRadius="0" HorizontalContentAlignment="Left"
+                                    Background="{StaticResource RuAccentSoftBrush}" BorderBrush="{StaticResource RuLineBrush}"
+                                    BorderThickness="1" Foreground="{StaticResource RuAccentBrush}" Padding="10,8"
+                                    CornerRadius="{StaticResource RuControlCornerRadius}" HorizontalContentAlignment="Left"
                                     AutomationProperties.AutomationId="NewSessionButton"
                                     ToolTipService.ToolTip="Đoạn chat mới" AutomationProperties.Name="Đoạn chat mới">
                                 <Grid ColumnDefinitions="Auto,*">
@@ -139,7 +139,7 @@
                             <!-- Navigation Tabs -->
                             <Button x:Name="NavChat" Tag="chat" Click="OnNavClick" HorizontalAlignment="Stretch"
                                     Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
-                                    Padding="10,8" CornerRadius="0" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
+                                    Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
                                     ToolTipService.ToolTip="Trò chuyện" AutomationProperties.Name="Trò chuyện">
                                 <Grid ColumnDefinitions="Auto,*">
                                     <FontIcon Grid.Column="0" Glyph="&#xE8F2;" FontSize="15" Margin="0,0,12,0"/>
@@ -149,7 +149,7 @@
 
                             <Button x:Name="NavVoice" Tag="voice" Click="OnNavClick" HorizontalAlignment="Stretch"
                                     Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
-                                    Padding="10,8" CornerRadius="0" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
+                                    Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
                                     ToolTipService.ToolTip="Giọng nói &amp; VTS" AutomationProperties.Name="Giọng nói và VTS">
                                 <Grid ColumnDefinitions="Auto,*">
                                     <FontIcon Grid.Column="0" Glyph="&#xE720;" FontSize="15" Margin="0,0,12,0"/>
@@ -162,7 +162,7 @@
                                     Background="Transparent"
                                     Foreground="{StaticResource RuMutedBrush}"
                                     Padding="10,8"
-                                    CornerRadius="0"
+                                    CornerRadius="{StaticResource RuControlCornerRadius}"
                                     BorderBrush="Transparent"
                                     BorderThickness="0"
                                     HorizontalContentAlignment="Left"
@@ -217,7 +217,7 @@
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                     <Setter Property="MinHeight" Value="34" />
                                     <Setter Property="Padding" Value="10,4" />
-                                    <Setter Property="CornerRadius" Value="0" />
+                                    <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
                                     <Setter Property="Margin" Value="0,1" />
                                 </Style>
                             </ListView.ItemContainerStyle>
@@ -234,7 +234,7 @@
                                                    TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Title}" 
                                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <Button Grid.Column="2" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
-                                                Width="24" Height="24" CornerRadius="0" Click="OnDeleteSessionClick"
+                                                Width="24" Height="24" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
                                                 Tag="{x:Bind Id}" ToolTipService.ToolTip="Xóa đoạn chat" Opacity="0">
                                             <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource AppDangerBrush}"/>
                                         </Button>

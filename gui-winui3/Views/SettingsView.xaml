@@ -51,7 +51,7 @@
                           HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="24" HorizontalAlignment="Stretch">
                     <StackPanel Spacing="4">
-                        <TextBlock Text="Cấu hình Hệ thống &amp; Mô hình" FontSize="22" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                        <TextBlock Text="Cấu hình Hệ thống &amp; Mô hình" FontSize="22" FontFamily="{StaticResource RuDisplayFontFamily}" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
                         <TextBlock Text="Quản lý provider OpenAI-compatible, tham số sinh và tính năng bộ nhớ" FontSize="13.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                     </StackPanel>
 

@@ -40,4 +40,18 @@ public sealed class ConversationSessionGateTests
         Assert.NotNull(second);
         Assert.Equal(1, gate.ActiveSessionCount);
     }
+
+    [Fact]
+    public void Disposing_with_an_active_lease_defers_semaphore_disposal()
+    {
+        var gate = new ConversationSessionGate();
+        var lease = gate.TryEnter("session-1");
+
+        Assert.NotNull(lease);
+        gate.Dispose();
+
+        Assert.Null(Record.Exception(lease!.Dispose));
+        Assert.Equal(0, gate.ActiveSessionCount);
+        Assert.Throws<ObjectDisposedException>(() => gate.TryEnter("session-2"));
+    }
 }

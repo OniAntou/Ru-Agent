@@ -8,9 +8,15 @@ import subprocess
 from pathlib import Path
 
 
-def _write_stub_commands(root: Path) -> None:
+def _write_stub_commands(root: Path, *, gui_publish_exists: bool = True) -> None:
     bin_dir = root / "bin"
     bin_dir.mkdir()
+    gui_publish = (
+        "  mkdir \"%RU_BUILD_TEST_ROOT%\\gui-winui3\\bin\\Release\\net10.0-windows10.0.26100.0\\win-x64\\publish\" >nul 2>&1\n"
+        "  echo gui > \"%RU_BUILD_TEST_ROOT%\\gui-winui3\\bin\\Release\\net10.0-windows10.0.26100.0\\win-x64\\publish\\RuApp.exe\"\n"
+        if gui_publish_exists
+        else ""
+    )
     (bin_dir / "dotnet.cmd").write_text(
         "@echo off\n"
         "if /I \"%~1\"==\"publish\" (\n"
@@ -20,6 +26,7 @@ def _write_stub_commands(root: Path) -> None:
         "  echo broker > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Broker\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Broker.exe\"\n"
         "  echo backend > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuBackend\\bin\\Release\\net10.0\\win-x64\\publish\\RuBackend.exe\"\n"
         "  echo cli > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Cli\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Cli.exe\"\n"
+        f"{gui_publish}"
         ")\n"
         "exit /b 0\n",
         encoding="utf-8",
@@ -37,7 +44,11 @@ def _write_stub_commands(root: Path) -> None:
 
 
 def _run_build_script(
-    tmp_path: Path, *, overlay_exists: bool, native_failure: bool = False
+    tmp_path: Path,
+    *,
+    overlay_exists: bool,
+    native_failure: bool = False,
+    gui_publish_exists: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     repo_root = Path(__file__).resolve().parents[1]
     build_root = tmp_path / "checkout"
@@ -64,7 +75,7 @@ def _run_build_script(
     if native_failure:
         (build_root / "powershell.fail").write_text("fail\n", encoding="utf-8")
 
-    _write_stub_commands(tmp_path)
+    _write_stub_commands(tmp_path, gui_publish_exists=gui_publish_exists)
     env = os.environ.copy()
     env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env['PATH']}"
     env["RU_BUILD_TEST_ROOT"] = str(build_root)
@@ -100,3 +111,45 @@ def test_native_build_failure_stops_release_build(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "Build complete" not in result.stdout
+
+
+def test_missing_gui_publish_fails_before_overlay_build(tmp_path: Path) -> None:
+    result = _run_build_script(
+        tmp_path,
+        overlay_exists=True,
+        gui_publish_exists=False,
+    )
+
+    assert result.returncode != 0
+    assert "RuApp.exe was not created" in result.stdout
+    assert "Build complete" not in result.stdout
+    assert not (tmp_path / "checkout" / "powershell.invocations").exists()
+
+
+def test_start_dev_rejects_debug_fallback_when_release_is_missing(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    script = tmp_path / "start_dev.bat"
+    shutil.copy2(repo_root / "start_dev.bat", script)
+    debug = (
+        tmp_path
+        / "gui-winui3"
+        / "bin"
+        / "Debug"
+        / "net10.0-windows10.0.26100.0"
+        / "win-x64"
+        / "RuApp.exe"
+    )
+    debug.parent.mkdir(parents=True)
+    debug.write_text("debug placeholder\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["cmd", "/d", "/c", str(script)],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Release publish" in result.stdout
+    assert "Debug" not in result.stdout

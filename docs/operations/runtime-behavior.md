@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the current main branch, 2026-08-28.
+Status: operating contract for the current main branch, 2026-08-29.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -20,6 +20,23 @@ calls the user `anh` and itself `em`. Chat contains no Unicode emoji or ASCII
 emoticons. Search commands, model controls, voice pace, VTS actions, segment
 identifiers, and transport timings are private metadata and must be removed
 before display, TTS, history, memory, logs, or reviewed examples.
+
+Each Chat turn carries a bounded `correlation_id` on the wire and a separate
+GUI-only `turn_id`. The composer keeps one active turn and a FIFO queue of up
+to eight active/pending turns; the WebSocket endpoint buffers up to eight
+deferred requests per connection and returns `chat_queue_full` with the
+overflowing correlation when that buffer is full. A keyed backend session gate
+prevents concurrent history writes. Frames whose correlation is missing,
+malformed, stale, or no longer active are ignored by the presenter, so a late
+reply cannot update a newer bubble. A disconnect marks streaming bubbles as a
+bounded retryable connection error and invalidates the queue; Ru does not
+automatically replay an ambiguous request and risk duplicate history.
+
+Short, allowlisted greetings and acknowledgements use a high-confidence local
+reply after the same session gate and still append ordered history. Corrections
+and all uncertain, path, search, filesystem, network, or current-fact requests
+retain the full model context; the local resolver never chooses Agent tools or
+an execution path.
 
 ## Voice output
 
@@ -131,14 +148,26 @@ via `Microsoft.UI.Composition` (`SpriteVisual`, `CompositionLinearGradientBrush`
 soft halo glow and core beam), runs only while `Messages.Count == 0`, and stops and
 clears every visual element as soon as the first message exists. The composer keeps the
 native TextBox caret/focus behavior and now contains an explicit compact `Chat` /
-`Coding Agent` mode pill. The mode dropdown contains only those two choices; a
-separate Agent configuration button owns workspace and preset fields. The
-workspace field is optional: when empty, the UI uses the known project root,
-while the authenticated API still validates the canonical path. Chat
+`Coding Agent` mode pill. The mode dropdown contains only those two choices;
+selecting Agent reveals a compact `Standard`/`Full Access` preset selector.
+The UI uses the known project root as the initial Agent workspace and does not
+expose a workspace editor, while the authenticated API still validates the
+canonical path. Chat
 submissions still use the Chat WebSocket; Agent submissions use the authenticated
 `/agent/v1/*` API/SSE path. Workspace trust, approval, Stop, Continue, and bounded
-Agent status remain inline above the input, outside the transcript. Agent payloads
-and raw tool output never enter Chat, TTS, VTS metadata, memory, or automation names.
+Agent status remain inline above the input. While a run is active, the transcript
+may also show a separate transient activity feed driven by typed `agent.activity`
+SSE frames. It renders only safe state, basename/line-range, symbol/count,
+edit-count, duration, and safe-code fields; it is cleared on terminal,
+cancellation, failure, disconnect, session replacement, or reset. Activity
+frames do not enter durable history or audit. Agent payloads and raw tool output
+never enter Chat, TTS, VTS metadata, memory, or automation names.
+When no chat session has been opened yet, the first Agent prompt creates a fresh
+session before the preset call; Agent does not require a preliminary Chat turn.
+If an Agent API call reports `session_not_found` or `invalid_session_id`, the
+desktop creates one replacement session and retries once only before a run is
+created. A second recovery failure is shown as a bounded error and is never
+looped or filled with an earlier response.
 
 ## Action execution kernel v1
 

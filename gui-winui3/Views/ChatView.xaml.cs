@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -63,15 +64,22 @@ namespace RuApp.Views
         private string _activeSessionId = "default";
         private AgentRunController? _agentController;
         private CancellationTokenSource? _agentMonitorCts;
+        private readonly ChatTurnQueue _chatTurnQueue = new();
+        private readonly ChatTurnPresenter _chatTurnPresenter;
+        private readonly AgentSessionRecovery _agentSessionRecovery = new();
         private bool _agentMode;
         private bool _agentActivityVisible;
         private AgentPermissionPreset _agentPreset = AgentPermissionPreset.Standard;
         private string? _agentPresetSessionId;
         private long? _agentPresetVersion;
+        private string? _agentApprovalScopeApprovalId;
         private string _agentWorkspace = Environment.CurrentDirectory;
         private string? _defaultAgentWorkspace;
         private bool _agentActionPending;
+        private AgentRunSummaryItem? _agentRunSummary;
         public ObservableCollection<ChatMessageItem> Messages { get; } = new();
+        public ObservableCollection<AgentActivityItem> AgentActivities { get; } = new();
+        private readonly Dictionary<string, AgentActivityItem> _agentActivityById = new(StringComparer.Ordinal);
         private DispatcherTimer? _typingDebounce;
         private bool _typingPushed;
         private bool _voiceTurnPending;
@@ -79,7 +87,9 @@ namespace RuApp.Views
         public ChatView()
         {
             this.InitializeComponent();
+            _chatTurnPresenter = new ChatTurnPresenter(_chatTurnQueue);
             ChatListView.ItemsSource = Messages;
+            AgentActivityFeed.ItemsSource = AgentActivities;
             Messages.CollectionChanged += (s, e) => UpdateViewMode();
             RootGrid.SizeChanged += OnRootGridSizeChanged;
             this.Loaded += (s, e) => ApplyInputWidth();
@@ -131,8 +141,9 @@ namespace RuApp.Views
                 : defaultAgentWorkspace.Trim();
             _defaultAgentWorkspace = defaultWorkspace;
             _agentWorkspace = defaultWorkspace;
-            AgentWorkspaceBox.Text = defaultWorkspace;
             _agentController?.PropertyChanged += OnAgentControllerChanged;
+            _agentController?.ActivityReceived += OnAgentActivityReceived;
+            _agentController?.SummaryReceived += OnAgentSummaryReceived;
             UpdateAgentModeVisuals();
             UpdateAgentInlineState();
             _voiceCapture = new VoiceTurnCaptureService(voiceSourceFactory);
@@ -143,11 +154,7 @@ namespace RuApp.Views
                 harnessEvents);
             _voiceConversation.StatusChanged += OnVoiceConversationStatusChanged;
 
-            _wsClient.OnDeltaReceived += OnWsDeltaReceived;
-            _wsClient.OnDoneReceived += OnWsDoneReceived;
-            _wsClient.OnErrorReceived += OnWsErrorReceived;
-            _wsClient.OnSessionReceived += OnWsSessionReceived;
-            _wsClient.OnResetReceived += OnWsResetReceived;
+            _wsClient.OnFrameReceived += OnWsFrameReceived;
             _wsClient.OnDisconnected += OnWsDisconnected;
 
             ChatInputTextBox.TextChanged += OnChatInputTyping;
@@ -190,6 +197,93 @@ namespace RuApp.Views
             DispatcherQueue.TryEnqueue(UpdateAgentInlineState);
         }
 
+        private void OnAgentActivityReceived(object? sender, AgentActivityModel activity)
+        {
+            if (DispatcherQueue.HasThreadAccess)
+            {
+                ApplyAgentActivity(activity);
+                return;
+            }
+
+            DispatcherQueue.TryEnqueue(() => ApplyAgentActivity(activity));
+        }
+
+        private void ApplyAgentActivity(AgentActivityModel activity)
+        {
+            if (!_agentMode
+                || _agentController?.IsBusy != true
+                || string.IsNullOrWhiteSpace(activity.ActivityId))
+            {
+                return;
+            }
+
+            if (_agentActivityById.TryGetValue(activity.ActivityId, out var existing))
+            {
+                existing.UpdateFrom(activity);
+            }
+            else
+            {
+                var item = new AgentActivityItem(activity);
+                _agentActivityById.Add(item.ActivityId, item);
+                AgentActivities.Add(item);
+            }
+
+            AgentActivityFeed.Visibility = Visibility.Visible;
+            ScrollChatToBottom();
+        }
+
+        private void OnAgentSummaryReceived(object? sender, AgentRunSummaryModel summary)
+        {
+            if (DispatcherQueue.HasThreadAccess)
+            {
+                ApplyAgentRunSummary(summary);
+                return;
+            }
+
+            DispatcherQueue.TryEnqueue(() => ApplyAgentRunSummary(summary));
+        }
+
+        private void ApplyAgentRunSummary(AgentRunSummaryModel summary)
+        {
+            if (!_agentMode || _agentController?.IsBusy != true)
+            {
+                return;
+            }
+
+            _agentRunSummary = new AgentRunSummaryItem(summary);
+            AgentRunSummaryText.Text = _agentRunSummary.DisplayText;
+            AgentRunSummaryMetadata.Text = _agentRunSummary.MetadataText;
+            AgentRunSummaryGlyph.Glyph = _agentRunSummary.StatusGlyph;
+            AgentRunSummaryGlyph.Foreground = _agentRunSummary.IsVerifiedSuccess
+                ? (Brush)Application.Current.Resources["RuSuccessBrush"]
+                : _agentRunSummary.IsFailure
+                    ? (Brush)Application.Current.Resources["AppDangerBrush"]
+                    : (Brush)Application.Current.Resources["RuMutedBrush"];
+            AgentRunSummaryPanel.Visibility = Visibility.Visible;
+            ScrollChatToBottom();
+        }
+
+        private void ClearAgentActivities()
+        {
+            _agentActivityById.Clear();
+            AgentActivities.Clear();
+            if (AgentActivityFeed is not null)
+            {
+                AgentActivityFeed.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void ClearAgentRunSummary()
+        {
+            _agentRunSummary = null;
+            if (AgentRunSummaryPanel is not null)
+            {
+                AgentRunSummaryPanel.Visibility = Visibility.Collapsed;
+                AgentRunSummaryText.Text = string.Empty;
+                AgentRunSummaryMetadata.Text = string.Empty;
+            }
+        }
+
         private void OnAgentModeButtonClick(object sender, RoutedEventArgs e)
         {
             UpdateAgentModeVisuals();
@@ -228,6 +322,8 @@ namespace RuApp.Views
             _agentActivityVisible = enabled && IsActiveAgentRunPending();
             if (!enabled)
             {
+                ClearAgentActivities();
+                ClearAgentRunSummary();
                 _agentActivityVisible = false;
                 _agentPreset = AgentPermissionPreset.Standard;
                 _agentPresetSessionId = null;
@@ -263,7 +359,7 @@ namespace RuApp.Views
             AgentModeAgentOption.IsChecked = _agentMode;
             AgentModeLabel.Text = _agentMode ? "Agent" : "Chat";
             AgentModeIcon.Glyph = _agentMode ? "\uEC25" : "\uE8F2";
-            AgentSettingsButton.Visibility = _agentMode ? Visibility.Visible : Visibility.Collapsed;
+            AgentPresetBox.Visibility = _agentMode ? Visibility.Visible : Visibility.Collapsed;
             AutomationProperties.SetName(
                 AgentModeButton,
                 _agentMode ? "Đang ở chế độ Coding Agent" : "Đang ở chế độ Trò chuyện");
@@ -343,6 +439,15 @@ namespace RuApp.Views
             AgentApprovalPanel.Visibility = approvalPending ? Visibility.Visible : Visibility.Collapsed;
             if (approvalPending)
             {
+                if (!string.Equals(
+                        _agentApprovalScopeApprovalId,
+                        _agentController.PendingApprovalId,
+                        StringComparison.Ordinal))
+                {
+                    _agentApprovalScopeApprovalId = _agentController.PendingApprovalId;
+                    AgentApprovalScopeBox.SelectedIndex = 0;
+                }
+
                 string summary = _agentController.PendingApprovalSummary
                     ?? "Agent đang yêu cầu một hành động cần phê duyệt.";
                 bool externalDirectoryApproval = string.Equals(
@@ -362,6 +467,7 @@ namespace RuApp.Views
             }
             else
             {
+                _agentApprovalScopeApprovalId = null;
                 AgentApprovalScopePanel.Visibility = Visibility.Collapsed;
             }
 
@@ -442,6 +548,14 @@ namespace RuApp.Views
         {
             DispatcherQueue.TryEnqueue(() =>
             {
+                MarkStreamingChatMessagesAsError(
+                    "**LỖI KẾT NỐI:** Backend đã ngắt kết nối. Hãy gửi lại lượt này.");
+                _voicePlayback?.FailReplyStream();
+                _voiceTurnPending = false;
+                _voiceConversation?.NotifyReplyError(
+                    new InvalidOperationException("Chat backend disconnected."));
+                ClearAgentActivities();
+                ClearAgentRunSummary();
                 ResetAgentState();
                 ShowAgentInlineStatus("Mất kết nối backend. Coding Agent đã tạm dừng giao diện.");
             });
@@ -456,17 +570,22 @@ namespace RuApp.Views
             }
             DispatcherQueue.TryEnqueue(() =>
             {
+                ClearAgentActivities();
+                ClearAgentRunSummary();
                 ResetAgentState();
-                var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
-                if (last != null)
+                _chatTurnQueue.Invalidate();
+                foreach (var message in Messages.Where(item => item.Role == "assistant" && item.IsStreaming))
                 {
-                    Messages.Remove(last);
+                    message.IsStreaming = false;
+                    message.IsError = true;
                 }
             });
         }
 
         private void ResetAgentState()
         {
+            ClearAgentActivities();
+            ClearAgentRunSummary();
             if (_agentController?.CanCancel == true)
             {
                 _ = _agentController.CancelAsync();
@@ -481,6 +600,7 @@ namespace RuApp.Views
             _agentPreset = AgentPermissionPreset.Standard;
             _agentPresetSessionId = null;
             _agentPresetVersion = null;
+            _agentApprovalScopeApprovalId = null;
             _agentActionPending = false;
             if (AgentPresetBox is not null)
             {
@@ -495,6 +615,7 @@ namespace RuApp.Views
             AgentContinueButton.Visibility = Visibility.Collapsed;
             AgentStatusText.Text = string.Empty;
         }
+
 
         private static string StripDisplayMarkers(string content)
         {
@@ -534,6 +655,16 @@ namespace RuApp.Views
         {
             try
             {
+                var ctrlDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
+                    .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+                if (ctrlDown && e.Key == Windows.System.VirtualKey.M)
+                {
+                    e.Handled = true;
+                    SetAgentMode(!_agentMode);
+                    return;
+                }
+
                 if (e.Key == Windows.System.VirtualKey.Enter)
                 {
                     var shiftDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift)
@@ -557,6 +688,38 @@ namespace RuApp.Views
             {
                 string text = ChatInputTextBox.Text.Trim();
                 if (string.IsNullOrEmpty(text)) return;
+
+                if (string.Equals(text, "/chat", StringComparison.OrdinalIgnoreCase))
+                {
+                    ChatInputTextBox.Text = string.Empty;
+                    SetAgentMode(false);
+                    return;
+                }
+
+                if (string.Equals(text, "/agent", StringComparison.OrdinalIgnoreCase))
+                {
+                    ChatInputTextBox.Text = string.Empty;
+                    SetAgentMode(true);
+                    return;
+                }
+
+                if (string.Equals(text, "/full", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(text, "/fullaccess", StringComparison.OrdinalIgnoreCase))
+                {
+                    ChatInputTextBox.Text = string.Empty;
+                    if (!_agentMode) SetAgentMode(true);
+                    AgentPresetBox.SelectedIndex = 1;
+                    return;
+                }
+
+                if (string.Equals(text, "/std", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(text, "/standard", StringComparison.OrdinalIgnoreCase))
+                {
+                    ChatInputTextBox.Text = string.Empty;
+                    if (!_agentMode) SetAgentMode(true);
+                    AgentPresetBox.SelectedIndex = 0;
+                    return;
+                }
 
                 if (_agentMode)
                 {
@@ -603,8 +766,16 @@ namespace RuApp.Views
             }
         }
 
-        private async Task SendAgentMessageAsync(string text, CancellationToken cancellationToken)
+        private async Task SendAgentMessageAsync(
+            string text,
+            CancellationToken cancellationToken,
+            bool allowSessionRecovery = true)
         {
+            if (allowSessionRecovery)
+            {
+                _agentSessionRecovery.Reset();
+            }
+
             if (_agentController is null)
             {
                 throw new InvalidOperationException("Agent controller is unavailable.");
@@ -616,16 +787,10 @@ namespace RuApp.Views
                 return;
             }
 
-            string? workspace = AgentWorkspaceSelection.Resolve(
-                AgentWorkspaceBox.Text,
-                _defaultAgentWorkspace);
-            if (workspace is null)
-            {
-                AgentSettingsFlyout.ShowAt(AgentSettingsButton);
-                AgentWorkspaceBox.Focus(FocusState.Programmatic);
-                ShowAgentInlineStatus("Chưa xác định được thư mục làm việc cho Coding Agent.");
-                return;
-            }
+            await EnsureAgentSessionAsync(cancellationToken);
+
+            string workspace = AgentWorkspaceSelection.Resolve(null, _defaultAgentWorkspace)
+                ?? Environment.CurrentDirectory;
 
             _agentWorkspace = workspace;
 
@@ -639,23 +804,40 @@ namespace RuApp.Views
             }
 
             _agentPreset = preset;
-            long presetVersion = await EnsureAgentPresetAsync(preset, cancellationToken);
-            string wirePreset = preset == AgentPermissionPreset.FullAccess ? "full_access" : "standard";
-            var request = new CreateAgentRunRequest(
-                _activeSessionId,
-                workspace,
-                text,
-                wirePreset,
-                presetVersion,
-                Guid.NewGuid().ToString("N"));
+            try
+            {
+                long presetVersion = await EnsureAgentPresetAsync(preset, cancellationToken);
+                string wirePreset = preset == AgentPermissionPreset.FullAccess ? "full_access" : "standard";
+                var request = new CreateAgentRunRequest(
+                    _activeSessionId,
+                    workspace,
+                    text,
+                    wirePreset,
+                    presetVersion,
+                    Guid.NewGuid().ToString("N"));
 
-            ShowAgentInlineStatus("Đang chuẩn bị thao tác…");
-            AgentStopButton.Visibility = Visibility.Collapsed;
-            UpdateAgentInlineState();
-            await _agentController.CreateAndRunAsync(request, cancellationToken);
+                ClearAgentActivities();
+                ClearAgentRunSummary();
+                Messages.Add(new ChatMessageItem { Role = "user", Content = text });
+                ScrollChatToBottom();
+                ShowAgentInlineStatus("Đang chuẩn bị thao tác…");
+                AgentStopButton.Visibility = Visibility.Collapsed;
+                UpdateAgentInlineState();
+                await _agentController.CreateAndRunAsync(request, cancellationToken);
+            }
+            catch (AgentApiException error) when (
+                allowSessionRecovery
+                && AgentSessionRecovery.IsRecoverable(error)
+                && _agentSessionRecovery.TryBegin(_activeSessionId))
+            {
+                await RecoverAgentSessionAsync(cancellationToken);
+                await SendAgentMessageAsync(text, cancellationToken, allowSessionRecovery: false);
+                return;
+            }
 
             if (IsTerminalStatus(_agentController.CurrentRun?.Status))
             {
+                ClearAgentActivities();
                 await ReloadSessionHistoryAsync(cancellationToken);
             }
             else
@@ -663,6 +845,70 @@ namespace RuApp.Views
                 StartAgentMonitor();
             }
             UpdateAgentInlineState();
+        }
+
+        private async Task RecoverAgentSessionAsync(CancellationToken cancellationToken)
+        {
+            if (_apiService is null)
+            {
+                throw new InvalidOperationException("Backend session is unavailable.");
+            }
+
+            SessionInfo? created = await _apiService.CreateSessionAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            string? sessionId = created?.Id?.Trim();
+            if (!AgentSessionSelection.IsValid(sessionId))
+            {
+                throw new AgentApiException(
+                    "session_create_failed",
+                    "Không tạo được session mới cho Coding Agent.");
+            }
+
+            _activeSessionId = sessionId!;
+            _agentPresetSessionId = null;
+            _agentPresetVersion = null;
+            ClearAgentActivities();
+            ClearAgentRunSummary();
+            Messages.Clear();
+            UpdateViewMode();
+            SessionOpened?.Invoke(
+                this,
+                new SessionOpenedEventArgs(
+                    sessionId!,
+                    created?.Title ?? "Cuộc trò chuyện mới"));
+        }
+
+        private async Task EnsureAgentSessionAsync(CancellationToken cancellationToken)
+        {
+            if (AgentSessionSelection.IsValid(_activeSessionId))
+            {
+                return;
+            }
+
+            if (_apiService is null)
+            {
+                throw new InvalidOperationException("Backend session is unavailable.");
+            }
+
+            SessionInfo? created = await _apiService.CreateSessionAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            string? sessionId = created?.Id?.Trim();
+            if (!AgentSessionSelection.IsValid(sessionId))
+            {
+                throw new AgentApiException(
+                    "session_create_failed",
+                    "Không tạo được session cho Coding Agent.");
+            }
+
+            string validSessionId = sessionId!;
+            _activeSessionId = validSessionId;
+            _agentPresetSessionId = null;
+            _agentPresetVersion = null;
+            SessionOpened?.Invoke(
+                this,
+                new SessionOpenedEventArgs(
+                    validSessionId,
+                    created?.Title ?? "Cuộc trò chuyện mới"));
         }
 
         private async Task<long> EnsureAgentPresetAsync(
@@ -730,6 +976,8 @@ namespace RuApp.Views
 
         private void ShowAgentError(Exception exception)
         {
+            ClearAgentActivities();
+            ClearAgentRunSummary();
             string status = exception switch
             {
                 AgentApiException api => api.ErrorCode switch
@@ -737,10 +985,12 @@ namespace RuApp.Views
                     "invalid_workspace" => "Thư mục làm việc không hợp lệ hoặc không tồn tại.",
                     "workspace_busy" => "Thư mục đang được một phiên Agent khác sử dụng.",
                     "preset_mismatch" or "preset_version_conflict" => "Preset quyền đã thay đổi. Hãy chọn lại preset rồi thử lại.",
+                    "session_create_failed" => "Không tạo được phiên trò chuyện cho Coding Agent. Kiểm tra backend rồi thử lại.",
+                    "session_not_found" or "invalid_session_id" => "Phiên trò chuyện không còn hợp lệ. Hãy gửi lại để Ru tạo phiên mới.",
                     "unauthorized" => "Phiên đăng nhập Agent không còn hợp lệ. Hãy khởi động lại backend.",
                     _ => "Coding Agent không thể bắt đầu. Mở Công cụ → Nhật ký hoạt động để kiểm tra."
                 },
-                _ => "Coding Agent không thể bắt đầu. Kiểm tra workspace và backend rồi thử lại."
+                _ => "Coding Agent không thể bắt đầu. Kiểm tra project root và backend rồi thử lại."
             };
             ShowAgentInlineStatus(status);
             AgentStopButton.Visibility = Visibility.Collapsed;
@@ -772,6 +1022,7 @@ namespace RuApp.Views
 
                     if (IsTerminalStatus(_agentController.CurrentRun.Status))
                     {
+                        ClearAgentActivities();
                         await ReloadSessionHistoryAsync(cancellationToken);
                         return;
                     }
@@ -804,6 +1055,8 @@ namespace RuApp.Views
 
             void Apply()
             {
+                _chatTurnQueue.Invalidate();
+                ClearAgentActivities();
                 Messages.Clear();
                 foreach (var (role, content) in history)
                 {
@@ -885,8 +1138,27 @@ namespace RuApp.Views
             }
 
             _voicePlayback?.StopVoice();
-            Messages.Add(new ChatMessageItem { Role = "user", Content = text });
-            Messages.Add(new ChatMessageItem { Role = "assistant", Content = "", IsStreaming = true });
+            var correlationId = $"c_{Guid.NewGuid():N}";
+            if (!_chatTurnQueue.TryEnqueue(_activeSessionId, correlationId, out var turn))
+            {
+                throw new InvalidOperationException("Đang có quá nhiều lượt Chat chờ xử lý.");
+            }
+
+            Messages.Add(new ChatMessageItem
+            {
+                Role = "user",
+                Content = text,
+                TurnId = turn.TurnId,
+                SessionId = turn.SessionId,
+            });
+            Messages.Add(new ChatMessageItem
+            {
+                Role = "assistant",
+                Content = "",
+                IsStreaming = true,
+                TurnId = turn.TurnId,
+                SessionId = turn.SessionId,
+            });
             if (_voicePlayback?.AutoReadReplies == true)
             {
                 _voicePlayback.BeginReplyStream();
@@ -898,31 +1170,74 @@ namespace RuApp.Views
             }
 
             ScrollChatToBottom();
-            cancellationToken.ThrowIfCancellationRequested();
-            await _wsClient.SendMessageAsync(text, _activeSessionId, cancellationToken);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await _wsClient.SendMessageAsync(
+                    text,
+                    _activeSessionId,
+                    turn.CorrelationId,
+                    cancellationToken);
+            }
+            catch (Exception error)
+            {
+                _chatTurnQueue.Remove(turn.CorrelationId);
+                throw new ChatTurnSendException(turn, error);
+            }
         }
 
         private void HandleSendError(Exception exception, string operation)
         {
             System.Diagnostics.Debug.WriteLine($"Error in {operation}: {exception.Message}");
             _voicePlayback?.StopVoice();
-            var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
-            if (last != null)
+            var failedSend = exception as ChatTurnSendException;
+            var turn = failedSend is null ? _chatTurnQueue.ActiveTurn : null;
+            var message = turn is null
+                ? failedSend is null
+                    ? null
+                    : Messages.FirstOrDefault(item =>
+                        string.Equals(item.TurnId, failedSend.TurnId, StringComparison.Ordinal)
+                        && item.Role == "assistant")
+                : Messages.FirstOrDefault(item =>
+                    string.Equals(item.TurnId, turn.TurnId, StringComparison.Ordinal)
+                    && item.Role == "assistant");
+            if (message is not null)
             {
-                last.Content = $"**LỖI GỬI:** {exception.Message}";
-                last.IsStreaming = false;
-                last.IsError = true;
+                message.Content = "**LỖI GỬI:** Không thể gửi lượt này. Hãy kiểm tra kết nối backend rồi thử lại.";
+                message.IsStreaming = false;
+                message.IsError = true;
             }
             else
             {
                 Messages.Add(new ChatMessageItem
                 {
                     Role = "assistant",
-                    Content = $"**LỖI GỬI:** {exception.Message}",
+                    Content = "**LỖI GỬI:** Không thể gửi lượt này. Hãy kiểm tra kết nối backend rồi thử lại.",
                     IsStreaming = false,
                     IsError = true
                 });
             }
+
+            // A generic send failure can happen after the placeholder was removed
+            // by a session reload. Always release the exact active turn so a hidden
+            // queue entry cannot block every subsequent Chat submission.
+            if (turn is not null)
+            {
+                _chatTurnQueue.Remove(turn.CorrelationId);
+            }
+        }
+
+        private void MarkStreamingChatMessagesAsError(string content)
+        {
+            foreach (var message in Messages.Where(item =>
+                         item.Role == "assistant" && item.IsStreaming))
+            {
+                message.Content = content;
+                message.IsStreaming = false;
+                message.IsError = true;
+            }
+
+            _chatTurnQueue.Invalidate();
         }
 
         private void ApplyInputWidth()
@@ -983,147 +1298,162 @@ namespace RuApp.Views
             }
         }
 
-        private void OnWsDeltaReceived(string delta)
+        private void OnWsFrameReceived(ChatEventFrame frame)
         {
             try
             {
-                if (_voicePlayback?.AutoReadReplies == true)
+                var update = _chatTurnPresenter.Apply(frame);
+                if (update.Kind == ChatTurnUpdateKind.Ignored)
                 {
-                    _voicePlayback.AppendReplyDelta(delta);
+                    return;
                 }
 
-                DispatcherQueue.TryEnqueue(() =>
+                if (update.Kind == ChatTurnUpdateKind.Delta
+                    && _voicePlayback?.AutoReadReplies == true)
                 {
-                    try
-                    {
-                        var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
-                        if (last != null)
-                        {
-                            last.Content += delta;
-                            ScrollChatToBottom();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Error in OnWsDeltaReceived queue: {ex.Message}");
-                    }
-                });
+                    _voicePlayback.AppendReplyDelta(update.Content ?? string.Empty);
+                }
+                else if (update.Kind == ChatTurnUpdateKind.Error)
+                {
+                    _voicePlayback?.FailReplyStream();
+                    _voiceTurnPending = false;
+                    _voiceConversation?.NotifyReplyError(
+                        new InvalidOperationException(update.Content ?? "Lỗi không xác định"));
+                }
+
+                if (!DispatcherQueue.TryEnqueue(() =>
+                {
+                    _ = ApplyChatTurnUpdateAsync(update);
+                }))
+                {
+                    System.Diagnostics.Debug.WriteLine("Could not enqueue Chat event on UI dispatcher.");
+                }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in OnWsDeltaReceived: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error in OnWsFrameReceived: {ex.Message}");
             }
         }
 
-        private void OnWsDoneReceived(string content, string sessionId)
+        private async Task ApplyChatTurnUpdateAsync(ChatTurnUpdate update)
         {
-            try
+            if (update.Turn is null)
             {
-                if (_voiceTurnPending)
+                return;
+            }
+
+            var message = Messages.FirstOrDefault(item =>
+                item.Role == "assistant" &&
+                string.Equals(item.TurnId, update.Turn.TurnId, StringComparison.Ordinal));
+            switch (update.Kind)
+            {
+                case ChatTurnUpdateKind.Session:
+                    if (!string.IsNullOrWhiteSpace(update.SessionId))
+                    {
+                        _activeSessionId = update.SessionId;
+                        ResetAgentState();
+                        if (message is not null)
+                        {
+                            message.SessionId = update.SessionId;
+                        }
+                    }
+                    break;
+                case ChatTurnUpdateKind.Reset:
+                    if (message is not null)
+                    {
+                        message.Content = string.Empty;
+                        message.IsStreaming = true;
+                    }
+                    break;
+                case ChatTurnUpdateKind.Delta:
+                    if (message is not null)
+                    {
+                        message.Content += update.Content ?? string.Empty;
+                        ScrollChatToBottom();
+                    }
+                    break;
+                case ChatTurnUpdateKind.Done:
+                    await CompleteChatTurnAsync(message, update).ConfigureAwait(true);
+                    break;
+                case ChatTurnUpdateKind.Error:
+                    ApplyChatTurnError(message, update);
+                    break;
+            }
+        }
+
+        private async Task CompleteChatTurnAsync(ChatMessageItem? message, ChatTurnUpdate update)
+        {
+            string final = update.Content ?? message?.Content ?? string.Empty;
+            string finalVoiceText = StripDisplayMarkers(final);
+            if (message is null)
+            {
+                message = new ChatMessageItem
                 {
-                    _harnessEvents?.Write("voice.reply.received");
+                    Role = "assistant",
+                    TurnId = update.Turn?.TurnId,
+                    SessionId = update.SessionId,
+                    Content = finalVoiceText,
+                    IsStreaming = false,
+                };
+                Messages.Add(message);
+            }
+            else
+            {
+                message.Content = finalVoiceText;
+                message.IsStreaming = false;
+                if (!string.IsNullOrWhiteSpace(update.SessionId))
+                {
+                    message.SessionId = update.SessionId;
                 }
-
-                DispatcherQueue.TryEnqueue(async () =>
-                {
-                    try
-                    {
-                        var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
-                        string finalVoiceText = StripDisplayMarkers(
-                            string.IsNullOrWhiteSpace(content) ? last?.Content ?? "" : content);
-                        if (last != null)
-                        {
-                            string display = string.IsNullOrWhiteSpace(content)
-                                ? StripDisplayMarkers(last.Content)
-                                : StripDisplayMarkers(content);
-                            last.Content = display;
-                            last.IsStreaming = false;
-                        }
-                        else if (!string.IsNullOrWhiteSpace(content))
-                        {
-                            Messages.Add(new ChatMessageItem
-                            {
-                                Role = "assistant",
-                                Content = StripDisplayMarkers(content),
-                                IsStreaming = false
-                            });
-                        }
-
-                        if (!string.IsNullOrEmpty(sessionId))
-                        {
-                            _activeSessionId = sessionId;
-                        }
-
-                        if (_voicePlayback != null && _voicePlayback.AutoReadReplies)
-                        {
-                            await _voicePlayback.CompleteReplyStreamAsync(finalVoiceText);
-                        }
-
-                        if (_voiceTurnPending)
-                        {
-                            _harnessEvents?.Write("voice.reply.completed");
-                            _voiceTurnPending = false;
-                        }
-                        _voiceConversation?.NotifyReplyCompleted();
-                    }
-                    catch (Exception ex)
-                    {
-                        if (_voiceTurnPending)
-                        {
-                            _harnessEvents?.Write("voice.reply.failed");
-                        }
-                        _voiceConversation?.NotifyReplyError(ex);
-                        System.Diagnostics.Debug.WriteLine($"Error in OnWsDoneReceived queue: {ex.Message}");
-                    }
-                });
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error in OnWsDoneReceived: {ex.Message}");
-            }
-        }
 
-        private void OnWsErrorReceived(string error)
-        {
-            try
+            if (!string.IsNullOrWhiteSpace(update.SessionId))
             {
-                _voicePlayback?.FailReplyStream();
+                _activeSessionId = update.SessionId;
+            }
+
+            if (_voiceTurnPending)
+            {
+                _harnessEvents?.Write("voice.reply.received");
+            }
+
+            if (_voicePlayback?.AutoReadReplies == true)
+            {
+                await _voicePlayback.CompleteReplyStreamAsync(finalVoiceText);
+            }
+
+            if (_voiceTurnPending)
+            {
+                _harnessEvents?.Write("voice.reply.completed");
                 _voiceTurnPending = false;
-                _voiceConversation?.NotifyReplyError(new InvalidOperationException(error));
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    var last = Messages.LastOrDefault(m => m.Role == "assistant" && m.IsStreaming);
-                    if (last == null)
-                    {
-                        Messages.Add(new ChatMessageItem
-                        {
-                            Role = "assistant",
-                            Content = $"**LỖI:** {error}\n\n{GetErrorDetails(error)}",
-                            IsStreaming = false,
-                            IsError = true
-                        });
-                        return;
-                    }
+            }
 
-                    try
-                    {
-                        string detailedError = $"**LỖI: {error}**\n\n**Gợi ý sửa:** {GetErrorDetails(error)}";
-                        last.Content = string.IsNullOrEmpty(last.Content)
-                            ? detailedError
-                            : $"{last.Content}\n\n{detailedError}";
-                        last.IsStreaming = false;
-                        last.IsError = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Error updating message: {ex.Message}");
-                    }
-                });
-            }
-            catch (Exception ex)
+            _voiceConversation?.NotifyReplyCompleted();
+        }
+
+        private void ApplyChatTurnError(ChatMessageItem? message, ChatTurnUpdate update)
+        {
+            string error = update.Content ?? "Lỗi không xác định";
+            string detailedError = $"**LỖI: {error}**\n\n**Gợi ý sửa:** {GetErrorDetails(error)}";
+            if (message is null)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in OnWsErrorReceived: {ex.Message}");
+                Messages.Add(new ChatMessageItem
+                {
+                    Role = "assistant",
+                    TurnId = update.Turn?.TurnId,
+                    SessionId = update.SessionId,
+                    Content = detailedError,
+                    IsStreaming = false,
+                    IsError = true,
+                });
+                return;
             }
+
+            message.Content = string.IsNullOrEmpty(message.Content)
+                ? detailedError
+                : $"{message.Content}\n\n{detailedError}";
+            message.IsStreaming = false;
+            message.IsError = true;
         }
 
         private string GetErrorDetails(string error)
@@ -1172,6 +1502,8 @@ namespace RuApp.Views
             await RunAgentActionAsync(
                 () => _agentController?.CancelAsync() ?? Task.CompletedTask,
                 "Đang dừng Coding Agent…");
+            ClearAgentActivities();
+            ClearAgentRunSummary();
         }
 
         private async void OnAgentContinueClick(object sender, RoutedEventArgs e)
@@ -1256,6 +1588,7 @@ namespace RuApp.Views
                 if (_apiService == null) return;
                 await ReplaceVoiceSessionAsync();
                 _activeSessionId = sessionId;
+                _chatTurnQueue.Invalidate();
                 ResetAgentState();
                 SessionOpened?.Invoke(this, new SessionOpenedEventArgs(sessionId, title));
                 Messages.Clear();
@@ -1283,7 +1616,7 @@ namespace RuApp.Views
                 Messages.Add(new ChatMessageItem
                 {
                     Role = "assistant",
-                    Content = $"**LỖI MỞ SESSION:** {ex.Message}",
+                    Content = "**LỖI MỞ SESSION:** Không thể tải cuộc trò chuyện. Hãy kiểm tra backend rồi thử lại.",
                     IsError = true
                 });
             }
@@ -1439,11 +1772,7 @@ namespace RuApp.Views
         {
             if (_wsClient != null)
             {
-                _wsClient.OnDeltaReceived -= OnWsDeltaReceived;
-                _wsClient.OnDoneReceived -= OnWsDoneReceived;
-                _wsClient.OnErrorReceived -= OnWsErrorReceived;
-                _wsClient.OnSessionReceived -= OnWsSessionReceived;
-                _wsClient.OnResetReceived -= OnWsResetReceived;
+                _wsClient.OnFrameReceived -= OnWsFrameReceived;
                 _wsClient.OnDisconnected -= OnWsDisconnected;
             }
             _agentMonitorCts?.Cancel();
@@ -1452,7 +1781,11 @@ namespace RuApp.Views
             if (_agentController is not null)
             {
                 _agentController.PropertyChanged -= OnAgentControllerChanged;
+                _agentController.ActivityReceived -= OnAgentActivityReceived;
+                _agentController.SummaryReceived -= OnAgentSummaryReceived;
             }
+            ClearAgentActivities();
+            ClearAgentRunSummary();
             _typingDebounce?.Stop();
             _typingDebounce = null;
             MeteorShowerField?.Dispose();

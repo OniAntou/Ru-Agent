@@ -12,36 +12,42 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains("x:Name=\"AgentModeButton\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.AutomationId=\"AgentModeButton\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AgentModeFlyout\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AgentSettingsButton\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AgentSettingsFlyout\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AgentModeChatOption\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AgentModeAgentOption\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AgentWorkspaceBox\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AgentPresetBox\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"AgentSettingsButton\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"AgentSettingsFlyout\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"AgentWorkspaceBox\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AgentStatusText\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AgentStopButton\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AgentContinueButton\"", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Mode_flyout_contains_only_mode_choices_and_agent_settings_are_separate()
+    public void Agent_mode_exposes_only_a_compact_preset_selector_without_workspace_editor()
     {
         string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
 
         int modeStart = xaml.IndexOf("x:Name=\"AgentModeFlyout\"", StringComparison.Ordinal);
-        int settingsStart = xaml.IndexOf("x:Name=\"AgentSettingsFlyout\"", StringComparison.Ordinal);
         Assert.True(modeStart >= 0, "Agent mode flyout is missing.");
-        Assert.True(settingsStart > modeStart, "Agent settings flyout must be separate from the mode flyout.");
+        int modeEnd = xaml.IndexOf("</Flyout>", modeStart, StringComparison.Ordinal);
+        Assert.True(modeEnd > modeStart, "Agent mode flyout must be closed.");
 
-        string modeBlock = xaml[modeStart..settingsStart];
+        string modeBlock = xaml[modeStart..modeEnd];
         Assert.Contains("AgentModeChatOption", modeBlock, StringComparison.Ordinal);
         Assert.Contains("AgentModeAgentOption", modeBlock, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentWorkspaceBox", modeBlock, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentPresetBox", modeBlock, StringComparison.Ordinal);
 
-        string settingsBlock = xaml[settingsStart..];
-        Assert.Contains("AgentWorkspaceBox", settingsBlock, StringComparison.Ordinal);
-        Assert.Contains("AgentPresetBox", settingsBlock, StringComparison.Ordinal);
+        int presetStart = xaml.IndexOf("x:Name=\"AgentPresetBox\"", modeEnd, StringComparison.Ordinal);
+        Assert.True(presetStart > modeEnd, "Agent preset selector must live outside the mode flyout.");
+        string presetBlock = xaml[presetStart..];
+        Assert.Contains("Visibility=\"Collapsed\"", presetBlock, StringComparison.Ordinal);
+        Assert.Contains("SelectionChanged=\"OnAgentPresetChanged\"", presetBlock, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Standard\"", presetBlock, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Full Access\"", presetBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentWorkspaceBox", presetBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentSettingsFlyout", presetBlock, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -51,11 +57,11 @@ public sealed class AgentSessionUiSourceContractTests
         string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
 
         int modeStart = xaml.IndexOf("x:Name=\"AgentModeFlyout\"", StringComparison.Ordinal);
-        int settingsStart = xaml.IndexOf("x:Name=\"AgentSettingsFlyout\"", StringComparison.Ordinal);
         Assert.True(modeStart >= 0, "Agent mode flyout is missing.");
-        Assert.True(settingsStart > modeStart, "Agent settings flyout must remain separate.");
+        int modeEnd = xaml.IndexOf("</Flyout>", modeStart, StringComparison.Ordinal);
+        Assert.True(modeEnd > modeStart, "Agent mode flyout must be closed.");
 
-        string modeBlock = xaml[modeStart..settingsStart];
+        string modeBlock = xaml[modeStart..modeEnd];
         Assert.Contains("<Flyout.FlyoutPresenterStyle>", modeBlock, StringComparison.Ordinal);
         Assert.Contains("TargetType=\"FlyoutPresenter\"", modeBlock, StringComparison.Ordinal);
         Assert.Contains("RuSurfaceBrush", modeBlock, StringComparison.Ordinal);
@@ -67,6 +73,7 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains("MinHeight=\"38\"", modeBlock, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentWorkspaceBox", modeBlock, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentPresetBox", modeBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentSettingsFlyout", modeBlock, StringComparison.Ordinal);
 
         int readingStart = xaml.IndexOf("<Grid x:Name=\"ReadingColumn\"", StringComparison.Ordinal);
         int inputStart = xaml.IndexOf("<Grid x:Name=\"InputContainer\"", readingStart, StringComparison.Ordinal);
@@ -142,14 +149,17 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.Contains("SendAgentMessageAsync", codeBehind, StringComparison.Ordinal);
         Assert.Contains("_agentController.CreateAndRunAsync", codeBehind, StringComparison.Ordinal);
         Assert.Contains("_agentWorkspace = workspace;", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("AgentWorkspaceSelection.Resolve", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("AgentWorkspaceSelection.Resolve(null, _defaultAgentWorkspace)", codeBehind, StringComparison.Ordinal);
         Assert.Contains("_defaultAgentWorkspace", codeBehind, StringComparison.Ordinal);
-        Assert.Contains("AgentSettingsFlyout.ShowAt", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("AgentPresetBox.Visibility = _agentMode ? Visibility.Visible : Visibility.Collapsed", codeBehind, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentSettingsFlyout", codeBehind, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentWorkspaceBox", codeBehind, StringComparison.Ordinal);
         Assert.DoesNotContain("Cần nhập thư mục làm việc cho Coding Agent.", codeBehind, StringComparison.Ordinal);
 
         string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-        Assert.Contains("Thư mục làm việc (tuỳ chọn)", xaml, StringComparison.Ordinal);
-        Assert.Contains("Để trống để dùng project root", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Thư mục làm việc (tuỳ chọn)", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Để trống để dùng project root", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"AgentPresetBox\"", xaml, StringComparison.Ordinal);
 
         int agentSend = codeBehind.IndexOf("private async Task SendAgentMessageAsync", StringComparison.Ordinal);
         Assert.True(agentSend >= 0);
@@ -157,6 +167,41 @@ public sealed class AgentSessionUiSourceContractTests
         Assert.True(nextMethod > agentSend);
         string agentBody = codeBehind[agentSend..nextMethod];
         Assert.DoesNotContain("_wsClient.SendMessageAsync", agentBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Agent_start_creates_a_real_session_before_updating_the_preset()
+    {
+        string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+
+        int sendStart = codeBehind.IndexOf("private async Task SendAgentMessageAsync", StringComparison.Ordinal);
+        Assert.True(sendStart >= 0, "SendAgentMessageAsync is missing.");
+        int nextMethod = codeBehind.IndexOf("private async Task<long> EnsureAgentPresetAsync", sendStart, StringComparison.Ordinal);
+        Assert.True(nextMethod > sendStart, "EnsureAgentPresetAsync must remain a separate helper.");
+
+        string sendBody = codeBehind[sendStart..nextMethod];
+        int sessionEnsure = sendBody.IndexOf("EnsureAgentSessionAsync", StringComparison.Ordinal);
+        int presetEnsure = sendBody.IndexOf("EnsureAgentPresetAsync", StringComparison.Ordinal);
+
+        Assert.True(sessionEnsure >= 0, "Agent must create a real session when the current chat has no session yet.");
+        Assert.True(presetEnsure > sessionEnsure, "The preset API must run only after a real session exists.");
+        Assert.Contains("CreateSessionAsync", sendBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Agent_session_errors_are_reported_without_the_generic_start_message()
+    {
+        string codeBehind = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+
+        int errorStart = codeBehind.IndexOf("private void ShowAgentError", StringComparison.Ordinal);
+        Assert.True(errorStart >= 0, "ShowAgentError is missing.");
+        int nextMethod = codeBehind.IndexOf("private void StartAgentMonitor", errorStart, StringComparison.Ordinal);
+        Assert.True(nextMethod > errorStart, "ShowAgentError must remain bounded to its helper body.");
+        string errorBody = codeBehind[errorStart..nextMethod];
+
+        Assert.Contains("session_create_failed", errorBody, StringComparison.Ordinal);
+        Assert.Contains("session_not_found", errorBody, StringComparison.Ordinal);
+        Assert.Contains("invalid_session_id", errorBody, StringComparison.Ordinal);
     }
 
     [Fact]

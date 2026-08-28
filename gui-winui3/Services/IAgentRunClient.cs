@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 
 namespace RuApp.Services;
@@ -21,5 +22,11 @@ public interface IAgentRunClient
     Task ContinueAsync(string runId, CancellationToken cancellationToken = default);
     Task ApproveAsync(string runId, string approvalId, string scope, CancellationToken cancellationToken = default);
     Task DenyAsync(string runId, string approvalId, CancellationToken cancellationToken = default);
-    Task SubscribeEventsAsync(string runId, long afterSequence, Func<AgentEventModel, Task> onEvent, CancellationToken cancellationToken = default);
+    Task SubscribeEventsAsync(
+        string runId,
+        long afterSequence,
+        Func<AgentEventModel, Task> onEvent,
+        CancellationToken cancellationToken = default,
+        Func<AgentActivityModel, Task>? onActivity = null,
+        Func<AgentRunSummaryModel, Task>? onSummary = null);
 }

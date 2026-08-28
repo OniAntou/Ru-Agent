@@ -42,6 +42,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
     private readonly ConversationTurnGate _gate;
     private readonly ConversationSessionGate _sessionGate;
     private readonly IDiagnosticEmitter? _diagnosticEmitter;
+    private readonly IConversationIntentResolver? _intentResolver;
 
 
     public ConversationCoordinator(
@@ -55,7 +56,8 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         IStreamSanitizer sanitizer,
         ConversationTurnGate gate,
         IDiagnosticEmitter? diagnosticEmitter = null,
-        ConversationSessionGate? sessionGate = null)
+        ConversationSessionGate? sessionGate = null,
+        IConversationIntentResolver? intentResolver = null)
     {
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _memory = memory ?? throw new ArgumentNullException(nameof(memory));
@@ -68,6 +70,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         _gate = gate ?? throw new ArgumentNullException(nameof(gate));
         _sessionGate = sessionGate ?? new ConversationSessionGate();
         _diagnosticEmitter = diagnosticEmitter;
+        _intentResolver = intentResolver;
     }
 
     public IAsyncEnumerable<ChatEvent> HandleAsync(
@@ -142,6 +145,24 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                 return;
             }
 
+            var cleanPrompt = _metadata.StripVoiceMarkers(prompt);
+            var intent = _intentResolver?.Resolve(cleanPrompt);
+            if (intent?.IsLocalReply == true)
+            {
+                // The local fast path persists the user turn itself. Mark it before
+                // entering that path so a failed assistant append still produces
+                // the same processing-failure history marker as the model path.
+                userAppended = true;
+                await ProduceLocalReplyAsync(
+                    sessionId,
+                    cleanPrompt,
+                    intent.LocalReply!,
+                    request.CorrelationId,
+                    writer,
+                    cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             await using var memoryLease = await _gate.EnterMemoryAsync(cancellationToken)
                 .ConfigureAwait(false);
             if (memoryLease is null)
@@ -165,7 +186,6 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                 sessionId,
                 MaximumContextTurns,
                 cancellationToken).ConfigureAwait(false);
-            var cleanPrompt = _metadata.StripVoiceMarkers(prompt);
             var memories = await _memory.RetrieveAsync(cleanPrompt, cancellationToken)
                 .ConfigureAwait(false);
             if (!await _sessions.AppendAsync(
@@ -182,7 +202,9 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                 .ConfigureAwait(false);
             var workerRequest = new WorkerChatRequest(
                 requestId,
-                cleanPrompt,
+                string.IsNullOrWhiteSpace(intent?.ModelInstruction)
+                    ? cleanPrompt
+                    : $"{intent.ModelInstruction}\n\nYêu cầu mới nhất của anh:\n{cleanPrompt}",
                 sessionId,
                 turns.Select(turn => new WorkerTurn(turn.Prompt, turn.Response)).ToArray(),
                 ShouldShareMemory(settings) ? RenderMemory(memories) : string.Empty,
@@ -332,6 +354,49 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         {
             writer.TryComplete(completionError);
         }
+    }
+
+    private async Task ProduceLocalReplyAsync(
+        string sessionId,
+        string cleanPrompt,
+        string reply,
+        string? correlationId,
+        ChannelWriter<ChatEvent> writer,
+        CancellationToken cancellationToken)
+    {
+        if (!await _sessions.AppendAsync(
+                sessionId,
+                [new SessionMessage("user", cleanPrompt)],
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new ConversationException("session_write_failed");
+        }
+
+        if (!await _sessions.AppendAsync(
+                sessionId,
+                [new SessionMessage("ai", reply)],
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new ConversationException("session_write_failed");
+        }
+
+        await WriteAsync(
+            writer,
+            new ChatEvent("reset", CorrelationId: correlationId),
+            cancellationToken).ConfigureAwait(false);
+        if (reply.Length > 0)
+        {
+            await WriteAsync(
+                writer,
+                new ChatEvent("chunk", reply, CorrelationId: correlationId),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        _ = TryAppendActivityAsync(sessionId, cleanPrompt, reply, null);
+        await WriteAsync(
+            writer,
+            new ChatEvent("done", reply, sessionId, CorrelationId: correlationId),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<(string SessionId, bool Created)?> ResolveSessionAsync(

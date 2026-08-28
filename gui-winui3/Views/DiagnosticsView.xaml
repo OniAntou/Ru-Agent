@@ -56,7 +56,7 @@
         <!-- Header & Filters Bar -->
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" Margin="0,0,0,16" VerticalAlignment="Center">
             <StackPanel x:Name="HeaderTitlePanel" Grid.Row="0" Grid.Column="0" Spacing="4">
-                <TextBlock Text="Chẩn đoán kỹ thuật (Technical Diagnostics)" FontSize="22" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                <TextBlock Text="Chẩn đoán kỹ thuật (Technical Diagnostics)" FontSize="22" FontFamily="{StaticResource RuDisplayFontFamily}" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
                 <TextBlock Text="Theo dõi các chỉ số vận hành, mã sự kiện và mã tương quan (Correlation ID) theo thời gian thực" FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
             </StackPanel>
 

@@ -44,6 +44,13 @@ publish output, and the incremental native overlay build/test invocation; it
 does not prove that a GUI, microphone, speaker, VTube Studio model, or Windows
 audio endpoint worked.
 
+The desktop launcher and release build share one artifact:
+`gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe`.
+`build.bat` fails if the GUI publish is absent, and `start_dev.bat` refuses to
+run when that Release artifact is missing instead of silently selecting a stale
+Debug executable. Any Windows shortcut should target `start_dev.bat` so it uses
+the same release-path check.
+
 Ruff, Mypy, and `pip check` are required dependency/tooling gates; do not hide
 findings with permanent ignores or `continue-on-error`. Live microphone,
 speaker, volume, and VTube Studio acceptance remain explicit user-run checks.
@@ -160,7 +167,11 @@ that needs user interaction. Typed requested, granted, verified, and failed
 copy is covered by WinUI contract tests. Agent artifacts and event-sink records
 contain only bounded states, counts, tool IDs, durations, and safe reason
 codes—not arguments, output, levels, amounts, mute state, prompts, replies,
-device identity, endpoint hashes, or exception text.
+device identity, endpoint hashes, or exception text. The WinUI activity feed
+additionally accepts only typed transient `agent.activity` fields:
+basename/line range, symbol, counts, edit counts, duration, and `safe_code`;
+malformed or content-bearing transient frames are ignored and never become
+durable history.
 
 Broker approval dispatch/replay is covered by the private deterministic probe;
 the visible approval card remains covered by `AgentApprovalTests` and
@@ -168,11 +179,15 @@ the visible approval card remains covered by `AgentApprovalTests` and
 terminal, files, Web, connectors, or skills are model-usable.
 
 For manual Chat visual acceptance, open the composer mode control: its compact
-Ru flyout contains only `Trò chuyện` and `Coding Agent`; workspace and preset
-remain behind the separate Agent settings button. Grow a transcript until
-scrolling is needed and verify messages stay centered while the native vertical
-scrollbar sits at the far-right edge of the Chat viewport. Horizontal scrolling
-must remain disabled.
+Ru flyout contains only `Trò chuyện` and `Coding Agent`. Select `Coding Agent`
+and verify that the composer reveals one compact preset selector with only
+`Standard` and `Full Access`; no workspace editor or separate settings button
+appears. Grow a transcript until scrolling is needed and verify messages stay
+centered while the native vertical scrollbar sits at the far-right edge of the
+Chat viewport. Horizontal scrolling must remain disabled.
+Also verify that selecting Coding Agent from the empty welcome screen and
+sending the first prompt creates a session automatically; no preliminary Chat
+turn is required.
 
 A passing deterministic GUI result does not claim an audible Windows volume
 change and does not accept live microphone capture, audible OmniVoice,

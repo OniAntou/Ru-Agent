@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
+using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 
 namespace RuApp.Services;
@@ -156,7 +157,14 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
                 RefreshCommands();
             });
 
-            await _client.SubscribeEventsAsync(run.RunId, 0, OnEventAsync, token).ConfigureAwait(false);
+            await _client.SubscribeEventsAsync(
+                    run.RunId,
+                    0,
+                    OnEventAsync,
+                    token,
+                    OnActivityAsync,
+                    OnSummaryAsync)
+                .ConfigureAwait(false);
             // The SSE stream ends after the terminal snapshot, but the create response
             // may be stale (or the stream may have disconnected). Refresh the durable
             // run before changing command state so Cancel is never left enabled for a
@@ -235,10 +243,10 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         lock (_gate)
         {
             _subscriptionCts?.Cancel();
+            _isCancelRequested = true;
         }
         RunOnUi(() =>
         {
-            _isCancelRequested = true;
             StatusText = "Đang hủy phiên chạy...";
             RefreshCommands();
         });
@@ -402,6 +410,13 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
 
     private async Task OnEventAsync(AgentEventModel model)
     {
+        if (model.IsTransient)
+        {
+            // Raw transient output is intentionally not part of the durable event
+            // collection. AgentActivityModel travels through the separate callback.
+            return;
+        }
+
         RunOnUi(() =>
         {
             if (Events.Count > 200)
@@ -448,6 +463,72 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
         });
 
         await Task.CompletedTask;
+    }
+
+    private Task OnActivityAsync(AgentActivityModel model)
+    {
+        lock (_gate)
+        {
+            if (!_isBusy || _isCancelRequested)
+            {
+                return Task.CompletedTask;
+            }
+        }
+
+        RunOnUi(() =>
+        {
+            try
+            {
+                lock (_gate)
+                {
+                    if (!_isBusy || _isCancelRequested)
+                    {
+                        return;
+                    }
+                }
+
+                ActivityReceived?.Invoke(this, model);
+            }
+            catch
+            {
+                // A visual activity subscriber is observational and must not fail the
+                // Agent SSE subscription or its durable run state.
+            }
+        });
+        return Task.CompletedTask;
+    }
+
+    private Task OnSummaryAsync(AgentRunSummaryModel model)
+    {
+        lock (_gate)
+        {
+            if (!_isBusy || _isCancelRequested)
+            {
+                return Task.CompletedTask;
+            }
+        }
+
+        RunOnUi(() =>
+        {
+            try
+            {
+                lock (_gate)
+                {
+                    if (!_isBusy || _isCancelRequested)
+                    {
+                        return;
+                    }
+                }
+
+                SummaryReceived?.Invoke(this, model);
+            }
+            catch
+            {
+                // A visual summary subscriber is observational and must not fail the
+                // Agent SSE subscription or durable run state.
+            }
+        });
+        return Task.CompletedTask;
     }
 
     private void WriteSink(AgentEventModel model)
@@ -498,6 +579,10 @@ public sealed class AgentRunController : INotifyPropertyChanged, IDisposable
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public event EventHandler<AgentActivityModel>? ActivityReceived;
+
+    public event EventHandler<AgentRunSummaryModel>? SummaryReceived;
 
     private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 

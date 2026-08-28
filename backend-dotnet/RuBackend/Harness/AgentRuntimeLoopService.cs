@@ -146,6 +146,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
     private readonly KnownSecretRedactor? _transientRedactor;
     private readonly HarnessLiveEventHub? _liveEvents;
+    private readonly AgentRunSummaryLivePublisher? _summaryPublisher;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -155,7 +156,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         ReconciliationInspectionGate? inspectionGate = null,
         RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null,
         KnownSecretRedactor? transientRedactor = null,
-        HarnessLiveEventHub? liveEvents = null)
+        HarnessLiveEventHub? liveEvents = null,
+        AgentRunSummaryLivePublisher? summaryPublisher = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -165,6 +167,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _approvalGrants = approvalGrants;
         _transientRedactor = transientRedactor;
         _liveEvents = liveEvents;
+        _summaryPublisher = summaryPublisher;
     }
 
     public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null)
@@ -179,6 +182,11 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         var frames = new TransientFrameBuffer(
             64 * 1024,
             _liveEvents is null ? null : frame => PublishLiveFrame(_liveEvents, frame));
+        IAgentActivitySink? activitySink = _summaryPublisher is not null
+            ? _summaryPublisher
+            : _liveEvents is null
+                ? null
+                : new AgentActivityLivePublisher(_liveEvents);
         return new AgentRunCoordinator(
             _model,
             gateway,
@@ -190,7 +198,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             frames,
             _transientRedactor ?? KnownSecretRedactor.Empty,
             null,
-            _inspectionGate);
+            _inspectionGate,
+            activitySink);
     }
 
     private static void PublishLiveFrame(HarnessLiveEventHub hub, HarnessTransientFrame frame)
@@ -223,6 +232,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     private readonly IAgentRuntimeCoordinatorFactory _coordinatorFactory;
     private readonly IAgentRuntimeRootRegistry _roots;
     private readonly ILogger<AgentRuntimeLoopService> _logger;
+    private readonly AgentRunSummaryLivePublisher? _summaryPublisher;
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
 
     public AgentRuntimeLoopService(
@@ -230,13 +240,15 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         IHarnessEventStore store,
         IAgentRuntimeCoordinatorFactory coordinatorFactory,
         IAgentRuntimeRootRegistry roots,
-        ILogger<AgentRuntimeLoopService> logger)
+        ILogger<AgentRuntimeLoopService> logger,
+        AgentRunSummaryLivePublisher? summaryPublisher = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _coordinatorFactory = coordinatorFactory ?? throw new ArgumentNullException(nameof(coordinatorFactory));
         _roots = roots ?? throw new ArgumentNullException(nameof(roots));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _summaryPublisher = summaryPublisher;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -320,6 +332,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
             {
                 if (run is { } loaded && loaded.State.IsTerminal())
                 {
+                    _summaryPublisher?.TryPublishSummary(loaded);
                     _roots.Remove(new RunId(runIdValue));
                 }
 
@@ -343,12 +356,14 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         AgentRunCoordinator? coordinator = null;
         try
         {
+            _summaryPublisher?.RegisterWorkspace(runId, workspaceRoot);
             coordinator = _coordinatorFactory.Create(workspaceRoot, policySnapshot);
             _roots.RegisterCoordinator(runId, coordinator);
 
             if (policySnapshot is null)
             {
                 await coordinator.FailAsync(runId, "policy_snapshot_unavailable", cancellationToken).ConfigureAwait(false);
+                await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -362,6 +377,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
 
                 if (result.Run.State.IsTerminal())
                 {
+                    _summaryPublisher?.TryPublishSummary(result.Run);
                     _roots.Remove(runId);
                 }
 
@@ -383,11 +399,28 @@ public sealed class AgentRuntimeLoopService : BackgroundService
             try
             {
                 await coordinator.FailAsync(runId, "runtime_drive_failed", cancellationToken).ConfigureAwait(false);
+                await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception nested)
             {
                 _logger.LogError(nested, "failed to mark run {RunId} as failed", runIdValue);
             }
+        }
+    }
+
+    private async Task PublishTerminalSummaryAsync(
+        RunId runId,
+        CancellationToken cancellationToken)
+    {
+        if (_summaryPublisher is null)
+        {
+            return;
+        }
+
+        var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (run is { } terminal && terminal.State.IsTerminal())
+        {
+            _summaryPublisher.TryPublishSummary(terminal);
         }
     }
 }

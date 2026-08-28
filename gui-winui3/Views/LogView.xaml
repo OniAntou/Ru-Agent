@@ -54,7 +54,7 @@
         <!-- Header & Filters Bar -->
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" Margin="0,0,0,20" VerticalAlignment="Center">
             <StackPanel x:Name="HeaderTitlePanel" Grid.Row="0" Grid.Column="0" Spacing="4">
-                <TextBlock Text="Nhật ký hoạt động (Activity Timeline)" FontSize="22" FontFamily="Segoe UI Variable Display" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                <TextBlock Text="Nhật ký hoạt động (Activity Timeline)" FontSize="22" FontFamily="{StaticResource RuDisplayFontFamily}" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
                 <TextBlock Text="Theo dõi các sự kiện chat, phân tích cảm xúc và điều khiển VTube Studio theo thời gian thực" FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
             </StackPanel>
 

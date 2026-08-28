@@ -94,64 +94,96 @@ public sealed class AgentRunClientAdapter : IAgentRunClient, IDisposable
         string runId,
         long afterSequence,
         Func<AgentEventModel, Task> onEvent,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<AgentActivityModel, Task>? onActivity = null,
+        Func<AgentRunSummaryModel, Task>? onSummary = null)
     {
         ArgumentNullException.ThrowIfNull(onEvent);
         using var sse = _sseFactory();
         await foreach (var frame in sse.ReadEventsAsync(runId, afterSequence, cancellationToken).ConfigureAwait(false))
         {
-            var model = AgentEventModel.FromSseFrame(frame);
-            if (_dispatcher is not null)
+            if (frame.IsTransient)
             {
-                var delivered = new TaskCompletionSource<object?>(
-                    TaskCreationOptions.RunContinuationsAsynchronously);
-                bool queued;
+                if (onSummary is not null
+                    && AgentRunSummaryModel.TryParse(frame, out var summary)
+                    && summary is not null)
+                {
+                    await DispatchAsync(() => onSummary(summary), cancellationToken)
+                        .ConfigureAwait(false);
+                    continue;
+                }
+
+                if (onActivity is null
+                    || !AgentActivityModel.TryParse(frame, out var activity)
+                    || activity is null)
+                {
+                    // Raw assistant/tool deltas and malformed activity frames are not
+                    // durable events and must never reach the audit/status collection.
+                    continue;
+                }
+
+                await DispatchAsync(() => onActivity(activity), cancellationToken)
+                    .ConfigureAwait(false);
+                continue;
+            }
+
+            var model = AgentEventModel.FromSseFrame(frame);
+            await DispatchAsync(() => onEvent(model), cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task DispatchAsync(Func<Task> callback, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+        if (_dispatcher is null)
+        {
+            await callback().ConfigureAwait(false);
+            return;
+        }
+
+        var delivered = new TaskCompletionSource<object?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        bool queued;
+        try
+        {
+            queued = _dispatcher.TryEnqueue(async () =>
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    delivered.TrySetCanceled(cancellationToken);
+                    return;
+                }
+
                 try
                 {
-                    queued = _dispatcher.TryEnqueue(async () =>
-                    {
-                        if (cancellationToken.IsCancellationRequested)
-                        {
-                            delivered.TrySetCanceled(cancellationToken);
-                            return;
-                        }
+                    await callback().ConfigureAwait(true);
+                    delivered.TrySetResult(null);
+                }
+                catch (OperationCanceledException error)
+                {
+                    delivered.TrySetException(error);
+                }
+                catch (Exception error)
+                {
+                    delivered.TrySetException(error);
+                }
+            });
+        }
+        catch (InvalidOperationException)
+        {
+            queued = false;
+        }
 
-                        try
-                        {
-                            await onEvent(model).ConfigureAwait(true);
-                            delivered.TrySetResult(null);
-                        }
-                        catch (OperationCanceledException error)
-                        {
-                            delivered.TrySetException(error);
-                        }
-                        catch (Exception error)
-                        {
-                            delivered.TrySetException(error);
-                        }
-                    });
-                }
-                catch (InvalidOperationException)
-                {
-                    queued = false;
-                }
-
-                if (queued)
-                {
-                    await delivered.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-                }
-                else
-                {
-                    // A dispatcher can disappear during window shutdown. Do not
-                    // silently lose the durable event; deliver it on the caller
-                    // context instead.
-                    await onEvent(model).ConfigureAwait(false);
-                }
-            }
-            else
-            {
-                await onEvent(model).ConfigureAwait(false);
-            }
+        if (queued)
+        {
+            await delivered.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // A dispatcher can disappear during window shutdown. Do not silently lose
+            // a durable event or activity; deliver on the caller context instead.
+            await callback().ConfigureAwait(false);
         }
     }
 

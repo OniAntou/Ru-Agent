@@ -2,11 +2,11 @@
 
 This document is the operating contract for Ru's action execution kernel v1
 plus the additive Phase-2 policy authority and selected Phase-3 headless Agent
-v2 surfaces (2026-08-28).
+v2 surfaces (2026-08-29).
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
-> **Current checkpoint (Phases 1–3 selected surfaces, 2026-08-28):**
+> **Current checkpoint (Phases 1–3 selected surfaces, 2026-08-29):**
 > - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
 >   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
 >   `RuAgent.Client`. Normal Chat remains on Worker v1; harness runs are
@@ -208,29 +208,56 @@ or application launcher is advertised to the model.
 ## Agent activity shown in WinUI
 
 Coding Agent is selected explicitly from the compact mode pill inside the Chat
-composer; that dropdown contains only Chat and Coding Agent. A separate Agent
-configuration button owns the workspace and preset fields. The sidebar keeps
-only primary conversation surfaces; Log,
+composer; that dropdown contains only Chat and Coding Agent. Selecting Agent
+reveals one compact preset selector with `Standard` and `Full Access`; the UI
+uses the known project root and does not expose a workspace editor. The
+sidebar keeps only primary conversation surfaces; Log,
 Diagnostics, Policy, and Audit remain reachable from the `Công cụ` flyout.
 Ordinary Chat prompts continue through the Chat WebSocket, while Agent prompts
 are created through the authenticated `/agent/v1/*` API and observed over SSE.
 The inline surface never displays raw commands, arguments, stdout, or private
 payload content.
 
-The activity line describes only a bounded state that has occurred:
+The transcript activity feed is connection-local and transient. Runtime maps the
+Core projection to an `agent.activity` SSE frame whose inner JSON contains only
+the typed fields `activity_id`, `kind`, `state`, optional safe `file_name`
+(basename/line range only), `line_start`/`line_end`, `symbol`, `count`, `added`, `removed`,
+`duration_ms`, and bounded `safe_code`. It does not advance the durable event
+cursor, append to the Harness event store, or enter session history.
 
-| Actual state | Visible copy |
-| --- | --- |
-| Coding Agent selected, no request | No inline activity panel; the mode pill shows `Agent` |
-| Typed request received | `Đang chuẩn bị thao tác…` |
-| Durable Agent event received | Bounded safe event code or count |
-| Terminal status | Bounded run status (`completed`, `failed`, `cancelled`, or `interrupted`) |
-| API/client failure | Fixed generic error copy; exception text is not rendered |
+Each activity item exposes one of four visual states: a spinner while started,
+a check when completed, an error mark when failed, and an ellipsis while waiting
+for approval or continuation. Thinking items may show only their elapsed
+duration after completion. File edits and analysis show a basename and optional
+line range; search and exploration show bounded symbols or counts. The temporary
+user prompt and activity items use separate collections, so durable assistant
+history remains unchanged when the feed is cleared.
 
-WinUI accepts only the bounded typed fields `session_id`, `status`, `tool_id`,
-and optional stable `error_code`. Malformed, stale-session, unexpected, or raw
-content-bearing activity frames are ignored. Returning to Chat, disconnect,
-and session replacement clear pending approval and activity state.
+The feed is shown only after the first valid activity frame and is cleared on
+terminal completion, cancellation, failure, disconnect, session replacement,
+or reset. The inline surface still owns bounded status, workspace trust,
+approval, Stop, and Continue controls. Malformed, unknown, stale, or other
+content-bearing transient frames are ignored. Raw commands, arguments, stdout,
+or private payload content never reach the feed, durable audit, Chat history,
+TTS, VTS metadata, or memory.
+The desktop entry point also creates a real 32-character session automatically
+for the first Agent prompt when the empty Chat surface has no active session;
+users do not need to send a preliminary Chat message.
+
+Chat and Agent have separate transport contracts. Chat requests use an opaque
+`correlation_id` plus a GUI-only `turn_id`; the GUI presents one active Chat
+turn in FIFO order and ignores stale or uncorrelated frames. The bounded
+connection queue accepts eight deferred requests and reports
+`chat_queue_full` on the correlation that cannot be retained. A backend
+session gate serializes history writes, and a disconnect invalidates pending
+turns without automatic replay. This protects ordered history when a socket
+dies after the server may already have appended a request.
+
+The short-intent resolver may answer only an exact, high-confidence greeting
+or acknowledgement locally. Corrections, filesystem/path, search, network,
+current-fact, and uncertain text continue through the full model context; the
+resolver does not select Agent capabilities. A stale Agent session is recovered
+by creating a replacement session and retrying at most once before a run exists.
 
 ## Approval, privacy, and diagnostics
 

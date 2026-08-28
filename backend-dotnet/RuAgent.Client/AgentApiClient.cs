@@ -72,7 +72,10 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
             throw new AgentApiException(ExtractErrorCode(body) ?? "conflict", body, (int)resp.StatusCode);
         }
         if (!resp.IsSuccessStatusCode)
-            throw new AgentApiException("agent_create_failed", body, (int)resp.StatusCode);
+            throw new AgentApiException(
+                ExtractErrorCode(body) ?? "agent_create_failed",
+                body,
+                (int)resp.StatusCode);
 
         return ParseCreateResponseStrict(body);
     }

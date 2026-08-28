@@ -1,0 +1,203 @@
+using System.Text.Json;
+using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Tests.Fakes;
+using Xunit;
+
+namespace RuAgent.Harness.Core.Tests;
+
+public sealed class AgentActivityLifecycleTests
+{
+    private static readonly DateTimeOffset Epoch =
+        new(2026, 8, 24, 8, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task Run_publishes_thinking_and_tool_activity_without_persisting_activity()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var sink = new RecordingSink();
+        var coordinator = Coordinator(model, new FakeToolGateway(), store, sink);
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Collection(
+            sink.Items,
+            thinkingStarted =>
+            {
+                Assert.Equal(AgentActivityKind.Thinking, thinkingStarted.Activity.Kind);
+                Assert.Equal(AgentActivityState.Started, thinkingStarted.Activity.State);
+            },
+            thinkingCompleted =>
+            {
+                Assert.Equal(AgentActivityKind.Thinking, thinkingCompleted.Activity.Kind);
+                Assert.Equal(AgentActivityState.Completed, thinkingCompleted.Activity.State);
+                Assert.True(thinkingCompleted.Activity.DurationMs > 0);
+            },
+            toolStarted =>
+            {
+                Assert.Equal(AgentActivityKind.Analyze, toolStarted.Activity.Kind);
+                Assert.Equal(AgentActivityState.Started, toolStarted.Activity.State);
+            },
+            toolCompleted =>
+            {
+                Assert.Equal(AgentActivityKind.Analyze, toolCompleted.Activity.Kind);
+                Assert.Equal(AgentActivityState.Completed, toolCompleted.Activity.State);
+            });
+
+        Assert.DoesNotContain(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.Kind.ToString().Contains("Activity", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Approval_wait_changes_tool_activity_to_waiting_without_claiming_success()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = _ => ToolProposalDecision.Ask(
+                ToolAccessKind.Mutation,
+                new ApprovalId("apr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")),
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var sink = new RecordingSink();
+        var coordinator = Coordinator(model, gateway, store, sink);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingApproval, result.Run.State);
+        var toolItems = sink.Items
+            .Where(item => item.Activity.Kind == AgentActivityKind.Analyze)
+            .Select(item => item.Activity)
+            .ToArray();
+        Assert.Equal(
+            new[] { AgentActivityState.Started, AgentActivityState.Waiting },
+            toolItems.Select(item => item.State));
+        Assert.DoesNotContain(toolItems, item => item.State == AgentActivityState.Completed);
+    }
+
+    [Fact]
+    public async Task Denied_tool_activity_is_failed_and_does_not_expose_arguments()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep());
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = _ => ToolProposalDecision.Deny(
+                ToolAccessKind.ReadOnly,
+                "policy_denied"),
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run());
+        var sink = new RecordingSink();
+        var coordinator = Coordinator(model, gateway, store, sink);
+
+        await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        var failed = Assert.Single(
+            sink.Items.Where(item => item.Activity.Kind == AgentActivityKind.Analyze),
+            item => item.Activity.State == AgentActivityState.Failed);
+        Assert.Equal("policy_denied", failed.Activity.SafeCode);
+        Assert.Equal("README.md", failed.Activity.FileName);
+        Assert.DoesNotContain("arguments", failed.Activity.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static AgentRunCoordinator Coordinator(
+        FakeModelStepRunner model,
+        FakeToolGateway gateway,
+        InMemoryHarnessEventStore store,
+        IAgentActivitySink sink) =>
+        new(
+            model,
+            gateway,
+            store,
+            new AgentContextAssembler(new EmptyContextSource()),
+            new SequenceIdGenerator(),
+            new IncrementingTimeProvider(Epoch),
+            new ToolCallScheduler(),
+            new TransientFrameBuffer(32),
+            activitySink: sink);
+
+    private static AssistantStep ToolStep() =>
+        new(
+            "checking",
+            new[]
+            {
+                new ModelToolCall(
+                    "provider-call",
+                    "files.read",
+                    "1",
+                    JsonDocument.Parse("{\"path\":\"README.md\"}").RootElement.Clone()),
+            },
+            AssistantFinishReason.ToolCalls,
+            16);
+
+    private static AgentRun Run() =>
+        new(
+            RunId(),
+            new SessionId("11111111111111111111111111111111"),
+            new WorkspaceId("ws_11111111111111111111111111111111"),
+            new HarnessRunStatus(HarnessRunState.Running),
+            0,
+            0,
+            1,
+            0,
+            0,
+            AgentPermissionPreset.Standard,
+            1,
+            new string('a', 64),
+            Epoch,
+            Epoch);
+
+    private static RunId RunId() => new("run_11111111111111111111111111111111");
+
+    private sealed class RecordingSink : IAgentActivitySink
+    {
+        public List<(RunId RunId, AgentActivity Activity)> Items { get; } = new();
+
+        public void Publish(RunId runId, AgentActivity activity) => Items.Add((runId, activity));
+    }
+
+    private sealed class EmptyContextSource : IModelContextSource
+    {
+        public Task<ModelContextSourceSnapshot> LoadAsync(
+            RunId runId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ModelContextSourceSnapshot(
+                Array.Empty<ModelContextEntry>(),
+                Array.Empty<ModelContextEntry>()));
+    }
+
+    private sealed class IncrementingTimeProvider : ITimeProvider
+    {
+        private DateTimeOffset _current;
+
+        public IncrementingTimeProvider(DateTimeOffset current) => _current = current;
+
+        public DateTimeOffset UtcNow => _current = _current.AddSeconds(1);
+    }
+
+    private sealed class SequenceIdGenerator : IIdGenerator
+    {
+        private int _next;
+
+        public RunId NewRunId() => new(Value("run_"));
+        public ModelStepId NewModelStepId() => new(Value("step_"));
+        public ToolCallId NewToolCallId() => new(Value("call_"));
+        public ExecutionId NewExecutionId() => new(Value("exec_"));
+        public ApprovalId NewApprovalId() => new(Value("apr_"));
+        public TrustRequestId NewTrustRequestId() => new(Value("trust_"));
+        public PolicyRuleId NewPolicyRuleId() => new(Value("rule_"));
+        public EventId NewEventId() => new(Value("evt_"));
+        public PayloadId NewPayloadId() => new(Value("payload_"));
+
+        private string Value(string prefix) =>
+            prefix + Interlocked.Increment(ref _next).ToString("x32");
+    }
+}

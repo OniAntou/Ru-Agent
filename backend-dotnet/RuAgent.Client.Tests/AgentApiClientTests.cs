@@ -90,6 +90,28 @@ public sealed class AgentApiClientTests
         Assert.Equal("invalid_payload_id", payloadError.ErrorCode);
     }
 
+    [Fact]
+    public async Task CreateRun_preserves_backend_error_code_for_bad_requests()
+    {
+        var s = Session();
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("{\"error_code\":\"invalid_workspace\"}", Encoding.UTF8, "application/json")
+        });
+        var client = new AgentApiClient(s, new HttpClient(handler));
+
+        var ex = await Assert.ThrowsAsync<AgentApiException>(() => client.CreateRunAsync(
+            new CreateAgentRunRequest(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "D:\\missing",
+                "hello",
+                "standard",
+                1,
+                "idem-key-123")));
+
+        Assert.Equal("invalid_workspace", ex.ErrorCode);
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;

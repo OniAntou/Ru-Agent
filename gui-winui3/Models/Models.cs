@@ -20,6 +20,8 @@ namespace RuApp.Models
         private DateTime _timestamp = DateTime.Now;
         private bool _isStreaming = false;
         private bool _isError = false;
+        private string? _turnId;
+        private string? _sessionId;
 
         public string Id
         {
@@ -83,6 +85,18 @@ namespace RuApp.Models
         {
             get => _isError;
             set => SetProperty(ref _isError, value);
+        }
+
+        public string? TurnId
+        {
+            get => _turnId;
+            set => SetProperty(ref _turnId, value);
+        }
+
+        public string? SessionId
+        {
+            get => _sessionId;
+            set => SetProperty(ref _sessionId, value);
         }
 
         public bool ShowTypingDots => Role == "assistant" && IsStreaming && string.IsNullOrEmpty(Content);

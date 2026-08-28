@@ -112,7 +112,7 @@ public sealed class AgentModeProfileTests
         using var socket = await ConnectAsync(factory);
         await SendTextAsync(
             socket,
-            "{\"prompt\":\"Xin chào\",\"session_id\":\"session-1\",\"mode\":\"chat\"}");
+            "{\"prompt\":\"Kiểm tra việc này giúp anh\",\"session_id\":\"session-1\",\"mode\":\"chat\"}");
         await worker.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         await WaitUntilAsync(() => worker.Done.Task.IsCompleted, TimeSpan.FromSeconds(5));

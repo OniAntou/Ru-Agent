@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 using RuApp.Services;
@@ -92,6 +93,75 @@ public sealed class AgentRunClientAdapterTests
         Assert.Single(received);
         Assert.Equal("run.state_changed", received[0].EventType);
         Assert.Equal(5, received[0].Sequence);
+    }
+
+    [Fact]
+    public async Task SubscribeEvents_delivers_only_valid_agent_activity_to_separate_callback()
+    {
+        var inner = "{\"activity_id\":\"act_11111111111111111111111111111111\",\"kind\":\"analyze\",\"state\":\"completed\",\"file_name\":\"ChatView.xaml.cs\",\"safe_code\":\"succeeded\"}";
+        var outer = JsonSerializer.Serialize(new { kind = "agent.activity", data = inner });
+        var raw = JsonSerializer.Serialize(new { kind = "tool.output.delta", data = "secret" });
+        var sse =
+            $"event: transient\nid: t7\ndata: {outer}\n\n" +
+            $"event: transient\nid: t8\ndata: {raw}\n\n";
+        var handler = new FakeHttpHandler
+        {
+            Responder = _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+            },
+        };
+        using var http = new HttpClient(handler);
+        var adapter = new AgentRunClientAdapter(MakeSession(), http);
+        var received = new List<AgentActivityModel>();
+
+        await adapter.SubscribeEventsAsync(
+            RunId,
+            0,
+            _ => Task.CompletedTask,
+            onActivity: activity =>
+            {
+                received.Add(activity);
+                return Task.CompletedTask;
+            });
+
+        var activity = Assert.Single(received);
+        Assert.Equal(AgentActivityKind.Analyze, activity.Kind);
+        Assert.Equal(7, activity.TransientSequence);
+        Assert.Null(activity.DurableSequence);
+    }
+
+    [Fact]
+    public async Task SubscribeEvents_delivers_typed_summary_to_summary_callback()
+    {
+        var inner = "{\"status\":\"succeeded\",\"verification_state\":\"verified\",\"workspace_label\":\"Test Agent\",\"files_scanned\":5,\"files_changed\":1}";
+        var outer = JsonSerializer.Serialize(new { kind = "agent.summary", data = inner });
+        var sse = $"event: transient\nid: t9\ndata: {outer}\n\n";
+        var handler = new FakeHttpHandler
+        {
+            Responder = _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+            },
+        };
+        using var http = new HttpClient(handler);
+        var adapter = new AgentRunClientAdapter(MakeSession(), http);
+        var received = new List<AgentRunSummaryModel>();
+
+        await adapter.SubscribeEventsAsync(
+            RunId,
+            0,
+            _ => Task.CompletedTask,
+            onSummary: summary =>
+            {
+                received.Add(summary);
+                return Task.CompletedTask;
+            });
+
+        var summary = Assert.Single(received);
+        Assert.Equal("succeeded", summary.Status);
+        Assert.Equal("verified", summary.VerificationState);
+        Assert.Equal(9, summary.TransientSequence);
     }
 
     [Fact]

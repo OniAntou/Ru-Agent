@@ -107,6 +107,12 @@ if errorlevel 1 (
     echo BUILD FAILED!
     exit /b 1
 )
+if not exist "%PUBLISH_DIR%\RuApp.exe" (
+    echo.
+    echo BUILD FAILED: RuApp.exe was not created at:
+    echo   "%PUBLISH_DIR%\RuApp.exe"
+    exit /b 1
+)
 
 echo [10/12] Copying compiled XAML (.xbf) files...
 if not exist "%PUBLISH_DIR%\Views" mkdir "%PUBLISH_DIR%\Views"
@@ -140,6 +146,7 @@ echo  CLI:                %CLI_PUBLISH_DIR%\RuAgent.Cli.exe
 echo  Broker:             %BROKER_PUBLISH_DIR%\RuAgent.Broker.exe
 echo  Backend:            %BACKEND_PUBLISH_DIR%\RuBackend.exe
 echo  Output:             %PUBLISH_DIR%\RuApp.exe
+for %%I in ("%PUBLISH_DIR%\RuApp.exe") do echo  Published:          %%~tI
 echo  Launch:             start_dev.bat
 echo ============================================
 echo.

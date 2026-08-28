@@ -16,6 +16,7 @@ internal sealed class AgentToolExecutionPipeline
     private readonly TransientFrameBuffer _frames;
     private readonly ITransientContentRedactor _transientRedactor;
     private readonly ReconciliationInspectionGate? _inspectionGate;
+    private readonly IAgentActivitySink? _activitySink;
 
     internal AgentToolExecutionPipeline(
         IToolGateway gateway,
@@ -25,7 +26,8 @@ internal sealed class AgentToolExecutionPipeline
         ToolCallScheduler scheduler,
         TransientFrameBuffer frames,
         ITransientContentRedactor transientRedactor,
-        ReconciliationInspectionGate? inspectionGate = null)
+        ReconciliationInspectionGate? inspectionGate = null,
+        IAgentActivitySink? activitySink = null)
     {
         _gateway = gateway;
         _store = store;
@@ -35,6 +37,7 @@ internal sealed class AgentToolExecutionPipeline
         _frames = frames;
         _transientRedactor = transientRedactor;
         _inspectionGate = inspectionGate;
+        _activitySink = activitySink;
     }
 
     internal async Task<AgentToolPipelineResult> ExecuteAsync(
@@ -60,6 +63,7 @@ internal sealed class AgentToolExecutionPipeline
         }
 
         var prepared = new List<PreparedToolExecution>(modelCalls.Count);
+        var proposals = new Dictionary<int, ToolProposal>(modelCalls.Count);
         var denied = new Dictionary<int, DeniedToolExecution>();
         var orderedReceipts = new List<(int ModelOrder, ToolExecutionReceipt Receipt)>(
             modelCalls.Count);
@@ -76,6 +80,7 @@ internal sealed class AgentToolExecutionPipeline
                     modelCall.ToolId,
                     modelCall.ToolVersion,
                     modelCall.Arguments);
+                proposals[proposal.ModelOrder] = proposal;
                 var argumentBytes = SerializeModelToolCall(modelCall);
                 var argumentPayloadId = _ids.NewPayloadId();
                 var argumentPayload = new HarnessPayloadIntent(
@@ -99,6 +104,13 @@ internal sealed class AgentToolExecutionPipeline
                         new[] { argumentPayload },
                         cancellationToken)
                     .ConfigureAwait(false);
+                AgentActivityProjector.PublishSafe(
+                    _activitySink,
+                    run.RunId,
+                    AgentActivityProjector.ProjectTool(
+                        proposal,
+                        AgentActivityState.Started,
+                        durationMs: null));
                 var decision = await _gateway
                     .EvaluateAsync(proposal, cancellationToken)
                     .ConfigureAwait(false)
@@ -110,6 +122,26 @@ internal sealed class AgentToolExecutionPipeline
                     // reached the durable execution-request barrier and must not survive
                     // while the run is waiting for user input.
                     await DiscardPreparedAsync(prepared).ConfigureAwait(false);
+                    foreach (var discardedCall in prepared)
+                    {
+                        if (proposals.TryGetValue(discardedCall.ModelOrder, out var preparedProposal))
+                        {
+                            AgentActivityProjector.PublishSafe(
+                                _activitySink,
+                                run.RunId,
+                                AgentActivityProjector.ProjectTool(
+                                    preparedProposal,
+                                    AgentActivityState.Waiting,
+                                    safeCode: null));
+                        }
+                    }
+                    AgentActivityProjector.PublishSafe(
+                        _activitySink,
+                        run.RunId,
+                        AgentActivityProjector.ProjectTool(
+                            proposal,
+                            AgentActivityState.Waiting,
+                            safeCode: decision.SafeCode));
                     var waiting = AgentBudgetPolicy.EnterApprovalWait(run, _time.UtcNow);
                     var approvalEvent = new HarnessEventIntent(
                         _ids.NewEventId(),
@@ -163,9 +195,15 @@ internal sealed class AgentToolExecutionPipeline
                 {
                     var deniedExecutionId = _ids.NewExecutionId();
                     var code = decision.SafeCode ?? "policy_denied";
-                    denied.Add(
-                        proposal.ModelOrder,
-                        CreateDeniedExecution(proposal, deniedExecutionId, code));
+                    var deniedExecution = CreateDeniedExecution(proposal, deniedExecutionId, code);
+                    denied.Add(proposal.ModelOrder, deniedExecution);
+                    AgentActivityProjector.PublishSafe(
+                        _activitySink,
+                        run.RunId,
+                        AgentActivityProjector.ProjectTool(
+                            proposal,
+                            AgentActivityState.Failed,
+                            deniedExecution.Receipt));
                     continue;
                 }
 
@@ -174,9 +212,15 @@ internal sealed class AgentToolExecutionPipeline
                     && decision.AccessKind != ToolAccessKind.ReadOnly)
                 {
                     var gatedExecutionId = _ids.NewExecutionId();
-                    denied.Add(
-                        proposal.ModelOrder,
-                        CreateDeniedExecution(proposal, gatedExecutionId, "inspection_required"));
+                    var gatedExecution = CreateDeniedExecution(proposal, gatedExecutionId, "inspection_required");
+                    denied.Add(proposal.ModelOrder, gatedExecution);
+                    AgentActivityProjector.PublishSafe(
+                        _activitySink,
+                        run.RunId,
+                        AgentActivityProjector.ProjectTool(
+                            proposal,
+                            AgentActivityState.Failed,
+                            gatedExecution.Receipt));
                     continue;
                 }
 
@@ -234,6 +278,16 @@ internal sealed class AgentToolExecutionPipeline
                 cancellationToken)
             .ConfigureAwait(false);
         var executionDropped = checked((int)(_frames.DroppedCount - droppedBeforeExecution));
+        if (executionDropped > 0)
+        {
+            AgentActivityProjector.PublishSafe(
+                _activitySink,
+                run.RunId,
+                AgentActivityProjector.ProjectDropped(
+                    modelStepId,
+                    toolFrames: true,
+                    droppedCount: executionDropped));
+        }
         var rawByOrder = rawReceipts.ToDictionary(
             receipt => prepared.Single(call => call.ExecutionId == receipt.ExecutionId).ModelOrder);
         // The scheduler intentionally stops after an ambiguous mutation outcome.
@@ -347,6 +401,22 @@ internal sealed class AgentToolExecutionPipeline
                 // A durable read-only inspection receipt is what clears the
                 // UnknownContinue mutation gate.
                 _inspectionGate?.RecordInspection(run.RunId);
+            }
+
+            if (proposals.TryGetValue(call.ModelOrder, out var proposal))
+            {
+                var activityState = nextStatus.State == HarnessRunState.ReconciliationRequired
+                    ? AgentActivityState.Waiting
+                    : receipt.Outcome == ToolExecutionOutcome.Succeeded
+                        ? AgentActivityState.Completed
+                        : AgentActivityState.Failed;
+                AgentActivityProjector.PublishSafe(
+                    _activitySink,
+                    run.RunId,
+                    AgentActivityProjector.ProjectTool(
+                        proposal,
+                        activityState,
+                        receipt));
             }
 
             var next = run.Advance(

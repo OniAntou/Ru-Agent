@@ -223,12 +223,33 @@ def test_current_docs_describe_the_compact_desktop_agent_entry_point() -> None:
 
     assert "compact mode pill inside the Chat composer" in root_readme
     assert "dropdown contains only Chat and Agent" in root_readme
+    root_flat = " ".join(root_readme.split())
+    assert "first Agent prompt creates a fresh session" in root_flat
+    assert "correlation-aware FIFO turns" in root_flat
     assert "Công cụ" in root_readme
     runtime_flat = " ".join(runtime.split())
     assert "Chat submissions still use the Chat WebSocket" in runtime_flat
     assert "Agent submissions use the authenticated `/agent/v1/*` API/SSE path" in runtime_flat
-    assert "separate Agent configuration button owns workspace and preset fields" in runtime_flat
+    assert "selecting Agent reveals a compact `Standard`/`Full Access` preset selector" in runtime_flat
+    assert "does not expose a workspace editor" in runtime_flat
+    assert "first Agent prompt creates a fresh session" in runtime_flat
+    assert "bounded `correlation_id`" in runtime_flat
+    assert "chat_queue_full" in runtime_flat
+    assert "does not automatically replay" in runtime_flat
+    assert "high-confidence local reply" in runtime_flat
+    assert "creates one replacement session and retries once" in runtime_flat
+    assert "separate Agent configuration button owns workspace and preset fields" not in runtime_flat
+    assert "transient activity feed driven by typed `agent.activity`" in runtime_flat
+    assert "do not enter durable history or audit" in runtime_flat
     assert "raw commands, arguments, stdout, or private" in agent_tools
+    agent_tools_flat = " ".join(agent_tools.split())
+    assert "connection-local and transient" in agent_tools_flat
+    assert "basename/line range" in agent_tools_flat
+    assert "cleared on terminal completion, cancellation, failure, disconnect" in agent_tools_flat
+    assert "Chat requests use an opaque `correlation_id`" in agent_tools_flat
+    assert "chat_queue_full" in agent_tools_flat
+    assert "retrying at most once" in agent_tools_flat
+    assert "outside the transcript" not in runtime_flat
 
 
 def test_agent_tools_close_the_model_selection_channel() -> None:

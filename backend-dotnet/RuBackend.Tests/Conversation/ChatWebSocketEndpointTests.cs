@@ -287,6 +287,38 @@ public sealed class ChatWebSocketEndpointTests
     }
 
     [Fact]
+    public async Task Deferred_queue_full_rejects_only_the_overflowing_correlation()
+    {
+        var coordinator = new FakeCoordinator { HoldBeforeEvents = true };
+        using var factory = Factory(coordinator);
+        using var socket = await ConnectAsync(factory, "?token=test-secret");
+
+        await SendTextAsync(
+            socket,
+            "{\"prompt\":\"Lượt một\",\"correlation_id\":\"c_first123\"}");
+        await coordinator.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        for (var index = 0; index < 9; index++)
+        {
+            await SendTextAsync(
+                socket,
+                JsonSerializer.Serialize(new
+                {
+                    prompt = $"Lượt chờ {index}",
+                    correlation_id = $"c_queue{index:00}",
+                }));
+        }
+
+        using var overflow = JsonDocument.Parse(
+            await ReceiveTextAsync(socket).WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.Equal("error", overflow.RootElement.GetProperty("type").GetString());
+        Assert.Equal("chat_queue_full", overflow.RootElement.GetProperty("error_code").GetString());
+        Assert.Equal("c_queue08", overflow.RootElement.GetProperty("correlation_id").GetString());
+
+        coordinator.Release.TrySetResult();
+    }
+
+    [Fact]
     public async Task Approval_control_message_is_rejected_on_chat_websocket()
     {
         // Phase-4 cutover: agent.approval.response is handled by the

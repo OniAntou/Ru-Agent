@@ -15,6 +15,86 @@ namespace RuBackend.Tests.Conversation;
 public sealed class ConversationCoordinatorTests
 {
     [Fact]
+    public async Task High_confidence_greeting_is_persisted_without_worker_or_memory_retrieval()
+    {
+        var log = new List<string>();
+        var sessions = new FakeSessionStore(log);
+        var memory = new FakeMemoryService(log);
+        var worker = new FakeWorkerClient(log);
+        var coordinator = CreateCoordinator(
+            log,
+            sessions,
+            memory,
+            worker,
+            intentResolver: new ConversationIntentResolver());
+
+        var events = await CollectAsync(coordinator.HandleAsync(
+            new ChatRequest("Xin chào em", "session-1", CorrelationId: "c_local123"),
+            CancellationToken.None));
+
+        Assert.Equal(["reset", "chunk", "done"], events.Select(item => item.Type));
+        Assert.Equal("Chào anh. Em đang nghe đây.", events[^1].Content);
+        Assert.Equal(
+            ["user", "ai"],
+            sessions.Messages.Select(message => message.Role));
+        Assert.Equal("Chào anh. Em đang nghe đây.", sessions.Messages[^1].Content);
+        Assert.Empty(worker.ChatRequests);
+        Assert.DoesNotContain("memory.retrieve", log);
+    }
+
+    [Fact]
+    public async Task Local_reply_append_failure_records_the_controlled_processing_message()
+    {
+        var log = new List<string>();
+        var sessions = new FakeSessionStore(log) { FailNextAssistantAppend = true };
+        var coordinator = CreateCoordinator(
+            log,
+            sessions,
+            new FakeMemoryService(log),
+            new FakeWorkerClient(log),
+            intentResolver: new ConversationIntentResolver());
+
+        var events = await CollectAsync(coordinator.HandleAsync(
+            new ChatRequest("Xin chào em", "session-1", CorrelationId: "c_localerr1"),
+            CancellationToken.None));
+
+        var error = Assert.Single(events);
+        Assert.Equal("error", error.Type);
+        Assert.Equal("session_write_failed", error.ErrorCode);
+        Assert.Equal(
+            ["user", "ai"],
+            sessions.Messages.Select(message => message.Role));
+        Assert.Equal(
+            ConversationCoordinator.ProcessingHistoryErrorText,
+            sessions.Messages[^1].Content);
+    }
+
+    [Fact]
+    public async Task Correction_keeps_the_original_prompt_in_history_and_adds_a_model_directive()
+    {
+        var log = new List<string>();
+        var sessions = new FakeSessionStore(log);
+        var worker = SuccessfulWorker(log);
+        var coordinator = CreateCoordinator(
+            log,
+            sessions,
+            new FakeMemoryService(log),
+            worker,
+            intentResolver: new ConversationIntentResolver());
+
+        _ = await CollectAsync(coordinator.HandleAsync(
+            new ChatRequest(
+                "Không, ý anh là sửa câu trước",
+                "session-1",
+                CorrelationId: "c_correct12"),
+            CancellationToken.None));
+
+        Assert.Contains("Không, ý anh là sửa câu trước", worker.LastChatRequest!.Prompt, StringComparison.Ordinal);
+        Assert.Contains("làm rõ ý trước đó", worker.LastChatRequest.Prompt, StringComparison.Ordinal);
+        Assert.Equal("Không, ý anh là sửa câu trước", sessions.Messages[0].Content);
+    }
+
+    [Fact]
     public async Task Correlation_id_is_preserved_on_every_coordinator_event()
     {
         var log = new List<string>();
@@ -448,7 +528,8 @@ public sealed class ConversationCoordinatorTests
         FakeMemoryService memory,
         FakeWorkerClient worker,
         ConversationTurnGate? gate = null,
-        IActionOutcomeContextStore? outcomes = null) => new(
+        IActionOutcomeContextStore? outcomes = null,
+        IConversationIntentResolver? intentResolver = null) => new(
             sessions,
             memory,
             new FakeSettingsStore(log),
@@ -457,7 +538,8 @@ public sealed class ConversationCoordinatorTests
             outcomes ?? new ActionOutcomeContextStore(),
             new MetadataPolicy(),
             new StreamSanitizer(),
-            gate ?? new ConversationTurnGate(TimeSpan.FromSeconds(1)));
+            gate ?? new ConversationTurnGate(TimeSpan.FromSeconds(1)),
+            intentResolver: intentResolver);
 
     private static FakeWorkerClient SuccessfulWorker(List<string> log) => new(log)
     {

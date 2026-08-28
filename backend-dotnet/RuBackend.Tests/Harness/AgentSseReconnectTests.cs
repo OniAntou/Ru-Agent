@@ -158,6 +158,9 @@ public sealed class AgentSseReconnectTests
         Assert.Contains("id: 2", sse);
         // Verify status field reflects terminal? Contains "cancelled"
         Assert.Contains("cancelled", sse, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("agent.summary", sse, StringComparison.Ordinal);
+        Assert.Contains("verification_state", sse, StringComparison.Ordinal);
+        Assert.DoesNotContain("workspace_path", sse, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<string> GetSseAsync(HttpClient client, string url)

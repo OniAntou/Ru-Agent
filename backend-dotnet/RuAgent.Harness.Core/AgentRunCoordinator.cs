@@ -32,6 +32,7 @@ public sealed class AgentRunCoordinator
     private readonly IToolRunCancellation? _cancellation;
     private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly IModelContextLimitProvider? _contextLimit;
+    private readonly IAgentActivitySink? _activitySink;
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -44,7 +45,8 @@ public sealed class AgentRunCoordinator
         TransientFrameBuffer frames,
         ITransientContentRedactor? transientRedactor = null,
         IModelContextLimitProvider? contextLimit = null,
-        ReconciliationInspectionGate? inspectionGate = null)
+        ReconciliationInspectionGate? inspectionGate = null,
+        IAgentActivitySink? activitySink = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -57,6 +59,7 @@ public sealed class AgentRunCoordinator
             ?? PassthroughTransientContentRedactor.Instance;
         _contextLimit = contextLimit;
         _inspectionGate = inspectionGate;
+        _activitySink = activitySink;
         _tools = new AgentToolExecutionPipeline(
             gateway ?? throw new ArgumentNullException(nameof(gateway)),
             store,
@@ -65,7 +68,8 @@ public sealed class AgentRunCoordinator
             scheduler ?? throw new ArgumentNullException(nameof(scheduler)),
             frames,
             _transientRedactor,
-            inspectionGate);
+            inspectionGate,
+            activitySink);
         _cancellation = gateway as IToolRunCancellation;
     }
 
@@ -151,11 +155,20 @@ public sealed class AgentRunCoordinator
                 Array.Empty<HarnessPayloadIntent>(),
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
-            .ConfigureAwait(false);
+                .ConfigureAwait(false);
         if (!reservation.Granted)
         {
             return AgentRunStepResult.Blocked(run, reservation.ErrorCode!);
         }
+
+        var thinkingStartedAt = _time.UtcNow;
+        AgentActivityProjector.PublishSafe(
+            _activitySink,
+            run.RunId,
+            AgentActivityProjector.ProjectModelStep(
+                modelStepId,
+                AgentActivityState.Started,
+                safeCode: "in_progress"));
 
         var request = new ModelStepRequest(
             run.RunId,
@@ -171,14 +184,62 @@ public sealed class AgentRunCoordinator
             run.RunId,
             TransientFrameKind.AssistantDelta,
             modelStepId: modelStepId);
-        var step = await _model.RunStepAsync(
-                request,
-                delta => PublishAssistantDelta(modelStepId, assistantStream, delta),
-                cancellationToken)
-            .ConfigureAwait(false)
-            ?? throw new InvalidOperationException("model_step_returned_null");
+        AssistantStep step;
+        try
+        {
+            step = await _model.RunStepAsync(
+                    request,
+                    delta => PublishAssistantDelta(modelStepId, assistantStream, delta),
+                    cancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException("model_step_returned_null");
+        }
+        catch (OperationCanceledException)
+        {
+            assistantStream.Complete();
+            AgentActivityProjector.PublishSafe(
+                _activitySink,
+                run.RunId,
+                AgentActivityProjector.ProjectModelStep(
+                    modelStepId,
+                    AgentActivityState.Failed,
+                    ElapsedMilliseconds(thinkingStartedAt),
+                    safeCode: "cancelled"));
+            throw;
+        }
+        catch (Exception)
+        {
+            assistantStream.Complete();
+            AgentActivityProjector.PublishSafe(
+                _activitySink,
+                run.RunId,
+                AgentActivityProjector.ProjectModelStep(
+                    modelStepId,
+                    AgentActivityState.Failed,
+                    ElapsedMilliseconds(thinkingStartedAt),
+                    safeCode: "model_failed"));
+            throw;
+        }
         assistantStream.Complete();
+        AgentActivityProjector.PublishSafe(
+            _activitySink,
+            run.RunId,
+            AgentActivityProjector.ProjectModelStep(
+                modelStepId,
+                AgentActivityState.Completed,
+                ElapsedMilliseconds(thinkingStartedAt),
+                safeCode: "succeeded"));
         var modelDroppedCount = checked((int)(_frames.DroppedCount - droppedBefore));
+        if (modelDroppedCount > 0)
+        {
+            AgentActivityProjector.PublishSafe(
+                _activitySink,
+                run.RunId,
+                AgentActivityProjector.ProjectDropped(
+                    modelStepId,
+                    toolFrames: false,
+                    droppedCount: modelDroppedCount));
+        }
 
         if (step.ToolCalls.Count > 0)
         {
@@ -556,6 +617,20 @@ public sealed class AgentRunCoordinator
 
         stream.Append(delta.Content);
         return ValueTask.CompletedTask;
+    }
+
+    private int? ElapsedMilliseconds(DateTimeOffset startedAt)
+    {
+        var elapsed = _time.UtcNow - startedAt;
+        if (elapsed < TimeSpan.Zero)
+        {
+            return null;
+        }
+
+        var milliseconds = elapsed.TotalMilliseconds;
+        return milliseconds is >= 0 and <= 86_400_000
+            ? (int)milliseconds
+            : null;
     }
 
     private async Task<AgentRun> RequireRunAsync(

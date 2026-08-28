@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 using RuApp.Services;
 using Xunit;
@@ -36,6 +37,8 @@ public sealed class AgentRunControllerTests
     {
         public AgentRunModel? Run;
         public List<AgentEventModel> Stream { get; } = new();
+        public List<AgentActivityModel> ActivityStream { get; } = new();
+        public List<AgentRunSummaryModel> SummaryStream { get; } = new();
         public bool CancelCalled;
         public bool ContinueCalled;
         public bool TrustCalled;
@@ -96,13 +99,92 @@ public sealed class AgentRunControllerTests
             return Task.CompletedTask;
         }
 
-        public async Task SubscribeEventsAsync(string runId, long after, Func<AgentEventModel, Task> onEvent, CancellationToken ct = default)
+        public async Task SubscribeEventsAsync(
+            string runId,
+            long after,
+            Func<AgentEventModel, Task> onEvent,
+            CancellationToken ct = default,
+            Func<AgentActivityModel, Task>? onActivity = null,
+            Func<AgentRunSummaryModel, Task>? onSummary = null)
         {
             foreach (var e in Stream)
             {
                 await onEvent(e).ConfigureAwait(false);
             }
+
+            if (onActivity is not null)
+            {
+                foreach (var activity in ActivityStream)
+                {
+                    await onActivity(activity).ConfigureAwait(false);
+                }
+            }
+
+            if (onSummary is not null)
+            {
+                foreach (var summary in SummaryStream)
+                {
+                    await onSummary(summary).ConfigureAwait(false);
+                }
+            }
         }
+    }
+
+    [Fact]
+    public async Task CreateAndRun_delivers_activity_separately_from_durable_events()
+    {
+        var fake = new FakeClient { Run = MakeRun() };
+        fake.Stream.Add(DurableEvent(1));
+        fake.ActivityStream.Add(new AgentActivityModel(
+            "act_11111111111111111111111111111111",
+            AgentActivityKind.Analyze,
+            AgentActivityState.Completed,
+            "ChatView.xaml.cs",
+            150,
+            200,
+            null,
+            null,
+            null,
+            null,
+            5000,
+            "succeeded",
+            null,
+            1));
+        var received = new List<AgentActivityModel>();
+        var controller = new AgentRunController(fake);
+        controller.ActivityReceived += (_, activity) => received.Add(activity);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest("sess_1", "C:\\work", "do it", "standard", null, "idem-activity"));
+
+        var activity = Assert.Single(received);
+        Assert.Equal("act_11111111111111111111111111111111", activity.ActivityId);
+        Assert.Single(controller.Events);
+        Assert.DoesNotContain(controller.Events, item => item.IsTransient);
+    }
+
+    [Fact]
+    public async Task CreateAndRun_delivers_terminal_summary_separately_from_durable_events()
+    {
+        var fake = new FakeClient { Run = MakeRun() };
+        fake.SummaryStream.Add(new AgentRunSummaryModel(
+            "succeeded",
+            "verified",
+            "Test Agent",
+            5,
+            1,
+            0,
+            0,
+            null,
+            2));
+        var received = new List<AgentRunSummaryModel>();
+        var controller = new AgentRunController(fake);
+        controller.SummaryReceived += (_, summary) => received.Add(summary);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest("sess_1", "C:\\work", "do it", "standard", null, "idem-summary"));
+
+        var summary = Assert.Single(received);
+        Assert.Equal("verified", summary.VerificationState);
+        Assert.Empty(controller.Events);
     }
 
     [Fact]

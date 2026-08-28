@@ -651,10 +651,58 @@ namespace RuApp
             }
         }
 
+        private void OnShellPreviewKeyDown(object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs e)
+        {
+            var ctrlDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
+                .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+            if (!ctrlDown) return;
+
+            if (e.Key == Windows.System.VirtualKey.N)
+            {
+                e.Handled = true;
+                OnNewChatClick(NavNewChat, new RoutedEventArgs());
+            }
+            else if (e.Key == Windows.System.VirtualKey.Number1)
+            {
+                e.Handled = true;
+                OnNavClick(NavChat, new RoutedEventArgs());
+            }
+            else if (e.Key == Windows.System.VirtualKey.Number2)
+            {
+                e.Handled = true;
+                OnNavClick(NavVoice, new RoutedEventArgs());
+            }
+            else if (e.Key == Windows.System.VirtualKey.Number3)
+            {
+                e.Handled = true;
+                OnNavClick(NavSettings, new RoutedEventArgs());
+            }
+        }
+
         private async void OnDeleteSessionClick(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.Tag is string sessionId && _apiService != null)
             {
+                if (ShellRoot.XamlRoot != null)
+                {
+                    var dialog = new ContentDialog
+                    {
+                        Title = "Xác nhận xoá đoạn chat",
+                        Content = "Bạn có chắc chắn muốn xoá vĩnh viễn đoạn chat này không?",
+                        PrimaryButtonText = "Xoá",
+                        CloseButtonText = "Huỷ",
+                        DefaultButton = ContentDialogButton.Close,
+                        XamlRoot = ShellRoot.XamlRoot
+                    };
+
+                    var result = await dialog.ShowAsync();
+                    if (result != ContentDialogResult.Primary)
+                    {
+                        return;
+                    }
+                }
+
                 await _apiService.DeleteSessionAsync(sessionId);
                 await LoadSessionsAsync();
 

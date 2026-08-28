@@ -162,6 +162,7 @@ builder.Services.AddSingleton<IRuntimeProtocolClient>(services =>
     builder.Services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
     builder.Services.AddSingleton<ConversationTurnGate>();
     builder.Services.AddSingleton<ConversationSessionGate>();
+    builder.Services.AddSingleton<IConversationIntentResolver, ConversationIntentResolver>();
     builder.Services.AddSingleton<IMetadataPolicy, MetadataPolicy>();
     builder.Services.AddSingleton<IStreamSanitizer, StreamSanitizer>();
     // Phase-4 cutover: Chat WebSocket is read-only and never drives Agent
@@ -228,6 +229,7 @@ builder.Services.AddSingleton<IHarnessEventStore>(services =>
         services.GetRequiredService<HarnessSqliteOptions>(),
         services.GetRequiredService<HarnessPayloadStore>()));
 builder.Services.AddSingleton<HarnessLiveEventHub>();
+builder.Services.AddSingleton<AgentRunSummaryLivePublisher>();
 // Headless runtime loop: per-run coordinators, outbox delivery, and model/tool driving.
 builder.Services.AddSingleton<IAgentRuntimeRootRegistry, AgentRuntimeRootRegistry>();
 builder.Services.AddSingleton<RuAgent.Harness.Core.Reconciliation.ReconciliationInspectionGate>();

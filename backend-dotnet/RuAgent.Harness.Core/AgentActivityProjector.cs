@@ -1,0 +1,353 @@
+using System.Text.Json;
+
+namespace RuAgent.Harness.Core;
+
+/// <summary>
+/// Converts private model/tool lifecycle data into a deliberately small activity shape.
+/// Only allowlisted scalar metadata can cross the sink boundary.
+/// </summary>
+public static class AgentActivityProjector
+{
+    private const int MaximumLine = 1_000_000;
+    private const int MaximumCount = 1_000_000;
+    private const int MaximumDurationMilliseconds = 86_400_000;
+    private const int MaximumLeafLength = 128;
+    private const int MaximumSymbolLength = 128;
+
+    public static AgentActivity ProjectModelStep(
+        ModelStepId modelStepId,
+        AgentActivityState state,
+        int? durationMs = null,
+        string? safeCode = null) =>
+        new(
+            ActivityId(modelStepId.Value),
+            AgentActivityKind.Thinking,
+            state,
+            DurationMs: ClampDuration(durationMs),
+            SafeCode: SafeCodeFor(state, safeCode));
+
+    public static AgentActivity ProjectTool(
+        ToolProposal proposal,
+        AgentActivityState state,
+        ToolExecutionReceipt? receipt = null,
+        int? durationMs = null,
+        string? safeCode = null)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+
+        var metadata = ToolActivityMetadataExtractor.Extract(proposal, receipt);
+        var kind = proposal.ToolId switch
+        {
+            "files.list" or "files.glob" => AgentActivityKind.Explore,
+            "files.search" => AgentActivityKind.Search,
+            "files.read" => AgentActivityKind.Analyze,
+            "files.write" or "files.edit" => AgentActivityKind.Edit,
+            "terminal.run" or "terminal.shell" => AgentActivityKind.Terminal,
+            _ => AgentActivityKind.Status,
+        };
+
+        if (kind == AgentActivityKind.Status)
+        {
+            metadata = ToolActivityMetadata.Empty;
+        }
+
+        return new AgentActivity(
+            ActivityId(proposal.ToolCallId.Value),
+            kind,
+            state,
+            metadata.FileName,
+            metadata.LineStart,
+            metadata.LineEnd,
+            metadata.Symbol,
+            metadata.Count,
+            metadata.Added,
+            metadata.Removed,
+            ClampDuration(durationMs),
+            SafeCodeFor(state, safeCode ?? receipt?.Code));
+    }
+
+    public static AgentActivity ProjectStatus(
+        string activityId,
+        AgentActivityState state,
+        string? safeCode = null) =>
+        new(
+            activityId,
+            AgentActivityKind.Status,
+            state,
+            SafeCode: SafeCodeFor(state, safeCode));
+
+    public static AgentActivity ProjectDropped(
+        ModelStepId modelStepId,
+        bool toolFrames,
+        int droppedCount)
+    {
+        var boundedCount = droppedCount is > 0
+            ? Math.Min(droppedCount, MaximumCount)
+            : 1;
+        var phase = toolFrames ? "tool" : "assistant";
+        return new AgentActivity(
+            $"{ActivityId(modelStepId.Value)}_{phase}_dropped",
+            AgentActivityKind.Status,
+            AgentActivityState.Completed,
+            Count: boundedCount,
+            SafeCode: "frames_dropped");
+    }
+
+    /// <summary>
+    /// A transient sink is optional and must never be allowed to change run semantics.
+    /// </summary>
+    public static void PublishSafe(
+        IAgentActivitySink? sink,
+        RunId runId,
+        AgentActivity activity)
+    {
+        if (sink is null)
+        {
+            return;
+        }
+
+        try
+        {
+            sink.Publish(runId, activity);
+        }
+        catch
+        {
+            // Activity is observational only. A disconnected or invalid live sink must
+            // never fail a model/tool step or alter durable harness state.
+        }
+    }
+
+    private static string ActivityId(string sourceId)
+    {
+        var separator = sourceId.IndexOf('_');
+        var suffix = separator >= 0 && separator + 1 < sourceId.Length
+            ? sourceId[(separator + 1)..]
+            : sourceId;
+        return $"act_{suffix}";
+    }
+
+    private static string SafeCodeFor(AgentActivityState state, string? code) =>
+        IsSafeCode(code)
+            ? code!
+            : state switch
+            {
+                AgentActivityState.Started => "in_progress",
+                AgentActivityState.Waiting => "waiting",
+                AgentActivityState.Failed => "failed",
+                _ => "succeeded",
+            };
+
+    private static int? ClampDuration(int? durationMs) =>
+        durationMs is >= 0 and <= MaximumDurationMilliseconds ? durationMs : null;
+
+    private static bool IsSafeCode(string? value) =>
+        value is { Length: >= 1 and <= 64 }
+        && value[0] is >= 'a' and <= 'z'
+        && value.All(character =>
+            character is (>= 'a' and <= 'z')
+                or (>= '0' and <= '9')
+                or '_'
+                or '.');
+
+    private sealed record ToolActivityMetadata(
+        string? FileName,
+        int? LineStart,
+        int? LineEnd,
+        string? Symbol,
+        int? Count,
+        int? Added,
+        int? Removed)
+    {
+        public static ToolActivityMetadata Empty { get; } = new(null, null, null, null, null, null, null);
+    }
+
+    private static class ToolActivityMetadataExtractor
+    {
+        public static ToolActivityMetadata Extract(
+            ToolProposal proposal,
+            ToolExecutionReceipt? receipt)
+        {
+            try
+            {
+                var arguments = proposal.Arguments;
+                var fileName = proposal.ToolId is "files.read" or "files.write" or "files.edit"
+                    ? ReadSafeFileName(arguments, "path")
+                    : null;
+                var (lineStart, lineEnd) = ReadLineRange(arguments);
+                var symbol = proposal.ToolId == "files.search"
+                    ? ReadSafeSymbol(arguments, "query")
+                    : null;
+                var count = ReadReceiptInt(receipt, "count");
+                var added = ReadReceiptInt(receipt, "added");
+                var removed = ReadReceiptInt(receipt, "removed");
+
+                if (proposal.ToolId is "files.write" or "files.edit")
+                {
+                    added ??= ReadLineBreakCount(arguments, "new_string")
+                        ?? ReadLineBreakCount(arguments, "content");
+                    removed ??= ReadLineBreakCount(arguments, "old_string");
+                }
+
+                if (proposal.ToolId is "files.read" or "files.edit" or "files.write")
+                {
+                    (lineStart, lineEnd) = PreferReceiptLineRange(receipt, lineStart, lineEnd);
+                }
+
+                return new ToolActivityMetadata(
+                    fileName,
+                    lineStart,
+                    lineEnd,
+                    symbol,
+                    ClampCount(count),
+                    ClampCount(added),
+                    ClampCount(removed));
+            }
+            catch
+            {
+                return ToolActivityMetadata.Empty;
+            }
+        }
+
+        private static (int? Start, int? End) PreferReceiptLineRange(
+            ToolExecutionReceipt? receipt,
+            int? start,
+            int? end)
+        {
+            if (start.HasValue && end.HasValue)
+            {
+                return (start, end);
+            }
+
+            var receiptStart = ReadReceiptInt(receipt, "line_start");
+            var receiptEnd = ReadReceiptInt(receipt, "line_end");
+            return IsLineRange(receiptStart, receiptEnd)
+                ? (receiptStart, receiptEnd)
+                : (null, null);
+        }
+
+        private static string? ReadSafeFileName(JsonElement arguments, string propertyName)
+        {
+            if (!TryGetString(arguments, propertyName, out var path)
+                || string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            var normalized = path.Replace('\\', '/');
+            var slash = normalized.LastIndexOf('/');
+            var candidate = slash >= 0 ? normalized[(slash + 1)..] : normalized;
+            if (candidate.Length is < 1 or > MaximumLeafLength
+                || candidate is "." or ".."
+                || candidate.EndsWith(".", StringComparison.Ordinal)
+                || candidate.EndsWith(" ", StringComparison.Ordinal)
+                || candidate.Any(char.IsControl)
+                || candidate.Contains(':', StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            var deviceStem = candidate.Split('.', 2, StringSplitOptions.None)[0];
+            if (deviceStem is "CON" or "PRN" or "AUX" or "NUL"
+                || (deviceStem.Length == 4
+                    && (deviceStem.StartsWith("COM", StringComparison.OrdinalIgnoreCase)
+                        || deviceStem.StartsWith("LPT", StringComparison.OrdinalIgnoreCase))
+                    && deviceStem[3] is >= '1' and <= '9'))
+            {
+                return null;
+            }
+
+            return candidate;
+        }
+
+        private static string? ReadSafeSymbol(JsonElement arguments, string propertyName)
+        {
+            if (!TryGetString(arguments, propertyName, out var symbol)
+                || symbol.Length is < 1 or > MaximumSymbolLength
+                || !(symbol[0] is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or '_'))
+            {
+                return null;
+            }
+
+            for (var index = 1; index < symbol.Length; index++)
+            {
+                var character = symbol[index];
+                if (!(character is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z')
+                    or (>= '0' and <= '9') or '_' or '.' or ':' or '-'))
+                {
+                    return null;
+                }
+            }
+
+            return symbol;
+        }
+
+        private static (int? Start, int? End) ReadLineRange(JsonElement arguments)
+        {
+            var start = ReadInt(arguments, "line_start");
+            var end = ReadInt(arguments, "line_end");
+            return IsLineRange(start, end) ? (start, end) : (null, null);
+        }
+
+        private static bool IsLineRange(int? start, int? end) =>
+            start is >= 1 and <= MaximumLine
+            && end is >= 1 and <= MaximumLine
+            && end >= start;
+
+        private static int? ReadLineBreakCount(JsonElement arguments, string propertyName)
+        {
+            if (!TryGetString(arguments, propertyName, out var value))
+            {
+                return null;
+            }
+
+            var count = value.Count(character => character == '\n');
+            return count <= MaximumCount ? count : null;
+        }
+
+        private static int? ReadReceiptInt(ToolExecutionReceipt? receipt, string propertyName)
+        {
+            if (receipt is null || receipt.ModelContent.IsEmpty)
+            {
+                return null;
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(receipt.ModelContent.ToArray());
+                return ReadInt(document.RootElement, propertyName);
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
+        private static int? ReadInt(JsonElement element, string propertyName)
+        {
+            if (!element.TryGetProperty(propertyName, out var value)
+                || value.ValueKind != JsonValueKind.Number
+                || !value.TryGetInt32(out var number))
+            {
+                return null;
+            }
+
+            return number;
+        }
+
+        private static bool TryGetString(JsonElement element, string propertyName, out string value)
+        {
+            value = string.Empty;
+            if (!element.TryGetProperty(propertyName, out var property)
+                || property.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+
+            value = property.GetString() ?? string.Empty;
+            return true;
+        }
+
+        private static int? ClampCount(int? value) =>
+            value is >= 0 and <= MaximumCount ? value : null;
+    }
+}

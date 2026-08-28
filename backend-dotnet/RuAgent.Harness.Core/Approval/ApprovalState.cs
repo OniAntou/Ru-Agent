@@ -36,36 +36,23 @@ public sealed record ToolApprovalBinding
     {
         _ = runId.Value;
         _ = toolCallId.Value;
-        if (string.IsNullOrWhiteSpace(toolId) || toolId.Length > 128)
-        {
-            throw new ArgumentException("Tool ID must be bounded.", nameof(toolId));
-        }
-
-        if (string.IsNullOrWhiteSpace(toolVersion) || toolVersion.Length > 32)
-        {
-            throw new ArgumentException("Tool version must be bounded.", nameof(toolVersion));
-        }
-
-        if (canonicalPath is { Length: > 4096 })
-        {
-            throw new ArgumentException("Canonical path must be bounded.", nameof(canonicalPath));
-        }
-
-        if (resolvedExecutable is { Length: > 256 })
-        {
-            throw new ArgumentException("Executable must be bounded.", nameof(resolvedExecutable));
-        }
+        ValidateBounded(toolId, 128, nameof(toolId));
+        ValidateBounded(toolVersion, 32, nameof(toolVersion));
+        ValidateOptional(canonicalPath, 4096, nameof(canonicalPath));
+        ValidateOptional(resolvedExecutable, 256, nameof(resolvedExecutable));
 
         ArgumentNullException.ThrowIfNull(argv);
-        if (argv.Count > 64 || argv.Any(argument => argument is { Length: > 4096 }))
+        if (argv.Count > 64)
         {
             throw new ArgumentException("Argv pattern must be bounded.", nameof(argv));
         }
 
-        if (cwd is { Length: > 4096 })
+        foreach (var argument in argv)
         {
-            throw new ArgumentException("Cwd must be bounded.", nameof(cwd));
+            ValidateBounded(argument, 4096, nameof(argv));
         }
+
+        ValidateOptional(cwd, 4096, nameof(cwd));
 
         if (!AllowedOperations.Contains(operationClass, StringComparer.Ordinal))
         {
@@ -77,10 +64,7 @@ public sealed record ToolApprovalBinding
             throw new ArgumentOutOfRangeException(nameof(networkIntent), networkIntent);
         }
 
-        if (string.IsNullOrWhiteSpace(intentHash) || intentHash.Length > 128)
-        {
-            throw new ArgumentException("Intent hash must be bounded.", nameof(intentHash));
-        }
+        ValidateBounded(intentHash, 128, nameof(intentHash));
 
         RunId = runId;
         ToolCallId = toolCallId;
@@ -95,6 +79,24 @@ public sealed record ToolApprovalBinding
         SnapshotVersion = snapshotVersion;
         IntentHash = intentHash;
         ExpiresAt = expiresAt;
+    }
+
+    private static void ValidateOptional(string? value, int maximumLength, string parameterName)
+    {
+        if (value is not null)
+        {
+            ValidateBounded(value, maximumLength, parameterName);
+        }
+    }
+
+    private static void ValidateBounded(string? value, int maximumLength, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || value.Length > maximumLength
+            || value.Contains('\0'))
+        {
+            throw new ArgumentException("Value must be non-empty, bounded, and contain no null characters.", parameterName);
+        }
     }
 
     public RunId RunId { get; init; }
@@ -244,6 +246,8 @@ public sealed record PendingToolApproval
         {
             throw new ArgumentException("Approval ID must be bounded.", nameof(approvalId));
         }
+
+        ArgumentNullException.ThrowIfNull(binding);
 
         ApprovalId = approvalId;
         Binding = binding;

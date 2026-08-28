@@ -158,6 +158,13 @@ public sealed class BrokerSession
             }
 
             var current = _activeRunLease;
+            if (current.IsExpired(DateTimeOffset.UtcNow)
+                || reboundLease.IsExpired(DateTimeOffset.UtcNow))
+            {
+                errorCode = "lease_expired";
+                return false;
+            }
+
             if (!string.Equals(current.RunId, reboundLease.RunId, StringComparison.Ordinal))
             {
                 errorCode = "run_conflict";
@@ -228,6 +235,18 @@ public sealed class BrokerSession
         lock (_gate)
         {
             preparationToken = null;
+            if (_activeRunLease is null || !string.Equals(_activeRunLease.RunId, runId, StringComparison.Ordinal))
+            {
+                errorCode = "run_not_open";
+                return false;
+            }
+
+            if (_activeRunLease.IsExpired(DateTimeOffset.UtcNow))
+            {
+                errorCode = "lease_expired";
+                return false;
+            }
+
             if (!_pendingDecisions.TryGetValue(decisionToken, out var entry)
                 || entry.Consumed
                 || !string.Equals(entry.Kind, "decision", StringComparison.Ordinal)
@@ -259,6 +278,18 @@ public sealed class BrokerSession
     {
         lock (_gate)
         {
+            if (_activeRunLease is null || !string.Equals(_activeRunLease.RunId, runId, StringComparison.Ordinal))
+            {
+                errorCode = "run_not_open";
+                return false;
+            }
+
+            if (_activeRunLease.IsExpired(DateTimeOffset.UtcNow))
+            {
+                errorCode = "lease_expired";
+                return false;
+            }
+
             if (!_pendingDecisions.TryGetValue(preparationToken, out var entry)
                 || entry.Consumed
                 || !string.Equals(entry.Kind, "preparation", StringComparison.Ordinal)
@@ -294,7 +325,9 @@ public sealed class BrokerSession
     private long CurrentBindingVersionLocked(string runId)
     {
         var lease = _activeRunLease;
-        return lease is not null && string.Equals(lease.RunId, runId, StringComparison.Ordinal)
+        return lease is not null
+            && !lease.IsExpired(DateTimeOffset.UtcNow)
+            && string.Equals(lease.RunId, runId, StringComparison.Ordinal)
             ? lease.BindingVersion
             : -1;
     }
@@ -304,6 +337,11 @@ public sealed class BrokerSession
         if (_activeRunLease is null || !string.Equals(_activeRunLease.RunId, runId, StringComparison.Ordinal))
         {
             throw new BrokerSessionException("run_not_open");
+        }
+
+        if (_activeRunLease.IsExpired(DateTimeOffset.UtcNow))
+        {
+            throw new BrokerSessionException("lease_expired");
         }
 
         return _activeRunLease;
@@ -356,6 +394,16 @@ public sealed class BrokerSession
             if (lease.IsExpired(DateTimeOffset.UtcNow))
             {
                 errorCode = "lease_expired";
+                return false;
+            }
+
+            // A connection may only attach a run to the session it opened. Without
+            // this check a caller that owns session A could submit a lease for
+            // session B and then address that run through A's socket.
+            if (_activeSessionId is not null
+                && !string.Equals(_activeSessionId, lease.SessionId, StringComparison.Ordinal))
+            {
+                errorCode = "session_conflict";
                 return false;
             }
 

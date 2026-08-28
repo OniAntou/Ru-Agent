@@ -700,7 +700,7 @@ class HarnessSession:
             checks.extend(asyncio.run(self._probe_broker_approval_lifecycle()))
         chat_checks = asyncio.run(self._probe_chat_websocket())
         if deterministic:
-            chat_checks.extend(asyncio.run(self._probe_agent_websocket()))
+            chat_checks.extend(asyncio.run(self._probe_agent_api()))
         voice_checks = asyncio.run(self._probe_voice_websocket())
         checks.extend(chat_checks)
         checks.extend(voice_checks)
@@ -712,97 +712,158 @@ class HarnessSession:
         )
         return checks
 
-    async def _probe_agent_websocket(self) -> list[CheckResult]:
-        uri = self._websocket_url("/chat", self._desktop_token)
+    async def _probe_agent_api(self) -> list[CheckResult]:
+        """Exercise the real Agent v1 HTTP/SSE lifecycle with a read-only fixture."""
+
+        started = time.perf_counter()
         events: list[dict[str, Any]] = []
+        status: str | None = None
+        terminal_statuses = {
+            "completed",
+            "failed",
+            "cancelled",
+            "interrupted",
+            "reconciliation_required",
+        }
         try:
-            async with connect(uri, proxy=None, open_timeout=10, close_timeout=2) as socket:
-                await socket.send(
-                    json.dumps(
-                        {
-                            "prompt": "Harness agent tool turn",
-                            "session_id": "harness-agent-session",
-                            "correlation_id": "harness-agent-correlation",
-                            "agent_mode": True,
-                        }
-                    )
+            fixture = self._workspace_root / "harness-agent.txt"
+            fixture.write_text("deterministic agent fixture\n", encoding="utf-8")
+            prompt = f"Harness agent tool turn {secrets.token_hex(8)}"
+            timeout = httpx.Timeout(10.0, connect=5.0)
+            async with httpx.AsyncClient(
+                base_url=self.edge_base_url,
+                headers={"Authorization": f"Bearer {self._desktop_token}"},
+                timeout=timeout,
+                trust_env=False,
+            ) as client:
+                session_response = await client.post("/sessions/new")
+                if session_response.status_code // 100 != 2:
+                    raise RuntimeError("session_create_failed")
+                session_payload = session_response.json()
+                session_id = session_payload.get("session_id")
+                if not isinstance(session_id, str) or len(session_id) != 32:
+                    raise RuntimeError("session_id_invalid")
+
+                run_response = await client.post(
+                    "/agent/v1/runs",
+                    json={
+                        "session_id": session_id,
+                        "workspace_path": str(self._workspace_root.resolve()),
+                        "prompt": prompt,
+                        "preset": "standard",
+                        "idempotency_key": secrets.token_hex(16),
+                    },
                 )
+                if run_response.status_code not in {200, 201}:
+                    raise RuntimeError("agent_run_create_failed")
+                run_payload = run_response.json()
+                run_id = run_payload.get("run_id")
+                trust_request_id = run_payload.get("trust_request_id")
+                display_identity_hash = run_payload.get("display_identity_hash")
+                if not isinstance(run_id, str) or not run_id.startswith("run_"):
+                    raise RuntimeError("run_id_invalid")
+
+                if trust_request_id is not None or display_identity_hash is not None:
+                    if not isinstance(trust_request_id, str) or not isinstance(display_identity_hash, str):
+                        raise RuntimeError("trust_challenge_invalid")
+                    trust_response = await client.post(
+                        f"/agent/v1/runs/{run_id}/trust",
+                        json={
+                            "trust_request_id": trust_request_id,
+                            "display_identity_hash": display_identity_hash,
+                            "decision": "approve",
+                        },
+                    )
+                    if trust_response.status_code != 200:
+                        raise RuntimeError("workspace_trust_failed")
+
                 deadline = time.monotonic() + 30
                 while time.monotonic() < deadline:
-                    message = await asyncio.wait_for(
-                        socket.recv(), timeout=max(0.1, deadline - time.monotonic())
-                    )
-                    if isinstance(message, str):
-                        payload = json.loads(message)
-                        if isinstance(payload, dict):
-                            events.append(payload)
-                        if isinstance(payload, dict) and payload.get("type") in {"done", "error"}:
-                            break
+                    run_state = await client.get(f"/agent/v1/runs/{run_id}")
+                    if run_state.status_code != 200:
+                        raise RuntimeError("agent_run_read_failed")
+                    current = run_state.json()
+                    status_value = current.get("status")
+                    if not isinstance(status_value, str):
+                        raise RuntimeError("agent_status_invalid")
+                    status = status_value
+                    if status in terminal_statuses:
+                        break
+                    await asyncio.sleep(0.2)
+                else:
+                    raise TimeoutError("agent_run_timeout")
 
+                sse_response = await client.get(
+                    f"/agent/v1/runs/{run_id}/events",
+                    params={"live": "0", "after_sequence": "0"},
+                )
+                if sse_response.status_code != 200:
+                    raise RuntimeError("agent_events_read_failed")
+                raw_sse = sse_response.text
+                if len(raw_sse.encode("utf-8")) > 1 * 1024 * 1024:
+                    raise RuntimeError("agent_events_too_large")
+                for frame in raw_sse.split("\n\n"):
+                    data_lines = [line[5:].lstrip() for line in frame.splitlines() if line.startswith("data:")]
+                    if not data_lines:
+                        continue
+                    event = json.loads("\n".join(data_lines))
+                    if isinstance(event, dict):
+                        if any(line == "event: final_snapshot" for line in frame.splitlines()):
+                            event["event_type"] = "final_snapshot"
+                        events.append(event)
+
+            event_types = {
+                event.get("event_type")
+                for event in events
+                if isinstance(event.get("event_type"), str)
+            }
+            loop_completed = (
+                status == "completed"
+                and "tool.proposed" in event_types
+                and "tool.execution_completed" in event_types
+                and any(event.get("event_type") == "final_snapshot" for event in events)
+            )
+            private_absent = not _contains_private_agent_metadata(events)
+            duration = (time.perf_counter() - started) * 1000
+            return [
+                CheckResult(
+                    "agent.synthetic_tool_loop",
+                    "passed" if loop_completed else "failed",
+                    duration,
+                    reason=None if loop_completed else "agent_tool_loop_not_completed",
+                    details={
+                        "status": status,
+                        "event_count": len(events),
+                        "tool_proposed": "tool.proposed" in event_types,
+                        "tool_execution_completed": "tool.execution_completed" in event_types,
+                    },
+                ),
+                CheckResult(
+                    "agent.private_metadata",
+                    "passed" if private_absent else "failed",
+                    duration,
+                    reason=None if private_absent else "private_agent_metadata_visible",
+                ),
+            ]
         except Exception as error:
+            duration = (time.perf_counter() - started) * 1000
+            details = {"error_type": type(error).__name__}
             return [
                 CheckResult(
                     "agent.synthetic_tool_loop",
                     "failed",
-                    0.0,
+                    duration,
                     reason="request_error",
-                    details={"error_type": type(error).__name__},
+                    details=details,
                 ),
                 CheckResult(
                     "agent.private_metadata",
                     "failed",
-                    0.0,
+                    duration,
                     reason="request_error",
-                    details={"error_type": type(error).__name__},
+                    details=details,
                 ),
             ]
-
-        terminal = [
-            event
-            for event in events
-            if event.get("type") == "agent.activity"
-            and event.get("status") in {
-                "succeeded",
-                "failed",
-                "denied",
-                "approval_required",
-                "cancelled",
-                "timed_out",
-            }
-        ]
-        done = [event for event in events if event.get("type") == "done"]
-        loop_completed = agent_tool_loop_completed(events, expected_status="failed")
-        truthful_reply = (
-            len(done) == 1
-            and done[0].get("content")
-            == "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows."
-        )
-        private_absent = not _contains_private_agent_metadata(events)
-        return [
-            CheckResult(
-                "agent.synthetic_tool_loop",
-                "passed" if loop_completed and truthful_reply else "failed",
-                0.0,
-                reason=(
-                    None
-                    if loop_completed and truthful_reply
-                    else "agent_tool_loop_not_completed"
-                ),
-                details={
-                    "expected_status": "failed",
-                    "terminal_count": len(terminal),
-                    "truthful_reply": truthful_reply,
-                },
-            ),
-            CheckResult(
-                "agent.private_metadata",
-                "passed" if private_absent else "failed",
-                0.0,
-                reason=None
-                if private_absent
-                else "private_agent_metadata_visible",
-            ),
-        ]
 
     async def _probe_broker_approval_lifecycle(self) -> list[CheckResult]:
         """Exercise approval once and replay it over the private Broker protocol."""

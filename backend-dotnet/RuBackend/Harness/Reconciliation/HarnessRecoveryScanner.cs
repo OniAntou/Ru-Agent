@@ -1,7 +1,13 @@
+using System.Security.Cryptography;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Persistence;
+using RuAgent.Harness.Persistence.Policy;
+using RuAgent.Harness.Persistence.Workspace;
+using RuBackend.Harness.Policy;
+using RuBackend.Harness.Workspace;
+using RuBackend.Harness;
 
 namespace RuBackend.Harness.Reconciliation;
 
@@ -194,25 +200,38 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
     private readonly IHarnessEventStore _store;
     private readonly HarnessSqliteOptions _sqliteOptions;
     private readonly ILogger<HarnessRecoveryStartupService> _logger;
+    private readonly WorkspaceTrustService? _trustService;
+    private readonly SqliteWorkspaceStore? _workspaceStore;
+    private readonly HarnessPolicySnapshotService? _policySnapshots;
+    private readonly IAgentRuntimeRootRegistry? _runtimeRoots;
 
     public HarnessRecoveryStartupService(
         IHarnessEventStore store,
         HarnessSqliteOptions sqliteOptions,
-        ILogger<HarnessRecoveryStartupService> logger)
+        ILogger<HarnessRecoveryStartupService> logger,
+        WorkspaceTrustService? trustService = null,
+        SqliteWorkspaceStore? workspaceStore = null,
+        HarnessPolicySnapshotService? policySnapshots = null,
+        IAgentRuntimeRootRegistry? runtimeRoots = null)
     {
         _store = store;
         _sqliteOptions = sqliteOptions;
         _logger = logger;
+        _trustService = trustService;
+        _workspaceStore = workspaceStore;
+        _policySnapshots = policySnapshots;
+        _runtimeRoots = runtimeRoots;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try
         {
+            var pendingRunIds = await ListNonTerminalRunIdsAsync(stoppingToken).ConfigureAwait(false);
             var scanner = new HarnessRecoveryScanner(
                 _store,
                 new SystemTimeProvider(),
-                ListNonTerminalRunIdsAsync);
+                _ => Task.FromResult<IReadOnlyList<RunId>>(pendingRunIds));
             var recovered = await scanner.ScanPendingRunsAsync(stoppingToken).ConfigureAwait(false);
             foreach (var summary in recovered)
             {
@@ -221,6 +240,8 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
                     summary.RunId.Value,
                     summary.Action);
             }
+
+            await RehydrateRuntimeRootsAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -228,6 +249,65 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         catch (Exception error)
         {
             _logger.LogError(error, "startup recovery scan failed");
+        }
+    }
+
+    private async Task RehydrateRuntimeRootsAsync(
+        IReadOnlyList<RunId> runIds,
+        CancellationToken cancellationToken)
+    {
+        if (_trustService is null
+            || _workspaceStore is null
+            || _policySnapshots is null
+            || _runtimeRoots is null)
+        {
+            return;
+        }
+
+        foreach (var runId in runIds)
+        {
+            try
+            {
+                var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
+                if (run is null || run.State.IsTerminal() || run.State == HarnessRunState.ReconciliationRequired)
+                {
+                    continue;
+                }
+
+                var storedWorkspace = await _workspaceStore
+                    .GetAsync(run.WorkspaceId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (storedWorkspace is null)
+                {
+                    _logger.LogWarning("run {RunId} has no persisted workspace registration; keeping it parked", runId.Value);
+                    continue;
+                }
+
+                var root = await _trustService
+                    .DecryptCanonicalRootAsync(storedWorkspace, cancellationToken)
+                    .ConfigureAwait(false);
+                var snapshot = await _policySnapshots
+                    .LoadAsync(storedWorkspace.Identity, run.Preset, run.RunId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (snapshot.Version != run.PolicySnapshotVersion
+                    || !string.Equals(snapshot.Sha256, run.PolicySnapshotSha256, StringComparison.Ordinal))
+                {
+                    _logger.LogError(
+                        "run {RunId} policy snapshot no longer matches its durable contract; keeping it parked",
+                        runId.Value);
+                    continue;
+                }
+
+                _runtimeRoots.Register(run.RunId, root, snapshot);
+            }
+            catch (Exception error) when (
+                error is HarnessStoreException
+                    or IOException
+                    or UnauthorizedAccessException
+                    or CryptographicException)
+            {
+                _logger.LogWarning(error, "run {RunId} could not be rehydrated; keeping it parked", runId.Value);
+            }
         }
     }
 

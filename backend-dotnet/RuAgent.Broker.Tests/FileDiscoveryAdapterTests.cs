@@ -357,6 +357,43 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
     }
 
     [Fact]
+    public void Policy_context_defaults_optional_discovery_path_to_workspace_root()
+    {
+        var lease = CreateLease("standard", _root);
+        var factory = new PolicyContextFactory(lease);
+
+        foreach (var toolId in new[] { "files.list", "files.glob", "files.search" })
+        {
+            var arguments = toolId switch
+            {
+                "files.glob" => new JsonObject { ["pattern"] = "*.txt" },
+                "files.search" => new JsonObject { ["query"] = "needle" },
+                _ => new JsonObject(),
+            };
+
+            var context = factory.Create(toolId, "1.0.0", arguments);
+
+            Assert.NotNull(context.Target);
+            Assert.Equal(lease.CanonicalRoot, context.Target!.CanonicalPath);
+        }
+    }
+
+    [Fact]
+    public void Policy_intent_hash_binds_non_path_arguments()
+    {
+        var lease = CreateLease("standard", _root);
+        var factory = new PolicyContextFactory(lease);
+
+        var searchA = factory.Create("files.search", "1.0.0", new JsonObject { ["query"] = "alpha" });
+        var searchB = factory.Create("files.search", "1.0.0", new JsonObject { ["query"] = "beta" });
+        var readA = factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = "src/a.txt", ["offset"] = 0, ["limit"] = 10 });
+        var readB = factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = "src/a.txt", ["offset"] = 10, ["limit"] = 10 });
+
+        Assert.NotEqual(searchA.IntentHash, searchB.IntentHash);
+        Assert.NotEqual(readA.IntentHash, readB.IntentHash);
+    }
+
+    [Fact]
     public void Policy_asks_for_protected_and_outside_in_standard()
     {
         var lease = CreateLease("standard", _root);

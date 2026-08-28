@@ -43,37 +43,67 @@ public sealed class SqlitePolicyRuleStore
         RunId? runId,
         DateTimeOffset now,
         CancellationToken cancellationToken)
+        => await CreateManyAsync(
+            new[] { rule },
+            workspaceId,
+            runId,
+            now,
+            cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Persists a set of related rules atomically. External-directory approvals use
+    /// this to materialize one bounded boundary across the non-destructive file
+    /// tools without leaving a partially broadened project policy on failure.
+    /// </summary>
+    public async Task CreateManyAsync(
+        IReadOnlyList<PolicyRule> rules,
+        WorkspaceId? workspaceId,
+        RunId? runId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(rule);
+        ArgumentNullException.ThrowIfNull(rules);
+        if (rules.Count == 0)
+        {
+            throw new ArgumentException("At least one policy rule is required.", nameof(rules));
+        }
+
         if (now == default)
         {
             throw new ArgumentException("Timestamp must be valid.", nameof(now));
         }
 
-        ValidateRule(rule);
-        ValidateOwnership(rule.Scope, workspaceId, runId);
-
-        var encrypted = await EncryptMatcherAsync(rule.Matcher, rule.RuleId, cancellationToken).ConfigureAwait(false);
-        var document = BuildDocument(rule, encrypted, now);
+        var prepared = new List<(PolicyRule Rule, byte[] Document)>(rules.Count);
+        foreach (var rule in rules)
+        {
+            ArgumentNullException.ThrowIfNull(rule);
+            ValidateRule(rule);
+            ValidateOwnership(rule.Scope, workspaceId, runId);
+            var encrypted = await EncryptMatcherAsync(rule.Matcher, rule.RuleId, cancellationToken).ConfigureAwait(false);
+            prepared.Add((rule, BuildDocument(rule, encrypted, now)));
+        }
 
         await using var connection = await _options.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = connection.BeginTransaction(deferred: false);
         try
         {
-            switch (rule.Scope)
+            foreach (var item in prepared)
             {
-                case PolicyRuleScope.Global:
-                    await InsertGlobalAsync(connection, transaction, rule, document, now, cancellationToken).ConfigureAwait(false);
-                    break;
-                case PolicyRuleScope.Project:
-                    await InsertProjectAsync(connection, transaction, rule, workspaceId!.Value, document, now, cancellationToken).ConfigureAwait(false);
-                    break;
-                case PolicyRuleScope.Run:
-                case PolicyRuleScope.Once:
-                    await InsertRunAsync(connection, transaction, rule, runId!.Value, document, now, cancellationToken).ConfigureAwait(false);
-                    break;
-                default:
-                    throw new HarnessStoreException("policy_scope_invalid");
+                switch (item.Rule.Scope)
+                {
+                    case PolicyRuleScope.Global:
+                        await InsertGlobalAsync(connection, transaction, item.Rule, item.Document, now, cancellationToken).ConfigureAwait(false);
+                        break;
+                    case PolicyRuleScope.Project:
+                        await InsertProjectAsync(connection, transaction, item.Rule, workspaceId!.Value, item.Document, now, cancellationToken).ConfigureAwait(false);
+                        break;
+                    case PolicyRuleScope.Run:
+                    case PolicyRuleScope.Once:
+                        await InsertRunAsync(connection, transaction, item.Rule, runId!.Value, item.Document, now, cancellationToken).ConfigureAwait(false);
+                        break;
+                    default:
+                        throw new HarnessStoreException("policy_scope_invalid");
+                }
             }
 
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);

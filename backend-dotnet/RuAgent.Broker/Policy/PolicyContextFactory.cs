@@ -29,8 +29,15 @@ public sealed class PolicyContextFactory
         var operationClass = OperationClassFor(toolId);
         var networkDeclared = IsTrue(arguments, "network_intent") || IsTrue(arguments, "network");
         int? timeoutMs = null;
-        if (arguments["timeout_ms"] is JsonValue timeoutValue && timeoutValue.TryGetValue<int>(out var parsedTimeout))
+        if (arguments.ContainsKey("timeout_ms"))
         {
+            if (arguments["timeout_ms"] is not JsonValue timeoutValue
+                || !timeoutValue.TryGetValue<int>(out var parsedTimeout)
+                || parsedTimeout < 1)
+            {
+                throw new PolicyContextException("malformed_call");
+            }
+
             timeoutMs = parsedTimeout;
         }
 
@@ -57,13 +64,35 @@ public sealed class PolicyContextFactory
                 throw new PolicyContextException("invalid_cwd", error);
             }
 
-            resolvedExecutable = OptionalText(arguments, "executable");
+            if (string.Equals(toolId, "terminal.run", StringComparison.Ordinal))
+            {
+                resolvedExecutable = OptionalText(arguments, "executable")
+                    ?? throw new PolicyContextException("malformed_call");
+            }
+            else
+            {
+                _ = OptionalText(arguments, "script")
+                    ?? throw new PolicyContextException("malformed_call");
+                _ = OptionalText(arguments, "shell");
+            }
+
             if (arguments["arguments"] is JsonArray argvNode)
             {
+                if (argvNode.Count > RuAgent.Protocol.TerminalLimits.MaxArguments)
+                {
+                    throw new PolicyContextException("malformed_call");
+                }
+
                 var list = new List<string>(argvNode.Count);
                 foreach (var item in argvNode)
                 {
                     if (item is not JsonValue value || !value.TryGetValue<string>(out var element))
+                    {
+                        throw new PolicyContextException("malformed_call");
+                    }
+
+                    if (element.Length > RuAgent.Protocol.TerminalLimits.MaxArgumentChars
+                        || element.Contains('\0'))
                     {
                         throw new PolicyContextException("malformed_call");
                     }
@@ -80,19 +109,55 @@ public sealed class PolicyContextFactory
         }
         else
         {
-            var pathInput = OptionalText(arguments, "path");
-            if (pathInput is null)
+            // Discovery tools operate on the workspace root when `path` is omitted;
+            // this mirrors their public schema and keeps the policy context identical
+            // between evaluate and execute.
+            if (operationClass == PolicyOperationClasses.Restore)
             {
-                throw new PolicyContextException("malformed_call");
-            }
+                // The runtime restore call is keyed by recovery_id, while the
+                // policy test/evaluation seam may still supply a path so that
+                // protected/outside-workspace checks remain deterministic.  A
+                // restore intent must provide one of these two bindings.
+                var recoveryId = OptionalText(arguments, "recovery_id");
+                var pathInput = OptionalText(arguments, "path");
+                if (recoveryId is null && pathInput is null)
+                {
+                    throw new PolicyContextException("malformed_call");
+                }
 
-            try
-            {
-                target = resolver.Resolve(pathInput);
+                if (pathInput is not null)
+                {
+                    try
+                    {
+                        target = resolver.Resolve(pathInput);
+                    }
+                    catch (ArgumentException error)
+                    {
+                        throw new PolicyContextException("invalid_path", error);
+                    }
+                }
             }
-            catch (ArgumentException error)
+            else
             {
-                throw new PolicyContextException("invalid_path", error);
+                var pathInput = OptionalText(arguments, "path")
+                    ?? (operationClass is PolicyOperationClasses.List
+                        or PolicyOperationClasses.Glob
+                        or PolicyOperationClasses.Search
+                        ? "."
+                        : null);
+                if (pathInput is null)
+                {
+                    throw new PolicyContextException("malformed_call");
+                }
+
+                try
+                {
+                    target = resolver.Resolve(pathInput);
+                }
+                catch (ArgumentException error)
+                {
+                    throw new PolicyContextException("invalid_path", error);
+                }
             }
         }
 
@@ -117,7 +182,8 @@ public sealed class PolicyContextFactory
                 resolvedExecutable,
                 argv,
                 canonicalCwd,
-                operationClass),
+                operationClass,
+                arguments),
             TimeoutMs: timeoutMs);
     }
 
@@ -137,17 +203,39 @@ public sealed class PolicyContextFactory
         _ => PolicyOperationClasses.Mutation,
     };
 
-    private static string? OptionalText(JsonObject arguments, string key) =>
-        arguments[key] is JsonValue value
-        && value.TryGetValue<string>(out var result)
-        && !string.IsNullOrWhiteSpace(result)
-            ? result
-            : null;
+    private static string? OptionalText(JsonObject arguments, string key)
+    {
+        if (!arguments.ContainsKey(key))
+        {
+            return null;
+        }
 
-    private static bool IsTrue(JsonObject arguments, string key) =>
-        arguments[key] is JsonValue value
-        && value.TryGetValue<bool>(out var flag)
-        && flag;
+        if (arguments[key] is not JsonValue value
+            || !value.TryGetValue<string>(out var result)
+            || string.IsNullOrWhiteSpace(result)
+            || result.Contains('\0'))
+        {
+            throw new PolicyContextException("malformed_call");
+        }
+
+        return result;
+    }
+
+    private static bool IsTrue(JsonObject arguments, string key)
+    {
+        if (!arguments.ContainsKey(key))
+        {
+            return false;
+        }
+
+        if (arguments[key] is not JsonValue value
+            || !value.TryGetValue<bool>(out var flag))
+        {
+            throw new PolicyContextException("malformed_call");
+        }
+
+        return flag;
+    }
 
     private static string ToRelative(string root, string canonicalPath)
     {
@@ -162,7 +250,8 @@ public sealed class PolicyContextFactory
         string? resolvedExecutable,
         IReadOnlyList<string> argv,
         string? canonicalCwd,
-        string operationClass)
+        string operationClass,
+        JsonObject arguments)
     {
         var builder = new StringBuilder();
         builder.Append(toolId).Append('|').Append(toolVersion).Append('|')
@@ -170,7 +259,38 @@ public sealed class PolicyContextFactory
             .Append(resolvedExecutable ?? "-").Append('|')
             .Append(string.Join(' ', argv)).Append('|')
             .Append(canonicalCwd ?? "-").Append('|')
-            .Append(operationClass);
+            .Append(operationClass).Append('|')
+            // Bind every model-controlled argument, not only the resolved path. Without
+            // this, a token for files.search could be replayed with a different query or
+            // a files.read token could be replayed with a different offset/limit.
+            .Append(CanonicalArgumentsHash(arguments));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()))).ToLowerInvariant();
+    }
+
+    private static string CanonicalArgumentsHash(JsonObject arguments)
+    {
+        var canonical = Canonicalize(arguments).ToJsonString();
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    private static JsonNode Canonicalize(JsonNode node)
+    {
+        if (node is JsonObject obj)
+        {
+            var ordered = new JsonObject();
+            foreach (var property in obj.OrderBy(item => item.Key, StringComparer.Ordinal))
+            {
+                ordered[property.Key] = property.Value is null ? null : Canonicalize(property.Value);
+            }
+
+            return ordered;
+        }
+
+        if (node is JsonArray array)
+        {
+            return new JsonArray(array.Select(item => item is null ? null : Canonicalize(item)).ToArray());
+        }
+
+        return node.DeepClone();
     }
 }

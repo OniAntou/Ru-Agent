@@ -41,7 +41,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
     private readonly IStreamSanitizer _sanitizer;
     private readonly ConversationTurnGate _gate;
     private readonly IDiagnosticEmitter? _diagnosticEmitter;
-    private readonly IAgentTurnCoordinator? _agent;
+
 
     public ConversationCoordinator(
         ISessionStore sessions,
@@ -53,8 +53,7 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         IMetadataPolicy metadata,
         IStreamSanitizer sanitizer,
         ConversationTurnGate gate,
-        IDiagnosticEmitter? diagnosticEmitter = null,
-        IAgentTurnCoordinator? agent = null)
+        IDiagnosticEmitter? diagnosticEmitter = null)
     {
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _memory = memory ?? throw new ArgumentNullException(nameof(memory));
@@ -66,7 +65,6 @@ public sealed class ConversationCoordinator : IConversationCoordinator
         _sanitizer = sanitizer ?? throw new ArgumentNullException(nameof(sanitizer));
         _gate = gate ?? throw new ArgumentNullException(nameof(gate));
         _diagnosticEmitter = diagnosticEmitter;
-        _agent = agent;
     }
 
     public IAsyncEnumerable<ChatEvent> HandleAsync(
@@ -138,18 +136,13 @@ public sealed class ConversationCoordinator : IConversationCoordinator
             }
 
             var settings = await _settings.ReadAsync(cancellationToken).ConfigureAwait(false);
-            var modelTools = _agent is null
-                ? Array.Empty<AgentToolCapability>()
-                : (await _agent.GetModelCapabilitiesAsync(
-                        request.Profile,
-                        cancellationToken).ConfigureAwait(false))
-                    .OrderBy(tool => tool.ToolId, StringComparer.Ordinal)
-                    .ThenBy(tool => tool.ToolVersion, StringComparer.Ordinal)
-                    .ToArray();
+            // Phase-4 cutover: Chat WebSocket is read-only. It never
+            // advertises Agent tools or wires a tool handler. Agent traffic
+            // uses the authenticated /agent/v1/* API.
+            var modelTools = Array.Empty<AgentToolCapability>();
             var advertisedTools = new WorkerAdvertisedTools(
-                modelTools
-                    .Select(tool => (tool.ToolId, tool.ToolVersion))
-                    .ToHashSet());
+                new HashSet<(string ToolId, string ToolVersion)>());
+
             var turns = await _sessions.GetContextTurnsAsync(
                 sessionId,
                 MaximumContextTurns,
@@ -176,23 +169,11 @@ public sealed class ConversationCoordinator : IConversationCoordinator
                 turns.Select(turn => new WorkerTurn(turn.Prompt, turn.Response)).ToArray(),
                 ShouldShareMemory(settings) ? RenderMemory(memories) : string.Empty,
                 BuildVtsInstruction(catalog),
-                BuildWorkerSettings(settings, request.Profile, modelTools))
+                BuildWorkerSettings(settings, CapabilityProfile.Chat, modelTools))
             {
                 LastActionOutcome = lastActionOutcome,
             };
-            if (_agent is not null && modelTools.Length > 0)
-            {
-                workerRequest = workerRequest with
-                {
-                    ToolHandler = (tool, toolCancellation) =>
-                        _agent.ExecuteToolAsync(
-                            new AgentTurnRequest(
-                                tool,
-                                value => WriteAsync(writer, value, toolCancellation),
-                                request.Profile),
-                            toolCancellation),
-                };
-            }
+
 
             var rawStream = string.Empty;
             var visibleStream = string.Empty;

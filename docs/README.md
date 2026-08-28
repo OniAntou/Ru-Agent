@@ -17,12 +17,18 @@ an operating contract.
 - [Canonical route data](../backend-dotnet/public-route-contract.json)
 - [Local conversational-model retirement](adr/0005-retire-legacy-llama-line.md)
 
-## Implemented checkpoint (Phase 2 — policy authority and complete file tools, 2026-08-25)
+## Implemented checkpoints (Phases 1–3 selected surfaces, 2026-08-28)
 
 - [Phase 1: Harness Foundation and Headless Read-Only Tracer](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-01-harness-foundation.md) — Public Host owns Worker/Broker in one Job Object, Worker v2 one-step `AssistantStep`, 54 HTTP + 2 WS (13 `/agent/v1/*` additive, `RuBackend:AgentHarness:Version=v1` default), encrypted SQLite harness store, SSE reconnect with durable `id:<sequence>`, and thin `RuAgent.Cli` tracer (safe NDJSON, no private payload auto-fetch).
-- [Phase 2: Policy Authority and Complete File Tools](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-02-policy-file-tools.md) — Standard allows ordinary trusted-workspace reads/creates/edits and asks for delete/protected/outside/network/unknown; Full Access changes fallback but never bypasses trust; immutable encrypted-at-rest `PolicySnapshot`/`WorkspaceTrust` snapshots, `CanonicalPathResolver`/`ProtectedPathCatalog` `v1`, Broker v2 `PolicyContext`/`PolicySnapshotEvaluator`, durable approvals first-writer-wins `approval_stale` with exact scope preview and old-snapshot execution ordering, complete `files.*` (`list`/`glob`/`search`/`read` offset/limit plus hash-guarded `write`/`edit`/`apply_patch` and recoverable `delete`/`restore` one-time), CLI `policy list`/`import`/`remove` and `approve`/`deny` plus `run --preset full` interactive, terminal/Git/reconciliation complete in Phase 3.
+- [Phase 2: Policy Authority and File Tools](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-02-policy-file-tools.md) — Standard allows ordinary trusted-workspace reads/creates/edits and asks for delete/protected/network/unknown; explicit absolute paths outside the root use `external_directory_required` and can be granted for the current run or project, while Full Access changes fallback but never bypasses trust; immutable encrypted-at-rest `PolicySnapshot`/`WorkspaceTrust` snapshots, `CanonicalPathResolver`/`ProtectedPathCatalog` `v1`, Broker v2 `PolicyContext`/`PolicySnapshotEvaluator`, durable approvals first-writer-wins `approval_stale` with exact scope preview and old-snapshot execution ordering, model-usable file tools (`list`/`glob`/`search`/`read`, hash-guarded `write`/`edit`, recoverable `delete`/`restore` one-time), CLI `policy list`/`import`/`remove` and `approve`/`deny` plus `run --preset full` interactive. `files.apply_patch` is not advertised or model-usable in the current runtime.
+- [Phase 3: Terminal and Git](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-03-terminal-git.md) — The headless Agent v2 path exposes policy-evaluated `terminal.run`/`terminal.shell` with explicit per-request approval, and the run reconciliation route is active. The managed Git commit workflow (Task 6) is not shipped; Git commands remain ordinary terminal requests and are not a managed commit capability.
+- Desktop entry point — the WinUI composer exposes an explicit Chat/Coding
+  Agent mode pill (the dropdown contains only those two choices) plus a
+  separate Agent configuration button; technical Agent surfaces remain
+  available under `Công cụ`, while Agent turns use the shared `/agent/v1/*`
+  API/SSE path.
 
-## Approved future work (Phases 3-4)
+## Approved future work (remaining Phase 3 work and Phase 4)
 
 - [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md)
 - [OpenCode/Pi coding-loop parity implementation program](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity.md)

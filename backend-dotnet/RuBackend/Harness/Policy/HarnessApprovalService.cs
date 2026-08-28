@@ -20,6 +20,16 @@ public sealed record ApprovalPersistOutcome(
 
 public sealed class HarnessApprovalService
 {
+    private static readonly (string ToolId, string OperationClass)[] ExternalFileOperations =
+    [
+        ("files.list", "list"),
+        ("files.glob", "glob"),
+        ("files.search", "search"),
+        ("files.read", "read"),
+        ("files.write", "write"),
+        ("files.edit", "edit"),
+    ];
+
     private readonly HarnessSqliteOptions _options;
     private readonly IHarnessKeyStore _keyStore;
     private readonly IIdGenerator _ids;
@@ -59,7 +69,9 @@ public sealed class HarnessApprovalService
         ApprovalCommand command,
         WorkspaceId workspaceId,
         RunId? runId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? externalDirectory = null,
+        bool externalDirectoryRequested = false)
     {
         ArgumentNullException.ThrowIfNull(binding);
         _ = workspaceId.Value;
@@ -98,8 +110,22 @@ public sealed class HarnessApprovalService
             || command.Kind == ApprovalCommandKind.AllowProject)
         {
             var scope = command.Kind == ApprovalCommandKind.AllowRun ? "run" : "project";
-            var pathPatterns = binding.CanonicalPath is null ? Array.Empty<string>() : new[] { Sanitize(binding.CanonicalPath) };
-            var cwdPattern = binding.Cwd is null ? null : Sanitize(binding.Cwd);
+            var externalDirectoryPattern = externalDirectory is not null
+                && ExternalDirectoryPolicy.TryCreatePattern(externalDirectory, out var generatedPattern)
+                    ? generatedPattern
+                    : null;
+            var isTerminal = binding.OperationClass == "terminal";
+            var reusableExternalDirectory = externalDirectoryPattern is not null;
+            var pathPatterns = externalDirectoryRequested && !reusableExternalDirectory
+                ? Array.Empty<string>()
+                : binding.CanonicalPath is null
+                    ? Array.Empty<string>()
+                    : new[] { externalDirectoryPattern ?? Sanitize(binding.CanonicalPath) };
+            var cwdPattern = binding.Cwd is null
+                ? null
+                : externalDirectoryPattern is not null && isTerminal
+                    ? externalDirectoryPattern
+                    : Sanitize(binding.Cwd);
             var argvPatterns = binding.Argv.Select(Sanitize).ToArray();
 
             candidateJson = new JsonObject
@@ -112,44 +138,83 @@ public sealed class HarnessApprovalService
                 ["argv_patterns"] = new JsonArray(argvPatterns.Select(p => (JsonNode?)p).ToArray()),
             };
 
-            // Try to persist reusable rule
-            try
-            {
-                var matcher = new PolicyMatcher(
-                    ToolId: binding.ToolId,
-                    ToolVersion: binding.ToolVersion,
-                    CanonicalPathPattern: pathPatterns.Length == 0 ? null : pathPatterns[0],
-                    ResolvedExecutable: binding.ResolvedExecutable is null ? null : Sanitize(binding.ResolvedExecutable),
-                    ArgvPattern: argvPatterns.Length == 0 ? null : argvPatterns,
-                    CwdPattern: cwdPattern,
-                    OperationClass: binding.OperationClass,
-                    NetworkIntent: binding.NetworkIntent);
-
-                var policyScope = scope == "run" ? PolicyRuleScope.Run : PolicyRuleScope.Project;
-                var newRuleId = _ids.NewPolicyRuleId();
-                ruleId = newRuleId.Value;
-                var rule = new PolicyRule(
-                    RuleId: newRuleId,
-                    Scope: policyScope,
-                    Decision: PolicyDecision.Allow,
-                    Matcher: matcher,
-                    CreationOrder: 0,
-                    ExpiresAt: null);
-
-                var store = Store;
-                if (policyScope == PolicyRuleScope.Run)
-                {
-                    if (runId is null) throw new HarnessStoreException("policy_scope_ownership_invalid");
-                    await store.CreateAsync(rule, null, runId.Value, _time.UtcNow, cancellationToken).ConfigureAwait(false);
-                }
-                else
-                {
-                    await store.CreateAsync(rule, workspaceId, null, _time.UtcNow, cancellationToken).ConfigureAwait(false);
-                }
-            }
-            catch (Exception ex) when (ex is HarnessStoreException or InvalidOperationException or System.Data.Common.DbException or Microsoft.Data.Sqlite.SqliteException)
+            // A request classified as external must never fall back to an exact
+            // reusable rule when its canonical directory cannot be represented as
+            // a safe descendant pattern (for example a filesystem root or a
+            // directory that disappeared during approval). The one-time intent
+            // bridge still authorizes the already-approved call; only durable
+            // broadening is refused.
+            if (externalDirectoryRequested && !reusableExternalDirectory)
             {
                 ruleSaveFailed = true;
+            }
+
+            // Try to persist reusable rule
+            if (!externalDirectoryRequested || reusableExternalDirectory)
+            {
+                try
+                {
+                    var policyScope = scope == "run" ? PolicyRuleScope.Run : PolicyRuleScope.Project;
+                    var store = Store;
+                    var rules = new List<PolicyRule>();
+                    if (externalDirectoryPattern is not null
+                        && !isTerminal
+                        && binding.ToolId.StartsWith("files.", StringComparison.Ordinal))
+                    {
+                        // An external-directory approval is a boundary grant, not a
+                        // one-tool grant. Materialize the safe, non-destructive file
+                        // operations as one transaction; delete/restore remain
+                        // approval actions and terminal commands keep their own rules.
+                        foreach (var (toolId, operationClass) in ExternalFileOperations)
+                        {
+                            rules.Add(new PolicyRule(
+                                RuleId: _ids.NewPolicyRuleId(),
+                                Scope: policyScope,
+                                Decision: PolicyDecision.Allow,
+                                Matcher: new PolicyMatcher(
+                                    ToolId: toolId,
+                                    ToolVersion: binding.ToolVersion,
+                                    CanonicalPathPattern: externalDirectoryPattern,
+                                    OperationClass: operationClass,
+                                    NetworkIntent: binding.NetworkIntent),
+                                CreationOrder: 0,
+                                ExpiresAt: null));
+                        }
+                    }
+                    else
+                    {
+                        rules.Add(new PolicyRule(
+                            RuleId: _ids.NewPolicyRuleId(),
+                            Scope: policyScope,
+                            Decision: PolicyDecision.Allow,
+                            Matcher: new PolicyMatcher(
+                                ToolId: binding.ToolId,
+                                ToolVersion: binding.ToolVersion,
+                                CanonicalPathPattern: pathPatterns.Length == 0 ? null : pathPatterns[0],
+                                ResolvedExecutable: binding.ResolvedExecutable is null ? null : Sanitize(binding.ResolvedExecutable),
+                                ArgvPattern: argvPatterns.Length == 0 ? null : argvPatterns,
+                                CwdPattern: cwdPattern,
+                                OperationClass: binding.OperationClass,
+                                NetworkIntent: binding.NetworkIntent),
+                            CreationOrder: 0,
+                            ExpiresAt: null));
+                    }
+
+                    ruleId = rules[0].RuleId.Value;
+                    if (policyScope == PolicyRuleScope.Run)
+                    {
+                        if (runId is null) throw new HarnessStoreException("policy_scope_ownership_invalid");
+                        await store.CreateManyAsync(rules, null, runId.Value, _time.UtcNow, cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await store.CreateManyAsync(rules, workspaceId, null, _time.UtcNow, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception ex) when (ex is HarnessStoreException or InvalidOperationException or System.Data.Common.DbException or Microsoft.Data.Sqlite.SqliteException)
+                {
+                    ruleSaveFailed = true;
+                }
             }
         }
 

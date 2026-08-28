@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the current main branch, 2026-08-24.
+Status: operating contract for the current main branch, 2026-08-28.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -130,22 +130,33 @@ gentle twinkling starlight points and periodic shooting star streaks rendered di
 via `Microsoft.UI.Composition` (`SpriteVisual`, `CompositionLinearGradientBrush` with
 soft halo glow and core beam), runs only while `Messages.Count == 0`, and stops and
 clears every visual element as soon as the first message exists. The composer keeps the
-native TextBox caret/focus behavior without a decorative accent line; there is no ambient
-welcome rectangle or extra surface layer. These elements do not add Chat content,
-VTS/voice metadata, fake status indicators, or calls to the backend, WebSocket,
-STT, voice, subtitle, VTS, or memory paths.
+native TextBox caret/focus behavior and now contains an explicit compact `Chat` /
+`Coding Agent` mode pill. The mode dropdown contains only those two choices; a
+separate Agent configuration button owns workspace and preset fields. The
+workspace field is optional: when empty, the UI uses the known project root,
+while the authenticated API still validates the canonical path. Chat
+submissions still use the Chat WebSocket; Agent submissions use the authenticated
+`/agent/v1/*` API/SSE path. Workspace trust, approval, Stop, Continue, and bounded
+Agent status remain inline above the input, outside the transcript. Agent payloads
+and raw tool output never enter Chat, TTS, VTS metadata, memory, or automation names.
 
 ## Action execution kernel v1
 
-Capability profiles gate everything: Chat advertises only `files.list` and
-`files.read`; Agent adds `files.write`, `files.edit`, `notes.create`, and
-`system.volume` but has no terminal scope; Full Access additionally advertises
-`terminal.run` and `terminal.shell`. Both terminal tools require a fresh
-per-request approval even in Full Access. After approval, the Full Access
-terminal is intentionally not an OS-enforced filesystem/network sandbox.
+Capability profiles gate everything: Chat advertises workspace discovery/read
+tools (`files.list`, `files.glob`, `files.search`, and `files.read`); Agent adds
+workspace mutation tools, `notes.create`, and `system.volume`. On the headless
+Agent v2 path, `terminal.run` and `terminal.shell` are also advertised and
+require a fresh per-request approval. Full Access retains that approval
+requirement. After approval, the terminal runs as the current Windows user and
+is intentionally not an OS-enforced filesystem/network sandbox. File tools may
+request an explicit absolute path outside the project; the user can grant that
+canonical directory for the current run or project. That grant covers the
+directory's read/create/edit operations only; protected and destructive
+operations keep their own approval gates. `files.apply_patch`
+is not advertised or model-usable in the current runtime.
 Explicit, unambiguous volume commands use a deterministic parser before
 generation in Agent and Full mode; in Chat mode the same intent is declined
-with copy that points at the Agent toggle. The parser creates one typed
+with copy that points at the Agent mode selector. The parser creates one typed
 `system.volume@1.0.0` request and does not call the configured model for action
 selection. Ambiguous volume wording returns a bounded clarification.
 
@@ -154,8 +165,8 @@ to ten model-initiated tool calls through the existing
 `chat.tool.request`/receipt pipeline. Selection JSON is never streamed into
 the visible transcript, history, mood state, or diagnostics; a malformed
 selection ends the turn with fixed copy and one bounded diagnostic.
-Mutating tools (`files.write`, `files.edit`, `notes.create`, and the two
-Full-Access terminal bindings) require per-action approval cards with bounded
+Mutating tools (`files.write`, `files.edit`, `files.delete`, `files.restore`,
+`notes.create`, and the two headless terminal bindings) require per-action approval cards with bounded
 previews; reads and verified volume operations do not. The Public Host opens
 one profile-scoped Broker session per turn loop, and RuAgentBroker executes and
 verifies adapters. The Worker may render native-volume success only from a
@@ -177,15 +188,24 @@ persisted to history, memory, reviewed examples, TTS, or VTS metadata.
 Model-enabled bindings follow the capability profiles above; `files.edit@1.0.0`
 and `notes.create@1.0.0` join the Agent/Full catalog, while read-only system
 bindings, unbound connectors, and `app.open` remain Broker-internal; skills are
-disabled. The GUI renders the actual `agent.session` grant received from the
-Host.
+disabled. The managed Git commit workflow (Phase 3 Task 6) is not shipped;
+Git commands are ordinary explicitly approved terminal requests. The GUI
+renders the actual `agent.session` grant received from the Host.
 
-The Agent activity line maps actual events to fixed copy: toggle-only idle is
-`Agent mode đã bật`; typed request is `Đang chuẩn bị thao tác…`; a matching
-grant is `Đang thực hiện thao tác đã cấp quyền…`; verified completion is
-`Thao tác đã được xác minh`; and failure uses only a bounded safe reason.
-Malformed or stale-session activity is ignored. Toggle-off, disconnect, and
-session replacement clear the visible state and pending approval.
+Selecting Agent while idle does not add a composer status row, so the empty
+Chat welcome content keeps its position. The Agent inline status appears only
+after a request or another activity that needs user interaction; a typed
+request starts with `Đang chuẩn bị thao tác…`. Subsequent status and event
+summaries are bounded safe copy, while verified completion and failure remain
+fixed or safe-reason states. Malformed or stale-session activity is ignored.
+Returning to Chat, disconnect, and session replacement clear the visible state
+and pending approval.
+
+The populated Chat transcript keeps its reading column centered and capped at
+820 px, while `ChatScrollHost` spans the full Chat viewport so its native
+vertical scrollbar sits at the far-right edge. Horizontal scrolling remains
+disabled; the scrollbar styling is scoped to Chat and does not alter message
+width or composer alignment.
 
 ## Persistence and privacy
 

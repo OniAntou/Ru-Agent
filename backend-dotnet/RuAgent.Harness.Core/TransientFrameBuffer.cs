@@ -64,15 +64,17 @@ public sealed record HarnessTransientFrame
 public sealed class TransientFrameBuffer
 {
     private readonly Channel<HarnessTransientFrame> _channel;
+    private readonly Action<HarnessTransientFrame>? _observer;
     private long _droppedCount;
 
-    public TransientFrameBuffer(int capacity)
+    public TransientFrameBuffer(int capacity, Action<HarnessTransientFrame>? observer = null)
     {
         if (capacity <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(capacity));
         }
 
+        _observer = observer;
         _channel = Channel.CreateBounded<HarnessTransientFrame>(
             new BoundedChannelOptions(capacity)
             {
@@ -88,13 +90,25 @@ public sealed class TransientFrameBuffer
     public bool TryPublish(HarnessTransientFrame frame)
     {
         ArgumentNullException.ThrowIfNull(frame);
-        if (_channel.Writer.TryWrite(frame))
+        var written = _channel.Writer.TryWrite(frame);
+        if (!written)
         {
-            return true;
+            Interlocked.Increment(ref _droppedCount);
         }
 
-        Interlocked.Increment(ref _droppedCount);
-        return false;
+        // The observer is deliberately independent from the bounded Core buffer:
+        // a slow/non-consuming Core reader must not suppress live SSE delivery.
+        // Observers are infrastructure side effects and cannot make a model step
+        // fail just because a client disconnected.
+        try
+        {
+            _observer?.Invoke(frame);
+        }
+        catch
+        {
+        }
+
+        return written;
     }
 
     public async IAsyncEnumerable<HarnessTransientFrame> ReadAllAsync(

@@ -1,11 +1,12 @@
 # Agent tools and truthful execution
 
 This document is the operating contract for Ru's action execution kernel v1
-plus the additive Phase-2 policy authority and complete file tools (2026-08-25).
+plus the additive Phase-2 policy authority and selected Phase-3 headless Agent
+v2 surfaces (2026-08-28).
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
-> **Transitional Phase-2 note (policy authority + complete file tools, 2026-08-25):**
+> **Current checkpoint (Phases 1–3 selected surfaces, 2026-08-28):**
 > - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
 >   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
 >   `RuAgent.Client`. Normal Chat remains on Worker v1; harness runs are
@@ -13,9 +14,9 @@ is actually allowed to select. Those states are not interchangeable.
 >   additive Agent v2 at `/worker/v2` (one-step `AssistantStep`) and
 >   `/agent/v1/*` (13 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
 >   `id:<sequence>`/`Last-Event-ID`/`after_sequence` cursor, reconnect replay).
->   This checkpoint exposes complete Broker-backed `files.*` (`files.list`,
+>   This checkpoint exposes Broker-backed model tools (`files.list`,
 >   `files.glob`, `files.search`, `files.read` offset/limit, `files.write`,
->   `files.edit`, `files.apply_patch`, `files.delete`, one-time
+>   `files.edit`, `files.delete`, one-time
 >   `files.restore`) through a durable Core (state machines incl.
 >   `tool.execution_requested`, SQLite WAL `agent_harness.db`, AES-GCM
 >   payloads, idempotent conversation outbox, workspace trust,
@@ -32,13 +33,15 @@ is actually allowed to select. Those states are not interchangeable.
 >   reconciliation outcomes. `full` preset requires
 >   interactive confirmation and `X-Interactive-Confirmed: true`; `--json`
 >   cannot create global rules or confirm trust/approval.
+>   Headless terminal requests are available under the same policy/approval
+>   boundary; the managed Git commit workflow (Phase 3 Task 6) is not shipped.
 > - Public Contract is now **54 HTTP plus 2 WebSocket** (41 + 13 `/agent/v1/*`).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,
 >   `FileRecoveryStore`), `RuAgent.Hosting`, `RuAgent.Client`, `RuAgent.Broker`
 >   (`CanonicalPathResolver`/`ProtectedPathCatalog` `v1`, `PolicyContext`/
 >   `PolicySnapshotEvaluator`, `PendingApprovalStore`/`ApprovalTokenService`,
->   `FileList`/`Glob`/`Search`/`Read`/`Write`/`Edit`/`Patch`/`Delete`/`Restore`
+>   `FileList`/`Glob`/`Search`/`Read`/`Write`/`Edit`/`Delete`/`Restore`
 >   adapters, `FileHashService`/`AtomicFileReplacement`/`FileMutationJournal`),
 >   and `RuAgent.Cli` (`PolicyJsonCodec` versioned, exact scope preview, no
 >   glob broadening) are covered in `docs/architecture.md`, `CONTEXT.md`,
@@ -49,29 +52,37 @@ is actually allowed to select. Those states are not interchangeable.
 Model advertisement derives from the session capability profile: a binding is
 visible to the model exactly when its manifest scopes fit the active profile's
 scope set. Chat grants `{workspace.read}`; Agent adds `{workspace.write}` and
-`system.write`; on the headless Agent v2 path Agent also advertises the terminal.execute/terminal.network scopes; Full Access adds the
-`terminal.execute` and `terminal.network` scopes. The `network` argument on a
+`system.write`. The headless Agent v2 path also advertises the
+`terminal.execute`/`terminal.network` scopes; Full Access adds those scopes.
+The `network` argument on a
 terminal request is descriptive input metadata, not a security boundary.
 
 | Capability | Chat | Agent | Full Access |
 | --- | --- | --- | --- |
 | `files.list@1.0.0`, `files.glob@1.0.0`, `files.search@1.0.0`, `files.read@1.0.0` (`workspace.read`) | automatic | automatic | automatic |
-| `files.write@1.0.0`, `files.edit@1.0.0`, `files.apply_patch@1.0.0` (`workspace.write`) | — | Standard `allow` for ordinary trusted-workspace create/edit, otherwise `ask` with approval card + preview; `workspace_changed` on preimage mismatch, `invalid_utf8`/`content_too_large` before dispatch | Full Access `allow` fallback (never bypasses trust); `ask` only for delete/protected/outside/network/unknown, otherwise approval card + preview when `ask` |
-| `files.delete@1.0.0` (`workspace.write`, recoverable) | — | `ask` → approval card + preview, `recovery_too_large` beyond 1 MiB remains intact, opaque `recovery_id` | `ask` → same; Full Access never bypasses `recovery_too_large` or workspace trust |
+| `files.write@1.0.0`, `files.edit@1.0.0` (`workspace.write`) | — | Standard `allow` for ordinary trusted-workspace create/edit; an absolute path outside the workspace asks with `external_directory_required` and may be granted for one call, the current run, or the project; `workspace_changed` on preimage mismatch, `invalid_utf8`/`content_too_large` before dispatch | Full Access `allow` fallback (never bypasses trust); protected paths and destructive/network/unknown actions still follow their own approval gates |
+| `files.delete@1.0.0` (`workspace.write`, recoverable) | — | `ask` → approval card + preview, including after an external-directory grant; `recovery_too_large` beyond 1 MiB remains intact, opaque `recovery_id` | `ask` → same; Full Access never bypasses `recovery_too_large` or workspace trust |
 | `files.restore@1.0.0` (`workspace.write`, one-time) | — | advertised only while active run owns valid `recovery_id`; success consumes once (`recovery_consumed` on replay, `recovery_target_exists` if recreated) | same |
 | `notes.create@1.0.0` (`workspace.write`) | — | approval card + one-time token | approval card + one-time token |
-| `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | — | — | explicit approval required for every request (available on the Agent v2 headless path; runs as the current Windows user and can execute arbitrary host code or open sockets) |
+| `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | — | headless Agent v2: explicit approval for every request; current Windows user; arbitrary host code/sockets | explicit approval required for every request (same boundary) |
 | `system.volume@1.0.0` (`system.write`) | — | yes, verified readback required | yes, verified readback required |
 | `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` (`system.read`) | Broker-internal | Broker-internal | Broker-internal |
 | Web search/fetch, connectors, `app.open` | absent | absent | absent |
 | Skills | disabled | disabled | disabled |
 
-Standard allows ordinary trusted-workspace reads/creates/edits and asks for
-delete, protected/outside paths, declared network, and unknown operations;
+Standard allows ordinary trusted-workspace reads/creates/edits. An explicit
+absolute path outside that root is not silently rejected: the first request
+asks for `external_directory_required`. The user can approve only that intent,
+the canonical external directory for the current run, or a project-scoped
+host-generated descendant rule (filesystem roots are never persisted as a
+directory grant); relative traversal still cannot escape the trusted root.
+Delete, protected paths, declared network, and unknown operations
+keep their own approval gates even after a directory grant;
 Full Access changes fallback but never bypasses workspace trust or protocol
 invariants and remains a current-Windows-user boundary. Durable approvals
 (`AllowOnce`/`AllowRun`/`AllowProject`/`Deny`) use first-writer-wins
-`approval_stale`, exact scope preview (no glob broadening), 30-min expiry,
+`approval_stale`, exact scope preview (the model cannot supply a broadening
+glob), 30-min expiry,
 60-s execution token, and old-snapshot execution ordering: consume one-time
 approval under snapshot N → persist reusable rule (or `reusable_rule_not_saved`)
 → execute already-authorized call under N → receipt → N+1 invalidates other
@@ -80,11 +91,17 @@ not network isolation. On the headless Agent v2 path, `terminal.run` and
 `terminal.shell` are available and execute as the current Windows user: they can
 run arbitrary host code and open sockets; Full Access advertises the terminal
 bindings but both `terminal.run` and `terminal.shell` require a fresh explicit
-approval for every request. Filesystem mutations are `ask` for at least delete/
-protected/outside/network/unknown and remain workspace-bounded. `native_pending`
+approval for every request. Filesystem mutations remain trust- and
+approval-gated: a project/run external-directory grant covers only the
+canonical directory's read/create/edit operations; delete, protected paths,
+network, and unknown operations keep their own approval gates. `native_pending`
 means the volume binding has a native Windows adapter and deterministic
 contract/adapter evidence, but real endpoint and GUI acceptance are still
 pending until the user explicitly runs them.
+
+`files.apply_patch` is intentionally absent from the runtime capability catalog
+and is not model-usable at this checkpoint. Any internal adapter or test fixture
+for patch application does not create a public model capability.
 
 ## Model selection channel
 
@@ -165,22 +182,23 @@ shorthand is not promoted into an action from conversation history.
 
 File, notes, and terminal bindings are advertised by capability profile as the
 matrix above shows. On the headless Agent v2 path (Phase 3), `terminal.run`/
-`terminal.shell` and local Git operations are available; they execute as the
-current Windows user and can run arbitrary host code or open sockets. Full
+`terminal.shell` is available under explicit approval; it executes as the
+current Windows user and can run arbitrary host code or open sockets. The
+managed Git commit workflow (Phase 3 Task 6) is not shipped; Git commands are
+ordinary terminal requests rather than a separate managed capability. Full
 Access is intentionally not an
 OS-enforced filesystem/network sandbox; its `network` field and
 `network_intent` are descriptive input validation and audit/approval metadata,
 not an operating-system sandbox or network-isolation boundary. A zero exit is
 `succeeded`; non-zero exit and start failure are `failed`; timeout is
-`timed_out`. `files.write`/`files.edit`/`files.apply_patch` are `allow` for
+`timed_out`. `files.write`/`files.edit` are `allow` for
 ordinary trusted-workspace create/edit in Standard and otherwise `ask`;
 `files.delete`/`files.restore` and protected/outside/network/unknown are always
 `ask` (even in Full Access trust still required); `notes.create` and both
 terminal bindings retain explicit approval where advertised. Every mutation
 requires `expected_sha256` (`missing` or 64-hex lowercase) and fails with
-`workspace_changed` on mismatch without writing; `files.apply_patch` validates
-all targets before first replacement and uses `FileMutationJournal` bounded
-restore on N-th failure; `files.delete` refuses `recovery_too_large` beyond
+`workspace_changed` on mismatch without writing; `files.delete` refuses
+`recovery_too_large` beyond
 1 MiB.
 
 Skills are disabled at session-open and execution boundaries. No current
@@ -189,20 +207,30 @@ or application launcher is advertised to the model.
 
 ## Agent activity shown in WinUI
 
-The activity line describes only a state that has occurred:
+Coding Agent is selected explicitly from the compact mode pill inside the Chat
+composer; that dropdown contains only Chat and Coding Agent. A separate Agent
+configuration button owns the workspace and preset fields. The sidebar keeps
+only primary conversation surfaces; Log,
+Diagnostics, Policy, and Audit remain reachable from the `Công cụ` flyout.
+Ordinary Chat prompts continue through the Chat WebSocket, while Agent prompts
+are created through the authenticated `/agent/v1/*` API and observed over SSE.
+The inline surface never displays raw commands, arguments, stdout, or private
+payload content.
+
+The activity line describes only a bounded state that has occurred:
 
 | Actual state | Visible copy |
 | --- | --- |
-| Agent toggle enabled, no request | `Agent mode đã bật` |
+| Coding Agent selected, no request | No inline activity panel; the mode pill shows `Agent` |
 | Typed request received | `Đang chuẩn bị thao tác…` |
-| Matching session grant received | `Đang thực hiện thao tác đã cấp quyền…` |
-| Verified terminal success | `Thao tác đã được xác minh` |
-| Terminal failure | `Thao tác thất bại: <lý do an toàn>` |
+| Durable Agent event received | Bounded safe event code or count |
+| Terminal status | Bounded run status (`completed`, `failed`, `cancelled`, or `interrupted`) |
+| API/client failure | Fixed generic error copy; exception text is not rendered |
 
 WinUI accepts only the bounded typed fields `session_id`, `status`, `tool_id`,
 and optional stable `error_code`. Malformed, stale-session, unexpected, or raw
-content-bearing activity frames are ignored. Toggle-off, disconnect, and
-session replacement clear pending approval and activity state.
+content-bearing activity frames are ignored. Returning to Chat, disconnect,
+and session replacement clear pending approval and activity state.
 
 ## Approval, privacy, and diagnostics
 
@@ -213,8 +241,10 @@ first-writer-wins `approval_stale` (including `PendingApprovalStore` and Host
 `HostApprovalLedger`); graceful `approval_rejected` on Deny; `approval_stale`
 on any changed field or expired/moved-workspace replay. The Broker returns the
 normalized candidate matcher for `AllowRun`/`AllowProject`; the UI/CLI shows
-that exact scope before confirmation and approval-derived rules cannot broaden
-to a glob. Ordering is `consume one-time approval under snapshot N → persist
+that exact scope before confirmation. The model cannot broaden a rule with a
+glob; for an external-directory approval the Host itself generates a bounded
+descendant matcher only after the user chooses run/project scope. Ordering is
+`consume one-time approval under snapshot N → persist
 reusable rule (or `reusable_rule_not_saved` still permits once-only execution)
 → execute already-authorized call under N → persist final receipt → build/bind
 N+1 → invalidate other pending N decisions`; Broker restart before dispatch

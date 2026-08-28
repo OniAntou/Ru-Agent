@@ -107,6 +107,10 @@ WebSocket, and artifact-writer seams.
 Host tests cover cross-session rotation with a stateful single-owner fake and
 prove close-before-open, same-session reuse, and no dispatch after close failure.
 
+External-directory tests prove canonical descendant grants for read/list and
+create/edit, sibling isolation, absolute-path output, project-scope reuse across
+runs, and delete/root-directory approval gates.
+
 ## evidence_class: native
 
 Native evidence is an explicit user-owned smoke against a freshly published
@@ -147,20 +151,28 @@ RuApp instance exists. The supported Agent scenarios are exactly:
 
 The cancel and stale-result scenarios replace the Agent session while its
 synthetic tool request is still in flight, wait beyond the delayed result, and
-fail if a user/assistant message, private marker, or enabled Agent toggle leaks
+fail if a user/assistant message, private marker, or enabled Agent mode leaks
 back into the replacement session.
 
-The UI driver also requires the honest idle copy `Agent mode đã bật`; typed
-requested, granted, verified, and failed copy is covered by WinUI contract
-tests. Agent artifacts and event-sink records contain only bounded states,
-counts, tool IDs, durations, and safe reason codes—not arguments, output,
-levels, amounts, mute state, prompts, replies, device identity, endpoint hashes,
-or exception text.
+The UI driver verifies the Agent mode pill without requiring an idle status row;
+`AgentStatusText` is expected only after an Agent request or another activity
+that needs user interaction. Typed requested, granted, verified, and failed
+copy is covered by WinUI contract tests. Agent artifacts and event-sink records
+contain only bounded states, counts, tool IDs, durations, and safe reason
+codes—not arguments, output, levels, amounts, mute state, prompts, replies,
+device identity, endpoint hashes, or exception text.
 
 Broker approval dispatch/replay is covered by the private deterministic probe;
 the visible approval card remains covered by `AgentApprovalTests` and
 `AgentApprovalUiContractTests`. GUI Harness scenarios do not claim that
 terminal, files, Web, connectors, or skills are model-usable.
+
+For manual Chat visual acceptance, open the composer mode control: its compact
+Ru flyout contains only `Trò chuyện` and `Coding Agent`; workspace and preset
+remain behind the separate Agent settings button. Grow a transcript until
+scrolling is needed and verify messages stay centered while the native vertical
+scrollbar sits at the far-right edge of the Chat viewport. Horizontal scrolling
+must remain disabled.
 
 A passing deterministic GUI result does not claim an audible Windows volume
 change and does not accept live microphone capture, audible OmniVoice,

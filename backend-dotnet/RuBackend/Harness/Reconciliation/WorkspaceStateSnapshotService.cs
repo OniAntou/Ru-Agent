@@ -16,6 +16,8 @@ namespace RuBackend.Harness.Reconciliation;
 /// </summary>
 public sealed class WorkspaceStateSnapshotService
 {
+    private const int MaxGitOutputBytes = 1 * 1024 * 1024;
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     private readonly SqliteRunGitStateStore _gitStateStore;
     private readonly Func<RunId, string?>? _rootResolver;
 
@@ -115,6 +117,8 @@ public sealed class WorkspaceStateSnapshotService
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = StrictUtf8,
+                StandardErrorEncoding = StrictUtf8,
             };
             startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
             startInfo.ArgumentList.Add("--no-optional-locks");
@@ -129,17 +133,79 @@ public sealed class WorkspaceStateSnapshotService
                 return null;
             }
 
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            _ = process.StandardError.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+            var stdoutTask = ReadBoundedAsync(process.StandardOutput, MaxGitOutputBytes, cancellationToken);
+            var stderrTask = ReadBoundedAsync(process.StandardError, MaxGitOutputBytes, cancellationToken);
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken)
+                    .WaitAsync(TimeSpan.FromSeconds(10), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                TryKill(process);
+                return null;
+            }
+
             var stdout = await stdoutTask.ConfigureAwait(false);
+            _ = await stderrTask.ConfigureAwait(false);
             return process.ExitCode == 0 ? stdout : null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception error) when (
             error is InvalidOperationException or System.ComponentModel.Win32Exception
-                or IOException or OperationCanceledException)
+                or IOException or DecoderFallbackException)
         {
             return null;
+        }
+    }
+
+    private static async Task<string?> ReadBoundedAsync(
+        StreamReader reader,
+        int maxBytes,
+        CancellationToken cancellationToken)
+    {
+        var builder = new StringBuilder();
+        var chars = new char[4096];
+        var bytes = 0;
+        var exceeded = false;
+        while (true)
+        {
+            var read = await reader.ReadAsync(chars.AsMemory(), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            var chunkBytes = StrictUtf8.GetByteCount(chars.AsSpan(0, read));
+            if (bytes <= maxBytes - chunkBytes)
+            {
+                builder.Append(chars, 0, read);
+                bytes += chunkBytes;
+            }
+            else
+            {
+                exceeded = true;
+            }
+        }
+
+        return exceeded ? null : builder.ToString();
+    }
+
+    private static void TryKill(System.Diagnostics.Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
         }
     }
 }

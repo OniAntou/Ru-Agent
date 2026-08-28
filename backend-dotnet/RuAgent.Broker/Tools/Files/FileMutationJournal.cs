@@ -47,32 +47,41 @@ public sealed class FileMutationJournal : IDisposable
 
     public void Rollback()
     {
-        for (int i = _entries.Count - 1; i >= 0; i--)
+        // Rollback participates in the same process-wide mutation gate as normal
+        // file adapters. Without this, a concurrent adapter call could interleave
+        // between the rollback existence check and its replacement/delete.
+        FileMutationGuard.WithLock(() =>
         {
-            var entry = _entries[i];
-            try
+            for (int i = _entries.Count - 1; i >= 0; i--)
             {
-                if (entry.WasMissing)
+                var entry = _entries[i];
+                try
                 {
-                    if (File.Exists(entry.CanonicalPath))
+                    if (entry.WasMissing)
                     {
-                        File.Delete(entry.CanonicalPath);
+                        if (File.Exists(entry.CanonicalPath))
+                        {
+                            File.Delete(entry.CanonicalPath);
+                        }
+                        else if (Directory.Exists(entry.CanonicalPath))
+                        {
+                            throw new IOException("is_directory");
+                        }
                     }
-                    else if (Directory.Exists(entry.CanonicalPath))
+                    else
                     {
-                        throw new IOException("is_directory");
+                        var bytes = entry.BeforeBytes ?? Array.Empty<byte>();
+                        AtomicFileReplacement.Replace(entry.CanonicalPath, bytes);
                     }
                 }
-                else
+                catch
                 {
-                    var bytes = entry.BeforeBytes ?? Array.Empty<byte>();
-                    AtomicFileReplacement.Replace(entry.CanonicalPath, bytes);
+                    // Rollback is best effort; preserve the original execution
+                    // error and let reconciliation inspect any partial state.
                 }
             }
-            catch
-            {
-            }
-        }
+            return 0;
+        });
 
         _entries.Clear();
         _totalBytes = 0;

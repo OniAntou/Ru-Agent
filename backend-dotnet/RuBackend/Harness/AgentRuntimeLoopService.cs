@@ -1,8 +1,11 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Reconciliation;
 using RuAgent.Harness.Persistence;
+using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Context;
 
 namespace RuBackend.Harness;
@@ -15,7 +18,15 @@ public interface IAgentRuntimeRootRegistry
 {
     void Register(RunId runId, string workspaceRoot);
 
+    void Register(RunId runId, string workspaceRoot, PolicySnapshot policySnapshot);
+
     bool TryGetRoot(RunId runId, out string? workspaceRoot);
+
+    bool TryGetPolicySnapshot(RunId runId, out PolicySnapshot? policySnapshot);
+
+    void RegisterCoordinator(RunId runId, AgentRunCoordinator coordinator);
+
+    Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken);
 
     void Remove(RunId runId);
 
@@ -24,16 +35,37 @@ public interface IAgentRuntimeRootRegistry
 
 public sealed class AgentRuntimeRootRegistry : IAgentRuntimeRootRegistry
 {
-    private readonly ConcurrentDictionary<string, string> _roots = new(StringComparer.Ordinal);
+    private sealed record Registration(
+        string WorkspaceRoot,
+        PolicySnapshot? PolicySnapshot,
+        AgentRunCoordinator? Coordinator = null);
+
+    private readonly ConcurrentDictionary<string, Registration> _roots = new(StringComparer.Ordinal);
 
     public void Register(RunId runId, string workspaceRoot) =>
-        _roots[runId.Value] = workspaceRoot;
+        _roots.AddOrUpdate(
+            runId.Value,
+            _ => new Registration(workspaceRoot, null),
+            (_, existing) => existing with { WorkspaceRoot = workspaceRoot });
+
+    public void Register(RunId runId, string workspaceRoot, PolicySnapshot policySnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(policySnapshot);
+        _roots.AddOrUpdate(
+            runId.Value,
+            _ => new Registration(workspaceRoot, policySnapshot),
+            (_, existing) => existing with
+            {
+                WorkspaceRoot = workspaceRoot,
+                PolicySnapshot = policySnapshot,
+            });
+    }
 
     public bool TryGetRoot(RunId runId, out string? workspaceRoot)
     {
-        if (_roots.TryGetValue(runId.Value, out var root))
+        if (_roots.TryGetValue(runId.Value, out var registration))
         {
-            workspaceRoot = root;
+            workspaceRoot = registration.WorkspaceRoot;
             return true;
         }
 
@@ -41,10 +73,47 @@ public sealed class AgentRuntimeRootRegistry : IAgentRuntimeRootRegistry
         return false;
     }
 
+    public bool TryGetPolicySnapshot(RunId runId, out PolicySnapshot? policySnapshot)
+    {
+        if (_roots.TryGetValue(runId.Value, out var registration)
+            && registration.PolicySnapshot is { } snapshot)
+        {
+            policySnapshot = snapshot;
+            return true;
+        }
+
+        policySnapshot = null;
+        return false;
+    }
+
+    public void RegisterCoordinator(RunId runId, AgentRunCoordinator coordinator)
+    {
+        ArgumentNullException.ThrowIfNull(coordinator);
+        while (_roots.TryGetValue(runId.Value, out var existing))
+        {
+            if (_roots.TryUpdate(
+                    runId.Value,
+                    existing with { Coordinator = coordinator },
+                    existing))
+            {
+                return;
+            }
+        }
+    }
+
+    public async Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken)
+    {
+        if (_roots.TryGetValue(runId.Value, out var registration)
+            && registration.Coordinator is { } coordinator)
+        {
+            await coordinator.CancelRunningToolsAsync(runId, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     public void Remove(RunId runId) => _roots.TryRemove(runId.Value, out _);
 
     public IReadOnlyList<(string RunId, string WorkspaceRoot)> Snapshot() =>
-        _roots.Select(pair => (pair.Key, pair.Value)).ToArray();
+        _roots.Select(pair => (pair.Key, pair.Value.WorkspaceRoot)).ToArray();
 }
 
 /// <summary>
@@ -53,7 +122,7 @@ public sealed class AgentRuntimeRootRegistry : IAgentRuntimeRootRegistry
 /// </summary>
 public interface IAgentRuntimeCoordinatorFactory
 {
-    AgentRunCoordinator Create(string workspaceRoot);
+    AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null);
 }
 
 public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFactory
@@ -75,6 +144,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly HarnessPayloadStore _payloadStore;
     private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
+    private readonly KnownSecretRedactor? _transientRedactor;
+    private readonly HarnessLiveEventHub? _liveEvents;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -82,7 +153,9 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         HarnessSqliteOptions sqliteOptions,
         HarnessPayloadStore payloadStore,
         ReconciliationInspectionGate? inspectionGate = null,
-        RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null)
+        RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null,
+        KnownSecretRedactor? transientRedactor = null,
+        HarnessLiveEventHub? liveEvents = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -90,16 +163,22 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
         _inspectionGate = inspectionGate;
         _approvalGrants = approvalGrants;
+        _transientRedactor = transientRedactor;
+        _liveEvents = liveEvents;
     }
 
-    public AgentRunCoordinator Create(string workspaceRoot)
+    public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null)
     {
         var gateway = new Broker.HarnessToolGateway(
             workspaceRoot,
             RuntimeCapabilities,
-            presetProvider: _ => AgentPermissionPreset.Standard,
+            presetProvider: runId => policySnapshot?.Preset ?? AgentPermissionPreset.Standard,
             idGenerator: new CryptographicIdGenerator(),
-            approvalGrants: _approvalGrants);
+            approvalGrants: _approvalGrants,
+            policySnapshot: policySnapshot);
+        var frames = new TransientFrameBuffer(
+            64 * 1024,
+            _liveEvents is null ? null : frame => PublishLiveFrame(_liveEvents, frame));
         return new AgentRunCoordinator(
             _model,
             gateway,
@@ -108,10 +187,24 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             new CryptographicIdGenerator(),
             new SystemTimeProvider(),
             new ToolCallScheduler(),
-            new TransientFrameBuffer(64 * 1024),
-            null,
+            frames,
+            _transientRedactor ?? KnownSecretRedactor.Empty,
             null,
             _inspectionGate);
+    }
+
+    private static void PublishLiveFrame(HarnessLiveEventHub hub, HarnessTransientFrame frame)
+    {
+        var kind = frame.Kind == TransientFrameKind.AssistantDelta
+            ? "assistant.delta"
+            : "tool.output.delta";
+        var data = JsonSerializer.Serialize(new
+        {
+            text = frame.Content,
+            model_step_id = frame.ModelStepId?.Value,
+            execution_id = frame.ExecutionId?.Value,
+        });
+        hub.TryPublish(frame.RunId, kind, data);
     }
 }
 
@@ -123,6 +216,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
 public sealed class AgentRuntimeLoopService : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
+    private const int MaxConcurrentRuns = 4;
 
     private readonly AgentConversationOutboxDispatcher _dispatcher;
     private readonly IHarnessEventStore _store;
@@ -175,15 +269,43 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         // runnable without an outbox write too (e.g. approval_resolved after a V1
         // approve), so delivery alone is not a sufficient trigger.
         _ = dispatch;
-        foreach (var (runId, workspaceRoot) in _roots.Snapshot())
+        var registrations = _roots.Snapshot();
+        if (registrations.Count == 0)
         {
-            await DriveRunIfRunningAsync(runId, workspaceRoot, cancellationToken).ConfigureAwait(false);
+            return;
         }
+
+        // A long-running terminal command must not stall every other run. Keep a
+        // bounded degree of concurrency so a burst of runs cannot exhaust the host
+        // with model/process work while still allowing independent runs to progress.
+        using var gate = new SemaphoreSlim(MaxConcurrentRuns, MaxConcurrentRuns);
+        var tasks = registrations.Select(async registration =>
+        {
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var runId = new RunId(registration.RunId);
+                _roots.TryGetPolicySnapshot(runId, out var policySnapshot);
+                await DriveRunIfRunningAsync(
+                        registration.RunId,
+                        registration.WorkspaceRoot,
+                        policySnapshot,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
     private async Task DriveRunIfRunningAsync(
         string runIdValue,
         string workspaceRoot,
+        PolicySnapshot? policySnapshot,
         CancellationToken cancellationToken)
     {
         if (!_inFlight.TryAdd(runIdValue, 0))
@@ -204,7 +326,7 @@ public sealed class AgentRuntimeLoopService : BackgroundService
                 return;
             }
 
-            await DriveRunAsync(runIdValue, workspaceRoot, cancellationToken).ConfigureAwait(false);
+            await DriveRunAsync(runIdValue, workspaceRoot, policySnapshot, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -215,12 +337,21 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     private async Task<AgentRun?> LoadRunAsync(string runIdValue, CancellationToken cancellationToken) =>
         await _store.GetRunAsync(new RunId(runIdValue), cancellationToken).ConfigureAwait(false);
 
-    private async Task DriveRunAsync(string runIdValue, string workspaceRoot, CancellationToken cancellationToken)
+    private async Task DriveRunAsync(string runIdValue, string workspaceRoot, PolicySnapshot? policySnapshot, CancellationToken cancellationToken)
     {
         var runId = new RunId(runIdValue);
-        var coordinator = _coordinatorFactory.Create(workspaceRoot);
+        AgentRunCoordinator? coordinator = null;
         try
         {
+            coordinator = _coordinatorFactory.Create(workspaceRoot, policySnapshot);
+            _roots.RegisterCoordinator(runId, coordinator);
+
+            if (policySnapshot is null)
+            {
+                await coordinator.FailAsync(runId, "policy_snapshot_unavailable", cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             while (!cancellationToken.IsCancellationRequested)
             {
                 var result = await coordinator.RunOneStepAsync(runId, cancellationToken).ConfigureAwait(false);
@@ -240,6 +371,15 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         catch (Exception error) when (error is not OperationCanceledException)
         {
             _logger.LogWarning(error, "run {RunId} failed during runtime drive", runIdValue);
+            if (coordinator is null)
+            {
+                // A missing/replaced workspace can make gateway construction fail
+                // before a coordinator exists. Park the registration instead of
+                // retrying the same bad root on every 250 ms poll.
+                _roots.Remove(runId);
+                return;
+            }
+
             try
             {
                 await coordinator.FailAsync(runId, "runtime_drive_failed", cancellationToken).ConfigureAwait(false);

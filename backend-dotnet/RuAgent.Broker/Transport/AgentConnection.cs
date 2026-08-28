@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Globalization;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -21,9 +22,6 @@ public sealed class AgentConnection
     private readonly PendingApprovalStore _pendingV2;
     private readonly ApprovalTokenService _authTokens;
 
-    private static readonly PendingApprovalStore SharedPendingV2 = new();
-    private static readonly ApprovalTokenService SharedAuthTokens = new();
-
     public AgentConnection(
         BrokerSession session,
         Func<CapabilityProfile, IReadOnlyList<AgentToolCapability>> capabilityProvider,
@@ -42,19 +40,16 @@ public sealed class AgentConnection
         _toolHandler = toolHandler;
         _approvalHandler = approvalHandler;
         _sessionClosedHandler = sessionClosedHandler;
-        _pendingV2 = pendingV2Store ?? SharedPendingV2;
-        _authTokens = approvalTokenService ?? SharedAuthTokens;
+        // State is scoped to the BrokerHost by callers that need reconnect support;
+        // a directly constructed connection gets private state instead of sharing
+        // approvals/tokens with unrelated hosts or test instances.
+        _pendingV2 = pendingV2Store ?? new PendingApprovalStore();
+        _authTokens = approvalTokenService ?? new ApprovalTokenService();
     }
 
     internal PendingApprovalStore PendingV2Store => _pendingV2;
 
     internal ApprovalTokenService AuthTokens => _authTokens;
-
-    internal static void ClearSharedV2State()
-    {
-        SharedPendingV2.Clear();
-        SharedAuthTokens.Clear();
-    }
 
     public async Task RunAsync(WebSocket socket, CancellationToken cancellationToken)
     {
@@ -64,7 +59,20 @@ public sealed class AgentConnection
         {
             while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
             {
-                var received = await ReceiveTextAsync(socket, buffer, cancellationToken).ConfigureAwait(false);
+                string? received;
+                try
+                {
+                    received = await ReceiveTextAsync(socket, buffer, cancellationToken).ConfigureAwait(false);
+                }
+                catch (AgentProtocolException error)
+                {
+                    await SendAsync(
+                        socket,
+                        ProtocolErrorEnvelope(error.Code),
+                        cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
                 if (received is null)
                 {
                     break;
@@ -77,22 +85,8 @@ public sealed class AgentConnection
                 }
                 catch (AgentProtocolException error)
                 {
-                    await SendAsync(
-                        socket,
-                        new AgentEnvelope(
-                            AgentEnvelopeCodec.ProtocolVersion,
-                            "protocol-error",
-                            AgentMessageTypes.ToolResult,
-                            "unknown",
-                            null,
-                            1_000,
-                            new JsonObject
-                            {
-                                ["status"] = ToolResultStatuses.Failed,
-                                ["error_code"] = error.Code,
-                                ["safe_summary"] = "invalid agent envelope",
-                            }),
-                        cancellationToken).ConfigureAwait(false);
+                    await SendAsync(socket, ProtocolErrorEnvelope(error.Code), cancellationToken)
+                        .ConfigureAwait(false);
                     continue;
                 }
 
@@ -227,8 +221,12 @@ public sealed class AgentConnection
 
     private AgentEnvelope CloseSession(AgentEnvelope request)
     {
+        var owned = _session.Owns(request.SessionId);
         _session.Close(request.SessionId);
-        _sessionClosedHandler?.Invoke(request.SessionId);
+        if (owned)
+        {
+            _sessionClosedHandler?.Invoke(request.SessionId);
+        }
         return Reply(request, AgentMessageTypes.SkillResult, new JsonObject
         {
             ["status"] = "succeeded",
@@ -241,6 +239,11 @@ public sealed class AgentConnection
         try
         {
             var lease = ReadRunLease(request);
+            if (!string.Equals(request.SessionId, lease.SessionId, StringComparison.Ordinal))
+            {
+                return ToolError(request, "session_conflict", "run lease session does not match connection session");
+            }
+
             if (!_session.TryOpenRunLease(lease, out var errorCode))
             {
                 return ToolError(request, errorCode ?? "lease_failed", "run lease failed");
@@ -267,12 +270,21 @@ public sealed class AgentConnection
         try
         {
             var lease = ReadRunLease(request);
+            if (!string.Equals(request.SessionId, lease.SessionId, StringComparison.Ordinal))
+            {
+                return ToolError(request, "session_conflict", "run lease session does not match connection session");
+            }
+
             if (!_session.TryRebindRunPolicy(lease, out var errorCode))
             {
                 return ToolError(request, errorCode ?? "rebind_failed", "run policy rebind failed");
             }
 
-            var bound = _session.ActiveRunLease!;
+            var bound = _session.ActiveRunLease;
+            if (bound is null)
+            {
+                return ToolError(request, "run_not_open", "run lease is not open");
+            }
             return Reply(request, AgentMessageTypes.RunRebound, new JsonObject
             {
                 ["status"] = ToolResultStatuses.Succeeded,
@@ -302,7 +314,11 @@ public sealed class AgentConnection
         var snapshotVersion = ReadRequiredLong(payload, "snapshot_version");
         var snapshotHash = ReadRequiredString(payload, "snapshot_hash");
         var expiresAtStr = ReadRequiredString(payload, "expires_at");
-        if (!DateTimeOffset.TryParse(expiresAtStr, out var expiresAt))
+        if (!DateTimeOffset.TryParse(
+                expiresAtStr,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out var expiresAt))
         {
             throw new AgentProtocolException("invalid_expires_at");
         }
@@ -330,6 +346,11 @@ public sealed class AgentConnection
 
     private AgentEnvelope HandleRunClose(AgentEnvelope request)
     {
+        if (!_session.Owns(request.SessionId))
+        {
+            return ToolError(request, "broker_not_ready", "session is not open");
+        }
+
         var runId = request.Payload["run_id"] is JsonValue v && v.TryGetValue<string>(out var s) ? s : request.RequestId;
         if (_session.TryCloseRun(runId))
         {
@@ -356,9 +377,9 @@ public sealed class AgentConnection
         var toolId = ReadOptionalPayloadString(payload, "tool_id") ?? string.Empty;
         var toolVersion = ReadOptionalPayloadString(payload, "tool_version") ?? "1.0.0";
 
-        if (!_session.TryGetRunLease(runId, out var lease) || lease is null)
+        if (!TryGetOwnedRunLease(request, runId, out var lease, out var leaseError) || lease is null)
         {
-            return Task.FromResult(ToolError(request, "run_not_open", "run lease is not open"));
+            return Task.FromResult(ToolError(request, leaseError, "run lease is not open"));
         }
 
         if (!lease.AdvertisedCapabilities.Contains(toolId))
@@ -475,9 +496,9 @@ public sealed class AgentConnection
         var toolId = ReadOptionalPayloadString(payload, "tool_id") ?? string.Empty;
         var decisionToken = ReadOptionalPayloadString(payload, "decision_token");
 
-        if (!_session.TryGetRunLease(runId, out _) )
+        if (!TryGetOwnedRunLease(request, runId, out _, out var leaseError))
         {
-            return Task.FromResult(ToolError(request, "run_not_open", "run lease is not open"));
+            return Task.FromResult(ToolError(request, leaseError, "run lease is not open"));
         }
 
         if (string.IsNullOrWhiteSpace(decisionToken))
@@ -531,13 +552,25 @@ public sealed class AgentConnection
         var commandRaw = ReadOptionalPayloadString(payload, "command");
         if (!string.IsNullOrWhiteSpace(commandRaw))
         {
-            command = commandRaw.ToLowerInvariant() switch
+            var normalizedCommand = commandRaw.ToLowerInvariant();
+            if (normalizedCommand is not ("allow_once" or "allowonce" or "allow_run" or "allowrun"
+                or "allow_project" or "allowproject" or "deny"))
+            {
+                return Task.FromResult(Reply(request, AgentMessageTypes.ApprovalResult, new JsonObject
+                {
+                    ["status"] = ToolResultStatuses.Denied,
+                    ["error_code"] = "invalid_command",
+                    ["safe_summary"] = "unknown approval command",
+                }));
+            }
+
+            command = normalizedCommand switch
             {
                 "allow_once" or "allowonce" => ApprovalCommandV2.AllowOnce,
                 "allow_run" or "allowrun" => ApprovalCommandV2.AllowRun,
                 "allow_project" or "allowproject" => ApprovalCommandV2.AllowProject,
                 "deny" => ApprovalCommandV2.Deny,
-                _ => ApprovalCommandV2.Deny,
+                _ => throw new InvalidOperationException("invalid_command"),
             };
         }
         else if (payload["approved"] is JsonValue av && av.TryGetValue<bool>(out var approved))
@@ -554,12 +587,12 @@ public sealed class AgentConnection
             }));
         }
 
-        if (!_session.TryGetRunLease(runId!, out var lease) || lease is null)
+        if (!TryGetOwnedRunLease(request, runId!, out var lease, out var leaseError) || lease is null)
         {
             return Task.FromResult(Reply(request, AgentMessageTypes.ApprovalResult, new JsonObject
             {
                 ["status"] = ToolResultStatuses.Denied,
-                ["error_code"] = "run_not_open",
+                ["error_code"] = leaseError,
                 ["safe_summary"] = "run lease is not open",
             }));
         }
@@ -582,6 +615,19 @@ public sealed class AgentConnection
                 ["status"] = ToolResultStatuses.Denied,
                 ["error_code"] = "approval_not_found",
                 ["safe_summary"] = "approval not found",
+            }));
+        }
+
+        if (!string.Equals(pending.Binding.RunId, runId, StringComparison.Ordinal))
+        {
+            // Approval identifiers are opaque, but the binding is still scoped to
+            // the run that requested it. Never let a caller consume another run's
+            // pending approval by guessing or replaying its id.
+            return Task.FromResult(Reply(request, AgentMessageTypes.ApprovalResult, new JsonObject
+            {
+                ["status"] = ToolResultStatuses.Denied,
+                ["error_code"] = "approval_stale",
+                ["safe_summary"] = "approval is bound to a different run",
             }));
         }
 
@@ -683,9 +729,9 @@ public sealed class AgentConnection
             ?? ReadOptionalPayloadString(payload, "authorizationToken")
             ?? ReadOptionalPayloadString(payload, "approval_token");
 
-        if (!_session.TryGetRunLease(runId, out var lease) || lease is null)
+        if (!TryGetOwnedRunLease(request, runId, out var lease, out var leaseError) || lease is null)
         {
-            return ToolError(request, "run_not_open", "run lease is not open");
+            return ToolError(request, leaseError, "run lease is not open");
         }
 
         if (!lease.AdvertisedCapabilities.Contains(toolId))
@@ -795,6 +841,33 @@ public sealed class AgentConnection
         payload[key] is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result)
             ? result
             : null;
+
+    private bool TryGetOwnedRunLease(
+        AgentEnvelope request,
+        string runId,
+        out BrokerRunLease? lease,
+        out string errorCode)
+    {
+        if (!_session.Owns(request.SessionId)
+            || !_session.TryGetRunLease(runId, out lease)
+            || lease is null
+            || !string.Equals(lease.SessionId, request.SessionId, StringComparison.Ordinal))
+        {
+            lease = null;
+            errorCode = "run_not_open";
+            return false;
+        }
+
+        if (lease.IsExpired(DateTimeOffset.UtcNow))
+        {
+            lease = null;
+            errorCode = "lease_expired";
+            return false;
+        }
+
+        errorCode = string.Empty;
+        return true;
+    }
 
     private static AgentEnvelope DecisionReply(
         AgentEnvelope request,
@@ -965,6 +1038,8 @@ public sealed class AgentConnection
         {
             "chat" => CapabilityProfile.Chat,
             "agent" => CapabilityProfile.Agent,
+            // Keep the Broker wire profile for existing clients. The Agent API
+            // still controls whether a run may select Full Access.
             "full" => CapabilityProfile.Full,
             _ => throw new AgentProtocolException("invalid_profile"),
         };
@@ -991,6 +1066,21 @@ public sealed class AgentConnection
             request.CorrelationId,
             Math.Min(request.DeadlineMs, AgentEnvelopeCodec.MaxDeadlineMs),
             payload);
+
+    private static AgentEnvelope ProtocolErrorEnvelope(string errorCode) =>
+        new(
+            AgentEnvelopeCodec.ProtocolVersion,
+            "protocol-error",
+            AgentMessageTypes.ToolResult,
+            "unknown",
+            null,
+            1_000,
+            new JsonObject
+            {
+                ["status"] = ToolResultStatuses.Failed,
+                ["error_code"] = errorCode,
+                ["safe_summary"] = "invalid agent envelope",
+            });
 
     private static async Task SendAsync(
         WebSocket socket,
@@ -1029,7 +1119,15 @@ public sealed class AgentConnection
             content.Write(buffer, 0, result.Count);
             if (result.EndOfMessage)
             {
-                return Encoding.UTF8.GetString(content.ToArray());
+                try
+                {
+                    return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+                        .GetString(content.ToArray());
+                }
+                catch (DecoderFallbackException error)
+                {
+                    throw new AgentProtocolException("invalid_utf8", error.Message);
+                }
             }
         }
     }

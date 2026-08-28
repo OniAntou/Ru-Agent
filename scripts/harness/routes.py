@@ -22,6 +22,7 @@ class RequestSpec:
     method: str
     path: str
     json_body: Mapping[str, object] | None = None
+    headers: Mapping[str, str] | None = None
 
 
 RequestFactory = Callable[[str | None], RequestSpec]
@@ -64,7 +65,6 @@ def _synthetic_audio_base64() -> str:
 def _factory_for(method: str, path: str) -> RequestFactory:
     def make(session_id: str | None = None) -> RequestSpec:
         resolved_path = path.replace("{sessionId}", session_id or "harness-session")
-        resolved_path = resolved_path.replace("{sessionId}", session_id or "harness-session")
         # Agent route placeholders – use synthetic deterministic IDs that satisfy bounded validation
         if "{runId}" in resolved_path:
             resolved_path = resolved_path.replace("{runId}", "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
@@ -130,7 +130,21 @@ def _factory_for(method: str, path: str) -> RequestFactory:
         elif path.startswith("/agent/v1/runs/") and path.endswith("/reconcile"):
             body = {"outcome": "applied", "snapshot_hash": "probe"}
         elif path == "/agent/v1/policies" and method == "POST":
-            body = {"scope": "global", "decision": "allow", "tool_id": "files.read"}
+            # Global policy writes intentionally require an explicit interactive
+            # confirmation header. The deterministic route probe exercises the
+            # endpoint with that header instead of treating a security 403 as a
+            # successful probe.
+            body = {
+                "scope": "global",
+                "decision": "allow",
+                "matcher": {"tool_id": "files.read"},
+            }
+            return RequestSpec(
+                method=method,
+                path=resolved_path,
+                json_body=body,
+                headers={"X-Interactive-Confirmed": "true"},
+            )
         return RequestSpec(method=method, path=resolved_path, json_body=body)
 
     return make

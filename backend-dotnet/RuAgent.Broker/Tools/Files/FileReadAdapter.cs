@@ -7,6 +7,7 @@ namespace RuAgent.Broker.Tools.Files;
 
 public sealed class FileReadAdapter
 {
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
 
@@ -153,11 +154,11 @@ public sealed class FileReadAdapter
         string content;
         try
         {
-            content = Encoding.UTF8.GetString(buffer, 0, validLength);
+            content = StrictUtf8.GetString(buffer, 0, validLength);
         }
-        catch
+        catch (DecoderFallbackException ex)
         {
-            content = Encoding.UTF8.GetString(buffer, 0, validLength);
+            throw new ArgumentException("invalid_utf8", ex);
         }
 
         bool truncated = isMore || utfTruncated || timeTruncated || validLength < bytesRead;

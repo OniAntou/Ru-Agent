@@ -145,6 +145,21 @@ public sealed class StreamingProcessRunnerTests
     }
 
     [Fact]
+    public async Task Runner_output_limit_is_enforced_even_when_the_request_limit_is_larger()
+    {
+        var runner = new StreamingProcessRunner(outputLimitBytes: 32, headCapacityChars: 64, tailCapacityChars: 64);
+        var result = await runner.RunAsync(
+            CmdSpec("powershell -NoProfile -Command \"Write-Output ([string]::new('x', 500))\"")
+                with { OutputLimitBytes = 1024 },
+            null,
+            CancellationToken.None);
+
+        Assert.Equal("succeeded", result.Status);
+        Assert.InRange(result.StdoutBytes, 1, 32);
+        Assert.True(result.StdoutDroppedBytes > 0);
+    }
+
+    [Fact]
     public async Task Cancellation_terminates_the_whole_process_tree()
     {
         var runner = new StreamingProcessRunner();
@@ -195,6 +210,13 @@ public sealed class StreamingProcessRunnerTests
         Assert.Equal("succeeded", result.Status);
         Assert.True(emitted >= 0);
         Assert.Contains("line-", result.StdoutHead, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Negative_retention_capacity_is_rejected_at_construction()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new StreamingProcessRunner(headCapacityChars: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new StreamingProcessRunner(tailCapacityChars: -1));
     }
 
     [Fact]

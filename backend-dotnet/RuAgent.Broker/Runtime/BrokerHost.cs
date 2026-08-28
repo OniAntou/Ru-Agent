@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebSockets;
+using RuAgent.Broker.Policy;
 using RuAgent.Broker.Transport;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Desktop;
@@ -15,6 +16,8 @@ public sealed class BrokerHost : IAsyncDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly BrokerCleanup _cleanup;
     private readonly ToolExecutionService _tools;
+    private readonly PendingApprovalStore _pendingV2 = new();
+    private readonly ApprovalTokenService _authTokens = new();
     private bool _disposed;
 
     private BrokerHost(
@@ -92,7 +95,8 @@ public sealed class BrokerHost : IAsyncDisposable
         IsReady = false;
         _session.ClearDecisions();
         _tools.ClearPendingApprovals();
-        RuAgent.Broker.Transport.AgentConnection.ClearSharedV2State();
+        _pendingV2.Clear();
+        _authTokens.Clear();
         await _cleanup.RunAsync().ConfigureAwait(false);
         await _application.DisposeAsync().ConfigureAwait(false);
         _shutdown.Dispose();
@@ -140,7 +144,9 @@ public sealed class BrokerHost : IAsyncDisposable
                 .ToHashSet(StringComparer.Ordinal),
             (request, token) => ExecuteToolAsync(request, token),
             (request, token) => ExecuteApprovalAsync(request, token),
-            sessionId => _tools.RemoveSession(sessionId))
+            sessionId => _tools.RemoveSession(sessionId),
+            pendingV2Store: _pendingV2,
+            approvalTokenService: _authTokens)
             .RunAsync(socket, linkedCancellation.Token).ConfigureAwait(false);
     }
 

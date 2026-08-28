@@ -7,6 +7,7 @@ namespace RuAgent.Broker.Tools.Files;
 public sealed class FilePatchAdapter
 {
     public const int MaxPatchBytes = UnifiedPatchParser.MaxPatchBytes;
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
@@ -125,8 +126,18 @@ public sealed class FilePatchAdapter
                 bool wasMissing = FileHashService.IsMissing(currentHash);
                 if (!wasMissing)
                 {
-                    beforeBytes = File.ReadAllBytes(reResolved.CanonicalPath);
-                    oldContent = Encoding.UTF8.GetString(beforeBytes);
+                    beforeBytes = ReadBoundedBytes(
+                        reResolved.CanonicalPath,
+                        FileWriteAdapter.MaxInputBytes,
+                        "file_too_large");
+                    try
+                    {
+                        oldContent = StrictUtf8.GetString(beforeBytes);
+                    }
+                    catch (DecoderFallbackException ex)
+                    {
+                        throw new ArgumentException("invalid_utf8", ex);
+                    }
                 }
 
                 string newContent;
@@ -154,10 +165,7 @@ public sealed class FilePatchAdapter
                 {
                     try
                     {
-                        if (File.Exists(reResolved.CanonicalPath))
-                        {
-                            File.Delete(reResolved.CanonicalPath);
-                        }
+                        FileMutationGuard.DeleteIfHashMatches(reResolved.CanonicalPath, beforeHash);
                     }
                     catch (UnauthorizedAccessException ex)
                     {
@@ -169,7 +177,7 @@ public sealed class FilePatchAdapter
                     var newBytes = Encoding.UTF8.GetBytes(newContent);
                     try
                     {
-                        AtomicFileReplacement.Replace(reResolved.CanonicalPath, newBytes);
+                        FileMutationGuard.ReplaceIfHashMatches(reResolved.CanonicalPath, newBytes, beforeHash);
                     }
                     catch (UnauthorizedAccessException ex)
                     {
@@ -361,16 +369,12 @@ public sealed class FilePatchAdapter
 
     private static void ValidateUtf8AndSize(string content)
     {
-        var byteCount = Encoding.UTF8.GetByteCount(content);
-        if (byteCount > FileWriteAdapter.MaxInputBytes)
-        {
-            throw new ArgumentException("content_too_large");
-        }
-
         try
         {
-            var enc = new UTF8Encoding(false, throwOnInvalidBytes: true);
-            enc.GetBytes(content);
+            if (StrictUtf8.GetByteCount(content) > FileWriteAdapter.MaxInputBytes)
+            {
+                throw new ArgumentException("content_too_large");
+            }
         }
         catch (EncoderFallbackException ex)
         {
@@ -380,14 +384,64 @@ public sealed class FilePatchAdapter
 
     private static string ReadText(string canonicalPath)
     {
+        byte[] bytes;
         try
         {
-            return File.ReadAllText(canonicalPath, Encoding.UTF8);
+            bytes = ReadBoundedBytes(canonicalPath, FileWriteAdapter.MaxInputBytes, "file_too_large");
         }
-        catch
+        catch (FileNotFoundException ex)
         {
-            return string.Empty;
+            throw new UnauthorizedAccessException("workspace_changed", ex);
         }
+        catch (DirectoryNotFoundException ex)
+        {
+            throw new UnauthorizedAccessException("workspace_changed", ex);
+        }
+
+        try
+        {
+            return StrictUtf8.GetString(bytes);
+        }
+        catch (DecoderFallbackException ex)
+        {
+            throw new ArgumentException("invalid_utf8", ex);
+        }
+    }
+
+    private static byte[] ReadBoundedBytes(string canonicalPath, int maxBytes, string tooLargeCode)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(canonicalPath);
+        if (maxBytes < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxBytes));
+        }
+
+        using var stream = new FileStream(
+            canonicalPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            81920,
+            FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(maxBytes, 81920));
+        var buffer = new byte[Math.Min(maxBytes, 81920)];
+        while (true)
+        {
+            var read = stream.Read(buffer, 0, buffer.Length);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (output.Length > maxBytes - read)
+            {
+                throw new ArgumentException(tooLargeCode);
+            }
+
+            output.Write(buffer, 0, read);
+        }
+
+        return output.ToArray();
     }
 
     private static string BuildDiffSummary(string beforeHash, string afterHash, string oldContent, string newContent)

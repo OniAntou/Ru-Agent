@@ -12,6 +12,7 @@ namespace RuBackend.Harness.Worker;
 
 public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 {
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     private readonly WorkerClientOptions _options;
     private readonly TimeSpan _connectTimeout = TimeSpan.FromSeconds(5);
     private readonly TimeSpan _receiveTimeout = TimeSpan.FromSeconds(30);
@@ -139,7 +140,6 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         await SendAsync(socket, startEnvelope, cancellationToken).ConfigureAwait(false);
 
         long expectedSeq = 1;
-        var deltas = new List<string>();
         AssistantStep? finalStep = null;
         bool doneReceived = false;
 
@@ -203,7 +203,6 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             {
                 case WorkerV2Contracts.AgentStepDelta:
                     var text = reply.Payload["text"] is JsonValue tv && tv.TryGetValue<string>(out var t) ? t : throw new WorkerProtocolException("invalid_delta");
-                    deltas.Add(text);
                     var delta = new AssistantDelta(request.ModelStepId, expectedSeq, text);
                     await publishDelta(delta).ConfigureAwait(false);
                     expectedSeq++;
@@ -243,7 +242,8 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                         var toolVersion = callObj["tool_version"] is JsonValue tv2 && tv2.TryGetValue<string>(out var tvs) ? tvs : throw new WorkerProtocolException("invalid_step");
                         var argsNode = callObj["arguments"] as JsonObject ?? throw new WorkerProtocolException("invalid_step");
                         var argsJson = argsNode.ToJsonString();
-                        var argsElement = JsonDocument.Parse(argsJson).RootElement.Clone();
+                        using var argsDocument = JsonDocument.Parse(argsJson);
+                        var argsElement = argsDocument.RootElement.Clone();
                         toolCalls.Add(new ModelToolCall(providerCallId, toolId, toolVersion, argsElement));
                     }
 
@@ -336,26 +336,29 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         return turns;
     }
 
+    private static readonly (string ToolId, string Scope)[] RuntimeTools =
+    [
+        ("files.list", "workspace.read"),
+        ("files.read", "workspace.read"),
+        ("files.glob", "workspace.read"),
+        ("files.search", "workspace.read"),
+        ("files.write", "workspace.write"),
+        ("files.edit", "workspace.write"),
+        ("files.delete", "workspace.write"),
+        ("files.restore", "workspace.write"),
+        ("terminal.run", "terminal.execute"),
+        ("terminal.shell", "terminal.execute"),
+    ];
+
     private static JsonObject BuildSettings()
     {
-        // Phase-1 tracer advertises only files.list/files.read
-        var tools = new JsonArray
-        {
-            BuildModelTool("files.list", "1.0.0", new JsonObject
-            {
-                ["type"] = "object",
-                ["additionalProperties"] = false,
-                ["properties"] = new JsonObject { ["path"] = new JsonObject { ["type"] = "string" } },
-                ["required"] = new JsonArray("path"),
-            }),
-            BuildModelTool("files.read", "1.0.0", new JsonObject
-            {
-                ["type"] = "object",
-                ["additionalProperties"] = false,
-                ["properties"] = new JsonObject { ["path"] = new JsonObject { ["type"] = "string" } },
-                ["required"] = new JsonArray("path"),
-            }),
-        };
+        // The worker receives the same executable surface as the Host gateway. Policy
+        // decides whether a proposed call is allowed; hiding mutation tools here would
+        // make the model contract disagree with the runtime contract.
+        var tools = new JsonArray(
+            RuntimeTools.Select(tool =>
+                (JsonNode?)BuildModelTool(tool.ToolId, "1.0.0", tool.Scope, CreateToolSchema(tool.ToolId)))
+                .ToArray());
 
         return new JsonObject
         {
@@ -367,13 +370,17 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         };
     }
 
-    private static JsonObject BuildModelTool(string toolId, string version, JsonObject schema)
+    private static JsonObject BuildModelTool(
+        string toolId,
+        string version,
+        string scope,
+        JsonObject schema)
     {
         return new JsonObject
         {
             ["tool_id"] = toolId,
             ["tool_version"] = version,
-            ["scopes"] = new JsonArray("workspace.read"),
+            ["scopes"] = new JsonArray(scope),
             ["availability"] = "executable",
             ["model_enabled"] = true,
             ["capability_class"] = "tool",
@@ -381,6 +388,38 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             ["input_schema"] = schema,
         };
     }
+
+    private static JsonObject CreateToolSchema(string toolId) =>
+        AgentModelToolContractCatalog.Find(toolId, AgentModelToolContractCatalog.CurrentVersion)?.InputSchema
+        ?? toolId switch
+        {
+            "files.delete" => new JsonObject
+            {
+                ["type"] = "object",
+                ["additionalProperties"] = false,
+                ["properties"] = new JsonObject
+                {
+                    ["path"] = new JsonObject { ["type"] = "string" },
+                    ["expected_sha256"] = new JsonObject { ["type"] = "string" },
+                },
+                ["required"] = new JsonArray("path"),
+            },
+            "files.restore" => new JsonObject
+            {
+                ["type"] = "object",
+                ["additionalProperties"] = false,
+                ["properties"] = new JsonObject
+                {
+                    ["recovery_id"] = new JsonObject { ["type"] = "string" },
+                },
+                ["required"] = new JsonArray("recovery_id"),
+            },
+            _ => new JsonObject
+            {
+                ["type"] = "object",
+                ["additionalProperties"] = false,
+            },
+        };
 
     private static async Task SendAsync(ClientWebSocket socket, WorkerV2Envelope envelope, CancellationToken cancellationToken)
     {
@@ -414,7 +453,16 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             ms.Write(buffer, 0, result.Count);
             if (result.EndOfMessage)
             {
-                var json = Encoding.UTF8.GetString(ms.ToArray());
+                string json;
+                try
+                {
+                    json = StrictUtf8.GetString(ms.GetBuffer(), 0, checked((int)ms.Length));
+                }
+                catch (DecoderFallbackException)
+                {
+                    throw new WorkerProtocolException("invalid_utf8");
+                }
+
                 return WorkerV2EnvelopeCodec.Parse(json);
             }
         }

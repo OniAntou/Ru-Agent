@@ -106,18 +106,18 @@ def test_agent_driver_payload_rejects_private_fields() -> None:
         HarnessSession._convert_gui_checks(payload)
 
 
-def test_backend_agent_probe_covers_broker_approval_and_failed_volume_contract() -> None:
+def test_backend_agent_probe_covers_broker_approval_and_v2_tool_loop() -> None:
     session_source = Path("scripts/harness/session.py").read_text(encoding="utf-8")
     worker_source = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
     broker_probe_source = Path("scripts/harness/broker_probe.py").read_text(encoding="utf-8")
     ui_driver_source = Path("gui-winui3.Harness/UiAutomationScenario.cs").read_text(
         encoding="utf-8"
     )
-    expected_reply = "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows."
-
     assert '"tool_id": "system.volume"' in worker_source
     assert '"operation": "set", "level": 101' in worker_source
-    assert '"expected_status": "failed"' in session_source
+    assert "_probe_agent_api" in session_source
+    assert '"tool.proposed"' in session_source
+    assert '"tool.execution_completed"' in session_source
     assert '"notes.create"' in session_source
     assert '"web.search"' not in worker_source
     assert '"RU_WORKSPACE_ROOT": str(workspace_root)' in session_source
@@ -127,9 +127,8 @@ def test_backend_agent_probe_covers_broker_approval_and_failed_volume_contract()
     assert "str(self.project_root)" not in workspace_assignment
     assert "approval_stale" in broker_probe_source
     assert "private_agent_metadata_visible" in session_source
-    assert expected_reply in worker_source
-    assert expected_reply in session_source
-    assert expected_reply in ui_driver_source
+    assert "Harness agent tool loop completed." in worker_source
+    assert "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows." in ui_driver_source
 
 
 def test_deterministic_worker_uses_only_the_non_native_volume_contract() -> None:

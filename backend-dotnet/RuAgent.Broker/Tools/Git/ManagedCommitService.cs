@@ -18,6 +18,7 @@ public sealed class ManagedCommitService(IGitCli cli)
 {
     public const int MaxCommitMessageChars = 2000;
     public const int MaxStagedPaths = 500;
+    private const int MaxIndexBytes = 16 * 1024 * 1024;
     private const int MaxPathChars = 512;
     private const string MissingHash = "missing";
 
@@ -436,7 +437,7 @@ public sealed class ManagedCommitService(IGitCli cli)
                 return new IndexSnapshot(false, null);
             }
 
-            return new IndexSnapshot(true, File.ReadAllBytes(indexPath));
+            return new IndexSnapshot(true, ReadBoundedBytes(indexPath, MaxIndexBytes));
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
@@ -448,7 +449,12 @@ public sealed class ManagedCommitService(IGitCli cli)
     {
         try
         {
-            if (snapshot is null || snapshot.Bytes is null)
+            if (snapshot is null)
+            {
+                return false;
+            }
+
+            if (!snapshot.Exists)
             {
                 if (File.Exists(indexPath))
                 {
@@ -458,8 +464,37 @@ public sealed class ManagedCommitService(IGitCli cli)
                 return true;
             }
 
-            File.WriteAllBytes(indexPath, snapshot.Bytes);
-            var restored = File.ReadAllBytes(indexPath);
+            // An existing index that could not be captured is not safely
+            // restorable. Leave it untouched and route the caller to reconciliation;
+            // deleting it would destroy unrelated user state.
+            if (snapshot.Bytes is null)
+            {
+                return false;
+            }
+
+            var directory = Path.GetDirectoryName(indexPath);
+            if (string.IsNullOrWhiteSpace(directory))
+            {
+                return false;
+            }
+
+            var temporaryPath = Path.Combine(directory, $".ru-index-{Guid.NewGuid():N}.tmp");
+            try
+            {
+                using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.SequentialScan))
+                {
+                    stream.Write(snapshot.Bytes, 0, snapshot.Bytes.Length);
+                    stream.Flush(flushToDisk: true);
+                }
+
+                File.Move(temporaryPath, indexPath, overwrite: true);
+            }
+            finally
+            {
+                try { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); } catch { }
+            }
+
+            var restored = ReadBoundedBytes(indexPath, MaxIndexBytes);
             return DictionariesEqual(restored, snapshot.Bytes);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
@@ -536,6 +571,30 @@ public sealed class ManagedCommitService(IGitCli cli)
 
     private static string HashText(string text) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
+
+    private static byte[] ReadBoundedBytes(string path, int maxBytes)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(maxBytes, 81920));
+        var buffer = new byte[Math.Min(maxBytes, 81920)];
+        while (true)
+        {
+            var read = stream.Read(buffer, 0, buffer.Length);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (output.Length > maxBytes - read)
+            {
+                throw new IOException("index_too_large");
+            }
+
+            output.Write(buffer, 0, read);
+        }
+
+        return output.ToArray();
+    }
 
     private static bool DictionariesEqual(byte[] left, byte[] right)
     {

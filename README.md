@@ -45,7 +45,8 @@ policy/approval endpoints (`GET`/`POST`/`DELETE /agent/v1/policies`, `POST
 `approval_stale` and exact scope preview) are active with durable
 encrypted-at-rest snapshots and global interactive header
 `X-Interactive-Confirmed: true`; `POST /agent/v1/runs/{runId}/reconcile`
-remains `phase_not_available` until its phase.
+is active on the headless Agent v2 path and resolves an ambiguous dispatch
+outcome before the run continues.
 Python is an authenticated private implementation boundary for model generation
 (one-step Worker v2 plus retained v1 Chat), provider adapters, STT execution,
 VTube Studio, observation, and the current voice engine coordination. The CLI
@@ -105,26 +106,40 @@ the Runtime Worker or voice engine as independent public services.
   available when voice mode is idle.
 - VTube Studio actions and lip sync remain private runtime metadata.
   `VoiceVolume` is the mouth input; `LLM_MouthOpen` is not used.
+- In the WinUI shell, Chat and Voice are the primary navigation surfaces. Log,
+   Diagnostics, Policy, and Audit are grouped under `Công cụ`; Coding Agent is
+   selected from the compact mode pill inside the Chat composer. That mode
+   dropdown contains only Chat and Agent; a separate Agent configuration
+   button holds workspace and preset choices. The workspace field is optional:
+   when empty, the UI uses the known project root while the authenticated API
+   still validates the canonical path. Agent prompts use the
+   authenticated `/agent/v1/*` API/SSE path, while ordinary Chat keeps the
+   Chat WebSocket path. The composer shows bounded Agent status, workspace
+   trust, approval, Stop, and Continue controls without placing tool payloads
+   in the Chat transcript.
 - Tool capability is an explicit tri-state selector. Chat (default) advertises
   only workspace discovery/read (`files.list`, `files.glob`, `files.search`,
   `files.read` with offset/limit, streaming enumeration, hidden/binary/
   protected handling, bounded `truncated` metadata) and declines volume
   commands with guidance. Agent adds `files.write`, `files.edit`,
-  `files.apply_patch`, `notes.create` and card-free `system.volume` with
-  verified readback; Agent has no model-visible terminal binding and therefore
-  cannot invoke a general-purpose terminal. Standard automatically allows
-  ordinary trusted-workspace reads, creates and edits and asks before delete,
-  protected/outside paths, declared network use, and unknown operations;
+  `notes.create` and card-free `system.volume` with verified readback. The
+  headless Agent v2 worker also advertises `terminal.run` and `terminal.shell`;
+  both are policy-evaluated and require explicit approval before execution.
+  `files.apply_patch` is not advertised or model-usable in the current runtime.
+  Standard automatically allows
+  ordinary trusted-workspace reads, creates and edits. An explicit absolute
+  path outside the project asks first with `external_directory_required`; the
+  user can grant only that intent, the canonical directory for the run, or a
+  project-scoped directory rule. Delete, protected paths, declared network use,
+  and unknown operations retain their own approval gates;
   Full Access changes fallback decisions but never bypasses workspace trust
   or protocol invariants and remains a current-Windows-user boundary. Allow
   once/run/project and Deny are durable; rule/snapshot replacement follows
   approved old-snapshot execution ordering with Broker as authoritative
   evaluator and Core persisting `tool.execution_requested` before dispatch.
-  Complete `files.*` at this checkpoint: `files.list`/`files.glob`/
+  Current model-usable file tools are `files.list`/`files.glob`/
   `files.search`/`files.read` and hash-guarded `files.write`/`files.edit`
-  (`expected_sha256` `missing` or 64-hex)/`files.apply_patch` (bounded unified
-  patch + exact expected-hash per target, multi-file preflight, journal restore
-  on N-th failure) plus `files.delete` (recoverable cap 1 MiB, opaque
+  (`expected_sha256` `missing` or 64-hex), plus `files.delete` (recoverable cap 1 MiB, opaque
   `recovery_id`) and one-time `files.restore` (`recovery_consumed` on replay).
   Every mutation uses preimage checks, atomic same-volume replacement where
   supported, before/after hashes, bounded diff summary, run attribution, and
@@ -132,8 +147,10 @@ the Runtime Worker or voice engine as independent public services.
   `agent deny`, `agent policy list`/`import --global FILE`/`remove`
   (versioned JSON, `X-Interactive-Confirmed: true`, `--json` cannot bypass),
   and `agent run --preset full` interactive warning (`--json` cannot confirm).
-  Terminal (`terminal.run`/`terminal.shell`) and Git remain unavailable in
-  Agent v2 at this checkpoint. Modes reset to Chat on every launch and Full
+  Terminal (`terminal.run`/`terminal.shell`) is available only on the headless
+  Agent v2 path, under policy and per-request approval; it runs as the current
+  Windows user and can execute host code or open sockets. The managed Git commit
+  workflow (Phase 3 Task 6) is not shipped yet. Modes reset to Chat on every launch and Full
   Access needs one explicit confirmation per run. WinUI displays typed
   activity from actual Host events, and a success is visible only after a
   matching verified Broker receipt.
@@ -176,13 +193,14 @@ approval/replay is checked separately with a temporary `notes.create` fixture.
 `--deterministic-chat` remains an alias for the backend mode. At this
 checkpoint the harness also covers the additive Agent v2 tracer
 (HTTP 201/200/409 idempotency, `workspace_busy`, `preset_mismatch`,
-`phase_not_available` only for `reconcile`, SSE reconnect
+unsupported capabilities return bounded `phase_not_available` errors, while
+SSE reconnect
 `id:<sequence>`/`Last-Event-ID` cursor, encrypted payload binding,
 durable `agent_harness.db` policy snapshots/workspace trust/session
 permissions, and first-writer-wins approval) via the temp Harness store and
 fake Worker/Broker, plus deterministic file-tool matrix
-(`files.list`/`glob`/`search`/`read`/`write`/`edit`/`apply_patch`/
-`delete`/`restore` with hash preimage and recovery caps) using a temp
+(`files.list`/`glob`/`search`/`read`/`write`/`edit`/`delete`/`restore`; `files.apply_patch`
+is intentionally not model-usable) with hash preimage and recovery caps) using a temp
 workspace.
 
 The deterministic GUI voice Harness is manual and interactive on Windows. It

@@ -106,16 +106,22 @@ public sealed record ToolProposalDecision
 
     public static ToolProposalDecision Ask(
         ToolAccessKind accessKind,
-        ApprovalId approvalId)
+        ApprovalId approvalId,
+        string safeCode = "approval_required")
     {
         ValidateAccessKind(accessKind);
         _ = approvalId.Value;
+        if (!IsSafeCode(safeCode))
+        {
+            throw new ArgumentException("Ask code must be bounded.", nameof(safeCode));
+        }
+
         return new ToolProposalDecision(
             PolicyDecision.Ask,
             accessKind,
             null,
             approvalId,
-            "approval_required");
+            safeCode);
     }
 
     public static ToolProposalDecision Deny(ToolAccessKind accessKind, string safeCode)

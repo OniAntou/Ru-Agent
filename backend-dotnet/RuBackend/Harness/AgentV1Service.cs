@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Approval;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Reconciliation;
@@ -37,9 +38,21 @@ public sealed class AgentV1Service
     private readonly AgentSessionPermissionStore _permissionStore;
     private readonly IHarnessKeyStore _keyStore;
     private readonly IAgentRuntimeRootRegistry? _runtimeRoots;
+    private readonly HarnessPolicySnapshotService? _policySnapshotService;
     private readonly RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService? _snapshots;
     private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
+
+    private const int ApprovalToolIdMaxLength = 128;
+    private const int ApprovalToolVersionMaxLength = 32;
+    private const int ApprovalPathMaxLength = 4096;
+    private const int ApprovalExecutableMaxLength = 256;
+    private const int ApprovalCwdMaxLength = 4096;
+    private const int ApprovalArgumentMaxLength = 4096;
+    private const int ApprovalScriptMaxLength = 16_000;
+    private const int MaxCursorChars = 512;
+    private const int MaxCursorBytes = 384;
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     public AgentV1Service(
         IHarnessEventStore store,
@@ -57,7 +70,8 @@ public sealed class AgentV1Service
         IAgentRuntimeRootRegistry? runtimeRoots = null,
         RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService? snapshots = null,
         ReconciliationInspectionGate? inspectionGate = null,
-        RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null)
+        RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null,
+        HarnessPolicySnapshotService? policySnapshotService = null)
     {
         _store = store;
         _options = options;
@@ -72,6 +86,7 @@ public sealed class AgentV1Service
         _permissionStore = permissionStore;
         _keyStore = keyStore;
         _runtimeRoots = runtimeRoots;
+        _policySnapshotService = policySnapshotService;
         _snapshots = snapshots;
         _inspectionGate = inspectionGate;
         _approvalGrants = approvalGrants;
@@ -174,15 +189,21 @@ public sealed class AgentV1Service
         {
             workspaceIdentity = await _resolver.ResolveAsync(workspacePath, cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception)
         {
             return BoundedError(400, "invalid_workspace", "workspace_path invalid.");
         }
 
         WorkspaceTrustRequest? pendingTrustRequest = null;
+        string canonicalWorkspacePath;
         try
         {
             var trustReq = await _trustService.EnsureTrustRequestAsync(workspacePath, cancellationToken).ConfigureAwait(false);
+            canonicalWorkspacePath = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(workspacePath);
             var storedWs = await _workspaceStore.GetAsync(workspaceIdentity.WorkspaceId, cancellationToken).ConfigureAwait(false);
             if (storedWs is not null)
             {
@@ -194,9 +215,33 @@ public sealed class AgentV1Service
                 pendingTrustRequest = trustReq;
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception)
         {
             return BoundedError(400, "invalid_workspace", "workspace registration failed.");
+        }
+
+        // Keep the exact final path that was trusted. Retaining a caller-supplied
+        // symlink/junction here would allow it to be retargeted before the runtime
+        // loop constructs its gateway.
+        try
+        {
+            var finalIdentity = await _resolver.ResolveAsync(canonicalWorkspacePath, cancellationToken).ConfigureAwait(false);
+            if (finalIdentity != workspaceIdentity)
+            {
+                return BoundedError(409, "workspace_changed", "Workspace identity changed during registration.");
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return BoundedError(409, "workspace_changed", "Workspace identity changed during registration.");
         }
 
         long effectiveVersion;
@@ -255,37 +300,38 @@ public sealed class AgentV1Service
 
         var now = _time.UtcNow;
         var runId = _ids.NewRunId();
+        PolicySnapshot policySnapshot;
+        try
+        {
+            policySnapshot = _policySnapshotService is null
+                ? PolicySnapshotCanonicalizer.Create(
+                    1,
+                    preset,
+                    workspaceIdentity,
+                    Array.Empty<PolicyRule>(),
+                    now)
+                : await _policySnapshotService.LoadAsync(
+                    workspaceIdentity,
+                    preset,
+                    runId,
+                    cancellationToken).ConfigureAwait(false);
+        }
+        catch (HarnessStoreException ex)
+        {
+            return BoundedError(409, ex.Code ?? "policy_snapshot_invalid", "Policy snapshot could not be loaded.");
+        }
+
         var initialState = isTrusted
             ? new HarnessRunStatus(HarnessRunState.WaitingHistory, HistoryWaitKind.UserBeforeFirstStep)
             : new HarnessRunStatus(HarnessRunState.WaitingWorkspaceTrust);
 
         var sessionHarnessId = new SessionId(sessionIdRaw);
-        var snapshotSha = ComputePolicySnapshotSha(preset, workspaceIdentity);
-        var run = new AgentRun(
-            runId,
-            sessionHarnessId,
-            workspaceIdentity.WorkspaceId,
-            initialState,
-            version: 0,
-            lastSequence: 0,
-            budgetWindow: 1,
-            modelStepsInWindow: 0,
-            toolCallsInWindow: 0,
-            preset,
-            policySnapshotVersion: effectiveVersion,
-            policySnapshotSha256: snapshotSha,
-            createdAt: now,
-            updatedAt: now);
-
+        var snapshotSha = policySnapshot.Sha256;
         var events = new List<HarnessEventIntent>
         {
             new(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: isTrusted ? "waiting_history" : "waiting_workspace_trust"),
         };
-        events = new List<HarnessEventIntent>
-        {
-            new(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: isTrusted ? "waiting_history" : "waiting_workspace_trust"),
-        };
-        run = new AgentRun(
+        var run = new AgentRun(
             runId,
             sessionHarnessId,
             workspaceIdentity.WorkspaceId,
@@ -296,7 +342,7 @@ public sealed class AgentV1Service
             modelStepsInWindow: 0,
             toolCallsInWindow: 0,
             preset,
-            policySnapshotVersion: effectiveVersion,
+            policySnapshotVersion: policySnapshot.Version,
             policySnapshotSha256: snapshotSha,
             createdAt: now,
             updatedAt: now);
@@ -347,7 +393,7 @@ public sealed class AgentV1Service
 
         if (storeResult.Outcome == CreateRunOutcome.Created)
         {
-            RegisterRuntimeRoot(storeResult.Run, workspacePath);
+            RegisterRuntimeRoot(storeResult.Run, canonicalWorkspacePath, policySnapshot);
             var resp = isTrusted
                 ? MapRun(storeResult.Run)
                 : MapRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
@@ -356,7 +402,11 @@ public sealed class AgentV1Service
 
         if (storeResult.Outcome == CreateRunOutcome.AlreadyExists)
         {
-            RegisterRuntimeRoot(storeResult.Run, workspacePath);
+            if (string.Equals(storeResult.Run.PolicySnapshotSha256, policySnapshot.Sha256, StringComparison.Ordinal)
+                && storeResult.Run.PolicySnapshotVersion == policySnapshot.Version)
+            {
+                RegisterRuntimeRoot(storeResult.Run, canonicalWorkspacePath, policySnapshot);
+            }
             var resp = isTrusted
                 ? MapRun(storeResult.Run)
                 : MapRun(storeResult.Run, pendingTrustRequest?.RequestId.Value, workspaceIdentity.DisplayIdentityHash);
@@ -780,7 +830,13 @@ public sealed class AgentV1Service
                     return BoundedError(400, "invalid_workspace", "workspace_id required for project scope.");
                 }
 
-                var wsId = new WorkspaceId(workspaceIdRaw.Trim());
+                var trimmedWorkspaceId = workspaceIdRaw.Trim();
+                if (!IsWorkspaceId(trimmedWorkspaceId))
+                {
+                    return BoundedError(400, "invalid_workspace", "workspace_id invalid.");
+                }
+
+                var wsId = new WorkspaceId(trimmedWorkspaceId);
                 var list = await store.ListProjectAsync(wsId, cancellationToken).ConfigureAwait(false);
                 var items = list.Select(MapPolicyRule).ToList();
                 return new AgentServiceResult(200, new { items });
@@ -809,13 +865,44 @@ public sealed class AgentV1Service
             return BoundedError(400, "invalid_request", "Body must be object.");
         }
 
-        // Check for session_preset kind
-        if (body.TryGetProperty("kind", out var kindProp) && kindProp.ValueKind == JsonValueKind.String && kindProp.GetString() == "session_preset")
+        // Older clients wrapped the rule in a `rule` property.  Accept that
+        // shape only when it is the sole top-level property, otherwise a
+        // caller could smuggle ignored fields alongside the actual rule.
+        if (body.TryGetProperty("rule", out var wrappedRule))
         {
-            return await HandleSessionPresetAsync(body, isInteractive, cancellationToken).ConfigureAwait(false);
+            if (wrappedRule.ValueKind != JsonValueKind.Object
+                || body.EnumerateObject().Any(property => !string.Equals(property.Name, "rule", StringComparison.Ordinal)))
+            {
+                return BoundedError(400, "invalid_request", "rule must be the only top-level property.");
+            }
+
+            body = wrappedRule.Clone();
         }
 
-        // Otherwise treat as policy rule creation (also allow kind == "policy_rule" or missing)
+        // Check for session_preset kind.  Unknown kinds must not silently fall
+        // through to policy-rule parsing because that makes a typo change the
+        // meaning of the request.
+        if (body.TryGetProperty("kind", out var kindProp))
+        {
+            if (kindProp.ValueKind != JsonValueKind.String)
+            {
+                return BoundedError(400, "invalid_kind", "kind must be policy_rule or session_preset.");
+            }
+
+            var kind = kindProp.GetString()?.Trim().ToLowerInvariant();
+            if (kind == "session_preset")
+            {
+                return await HandleSessionPresetAsync(body, isInteractive, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (kind != "policy_rule")
+            {
+                return BoundedError(400, "invalid_kind", "kind must be policy_rule or session_preset.");
+            }
+        }
+
+        // Otherwise treat as policy rule creation (kind may be omitted for
+        // compatibility with the original endpoint).
         // Validate scope
         if (!body.TryGetProperty("scope", out var scopeProp) || scopeProp.ValueKind != JsonValueKind.String)
         {
@@ -854,37 +941,68 @@ public sealed class AgentV1Service
         {
             if (!allowedMatcherFields.Contains(prop.Name))
             {
-                return BoundedError(400, "unknown_field", $"Unknown matcher field {prop.Name}.");
+                return BoundedError(400, "unknown_field", "Unknown matcher field.");
             }
         }
 
-        var allowedTop = new HashSet<string>(StringComparer.Ordinal) { "kind", "scope", "decision", "matcher", "workspace_id", "run_id", "creation_order", "expires_at", "rule" };
+        var allowedTop = new HashSet<string>(StringComparer.Ordinal) { "kind", "scope", "decision", "matcher", "workspace_id", "run_id", "creation_order", "expires_at" };
         foreach (var prop in body.EnumerateObject())
         {
             if (!allowedTop.Contains(prop.Name))
             {
-                return BoundedError(400, "unknown_field", $"Unknown field {prop.Name}.");
+                return BoundedError(400, "unknown_field", "Unknown policy field.");
             }
         }
 
         string? toolId = null;
-        if (matcherProp.TryGetProperty("tool_id", out var tid) && tid.ValueKind == JsonValueKind.String) toolId = tid.GetString();
+        if (!TryReadPolicyString(matcherProp, "tool_id", 128, out toolId))
+        {
+            return BoundedError(400, "invalid_matcher", "tool_id must be a non-empty string or null.");
+        }
+
         string? toolVersion = null;
-        if (matcherProp.TryGetProperty("tool_version", out var tv) && tv.ValueKind == JsonValueKind.String) toolVersion = tv.GetString();
+        if (!TryReadPolicyString(matcherProp, "tool_version", 32, out toolVersion))
+        {
+            return BoundedError(400, "invalid_matcher", "tool_version must be a non-empty string or null.");
+        }
+
         string? pathPattern = null;
-        if (matcherProp.TryGetProperty("canonical_path_pattern", out var pp) && pp.ValueKind == JsonValueKind.String) pathPattern = pp.GetString();
+        if (!TryReadPolicyString(matcherProp, "canonical_path_pattern", 4096, out pathPattern))
+        {
+            return BoundedError(400, "invalid_matcher", "canonical_path_pattern must be a non-empty string or null.");
+        }
+
         string? resolvedExe = null;
-        if (matcherProp.TryGetProperty("resolved_executable", out var re) && re.ValueKind == JsonValueKind.String) resolvedExe = re.GetString();
+        if (!TryReadPolicyString(matcherProp, "resolved_executable", 256, out resolvedExe))
+        {
+            return BoundedError(400, "invalid_matcher", "resolved_executable must be a non-empty string or null.");
+        }
+
         IReadOnlyList<string>? argvPattern = null;
         if (matcherProp.TryGetProperty("argv_pattern", out var argvProp))
         {
             if (argvProp.ValueKind == JsonValueKind.Array)
             {
+                if (argvProp.GetArrayLength() > 64)
+                {
+                    return BoundedError(400, "invalid_matcher", "argv_pattern has too many entries.");
+                }
+
                 var list = new List<string>();
                 foreach (var el in argvProp.EnumerateArray())
                 {
-                    if (el.ValueKind != JsonValueKind.String) return BoundedError(400, "invalid_matcher", "argv_pattern must be string array.");
-                    list.Add(el.GetString()!);
+                    if (el.ValueKind != JsonValueKind.String)
+                    {
+                        return BoundedError(400, "invalid_matcher", "argv_pattern must be string array.");
+                    }
+
+                    var value = el.GetString();
+                    if (value is null || value.Length == 0 || value.Length > 4096 || string.IsNullOrWhiteSpace(value) || value.Contains('\0'))
+                    {
+                        return BoundedError(400, "invalid_matcher", "argv_pattern contains an invalid entry.");
+                    }
+
+                    list.Add(value);
                 }
 
                 argvPattern = list;
@@ -896,16 +1014,68 @@ public sealed class AgentV1Service
         }
 
         string? cwdPattern = null;
-        if (matcherProp.TryGetProperty("cwd_pattern", out var cwd) && cwd.ValueKind == JsonValueKind.String) cwdPattern = cwd.GetString();
+        if (!TryReadPolicyString(matcherProp, "cwd_pattern", 4096, out cwdPattern))
+        {
+            return BoundedError(400, "invalid_matcher", "cwd_pattern must be a non-empty string or null.");
+        }
+
         string? opClass = null;
-        if (matcherProp.TryGetProperty("operation_class", out var oc) && oc.ValueKind == JsonValueKind.String) opClass = oc.GetString();
+        if (!TryReadPolicyString(matcherProp, "operation_class", 64, out opClass))
+        {
+            return BoundedError(400, "invalid_matcher", "operation_class must be a non-empty string or null.");
+        }
+
         string? netIntent = null;
-        if (matcherProp.TryGetProperty("network_intent", out var ni) && ni.ValueKind == JsonValueKind.String) netIntent = ni.GetString();
+        if (!TryReadPolicyString(matcherProp, "network_intent", 64, out netIntent))
+        {
+            return BoundedError(400, "invalid_matcher", "network_intent must be a non-empty string or null.");
+        }
 
         string? workspaceIdRaw = null;
-        if (body.TryGetProperty("workspace_id", out var wsp) && wsp.ValueKind == JsonValueKind.String) workspaceIdRaw = wsp.GetString();
+        if (!TryReadPolicyString(body, "workspace_id", 64, out workspaceIdRaw))
+        {
+            return BoundedError(400, "invalid_workspace", "workspace_id must be a string or null.");
+        }
+
         string? runIdRaw = null;
-        if (body.TryGetProperty("run_id", out var rip) && rip.ValueKind == JsonValueKind.String) runIdRaw = rip.GetString();
+        if (!TryReadPolicyString(body, "run_id", 64, out runIdRaw))
+        {
+            return BoundedError(400, "invalid_run_id", "run_id must be a string or null.");
+        }
+
+        long creationOrder = 0;
+        if (body.TryGetProperty("creation_order", out var creationProp))
+        {
+            if (creationProp.ValueKind != JsonValueKind.Number
+                || !creationProp.TryGetInt64(out creationOrder)
+                || creationOrder < 0)
+            {
+                return BoundedError(400, "invalid_creation_order", "creation_order must be a non-negative integer.");
+            }
+        }
+
+        DateTimeOffset? expiresAt = null;
+        if (body.TryGetProperty("expires_at", out var expiresProp))
+        {
+            if (expiresProp.ValueKind == JsonValueKind.Null)
+            {
+                expiresAt = null;
+            }
+            else if (expiresProp.ValueKind != JsonValueKind.String
+                || !DateTimeOffset.TryParse(
+                    expiresProp.GetString(),
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind,
+                    out var parsedExpiry)
+                || parsedExpiry == default)
+            {
+                return BoundedError(400, "invalid_expiry", "expires_at must be an ISO-8601 timestamp or null.");
+            }
+            else
+            {
+                expiresAt = parsedExpiry.ToUniversalTime();
+            }
+        }
 
         PolicyRuleScope scopeEnum = scopeRaw switch
         {
@@ -929,6 +1099,8 @@ public sealed class AgentV1Service
         if (scopeEnum == PolicyRuleScope.Project)
         {
             if (string.IsNullOrWhiteSpace(workspaceIdRaw)) return BoundedError(400, "invalid_workspace", "workspace_id required for project scope.");
+            if (!IsWorkspaceId(workspaceIdRaw.Trim())) return BoundedError(400, "invalid_workspace", "workspace_id invalid.");
+            if (runIdRaw is not null) return BoundedError(400, "invalid_scope", "project scope must not have run_id.");
             wsId = new WorkspaceId(workspaceIdRaw.Trim());
             var ws = await _workspaceStore.GetAsync(wsId.Value, cancellationToken).ConfigureAwait(false);
             if (ws is null) return BoundedError(404, "workspace_not_found", "Workspace not found.");
@@ -937,6 +1109,7 @@ public sealed class AgentV1Service
         {
             if (string.IsNullOrWhiteSpace(runIdRaw)) return BoundedError(400, "invalid_run_id", "run_id required.");
             if (!IsRunId(runIdRaw.Trim())) return BoundedError(400, "invalid_run_id", "run_id invalid.");
+            if (workspaceIdRaw is not null) return BoundedError(400, "invalid_scope", "run/once scope must not have workspace_id.");
             runId = new RunId(runIdRaw.Trim());
             var run = await _store.GetRunAsync(runId.Value, cancellationToken).ConfigureAwait(false);
             if (run is null) return BoundedError(404, "run_not_found", "Run not found.");
@@ -957,7 +1130,7 @@ public sealed class AgentV1Service
         }
 
         var ruleId = _ids.NewPolicyRuleId();
-        var rule = new PolicyRule(ruleId, scopeEnum, decisionEnum, matcher, CreationOrder: 0, ExpiresAt: null);
+        var rule = new PolicyRule(ruleId, scopeEnum, decisionEnum, matcher, creationOrder, expiresAt);
         var store = new SqlitePolicyRuleStore(_options, _keyStore);
         try
         {
@@ -981,11 +1154,23 @@ public sealed class AgentV1Service
             operation_class = opClass,
             network_intent = netIntent
         };
-        return new AgentServiceResult(201, new { rule_id = ruleId.Value, scope = scopeRaw, decision = decRaw, matcher = respMatcher, creation_order = 0 });
+        return new AgentServiceResult(201, new { rule_id = ruleId.Value, scope = scopeRaw, decision = decRaw, matcher = respMatcher, creation_order = creationOrder, expires_at = expiresAt?.ToString("O", CultureInfo.InvariantCulture), version = 1 });
     }
 
     private async Task<AgentServiceResult> HandleSessionPresetAsync(JsonElement body, bool isInteractive, CancellationToken cancellationToken)
     {
+        var allowedFields = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "kind", "session_id", "preset", "expected_version"
+        };
+        foreach (var property in body.EnumerateObject())
+        {
+            if (!allowedFields.Contains(property.Name))
+            {
+                return BoundedError(400, "unknown_field", "Unknown session preset field.");
+            }
+        }
+
         if (!body.TryGetProperty("session_id", out var sessProp) || sessProp.ValueKind != JsonValueKind.String)
         {
             return BoundedError(400, "invalid_session_id", "session_id required.");
@@ -1014,6 +1199,11 @@ public sealed class AgentV1Service
             if (verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt64(out var v)) expectedVersion = v;
             else if (verProp.ValueKind == JsonValueKind.String && long.TryParse(verProp.GetString(), out var sv)) expectedVersion = sv;
             else if (verProp.ValueKind != JsonValueKind.Null) return BoundedError(400, "invalid_preset_version", "expected_version invalid.");
+        }
+
+        if (expectedVersion < 0)
+        {
+            return BoundedError(400, "invalid_preset_version", "expected_version must be non-negative.");
         }
 
         if (preset == AgentPermissionPreset.FullAccess && !isInteractive)
@@ -1144,10 +1334,34 @@ public sealed class AgentV1Service
         };
     }
 
-    // Host-side one-time approval ledger for HTTP approvals (first-writer wins)
-    private static readonly ConcurrentDictionary<string, byte> HostApprovalLedger = new(StringComparer.Ordinal);
+    // Host-side one-time approval ledger for HTTP approvals (first-writer wins).
+    // Entries are only a retry guard; the durable approval event/run state remains
+    // authoritative. Expire old entries so a host that processes many approvals
+    // cannot retain an unbounded amount of memory until restart.
+    private static readonly ConcurrentDictionary<string, DateTimeOffset> HostApprovalLedger = new(StringComparer.Ordinal);
+    private static readonly TimeSpan HostApprovalLedgerTtl = TimeSpan.FromMinutes(30);
 
     internal static void ClearHostApprovalsForTests() => HostApprovalLedger.Clear();
+
+    private static void PruneHostApprovalLedger(DateTimeOffset now)
+    {
+        // Pruning on every approval would add avoidable contention to the normal
+        // path. Once the bounded retry ledger grows, remove entries older than the
+        // same TTL used by pending approval requests.
+        if (HostApprovalLedger.Count < 1024)
+        {
+            return;
+        }
+
+        var cutoff = now - HostApprovalLedgerTtl;
+        foreach (var entry in HostApprovalLedger)
+        {
+            if (entry.Value <= cutoff)
+            {
+                HostApprovalLedger.TryRemove(new KeyValuePair<string, DateTimeOffset>(entry.Key, entry.Value));
+            }
+        }
+    }
 
     public async Task<AgentServiceResult> HandleApprovalAsync(string runIdRaw, string approvalIdRaw, JsonElement? body, CancellationToken cancellationToken)
     {
@@ -1202,20 +1416,28 @@ public sealed class AgentV1Service
                         "run" => "allow_run",
                         "project" => "allow_project",
                         "global" => "global",
-                        _ => "allow_once"
+                        _ => null
                     };
                 }
             }
 
             if (string.IsNullOrWhiteSpace(commandRaw) && decisionRaw is not null)
             {
-                commandRaw = decisionRaw;
+                commandRaw = decisionRaw.Trim().Equals("allow", StringComparison.OrdinalIgnoreCase)
+                    ? "allow_once"
+                    : decisionRaw;
             }
         }
 
         if (string.IsNullOrWhiteSpace(commandRaw) && string.IsNullOrWhiteSpace(scopeRaw))
         {
-            commandRaw = "allow_once";
+            return BoundedError(400, "invalid_approval_command", "Approval command is required.");
+        }
+
+        if (scopeRaw is not null
+            && scopeRaw.Trim().ToLowerInvariant() is not ("once" or "run" or "project" or "global"))
+        {
+            return BoundedError(400, "invalid_approval_command", "Approval scope is invalid.");
         }
 
         if (!string.IsNullOrWhiteSpace(scopeRaw) && scopeRaw!.Trim().Equals("global", StringComparison.OrdinalIgnoreCase))
@@ -1232,6 +1454,11 @@ public sealed class AgentV1Service
         bool isDeny = commandRaw is "deny" or "reject";
         bool isAllowRun = commandRaw is "allow_run" or "allowrun";
         bool isAllowProject = commandRaw is "allow_project" or "allowproject";
+        var isAllowOnce = commandRaw is "allow_once" or "allowonce" or "once";
+        if (!isDeny && !isAllowRun && !isAllowProject && !isAllowOnce)
+        {
+            return BoundedError(400, "invalid_approval_command", "Approval command is invalid.");
+        }
 
         var runId = new RunId(runIdRaw);
         var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
@@ -1240,18 +1467,34 @@ public sealed class AgentV1Service
             return BoundedError(404, "run_not_found", "Run not found.");
         }
 
+        // A durable approval request is consumable only while the run is still
+        // waiting for that approval.  Relying solely on an in-memory ledger would
+        // allow a replay after a host restart to resolve an already-used request.
+        if (run.State != HarnessRunState.WaitingApproval)
+        {
+            return BoundedError(409, "approval_stale", "Approval is missing, expired, or already used.");
+        }
+
         // The approval ID must correspond to a persisted approval.requested event for this
         // run while it is actually waiting; fabricated or mismatched IDs are rejected as
         // approval_stale. This check is authoritative and survives process restarts because
         // the event stream is durable. HostApprovalLedger below is only the atomic
         // first-writer-wins guard for HTTP retries.
         ApprovalId? latestPendingId = null;
+        HarnessEvent? pendingApprovalEvent = null;
+        var proposedEvents = new Dictionary<string, HarnessEvent>(StringComparer.Ordinal);
         await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
         {
-            if (envelope.Event.Kind == "approval.requested"
+            if (envelope.Event.Kind == "tool.proposed"
+                && envelope.Event.ToolCallId is { } proposedToolCall)
+            {
+                proposedEvents[proposedToolCall.Value] = envelope.Event;
+            }
+            else if (envelope.Event.Kind == "approval.requested"
                 && envelope.Event.ApprovalId is { } id)
             {
                 latestPendingId = id;
+                pendingApprovalEvent = envelope.Event;
             }
         }
 
@@ -1260,10 +1503,37 @@ public sealed class AgentV1Service
             return BoundedError(409, "approval_stale", "Approval is missing, expired, or already used.");
         }
 
-        // One-time consumption: first writer wins
+        if (pendingApprovalEvent is null
+            || _time.UtcNow - pendingApprovalEvent.OccurredAt > TimeSpan.FromMinutes(30))
+        {
+            return BoundedError(409, "approval_stale", "Approval is missing, expired, or already used.");
+        }
+
+        ToolApprovalBinding? approvalBinding = null;
+        if (pendingApprovalEvent?.ToolCallId is { } pendingToolCallId
+            && proposedEvents.TryGetValue(pendingToolCallId.Value, out var proposedEvent)
+            && proposedEvent.PayloadId is { } proposalPayloadId)
+        {
+            approvalBinding = await BuildApprovalBindingAsync(
+                    run,
+                    pendingToolCallId,
+                    proposalPayloadId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (approvalBinding is null)
+        {
+            return BoundedError(409, "approval_stale", "Approval binding is missing or invalid.");
+        }
+
+        // One-time consumption: first writer wins. The durable checks above prevent
+        // a replay after restart; this ledger only closes the concurrent HTTP race.
 
         var key = $"{runIdRaw}|{approvalIdRaw}";
-        if (!HostApprovalLedger.TryAdd(key, 0))
+        var ledgerNow = _time.UtcNow;
+        PruneHostApprovalLedger(ledgerNow);
+        if (!HostApprovalLedger.TryAdd(key, ledgerNow))
         {
             return BoundedError(409, "approval_stale", "approval already consumed");
         }
@@ -1273,6 +1543,7 @@ public sealed class AgentV1Service
             var denyTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveApproval);
             if (!denyTransition.Accepted)
             {
+                HostApprovalLedger.TryRemove(key, out _);
                 return BoundedError(409, denyTransition.ErrorCode ?? "invalid_transition", "Approval resolve rejected.");
             }
 
@@ -1280,9 +1551,19 @@ public sealed class AgentV1Service
             var deniedRun = AdvanceRun(run, denyTransition.Next, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, 1, denyNow);
             var denyEvt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: "approval_resolved");
             var denyCommit = new HarnessCommit(runId, run.Version, deniedRun, new[] { denyEvt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
-            var denyResult = await _store.CommitAsync(denyCommit, cancellationToken).ConfigureAwait(false);
+            HarnessCommitResult denyResult;
+            try
+            {
+                denyResult = await _store.CommitAsync(denyCommit, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                HostApprovalLedger.TryRemove(key, out _);
+                throw;
+            }
             if (denyResult.Outcome != HarnessCommitOutcome.Committed)
             {
+                HostApprovalLedger.TryRemove(key, out _);
                 return BoundedError(409, "commit_conflict", "Commit conflict.");
             }
 
@@ -1298,38 +1579,34 @@ public sealed class AgentV1Service
 
         bool ruleSaveFailed = false;
         string? ruleId = null;
+        var externalDirectoryRequested = string.Equals(
+            pendingApprovalEvent?.SafeCode,
+            "external_directory_required",
+            StringComparison.Ordinal);
+        string? externalDirectory = isAllowRun || isAllowProject
+            ? TryGetExternalDirectory(run, approvalBinding, externalDirectoryRequested)
+            : null;
         if (isAllowRun || isAllowProject)
         {
             try
             {
-                var ws = await _workspaceStore.GetAsync(run.WorkspaceId, cancellationToken).ConfigureAwait(false);
-                if (ws is not null)
-                {
-                    var dummyBinding = new RuAgent.Harness.Core.Approval.ToolApprovalBinding(
-                        new RunId(runIdRaw),
-                        new ToolCallId("call_" + new string('b', 32)),
-                        "files.read",
-                        "1.0.0",
-                        "probe.txt",
-                        null,
-                        Array.Empty<string>(),
-                        null,
-                        "read",
-                        "none",
-                        run.PolicySnapshotVersion,
-                        new string('0', 64),
-                        _time.UtcNow.AddMinutes(30));
-                    var cmd = isAllowRun ? RuAgent.Harness.Core.Approval.ApprovalCommand.AllowRun : RuAgent.Harness.Core.Approval.ApprovalCommand.AllowProject;
-                    var approvalService = new HarnessApprovalService(_options, _keyStore, _ids, _time);
-                    var outcome = await approvalService.ProcessAsync(
-                        dummyBinding,
-                        cmd,
-                        run.WorkspaceId,
-                        runId,
-                        cancellationToken).ConfigureAwait(false);
-                    ruleSaveFailed = outcome.RuleSaveFailed;
-                    ruleId = outcome.RuleId;
-                }
+                var cmd = isAllowRun ? RuAgent.Harness.Core.Approval.ApprovalCommand.AllowRun : RuAgent.Harness.Core.Approval.ApprovalCommand.AllowProject;
+                var approvalService = new HarnessApprovalService(_options, _keyStore, _ids, _time);
+                var outcome = await approvalService.ProcessAsync(
+                    approvalBinding,
+                    cmd,
+                    run.WorkspaceId,
+                    runId,
+                    cancellationToken,
+                    externalDirectory,
+                    externalDirectoryRequested).ConfigureAwait(false);
+                ruleSaveFailed = outcome.RuleSaveFailed;
+                ruleId = outcome.RuleId;
+            }
+            catch (OperationCanceledException)
+            {
+                HostApprovalLedger.TryRemove(key, out _);
+                throw;
             }
             catch
             {
@@ -1340,6 +1617,7 @@ public sealed class AgentV1Service
         var allowTransition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.ResolveApproval);
         if (!allowTransition.Accepted)
         {
+            HostApprovalLedger.TryRemove(key, out _);
             return BoundedError(409, allowTransition.ErrorCode ?? "invalid_transition", "Approval resolve rejected.");
         }
 
@@ -1347,21 +1625,53 @@ public sealed class AgentV1Service
         var nextRun = AdvanceRun(run, allowTransition.Next, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow, 1, allowNow);
         var evt = new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: "approval_resolved");
         var commit = new HarnessCommit(runId, run.Version, nextRun, new[] { evt }, Array.Empty<HarnessPayloadIntent>(), Array.Empty<ConversationOutboxIntent>());
-        var commitResult = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
+        HarnessCommitResult commitResult;
+        try
+        {
+            commitResult = await _store.CommitAsync(commit, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            HostApprovalLedger.TryRemove(key, out _);
+            throw;
+        }
         if (commitResult.Outcome != HarnessCommitOutcome.Committed)
         {
+            HostApprovalLedger.TryRemove(key, out _);
             return BoundedError(409, "commit_conflict", "Commit conflict.");
         }
 
-        _approvalGrants?.GrantNext(runId.Value);
+        // Bind the process-local allow-once bridge to the exact tool/version/
+        // argument hash that produced this approval. The resumed model step may
+        // allocate a new provider call id, but it must re-emit this same intent.
+        _approvalGrants?.GrantNext(runId.Value, approvalBinding.IntentHash);
+        if (externalDirectory is not null)
+        {
+            try
+            {
+                // The durable project rule covers future runs. The process-local
+                // directory grant is needed immediately because the active run's
+                // policy snapshot is intentionally immutable.
+                _approvalGrants?.GrantExternalDirectory(runId.Value, externalDirectory);
+            }
+            catch (Exception error) when (error is ArgumentException or DirectoryNotFoundException)
+            {
+                // A directory can disappear between approval binding and grant
+                // registration. Keep the run fail-closed; its next proposal will
+                // request approval again rather than turning this into a 500.
+            }
+        }
 
         var matcherPreview = new
         {
-            tool_id = "files.read",
-            tool_version = "1.0.0",
-            canonical_path = "probe.txt",
-            operation_class = "read",
-            network_intent = "none",
+            tool_id = approvalBinding.ToolId,
+            tool_version = approvalBinding.ToolVersion,
+            canonical_path = approvalBinding.CanonicalPath,
+            resolved_executable = approvalBinding.ResolvedExecutable,
+            argv_pattern = approvalBinding.Argv,
+            cwd_pattern = approvalBinding.Cwd,
+            operation_class = approvalBinding.OperationClass,
+            network_intent = approvalBinding.NetworkIntent,
             scope = isAllowRun ? "run" : isAllowProject ? "project" : "once"
         };
 
@@ -1383,6 +1693,310 @@ public sealed class AgentV1Service
     }
 
     private IHarnessKeyStore GetKeyStore() => _keyStore;
+
+    private async Task<ToolApprovalBinding?> BuildApprovalBindingAsync(
+        AgentRun run,
+        ToolCallId toolCallId,
+        PayloadId payloadId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var payload = await _payloadStore
+                .ReadForClientAsync(run.RunId, payloadId, cancellationToken)
+                .ConfigureAwait(false);
+            using var document = JsonDocument.Parse(payload.Plaintext);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("tool_id", out var toolIdNode)
+                || toolIdNode.ValueKind != JsonValueKind.String
+                || !root.TryGetProperty("tool_version", out var versionNode)
+                || versionNode.ValueKind != JsonValueKind.String
+                || !root.TryGetProperty("arguments", out var arguments)
+                || arguments.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var toolId = ReadString(root, "tool_id", ApprovalToolIdMaxLength);
+            var toolVersion = ReadString(root, "tool_version", ApprovalToolVersionMaxLength);
+            if (toolId is null || toolVersion is null)
+            {
+                return null;
+            }
+
+            var canonicalPath = ReadString(arguments, "path", ApprovalPathMaxLength);
+            var requestedExecutable = ReadString(arguments, "executable", ApprovalExecutableMaxLength);
+            var shellRuntime = ReadString(arguments, "shell", 32) ?? "powershell";
+            var argv = ReadStringArray(arguments, "arguments");
+            if (string.Equals(toolId, "terminal.shell", StringComparison.Ordinal))
+            {
+                if (!string.Equals(shellRuntime, "powershell", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(shellRuntime, "pwsh", StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                var script = ReadString(arguments, "script", ApprovalScriptMaxLength);
+                if (script is null)
+                {
+                    return null;
+                }
+
+                requestedExecutable = shellRuntime;
+                argv = ["-NoProfile", "-NonInteractive", "-Command", script];
+            }
+            else if (string.Equals(toolId, "terminal.run", StringComparison.Ordinal)
+                && requestedExecutable is null)
+            {
+                return null;
+            }
+
+            if (toolId is "files.read" or "files.write" or "files.edit" or "files.delete"
+                && canonicalPath is null)
+            {
+                return null;
+            }
+
+            var cwd = ReadString(arguments, "working_directory", ApprovalCwdMaxLength);
+            if (toolId is "terminal.run" or "terminal.shell")
+            {
+                if (_runtimeRoots is null || !_runtimeRoots.TryGetRoot(run.RunId, out var rootPath)
+                    || string.IsNullOrWhiteSpace(rootPath))
+                {
+                    return null;
+                }
+
+                var trustedRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(rootPath);
+                var requestedCwd = cwd ?? ".";
+                var candidateCwd = Path.IsPathRooted(requestedCwd)
+                    ? Path.GetFullPath(requestedCwd)
+                    : Path.GetFullPath(Path.Combine(trustedRoot, requestedCwd));
+                if (!Directory.Exists(candidateCwd))
+                {
+                    return null;
+                }
+
+                // The gateway stores the final directory identity in its policy
+                // context. Resolve the same identity here so a reusable approval
+                // cannot be silently bound to a lexical path or a retargeted link.
+                cwd = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(candidateCwd);
+            }
+
+            var operationClass = toolId switch
+            {
+                "files.list" => "list",
+                "files.glob" => "glob",
+                "files.search" => "search",
+                "files.read" => "read",
+                "files.write" => "write",
+                "files.edit" => "edit",
+                "files.apply_patch" => "patch",
+                "files.delete" => "delete",
+                "files.restore" => "restore",
+                "terminal.run" or "terminal.shell" => "terminal",
+                _ => "mutation",
+            };
+            var networkIntent = "none";
+            if (arguments.TryGetProperty("network_intent", out var network))
+            {
+                if (network.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                {
+                    return null;
+                }
+
+                networkIntent = network.ValueKind == JsonValueKind.True ? "declared" : "none";
+            }
+            else if (arguments.TryGetProperty("network", out var legacyNetwork))
+            {
+                if (legacyNetwork.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                {
+                    return null;
+                }
+
+                networkIntent = legacyNetwork.ValueKind == JsonValueKind.True ? "declared" : "none";
+            }
+            var intentHash = HarnessIntentCanonicalizer.ComputeHash(
+                toolId,
+                toolVersion,
+                arguments);
+
+            return new ToolApprovalBinding(
+                run.RunId,
+                toolCallId,
+                toolId,
+                toolVersion,
+                canonicalPath,
+                requestedExecutable,
+                argv,
+                cwd,
+                operationClass,
+                networkIntent,
+                run.PolicySnapshotVersion,
+                intentHash,
+                _time.UtcNow.AddMinutes(30));
+        }
+        catch (Exception error) when (error is JsonException
+            or InvalidOperationException
+            or ArgumentException
+            or IOException
+            or HarnessStoreException
+            or CryptographicException)
+        {
+            return null;
+        }
+    }
+
+    private string? TryGetExternalDirectory(
+        AgentRun run,
+        ToolApprovalBinding binding,
+        bool externalDirectoryRequested)
+    {
+        if (!externalDirectoryRequested)
+        {
+            return null;
+        }
+
+        if (_runtimeRoots is null
+            || !_runtimeRoots.TryGetRoot(run.RunId, out var rootPath)
+            || string.IsNullOrWhiteSpace(rootPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var trustedRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(rootPath);
+            string? candidate;
+            if (binding.OperationClass == "terminal")
+            {
+                candidate = binding.Cwd;
+            }
+            else if (binding.CanonicalPath is not null)
+            {
+                candidate = Path.IsPathRooted(binding.CanonicalPath)
+                    ? Path.GetFullPath(binding.CanonicalPath)
+                    : Path.GetFullPath(Path.Combine(trustedRoot, binding.CanonicalPath));
+            }
+            else
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return null;
+            }
+
+            string directory;
+            if (Directory.Exists(candidate))
+            {
+                directory = candidate;
+            }
+            else
+            {
+                var parent = Directory.GetParent(candidate)?.FullName;
+                if (string.IsNullOrWhiteSpace(parent) || !Directory.Exists(parent))
+                {
+                    return null;
+                }
+
+                directory = parent;
+            }
+
+            var canonicalDirectory = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(directory);
+            if (IsWithinPath(canonicalDirectory, trustedRoot)
+                || !ExternalDirectoryPolicy.TryCreatePattern(canonicalDirectory, out _))
+            {
+                return null;
+            }
+
+            return canonicalDirectory;
+        }
+        catch (Exception error) when (error is ArgumentException
+            or IOException
+            or UnauthorizedAccessException
+            or System.Security.SecurityException)
+        {
+            return null;
+        }
+    }
+
+    private static bool IsWithinPath(string candidate, string root)
+    {
+        var normalizedCandidate = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate));
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        return string.Equals(normalizedCandidate, normalizedRoot, StringComparison.OrdinalIgnoreCase)
+            || normalizedCandidate.StartsWith(
+                normalizedRoot + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase)
+            || Path.AltDirectorySeparatorChar != Path.DirectorySeparatorChar
+                && normalizedCandidate.StartsWith(
+                    normalizedRoot + Path.AltDirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ReadString(JsonElement objectNode, string propertyName, int maxLength)
+    {
+        if (!objectNode.TryGetProperty(propertyName, out var value)
+            || value.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            throw new ArgumentException($"{propertyName} must be a string", propertyName);
+        }
+
+        var text = value.GetString();
+        if (text is null
+            || string.IsNullOrWhiteSpace(text)
+            || text.Length > maxLength
+            || text.Contains('\0'))
+        {
+            throw new ArgumentException($"{propertyName} is invalid", propertyName);
+        }
+
+        return text;
+    }
+
+    private static IReadOnlyList<string> ReadStringArray(JsonElement objectNode, string propertyName)
+    {
+        if (!objectNode.TryGetProperty(propertyName, out var value)
+            || value.ValueKind == JsonValueKind.Null)
+        {
+            return Array.Empty<string>();
+        }
+
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            throw new ArgumentException("arguments array is invalid", propertyName);
+        }
+
+        var values = new List<string>();
+        if (value.GetArrayLength() > RuAgent.Protocol.TerminalLimits.MaxArguments)
+        {
+            throw new ArgumentException("arguments array is too large", propertyName);
+        }
+
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String || item.GetString() is not { } text)
+            {
+                throw new ArgumentException("arguments array is invalid", propertyName);
+            }
+
+            if (text.Length > ApprovalArgumentMaxLength || text.Contains('\0'))
+            {
+                throw new ArgumentException("arguments array is invalid", propertyName);
+            }
+
+            values.Add(text);
+        }
+
+        return values;
+    }
 
     private sealed class EphemeralKeyStore : IHarnessKeyStore
     {
@@ -1412,6 +2026,15 @@ public sealed class AgentV1Service
         if (run.State.IsTerminal())
         {
             return new AgentServiceResult(200, MapRun(run));
+        }
+
+        // Stop live terminal processes before committing the durable cancelled
+        // projection. The runtime registry points at the same per-run coordinator
+        // that owns the gateway/Job Object; merely changing SQLite state leaves a
+        // child process running.
+        if (_runtimeRoots is not null)
+        {
+            await _runtimeRoots.CancelRunningToolsAsync(runId, cancellationToken).ConfigureAwait(false);
         }
 
         var transition = AgentRunStateMachine.TryTransition(run.Status, HarnessRunTransition.Cancel);
@@ -1689,8 +2312,8 @@ public sealed class AgentV1Service
     /// can execute model/tool steps for it on this host process. Untrusted runs are
     /// registered too but only start driving once trust approval moves them to running.
     /// </summary>
-    private void RegisterRuntimeRoot(AgentRun run, string workspacePath) =>
-        _runtimeRoots?.Register(run.RunId, workspacePath);
+    private void RegisterRuntimeRoot(AgentRun run, string workspacePath, PolicySnapshot policySnapshot) =>
+        _runtimeRoots?.Register(run.RunId, workspacePath, policySnapshot);
 
     private static GetAgentRunResponse MapRun(
         AgentRun run,
@@ -1727,6 +2350,10 @@ public sealed class AgentV1Service
 
     private static bool IsSessionId(string value) => value.Length == 32 && IsLowerHex(value);
 
+    private static bool IsWorkspaceId(string value) => value.StartsWith("ws_", StringComparison.Ordinal)
+        && value.Length == 35
+        && IsLowerHex(value.AsSpan(3));
+
     private static bool IsRunId(string value) => value.StartsWith("run_", StringComparison.Ordinal) && value.Length == 36 && IsLowerHex(value.AsSpan(4));
 
     private static bool IsPayloadId(string value) => value.StartsWith("payload_", StringComparison.Ordinal) && value.Length == 40 && IsLowerHex(value.AsSpan(8));
@@ -1755,6 +2382,38 @@ public sealed class AgentV1Service
         return DateTimeOffset.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out _);
     }
 
+    private static bool TryReadPolicyString(JsonElement obj, string propertyName, int maxLength, out string? value)
+    {
+        value = null;
+        if (!obj.TryGetProperty(propertyName, out var property))
+        {
+            return true;
+        }
+
+        if (property.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (property.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        var raw = property.GetString();
+        if (raw is null
+            || raw.Length == 0
+            || raw.Length > maxLength
+            || string.IsNullOrWhiteSpace(raw)
+            || raw.Contains('\0'))
+        {
+            return false;
+        }
+
+        value = raw;
+        return true;
+    }
+
     private static string EncodeCursor(string createdAt, string runId)
     {
         var raw = $"{createdAt}|{runId}";
@@ -1763,12 +2422,28 @@ public sealed class AgentV1Service
 
     private static (string CreatedAt, string RunId)? TryDecodeCursor(string cursor)
     {
+        if (cursor.Length > MaxCursorChars)
+        {
+            return null;
+        }
+
         try
         {
             var bytes = Convert.FromBase64String(cursor);
-            var raw = Encoding.UTF8.GetString(bytes);
+            if (bytes.Length == 0 || bytes.Length > MaxCursorBytes)
+            {
+                return null;
+            }
+
+            var raw = StrictUtf8.GetString(bytes);
             var parts = raw.Split('|');
-            if (parts.Length != 2)
+            if (parts.Length != 2
+                || parts[0].Length is 0 or > 64
+                || parts[1].Length is 0 or > 64
+                || parts[0].Contains('\0')
+                || parts[1].Contains('\0')
+                || !IsValidIsoTimestamp(parts[0])
+                || !IsRunId(parts[1]))
             {
                 return null;
             }

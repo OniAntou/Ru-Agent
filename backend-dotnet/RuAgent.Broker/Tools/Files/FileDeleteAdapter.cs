@@ -60,35 +60,9 @@ public sealed class FileDeleteAdapter
             throw new UnauthorizedAccessException("workspace_changed");
         }
 
-        // Read file byte-exact, bounded by cap (already ensured length <= cap)
-        byte[] bytes;
-        using (var stream = new FileStream(
-            resolved.CanonicalPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete,
-            4096,
-            FileOptions.SequentialScan))
-        {
-            var length = (int)info.Length;
-            bytes = new byte[length];
-            int read = 0;
-            while (read < length)
-            {
-                int n = stream.Read(bytes, read, length - read);
-                if (n == 0)
-                {
-                    break;
-                }
-
-                read += n;
-            }
-
-            if (read != length)
-            {
-                throw new IOException("io_error");
-            }
-        }
+        // Read file byte-exact, bounded by cap (the file may grow after the
+        // metadata check, so do not trust FileInfo.Length for allocation).
+        var bytes = ReadBoundedBytes(resolved.CanonicalPath);
 
         var computed = FileHashService.ComputeBytesHash(bytes);
         if (!string.Equals(computed, expected, StringComparison.Ordinal))
@@ -159,42 +133,34 @@ public sealed class FileDeleteAdapter
             throw new ArgumentException("recovery_too_large");
         }
 
-        var currentHash = FileHashService.GetCurrentHash(reResolved.CanonicalPath);
-        if (!string.Equals(currentHash, expected, StringComparison.Ordinal))
+        var deletion = FileMutationGuard.WithLock(() =>
         {
-            throw new UnauthorizedAccessException("workspace_changed");
-        }
+            var currentHash = FileHashService.GetCurrentHash(reResolved.CanonicalPath);
+            if (!string.Equals(currentHash, expected, StringComparison.Ordinal))
+            {
+                throw new UnauthorizedAccessException("workspace_changed");
+            }
 
-        // Capture byte-exact recovery copy before delete (bounded)
-        var recoveryBytes = File.ReadAllBytes(reResolved.CanonicalPath);
-        if (recoveryBytes.Length > MaxRecoveryBytes)
-        {
-            throw new ArgumentException("recovery_too_large");
-        }
+            // Capture the byte-exact recovery copy and perform the delete under the
+            // same process-wide mutation gate. This prevents another adapter call
+            // from replacing the preimage between the hash and File.Delete.
+            var recoveryBytes = ReadBoundedBytes(reResolved.CanonicalPath);
+            var computedHash = FileHashService.ComputeBytesHash(recoveryBytes);
+            if (!string.Equals(computedHash, currentHash, StringComparison.Ordinal))
+            {
+                throw new UnauthorizedAccessException("workspace_changed");
+            }
 
-        var computedHash = FileHashService.ComputeBytesHash(recoveryBytes);
-        if (!string.Equals(computedHash, currentHash, StringComparison.Ordinal))
-        {
-            throw new UnauthorizedAccessException("workspace_changed");
-        }
-
-        try
-        {
             File.Delete(reResolved.CanonicalPath);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            throw new UnauthorizedAccessException("access_denied", ex);
-        }
-        catch (DirectoryNotFoundException ex)
-        {
-            throw new IOException("io_error", ex);
-        }
+            if (File.Exists(reResolved.CanonicalPath))
+            {
+                throw new IOException("io_error");
+            }
 
-        if (File.Exists(reResolved.CanonicalPath))
-        {
-            throw new IOException("io_error");
-        }
+            return (currentHash, recoveryBytes);
+        });
+        var currentHash = deletion.currentHash;
+        var recoveryBytes = deletion.recoveryBytes;
 
         var recoveryId = "payload_" + Guid.NewGuid().ToString("N");
         // Store for restore – byte-exact, shared with FileRestoreAdapter
@@ -204,7 +170,7 @@ public sealed class FileDeleteAdapter
             ["path"] = ToRelative(reResolved.CanonicalPath),
             ["before_sha256"] = currentHash,
             ["recovery_id"] = recoveryId,
-            ["bytes"] = (int)info.Length,
+            ["bytes"] = recoveryBytes.Length,
         };
     }
 
@@ -237,6 +203,36 @@ public sealed class FileDeleteAdapter
         }
 
         return relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
+    }
+
+    private static byte[] ReadBoundedBytes(string canonicalPath)
+    {
+        using var stream = new FileStream(
+            canonicalPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            81920,
+            FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(MaxRecoveryBytes, 81920));
+        var buffer = new byte[Math.Min(MaxRecoveryBytes, 81920)];
+        while (true)
+        {
+            var read = stream.Read(buffer, 0, buffer.Length);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (output.Length > MaxRecoveryBytes - read)
+            {
+                throw new ArgumentException("recovery_too_large");
+            }
+
+            output.Write(buffer, 0, read);
+        }
+
+        return output.ToArray();
     }
 
     private static string GetRequiredString(JsonObject obj, string key)

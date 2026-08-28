@@ -238,6 +238,39 @@ public sealed class AgentRunCoordinatorTests
     }
 
     [Fact]
+    public async Task Approval_wait_discards_prepared_calls_and_durably_records_prior_denials()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep(callCount: 3));
+        var gateway = new FakeToolGateway
+        {
+            DecisionFactory = proposal => proposal.ModelOrder switch
+            {
+                1 => ToolProposalDecision.Allow(ToolAccessKind.ReadOnly, "canonical-1"),
+                2 => ToolProposalDecision.Deny(ToolAccessKind.ReadOnly, "policy_denied"),
+                _ => ToolProposalDecision.Ask(
+                    ToolAccessKind.Mutation,
+                    new ApprovalId("apr_" + new string('a', 32))),
+            },
+        };
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.WaitingApproval, result.Run.State);
+        Assert.Single(gateway.CancelAttempts);
+        Assert.Empty(gateway.ExecuteAttempts);
+        Assert.Single(result.Receipts);
+        Assert.Equal("policy_denied", result.Receipts[0].Code);
+        var events = store.Commits.SelectMany(commit => commit.Events).ToArray();
+        Assert.Contains(events, @event => @event.Kind == HarnessEventKind.ToolExecutionCompleted);
+        Assert.Contains(events, @event => @event.Kind == HarnessEventKind.ApprovalRequested);
+        Assert.DoesNotContain(events, @event => @event.Kind == HarnessEventKind.ToolExecutionRequested);
+    }
+
+    [Fact]
     public async Task Read_only_transport_retry_uses_same_execution_id_and_at_most_two_attempts()
     {
         var model = new FakeModelStepRunner();
@@ -302,6 +335,30 @@ public sealed class AgentRunCoordinatorTests
         var blocked = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
         Assert.Equal("run_not_runnable", blocked.ErrorCode);
         Assert.Single(gateway.ExecuteAttempts);
+    }
+
+    [Fact]
+    public async Task Unknown_mutation_outcome_records_later_prepared_calls_as_not_executed()
+    {
+        var model = new FakeModelStepRunner();
+        model.Enqueue(ToolStep(callCount: 2));
+        var gateway = new FakeToolGateway(
+            ToolAccessKind.Mutation,
+            transportFailures: 1);
+        var store = new InMemoryHarnessEventStore();
+        store.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
+        var coordinator = Coordinator(model, gateway, store);
+
+        var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
+
+        Assert.Equal(HarnessRunState.ReconciliationRequired, result.Run.State);
+        Assert.Single(gateway.ExecuteAttempts);
+        Assert.Single(gateway.CancelAttempts);
+        Assert.Equal(2, result.Receipts.Count);
+        Assert.Equal(ToolExecutionOutcome.OutcomeUnknown, result.Receipts[0].Outcome);
+        Assert.Equal("not_executed_after_unknown", result.Receipts[1].Code);
+        Assert.Equal(2, store.Commits.SelectMany(commit => commit.Events)
+            .Count(@event => @event.Kind == HarnessEventKind.ToolExecutionCompleted));
     }
 
     [Fact]

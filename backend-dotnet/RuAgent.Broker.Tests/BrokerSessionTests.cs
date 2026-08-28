@@ -77,6 +77,26 @@ public sealed class BrokerSessionTests
     }
 
     [Fact]
+    public void V2_run_lease_cannot_attach_to_a_different_active_session()
+    {
+        using var fixture = DescriptorFixture.Create();
+        var session = BrokerSession.Load(fixture.DescriptorPath, fixture.Now);
+        Assert.True(session.Open("session-owner"));
+
+        var lease = CreateLease(
+            "run_foreign111111111111111111111111",
+            "session-foreign",
+            LeaseTestSnapshots.WorkspaceId,
+            LeaseTestSnapshots.DisplayHash,
+            Path.GetTempPath(),
+            LeaseTestSnapshots.StandardEmpty());
+
+        Assert.False(session.TryOpenRunLease(lease, out var error));
+        Assert.Equal("session_conflict", error);
+        Assert.Null(session.ActiveRunLease);
+    }
+
+    [Fact]
     public void V2_identity_hash_mismatch_fails_closed()
     {
         using var fixture = DescriptorFixture.Create();

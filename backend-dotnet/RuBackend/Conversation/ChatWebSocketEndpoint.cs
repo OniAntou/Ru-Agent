@@ -20,7 +20,6 @@ public static class ChatWebSocketEndpoint
     private static async Task HandleAsync(
         HttpContext context,
         IConversationCoordinator coordinator,
-        IAgentApprovalCoordinator approvalCoordinator,
         IActionOutcomeContextStore actionOutcomes,
         IDiagnosticEmitter? diagnostics,
         RuAgent.Hosting.RuntimeClientLeaseRegistry leaseRegistry,
@@ -89,6 +88,8 @@ public static class ChatWebSocketEndpoint
                     continue;
                 }
 
+                // Phase-4 cutover: agent.approval.response is handled by the
+                // authenticated /agent/v1/* API, not the Chat WebSocket.
                 if (message.MessageType == WebSocketMessageType.Text
                     && TryParseApprovalResponse(message.Bytes, out var approvalResponse, out var approvalError))
                 {
@@ -102,29 +103,36 @@ public static class ChatWebSocketEndpoint
                         continue;
                     }
 
-                    var approvalResult = await approvalCoordinator.RespondAsync(
-                        approvalResponse!,
-                        connectionCancellation.Token).ConfigureAwait(false);
+                    EmitChatRejected(
+                        diagnostics,
+                        approvalResponse!.SessionId,
+                        "agent approval must use the Agent API");
                     await SendAsync(
                         socket,
                         sendLock,
-                        new ChatEvent(
-                            "agent.approval_result",
-                            approvalResult.SafeSummary,
-                            approvalResponse!.SessionId,
-                            approvalResult.ErrorCode,
-                            approvalResult.Status,
-                            approvalResponse.ApprovalId),
+                        Error("agent_requires_harness", "Agent approval must use the Agent API."),
                         connectionCancellation.Token).ConfigureAwait(false);
                     continue;
                 }
 
+
                 ChatRequest? request = null;
                 ChatEvent? parseError = null;
-                var modeClamped = false;
+                string? rejectedCode = null;
+                string? rejectedReason = null;
                 if (message.MessageType != WebSocketMessageType.Text
-                    || !TryParseRequest(message.Bytes, out request, out modeClamped, out parseError))
+                    || !TryParseRequest(
+                        message.Bytes,
+                        out request,
+                        out rejectedCode,
+                        out rejectedReason,
+                        out parseError))
                 {
+                    if (rejectedCode is not null)
+                    {
+                        EmitChatRejected(diagnostics, request?.CorrelationId, rejectedReason ?? rejectedCode);
+                    }
+
                     await SendAsync(
                         socket,
                         sendLock,
@@ -133,14 +141,20 @@ public static class ChatWebSocketEndpoint
                     continue;
                 }
 
-                if (request is null || string.IsNullOrWhiteSpace(request.Prompt))
+                if (rejectedCode is not null)
                 {
+                    EmitChatRejected(diagnostics, request?.CorrelationId, rejectedReason ?? rejectedCode);
+                    await SendAsync(
+                        socket,
+                        sendLock,
+                        Error(rejectedCode, rejectedReason ?? "Agent requests must use the Agent API."),
+                        connectionCancellation.Token).ConfigureAwait(false);
                     continue;
                 }
 
-                if (modeClamped)
+                if (request is null || string.IsNullOrWhiteSpace(request.Prompt))
                 {
-                    EmitModeClamped(diagnostics, request.CorrelationId);
+                    continue;
                 }
 
                 var prompt = request.Prompt.Trim();
@@ -155,6 +169,7 @@ public static class ChatWebSocketEndpoint
                         connectionCancellation.Token).ConfigureAwait(false);
                     continue;
                 }
+
 
                 ObserveSession(request.SessionId);
                 var closed = await StreamTurnAsync(
@@ -414,11 +429,13 @@ public static class ChatWebSocketEndpoint
     private static bool TryParseRequest(
         byte[] bytes,
         out ChatRequest? request,
-        out bool modeClamped,
+        out string? rejectedCode,
+        out string? rejectedReason,
         out ChatEvent? error)
     {
         request = null;
-        modeClamped = false;
+        rejectedCode = null;
+        rejectedReason = null;
         error = null;
         try
         {
@@ -470,9 +487,21 @@ public static class ChatWebSocketEndpoint
                 }
             }
 
-            (var profile, modeClamped) =
-                AgentTurnCoordinator.ProfileForTurn(mode, legacyAgentMode);
-            request = new ChatRequest(prompt, sessionId, correlationId, profile);
+            // Phase-4 cutover: chat WebSocket is read-only Chat. Any
+            // `mode` or legacy `agent_mode` request is rejected fail-closed
+            // so Chat never advertises Agent tools. Agent traffic must use
+            // the authenticated /agent/v1/* API.
+            var (profile, rejectionCode, rejectionReason) = ResolveChatProfile(mode, legacyAgentMode);
+            if (rejectionCode is not null)
+            {
+                request = new ChatRequest(prompt, sessionId, correlationId, CapabilityProfile.Chat);
+                rejectedCode = rejectionCode;
+                rejectedReason = rejectionReason;
+                error = Error(rejectionCode, rejectionReason ?? "Agent requests must use the Agent API.");
+                return false;
+            }
+
+            request = new ChatRequest(prompt, sessionId, correlationId, profile!.Value);
             return true;
         }
         catch (Exception parseError) when (parseError is JsonException or DecoderFallbackException)
@@ -575,21 +604,53 @@ public static class ChatWebSocketEndpoint
     private static ChatEvent Error(string code, string content) =>
         new("error", content, ErrorCode: code);
 
-    private static void EmitModeClamped(IDiagnosticEmitter? diagnostics, string? correlationId)
+    private static void EmitChatRejected(
+        IDiagnosticEmitter? diagnostics,
+        string? correlationId,
+        string reason)
     {
         try
         {
             diagnostics?.TryEmit(
-                "warning",
-                "host.conversation",
-                DiagnosticCodes.ModeClamped,
-                correlationId);
+                level: "warning",
+                component: "host.conversation",
+                eventCode: DiagnosticCodes.HarnessChatRejected,
+                correlationId: correlationId,
+                errorCode: reason);
         }
         catch
         {
             // Diagnostics must never break the chat loop.
         }
     }
+
+    private static (CapabilityProfile? Profile, string? RejectionCode, string? RejectionReason) ResolveChatProfile(
+        string? mode,
+        bool legacyAgentMode)
+    {
+        // Phase-4 cutover: chat WebSocket is read-only Chat. `mode:"chat"`
+        // (or no mode) is accepted. Any `mode:"agent"` / `mode:"full"` or
+        // legacy `agent_mode:true` request is rejected fail-closed because
+        // Chat must not advertise Agent tools. Agent traffic must use the
+        // authenticated /agent/v1/* API.
+        // The legacy flag is authoritative even when the client omits `mode` (or
+        // sends `mode:"chat"`). Accepting that combination would silently route
+        // an Agent request through the read-only Chat surface.
+        if (legacyAgentMode)
+        {
+            return (null, "agent_requires_harness", "legacy agent_mode is unsupported; use the Agent API");
+        }
+
+        if (string.IsNullOrWhiteSpace(mode) || string.Equals(mode, "chat", StringComparison.OrdinalIgnoreCase))
+        {
+            return (CapabilityProfile.Chat, null, null);
+        }
+
+        var reason = $"mode '{mode}' is unsupported; use the Agent API";
+        return (null, "agent_requires_harness", reason);
+    }
+
+
 
     private sealed record InboundMessage(
         WebSocketMessageType MessageType,

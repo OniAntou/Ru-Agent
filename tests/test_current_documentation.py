@@ -73,6 +73,7 @@ def test_architecture_records_current_ownership_and_privacy() -> None:
     readme = _text("README.md")
     backend_readme = _text("backend-dotnet/README.md")
     context = _text("CONTEXT.md")
+    aspnet_adr = _text("docs/adr/0001-aspnet-core-public-host.md")
     cli_readme = _text("backend-dotnet/RuAgent.Cli/README.md")
     assert "ASP.NET Core" in architecture
     assert "54 HTTP" in architecture
@@ -84,6 +85,8 @@ def test_architecture_records_current_ownership_and_privacy() -> None:
     assert "54 HTTP" in readme
     assert "54 HTTP" in backend_readme
     assert "54 HTTP" in context
+    assert "54 HTTP routes" in aspnet_adr
+    assert "13 `/agent/v1/*`" in aspnet_adr
     assert "Public Host" in architecture
     assert "Worker/Broker" in architecture
     assert "RuBackend.exe --managed-runtime" in architecture or "Public Host" in backend_readme
@@ -151,7 +154,8 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
         "| automatic | automatic | automatic |"
     ) in agent_tools
     assert "files.write@1.0.0" in agent_tools and "files.edit@1.0.0" in agent_tools
-    assert "files.apply_patch@1.0.0" in agent_tools
+    assert "files.apply_patch@1.0.0" not in agent_tools
+    assert "files.apply_patch" in agent_tools and "not model-usable" in agent_tools
     assert "files.delete@1.0.0" in agent_tools
     assert "files.restore@1.0.0" in agent_tools
     assert "recovery_too_large" in agent_tools
@@ -176,7 +180,7 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
     assert "open sockets" in agent_tools
     assert "arbitrary host code" in agent_tools
     assert "network_intent" in agent_tools
-    assert "`terminal.execute` and `terminal.network` scopes" in agent_tools
+    assert "`terminal.execute`/`terminal.network` scopes" in agent_tools
     assert "descriptive input metadata, not a security boundary" in agent_tools
     assert "files.edit@1.0.0" in agent_tools
     assert "evidence_class: contract" in verification
@@ -202,7 +206,7 @@ def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -
         "| `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` "
         "(`system.read`) | Broker-internal | Broker-internal | Broker-internal |",
         "| `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | — | "
-        "— | explicit approval required for every request",
+        "headless Agent v2: explicit approval for every request",
     ):
         assert row in agent_tools
 
@@ -210,6 +214,21 @@ def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -
     assert "The first usable tool set" not in agent_tools
     assert "Skill packages are declarative" not in agent_tools
     assert "gives Ru bounded workspace" not in root_readme
+
+
+def test_current_docs_describe_the_compact_desktop_agent_entry_point() -> None:
+    root_readme = _text("README.md")
+    runtime = _text("docs/operations/runtime-behavior.md")
+    agent_tools = _text("docs/operations/agent-tools.md")
+
+    assert "compact mode pill inside the Chat composer" in root_readme
+    assert "dropdown contains only Chat and Agent" in root_readme
+    assert "Công cụ" in root_readme
+    runtime_flat = " ".join(runtime.split())
+    assert "Chat submissions still use the Chat WebSocket" in runtime_flat
+    assert "Agent submissions use the authenticated `/agent/v1/*` API/SSE path" in runtime_flat
+    assert "separate Agent configuration button owns workspace and preset fields" in runtime_flat
+    assert "raw commands, arguments, stdout, or private" in agent_tools
 
 
 def test_agent_tools_close_the_model_selection_channel() -> None:
@@ -260,10 +279,10 @@ def test_current_docs_describe_deterministic_volume_recovery_truthfully() -> Non
         assert event_code in logging
 
     for visible_state in (
-        "Agent mode đã bật",
+        "does not add a composer status row",
         "Đang chuẩn bị thao tác…",
-        "Đang thực hiện thao tác đã cấp quyền…",
-        "Thao tác đã được xác minh",
+        "bounded safe copy",
+        "safe-reason states",
     ):
         assert visible_state in runtime_flat
 
@@ -302,9 +321,11 @@ def test_phase2_policy_and_file_tools_are_documented() -> None:
     assert "never bypasses" in readme or "never bypasses workspace trust" in agent_tools
 
     # Complete files.* contract
-    for tool in ("files.list", "files.glob", "files.search", "files.read", "files.write", "files.edit", "files.apply_patch", "files.delete", "files.restore"):
+    for tool in ("files.list", "files.glob", "files.search", "files.read", "files.write", "files.edit", "files.delete", "files.restore"):
         assert tool in agent_tools, f"missing {tool} in agent-tools"
         assert tool in readme or tool in architecture
+    assert "files.apply_patch" in agent_tools
+    assert "not advertised or model-usable" in readme or "not model-usable" in agent_tools
 
     # CLI policy/approval
     assert "policy list" in cli_readme or "policy list" in readme
@@ -317,10 +338,11 @@ def test_phase2_policy_and_file_tools_are_documented() -> None:
     assert "first-writer-wins" in agent_tools or "first-writer-wins" in readme
     assert "tool.execution_requested" in architecture or "tool.execution_requested" in agent_tools
 
-    # Terminal/Git/reconciliation now available on Agent v2 headless path (Phase 3)
+    # Terminal and reconciliation are available; managed Git commit is not shipped.
     assert "terminal.run" in agent_tools and "terminal.shell" in agent_tools
     assert "open sockets" in agent_tools
     assert "network_intent" in agent_tools
+    assert "Task 6" in agent_tools or "Task 6" in docs_index
 
     # No sandboxing claim
     readme_lower = readme.lower()
@@ -328,7 +350,7 @@ def test_phase2_policy_and_file_tools_are_documented() -> None:
     assert "filesystem sandbox" not in readme_lower
     assert "network isolation" not in readme_lower
 
-    # Docs index updated to Phase 2
+    # Docs index records the implemented Phase 2 and selected Phase 3 surfaces.
     assert "Phase 2" in docs_index
     assert "02-policy-file-tools" in docs_index
 

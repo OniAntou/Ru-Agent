@@ -848,6 +848,24 @@ public sealed class HarnessTerminalIntegrationTests
                 }),
                 CancellationToken.None);
             Assert.Equal(PolicyDecision.Ask, pipInstall.Decision);
+
+            var prefixedModule = await gateway.EvaluateAsync(
+                Proposal(new JsonObject
+                {
+                    ["executable"] = "python",
+                    ["arguments"] = new JsonArray("-m", "pytestevil"),
+                }),
+                CancellationToken.None);
+            Assert.Equal(PolicyDecision.Ask, prefixedModule.Decision);
+
+            var interactivePytest = await gateway.EvaluateAsync(
+                Proposal(new JsonObject
+                {
+                    ["executable"] = "python",
+                    ["arguments"] = new JsonArray("-m", "pytest", "--pdb"),
+                }),
+                CancellationToken.None);
+            Assert.Equal(PolicyDecision.Ask, interactivePytest.Decision);
         }
         finally
         {

@@ -17,7 +17,7 @@ ASP.NET Core Public Host :8000 (RuBackend.exe --managed-runtime)
         |      |     +-- hosted / external OpenAI-compatible provider adapters
         |      |     +-- OmniVoice and Google STT
         |      |     +-- VTube Studio and observation runtime
-        |      `-- private RuAgentBroker (leased loopback endpoint, run lease for files.list/read)
+        |      `-- private RuAgentBroker (leased loopback endpoint, profile-scoped file/terminal tools)
         |
         | durable Harness: Core + SQLite (agent_harness.db) + encrypted payloads + idempotent history
 Public Host owns Worker/Broker in one Job Object; RuApp/CLI only own the
@@ -74,13 +74,22 @@ explicitly set to `v2`. Worker v2 performs exactly one `generate_reply` per
 `AssistantStep(text, tool_calls, finish_reason)`; Broker-backed file tools at
 this checkpoint are `files.list`/`files.glob`/`files.search`/`files.read`
 (offset/limit, streaming, bounded `truncated`) plus hash-guarded
-`files.write`/`files.edit`/`files.apply_patch` and recoverable
+  `files.write`/`files.edit` and recoverable
 `files.delete`/`files.restore` (one-time, `recovery_too_large` beyond 1 MiB,
 `recovery_consumed` on replay). Standard allows ordinary trusted-workspace
-reads/creates/edits and asks for delete/protected/outside/network/unknown;
-Full Access changes fallback but never bypasses trust; approvals are durable
-first-writer-wins `approval_stale` with exact scope preview and snapshot
-version ordering.
+reads/creates/edits. An explicit absolute path outside the trusted root asks
+with `external_directory_required`; the approval UI can grant that canonical
+directory for the current run or persist it for the project. Delete/protected/
+network/unknown actions retain their own approval gates. Full Access changes
+fallback but never bypasses trust; approvals are durable
+  first-writer-wins `approval_stale` with exact scope preview and snapshot
+  version ordering. On the headless Agent v2 path, `terminal.run` and
+  `terminal.shell` are policy-evaluated and require explicit approval for every
+  request; they run as the current Windows user and may execute host code or
+  open sockets. `files.apply_patch` is not advertised or model-usable in the
+  current runtime. The managed Git commit workflow (Phase 3 Task 6) is not
+  shipped; Git commands may still be invoked through the explicitly approved
+  terminal path.
 
 ## Build and verification
 

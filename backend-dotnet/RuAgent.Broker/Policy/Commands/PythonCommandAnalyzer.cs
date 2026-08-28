@@ -38,7 +38,7 @@ public sealed class PythonCommandAnalyzer : ICommandAnalyzer
 
             return argv[i + 1] switch
             {
-                var module when module.StartsWith("pytest", StringComparison.Ordinal) => Test(),
+                "pytest" => AnalyzePytest(argv.Skip(i + 2).ToArray()),
                 "ruff" => AnalyzeRuff(argv.Skip(i + 2).ToArray()),
                 "mypy" => Lint(),
                 "pip" or "pip3" => PipInstall("python_pip_install"),
@@ -51,19 +51,31 @@ public sealed class PythonCommandAnalyzer : ICommandAnalyzer
 
     private CommandAnalysis AnalyzePytest(IReadOnlyList<string> argv)
     {
-        if (argv.Any(argument => argument is "--pdb" or "--trace" or "-p" && IsPdbPlugin(argument, argv)))
+        for (var index = 0; index < argv.Count; index++)
         {
-            return new(AnalyzerVersion, TerminalOperationClass.Unknown, "none", "pytest_interactive_asks");
+            var argument = argv[index];
+            if (argument is "--pdb" or "--trace")
+            {
+                return InteractivePytest();
+            }
+
+            if (argument == "-p")
+            {
+                if (index + 1 >= argv.Count
+                    || !string.Equals(argv[index + 1], "no:cacheprovider", StringComparison.Ordinal))
+                {
+                    return InteractivePytest();
+                }
+
+                index++;
+            }
         }
 
         return Test();
     }
 
-    private static bool IsPdbPlugin(string argument, IReadOnlyList<string> argv)
-    {
-        // Only "-p no:cacheprovider"-style non-interactive plugin selection stays safe.
-        return !(argument == "-p" && argv.Contains("no:cacheprovider", StringComparer.Ordinal));
-    }
+    private static CommandAnalysis InteractivePytest() =>
+        new(AnalyzerVersion, TerminalOperationClass.Unknown, "none", "pytest_interactive_asks");
 
     private static CommandAnalysis AnalyzeRuff(IReadOnlyList<string> argv)
     {

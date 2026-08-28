@@ -27,7 +27,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     private readonly ISettingsStore? _settingsStore;
     private readonly IConversationCoordinator? _conversationCoordinator;
     private readonly IActionOutcomeContextStore? _actionOutcomeContextStore;
-    private readonly IAgentApprovalCoordinator? _approvalCoordinator;
     private readonly IVoiceProtocolClient? _voiceProtocolClient;
     private readonly IAgentBrokerClient? _agentBrokerClient;
     private readonly IDiagnosticEmitter? _diagnosticEmitter;
@@ -42,7 +41,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         ISettingsStore? settingsStore = null,
         IConversationCoordinator? conversationCoordinator = null,
         IActionOutcomeContextStore? actionOutcomeContextStore = null,
-        IAgentApprovalCoordinator? approvalCoordinator = null,
         IVoiceProtocolClient? voiceProtocolClient = null,
         IAgentBrokerClient? agentBrokerClient = null,
         IDiagnosticEmitter? diagnosticEmitter = null,
@@ -60,7 +58,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
         _settingsStore = settingsStore;
         _conversationCoordinator = conversationCoordinator;
         _actionOutcomeContextStore = actionOutcomeContextStore;
-        _approvalCoordinator = approvalCoordinator;
         _voiceProtocolClient = voiceProtocolClient;
         _agentBrokerClient = agentBrokerClient;
         _diagnosticEmitter = diagnosticEmitter;
@@ -132,11 +129,6 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
                 services.AddSingleton(_actionOutcomeContextStore);
             }
 
-            if (_approvalCoordinator is not null)
-            {
-                services.RemoveAll<IAgentApprovalCoordinator>();
-                services.AddSingleton(_approvalCoordinator);
-            }
 
             if (_voiceProtocolClient is not null)
             {

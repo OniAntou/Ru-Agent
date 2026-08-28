@@ -70,6 +70,8 @@ public static class DiagnosticCodes
     public const string HarnessTrustStale = "harness.trust.stale";
     public const string HarnessPhaseNotAvailable = "harness.phase.not_available";
     public const string HarnessCursorMismatch = "harness.cursor.mismatch";
+    public const string HarnessChatRejected = "harness.chat.rejected";
+
 
     public const string GenericError = "error";
     public const string Unclassified = "diagnostic_unclassified";

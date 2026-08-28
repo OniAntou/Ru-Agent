@@ -19,7 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\backend-dotnet\RuAgent.Client\RuAgent.Client.csproj" />
     <ProjectReference Include="..\backend-dotnet\RuAgent.Protocol\RuAgent.Protocol.csproj" />
-    <Content Include="Assets\SplashScreen.scale-200.png" />
+    <ProjectReference Include="..\backend-dotnet\RuAgent.Harness.Core\RuAgent.Harness.Core.csproj" />
     <Content Include="Assets\LockScreenLogo.scale-200.png" />
     <Content Include="Assets\Square150x150Logo.scale-200.png" />
     <Content Include="Assets\Square44x44Logo.scale-200.png" />

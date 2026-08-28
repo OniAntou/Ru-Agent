@@ -257,25 +257,18 @@ public sealed class ConversationCoordinatorTests
             sessions,
             memory,
             worker,
-            agent: new FakeAgentTurnCoordinator(ModelCapabilities()),
             outcomes: outcomes);
 
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Đặt âm lượng về 2", "session-1", Profile: CapabilityProfile.Agent),
+            new ChatRequest("Đặt âm lượng về 2", "session-1", Profile: CapabilityProfile.Chat),
             CancellationToken.None));
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Kể em nghe chuyện khác", "session-1", Profile: CapabilityProfile.Agent),
+            new ChatRequest("Kể em nghe chuyện khác", "session-1", Profile: CapabilityProfile.Chat),
             CancellationToken.None));
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Tiếp đi em", "session-1", Profile: CapabilityProfile.Agent),
+            new ChatRequest("Tiếp đi em", "session-1", Profile: CapabilityProfile.Chat),
             CancellationToken.None));
-
         Assert.Equal(3, worker.ChatRequests.Count);
-        Assert.Null(worker.ChatRequests[0].LastActionOutcome);
-        Assert.Equal(
-            "write_failed",
-            worker.ChatRequests[1].LastActionOutcome!.ReasonCode);
-        Assert.Null(worker.ChatRequests[2].LastActionOutcome);
         var persisted = string.Join(
             "\n",
             sessions.Messages.Select(message => message.Content));
@@ -318,14 +311,13 @@ public sealed class ConversationCoordinatorTests
             new FakeSessionStore(log),
             new FakeMemoryService(log),
             worker,
-            agent: new FakeAgentTurnCoordinator(ModelCapabilities()),
             outcomes: new ActionOutcomeContextStore());
 
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Đặt âm lượng về 2", "session-1", Profile: CapabilityProfile.Agent),
+            new ChatRequest("Đặt âm lượng về 2", "session-1", Profile: CapabilityProfile.Chat),
             CancellationToken.None));
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("sao vậy?", "session-1", Profile: CapabilityProfile.Agent),
+            new ChatRequest("sao vậy?", "session-1", Profile: CapabilityProfile.Chat),
             CancellationToken.None));
 
         Assert.Equal(2, worker.ChatRequests.Count);
@@ -357,19 +349,22 @@ public sealed class ConversationCoordinatorTests
             sessions,
             new FakeMemoryService(log),
             worker,
-            agent: new FakeAgentTurnCoordinator(ModelCapabilities()),
             outcomes: outcomes);
 
         _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Đặt âm lượng về 2", "session-1", Profile: CapabilityProfile.Agent),
+            new ChatRequest("Đặt âm lượng về 2", "session-1", Profile: CapabilityProfile.Chat),
             CancellationToken.None));
 
         Assert.Null(outcomes.Take("session-1"));
     }
 
     [Fact]
-    public async Task Agent_profile_advertises_volume_with_verification_flag()
+    public async Task Chat_profile_never_advertises_or_executes_tools()
     {
+        // Phase-4 cutover: Chat WebSocket is read-only Chat. It never
+        // advertises Agent tools or wires a tool handler, even when the
+        // worker emits a tool request frame. Agent traffic uses the
+        // authenticated /agent/v1/* API.
         var log = new List<string>();
         var worker = new FakeWorkerClient(log)
         {
@@ -387,84 +382,25 @@ public sealed class ConversationCoordinatorTests
                 new JsonObject { ["operation"] = "mute" },
                 2_000),
         };
-        var agent = new FakeAgentTurnCoordinator(ModelCapabilities());
         var coordinator = CreateCoordinator(
             log,
             new FakeSessionStore(log),
             new FakeMemoryService(log),
-            worker,
-            agent: agent);
+            worker);
 
         var events = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Tắt tiếng giúp anh", "session-1", Profile: CapabilityProfile.Agent),
+            new ChatRequest("Tắt tiếng giúp anh", "session-1", Profile: CapabilityProfile.Chat),
             CancellationToken.None));
 
-        Assert.True(worker.ToolHandlerWasPresent);
-        Assert.Equal(1, agent.ExecuteCount);
-        Assert.Contains(events, item => item.Type == "agent.activity" && item.Status == "succeeded");
+        Assert.Null(worker.LastChatRequest!.ToolHandler);
+        Assert.DoesNotContain(events, item => item.Type == "agent.activity");
 
-        var settings = worker.LastChatRequest!.Settings;
-        Assert.True(settings["agent_mode"]!.GetValue<bool>());
-        var tools = settings["model_tools"]!.AsArray();
-        var volume = tools.Single(item => item!["tool_id"]!.GetValue<string>() == "system.volume")!;
-        Assert.Equal("1.0.0", volume["tool_version"]!.GetValue<string>());
-        Assert.Equal(["system.write"], volume["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
-        Assert.Equal("native_pending", volume["availability"]!.GetValue<string>());
-        Assert.True(volume["model_enabled"]!.GetValue<bool>());
-        Assert.Equal("native_mutation", volume["capability_class"]!.GetValue<string>());
-        Assert.True(volume["verification_required"]!.GetValue<bool>());
-        var readTool = tools.Single(item => item!["tool_id"]!.GetValue<string>() == "files.read")!;
-        Assert.Equal("tool", readTool["capability_class"]!.GetValue<string>());
-        Assert.False(readTool["verification_required"]!.GetValue<bool>());
-    }
-
-    [Fact]
-    public async Task Chat_profile_advertises_no_mutating_tools_and_legacy_flag_is_false()
-    {
-        var log = new List<string>();
-        var worker = SuccessfulWorker(log);
-        var agent = new FakeAgentTurnCoordinator(ModelCapabilities());
-        var coordinator = CreateCoordinator(
-            log,
-            new FakeSessionStore(log),
-            new FakeMemoryService(log),
-            worker,
-            agent: agent);
-
-        _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Xin chào", "session-1", Profile: CapabilityProfile.Chat),
-            CancellationToken.None));
-
-        Assert.Equal(0, agent.ExecuteCount);
         var settings = worker.LastChatRequest!.Settings;
         Assert.False(settings["agent_mode"]!.GetValue<bool>());
         var serializedTools = settings["model_tools"]!.AsArray().ToJsonString();
         Assert.DoesNotContain("system.volume", serializedTools, StringComparison.Ordinal);
-        Assert.DoesNotContain(agent.RequestedProfiles, profile => profile != CapabilityProfile.Chat);
+        Assert.DoesNotContain("files.write", serializedTools, StringComparison.Ordinal);
     }
-
-    [Fact]
-    public async Task Zero_model_capabilities_leave_worker_tool_handler_unset()
-    {
-        var log = new List<string>();
-        var worker = SuccessfulWorker(log);
-        var agent = new FakeAgentTurnCoordinator([]);
-        var coordinator = CreateCoordinator(
-            log,
-            new FakeSessionStore(log),
-            new FakeMemoryService(log),
-            worker,
-            agent: agent);
-
-        _ = await CollectAsync(coordinator.HandleAsync(
-            new ChatRequest("Xin chào", "session-1", Profile: CapabilityProfile.Agent),
-            CancellationToken.None));
-
-        Assert.Null(worker.LastChatRequest!.ToolHandler);
-        Assert.Empty(worker.LastChatRequest.Settings["model_tools"]!.AsArray());
-        Assert.Equal(0, agent.ExecuteCount);
-    }
-
     private static IReadOnlyList<AgentToolCapability> ModelCapabilities() =>
     [
         new AgentToolCapability(
@@ -489,7 +425,6 @@ public sealed class ConversationCoordinatorTests
         FakeMemoryService memory,
         FakeWorkerClient worker,
         ConversationTurnGate? gate = null,
-        IAgentTurnCoordinator? agent = null,
         IActionOutcomeContextStore? outcomes = null) => new(
             sessions,
             memory,
@@ -499,8 +434,7 @@ public sealed class ConversationCoordinatorTests
             outcomes ?? new ActionOutcomeContextStore(),
             new MetadataPolicy(),
             new StreamSanitizer(),
-            gate ?? new ConversationTurnGate(TimeSpan.FromSeconds(1)),
-            agent: agent);
+            gate ?? new ConversationTurnGate(TimeSpan.FromSeconds(1)));
 
     private static FakeWorkerClient SuccessfulWorker(List<string> log) => new(log)
     {
@@ -838,75 +772,4 @@ public sealed class ConversationCoordinatorTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private sealed class FakeAgentTurnCoordinator : IAgentTurnCoordinator
-    {
-        private readonly IReadOnlyList<AgentToolCapability> _capabilities;
-
-        public FakeAgentTurnCoordinator(IReadOnlyList<AgentToolCapability> capabilities)
-        {
-            _capabilities = capabilities;
-        }
-
-        public int ExecuteCount { get; private set; }
-        public List<CapabilityProfile> RequestedProfiles { get; } = [];
-
-        public Task<IReadOnlyList<AgentToolCapability>> GetModelCapabilitiesAsync(
-            CapabilityProfile profile,
-            CancellationToken cancellationToken)
-        {
-            RequestedProfiles.Add(profile);
-            IReadOnlyList<AgentToolCapability> capabilities = profile == CapabilityProfile.Chat
-                ? _capabilities
-                    .Where(tool => !string.Equals(
-                        tool.ToolId,
-                        "system.volume",
-                        StringComparison.Ordinal))
-                    .ToArray()
-                : _capabilities;
-            return Task.FromResult(capabilities);
-        }
-
-        public async IAsyncEnumerable<ChatEvent> HandleToolTurnAsync(
-            AgentTurnRequest request,
-            [EnumeratorCancellation] CancellationToken cancellationToken)
-        {
-            yield return new ChatEvent(
-                "agent.activity",
-                SessionId: request.ToolRequest.SessionId,
-                Status: "requested",
-                ToolId: request.ToolRequest.ToolId);
-            _ = await ExecuteToolAsync(request, cancellationToken).ConfigureAwait(false);
-        }
-
-        public async Task<WorkerToolResult> ExecuteToolAsync(
-            AgentTurnRequest request,
-            CancellationToken cancellationToken)
-        {
-            ExecuteCount++;
-            if (request.PublishAsync is not null)
-            {
-                await request.PublishAsync(new ChatEvent(
-                    "agent.activity",
-                    SessionId: request.ToolRequest.SessionId,
-                    Status: "requested",
-                    ToolId: request.ToolRequest.ToolId));
-                await request.PublishAsync(new ChatEvent(
-                    "agent.activity",
-                    SessionId: request.ToolRequest.SessionId,
-                    Status: ToolResultStatuses.Succeeded,
-                    ToolId: request.ToolRequest.ToolId));
-            }
-
-            return new WorkerToolResult(
-                request.ToolRequest.RequestId,
-                ToolResultStatuses.Succeeded,
-                new JsonObject(),
-                null,
-                "Volume set verified.",
-                5,
-                ToolVerificationStates.Verified,
-                "default_render_multimedia",
-                "0123456789abcdef");
-        }
-    }
 }

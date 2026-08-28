@@ -26,11 +26,6 @@ namespace RuApp.Services
         public event Action? OnResetReceived;
         public event Action<string, string>? OnDoneReceived;
         public event Action<string>? OnErrorReceived;
-        public event Action<AgentSessionGrantModel>? OnAgentSessionReceived;
-        public event Action<AgentActivityModel>? OnAgentActivityReceived;
-        public event Action<AgentApprovalModel>? OnAgentApprovalRequired;
-        public event Action<AgentApprovalResult>? OnAgentApprovalResult;
-
         public bool IsConnected => _webSocket != null && _webSocket.State == WebSocketState.Open;
 
         public ChatWebSocketClient(string authSecret, int port = 8000)
@@ -180,32 +175,7 @@ namespace RuApp.Services
                     System.Diagnostics.Debug.WriteLine($"Error frame received: {content.Length} chars");
                     OnErrorReceived?.Invoke(content);
                 }
-                else if (msgType == "agent.session")
-                {
-                    if (AgentSessionGrantModel.TryParse(root, out var grant))
-                    {
-                        OnAgentSessionReceived?.Invoke(grant);
-                    }
-                }
-                else if (msgType == "agent.activity"
-                    && AgentActivityModel.TryParse(root, out var activity))
-                {
-                    OnAgentActivityReceived?.Invoke(activity);
-                }
-                else if (msgType == "agent.approval_required")
-                {
-                    if (AgentApprovalModel.TryParse(root, out var approval))
-                    {
-                        OnAgentApprovalRequired?.Invoke(approval);
-                    }
-                }
-                else if (msgType == "agent.approval_result")
-                {
-                    if (TryReadApprovalResult(root, out var result))
-                    {
-                        OnAgentApprovalResult?.Invoke(result);
-                    }
-                }
+
             }
             catch (JsonException ex)
             {
@@ -214,37 +184,7 @@ namespace RuApp.Services
             }
         }
 
-        private static bool TryReadApprovalResult(JsonElement root, out AgentApprovalResult result)
-        {
-            result = default!;
-            string approvalId = ReadBoundedString(root, "approval_id", 128);
-            string sessionId = ReadBoundedString(root, "session_id", 128);
-            string status = ReadBoundedString(root, "status", 64);
-            string safeSummary = ReadBoundedString(root, "content", 256);
-            if (string.IsNullOrWhiteSpace(approvalId) || string.IsNullOrWhiteSpace(sessionId))
-            {
-                return false;
-            }
 
-            result = new AgentApprovalResult(
-                approvalId,
-                sessionId,
-                string.IsNullOrWhiteSpace(status) ? "unknown" : status,
-                string.IsNullOrWhiteSpace(safeSummary) ? "Approval updated." : safeSummary);
-            return true;
-        }
-
-        private static string ReadBoundedString(JsonElement root, string propertyName, int maxLength)
-        {
-            if (!root.TryGetProperty(propertyName, out var property)
-                || property.ValueKind != JsonValueKind.String)
-            {
-                return string.Empty;
-            }
-
-            string value = property.GetString() ?? string.Empty;
-            return value.Length <= maxLength ? value : string.Empty;
-        }
 
         public async Task SendMessageAsync(string messageText, string sessionId)
         {
@@ -254,8 +194,7 @@ namespace RuApp.Services
         public async Task SendMessageAsync(
             string messageText,
             string sessionId,
-            CancellationToken cancellationToken,
-            RuAppMode mode = RuAppMode.Chat)
+            CancellationToken cancellationToken)
         {
             var socket = await WaitForSocketAsync(cancellationToken);
 
@@ -265,43 +204,13 @@ namespace RuApp.Services
                 prompt = messageText,
                 session_id = sessionId,
                 correlation_id = correlationId,
-                mode = ModeToWire(mode),
             };
             string json = JsonSerializer.Serialize(payload);
             byte[] bytes = Encoding.UTF8.GetBytes(json);
             await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
         }
 
-        private static string ModeToWire(RuAppMode mode) => mode switch
-        {
-            RuAppMode.Agent => "agent",
-            RuAppMode.Full => "full",
-            _ => "chat",
-        };
 
-        public async Task SendAgentApprovalAsync(
-            string sessionId,
-            string approvalId,
-            bool approved,
-            CancellationToken cancellationToken = default)
-        {
-            if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(approvalId))
-            {
-                throw new ArgumentException("Approval session and ID are required.");
-            }
-
-            var socket = await WaitForSocketAsync(cancellationToken);
-            var payload = new
-            {
-                type = "agent.approval.response",
-                session_id = sessionId,
-                approval_id = approvalId,
-                approved,
-            };
-            string json = JsonSerializer.Serialize(payload);
-            byte[] bytes = Encoding.UTF8.GetBytes(json);
-            await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
-        }
 
         private async Task<ClientWebSocket> WaitForSocketAsync(CancellationToken cancellationToken)
         {

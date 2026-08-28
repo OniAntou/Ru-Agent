@@ -58,6 +58,9 @@ public sealed class FileListAdapter
         var sw = Stopwatch.StartNew();
         var collected = new List<(string Relative, bool IsDir, long Size)>();
         int skipped = 0;
+        int scannedEntries = 0;
+        var scanLimitHit = false;
+        const int maxScannedEntries = FileToolLimits.MaxEntries * 16;
 
         IEnumerable<string> entries;
         try
@@ -80,9 +83,16 @@ public sealed class FileListAdapter
                 break;
             }
 
+            if (scannedEntries++ >= maxScannedEntries)
+            {
+                scanLimitHit = true;
+                break;
+            }
+
             if (collected.Count >= FileToolLimits.MaxEntries * 2)
             {
                 // Bounded enumeration: avoid collecting unbounded for huge directories
+                scanLimitHit = true;
                 break;
             }
 
@@ -144,7 +154,7 @@ public sealed class FileListAdapter
         }
         else
         {
-            truncated = sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs;
+            truncated = scanLimitHit || sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs;
             // Also check if directory had more entries than we collected due to bounded enumeration cap
             // We already limited collected to MaxEntries*2, so if we hit that cap, truncated
             if (collected.Count >= FileToolLimits.MaxEntries * 2)

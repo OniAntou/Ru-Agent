@@ -15,7 +15,9 @@ public sealed class UiAutomationScenario : IDisposable
     private const string ChatMessagesAutomationId = "ChatMessages";
     private const string NewSessionAutomationId = "NewSessionButton";
     private const string AgentModeAutomationId = "AgentModeButton";
-    private const string AgentActivityAutomationId = "AgentActivity";
+    private const string AgentModeChatOptionAutomationId = "AgentModeChatOption";
+    private const string AgentModeAgentOptionAutomationId = "AgentModeAgentOption";
+    private const string AgentActivityAutomationId = "AgentStatusText";
     private const string ChatInputAutomationId = "ChatInput";
     private const string SendButtonAutomationId = "SendButton";
     private readonly Process _process;
@@ -216,16 +218,19 @@ public sealed class UiAutomationScenario : IDisposable
         try
         {
             AutomationElement mode = await WaitForElementAsync(AgentModeAutomationId, timeout);
-            stage = $"toggle_agent_mode_on_"
+            stage = $"open_agent_mode_"
                 + $"{(mode.Current.IsEnabled ? "enabled" : "disabled")}_"
                 + $"{(mode.Current.IsOffscreen ? "offscreen" : "onscreen")}";
-            Toggle(mode);
+            Invoke(mode);
+            stage = "find_agent_mode_option";
+            AutomationElement agentOption = await WaitForElementAsync(
+                AgentModeAgentOptionAutomationId,
+                timeout);
+            stage = "select_agent_mode";
+            Invoke(agentOption);
             stage = "wait_agent_mode_on";
             bool enabled = await WaitUntilAsync(
-                () => IsToggleOn(mode)
-                    && ContainsIgnoreCase(
-                        GetName(FindByAutomationId(AgentActivityAutomationId)),
-                        "Agent mode đã bật"),
+                () => IsAgentModeActive(mode),
                 timeout);
             if (!enabled)
             {
@@ -252,12 +257,12 @@ public sealed class UiAutomationScenario : IDisposable
                 bool noLateAgentUpdate = !HasUserAndAssistantMessages()
                     && !VisibleMessageContainsPrivateMarker()
                     && !AgentSurfaceContainsPrivateMarker();
-                stage = "toggle_agent_mode_off_after_replacement";
-                EnsureToggleOff(mode);
-                stage = "wait_agent_mode_off_after_replacement";
-                bool disabledAfterReplacement = await WaitUntilAsync(
-                    () => !IsToggleOn(mode),
+                stage = "select_chat_mode_after_replacement";
+                bool disabledAfterReplacement = await SelectModeAsync(
+                    mode,
+                    AgentModeChatOptionAutomationId,
                     timeout);
+                stage = "wait_agent_mode_off_after_replacement";
                 bool lifecyclePassed = replaced.Status == "passed"
                     && noLateAgentUpdate
                     && disabledAfterReplacement;
@@ -281,10 +286,12 @@ public sealed class UiAutomationScenario : IDisposable
                 && truthfulVolumeFailure
                 && privateAbsent;
 
-            stage = "toggle_agent_mode_off";
-            EnsureToggleOff(mode);
+            stage = "select_chat_mode";
+            bool disabled = await SelectModeAsync(
+                mode,
+                AgentModeChatOptionAutomationId,
+                timeout);
             stage = "wait_agent_mode_off";
-            bool disabled = await WaitUntilAsync(() => !IsToggleOn(mode), timeout);
             passed &= disabled;
             return Check(
                 "gui." + scenario,
@@ -402,10 +409,24 @@ public sealed class UiAutomationScenario : IDisposable
 
     private AutomationElement? FindByAutomationId(string automationId)
     {
+        var condition = new AndCondition(
+            new PropertyCondition(AutomationElement.AutomationIdProperty, automationId),
+            new PropertyCondition(AutomationElement.ProcessIdProperty, _process.Id));
         AutomationElement? window = TryGetWindow();
-        return window?.FindFirst(
-            TreeScope.Descendants,
-            new PropertyCondition(AutomationElement.AutomationIdProperty, automationId));
+        AutomationElement? result = window?.FindFirst(TreeScope.Descendants, condition);
+        if (result != null)
+        {
+            return result;
+        }
+
+        try
+        {
+            return AutomationElement.RootElement.FindFirst(TreeScope.Descendants, condition);
+        }
+        catch (ElementNotAvailableException)
+        {
+            return null;
+        }
     }
 
     private AutomationElement? TryGetWindow()
@@ -486,11 +507,40 @@ public sealed class UiAutomationScenario : IDisposable
         return forbidden.Any(marker => activity.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static bool IsToggleOn(AutomationElement element)
+    private static bool IsModeSelected(AutomationElement element)
     {
-        return element.TryGetCurrentPattern(TogglePattern.Pattern, out object pattern)
-            && pattern is TogglePattern toggle
-            && toggle.Current.ToggleState == ToggleState.On;
+        if (element.TryGetCurrentPattern(TogglePattern.Pattern, out object togglePattern)
+            && togglePattern is TogglePattern toggle
+            && toggle.Current.ToggleState == ToggleState.On)
+        {
+            return true;
+        }
+
+        return element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out object pattern)
+            && pattern is SelectionItemPattern selection
+            && selection.Current.IsSelected;
+    }
+
+    private static bool IsAgentModeActive(AutomationElement element)
+        => ContainsIgnoreCase(GetName(element), "Coding Agent");
+
+    private async Task<bool> SelectModeAsync(
+        AutomationElement mode,
+        string optionAutomationId,
+        TimeSpan timeout)
+    {
+        Invoke(mode);
+        AutomationElement option = await WaitForElementAsync(optionAutomationId, timeout);
+        Invoke(option);
+
+        bool expectAgent = optionAutomationId == AgentModeAgentOptionAutomationId;
+        return await WaitUntilAsync(
+            () => (expectAgent
+                    ? IsAgentModeActive(mode)
+                    : ContainsIgnoreCase(GetName(mode), "Trò chuyện"))
+                || (FindByAutomationId(optionAutomationId) is { } current
+                    && IsModeSelected(current)),
+            timeout);
     }
 
     private static void SetValue(AutomationElement element, string value)
@@ -513,25 +563,6 @@ public sealed class UiAutomationScenario : IDisposable
         }
 
         invokePattern.Invoke();
-    }
-
-    private static void Toggle(AutomationElement element)
-    {
-        if (!element.TryGetCurrentPattern(TogglePattern.Pattern, out object pattern)
-            || pattern is not TogglePattern togglePattern)
-        {
-            throw new NotSupportedException("Automation control does not support TogglePattern.");
-        }
-
-        togglePattern.Toggle();
-    }
-
-    private static void EnsureToggleOff(AutomationElement element)
-    {
-        if (IsToggleOn(element))
-        {
-            Toggle(element);
-        }
     }
 
     private static string GetName(AutomationElement? element)

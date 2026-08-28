@@ -42,7 +42,8 @@ public sealed class HarnessLiveEventHub
         var options = new BoundedChannelOptions(Capacity)
         {
             SingleReader = true,
-            SingleWriter = true,
+            // Runtime coordinators publish concurrently for independent runs.
+            SingleWriter = false,
             FullMode = BoundedChannelFullMode.DropOldest,
         };
         subscription.Channel = Channel.CreateBounded<TransientFrame>(options, _ =>
@@ -102,7 +103,6 @@ public sealed class HarnessLiveEventHub
             {
                 var subscription = pair.Value;
                 Interlocked.Increment(ref subscription.Dropped);
-                _subscriptions[pair.Key] = subscription;
                 Interlocked.Increment(ref _droppedCount);
                 delivered = false;
             }
@@ -130,7 +130,11 @@ public sealed class HarnessLiveEventHub
 
         public ValueTask DisposeAsync()
         {
-            _hub._subscriptions.TryRemove(_id, out _);
+            if (_hub._subscriptions.TryRemove(_id, out var subscription))
+            {
+                subscription.Channel.Writer.TryComplete();
+            }
+
             return ValueTask.CompletedTask;
         }
     }

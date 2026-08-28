@@ -217,6 +217,219 @@ public sealed class HarnessReadOnlyTracerTests
         }
     }
 
+    [Fact]
+    public async Task Standard_mutation_against_protected_file_requires_approval()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "harness-policy-protected-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        var protectedPath = Path.Combine(tempRoot, ".env.local");
+        File.WriteAllText(protectedPath, "secret");
+        try
+        {
+            var gateway = new HarnessToolGateway(tempRoot, new[] { "files.write" });
+            var proposal = new ToolProposal(
+                new RunId("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                new ModelStepId("step_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                new ToolCallId("call_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+                1,
+                "files.write",
+                "1.0.0",
+                JsonDocument.Parse("{\"path\":\".env.local\",\"content\":\"replaced\"}").RootElement);
+
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+
+            Assert.Equal(PolicyDecision.Ask, decision.Decision);
+            Assert.Equal("approval_required", decision.SafeCode);
+            Assert.NotNull(decision.ApprovalId);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task Policy_snapshot_deny_rule_overrides_standard_fallback()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "harness-policy-rule-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var workspace = new RuAgent.Harness.Core.Workspace.WorkspaceIdentity(
+                new WorkspaceId("ws_dddddddddddddddddddddddddddddddd"),
+                "vol-policy",
+                "fid-policy",
+                new string('d', 64));
+            var snapshot = PolicySnapshotCanonicalizer.Create(
+                2,
+                AgentPermissionPreset.Standard,
+                workspace,
+                new[]
+                {
+                    new PolicyRule(
+                        new PolicyRuleId("rule_" + new string('d', 32)),
+                        PolicyRuleScope.Project,
+                        PolicyDecision.Deny,
+                        new PolicyMatcher(ToolId: "files.write", OperationClass: "write", CanonicalPathPattern: "blocked.txt"),
+                        1,
+                        null),
+                },
+                new DateTimeOffset(2026, 8, 27, 0, 0, 0, TimeSpan.Zero));
+            var gateway = new HarnessToolGateway(
+                tempRoot,
+                new[] { "files.write" },
+                presetProvider: _ => AgentPermissionPreset.Standard,
+                idGenerator: new CryptographicIdGenerator(),
+                policySnapshot: snapshot);
+            var proposal = new ToolProposal(
+                new RunId("run_dddddddddddddddddddddddddddddddd"),
+                new ModelStepId("step_dddddddddddddddddddddddddddddddd"),
+                new ToolCallId("call_dddddddddddddddddddddddddddddddd"),
+                1,
+                "files.write",
+                "1.0.0",
+                JsonDocument.Parse("{\"path\":\"blocked.txt\",\"content\":\"no\"}").RootElement);
+
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+
+            Assert.Equal(PolicyDecision.Deny, decision.Decision);
+            Assert.Equal("policy_denied", decision.SafeCode);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, true);
+        }
+    }
+
+    [Fact]
+    public async Task Apply_patch_is_not_advertised_until_a_real_executor_exists()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "harness-patch-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var gateway = new HarnessToolGateway(tempRoot, new[] { "files.apply_patch" });
+            var proposal = new ToolProposal(
+                new RunId("run_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
+                new ModelStepId("step_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
+                new ToolCallId("call_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
+                1,
+                "files.apply_patch",
+                "1.0.0",
+                JsonDocument.Parse("{\"patch\":\"--- a/a.txt\\n+++ b/a.txt\\n\"}").RootElement);
+
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+
+            Assert.Equal(PolicyDecision.Deny, decision.Decision);
+            Assert.Equal("phase_not_available", decision.SafeCode);
+        }
+        finally
+        {
+            try { Directory.Delete(tempRoot, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task Forged_file_execution_without_a_live_preparation_is_rejected()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "harness-forged-file-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var gateway = new HarnessToolGateway(tempRoot, new[] { "files.read" });
+            var forged = new PreparedToolExecution(
+                new ExecutionId("exec_" + new string('a', 32)),
+                new ToolCallId("call_" + new string('a', 32)),
+                1,
+                ToolAccessKind.ReadOnly,
+                "prepared-canonical-files.read-forged",
+                Array.Empty<PreparedPayload>());
+
+            var receipt = await gateway.ExecuteAsync(forged, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+            Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
+            Assert.Equal("decision_stale", receipt.Code);
+        }
+        finally
+        {
+            try { Directory.Delete(tempRoot, recursive: true); } catch { }
+        }
+    }
+
+    [Theory]
+    [InlineData("files.read", "{\"path\":\"a.txt\",\"offset\":-1}")]
+    [InlineData("files.read", "{\"path\":\"a.txt\",\"limit\":0}")]
+    [InlineData("files.glob", "{\"pattern\":123}")]
+    [InlineData("files.search", "{\"query\":true}")]
+    [InlineData("files.write", "{\"path\":\"a.txt\",\"content\":123}")]
+    [InlineData("files.edit", "{\"path\":\"a.txt\",\"old_string\":\"x\",\"expected_occurrences\":0}")]
+    public async Task File_tools_reject_malformed_arguments_before_prepare(string toolId, string rawArguments)
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "harness-argument-validation-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var gateway = new HarnessToolGateway(tempRoot, new[] { toolId });
+            var proposal = new ToolProposal(
+                new RunId("run_" + new string('a', 32)),
+                new ModelStepId("step_" + new string('a', 32)),
+                new ToolCallId("call_" + new string('a', 32)),
+                1,
+                toolId,
+                "1.0.0",
+                JsonDocument.Parse(rawArguments).RootElement);
+
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+
+            Assert.Equal(PolicyDecision.Deny, decision.Decision);
+            Assert.Equal("invalid_arguments", decision.SafeCode);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task File_read_honours_bounded_offset_and_limit_without_splitting_utf8()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "harness-read-window-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        File.WriteAllText(Path.Combine(tempRoot, "a.txt"), "a\u00e9bcdef", new UTF8Encoding(false));
+        try
+        {
+            var gateway = new HarnessToolGateway(tempRoot, new[] { "files.read" });
+            var proposal = new ToolProposal(
+                new RunId("run_" + new string('b', 32)),
+                new ModelStepId("step_" + new string('b', 32)),
+                new ToolCallId("call_" + new string('b', 32)),
+                1,
+                "files.read",
+                "1.0.0",
+                JsonDocument.Parse("{\"path\":\"a.txt\",\"offset\":2,\"limit\":3}").RootElement);
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, decision.Decision);
+
+            var execution = new ApprovedToolExecution(
+                proposal,
+                new ExecutionId("exec_" + new string('b', 32)),
+                decision.CanonicalIntentToken!);
+            var prepared = await gateway.PrepareAsync(execution, CancellationToken.None);
+            var receipt = await gateway.ExecuteAsync(prepared, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+            Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
+            using var document = JsonDocument.Parse(receipt.ModelContent);
+            Assert.Equal("bc", document.RootElement.GetProperty("content").GetString());
+            Assert.Equal(2, document.RootElement.GetProperty("offset").GetInt32());
+            Assert.Equal(2, document.RootElement.GetProperty("bytes_read").GetInt32());
+            Assert.True(document.RootElement.GetProperty("truncated").GetBoolean());
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     private sealed class SimpleContextSource : IModelContextSource
     {
         public Task<ModelContextSourceSnapshot> LoadAsync(RunId runId, CancellationToken cancellationToken)

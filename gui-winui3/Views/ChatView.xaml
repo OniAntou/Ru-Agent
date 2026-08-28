@@ -109,7 +109,7 @@
 
         <Grid x:Name="ReadingColumn"
               Grid.Row="0"
-              HorizontalAlignment="Center"
+              HorizontalAlignment="Stretch"
               Background="Transparent">
             <StackPanel x:Name="WelcomeHeroPanel"
                         MaxWidth="820"
@@ -173,9 +173,22 @@
                           HorizontalAlignment="Stretch"
                           HorizontalContentAlignment="Stretch"
                           VerticalContentAlignment="Bottom"
+                          Padding="0"
                           HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Auto"
                           Visibility="Collapsed">
+                <ScrollViewer.Resources>
+                    <SolidColorBrush x:Key="ScrollBarBackground" Color="Transparent" />
+                    <SolidColorBrush x:Key="ScrollBarForeground" Color="Transparent" />
+                    <SolidColorBrush x:Key="ScrollBarThumbFill" Color="{ThemeResource RuLineColor}" />
+                    <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="{ThemeResource RuAccentColor}" />
+                    <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="{ThemeResource RuAccentColor}" />
+                    <SolidColorBrush x:Key="ScrollBarThumbFillDisabled" Color="Transparent" />
+                    <SolidColorBrush x:Key="ScrollBarTrackFill" Color="Transparent" />
+                    <SolidColorBrush x:Key="ScrollBarTrackFillPointerOver" Color="Transparent" />
+                    <SolidColorBrush x:Key="ScrollBarTrackFillDisabled" Color="Transparent" />
+                    <x:Double x:Key="ScrollBarSize">8</x:Double>
+                </ScrollViewer.Resources>
                 <Grid x:Name="ChatContentGrid" HorizontalAlignment="Center">
                     <ListView x:Name="ChatListView"
                               AutomationProperties.AutomationId="ChatMessages"
@@ -225,76 +238,117 @@
                        AutomationProperties.LiveSetting="Polite"
                        Foreground="{StaticResource RuMutedBrush}"
                        Margin="8,0,8,6" />
-            <Border x:Name="AgentApprovalCard"
-                    Grid.Row="1"
-                    Visibility="Collapsed"
-                    Background="{StaticResource RuSurfaceBrush}"
-                    BorderBrush="{StaticResource RuAccentBrush}"
-                    BorderThickness="1"
-                    CornerRadius="{StaticResource RuControlCornerRadius}"
-                    Padding="12,10"
-                    Margin="8,0,8,8"
-                    AutomationProperties.AutomationId="AgentApprovalCard"
-                    AutomationProperties.Name="Yêu cầu phê duyệt một lần cho hành động của Agent"
-                    AutomationProperties.LiveSetting="Polite">
-                <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
-                    <TextBlock Text="Ru cần anh duyệt một hành động"
-                               FontFamily="{StaticResource RuUiFontFamily}"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource RuAccentBrush}" />
-                    <TextBlock x:Name="AgentApprovalActionText"
-                               Grid.Row="1"
+
+            <StackPanel x:Name="AgentInlinePanel"
+                        Grid.Row="1"
+                        Visibility="Collapsed"
+                        Spacing="6"
+                        Margin="8,0,8,8">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <TextBlock x:Name="AgentStatusText"
+                               AutomationProperties.AutomationId="AgentStatusText"
+                               AutomationProperties.LiveSetting="Polite"
                                TextWrapping="Wrap"
-                               FontFamily="{StaticResource RuUiFontFamily}"
-                               FontSize="14"
-                               Foreground="{StaticResource RuInkBrush}" />
-                    <TextBlock x:Name="AgentApprovalPreviewText"
-                               Grid.Row="2"
-                               TextWrapping="Wrap"
-                               FontFamily="Consolas"
-                               FontSize="12"
-                               IsTextSelectionEnabled="False"
-                               Visibility="Collapsed"
-                               AutomationProperties.AutomationId="AgentApprovalPreviewText"
-                               Foreground="{StaticResource RuMutedBrush}" />
-                    <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                        <StackPanel Spacing="2" VerticalAlignment="Center">
-                            <TextBlock x:Name="AgentApprovalScopeText"
-                                       TextWrapping="Wrap"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="11"
-                                       Foreground="{StaticResource RuMutedBrush}" />
-                            <TextBlock x:Name="AgentApprovalExpiryText"
-                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                       FontSize="11"
-                                       Foreground="{StaticResource RuMutedBrush}" />
-                        </StackPanel>
-                        <Button x:Name="AgentRejectButton"
-                                Grid.Column="1"
-                                Content="Từ chối"
-                                Click="OnAgentRejectClick"
-                                Padding="12,6"
-                                CornerRadius="{StaticResource RuControlCornerRadius}"
-                                Background="Transparent"
-                                BorderBrush="{StaticResource RuLineBrush}"
-                                Foreground="{StaticResource RuMutedBrush}"
-                                AutomationProperties.AutomationId="AgentRejectButton"
-                                AutomationProperties.Name="Từ chối hành động này một lần" />
-                        <Button x:Name="AgentApproveButton"
-                                Grid.Column="2"
-                                Content="Duyệt một lần"
-                                Click="OnAgentApproveClick"
-                                Padding="12,6"
-                                CornerRadius="{StaticResource RuControlCornerRadius}"
-                                Background="{StaticResource RuAccentBrush}"
-                                BorderThickness="0"
-                                Foreground="White"
-                                AutomationProperties.AutomationId="AgentApproveButton"
-                                AutomationProperties.Name="Duyệt hành động này một lần" />
-                    </Grid>
+                               Foreground="{StaticResource RuMutedBrush}"
+                               VerticalAlignment="Center" />
+                    <Button x:Name="AgentStopButton"
+                            Grid.Column="1"
+                            Content="Dừng"
+                            Click="OnAgentStopClick"
+                            Visibility="Collapsed"
+                            Padding="10,4"
+                            AutomationProperties.AutomationId="AgentStopButton"
+                            AutomationProperties.Name="Dừng Coding Agent"
+                            ToolTipService.ToolTip="Dừng phiên Coding Agent" />
                 </Grid>
-            </Border>
+
+                <Border x:Name="AgentTrustPanel"
+                        Visibility="Collapsed"
+                        Background="{StaticResource RuSurfaceBrush}"
+                        BorderBrush="{StaticResource RuAccentBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource RuControlCornerRadius}"
+                        Padding="10,8">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Workspace cần được xác nhận"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource RuAccentBrush}" />
+                        <TextBlock x:Name="AgentTrustText"
+                                   TextWrapping="Wrap"
+                                   Foreground="{StaticResource RuInkBrush}"
+                                   AutomationProperties.AutomationId="AgentTrustText" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="AgentTrustDenyButton"
+                                    Content="Từ chối"
+                                    Click="OnAgentTrustDenyClick"
+                                    AutomationProperties.AutomationId="AgentTrustDenyButton"
+                                    AutomationProperties.Name="Từ chối workspace" />
+                            <Button x:Name="AgentTrustApproveButton"
+                                    Content="Tin cậy workspace"
+                                    Click="OnAgentTrustApproveClick"
+                                    AutomationProperties.AutomationId="AgentTrustApproveButton"
+                                    AutomationProperties.Name="Tin cậy workspace" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="AgentApprovalPanel"
+                        Visibility="Collapsed"
+                        Background="{StaticResource RuSurfaceBrush}"
+                        BorderBrush="{StaticResource RuAccentBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource RuControlCornerRadius}"
+                        Padding="10,8">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Agent cần anh phê duyệt một hành động"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource RuAccentBrush}" />
+                        <TextBlock x:Name="AgentApprovalSummaryText"
+                                   TextWrapping="Wrap"
+                                   Foreground="{StaticResource RuInkBrush}"
+                                   AutomationProperties.AutomationId="AgentApprovalSummaryText" />
+                        <StackPanel x:Name="AgentApprovalScopePanel"
+                                    Orientation="Horizontal"
+                                    Spacing="8"
+                                    Visibility="Collapsed">
+                            <TextBlock Text="Phạm vi"
+                                       VerticalAlignment="Center"
+                                       Foreground="{StaticResource RuMutedBrush}" />
+                            <ComboBox x:Name="AgentApprovalScopeBox"
+                                      SelectedIndex="0"
+                                      MinWidth="190"
+                                      AutomationProperties.AutomationId="AgentApprovalScopeBox"
+                                      AutomationProperties.Name="Phạm vi phê duyệt Agent">
+                                <ComboBoxItem Content="Chỉ lần này" Tag="once" />
+                                <ComboBoxItem Content="Cho phiên hiện tại" Tag="run" />
+                                <ComboBoxItem Content="Cho project này" Tag="project" />
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="AgentDenyButton"
+                                    Content="Từ chối"
+                                    Click="OnAgentDenyClick"
+                                    AutomationProperties.AutomationId="AgentDenyButton"
+                                    AutomationProperties.Name="Từ chối hành động của Agent" />
+                            <Button x:Name="AgentApproveButton"
+                                    Content="Duyệt theo phạm vi"
+                                    Click="OnAgentApproveClick"
+                                    AutomationProperties.AutomationId="AgentApproveButton"
+                                    AutomationProperties.Name="Duyệt theo phạm vi cho Agent" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Button x:Name="AgentContinueButton"
+                        Content="Tiếp tục"
+                        Click="OnAgentContinueClick"
+                        Visibility="Collapsed"
+                        HorizontalAlignment="Left"
+                        Padding="10,4"
+                        AutomationProperties.AutomationId="AgentContinueButton"
+                        AutomationProperties.Name="Tiếp tục phiên Coding Agent" />
+            </StackPanel>
+
             <Border x:Name="InputBorder"
                     Grid.Row="2"
                     Background="{StaticResource RuSurfaceBrush}"
@@ -331,10 +385,146 @@
                     </TextBox>
 
                     <Grid Grid.Row="1"
-                          ColumnDefinitions="Auto,Auto,*,Auto"
+                          ColumnDefinitions="Auto,*,Auto,Auto"
                           Margin="0,4,0,0">
-                        <Button x:Name="MicButton"
+                        <Button x:Name="AgentModeButton"
                                 Grid.Column="0"
+                                Click="OnAgentModeButtonClick"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="6,4"
+                                CornerRadius="{StaticResource RuControlCornerRadius}"
+                                HorizontalAlignment="Left"
+                                HorizontalContentAlignment="Left"
+                                AutomationProperties.AutomationId="AgentModeButton"
+                                AutomationProperties.Name="Chọn chế độ Chat hoặc Coding Agent"
+                                ToolTipService.ToolTip="Chọn chế độ Chat hoặc Coding Agent">
+                             <Button.Flyout>
+                                 <Flyout x:Name="AgentModeFlyout" Placement="Top">
+                                     <Flyout.FlyoutPresenterStyle>
+                                         <Style TargetType="FlyoutPresenter">
+                                             <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
+                                             <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
+                                             <Setter Property="BorderThickness" Value="1" />
+                                             <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
+                                             <Setter Property="Padding" Value="6" />
+                                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                         </Style>
+                                     </Flyout.FlyoutPresenterStyle>
+                                     <StackPanel Width="208" Spacing="2" Padding="0">
+                                         <StackPanel.Resources>
+                                             <SolidColorBrush x:Key="RadioButtonForeground" Color="{ThemeResource RuInkColor}" />
+                                             <SolidColorBrush x:Key="RadioButtonForegroundPointerOver" Color="{ThemeResource RuInkColor}" />
+                                             <SolidColorBrush x:Key="RadioButtonForegroundPressed" Color="{ThemeResource RuInkColor}" />
+                                             <SolidColorBrush x:Key="RadioButtonBackground" Color="Transparent" />
+                                             <StaticResource x:Key="RadioButtonBackgroundPointerOver" ResourceKey="RuAccentSoftBrush" />
+                                             <StaticResource x:Key="RadioButtonBackgroundPressed" ResourceKey="RuAccentSoftBrush" />
+                                             <StaticResource x:Key="RadioButtonOuterEllipseStroke" ResourceKey="RuMutedBrush" />
+                                             <StaticResource x:Key="RadioButtonOuterEllipseStrokePointerOver" ResourceKey="RuAccentBrush" />
+                                             <StaticResource x:Key="RadioButtonOuterEllipseCheckedStroke" ResourceKey="RuAccentBrush" />
+                                             <StaticResource x:Key="RadioButtonOuterEllipseCheckedFill" ResourceKey="RuAccentBrush" />
+                                         </StackPanel.Resources>
+                                         <RadioButton x:Name="AgentModeChatOption"
+                                                      Content="Trò chuyện"
+                                                      Tag="chat"
+                                                      GroupName="RuResponseMode"
+                                                      IsChecked="True"
+                                                      Click="OnAgentModeOptionClick"
+                                                      Padding="10,8"
+                                                      MinHeight="38"
+                                                      Margin="0"
+                                                      HorizontalContentAlignment="Stretch"
+                                                      FontFamily="{StaticResource RuUiFontFamily}"
+                                                      FontSize="13"
+                                                      Foreground="{StaticResource RuInkBrush}"
+                                                      AutomationProperties.AutomationId="AgentModeChatOption"
+                                                      AutomationProperties.Name="Chế độ Trò chuyện" />
+                                         <RadioButton x:Name="AgentModeAgentOption"
+                                                      Content="Coding Agent"
+                                                      Tag="agent"
+                                                      GroupName="RuResponseMode"
+                                                      Click="OnAgentModeOptionClick"
+                                                      Padding="10,8"
+                                                      MinHeight="38"
+                                                      Margin="0"
+                                                      HorizontalContentAlignment="Stretch"
+                                                      FontFamily="{StaticResource RuUiFontFamily}"
+                                                      FontSize="13"
+                                                      Foreground="{StaticResource RuInkBrush}"
+                                                      AutomationProperties.AutomationId="AgentModeAgentOption"
+                                                      AutomationProperties.Name="Chế độ Coding Agent" />
+                                     </StackPanel>
+                                 </Flyout>
+                             </Button.Flyout>
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <FontIcon x:Name="AgentModeIcon"
+                                          Glyph="&#xE8F2;"
+                                          FontSize="12"
+                                          Foreground="{StaticResource RuMutedBrush}" />
+                                <TextBlock x:Name="AgentModeLabel"
+                                           Text="Chat"
+                                           FontSize="12"
+                                           Foreground="{StaticResource RuMutedBrush}"
+                                           VerticalAlignment="Center" />
+                                <FontIcon Glyph="&#xE70D;"
+                                          FontSize="10"
+                                          Foreground="{StaticResource RuMutedBrush}"
+                                          VerticalAlignment="Center" />
+                             </StackPanel>
+                         </Button>
+
+                        <Button x:Name="AgentSettingsButton"
+                                Grid.Column="1"
+                                Visibility="Collapsed"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="6,4"
+                                CornerRadius="{StaticResource RuControlCornerRadius}"
+                                HorizontalAlignment="Left"
+                                HorizontalContentAlignment="Left"
+                                AutomationProperties.AutomationId="AgentSettingsButton"
+                                AutomationProperties.Name="Cài đặt Coding Agent"
+                                ToolTipService.ToolTip="Cấu hình workspace và preset của Coding Agent">
+                            <Button.Flyout>
+                                <Flyout x:Name="AgentSettingsFlyout" Placement="Top">
+                                    <StackPanel Width="300" Spacing="8" Padding="4">
+                                        <TextBlock Text="Cấu hình Agent"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{StaticResource RuInkBrush}" />
+                                        <TextBox x:Name="AgentWorkspaceBox"
+                                                 Header="Thư mục làm việc (tuỳ chọn)"
+                                                 PlaceholderText="Để trống để dùng project root"
+                                                 AutomationProperties.AutomationId="AgentWorkspaceBox"
+                                                 AutomationProperties.Name="Thư mục làm việc của Agent" />
+                                        <ComboBox x:Name="AgentPresetBox"
+                                                  Header="Preset quyền"
+                                                  SelectedIndex="0"
+                                                  SelectionChanged="OnAgentPresetChanged"
+                                                  AutomationProperties.AutomationId="AgentPresetBox"
+                                                  AutomationProperties.Name="Preset quyền của Agent">
+                                            <ComboBoxItem Content="Standard" Tag="standard" />
+                                            <ComboBoxItem Content="Full Access" Tag="full_access" />
+                                        </ComboBox>
+                                        <TextBlock Text="Full Access vẫn chạy dưới quyền người dùng Windows hiện tại và luôn cần xác nhận."
+                                                   TextWrapping="Wrap"
+                                                   FontSize="12"
+                                                   Foreground="{StaticResource RuMutedBrush}" />
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                <FontIcon Glyph="&#xE713;"
+                                          FontSize="12"
+                                          Foreground="{StaticResource RuMutedBrush}" />
+                                <TextBlock Text="Cấu hình"
+                                           FontSize="12"
+                                           Foreground="{StaticResource RuMutedBrush}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button x:Name="MicButton"
+                                Grid.Column="2"
                                 Click="OnMicClick"
                                 Width="32"
                                 Height="32"
@@ -354,69 +544,7 @@
                                       Foreground="{StaticResource RuMutedBrush}" />
                         </Button>
 
-                        <StackPanel x:Name="ModeSelector"
-                                    Grid.Column="1"
-                                    Orientation="Horizontal"
-                                    Spacing="4"
-                                    Margin="6,0,0,0"
-                                    VerticalAlignment="Center">
-                            <Button x:Name="ModeChatButton"
-                                    Click="OnModeChatClick"
-                                    Height="32"
-                                    Padding="10,0"
-                                    CornerRadius="{StaticResource RuControlCornerRadius}"
-                                    AutomationProperties.AutomationId="ModeChatButton"
-                                    AutomationProperties.Name="Chế độ trò chuyện thông thường, chỉ đọc workspace"
-                                    ToolTipService.ToolTip="Chế độ trò chuyện thông thường, chỉ đọc workspace"
-                                    Background="Transparent"
-                                    BorderBrush="{StaticResource RuLineBrush}"
-                                    BorderThickness="1"
-                                    Foreground="{StaticResource RuMutedBrush}">
-                                <TextBlock Text="Chat" FontSize="12" FontFamily="{StaticResource RuUiFontFamily}" VerticalAlignment="Center" />
-                            </Button>
-                            <ToggleButton x:Name="ModeAgentButton" Click="OnModeAgentClick"
-                                          Height="32"
-                                          Padding="10,0"
-                                          CornerRadius="{StaticResource RuControlCornerRadius}"
-                                          AutomationProperties.AutomationId="AgentModeButton"
-                                          AutomationProperties.Name="Bật chế độ Agent cho session này với workspace và terminal giới hạn"
-                                          ToolTipService.ToolTip="Bật/tắt chế độ Agent"
-                                          Background="Transparent"
-                                          BorderBrush="{StaticResource RuLineBrush}"
-                                          BorderThickness="1"
-                                          Foreground="{StaticResource RuMutedBrush}">
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <FontIcon Glyph="&#xE945;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" />
-                                    <TextBlock Text="Agent" FontSize="12" FontFamily="{StaticResource RuUiFontFamily}" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </ToggleButton>
-                            <Button x:Name="ModeFullButton"
-                                    Click="OnModeFullClick"
-                                    Height="32"
-                                    Padding="10,0"
-                                    CornerRadius="{StaticResource RuControlCornerRadius}"
-                                    AutomationProperties.AutomationId="ModeFullButton"
-                                    AutomationProperties.Name="Bật Full Access với shell tự do trên toàn hệ thống và mạng được phép"
-                                    ToolTipService.ToolTip="Bật Full Access với shell tự do trên toàn hệ thống và mạng được phép"
-                                    Background="Transparent"
-                                    BorderBrush="{StaticResource RuLineBrush}"
-                                    BorderThickness="1"
-                                    Foreground="{StaticResource RuMutedBrush}">
-                                <TextBlock Text="Full" FontSize="12" FontFamily="{StaticResource RuUiFontFamily}" VerticalAlignment="Center" />
-                            </Button>
-                        </StackPanel>
 
-                        <TextBlock x:Name="AgentActivity"
-                                   Grid.Column="2"
-                                   Text=""
-                                   Visibility="Collapsed"
-                                   VerticalAlignment="Center"
-                                   Margin="10,0,8,0"
-                                   FontSize="12"
-                                   TextTrimming="CharacterEllipsis"
-                                   AutomationProperties.AutomationId="AgentActivity"
-                                   AutomationProperties.LiveSetting="Polite"
-                                   Foreground="{StaticResource RuMutedBrush}" />
 
                         <Button x:Name="SendButton"
                                 Grid.Column="3"

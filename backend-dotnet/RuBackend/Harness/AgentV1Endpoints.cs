@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Globalization;
+using System.Text;
 using RuAgent.Harness.Core;
 using RuAgent.Protocol.Harness;
 
@@ -6,6 +8,9 @@ namespace RuBackend.Harness;
 
 public static class AgentV1Endpoints
 {
+    private const int MaxJsonBodyBytes = 64 * 1024;
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
     public static void Map(WebApplication app)
     {
         app.MapPost("/agent/v1/runs", CreateRunAsync);
@@ -28,9 +33,20 @@ public static class AgentV1Endpoints
         CreateAgentRunRequest? dto;
         try
         {
-            dto = await JsonSerializer.DeserializeAsync<CreateAgentRunRequest>(context.Request.Body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
+            dto = text is null
+                ? null
+                : JsonSerializer.Deserialize<CreateAgentRunRequest>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         }
-        catch
+        catch (RequestBodyTooLargeException)
+        {
+            return Results.Json(new { error_code = "request_too_large" }, statusCode: 413);
+        }
+        catch (JsonException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+        catch (DecoderFallbackException)
         {
             return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
         }
@@ -61,7 +77,7 @@ public static class AgentV1Endpoints
 
         if (!string.IsNullOrWhiteSpace(afterSequenceRaw))
         {
-            if (!long.TryParse(afterSequenceRaw, out var parsed) || parsed < 0)
+            if (!long.TryParse(afterSequenceRaw, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) || parsed < 0)
             {
                 context.Response.StatusCode = 400;
                 await context.Response.WriteAsJsonAsync(new { error_code = "invalid_cursor" }, ct);
@@ -73,14 +89,27 @@ public static class AgentV1Endpoints
 
         if (!string.IsNullOrWhiteSpace(lastEventIdRaw))
         {
-            // Last-Event-ID may be "id: <seq>" or just seq, also may be t<seq> for transient; we only handle durable
+            // Last-Event-ID may be "id: <seq>" or just seq.  A transient
+            // connection-local id (t<seq>) is valid SSE state but never becomes
+            // a durable replay cursor.
             var trimmed = lastEventIdRaw.Trim();
+            if (trimmed.StartsWith("id:", StringComparison.OrdinalIgnoreCase))
+            {
+                trimmed = trimmed[3..].Trim();
+            }
+
             if (trimmed.StartsWith("t", StringComparison.Ordinal))
             {
-                // transient id not valid for durable cursor; treat as mismatch if afterSeq present? ignore
+                if (!long.TryParse(trimmed.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out var transientSeq) || transientSeq < 0)
+                {
+                    context.Response.StatusCode = 400;
+                    await context.Response.WriteAsJsonAsync(new { error_code = "invalid_cursor" }, ct);
+                    return;
+                }
+
                 lastSeq = null;
             }
-            else if (!long.TryParse(trimmed, out var parsed) || parsed < 0)
+            else if (!long.TryParse(trimmed, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) || parsed < 0)
             {
                 context.Response.StatusCode = 400;
                 await context.Response.WriteAsJsonAsync(new { error_code = "invalid_cursor" }, ct);
@@ -117,6 +146,18 @@ public static class AgentV1Endpoints
             return;
         }
 
+        // Validate protocol negotiation before acquiring a long-lived lease or
+        // committing SSE headers; invalid requests should still receive a normal
+        // JSON error response.
+        var protoRaw = context.Request.Query["protocol_version"].ToString();
+        if (!string.IsNullOrWhiteSpace(protoRaw)
+            && (!int.TryParse(protoRaw, NumberStyles.None, CultureInfo.InvariantCulture, out var proto) || proto != HarnessSafeEventEnvelope.CurrentProtocolVersion))
+        {
+            context.Response.StatusCode = 400;
+            await context.Response.WriteAsJsonAsync(new { error_code = "unsupported_protocol_version" }, ct);
+            return;
+        }
+
         // Acquire client lease for SSE lifetime (per spec: Agent SSE = long-lived lease)
         using var lease = leaseRegistry.Acquire("sse");
         // Set SSE headers
@@ -134,21 +175,19 @@ public static class AgentV1Endpoints
             return;
         }
 
-        // Reject unknown protocol version query param? Check protocol_version param if present
-        var protoRaw = context.Request.Query["protocol_version"].ToString();
-        if (!string.IsNullOrWhiteSpace(protoRaw))
-        {
-            if (!int.TryParse(protoRaw, out var proto) || proto != HarnessSafeEventEnvelope.CurrentProtocolVersion)
-            {
-                context.Response.StatusCode = 400;
-                await context.Response.WriteAsJsonAsync(new { error_code = "unsupported_protocol_version" }, ct);
-                return;
-            }
-        }
-
         // Streaming durable events without materializing
         long lastSent = effectiveAfter;
         var isTerminal = run.State.IsTerminal();
+        var liveRaw = context.Request.Query["live"].ToString();
+        var live = liveRaw != "0";
+        HarnessLiveEventHub.HubLease? hubLease = null;
+        if (live && !isTerminal)
+        {
+            // Subscribe before replaying durables. A model step can publish a
+            // transient frame while the initial durable cursor is being read;
+            // subscribing afterwards creates a silent loss window.
+            hubLease = hub.Subscribe(runIdObj);
+        }
 
         // Helper to stream available durables
         async Task<bool> StreamDurablesAsync()
@@ -188,24 +227,28 @@ public static class AgentV1Endpoints
 
             await HarnessSseWriter.WriteFinalSnapshotAsync(context.Response, AgentV1Service.MapRunState(run.Status), ct);
             await context.Response.Body.FlushAsync(ct);
+            if (hubLease is { } terminalLease)
+            {
+                await terminalLease.DisposeAsync();
+            }
             return;
         }
 
         // Live tail: stream durables and this run's transient frames until the run
         // reaches a terminal state, the client disconnects, or the server shuts down.
         // `live=0` keeps the legacy snapshot-then-close behavior for replay/cursor checks.
-        var liveRaw = context.Request.Query["live"].ToString();
-        var live = liveRaw != "0";
         var pollInterval = TimeSpan.FromMilliseconds(100);
         long localTransientSeq = 0;
 
         if (!live || isTerminal)
         {
             await context.Response.Body.FlushAsync(ct);
+            if (hubLease is { } replayLease)
+            {
+                await replayLease.DisposeAsync();
+            }
             return;
         }
-
-        await using var hubLease = hub.Subscribe(runIdObj);
 
         try
         {
@@ -225,7 +268,7 @@ public static class AgentV1Endpoints
                     break;
                 }
 
-                while (hubLease.Reader.TryRead(out var frame))
+                while (hubLease is { } activeLease && activeLease.Reader.TryRead(out var frame))
                 {
                     localTransientSeq++;
                     var payload = new { kind = frame.Kind, data = frame.Data };
@@ -251,6 +294,13 @@ public static class AgentV1Endpoints
         {
             // client disconnected
         }
+        finally
+        {
+            if (hubLease is { } activeLease)
+            {
+                await activeLease.DisposeAsync();
+            }
+        }
     }
 
     private static async Task<IResult> GetPayloadAsync(string runId, string payloadId, AgentV1Service service, CancellationToken ct)
@@ -265,15 +315,26 @@ public static class AgentV1Endpoints
         bool hasBody = false;
         try
         {
-            using var reader = new System.IO.StreamReader(context.Request.Body);
-            var text = await reader.ReadToEndAsync(ct);
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
             if (!string.IsNullOrWhiteSpace(text))
             {
-                body = System.Text.Json.JsonDocument.Parse(text).RootElement.Clone();
+                using var document = System.Text.Json.JsonDocument.Parse(text);
+                body = document.RootElement.Clone();
                 hasBody = true;
             }
         }
-        catch { }
+        catch (RequestBodyTooLargeException)
+        {
+            return Results.Json(new { error_code = "request_too_large" }, statusCode: 413);
+        }
+        catch (JsonException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+        catch (DecoderFallbackException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
 
         var result = await service.HandleApprovalAsync(runId, approvalId, hasBody ? body : null, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
@@ -284,9 +345,20 @@ public static class AgentV1Endpoints
         TrustAgentRunRequest? dto;
         try
         {
-            dto = await JsonSerializer.DeserializeAsync<TrustAgentRunRequest>(context.Request.Body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, ct);
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
+            dto = text is null
+                ? null
+                : JsonSerializer.Deserialize<TrustAgentRunRequest>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         }
-        catch
+        catch (RequestBodyTooLargeException)
+        {
+            return Results.Json(new { error_code = "request_too_large" }, statusCode: 413);
+        }
+        catch (JsonException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+        catch (DecoderFallbackException)
         {
             return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
         }
@@ -318,7 +390,13 @@ public static class AgentV1Endpoints
         string? snapshotHash = null;
         try
         {
-            using var document = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: ct);
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+            }
+
+            using var document = JsonDocument.Parse(text);
             if (document.RootElement.ValueKind == JsonValueKind.Object)
             {
                 if (document.RootElement.TryGetProperty("outcome", out var outcomeElement)
@@ -334,7 +412,15 @@ public static class AgentV1Endpoints
                 }
             }
         }
+        catch (RequestBodyTooLargeException)
+        {
+            return Results.Json(new { error_code = "request_too_large" }, statusCode: 413);
+        }
         catch (JsonException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+        catch (DecoderFallbackException)
         {
             return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
         }
@@ -349,7 +435,7 @@ public static class AgentV1Endpoints
         int? limit = null;
         if (!string.IsNullOrWhiteSpace(limitRaw))
         {
-            if (!int.TryParse(limitRaw, out var parsed))
+            if (!int.TryParse(limitRaw, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed))
             {
                 return Results.Json(new { error_code = "invalid_limit" }, statusCode: 400);
             }
@@ -383,16 +469,24 @@ public static class AgentV1Endpoints
         JsonElement body;
         try
         {
-            using var reader = new System.IO.StreamReader(context.Request.Body);
-            var text = await reader.ReadToEndAsync(ct);
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
             if (string.IsNullOrWhiteSpace(text))
             {
                 return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
             }
 
-            body = JsonDocument.Parse(text).RootElement.Clone();
+            using var document = JsonDocument.Parse(text);
+            body = document.RootElement.Clone();
         }
-        catch
+        catch (RequestBodyTooLargeException)
+        {
+            return Results.Json(new { error_code = "request_too_large" }, statusCode: 413);
+        }
+        catch (JsonException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+        catch (DecoderFallbackException)
         {
             return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
         }
@@ -407,6 +501,46 @@ public static class AgentV1Endpoints
         var result = await service.DeletePolicyAsync(ruleId, isInteractive, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
+
+    private static async Task<string?> ReadBoundedBodyTextAsync(HttpRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.ContentLength is > MaxJsonBodyBytes)
+        {
+            throw new RequestBodyTooLargeException();
+        }
+
+        using var buffer = new MemoryStream(
+            request.ContentLength is >= 0 and <= MaxJsonBodyBytes
+                ? checked((int)request.ContentLength.Value)
+                : 0);
+        var chunk = new byte[8 * 1024];
+        while (true)
+        {
+            var read = await request.Body.ReadAsync(chunk.AsMemory(), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (buffer.Length > MaxJsonBodyBytes - read)
+            {
+                throw new RequestBodyTooLargeException();
+            }
+
+            await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+        }
+
+        if (buffer.Length == 0)
+        {
+            return null;
+        }
+
+        var text = StrictUtf8.GetString(buffer.GetBuffer(), 0, checked((int)buffer.Length));
+        return text.Length > 0 && text[0] == '\uFEFF' ? text[1..] : text;
+    }
+
+    private sealed class RequestBodyTooLargeException : Exception;
 }
 
 internal static class HarnessEventMapper

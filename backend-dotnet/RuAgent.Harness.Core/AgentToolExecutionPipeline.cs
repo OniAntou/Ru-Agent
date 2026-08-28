@@ -63,105 +63,146 @@ internal sealed class AgentToolExecutionPipeline
         var denied = new Dictionary<int, DeniedToolExecution>();
         var orderedReceipts = new List<(int ModelOrder, ToolExecutionReceipt Receipt)>(
             modelCalls.Count);
-        for (var index = 0; index < modelCalls.Count; index++)
+        try
         {
-            var modelCall = modelCalls[index];
-            var proposal = new ToolProposal(
-                run.RunId,
-                modelStepId,
-                _ids.NewToolCallId(),
-                index + 1,
-                modelCall.ToolId,
-                modelCall.ToolVersion,
-                modelCall.Arguments);
-            var argumentBytes = SerializeModelToolCall(modelCall);
-            var argumentPayloadId = _ids.NewPayloadId();
-            var argumentPayload = new HarnessPayloadIntent(
-                argumentPayloadId,
-                HarnessPayloadKind.ToolArguments,
-                HarnessPayloadAudience.AuthenticatedClient
-                    | HarnessPayloadAudience.ModelContext,
-                HarnessPayloadEncoding.Json,
-                Math.Max(argumentBytes.Length, 1),
-                argumentBytes);
-            run = await CommitSingleEventAsync(
-                    run,
-                    run.Status,
-                    new HarnessEventIntent(
-                        _ids.NewEventId(),
-                        HarnessEventKind.ToolProposed,
-                        modelStepId: modelStepId,
-                        toolCallId: proposal.ToolCallId,
-                        payloadId: argumentPayloadId,
-                        safeCount: proposal.ModelOrder),
-                    new[] { argumentPayload },
-                    cancellationToken)
-                .ConfigureAwait(false);
-            var decision = await _gateway
-                .EvaluateAsync(proposal, cancellationToken)
-                .ConfigureAwait(false)
-                ?? throw new InvalidOperationException("tool_decision_returned_null");
-            if (decision.Decision == PolicyDecision.Ask)
+            for (var index = 0; index < modelCalls.Count; index++)
             {
-                var waiting = AgentBudgetPolicy.EnterApprovalWait(run, _time.UtcNow);
-                var approvalEvent = new HarnessEventIntent(
-                    _ids.NewEventId(),
-                    HarnessEventKind.ApprovalRequested,
-                    modelStepId: modelStepId,
-                    toolCallId: proposal.ToolCallId,
-                    approvalId: decision.ApprovalId,
-                    safeCode: decision.SafeCode);
-                run = await CommitAsync(
+                var modelCall = modelCalls[index];
+                var proposal = new ToolProposal(
+                    run.RunId,
+                    modelStepId,
+                    _ids.NewToolCallId(),
+                    index + 1,
+                    modelCall.ToolId,
+                    modelCall.ToolVersion,
+                    modelCall.Arguments);
+                var argumentBytes = SerializeModelToolCall(modelCall);
+                var argumentPayloadId = _ids.NewPayloadId();
+                var argumentPayload = new HarnessPayloadIntent(
+                    argumentPayloadId,
+                    HarnessPayloadKind.ToolArguments,
+                    HarnessPayloadAudience.AuthenticatedClient
+                        | HarnessPayloadAudience.ModelContext,
+                    HarnessPayloadEncoding.Json,
+                    Math.Max(argumentBytes.Length, 1),
+                    argumentBytes);
+                run = await CommitSingleEventAsync(
                         run,
-                        waiting,
-                        new[] { approvalEvent },
-                        Array.Empty<HarnessPayloadIntent>(),
+                        run.Status,
+                        new HarnessEventIntent(
+                            _ids.NewEventId(),
+                            HarnessEventKind.ToolProposed,
+                            modelStepId: modelStepId,
+                            toolCallId: proposal.ToolCallId,
+                            payloadId: argumentPayloadId,
+                            safeCount: proposal.ModelOrder),
+                        new[] { argumentPayload },
                         cancellationToken)
                     .ConfigureAwait(false);
-                return new AgentToolPipelineResult(
-                    run,
-                    Array.Empty<ToolExecutionReceipt>(),
-                    "approval_required");
-            }
+                var decision = await _gateway
+                    .EvaluateAsync(proposal, cancellationToken)
+                    .ConfigureAwait(false)
+                    ?? throw new InvalidOperationException("tool_decision_returned_null");
+                if (decision.Decision == PolicyDecision.Ask)
+                {
+                    // A model step can contain more than one call. Any calls prepared
+                    // before the first approval request must be discarded: they have not
+                    // reached the durable execution-request barrier and must not survive
+                    // while the run is waiting for user input.
+                    await DiscardPreparedAsync(prepared).ConfigureAwait(false);
+                    var waiting = AgentBudgetPolicy.EnterApprovalWait(run, _time.UtcNow);
+                    var approvalEvent = new HarnessEventIntent(
+                        _ids.NewEventId(),
+                        HarnessEventKind.ApprovalRequested,
+                        modelStepId: modelStepId,
+                        toolCallId: proposal.ToolCallId,
+                        approvalId: decision.ApprovalId,
+                        safeCode: decision.SafeCode);
+                    var approvalEvents = new List<HarnessEventIntent>();
+                    var approvalPayloads = new List<HarnessPayloadIntent>();
+                    var deniedReceipts = new List<ToolExecutionReceipt>();
+                    foreach (var deniedExecution in denied.OrderBy(item => item.Key).Select(item => item.Value))
+                    {
+                        var deniedReceipt = deniedExecution.Receipt;
+                        approvalEvents.Add(new HarnessEventIntent(
+                            _ids.NewEventId(),
+                            HarnessEventKind.ToolExecutionCompleted,
+                            modelStepId: modelStepId,
+                            toolCallId: deniedReceipt.ToolCallId,
+                            executionId: deniedReceipt.ExecutionId,
+                            payloadId: deniedReceipt.ResultPayloadId,
+                            safeCode: deniedReceipt.Code,
+                            toolOutcome: deniedReceipt.Outcome,
+                            sideEffectsPossible: deniedReceipt.SideEffectsPossible));
+                        approvalPayloads.Add(deniedExecution.Payload);
+                        deniedReceipts.Add(deniedReceipt);
+                    }
 
-            if (decision.Decision == PolicyDecision.Deny)
-            {
-                var deniedExecutionId = _ids.NewExecutionId();
-                var code = decision.SafeCode ?? "policy_denied";
-                denied.Add(
-                    proposal.ModelOrder,
-                    CreateDeniedExecution(proposal, deniedExecutionId, code));
-                continue;
-            }
+                    approvalEvents.Add(approvalEvent);
+                    var approvalNext = run.Advance(
+                        waiting.Status,
+                        waiting.BudgetWindow,
+                        waiting.ModelStepsInWindow,
+                        waiting.ToolCallsInWindow,
+                        approvalEvents.Count,
+                        _time.UtcNow);
+                    run = await CommitAsync(
+                            run,
+                            approvalNext,
+                            approvalEvents,
+                            approvalPayloads,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    return new AgentToolPipelineResult(
+                        run,
+                        deniedReceipts,
+                        "approval_required");
+                }
 
-            if (_inspectionGate is { } gate
-                && gate.IsMutationDenied(run.RunId)
-                && decision.AccessKind != ToolAccessKind.ReadOnly)
-            {
-                var gatedExecutionId = _ids.NewExecutionId();
-                denied.Add(
-                    proposal.ModelOrder,
-                    CreateDeniedExecution(proposal, gatedExecutionId, "inspection_required"));
-                continue;
-            }
+                if (decision.Decision == PolicyDecision.Deny)
+                {
+                    var deniedExecutionId = _ids.NewExecutionId();
+                    var code = decision.SafeCode ?? "policy_denied";
+                    denied.Add(
+                        proposal.ModelOrder,
+                        CreateDeniedExecution(proposal, deniedExecutionId, code));
+                    continue;
+                }
 
-            if (decision.Decision != PolicyDecision.Allow
-                || decision.CanonicalIntentToken is null)
-            {
-                throw new InvalidOperationException("invalid_tool_decision");
-            }
+                if (_inspectionGate is { } gate
+                    && gate.IsMutationDenied(run.RunId)
+                    && decision.AccessKind != ToolAccessKind.ReadOnly)
+                {
+                    var gatedExecutionId = _ids.NewExecutionId();
+                    denied.Add(
+                        proposal.ModelOrder,
+                        CreateDeniedExecution(proposal, gatedExecutionId, "inspection_required"));
+                    continue;
+                }
 
-            var executionId = _ids.NewExecutionId();
-            var approved = new ApprovedToolExecution(
-                proposal,
-                executionId,
-                decision.CanonicalIntentToken);
-            var preparedCall = await _gateway
-                .PrepareAsync(approved, cancellationToken)
-                .ConfigureAwait(false)
-                ?? throw new InvalidOperationException("tool_prepare_returned_null");
-            ValidatePrepared(approved, decision.AccessKind, preparedCall);
-            prepared.Add(preparedCall);
+                if (decision.Decision != PolicyDecision.Allow
+                    || decision.CanonicalIntentToken is null)
+                {
+                    throw new InvalidOperationException("invalid_tool_decision");
+                }
+
+                var executionId = _ids.NewExecutionId();
+                var approved = new ApprovedToolExecution(
+                    proposal,
+                    executionId,
+                    decision.CanonicalIntentToken);
+                var preparedCall = await _gateway
+                    .PrepareAsync(approved, cancellationToken)
+                    .ConfigureAwait(false)
+                    ?? throw new InvalidOperationException("tool_prepare_returned_null");
+                prepared.Add(preparedCall);
+                ValidatePrepared(approved, decision.AccessKind, preparedCall);
+            }
+        }
+        catch
+        {
+            await DiscardPreparedAsync(prepared).ConfigureAwait(false);
+            throw;
         }
 
         foreach (var call in prepared.OrderBy(call => call.ModelOrder))
@@ -195,6 +236,16 @@ internal sealed class AgentToolExecutionPipeline
         var executionDropped = checked((int)(_frames.DroppedCount - droppedBeforeExecution));
         var rawByOrder = rawReceipts.ToDictionary(
             receipt => prepared.Single(call => call.ExecutionId == receipt.ExecutionId).ModelOrder);
+        // The scheduler intentionally stops after an ambiguous mutation outcome.
+        // Every earlier ToolExecutionRequested event still needs a terminal receipt;
+        // otherwise skipped calls remain dangling in the durable stream and their
+        // prepared authorization state can be replayed. Mark them as not executed and
+        // discard their preparation state before recording the reconciliation boundary.
+        foreach (var skipped in prepared.Where(call => !rawByOrder.ContainsKey(call.ModelOrder)))
+        {
+            await _gateway.CancelAsync(skipped.ExecutionId, CancellationToken.None).ConfigureAwait(false);
+            rawByOrder[skipped.ModelOrder] = CreateSkippedReceipt(skipped);
+        }
         var executionDropEventPending = executionDropped > 0;
         foreach (var modelOrder in rawByOrder.Keys.Concat(denied.Keys).Order())
         {
@@ -322,6 +373,38 @@ internal sealed class AgentToolExecutionPipeline
                 .ToArray(),
             null);
     }
+
+    private async Task DiscardPreparedAsync(IEnumerable<PreparedToolExecution> prepared)
+    {
+        foreach (var execution in prepared)
+        {
+            try
+            {
+                await _gateway.CancelAsync(execution.ExecutionId, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                // Cleanup is best-effort. The gateway remains responsible for
+                // failing closed when a stale execution is presented later.
+            }
+        }
+    }
+
+    private static ToolExecutionReceipt CreateSkippedReceipt(PreparedToolExecution execution) =>
+        new(
+            execution.ExecutionId,
+            execution.ToolCallId,
+            ToolExecutionOutcome.Cancelled,
+            "not_executed_after_unknown",
+            null,
+            sideEffectsPossible: false,
+            modelContent: JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                error = "tool_not_executed",
+                code = "not_executed_after_unknown",
+            }),
+            contentEncoding: HarnessPayloadEncoding.Json);
 
     private DeniedToolExecution CreateDeniedExecution(
         ToolProposal proposal,

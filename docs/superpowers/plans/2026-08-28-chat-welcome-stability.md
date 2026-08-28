@@ -26,7 +26,7 @@
 **Files:**
 - Modify: `gui-winui3.Tests/AgentSessionUiSourceContractTests.cs`
 
-- [ ] **Step 1: Add a failing source-contract test for Agent idle mode.**
+- [x] **Step 1: Add a failing source-contract test for Agent idle mode.**
 
 Add this fact to `AgentSessionUiSourceContractTests`:
 
@@ -54,12 +54,20 @@ public void Selecting_agent_does_not_show_idle_inline_activity()
         ? codeBehind[sendStart..nextSendMethod]
         : codeBehind[sendStart..];
 
-    Assert.Contains("_agentActivityVisible = true", sendBody, StringComparison.Ordinal);
-    Assert.Contains("AgentInlinePanel.Visibility = Visibility.Visible", sendBody, StringComparison.Ordinal);
+    Assert.Contains("ShowAgentInlineStatus(", sendBody, StringComparison.Ordinal);
+
+    int helperStart = codeBehind.IndexOf("private void ShowAgentInlineStatus", StringComparison.Ordinal);
+    Assert.True(helperStart >= 0, "ShowAgentInlineStatus is missing.");
+    int nextHelperMethod = codeBehind.IndexOf("\n        private", helperStart + 1, StringComparison.Ordinal);
+    string helperBody = nextHelperMethod > helperStart
+        ? codeBehind[helperStart..nextHelperMethod]
+        : codeBehind[helperStart..];
+    Assert.Contains("_agentActivityVisible = true", helperBody, StringComparison.Ordinal);
+    Assert.Contains("AgentInlinePanel.Visibility = Visibility.Visible", helperBody, StringComparison.Ordinal);
 }
 ```
 
-- [ ] **Step 2: Run the focused test and confirm it fails for the old behavior.**
+- [x] **Step 2: Run the focused test and confirm it fails for the old behavior.**
 
 Run:
 
@@ -74,7 +82,7 @@ Expected result before the fix: `FAIL`, because `SetAgentMode` currently writes 
 **Files:**
 - Modify: `gui-winui3/Views/ChatView.xaml.cs:70-330, 402-465, 515-711, 1180-1252`
 
-- [ ] **Step 1: Add one explicit activity flag and a helper.**
+- [x] **Step 1: Add one explicit activity flag and a helper.**
 
 Add the field beside `_agentMode`:
 
@@ -93,7 +101,7 @@ private void ShowAgentInlineStatus(string status)
 }
 ```
 
-- [ ] **Step 2: Keep idle mode selection collapsed.**
+- [x] **Step 2: Keep idle mode selection collapsed.**
 
 In `SetAgentMode`, clear activity when switching into idle Agent mode and remove the ready-copy/visible assignment:
 
@@ -118,7 +126,7 @@ else if (!_agentActivityVisible)
 
 The existing guard for an active run must remain fail-closed; its message should use `ShowAgentInlineStatus(...)` so disabling an active run still keeps the user-visible warning.
 
-- [ ] **Step 3: Make `UpdateAgentInlineState` depend on activity, not mode.**
+- [x] **Step 3: Make `UpdateAgentInlineState` depend on activity, not mode.**
 
 In the `_agentController is null` and stale-session branches, replace the `_agentMode ? Visible : Collapsed` expression with `_agentActivityVisible ? Visible : Collapsed`, and clear `AgentStatusText` only when activity is false. Replace the `hasRunState` expression with:
 
@@ -133,7 +141,7 @@ bool hasRunState = _agentActivityVisible
 
 This preserves active/terminal/error surfaces while making a mode-only selection layout-neutral.
 
-- [ ] **Step 4: Mark every real activity path before rendering it.**
+- [x] **Step 4: Mark every real activity path before rendering it.**
 
 Use `ShowAgentInlineStatus(...)` for the existing status-plus-visible pairs in:
 
@@ -147,11 +155,11 @@ Use `ShowAgentInlineStatus(...)` for the existing status-plus-visible pairs in:
 
 Do not change the text filtering or transport calls. Keep `AgentInlinePanel.Visibility = Visibility.Visible` only where an activity has been marked, and preserve the existing trust/approval/Stop/Continue child visibility rules.
 
-- [ ] **Step 5: Reset the flag with the existing session reset.**
+- [x] **Step 5: Reset the flag with the existing session reset.**
 
 In `ResetAgentState`, set `_agentActivityVisible = false` next to `_agentMode = false`, before calling `UpdateAgentModeVisuals()` and collapsing the child panels.
 
-- [ ] **Step 6: Run the focused regression test and confirm it passes.**
+- [x] **Step 6: Run the focused regression test and confirm it passes.**
 
 Run the same command from Task 1. Expected result: `PASS`.
 
@@ -164,7 +172,7 @@ Run the same command from Task 1. Expected result: `PASS`.
 - Modify: `docs/operations/verification.md:150-156`
 - Modify: `tests/test_current_documentation.py:281-287`
 
-- [ ] **Step 1: Stop the GUI harness from requiring hidden idle text.**
+- [x] **Step 1: Stop the GUI harness from requiring hidden idle text.**
 
 Change the Agent enable wait from:
 
@@ -187,11 +195,11 @@ bool enabled = await WaitUntilAsync(
 
 The existing later wait for `agent.activity` remains the proof that the inline surface appears after the request.
 
-- [ ] **Step 2: Update the runtime contract wording.**
+- [x] **Step 2: Update the runtime contract wording.**
 
 Replace the idle-status paragraph in `runtime-behavior.md` with wording that the inline status appears only after an Agent request or activity needing user interaction; selecting Agent while idle does not add a status row and preserves the empty-chat welcome position. Keep the requested, terminal, and bounded error semantics unchanged.
 
-- [ ] **Step 3: Update the operations table and verification instructions.**
+- [x] **Step 3: Update the operations table and verification instructions.**
 
 In `agent-tools.md`, change the idle row to:
 
@@ -201,7 +209,7 @@ In `agent-tools.md`, change the idle row to:
 
 In `verification.md`, replace the requirement for the idle copy with a requirement that the driver verifies the Agent mode pill and only expects `AgentStatusText` after sending an Agent request. Preserve the privacy and bounded-copy claims.
 
-- [ ] **Step 4: Update the documentation contract test.**
+- [x] **Step 4: Update the documentation contract test.**
 
 Replace the `"Coding Agent sẵn sàng."` entry in `tests/test_current_documentation.py` with a stable phrase present in the new runtime contract, such as `"does not add a composer status row"`. Keep the requested/terminal/bounded-state entries.
 
@@ -210,7 +218,7 @@ Replace the `"Coding Agent sẵn sàng."` entry in `tests/test_current_documenta
 **Files:**
 - No additional source files; inspect all changed documentation and generated artifacts.
 
-- [ ] **Step 1: Run the full GUI test project.**
+- [x] **Step 1: Run the full GUI test project.**
 
 Run:
 
@@ -220,7 +228,7 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore --nolog
 
 Expected result: all GUI tests pass.
 
-- [ ] **Step 2: Build the WinUI app and GUI harness.**
+- [x] **Step 2: Build the WinUI app and GUI harness.**
 
 Run sequentially:
 
@@ -231,7 +239,7 @@ dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Debug --no-restor
 
 Expected result: both builds succeed with zero errors.
 
-- [ ] **Step 3: Run documentation and whitespace checks.**
+- [x] **Step 3: Run documentation and whitespace checks.**
 
 Run:
 
@@ -242,7 +250,7 @@ git diff --check
 
 Expected result: documentation tests pass and `git diff --check` reports no whitespace errors. Existing line-ending normalization warnings are not source failures.
 
-- [ ] **Step 4: Publish the official shortcut target after confirming no RuApp process is running.**
+- [x] **Step 4: Publish the official shortcut target after confirming no RuApp process is running.**
 
 Read-only guard:
 
@@ -279,3 +287,9 @@ git commit -m "fix(gui): keep welcome layout stable when selecting agent"
 ```
 
 Do not stage or reset unrelated dirty files.
+
+## Execution status (2026-08-28)
+
+- Tasks 1-4, Steps 1-4 are complete. The focused source-contract test was intentionally RED before the production change and GREEN afterward; the full GUI suite is 301/301, the app and harness Debug builds succeed, the documentation suite is 12/12, and Release publish produced the official `RuApp.exe`.
+- Task 4, Step 5 remains a manual handoff: the user should open the existing shortcut, select `Coding Agent` without sending a request, and confirm the welcome heading and suggestions keep the same coordinates.
+- Task 4, Step 6 is intentionally deferred because the main checkout contains unrelated dirty changes in the same files; no unrelated files were staged, reset, or deleted.

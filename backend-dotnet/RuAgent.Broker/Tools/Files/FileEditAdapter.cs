@@ -128,17 +128,15 @@ public sealed class FileEditAdapter
         var afterHash = FileHashService.ComputeBytesHash(newBytes);
         try
         {
-            AtomicFileReplacement.Replace(reResolved.CanonicalPath, newBytes);
+            FileMutationGuard.ReplaceIfHashMatches(reResolved.CanonicalPath, newBytes, beforeHash);
+        }
+        catch (UnauthorizedAccessException ex) when (ex.Message == "workspace_changed")
+        {
+            throw;
         }
         catch (UnauthorizedAccessException ex)
         {
             throw new UnauthorizedAccessException("access_denied", ex);
-        }
-
-        var verifiedAfter = FileHashService.GetCurrentHash(reResolved.CanonicalPath);
-        if (!string.Equals(verifiedAfter, afterHash, StringComparison.Ordinal))
-        {
-            throw new IOException("io_error");
         }
 
         var diff = BuildDiffSummary(beforeHash, afterHash, text, updated, oldString, newString);
@@ -258,17 +256,7 @@ public sealed class FileEditAdapter
 
     private static string ReadBoundedText(string canonicalPath)
     {
-        var info = new FileInfo(canonicalPath);
-        if (info.Length > MaxFileBytes)
-        {
-            throw new ArgumentException("file_too_large");
-        }
-
-        var bytes = File.ReadAllBytes(canonicalPath);
-        if (bytes.Length > MaxFileBytes)
-        {
-            throw new ArgumentException("file_too_large");
-        }
+        var bytes = ReadBoundedBytes(canonicalPath, MaxFileBytes);
 
         try
         {
@@ -279,6 +267,36 @@ public sealed class FileEditAdapter
         {
             throw new ArgumentException("invalid_utf8", ex);
         }
+    }
+
+    private static byte[] ReadBoundedBytes(string canonicalPath, int maxBytes)
+    {
+        using var stream = new FileStream(
+            canonicalPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            81920,
+            FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(maxBytes, 81920));
+        var buffer = new byte[Math.Min(maxBytes, 81920)];
+        while (true)
+        {
+            var read = stream.Read(buffer, 0, buffer.Length);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (output.Length > maxBytes - read)
+            {
+                throw new ArgumentException("file_too_large");
+            }
+
+            output.Write(buffer, 0, read);
+        }
+
+        return output.ToArray();
     }
 
     private static void ValidateUtf8(string content)

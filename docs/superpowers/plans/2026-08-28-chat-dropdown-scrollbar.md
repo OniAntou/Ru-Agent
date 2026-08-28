@@ -25,7 +25,7 @@
 **Files:**
 - Modify: `gui-winui3.Tests/AgentSessionUiSourceContractTests.cs`
 
-- [ ] **Step 1: Add a failing source/XAML contract for the layout and styling invariants.**
+- [x] **Step 1: Add a failing source/XAML contract for the layout and styling invariants.**
 
 Append a focused fact that reads both `ChatView.xaml` and `ChatView.xaml.cs`, then asserts the following exact markers:
 
@@ -72,7 +72,7 @@ public void Chat_mode_flyout_and_transcript_viewport_follow_ru_layout_contract()
 }
 ```
 
-- [ ] **Step 2: Run the new focused test and confirm it fails before the UI change.**
+- [x] **Step 2: Run the new focused test and confirm it fails before the UI change.**
 
 Run:
 
@@ -87,7 +87,7 @@ Expected result before the fix: `FAIL`, because the current flyout has no scoped
 **Files:**
 - Modify: `gui-winui3/Views/ChatView.xaml:372-392`
 
-- [ ] **Step 1: Add a scoped FlyoutPresenter surface.**
+- [x] **Step 1: Add a scoped FlyoutPresenter surface.**
 
 Inside `AgentModeFlyout`, add this presenter style before the content panel:
 
@@ -104,7 +104,7 @@ Inside `AgentModeFlyout`, add this presenter style before the content panel:
 </Flyout.FlyoutPresenterStyle>
 ```
 
-- [ ] **Step 2: Add compact radio option resources and keep only the two options.**
+- [x] **Step 2: Add compact radio option resources and keep only the two options.**
 
 Replace the mode panel's `Width="220" Spacing="8" Padding="4"` with `Width="208" Spacing="2" Padding="0"`, and add these resources to that panel:
 
@@ -124,7 +124,7 @@ Replace the mode panel's `Width="220" Spacing="8" Padding="4"` with `Width="208"
 
 Set both existing radio options to `Padding="10,8"`, `MinHeight="38"`, `Margin="0"`, `HorizontalContentAlignment="Stretch"`, `FontFamily="{StaticResource RuUiFontFamily}"`, `FontSize="13"`, and `Foreground="{StaticResource RuInkBrush}"`. Do not add a title, workspace field, preset, or Agent activity status to the mode flyout; retain the existing names, tags, group, click handlers, and automation properties.
 
-- [ ] **Step 3: Build the XAML after the style change.**
+- [x] **Step 3: Build the XAML after the style change.**
 
 Run:
 
@@ -140,11 +140,11 @@ Expected result: build succeeds. If a resource type is rejected, remove only the
 - Modify: `gui-winui3/Views/ChatView.xaml:105-209`
 - Modify: `gui-winui3/Views/ChatView.xaml.cs:905-946`
 
-- [ ] **Step 1: Stretch the outer reading viewport but preserve the centered content width.**
+- [x] **Step 1: Stretch the outer reading viewport but preserve the centered content width.**
 
 Change `ReadingColumn` to `HorizontalAlignment="Stretch"`. Keep `ChatScrollHost` stretch-aligned and add `Padding="0"` if it is not already implicit. Keep `ChatContentGrid` centered; it still receives `targetWidth` in code-behind. Do not move the welcome panel or composer out of their current rows.
 
-- [ ] **Step 2: Scope a narrow Ru-token scrollbar without replacing the native control.**
+- [x] **Step 2: Scope a narrow Ru-token scrollbar without replacing the native control.**
 
 Add `ScrollViewer.Resources` inside `ChatScrollHost`:
 
@@ -165,7 +165,7 @@ Add `ScrollViewer.Resources` inside `ChatScrollHost`:
 
 Keep `VerticalScrollBarVisibility="Auto"` and `HorizontalScrollBarVisibility="Disabled"`. The scrollbar must stay accessible to keyboard, wheel, and automation input; do not draw a custom overlay.
 
-- [ ] **Step 3: Stop constraining `ReadingColumn` in `ApplyInputWidth`.**
+- [x] **Step 3: Stop constraining `ReadingColumn` in `ApplyInputWidth`.**
 
 Delete only this assignment from `ApplyInputWidth`:
 
@@ -178,7 +178,7 @@ if (ReadingColumn != null)
 
 Keep the existing `targetWidth` calculation and assignments to `WelcomeHeroPanel`, `InputContainer`, `InputBorder`, `ChatContentGrid`, and `ChatListView`. This leaves messages, welcome content, and composer aligned while the outer scroll host fills the Chat viewport.
 
-- [ ] **Step 4: Run the focused layout/style contract.**
+- [x] **Step 4: Run the focused layout/style contract.**
 
 Run the Task 1 command again. Expected result: `PASS`.
 
@@ -189,11 +189,11 @@ Run the Task 1 command again. Expected result: `PASS`.
 - Modify: `docs/operations/verification.md`
 - Modify: `tests/test_current_documentation.py` only when its asserted wording requires it
 
-- [ ] **Step 1: Document the stable UI relationship.**
+- [x] **Step 1: Document the stable UI relationship.**
 
 In the current Chat UI paragraph, state that the transcript reading column remains centered and capped at 820 px while its vertical scrollbar belongs to the full Chat viewport and sits at the far right; horizontal scrolling remains disabled. Keep the existing Agent idle/activity and privacy wording unchanged.
 
-- [ ] **Step 2: Add the manual acceptance steps.**
+- [x] **Step 2: Add the manual acceptance steps.**
 
 In the GUI verification instructions, add:
 
@@ -201,7 +201,7 @@ In the GUI verification instructions, add:
 Open the mode control in the composer: the flyout is a compact Ru surface containing only Trò chuyện and Coding Agent; Agent settings remain behind the separate settings button. Grow a transcript until scrolling is needed: messages stay centered in the reading column and the native vertical scrollbar sits at the far right edge of the Chat viewport. Horizontal scrolling remains disabled.
 ```
 
-- [ ] **Step 3: Run all focused and repository checks.**
+- [x] **Step 3: Run all focused and repository checks.**
 
 Run sequentially:
 
@@ -215,7 +215,7 @@ git diff --check
 
 Expected result: all GUI tests and documentation tests pass, both builds succeed, and `git diff --check` exits 0. Line-ending normalization warnings are not source failures.
 
-- [ ] **Step 4: Publish the official Release artifact after a process guard.**
+- [x] **Step 4: Publish the official Release artifact after a process guard.**
 
 Run:
 
@@ -227,6 +227,6 @@ Get-Item D:\LLM\gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publi
 
 Only publish when the first command returns no running `RuApp.exe`. Do not launch the app automatically.
 
-- [ ] **Step 5: Preserve unrelated dirty work and hand off visual acceptance.**
+- [x] **Step 5: Preserve unrelated dirty work and hand off visual acceptance.**
 
 Inspect `git status --short`; do not reset, delete, or stage unrelated files. Tell the user to open the existing shortcut and perform the flyout/right-edge scrollbar checks. Automated tests and builds do not replace this human visual check.

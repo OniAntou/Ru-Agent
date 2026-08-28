@@ -216,11 +216,12 @@ public sealed class ChatWebSocketEndpointTests
     }
 
     [Fact]
-    public async Task Approval_control_message_reaches_the_approval_coordinator()
+    public async Task Approval_control_message_is_rejected_on_chat_websocket()
     {
+        // Phase-4 cutover: agent.approval.response is handled by the
+        // authenticated /agent/v1/* API, not the Chat WebSocket.
         var coordinator = new FakeCoordinator();
-        var approvals = new FakeApprovalCoordinator();
-        using var factory = Factory(coordinator, approvals);
+        using var factory = Factory(coordinator);
         using var socket = await ConnectAsync(factory, "?token=test-secret");
 
         await SendTextAsync(
@@ -228,11 +229,8 @@ public sealed class ChatWebSocketEndpointTests
             "{\"type\":\"agent.approval.response\",\"session_id\":\"session-1\",\"approval_id\":\"approval-1\",\"approved\":false}");
         using var response = JsonDocument.Parse(await ReceiveTextAsync(socket));
 
-        Assert.Equal("agent.approval_result", response.RootElement.GetProperty("type").GetString());
-        Assert.Equal("approval-1", response.RootElement.GetProperty("approval_id").GetString());
-        Assert.Equal("denied", response.RootElement.GetProperty("status").GetString());
-        Assert.Equal("approval-1", approvals.LastResponse!.ApprovalId);
-        Assert.False(approvals.LastResponse.Approved);
+        Assert.Equal("error", response.RootElement.GetProperty("type").GetString());
+        Assert.Equal("agent_requires_harness", response.RootElement.GetProperty("error_code").GetString());
     }
 
     [Theory]
@@ -267,12 +265,10 @@ public sealed class ChatWebSocketEndpointTests
 
     private static BackendWebApplicationFactory Factory(
         IConversationCoordinator coordinator,
-        IAgentApprovalCoordinator? approvals = null,
         IActionOutcomeContextStore? outcomes = null) =>
         new(
             conversationCoordinator: coordinator,
-            actionOutcomeContextStore: outcomes,
-            approvalCoordinator: approvals);
+            actionOutcomeContextStore: outcomes);
 
     private static Task<WebSocket> ConnectAsync(
         BackendWebApplicationFactory factory,
@@ -403,29 +399,4 @@ public sealed class ChatWebSocketEndpointTests
         }
     }
 
-    private sealed class FakeApprovalCoordinator : IAgentApprovalCoordinator
-    {
-        public AgentApprovalResponse? LastResponse { get; private set; }
-
-        public ChatEvent Register(WorkerToolRequest tool, AgentToolResult result) =>
-            new("agent.approval_required", "Approval required.", tool.SessionId);
-
-        public Task<AgentToolResult> RespondAsync(
-            AgentApprovalResponse response,
-            CancellationToken cancellationToken)
-        {
-            LastResponse = response;
-            return Task.FromResult(new AgentToolResult(
-                response.ApprovalId,
-                response.Approved ? ToolResultStatuses.Succeeded : ToolResultStatuses.Denied,
-                new System.Text.Json.Nodes.JsonObject(),
-                response.Approved ? null : "approval_rejected",
-                response.Approved ? "Approved action completed." : "Approval was rejected.",
-                1,
-                response.Approved ? ToolVerificationStates.Verified : ToolVerificationStates.Failed,
-                null,
-                null,
-                response.Approved));
-        }
-    }
 }

@@ -29,6 +29,8 @@ public sealed class FakeToolGateway : IToolGateway
 
     public List<ExecutionId> ExecuteAttempts { get; } = new();
 
+    public List<ExecutionId> CancelAttempts { get; } = new();
+
     public IReadOnlyList<string> OutputChunks { get; set; } = [];
 
     public Func<ToolProposal, ToolProposalDecision>? DecisionFactory { get; set; }
@@ -109,6 +111,7 @@ public sealed class FakeToolGateway : IToolGateway
 
     public Task CancelAsync(ExecutionId executionId, CancellationToken cancellationToken)
     {
+        CancelAttempts.Add(executionId);
         _trace?.Add("cancel");
         return Task.CompletedTask;
     }

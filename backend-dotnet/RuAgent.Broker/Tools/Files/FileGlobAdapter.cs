@@ -74,6 +74,9 @@ public sealed class FileGlobAdapter
 
         var stack = new Stack<string>();
         stack.Push(baseCanonical);
+        var visitedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var traversalCapped = false;
+        const int maxScannedEntries = FileToolLimits.MaxEntries * 16;
 
         // Precompile regex for pattern
         var regex = GlobToRegex(pattern);
@@ -85,12 +88,18 @@ public sealed class FileGlobAdapter
                 break;
             }
 
-            if (scanned > FileToolLimits.MaxEntries * 8)
+            if (scanned >= maxScannedEntries)
             {
+                traversalCapped = true;
                 break;
             }
 
             var current = stack.Pop();
+            if (!visitedDirectories.Add(current))
+            {
+                continue;
+            }
+
             IEnumerable<string> entries;
             try
             {
@@ -114,10 +123,15 @@ public sealed class FileGlobAdapter
                     break;
                 }
 
-                if (scanned > FileToolLimits.MaxEntries * 8)
+                if (scanned >= maxScannedEntries)
                 {
+                    traversalCapped = true;
                     break;
                 }
+
+                // Count every enumerated entry, including skipped or invalid
+                // links, so a hostile directory cannot evade the traversal cap.
+                scanned++;
 
                 ResolvedPath entryResolved;
                 try
@@ -164,18 +178,17 @@ public sealed class FileGlobAdapter
                     results.Add(relative);
                 }
 
-                scanned++;
-
                 bool isDir = Directory.Exists(entryResolved.CanonicalPath);
                 if (isDir)
                 {
                     // Only push directories, but bounded
-                    if (scanned <= FileToolLimits.MaxEntries * 8)
+                    if (scanned < maxScannedEntries)
                     {
                         stack.Push(entryResolved.CanonicalPath);
                     }
                     else
                     {
+                        traversalCapped = true;
                         skipped++;
                     }
                 }
@@ -202,7 +215,7 @@ public sealed class FileGlobAdapter
         }
         else
         {
-            truncated = sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs || scanned > FileToolLimits.MaxEntries * 8;
+            truncated = traversalCapped || sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs;
             final = results;
             if (final.Count > maxResults)
             {

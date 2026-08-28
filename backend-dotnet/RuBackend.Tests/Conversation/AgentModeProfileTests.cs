@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.TestHost;
+using RuBackend.Tests;
 using RuAgent.Protocol;
 using RuBackend.Agent;
 using RuBackend.Conversation;
@@ -12,31 +13,79 @@ using RuBackend.Worker;
 using Xunit;
 
 namespace RuBackend.Tests.Conversation;
-
+/// Phase-4 cutover: the Chat WebSocket is read-only Chat. Any `mode` or
+/// legacy `agent_mode` request must be rejected fail-closed and never reach
+/// the worker as an Agent turn. Agent traffic uses the authenticated
+/// /agent/v1/* API.
+/// </summary>
 public sealed class AgentModeProfileTests
 {
-    [Theory]
-    [InlineData("chat", false, CapabilityProfile.Chat, false)]
-    [InlineData("agent", false, CapabilityProfile.Agent, false)]
-    [InlineData("full", false, CapabilityProfile.Full, false)]
-    [InlineData(null, false, CapabilityProfile.Chat, false)]
-    [InlineData(null, true, CapabilityProfile.Agent, false)]
-    [InlineData("yolo", true, CapabilityProfile.Chat, true)]
-    [InlineData("AGENT", false, CapabilityProfile.Chat, true)]
-    public void ProfileForTurn_maps_modes_legacy_flag_and_unknown_clamps(
-        string? mode,
-        bool legacyAgentMode,
-        CapabilityProfile expectedProfile,
-        bool expectedClamp)
+    [Fact]
+    public async Task Chat_frame_with_mode_agent_is_rejected_with_agent_requires_harness()
     {
-        var (profile, clamped) = AgentTurnCoordinator.ProfileForTurn(mode, legacyAgentMode);
+        var broker = new FakeBroker();
+        var worker = new FakeWorker();
+        var diagnostics = new RecordingEmitter();
+        using var factory = Factory(worker, broker, diagnostics);
+        using var socket = await ConnectAsync(factory);
+        await SendTextAsync(
+            socket,
+            "{\"prompt\":\"Ghi giúp anh\",\"session_id\":\"session-1\",\"mode\":\"agent\"}");
 
-        Assert.Equal(expectedProfile, profile);
-        Assert.Equal(expectedClamp, clamped);
+        var frames = await ReceiveUntilErrorAsync(socket);
+        Assert.Contains(
+            frames,
+            frame => frame.RootElement.GetProperty("type").GetString() == "error"
+                && frame.RootElement.GetProperty("error_code").GetString() == "agent_requires_harness");
+        Assert.Contains(DiagnosticCodes.HarnessChatRejected, diagnostics.Events);
+        Assert.Empty(worker.Requests);
+        await CloseAsync(socket);
     }
 
     [Fact]
-    public async Task Agent_frame_advertises_agent_tools_and_flags_verification_only_for_volume()
+    public async Task Chat_frame_with_mode_full_is_rejected_with_agent_requires_harness()
+    {
+        var broker = new FakeBroker();
+        var worker = new FakeWorker();
+        var diagnostics = new RecordingEmitter();
+        using var factory = Factory(worker, broker, diagnostics);
+        using var socket = await ConnectAsync(factory);
+        await SendTextAsync(
+            socket,
+            "{\"prompt\":\"Chạy đi\",\"session_id\":\"session-full\",\"mode\":\"full\"}");
+
+        var frames = await ReceiveUntilErrorAsync(socket);
+        Assert.Contains(
+            frames,
+            frame => frame.RootElement.GetProperty("type").GetString() == "error"
+                && frame.RootElement.GetProperty("error_code").GetString() == "agent_requires_harness");
+        Assert.Empty(worker.Requests);
+        await CloseAsync(socket);
+    }
+
+    [Fact]
+    public async Task Legacy_agent_mode_true_is_rejected_with_agent_requires_harness()
+    {
+        var broker = new FakeBroker();
+        var worker = new FakeWorker();
+        var diagnostics = new RecordingEmitter();
+        using var factory = Factory(worker, broker, diagnostics);
+        using var socket = await ConnectAsync(factory);
+        await SendTextAsync(
+            socket,
+            "{\"prompt\":\"Xin chào\",\"session_id\":\"session-1\",\"agent_mode\":true}");
+
+        var frames = await ReceiveUntilErrorAsync(socket);
+        Assert.Contains(
+            frames,
+            frame => frame.RootElement.GetProperty("type").GetString() == "error"
+                && frame.RootElement.GetProperty("error_code").GetString() == "agent_requires_harness");
+        Assert.Empty(worker.Requests);
+        await CloseAsync(socket);
+    }
+
+    [Fact]
+    public async Task Agent_approval_response_is_rejected_on_chat_websocket()
     {
         var broker = new FakeBroker();
         var worker = new FakeWorker();
@@ -44,68 +93,18 @@ public sealed class AgentModeProfileTests
         using var socket = await ConnectAsync(factory);
         await SendTextAsync(
             socket,
-            "{\"prompt\":\"Xin chào\",\"session_id\":\"session-1\",\"mode\":\"agent\"}");
-        await worker.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            "{\"type\":\"agent.approval.response\",\"session_id\":\"session-1\",\"approval_id\":\"a1\",\"approved\":true}");
 
-        await WaitUntilAsync(() => worker.Done.Task.IsCompleted, TimeSpan.FromSeconds(5));
-
-        var settings = Assert.Single(worker.Requests).Settings;
-        Assert.True(settings["agent_mode"]!.GetValue<bool>());
-        var tools = settings["model_tools"]!.AsArray();
-        var ids = tools.Select(item => item!["tool_id"]!.GetValue<string>()).ToHashSet();
-        Assert.Contains("files.write", ids);
-        Assert.Contains("system.volume", ids);
-        foreach (var entry in tools)
-        {
-            var toolId = entry!["tool_id"]!.GetValue<string>();
-            Assert.Equal(
-                string.Equals(toolId, "system.volume", StringComparison.Ordinal),
-                entry["verification_required"]!.GetValue<bool>());
-            Assert.Equal(
-                string.Equals(toolId, "system.volume", StringComparison.Ordinal)
-                    ? "native_mutation"
-                    : "tool",
-                entry["capability_class"]!.GetValue<string>());
-        }
-
-        Assert.Equal(
-            """{"path":"ten-file-trong-workspace","offset":0,"limit":1024}""",
-            tools.Single(item => item!["tool_id"]!.GetValue<string>() == "files.read")!["hint"]!
-                .GetValue<string>());
-        Assert.Equal(
-            """{"operation":"set","level":30}""",
-            tools.Single(item => item!["tool_id"]!.GetValue<string>() == "system.volume")!["hint"]!
-                .GetValue<string>());
-
+        var frames = await ReceiveUntilErrorAsync(socket);
+        Assert.Contains(
+            frames,
+            frame => frame.RootElement.GetProperty("type").GetString() == "error"
+                && frame.RootElement.GetProperty("error_code").GetString() == "agent_requires_harness");
         await CloseAsync(socket);
     }
 
     [Fact]
-    public async Task Full_frame_uses_the_broker_terminal_run_argument_contract()
-    {
-        var broker = new FakeBroker();
-        var worker = new FakeWorker();
-        using var factory = Factory(worker, broker);
-        using var socket = await ConnectAsync(factory);
-        await SendTextAsync(
-            socket,
-            "{\"prompt\":\"Kiểm tra\",\"session_id\":\"session-full\",\"mode\":\"full\"}");
-        await worker.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        await WaitUntilAsync(() => worker.Done.Task.IsCompleted, TimeSpan.FromSeconds(5));
-
-        var tools = Assert.Single(worker.Requests).Settings["model_tools"]!.AsArray();
-        var terminal = tools.Single(
-            item => item!["tool_id"]!.GetValue<string>() == "terminal.run")!;
-        Assert.Equal(
-            """{"executable":"git","arguments":["status"],"working_directory":".","network_intent":false}""",
-            terminal["hint"]!.GetValue<string>());
-
-        await CloseAsync(socket);
-    }
-
-    [Fact]
-    public async Task Chat_frame_never_advertises_write_tools()
+    public async Task Chat_frame_with_explicit_mode_chat_still_completes()
     {
         var broker = new FakeBroker();
         var worker = new FakeWorker();
@@ -121,141 +120,25 @@ public sealed class AgentModeProfileTests
         var settings = Assert.Single(worker.Requests).Settings;
         Assert.False(settings["agent_mode"]!.GetValue<bool>());
         var tools = settings["model_tools"]!.AsArray();
-        Assert.NotEmpty(tools);
         Assert.DoesNotContain(
             tools,
             item => item!["tool_id"]!.GetValue<string>() == "files.write");
         await CloseAsync(socket);
     }
 
-    [Fact]
-    public async Task Legacy_agent_mode_true_maps_to_the_agent_set()
+    private static async Task<List<JsonDocument>> ReceiveUntilErrorAsync(WebSocket socket)
     {
-        var broker = new FakeBroker();
-        var worker = new FakeWorker();
-        using var factory = Factory(worker, broker);
-        using var socket = await ConnectAsync(factory);
-        await SendTextAsync(
-            socket,
-            "{\"prompt\":\"Xin chào\",\"session_id\":\"session-1\",\"agent_mode\":true}");
-        await worker.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        await WaitUntilAsync(() => worker.Done.Task.IsCompleted, TimeSpan.FromSeconds(5));
-
-        var tools = Assert.Single(worker.Requests).Settings["model_tools"]!.AsArray();
-        Assert.Contains(
-            tools,
-            item => item!["tool_id"]!.GetValue<string>() == "files.write");
-        await CloseAsync(socket);
-    }
-
-    [Fact]
-    public async Task Unknown_mode_clamps_to_chat_and_emits_one_bounded_diagnostic()
-    {
-        var broker = new FakeBroker();
-        var worker = new FakeWorker();
-        var diagnostics = new RecordingEmitter();
-        using var factory = Factory(worker, broker, diagnostics);
-        using var socket = await ConnectAsync(factory);
-        await SendTextAsync(
-            socket,
-            "{\"prompt\":\"Xin chào\",\"session_id\":\"session-1\",\"mode\":\"warp\"}");
-        await worker.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        await WaitUntilAsync(() => worker.Done.Task.IsCompleted, TimeSpan.FromSeconds(5));
-
-        var tools = Assert.Single(worker.Requests).Settings["model_tools"]!.AsArray();
-        Assert.DoesNotContain(
-            tools,
-            item => item!["tool_id"]!.GetValue<string>() == "files.write");
-        var clamp = Assert.Single(
-            diagnostics.Events,
-            item => item == DiagnosticCodes.ModeClamped);
-        Assert.Equal(DiagnosticCodes.ModeClamped, clamp);
-        await CloseAsync(socket);
-    }
-
-    [Fact]
-    public async Task One_profile_scoped_session_serves_every_call_in_a_turn_loop()
-    {
-        var broker = new FakeBroker();
-        var worker = new FakeWorker();
-        worker.ToolScripts.Enqueue(ToolRequest("tool-1", "session-1", "files.write", "tool"));
-        worker.ToolScripts.Enqueue(ToolRequest("tool-2", "session-1", "system.volume", "native_mutation"));
-        using var factory = Factory(worker, broker);
-        using var socket = await ConnectAsync(factory);
-        await SendTextAsync(
-            socket,
-            "{\"prompt\":\"Ghi giúp anh\",\"session_id\":\"session-1\",\"mode\":\"agent\"}");
-        await worker.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        await WaitUntilAsync(() => worker.Done.Task.IsCompleted, TimeSpan.FromSeconds(5));
-        await WaitUntilAsync(() => broker.ExecuteCount >= 2, TimeSpan.FromSeconds(5));
-
-        Assert.Equal(1, broker.OpenCount);
-        Assert.Equal(0, broker.CloseCount);
-        Assert.Equal(2, broker.ExecuteCount);
-        Assert.Equal(
-            new HashSet<string>(
-                ["workspace.read", "workspace.write", "system.write"],
-                StringComparer.Ordinal),
-            broker.LastOpenScopes);
-        await CloseAsync(socket);
-    }
-
-    [Fact]
-    public async Task Session_switch_closes_the_previous_profile_session()
-    {
-        var broker = new FakeBroker();
-        var worker = new FakeWorker();
-        worker.ToolScripts.Enqueue(ToolRequest("tool-1", "session-1", "files.write", "tool"));
-        using var factory = Factory(worker, broker);
-        using var socket = await ConnectAsync(factory);
-        await SendTextAsync(
-            socket,
-            "{\"prompt\":\"Một\",\"session_id\":\"session-1\",\"mode\":\"agent\"}");
-        await DrainUntilDoneAsync(socket);
-
-        worker.ToolScripts.Enqueue(ToolRequest("tool-2", "session-2", "system.volume", "native_mutation"));
-        await SendTextAsync(
-            socket,
-            "{\"prompt\":\"Hai\",\"session_id\":\"session-2\",\"mode\":\"agent\"}");
-        await WaitUntilAsync(() => worker.Requests.Count == 2, TimeSpan.FromSeconds(5));
-        await DrainUntilDoneAsync(socket);
-
-        Assert.Equal(2, broker.OpenCount);
-        Assert.Equal(1, broker.CloseCount);
-        Assert.Equal(
-            [
-                "open:session-1", "execute:session-1",
-                "close:session-1",
-                "open:session-2", "execute:session-2",
-            ],
-            broker.Calls);
-        await CloseAsync(socket);
-    }
-
-    [Fact]
-    public async Task Cancelling_a_turn_releases_the_profile_session()
-    {
-        var broker = new FakeBroker { BlockExecution = true };
-        var worker = new FakeWorker();
-        worker.ToolScripts.Enqueue(ToolRequest("tool-1", "session-1", "files.write", "tool"));
-        using var factory = Factory(worker, broker);
-        using var socket = await ConnectAsync(factory);
-        await SendTextAsync(
-            socket,
-            "{\"prompt\":\"Chạy đi\",\"session_id\":\"session-1\",\"mode\":\"agent\"}");
-        await worker.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await WaitUntilAsync(() => broker.BlockedReached, TimeSpan.FromSeconds(5));
-
-        await socket.CloseOutputAsync(
-            WebSocketCloseStatus.NormalClosure,
-            "test disconnect",
-            CancellationToken.None);
-
-        await WaitUntilAsync(() => broker.CloseCount == 1, TimeSpan.FromSeconds(5));
-        Assert.Null(broker.ActiveSessionId);
+        var frames = new List<JsonDocument>();
+        while (true)
+        {
+            var text = await ReceiveTextAsync(socket);
+            var document = JsonDocument.Parse(text);
+            frames.Add(document);
+            if (document.RootElement.GetProperty("type").GetString() == "error")
+            {
+                return frames;
+            }
+        }
     }
 
     private static async Task<string> ReceiveTextAsync(WebSocket socket)
@@ -273,18 +156,6 @@ public sealed class AgentModeProfileTests
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    private static async Task DrainUntilDoneAsync(WebSocket socket)
-    {
-        while (true)
-        {
-            using var document = JsonDocument.Parse(await ReceiveTextAsync(socket));
-            if (document.RootElement.GetProperty("type").GetString() == "done")
-            {
-                return;
-            }
-        }
-    }
-
     private static BackendWebApplicationFactory Factory(
         FakeWorker worker,
         FakeBroker broker,
@@ -293,20 +164,6 @@ public sealed class AgentModeProfileTests
             workerClient: worker,
             agentBrokerClient: broker,
             diagnosticEmitter: diagnostics ?? new RecordingEmitter());
-
-    private static WorkerToolRequest ToolRequest(
-        string requestId,
-        string sessionId,
-        string toolId,
-        string capabilityClass) => new(
-            requestId,
-            sessionId,
-            $"corr-{requestId}",
-            toolId,
-            "1.0.0",
-            capabilityClass,
-            new JsonObject(),
-            30_000);
 
     private static Task<WebSocket> ConnectAsync(BackendWebApplicationFactory factory)
     {
@@ -351,27 +208,6 @@ public sealed class AgentModeProfileTests
 
     private sealed class FakeBroker : IAgentBrokerClient
     {
-        private static readonly IReadOnlyList<AgentToolCapability> ChatTools =
-        [
-            Capability("files.list", "workspace.read"),
-            Capability("files.read", "workspace.read"),
-        ];
-
-        private static readonly IReadOnlyList<AgentToolCapability> AgentTools =
-        [
-            Capability("files.list", "workspace.read"),
-            Capability("files.read", "workspace.read"),
-            Capability("files.write", "workspace.write"),
-            Capability("system.volume", "system.write"),
-        ];
-
-        private static readonly IReadOnlyList<AgentToolCapability> FullTools =
-        [
-            .. AgentTools,
-            Capability("terminal.run", "terminal.execute"),
-            Capability("terminal.shell", "terminal.execute"),
-        ];
-
         public bool BlockExecution { get; init; }
         public bool BlockedReached { get; private set; }
         public string? ActiveSessionId { get; private set; }
@@ -392,8 +228,7 @@ public sealed class AgentModeProfileTests
             profile switch
             {
                 CapabilityProfile.Chat => ChatTools,
-                CapabilityProfile.Agent => AgentTools,
-                _ => FullTools,
+                _ => AgentTools,
             });
 
         public Task<AgentSessionGrant> OpenSessionAsync(
@@ -471,6 +306,20 @@ public sealed class AgentModeProfileTests
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        private static readonly IReadOnlyList<AgentToolCapability> ChatTools =
+        [
+            Capability("files.list", "workspace.read"),
+            Capability("files.read", "workspace.read"),
+        ];
+
+        private static readonly IReadOnlyList<AgentToolCapability> AgentTools =
+        [
+            Capability("files.list", "workspace.read"),
+            Capability("files.read", "workspace.read"),
+            Capability("files.write", "workspace.write"),
+            Capability("system.volume", "system.write"),
+        ];
 
         private static AgentToolCapability Capability(string toolId, string scope) => new(
             toolId,

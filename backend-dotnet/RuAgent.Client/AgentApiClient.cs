@@ -6,18 +6,43 @@ using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Client;
 
-public sealed class AgentApiClient
+public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
 {
     private readonly HttpClient _httpClient;
+    private readonly bool _ownsHttpClient;
     private readonly PublicHostSession _session;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private bool _disposed;
 
     public AgentApiClient(PublicHostSession session, HttpClient? httpClient = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
-        _httpClient = httpClient ?? new HttpClient();
+        if (httpClient is null)
+        {
+            _httpClient = new HttpClient();
+            _ownsHttpClient = true;
+        }
+        else
+        {
+            _httpClient = httpClient;
+        }
+
         if (_httpClient.DefaultRequestHeaders.Authorization is null)
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.BearerToken);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        if (_ownsHttpClient)
+        {
+            _httpClient.Dispose();
+        }
     }
 
     private void EnsureAuth(HttpRequestMessage request)
@@ -66,6 +91,45 @@ public sealed class AgentApiClient
             throw new AgentApiException(ExtractErrorCode(body) ?? "get_run_failed", body, (int)resp.StatusCode);
         return ParseGetResponseStrict(body);
     }
+    public async Task<AgentRunTrustResponse> TrustAsync(
+        string runId,
+        TrustAgentRunRequest request,
+        CancellationToken ct = default)
+    {
+        ValidateRunId(runId);
+        ArgumentNullException.ThrowIfNull(request);
+        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/trust");
+        var json = JsonSerializer.Serialize(request);
+        using var req = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+        EnsureAuth(req);
+        using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
+        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+            throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
+        if (!resp.IsSuccessStatusCode)
+            throw new AgentApiException(ExtractErrorCode(body) ?? "trust_failed", body, (int)resp.StatusCode);
+
+        try
+        {
+            var result = JsonSerializer.Deserialize<AgentRunTrustResponse>(body, JsonOptions);
+            if (result is null
+                || !string.Equals(result.RunId, runId, StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(result.Status))
+            {
+                throw new AgentApiException("invalid_response", "Invalid trust response.");
+            }
+
+            return result;
+        }
+        catch (JsonException ex)
+        {
+            throw new AgentApiException("invalid_response", ex.Message);
+        }
+    }
+
 
     public async Task<string> GetPayloadAsync(string runId, string payloadId, CancellationToken ct = default)
     {
@@ -232,7 +296,7 @@ public sealed class AgentApiClient
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); } catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
         var root = doc.RootElement;
-        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "preset", "created_at", "updated_at", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "history_wait_kind", "terminal_at", "terminal_error_code"], StringComparer.Ordinal);
+        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "preset", "created_at", "updated_at", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "history_wait_kind", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash"], StringComparer.Ordinal);
         foreach (var prop in root.EnumerateObject())
         {
             if (!allowed.Contains(prop.Name))
@@ -255,7 +319,7 @@ public sealed class AgentApiClient
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); } catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
         var root = doc.RootElement;
-        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code"], StringComparer.Ordinal);
+        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash"], StringComparer.Ordinal);
         foreach (var prop in root.EnumerateObject())
         {
             if (!allowed.Contains(prop.Name))
@@ -288,13 +352,32 @@ public sealed class AgentApiClient
 
     private static void ValidateRunId(string runId)
     {
-        if (string.IsNullOrWhiteSpace(runId) || !runId.StartsWith("run_", StringComparison.Ordinal) || runId.Length != 36)
+        if (string.IsNullOrWhiteSpace(runId)
+            || !runId.StartsWith("run_", StringComparison.Ordinal)
+            || runId.Length != 36
+            || !IsLowerHex(runId.AsSpan(4)))
             throw new AgentApiException("invalid_run_id", "run_id invalid");
     }
 
     private static void ValidatePayloadId(string payloadId)
     {
-        if (string.IsNullOrWhiteSpace(payloadId) || !payloadId.StartsWith("payload_", StringComparison.Ordinal) || payloadId.Length != 40)
+        if (string.IsNullOrWhiteSpace(payloadId)
+            || !payloadId.StartsWith("payload_", StringComparison.Ordinal)
+            || payloadId.Length != 40
+            || !IsLowerHex(payloadId.AsSpan(8)))
             throw new AgentApiException("invalid_payload_id", "payload_id invalid");
+    }
+
+    private static bool IsLowerHex(ReadOnlySpan<char> value)
+    {
+        foreach (var character in value)
+        {
+            if (character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

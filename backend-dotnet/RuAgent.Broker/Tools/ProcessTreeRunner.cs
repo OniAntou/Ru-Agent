@@ -33,6 +33,8 @@ public sealed class ProcessTreeRunner
             throw new ArgumentOutOfRangeException(nameof(spec));
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         using var process = new Process
         {
             StartInfo = BuildStartInfo(spec),

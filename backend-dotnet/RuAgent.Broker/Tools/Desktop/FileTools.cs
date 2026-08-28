@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Tools.Files;
+using RuAgent.Broker.Tools.Paths;
 
 namespace RuAgent.Broker.Tools.Desktop;
 
@@ -22,14 +23,21 @@ public sealed class FileEditException : Exception
 public sealed class FileTools
 {
     private const long MaxEditBytes = 4 * 1024 * 1024;
+    private const int MaxWriteBytes = 256 * 1024;
+    private const int MaxEditOccurrences = 1024;
+    private static readonly UTF8Encoding StrictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
 
     private readonly WorkspacePathGuard _workspace;
+    private readonly CanonicalPathResolver _resolver;
     private readonly FileListAdapter _listAdapter;
     private readonly FileReadAdapter _readAdapter;
 
     public FileTools(WorkspacePathGuard workspace)
     {
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
+        _resolver = new CanonicalPathResolver(_workspace.Root);
         _listAdapter = new FileListAdapter(_workspace.Root);
         _readAdapter = new FileReadAdapter(_workspace.Root);
     }
@@ -60,20 +68,47 @@ public sealed class FileTools
     public JsonObject Write(string relativePath, string content, bool overwrite = false)
     {
         ArgumentNullException.ThrowIfNull(content);
-        if (content.Length > 256 * 1024)
+        byte[] bytes;
+        try
+        {
+            bytes = StrictUtf8.GetBytes(content);
+        }
+        catch (EncoderFallbackException error)
+        {
+            throw new ArgumentException("invalid_utf8", error);
+        }
+
+        if (bytes.Length > MaxWriteBytes)
         {
             throw new ArgumentOutOfRangeException(nameof(content));
         }
 
-        var path = _workspace.Resolve(relativePath, allowMissing: true);
-        if (File.Exists(path) && !overwrite)
+        var result = FileMutationGuard.WithLock(() =>
         {
-            throw new IOException("file_exists");
-        }
+            var path = ResolveMutationPath(relativePath);
+            var beforeHash = FileHashService.GetCurrentHash(path);
+            if (!overwrite && !FileHashService.IsMissing(beforeHash))
+            {
+                throw new IOException("file_exists");
+            }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, content, new UTF8Encoding(false));
-        return new JsonObject { ["path"] = _workspace.ToRelative(path), ["bytes"] = Encoding.UTF8.GetByteCount(content) };
+            try
+            {
+                // Keep the final preimage check and replacement inside the shared
+                // mutation gate. This closes the legacy v1 path's TOCTOU window
+                // against other in-process adapters and preserves create-only
+                // semantics when overwrite is false.
+                FileMutationGuard.ReplaceIfHashMatches(path, bytes, beforeHash, overwrite);
+            }
+            catch (IOException error) when (!overwrite && File.Exists(path))
+            {
+                throw new IOException("file_exists", error);
+            }
+
+            return (path, bytes.Length);
+        });
+
+        return new JsonObject { ["path"] = _workspace.ToRelative(result.path), ["bytes"] = result.Length };
     }
 
     public JsonObject Edit(string relativePath, string? oldString, string? newString, int expectedOccurrences = 1)
@@ -83,33 +118,120 @@ public sealed class FileTools
             throw new FileEditException("old_string_empty");
         }
 
-        var path = _workspace.Resolve(relativePath, allowMissing: true);
-        if (!File.Exists(path))
+        // The v1 schema rejects values below one before dispatch. Keep the
+        // legacy adapter's historical mismatch response for a direct caller
+        // passing zero, while still bounding pathological values.
+        if (expectedOccurrences > MaxEditOccurrences)
         {
-            throw new FileEditException("file_not_found");
+            throw new FileEditException("invalid_expected_occurrences");
         }
 
-        if (new FileInfo(path).Length > MaxEditBytes)
+        try
         {
-            throw new FileEditException("file_too_large");
+            if (StrictUtf8.GetByteCount(oldString) > MaxEditBytes
+                || StrictUtf8.GetByteCount(newString ?? string.Empty) > MaxEditBytes)
+            {
+                throw new FileEditException("content_too_large");
+            }
+        }
+        catch (EncoderFallbackException error)
+        {
+            throw new FileEditException("invalid_utf8", new JsonObject { ["message"] = error.Message });
         }
 
-        var read = ReadAtMost(path, checked((int)MaxEditBytes));
-        if (read.Truncated)
+        var result = FileMutationGuard.WithLock(() =>
         {
-            throw new FileEditException("file_too_large");
+            var path = ResolveMutationPath(relativePath);
+            if (!File.Exists(path))
+            {
+                throw new FileEditException("file_not_found");
+            }
+
+            if (new FileInfo(path).Length > MaxEditBytes)
+            {
+                throw new FileEditException("file_too_large");
+            }
+
+            var beforeHash = FileHashService.GetCurrentHash(path);
+            var read = ReadAtMost(path, checked((int)MaxEditBytes));
+            if (read.Truncated)
+            {
+                throw new FileEditException("file_too_large");
+            }
+
+            string text;
+            try
+            {
+                text = StrictUtf8.GetString(read.Bytes);
+            }
+            catch (DecoderFallbackException error)
+            {
+                throw new FileEditException("invalid_utf8", new JsonObject { ["message"] = error.Message });
+            }
+
+            // The metadata hash and byte read must describe the same preimage.
+            // Otherwise a concurrent writer could cause us to edit stale content.
+            if (!string.Equals(FileHashService.ComputeBytesHash(read.Bytes), beforeHash, StringComparison.Ordinal))
+            {
+                throw new FileEditException("workspace_changed");
+            }
+
+            var matches = CountOccurrences(text, oldString);
+            if (matches != expectedOccurrences)
+            {
+                throw new FileEditException("edit_not_unique", new JsonObject { ["matches"] = matches });
+            }
+
+            var updated = text.Replace(oldString, newString ?? string.Empty, StringComparison.Ordinal);
+            byte[] updatedBytes;
+            try
+            {
+                updatedBytes = StrictUtf8.GetBytes(updated);
+            }
+            catch (EncoderFallbackException error)
+            {
+                throw new FileEditException("invalid_utf8", new JsonObject { ["message"] = error.Message });
+            }
+
+            if (updatedBytes.Length > MaxEditBytes)
+            {
+                throw new FileEditException("content_too_large");
+            }
+
+            FileMutationGuard.ReplaceIfHashMatches(path, updatedBytes, beforeHash);
+            return (path, matches);
+        });
+
+        return new JsonObject { ["path"] = _workspace.ToRelative(result.path), ["replacements"] = result.matches };
+    }
+
+    private string ResolveMutationPath(string relativePath)
+    {
+        // Keep the legacy guard's input validation and symlink-escape checks, then
+        // use the canonical resolver so protected paths and junctions are classified
+        // consistently with the v2 adapters.
+        _workspace.Resolve(relativePath, allowMissing: true);
+        ResolvedPath resolved;
+        try
+        {
+            resolved = _resolver.Resolve(relativePath);
+        }
+        catch (ArgumentException error)
+        {
+            throw new UnauthorizedAccessException("workspace_path_invalid", error);
         }
 
-        var text = Encoding.UTF8.GetString(read.Bytes);
-        var matches = CountOccurrences(text, oldString);
-        if (matches != expectedOccurrences)
+        if (resolved.IsOutsideWorkspace)
         {
-            throw new FileEditException("edit_not_unique", new JsonObject { ["matches"] = matches });
+            throw new UnauthorizedAccessException("workspace_path_outside_root");
         }
 
-        var updated = text.Replace(oldString, newString ?? string.Empty, StringComparison.Ordinal);
-        File.WriteAllBytes(path, new UTF8Encoding(false).GetBytes(updated));
-        return new JsonObject { ["path"] = _workspace.ToRelative(path), ["replacements"] = matches };
+        if (resolved.IsProtected)
+        {
+            throw new UnauthorizedAccessException("protected_path");
+        }
+
+        return resolved.CanonicalPath;
     }
 
     private static BoundedRead ReadAtMost(string path, int maxBytes)

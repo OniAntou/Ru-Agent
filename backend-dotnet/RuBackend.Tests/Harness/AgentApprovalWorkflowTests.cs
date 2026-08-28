@@ -212,6 +212,45 @@ public sealed class AgentApprovalWorkflowTests
         try { Directory.Delete(tmpRoot, recursive: true); } catch { }
     }
 
+    [Fact]
+    public async Task Invalid_external_directory_scope_never_persists_exact_path_rule()
+    {
+        var tmpRoot = Path.Combine(Path.GetTempPath(), "ru-external-rule-reject-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tmpRoot);
+        var dbPath = Path.Combine(tmpRoot, "policy.db");
+        var options = new HarnessSqliteOptions(dbPath);
+        var keyStore = new EphemeralKeyStore();
+        await HarnessSqliteSchema.InitializeAsync(options, CancellationToken.None);
+        var policyStore = new SqlitePolicyRuleStore(options, keyStore);
+        var service = new HarnessApprovalService(policyStore, new TestIdGen(), new FixedTimeProvider(FixedNow));
+        var workspaceId = new WorkspaceId("ws_11111111111111111111111111111111");
+        var runId = new RunId("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        var binding = Binding(path: Path.GetPathRoot(AppContext.BaseDirectory));
+
+        try
+        {
+            var result = await service.ProcessAsync(
+                binding,
+                ApprovalCommand.AllowProject,
+                workspaceId,
+                runId,
+                CancellationToken.None,
+                externalDirectory: null,
+                externalDirectoryRequested: true);
+
+            Assert.True(result.Authorized);
+            Assert.True(result.RuleSaveFailed);
+            Assert.Null(result.RuleId);
+            Assert.Empty(await policyStore.ListProjectAsync(workspaceId, CancellationToken.None));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            await Task.Delay(50);
+            try { Directory.Delete(tmpRoot, recursive: true); } catch { }
+        }
+    }
+
     // 11f Broker restart before dispatch invalidates ephemeral decision
     [Fact]
     public void Broker_restart_before_dispatch_invalidates_ephemeral_decision()

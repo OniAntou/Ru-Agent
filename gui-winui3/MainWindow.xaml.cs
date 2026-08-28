@@ -33,6 +33,10 @@ namespace RuApp
         private SettingsView? _settingsView;
         private LogView? _logView;
         private DiagnosticsView? _diagnosticsView;
+        private AgentRunController? _agentController;
+        private PolicyPanel? _policyControlPanel;
+        private AgentPolicyController? _policyController;
+        private AuditLogPanel? _auditPanel;
         private DispatcherTimer? _sessionsTimer;
         private ResponsiveLayoutTier? _responsiveTier;
         private double _lastExpandedSidebarWidth = 250;
@@ -221,6 +225,8 @@ namespace RuApp
                     _subtitleOverlay.Start();
                 }
 
+                _agentController = _composition.CreateAgentRunController(this.DispatcherQueue);
+
                 _chatView = new ChatView();
                 _chatView.Initialize(
                     _apiService,
@@ -228,8 +234,13 @@ namespace RuApp
                     _voicePlayback,
                     _composition.VoiceSourceFactory,
                     _composition.HarnessEvents,
-                    _composition.HarnessScenario);
-                _chatView.SessionOpened += (_, e) => SyncSidebarSelection(e.SessionId);
+                    _composition.HarnessScenario,
+                    _agentController,
+                    projectRoot);
+                _chatView.SessionOpened += (_, e) =>
+                {
+                    SyncSidebarSelection(e.SessionId);
+                };
 
                 _voiceView = new VoiceView();
                 _voiceView.Initialize(_apiService, _voicePlayback, _subtitleOverlay);
@@ -242,6 +253,11 @@ namespace RuApp
 
                 _diagnosticsView = new DiagnosticsView();
                 _diagnosticsView.Initialize(_apiService);
+
+                _policyController = _composition.CreateAgentPolicyController(this.DispatcherQueue);
+                _policyControlPanel = new PolicyPanel { Controller = _policyController };
+
+                _auditPanel = new AuditLogPanel { Log = _composition.AuditLog };
 
                 // Default: Chat
                 ContentFrame.Content = _chatView;
@@ -281,7 +297,7 @@ namespace RuApp
             var accent = (SolidColorBrush)Application.Current.Resources["RuAccentBrush"];
             var surface = (SolidColorBrush)Application.Current.Resources["RuSurfaceBrush"];
 
-            foreach (var button in new[] { NavChat, NavVoice, NavLog, NavDiagnostics, NavSettings })
+            foreach (var button in new[] { NavChat, NavVoice, NavTools, NavSettings })
             {
                 button.Background = transparent;
                 button.Foreground = muted;
@@ -324,20 +340,41 @@ namespace RuApp
                     "settings" => _settingsView,
                     "log" => _logView,
                     "diagnostics" => _diagnosticsView,
+                    "policy" => _policyControlPanel,
+                    "audit" => _auditPanel,
                     _ => _chatView
                 };
             }
         }
 
+        private void OnToolsMenuItemClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuFlyoutItem item || item.Tag is not string tag)
+            {
+                return;
+            }
+
+            ContentFrame.Content = tag switch
+            {
+                "log" => _logView,
+                "diagnostics" => _diagnosticsView,
+                "policy" => _policyControlPanel,
+                "audit" => _auditPanel,
+                _ => _chatView
+            };
+            SetActiveNav(NavTools);
+        }
+
         public void NavigateToDiagnostics(string? correlationId = null)
         {
-            SetActiveNav(NavDiagnostics);
+            SetActiveNav(NavTools);
             ContentFrame.Content = _diagnosticsView;
             if (!string.IsNullOrWhiteSpace(correlationId))
             {
                 _diagnosticsView?.FilterByCorrelation(correlationId);
             }
         }
+
 
         private void OnBackendExited(object? sender, EventArgs e)
         {
@@ -388,6 +425,16 @@ namespace RuApp
             _wsClient?.Dispose();
             _apiService?.Dispose();
             _backendProvider.BackendExited -= OnBackendExited;
+            _agentController?.Dispose();
+            _agentController = null;
+            _policyController?.Dispose();
+            _policyController = null;
+            _policyControlPanel = null;
+            _auditPanel = null;
+            if (ReferenceEquals(Instance, this))
+            {
+                Instance = null;
+            }
             _composition.Dispose();
         }
 

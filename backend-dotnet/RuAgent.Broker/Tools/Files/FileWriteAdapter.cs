@@ -8,6 +8,7 @@ public sealed class FileWriteAdapter
 {
     public const int MaxInputBytes = 4 * 1024 * 1024;
     public const int MaxDiffChars = 8 * 1024;
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
@@ -95,27 +96,20 @@ public sealed class FileWriteAdapter
 
         var beforeText = FileHashService.IsMissing(beforeHash) ? string.Empty : ReadAllTextForDiff(reResolved.CanonicalPath);
         var afterHash = FileHashService.ComputeBytesHash(newBytes);
-        string diff;
         try
         {
-            AtomicFileReplacement.Replace(reResolved.CanonicalPath, newBytes);
+            FileMutationGuard.ReplaceIfHashMatches(reResolved.CanonicalPath, newBytes, beforeHash);
+        }
+        catch (UnauthorizedAccessException ex) when (ex.Message == "workspace_changed")
+        {
+            throw;
         }
         catch (UnauthorizedAccessException ex)
         {
             throw new UnauthorizedAccessException("access_denied", ex);
         }
-        catch (DirectoryNotFoundException ex)
-        {
-            throw new IOException("io_error", ex);
-        }
 
-        var verifiedAfterHash = FileHashService.GetCurrentHash(reResolved.CanonicalPath);
-        if (!string.Equals(verifiedAfterHash, afterHash, StringComparison.Ordinal))
-        {
-            throw new IOException("io_error");
-        }
-
-        diff = BuildDiffSummary(FileHashService.IsMissing(beforeHash), beforeHash, afterHash, beforeText, content);
+        var diff = BuildDiffSummary(FileHashService.IsMissing(beforeHash), beforeHash, afterHash, beforeText, content);
 
         return new JsonObject
         {
@@ -211,12 +205,42 @@ public sealed class FileWriteAdapter
     {
         try
         {
-            return File.ReadAllText(canonicalPath, Encoding.UTF8);
+            return StrictUtf8.GetString(ReadBoundedBytes(canonicalPath));
         }
         catch
         {
             return string.Empty;
         }
+    }
+
+    private static byte[] ReadBoundedBytes(string canonicalPath)
+    {
+        using var stream = new FileStream(
+            canonicalPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            81920,
+            FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(MaxInputBytes, 81920));
+        var buffer = new byte[Math.Min(MaxInputBytes, 81920)];
+        while (true)
+        {
+            var read = stream.Read(buffer, 0, buffer.Length);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (output.Length > MaxInputBytes - read)
+            {
+                throw new ArgumentException("content_too_large");
+            }
+
+            output.Write(buffer, 0, read);
+        }
+
+        return output.ToArray();
     }
 
     private static string BuildDiffSummary(bool wasMissing, string beforeHash, string afterHash, string oldContent, string newContent)

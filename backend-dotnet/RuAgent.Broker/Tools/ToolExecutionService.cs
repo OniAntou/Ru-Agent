@@ -22,6 +22,7 @@ public sealed class ToolExecutionService : IToolInvoker
     // the V2 authorization check; AgentConnection consumes the authorization_token BEFORE invoking the tool handler.
     // V2 approvals never invoke adapters via approval.respond; only tool.execute after token consumption invokes adapters.
     private static readonly Regex StableCodePattern = new("^[a-z][a-z0-9_]{0,63}$", RegexOptions.Compiled);
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     private readonly BrokerSession _session;
     private readonly ToolCatalog _catalog;
@@ -888,12 +889,36 @@ public sealed class ToolExecutionService : IToolInvoker
                 return null;
             }
 
-            return File.ReadAllText(fullPath, Encoding.UTF8);
+            return StrictUtf8.GetString(ReadBoundedBytes(fullPath, FileWriteAdapter.MaxInputBytes));
         }
         catch
         {
             return null;
         }
+    }
+
+    private static byte[] ReadBoundedBytes(string path, int maxBytes)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(maxBytes, 81920));
+        var buffer = new byte[Math.Min(maxBytes, 81920)];
+        while (true)
+        {
+            var read = stream.Read(buffer, 0, buffer.Length);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (output.Length > maxBytes - read)
+            {
+                throw new ArgumentException("content_too_large");
+            }
+
+            output.Write(buffer, 0, read);
+        }
+
+        return output.ToArray();
     }
 
     private static ToolResult Receipt(

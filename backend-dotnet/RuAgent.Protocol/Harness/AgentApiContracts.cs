@@ -17,7 +17,16 @@ public sealed record CreateAgentRunResponse(
     [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("preset")] string Preset,
     [property: JsonPropertyName("created_at")] string CreatedAt,
-    [property: JsonPropertyName("updated_at")] string UpdatedAt);
+    [property: JsonPropertyName("updated_at")] string UpdatedAt,
+    [property: JsonPropertyName("history_wait_kind")] string? HistoryWaitKind = null,
+    [property: JsonPropertyName("policy_snapshot_version")] long PolicySnapshotVersion = 0,
+    [property: JsonPropertyName("policy_snapshot_sha256")] string PolicySnapshotSha256 = "",
+    [property: JsonPropertyName("version")] long Version = 0,
+    [property: JsonPropertyName("last_sequence")] long LastSequence = 0,
+    [property: JsonPropertyName("terminal_at")] string? TerminalAt = null,
+    [property: JsonPropertyName("terminal_error_code")] string? TerminalErrorCode = null,
+    [property: JsonPropertyName("trust_request_id")] string? TrustRequestId = null,
+    [property: JsonPropertyName("display_identity_hash")] string? DisplayIdentityHash = null);
 
 public sealed record GetAgentRunResponse(
     [property: JsonPropertyName("run_id")] string RunId,

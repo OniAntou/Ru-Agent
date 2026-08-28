@@ -90,6 +90,23 @@ public sealed class AgentSseClientTests
         });
     }
 
+    [Fact]
+    public async Task Supplied_http_client_is_not_reconfigured_or_disposed()
+    {
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        using var http = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromMinutes(2),
+        };
+
+        var client = new AgentSseClient(Session(), http);
+        Assert.Equal(TimeSpan.FromMinutes(2), http.Timeout);
+        client.Dispose();
+
+        using var response = await http.GetAsync("http://127.0.0.1/ping");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     private sealed class BlockingStream : Stream
     {
         public override bool CanRead => true;

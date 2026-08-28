@@ -157,16 +157,19 @@ builder.Services.AddSingleton<IWorkerClient>(services =>
     services.GetRequiredService<LoopbackWorkerClient>());
 builder.Services.AddSingleton<IRuntimeProtocolClient>(services =>
     services.GetRequiredService<LoopbackWorkerClient>());
-builder.Services.AddSingleton<IVoiceProtocolClient>(services =>
-    services.GetRequiredService<LoopbackWorkerClient>());
-builder.Services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
-builder.Services.AddSingleton<ConversationTurnGate>();
-builder.Services.AddSingleton<IMetadataPolicy, MetadataPolicy>();
-builder.Services.AddSingleton<IStreamSanitizer, StreamSanitizer>();
-builder.Services.AddSingleton<IAgentApprovalCoordinator, AgentApprovalCoordinator>();
-builder.Services.AddSingleton<IActionOutcomeContextStore, ActionOutcomeContextStore>();
-builder.Services.AddSingleton<IConversationCoordinator, ConversationCoordinator>();
-builder.Services.AddSingleton<IAgentTurnCoordinator, AgentTurnCoordinator>();
+    builder.Services.AddSingleton<IVoiceProtocolClient>(services =>
+        services.GetRequiredService<LoopbackWorkerClient>());
+    builder.Services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
+    builder.Services.AddSingleton<ConversationTurnGate>();
+    builder.Services.AddSingleton<IMetadataPolicy, MetadataPolicy>();
+    builder.Services.AddSingleton<IStreamSanitizer, StreamSanitizer>();
+    // Phase-4 cutover: Chat WebSocket is read-only and never drives Agent
+    // tools. AgentTurnCoordinator / AgentApprovalCoordinator are removed;
+    // Agent traffic uses the authenticated /agent/v1/* API.
+    builder.Services.AddSingleton<IActionOutcomeContextStore, ActionOutcomeContextStore>();
+    builder.Services.AddSingleton<IConversationCoordinator, ConversationCoordinator>();
+
+
 var brokerDescriptor = Environment.GetEnvironmentVariable("RU_AGENT_BROKER_DESCRIPTOR");
 if (!string.IsNullOrWhiteSpace(brokerDescriptor))
 {
@@ -218,6 +221,7 @@ builder.Services.AddSingleton<HarnessPayloadStore>(services =>
         services.GetRequiredService<HarnessSqliteOptions>(),
         services.GetRequiredService<HarnessPayloadCryptography>(),
         services.GetRequiredService<KnownSecretRedactor>()));
+builder.Services.AddSingleton<RuBackend.Harness.Policy.HarnessPolicySnapshotService>();
 builder.Services.AddSingleton<IHarnessEventStore>(services =>
     new SqliteHarnessEventStore(
         services.GetRequiredService<HarnessSqliteOptions>(),

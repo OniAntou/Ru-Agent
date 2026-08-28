@@ -8,6 +8,7 @@ namespace RuAgent.Broker.Tools.Files;
 
 public sealed class FileSearchAdapter
 {
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
 
@@ -88,7 +89,9 @@ public sealed class FileSearchAdapter
         var results = new List<JsonObject>();
         int skipped = 0;
         int scannedFiles = 0;
+        int scannedDirectories = 0;
         long totalBytes = 0;
+        var traversalCapped = false;
         var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
         Regex? fileGlobRegex = null;
@@ -98,10 +101,18 @@ public sealed class FileSearchAdapter
         }
 
         var stack = new Stack<string>();
+        var visitedDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        const int maxVisitedDirectories = FileToolLimits.MaxEntries * 16;
         stack.Push(baseCanonical);
 
         while (stack.Count > 0)
         {
+            if (scannedDirectories >= maxVisitedDirectories)
+            {
+                traversalCapped = true;
+                break;
+            }
+
             if (sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs)
             {
                 break;
@@ -121,6 +132,12 @@ public sealed class FileSearchAdapter
             }
 
             var current = stack.Pop();
+            if (!visitedDirectories.Add(current))
+            {
+                continue;
+            }
+
+            scannedDirectories++;
             IEnumerable<string> entries;
             try
             {
@@ -170,8 +187,9 @@ public sealed class FileSearchAdapter
                 bool isDir = Directory.Exists(entryResolved.CanonicalPath);
                 if (isDir)
                 {
-                    if (scannedFiles > FileToolLimits.MaxEntries * 8)
+                    if (visitedDirectories.Count + stack.Count >= maxVisitedDirectories)
                     {
+                        traversalCapped = true;
                         skipped++;
                         continue;
                     }
@@ -227,11 +245,13 @@ public sealed class FileSearchAdapter
                     continue;
                 }
 
-                // Search file content streaming
+                // Read at most the advertised per-file cap. FileInfo.Length is only
+                // a hint and a concurrent writer can grow the file after that check;
+                // StreamReader.ReadLine would otherwise allocate an unbounded line.
                 try
                 {
-                    using var stream = new FileStream(entryResolved.CanonicalPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan);
-                    using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 4096);
+                    var text = ReadBoundedText(entryResolved.CanonicalPath);
+                    using var reader = new StringReader(text);
                     string? line;
                     int lineNumber = 0;
                     while ((line = reader.ReadLine()) != null)
@@ -247,14 +267,15 @@ public sealed class FileSearchAdapter
                             break;
                         }
 
-                        // Bound line length to avoid unbounded allocation per line
-                        if (line.Length > 8192)
+                        // The complete file is already bounded by
+                        // MaxSearchFileSize. Search the full line so a match past
+                        // the preview cap is not silently lost; only the returned
+                        // preview is truncated below.
+                        totalBytes += StrictUtf8.GetByteCount(line) + 1;
+                        if (totalBytes > FileToolLimits.MaxTotalSearchBytes)
                         {
-                            // Truncate line for search but still check
-                            line = line.Substring(0, 8192);
+                            break;
                         }
-
-                        totalBytes += Encoding.UTF8.GetByteCount(line) + 1;
 
                         int idx = line.IndexOf(query, comparison);
                         if (idx >= 0)
@@ -303,6 +324,11 @@ public sealed class FileSearchAdapter
                     skipped++;
                     continue;
                 }
+                catch (ArgumentException)
+                {
+                    skipped++;
+                    continue;
+                }
 
                 if (results.Count >= maxResults && scannedFiles > maxResults)
                 {
@@ -331,7 +357,7 @@ public sealed class FileSearchAdapter
         else
         {
             final = sorted;
-            truncated = sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs || totalBytes > FileToolLimits.MaxTotalSearchBytes || (sorted.Count == maxResults && scannedFiles > 0);
+            truncated = traversalCapped || sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs || totalBytes > FileToolLimits.MaxTotalSearchBytes || (sorted.Count == maxResults && scannedFiles > 0);
             // If we hit exact maxResults, truncated true to indicate potential more matches
             if (sorted.Count == maxResults && !truncated)
             {
@@ -352,7 +378,10 @@ public sealed class FileSearchAdapter
         }
 
         // If we never reached maxResults and not time/byte capped, truncated false
-        if (final.Count < maxResults && sw.ElapsedMilliseconds <= FileToolLimits.MaxTimeMs && totalBytes <= FileToolLimits.MaxTotalSearchBytes)
+        if (final.Count < maxResults
+            && !traversalCapped
+            && sw.ElapsedMilliseconds <= FileToolLimits.MaxTimeMs
+            && totalBytes <= FileToolLimits.MaxTotalSearchBytes)
         {
             truncated = false;
         }
@@ -369,6 +398,7 @@ public sealed class FileSearchAdapter
             ["count"] = final.Count,
             ["truncated"] = truncated,
             ["scanned_files"] = scannedFiles,
+            ["scanned_directories"] = scannedDirectories,
             ["skipped"] = skipped,
             ["duration_ms"] = (int)sw.ElapsedMilliseconds,
         };
@@ -435,6 +465,43 @@ public sealed class FileSearchAdapter
         catch
         {
             return false;
+        }
+    }
+
+    private static string ReadBoundedText(string canonicalPath)
+    {
+        using var stream = new FileStream(
+            canonicalPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            81920,
+            FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(FileToolLimits.MaxSearchFileSize, 81920));
+        var buffer = new byte[Math.Min(FileToolLimits.MaxSearchFileSize, 81920)];
+        while (true)
+        {
+            var read = stream.Read(buffer, 0, buffer.Length);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (output.Length > FileToolLimits.MaxSearchFileSize - read)
+            {
+                throw new ArgumentException("file_too_large");
+            }
+
+            output.Write(buffer, 0, read);
+        }
+
+        try
+        {
+            return StrictUtf8.GetString(output.GetBuffer(), 0, checked((int)output.Length));
+        }
+        catch (DecoderFallbackException ex)
+        {
+            throw new ArgumentException("invalid_utf8", ex);
         }
     }
 

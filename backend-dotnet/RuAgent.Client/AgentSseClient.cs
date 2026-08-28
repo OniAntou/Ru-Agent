@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using RuAgent.Protocol.Harness;
@@ -14,15 +15,34 @@ public sealed record SseFrame(
 
 public sealed class AgentSseClient : IDisposable
 {
+    private const int MaxSseFrameDataBytes = 512 * 1024;
     private readonly HttpClient _httpClient;
+    private readonly bool _ownsHttpClient;
     private readonly PublicHostSession _session;
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     private bool _disposed;
 
     public AgentSseClient(PublicHostSession session, HttpClient? httpClient = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
-        _httpClient = httpClient ?? new HttpClient();
-        _httpClient.Timeout = TimeSpan.FromSeconds(30);
+        if (httpClient is null)
+        {
+            _httpClient = new HttpClient
+            {
+                // An SSE connection is intentionally long-lived; cancellation is
+                // controlled by the caller token rather than an arbitrary request
+                // timeout.
+                Timeout = Timeout.InfiniteTimeSpan,
+            };
+            _ownsHttpClient = true;
+        }
+        else
+        {
+            // Callers commonly share one client between API and SSE adapters. Do not
+            // mutate its timeout or dispose it when this short-lived stream wrapper ends.
+            _httpClient = httpClient;
+            _ownsHttpClient = false;
+        }
     }
 
     public async IAsyncEnumerable<SseFrame> ReadEventsAsync(
@@ -30,6 +50,7 @@ public sealed class AgentSseClient : IDisposable
         long afterSequence = 0,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ValidateRunId(runId);
         if (afterSequence < 0) throw new AgentApiException("invalid_cursor", "after_sequence must be non-negative");
 
@@ -50,16 +71,31 @@ public sealed class AgentSseClient : IDisposable
         }
 
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
+        using var reader = new StreamReader(stream, StrictUtf8, detectEncodingFromByteOrderMarks: true);
 
         string? currentId = null;
         string? currentEvent = null;
         var dataBuilder = new StringBuilder();
+        var dataBytes = 0;
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            string? line;
+            try
+            {
+                line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (DecoderFallbackException ex)
+            {
+                throw new AgentApiException("invalid_sse_data", ex.Message);
+            }
+
             if (line is null) break;
+
+            if (line.Length > MaxSseFrameDataBytes)
+            {
+                throw new AgentApiException("sse_frame_too_large", "SSE frame is too large.");
+            }
 
             if (string.IsNullOrEmpty(line))
             {
@@ -74,6 +110,7 @@ public sealed class AgentSseClient : IDisposable
                 currentId = null;
                 currentEvent = null;
                 dataBuilder.Clear();
+                dataBytes = 0;
                 continue;
             }
 
@@ -96,6 +133,11 @@ public sealed class AgentSseClient : IDisposable
                 value = line.Substring(colon + 1).TrimStart(' ');
             }
 
+            if (field is "data" && dataBytes > MaxSseFrameDataBytes - StrictUtf8.GetByteCount(value) - 1)
+            {
+                throw new AgentApiException("sse_frame_too_large", "SSE frame is too large.");
+            }
+
             switch (field)
             {
                 case "id":
@@ -106,6 +148,7 @@ public sealed class AgentSseClient : IDisposable
                     break;
                 case "data":
                     dataBuilder.AppendLine(value);
+                    dataBytes += StrictUtf8.GetByteCount(value) + 1;
                     break;
             }
         }
@@ -124,18 +167,64 @@ public sealed class AgentSseClient : IDisposable
             if (id.StartsWith("t", StringComparison.Ordinal))
             {
                 isTransient = true;
-                if (long.TryParse(id.AsSpan(1), out var tseq))
-                    transientSeq = tseq;
+                if (!long.TryParse(id.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out var tseq) || tseq < 0)
+                    throw new AgentApiException("invalid_sse_data", "Transient SSE id is invalid.");
+
+                transientSeq = tseq;
             }
             else
             {
-                if (long.TryParse(id, out var dseq))
-                    durableSeq = dseq;
+                if (!long.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var dseq) || dseq <= 0)
+                    throw new AgentApiException("invalid_sse_data", "Durable SSE id is invalid.");
+
+                durableSeq = dseq;
             }
         }
 
         if (!string.IsNullOrWhiteSpace(eventType) && eventType == "transient")
             isTransient = true;
+
+        if (isTransient)
+        {
+            if (!transientSeq.HasValue && !string.IsNullOrWhiteSpace(data))
+            {
+                throw new AgentApiException("invalid_sse_data", "Transient SSE id is required.");
+            }
+
+            // A transient event can never advance the durable cursor, even if a
+            // malformed sender supplied a numeric id alongside event: transient.
+            durableSeq = null;
+        }
+        else if (!durableSeq.HasValue
+            && !string.IsNullOrWhiteSpace(data)
+            && !string.Equals(eventType, "final_snapshot", StringComparison.Ordinal))
+        {
+            throw new AgentApiException("invalid_sse_data", "Durable SSE id is required.");
+        }
+
+        if (!isTransient && string.Equals(eventType, "final_snapshot", StringComparison.Ordinal))
+        {
+            try
+            {
+                using var finalDocument = JsonDocument.Parse(data);
+                if (finalDocument.RootElement.ValueKind != JsonValueKind.Object
+                    || !finalDocument.RootElement.TryGetProperty("status", out var status)
+                    || status.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(status.GetString())
+                    || status.GetString()!.Length > 64)
+                {
+                    throw new AgentApiException("invalid_sse_data", "Final snapshot is invalid.");
+                }
+            }
+            catch (AgentApiException)
+            {
+                throw;
+            }
+            catch (JsonException ex)
+            {
+                throw new AgentApiException("invalid_sse_data", ex.Message);
+            }
+        }
 
         // For transient, durableSequence remains null (does not advance cursor)
         // For durable, validate sequence non-negative and data is valid JSON envelope with protocol_version check
@@ -145,11 +234,21 @@ public sealed class AgentSseClient : IDisposable
             try
             {
                 var doc = JsonDocument.Parse(data);
-                if (doc.RootElement.TryGetProperty("protocol_version", out var v) && v.TryGetInt32(out var ver))
+                if (doc.RootElement.ValueKind != JsonValueKind.Object
+                    || !doc.RootElement.TryGetProperty("protocol_version", out var v)
+                    || !v.TryGetInt32(out var ver))
                 {
-                    if (ver != HarnessSafeEventEnvelope.CurrentProtocolVersion)
-                        throw new AgentApiException("unsupported_protocol_version", $"unsupported version {ver}");
+                    throw new AgentApiException("invalid_sse_data", "Durable SSE envelope is missing protocol_version.");
                 }
+
+                if (ver != HarnessSafeEventEnvelope.CurrentProtocolVersion)
+                {
+                    throw new AgentApiException("unsupported_protocol_version", $"unsupported version {ver}");
+                }
+            }
+            catch (AgentApiException)
+            {
+                throw;
             }
             catch (JsonException ex)
             {
@@ -162,7 +261,10 @@ public sealed class AgentSseClient : IDisposable
 
     private static void ValidateRunId(string runId)
     {
-        if (string.IsNullOrWhiteSpace(runId) || !runId.StartsWith("run_", StringComparison.Ordinal) || runId.Length != 36)
+        if (string.IsNullOrWhiteSpace(runId)
+            || !runId.StartsWith("run_", StringComparison.Ordinal)
+            || runId.Length != 36
+            || runId.AsSpan(4).IndexOfAnyExcept("0123456789abcdef") >= 0)
             throw new AgentApiException("invalid_run_id", "run_id invalid");
     }
 
@@ -170,6 +272,9 @@ public sealed class AgentSseClient : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        _httpClient.Dispose();
+        if (_ownsHttpClient)
+        {
+            _httpClient.Dispose();
+        }
     }
 }

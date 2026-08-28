@@ -5,71 +5,53 @@ namespace RuApp.Tests;
 public sealed class AgentApprovalUiContractTests
 {
     [Fact]
-    public void Chat_has_a_compact_approval_card_outside_the_transcript()
+    public void Chat_has_bounded_inline_trust_and_approval_surfaces()
     {
         string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
 
-        Assert.Contains("x:Name=\"AgentApprovalCard\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AgentApprovalActionText\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AgentApprovalScopeText\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AgentApprovalExpiryText\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AgentApproveButton\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AgentRejectButton\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.AutomationId=\"AgentApprovalCard\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.AutomationId=\"AgentApproveButton\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.AutomationId=\"AgentRejectButton\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", xaml, StringComparison.Ordinal);
+        foreach (string marker in new[]
+        {
+            "x:Name=\"AgentTrustPanel\"",
+            "x:Name=\"AgentTrustApproveButton\"",
+            "x:Name=\"AgentTrustDenyButton\"",
+            "x:Name=\"AgentApprovalPanel\"",
+            "x:Name=\"AgentApprovalSummaryText\"",
+            "x:Name=\"AgentApprovalScopePanel\"",
+            "x:Name=\"AgentApprovalScopeBox\"",
+            "x:Name=\"AgentApproveButton\"",
+            "x:Name=\"AgentDenyButton\"",
+            "AutomationProperties.LiveSetting=\"Polite\""
+        })
+        {
+            Assert.Contains(marker, xaml, StringComparison.Ordinal);
+        }
+
         Assert.DoesNotContain("Arguments", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("stdout", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("script", xaml, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Approval_response_uses_a_minimal_control_payload_and_never_enters_messages()
+    public void Agent_actions_use_the_shared_api_controller_not_chat_websocket()
     {
-        string client = File.ReadAllText(FindSource("Services", "ChatWebSocketClient.cs"));
         string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
 
-        Assert.Contains("SendAgentApprovalAsync", client, StringComparison.Ordinal);
-        Assert.Contains("agent.approval.response", client, StringComparison.Ordinal);
-        Assert.Contains("approval_id", client, StringComparison.Ordinal);
-        Assert.Contains("approved", client, StringComparison.Ordinal);
-        Assert.DoesNotContain("arguments =", client, StringComparison.Ordinal);
-        Assert.DoesNotContain("script =", client, StringComparison.Ordinal);
-        Assert.Contains("OnAgentApprovalResult", client, StringComparison.Ordinal);
-        Assert.Contains("SendAgentApprovalAsync", code, StringComparison.Ordinal);
-        Assert.Contains("Messages.Add", code, StringComparison.Ordinal);
-        Assert.Contains("ClearAgentApproval", code, StringComparison.Ordinal);
+        Assert.Contains("ApproveAsync()", code, StringComparison.Ordinal);
+        Assert.Contains("DenyAsync()", code, StringComparison.Ordinal);
+        Assert.Contains("TrustAsync(approve:", code, StringComparison.Ordinal);
+        Assert.Contains("CancelAsync()", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("SendAgentApprovalAsync", code, StringComparison.Ordinal);
+        Assert.DoesNotContain("agent.approval.response", code, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Approval_card_is_bound_to_the_active_session_and_expires()
+    public void Agent_transport_client_remains_chat_only()
     {
-        string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-
-        Assert.Contains("approval.SessionId != _activeSessionId", code, StringComparison.Ordinal);
-        Assert.Contains("approval.IsExpired()", code, StringComparison.Ordinal);
-        Assert.Contains("AgentApprovalCard.Visibility", code, StringComparison.Ordinal);
-        Assert.Contains("AgentApproveButton.IsEnabled", code, StringComparison.Ordinal);
-        Assert.Contains("AgentRejectButton.IsEnabled", code, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Approval_card_shows_a_bounded_read_only_preview()
-    {
-        string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
-        string code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
-        string model = File.ReadAllText(FindSource("Services", "AgentApprovalModel.cs"));
         string client = File.ReadAllText(FindSource("Services", "ChatWebSocketClient.cs"));
 
-        Assert.Contains("x:Name=\"AgentApprovalPreviewText\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("IsTextSelectionEnabled=\"False\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("FontFamily=\"Consolas\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AgentApprovalPreviewText.Text =", code, StringComparison.Ordinal);
-        Assert.Contains("approval.Preview", code, StringComparison.Ordinal);
-        Assert.Contains("public const int MaxPreviewLength = 512", model, StringComparison.Ordinal);
-        Assert.Contains("value[..MaxPreviewLength]", model, StringComparison.Ordinal);
-        Assert.Contains("AgentApprovalModel.TryParse(root, out var approval)", client, StringComparison.Ordinal);
-        Assert.DoesNotContain("TryReadApproval(", client, StringComparison.Ordinal);
+        Assert.DoesNotContain("mode =", client, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("agent.approval", client, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SendAgentApprovalAsync", client, StringComparison.Ordinal);
     }
 
     private static string FindSource(params string[] parts)

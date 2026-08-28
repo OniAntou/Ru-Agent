@@ -72,6 +72,24 @@ public sealed class AgentApiClientTests
         Assert.Equal("unauthorized", ex.ErrorCode);
     }
 
+    [Fact]
+    public async Task Client_rejects_non_hex_generated_ids_before_network_io()
+    {
+        var s = Session();
+        var handler = new FakeHandler(_ => throw new InvalidOperationException("network must not be called"));
+        var client = new AgentApiClient(s, new HttpClient(handler));
+
+        var runError = await Assert.ThrowsAsync<AgentApiException>(
+            () => client.GetRunAsync("run_gggggggggggggggggggggggggggggggg"));
+        var payloadError = await Assert.ThrowsAsync<AgentApiException>(
+            () => client.GetPayloadAsync(
+                "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "payload_gggggggggggggggggggggggggggg"));
+
+        Assert.Equal("invalid_run_id", runError.ErrorCode);
+        Assert.Equal("invalid_payload_id", payloadError.ErrorCode);
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;

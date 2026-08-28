@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from ru_runtime.worker.server import serve_worker
 from ru_runtime.worker.v1.protocol import (
     CHAT_CHUNK,
     CHAT_DONE,
@@ -29,7 +30,9 @@ from ru_runtime.worker.v1.protocol import (
     VTS_ACTION,
     VTS_CATALOG,
 )
-from ru_runtime.worker.v1.server import WorkerHandlers, WorkerReply, serve_worker
+from ru_runtime.worker.v1.server import WorkerHandlers, WorkerReply
+from ru_runtime.worker.v2.handlers import StepReply
+from ru_runtime.worker.v2.protocol import AGENT_STEP_DONE
 
 from .voice_fixtures import build_synthetic_wav, is_valid_transcription_fixture
 
@@ -63,7 +66,14 @@ def _harness_delay_seconds(name: str) -> float:
 async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> AsyncIterator[WorkerReply]:
     settings = _payload.get("settings")
     tool_queue = _payload.get("__worker_tool_result_queue")
-    agent_mode = isinstance(settings, Mapping) and settings.get("agent_mode") is True
+    # Agent v2 carries both an explicit mode bit and a non-empty executable
+    # model-tool surface. Accept either marker so the deterministic fixture
+    # continues to exercise the headless loop while remaining compatible with
+    # older Worker payloads that only supplied model_tools.
+    agent_mode = isinstance(settings, Mapping) and (
+        settings.get("agent_mode") is True
+        or bool(settings.get("model_tools"))
+    )
     if agent_mode and isinstance(tool_queue, asyncio.Queue):
         session_id = str(_payload.get("session_id") or "harness-agent-session")
         correlation_id = str(
@@ -129,6 +139,78 @@ async def _chat(_payload: Mapping[str, Any], _cancelled: asyncio.Event) -> Async
                 "Em nghe đây. [[EMO:joy]] [[VTS:vts_01]] "
                 "[[VOICE_PACE:quick]]"
             )
+        },
+    )
+
+
+_agent_step_counts: dict[str, int] = {}
+
+
+async def _agent_step(
+    payload: dict[str, Any],
+    cancelled: asyncio.Event,
+) -> AsyncIterator[StepReply]:
+    """Deterministically exercise one real Agent v2 tool round-trip.
+
+    The fixture deliberately uses ``files.read`` rather than a native or mutating
+    capability.  The first model step proposes the read; after the gateway receipt
+    is added to context, the next step emits the final answer.  A prompt-keyed counter
+    keeps the stateless private protocol worker deterministic without exposing run
+    identifiers in the model payload.
+    """
+
+    if cancelled.is_set():
+        return
+
+    prompt = payload.get("prompt")
+    settings = payload.get("settings")
+    model_tools = settings.get("model_tools") if isinstance(settings, Mapping) else None
+    if not isinstance(prompt, str) or not isinstance(model_tools, list):
+        yield StepReply(
+            AGENT_STEP_DONE,
+            {
+                "text": "Deterministic worker completed the request.",
+                "tool_calls": [],
+                "finish_reason": "stop",
+            },
+        )
+        return
+
+    # Keep a bounded fixture state so repeated local harness runs cannot grow this
+    # process forever.  Eviction only affects an old prompt, never the current one.
+    if len(_agent_step_counts) >= 1024 and prompt not in _agent_step_counts:
+        _agent_step_counts.pop(next(iter(_agent_step_counts)))
+    count = _agent_step_counts.get(prompt, 0)
+    _agent_step_counts[prompt] = count + 1
+
+    has_read = any(
+        isinstance(tool, Mapping) and tool.get("tool_id") == "files.read"
+        for tool in model_tools
+    )
+    if count == 0 and has_read:
+        yield StepReply(
+            AGENT_STEP_DONE,
+            {
+                "text": None,
+                "tool_calls": [
+                    {
+                        "provider_call_id": None,
+                        "tool_id": "files.read",
+                        "tool_version": "1.0.0",
+                        "arguments": {"path": "harness-agent.txt"},
+                    }
+                ],
+                "finish_reason": "tool_calls",
+            },
+        )
+        return
+
+    yield StepReply(
+        AGENT_STEP_DONE,
+        {
+            "text": "Harness agent tool loop completed.",
+            "tool_calls": [],
+            "finish_reason": "stop",
         },
     )
 
@@ -302,7 +384,15 @@ def create_deterministic_handlers() -> WorkerHandlers:
 
 
 def serve_deterministic_worker(port: int, token: str) -> int:
-    asyncio.run(serve_worker("127.0.0.1", port, token, create_deterministic_handlers()))
+    asyncio.run(
+        serve_worker(
+            "127.0.0.1",
+            port,
+            token,
+            create_deterministic_handlers(),
+            v2_handler=_agent_step,
+        )
+    )
     return 0
 
 

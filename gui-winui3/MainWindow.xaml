@@ -62,8 +62,7 @@
                             <Setter Target="NavNewChat.Padding" Value="10,8"/>
                             <Setter Target="NavChat.Padding" Value="10,7"/>
                             <Setter Target="NavVoice.Padding" Value="10,7"/>
-                            <Setter Target="NavLog.Padding" Value="10,7"/>
-                            <Setter Target="NavDiagnostics.Padding" Value="10,7"/>
+                            <Setter Target="NavTools.Padding" Value="10,7"/>
                             <Setter Target="NavSettings.Padding" Value="10,7"/>
                             <Setter Target="ThemeToggleButton.Padding" Value="10,7"/>
                         </VisualState.Setters>
@@ -77,23 +76,20 @@
                             <Setter Target="LabelNewChat.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelChat.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelVoice.Visibility" Value="Collapsed"/>
-                            <Setter Target="LabelLog.Visibility" Value="Collapsed"/>
-                            <Setter Target="LabelDiagnostics.Visibility" Value="Collapsed"/>
+                            <Setter Target="LabelTools.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelThemeToggle.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelSettings.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelRecents.Visibility" Value="Collapsed"/>
                             <Setter Target="NavNewChat.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavChat.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavVoice.HorizontalContentAlignment" Value="Center"/>
-                            <Setter Target="NavLog.HorizontalContentAlignment" Value="Center"/>
-                            <Setter Target="NavDiagnostics.HorizontalContentAlignment" Value="Center"/>
+                            <Setter Target="NavTools.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="ThemeToggleButton.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavSettings.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavNewChat.Padding" Value="8"/>
                             <Setter Target="NavChat.Padding" Value="8"/>
                             <Setter Target="NavVoice.Padding" Value="8"/>
-                            <Setter Target="NavLog.Padding" Value="8"/>
-                            <Setter Target="NavDiagnostics.Padding" Value="8"/>
+                            <Setter Target="NavTools.Padding" Value="8"/>
                             <Setter Target="ThemeToggleButton.Padding" Value="8"/>
                             <Setter Target="NavSettings.Padding" Value="8"/>
                             <Setter Target="SidebarResizer.Visibility" Value="Collapsed"/>
@@ -161,23 +157,46 @@
                                 </Grid>
                             </Button>
 
-                            <Button x:Name="NavLog" Tag="log" Click="OnNavClick" HorizontalAlignment="Stretch"
-                                    Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
-                                    Padding="10,8" CornerRadius="0" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
-                                    ToolTipService.ToolTip="Nhật ký hoạt động" AutomationProperties.Name="Nhật ký hoạt động">
+                            <Button x:Name="NavTools"
+                                    HorizontalAlignment="Stretch"
+                                    Background="Transparent"
+                                    Foreground="{StaticResource RuMutedBrush}"
+                                    Padding="10,8"
+                                    CornerRadius="0"
+                                    BorderBrush="Transparent"
+                                    BorderThickness="0"
+                                    HorizontalContentAlignment="Left"
+                                    AutomationProperties.AutomationId="ToolsNavigationButton"
+                                    AutomationProperties.Name="Công cụ"
+                                    ToolTipService.ToolTip="Nhật ký, chẩn đoán và chính sách">
+                                <Button.Flyout>
+                                    <MenuFlyout Placement="RightEdgeAlignedTop">
+                                        <MenuFlyoutItem x:Name="ToolsLogItem"
+                                                        Text="Nhật ký hoạt động"
+                                                        Tag="log"
+                                                        Click="OnToolsMenuItemClick"
+                                                        AutomationProperties.AutomationId="ToolsLogItem" />
+                                        <MenuFlyoutItem x:Name="ToolsDiagnosticsItem"
+                                                        Text="Chẩn đoán kỹ thuật"
+                                                        Tag="diagnostics"
+                                                        Click="OnToolsMenuItemClick"
+                                                        AutomationProperties.AutomationId="ToolsDiagnosticsItem" />
+                                        <MenuFlyoutSeparator />
+                                        <MenuFlyoutItem x:Name="ToolsPolicyItem"
+                                                        Text="Chính sách tác nhân"
+                                                        Tag="policy"
+                                                        Click="OnToolsMenuItemClick"
+                                                        AutomationProperties.AutomationId="ToolsPolicyItem" />
+                                        <MenuFlyoutItem x:Name="ToolsAuditItem"
+                                                        Text="Nhật ký kiểm toán"
+                                                        Tag="audit"
+                                                        Click="OnToolsMenuItemClick"
+                                                        AutomationProperties.AutomationId="ToolsAuditItem" />
+                                    </MenuFlyout>
+                                </Button.Flyout>
                                 <Grid ColumnDefinitions="Auto,*">
-                                    <FontIcon Grid.Column="0" Glyph="&#xE9D9;" FontSize="15" Margin="0,0,12,0"/>
-                                    <TextBlock Grid.Column="1" x:Name="LabelLog" Text="Nhật ký hoạt động" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
-                                </Grid>
-                            </Button>
-
-                            <Button x:Name="NavDiagnostics" Tag="diagnostics" Click="OnNavClick" HorizontalAlignment="Stretch"
-                                    Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
-                                    Padding="10,8" CornerRadius="0" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
-                                    ToolTipService.ToolTip="Chẩn đoán kỹ thuật" AutomationProperties.Name="Chẩn đoán kỹ thuật">
-                                <Grid ColumnDefinitions="Auto,*">
-                                    <FontIcon Grid.Column="0" Glyph="&#xEBE8;" FontSize="15" Margin="0,0,12,0"/>
-                                    <TextBlock Grid.Column="1" x:Name="LabelDiagnostics" Text="Chẩn đoán kỹ thuật" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE713;" FontSize="15" Margin="0,0,12,0"/>
+                                    <TextBlock Grid.Column="1" x:Name="LabelTools" Text="Công cụ" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
                         </StackPanel>

@@ -4,7 +4,7 @@ namespace RuAgent.Broker.Tools.Files;
 
 public static class AtomicFileReplacement
 {
-    public static void Replace(string targetPath, byte[] newContent)
+    public static void Replace(string targetPath, byte[] newContent, bool overwrite = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
         ArgumentNullException.ThrowIfNull(newContent);
@@ -30,7 +30,7 @@ public static class AtomicFileReplacement
                 stream.Flush(true);
             }
 
-            File.Move(tempPath, targetPath, overwrite: true);
+            File.Move(tempPath, targetPath, overwrite);
         }
         finally
         {
@@ -47,10 +47,10 @@ public static class AtomicFileReplacement
         }
     }
 
-    public static void Replace(string targetPath, string content)
+    public static void Replace(string targetPath, string content, bool overwrite = true)
     {
         ArgumentNullException.ThrowIfNull(content);
         var bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetBytes(content);
-        Replace(targetPath, bytes);
+        Replace(targetPath, bytes, overwrite);
     }
 }

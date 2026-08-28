@@ -1,6 +1,7 @@
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Workspace;
 using RuAgent.Harness.Persistence;
+using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
 using RuBackend.Harness.Workspace;
 using Xunit;
@@ -137,6 +138,49 @@ public sealed class WorkspaceTrustEndpointTests
         }
     }
 
+    [Fact]
+    public async Task Trust_request_persists_an_authenticated_encrypted_root()
+    {
+        var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var tempRoot = Path.Combine(Path.GetTempPath(), "trust-encrypted-root-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var resolver = new WindowsWorkspaceIdentityResolver();
+            var store = new SqliteWorkspaceStore(fixture.Options);
+            var trustStore = new WorkspaceTrustRequestStore(fixture.Options);
+            var keyStore = new FixedKeyStore();
+            var service = new WorkspaceTrustService(resolver, store, trustStore, keyStore);
+
+            var request = await service.EnsureTrustRequestAsync(tempRoot);
+            var identity = await resolver.ResolveAsync(tempRoot);
+            var stored = await store.GetAsync(identity.WorkspaceId, CancellationToken.None);
+
+            Assert.NotNull(stored);
+            Assert.Equal(request.RequestId, stored!.TrustRequest.RequestId);
+            Assert.NotEqual(new byte[] { 1, 2, 3 }, stored.EncryptedCanonicalRoot.Ciphertext.ToArray());
+
+            var plaintext = new byte[stored.EncryptedCanonicalRoot.Ciphertext.Length];
+            using var aes = new System.Security.Cryptography.AesGcm(FixedKeyStore.Key, 16);
+            aes.Decrypt(
+                stored.EncryptedCanonicalRoot.Nonce.Span,
+                stored.EncryptedCanonicalRoot.Ciphertext.Span,
+                stored.EncryptedCanonicalRoot.AuthenticationTag.Span,
+                plaintext,
+                System.Text.Encoding.UTF8.GetBytes("ru-workspace-root-v1:" + identity.WorkspaceId.Value));
+            Assert.Equal(WindowsWorkspaceIdentityResolver.GetCanonicalRoot(tempRoot), System.Text.Encoding.UTF8.GetString(plaintext));
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, true);
+            }
+
+            await fixture.DisposeAsync();
+        }
+    }
+
     private sealed class HarnessStoreTestFixture : IAsyncDisposable
     {
         private HarnessStoreTestFixture(string rootPath)
@@ -185,5 +229,13 @@ public sealed class WorkspaceTrustEndpointTests
                 }
             }
         }
+    }
+
+    private sealed class FixedKeyStore : IHarnessKeyStore
+    {
+        public static readonly byte[] Key = Enumerable.Repeat((byte)0x5a, 32).ToArray();
+
+        public ValueTask<byte[]> GetOrCreateKeyAsync(CancellationToken cancellationToken) =>
+            ValueTask.FromResult(Key.ToArray());
     }
 }

@@ -11,7 +11,6 @@ public partial class App : Application
 {
     private static Mutex? _singleInstanceMutex;
     private Window? _window;
-
     public App()
     {
         InitializeComponent();

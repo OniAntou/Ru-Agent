@@ -53,14 +53,15 @@ public sealed class AgentRunHistoryTransitionSink : IAgentHistoryTransitionSink
         HistoryWaitKind historyWaitKind,
         CancellationToken cancellationToken)
     {
-        if (!_roots.TryGetRoot(runId, out var workspaceRoot) || workspaceRoot is null)
+        if (!_roots.TryGetRoot(runId, out var workspaceRoot) || workspaceRoot is null
+            || !_roots.TryGetPolicySnapshot(runId, out var policySnapshot) || policySnapshot is null)
         {
             // The transition stays durable in the outbox transition table and is retried
             // after reconciliation once this host holds the run's workspace root again.
             throw new InvalidOperationException("runtime_root_unknown");
         }
 
-        var coordinator = _factory.Create(workspaceRoot);
+        var coordinator = _factory.Create(workspaceRoot, policySnapshot);
         _ = await coordinator.AcknowledgeHistoryAsync(
                 runId,
                 historyWaitKind,
@@ -73,12 +74,13 @@ public sealed class AgentRunHistoryTransitionSink : IAgentHistoryTransitionSink
         string errorCode,
         CancellationToken cancellationToken)
     {
-        if (!_roots.TryGetRoot(runId, out var workspaceRoot) || workspaceRoot is null)
+        if (!_roots.TryGetRoot(runId, out var workspaceRoot) || workspaceRoot is null
+            || !_roots.TryGetPolicySnapshot(runId, out var policySnapshot) || policySnapshot is null)
         {
             throw new InvalidOperationException("runtime_root_unknown");
         }
 
-        var coordinator = _factory.Create(workspaceRoot);
+        var coordinator = _factory.Create(workspaceRoot, policySnapshot);
         _ = await coordinator.FailAsync(runId, errorCode, cancellationToken)
             .ConfigureAwait(false);
     }

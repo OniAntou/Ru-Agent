@@ -29,6 +29,23 @@ public sealed class PythonCommandAnalyzerTests
         _ = executable;
     }
 
+    [Fact]
+    public void Python_module_names_with_a_pytest_prefix_are_not_treated_as_pytest()
+    {
+        var analysis = _analyzer.Analyze(@"C:\python\python.exe", ["-m", "pytestevil"]);
+
+        Assert.Equal(TerminalOperationClass.Unknown, analysis.OperationClass);
+    }
+
+    [Fact]
+    public void Python_module_pytest_forwards_arguments_to_interactive_flag_checks()
+    {
+        var analysis = _analyzer.Analyze(@"C:\python\python.exe", ["-m", "pytest", "--pdb"]);
+
+        Assert.Equal(TerminalOperationClass.Unknown, analysis.OperationClass);
+        Assert.Equal("pytest_interactive_asks", analysis.ReasonCode);
+    }
+
     [Theory]
     [InlineData("ruff", new[] { "check" })]
     [InlineData("mypy", new[] { "." })]
@@ -78,5 +95,25 @@ public sealed class PythonCommandAnalyzerTests
         var analysis = _analyzer.Analyze(@"C:\venv\Scripts\pytest.exe", ["--pdb"]);
 
         Assert.Equal(TerminalOperationClass.Unknown, analysis.OperationClass);
+    }
+
+    [Fact]
+    public void Pytest_plugin_flag_must_be_the_explicit_non_interactive_plugin()
+    {
+        var safe = _analyzer.Analyze(
+            @"C:\venv\Scripts\pytest.exe",
+            ["-p", "no:cacheprovider"]);
+        var reordered = _analyzer.Analyze(
+            @"C:\venv\Scripts\pytest.exe",
+            ["-p", "evil_plugin", "no:cacheprovider"]);
+        var missingValue = _analyzer.Analyze(
+            @"C:\venv\Scripts\pytest.exe",
+            ["-p"]);
+
+        Assert.Equal(TerminalOperationClass.Test, safe.OperationClass);
+        Assert.Equal(TerminalOperationClass.Unknown, reordered.OperationClass);
+        Assert.Equal(TerminalOperationClass.Unknown, missingValue.OperationClass);
+        Assert.Equal("pytest_interactive_asks", reordered.ReasonCode);
+        Assert.Equal("pytest_interactive_asks", missingValue.ReasonCode);
     }
 }

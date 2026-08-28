@@ -139,6 +139,98 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task RunStepAsync_advertises_every_runtime_tool_with_its_scope()
+    {
+        var observedStart = new TaskCompletionSource<JsonObject>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        await StartServer(async context =>
+        {
+            if (!context.WebSockets.IsWebSocketRequest)
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var hello = JsonNode.Parse(await ReceiveTextAsync(socket)) as JsonObject
+                ?? throw new InvalidOperationException();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = hello["id"]!.GetValue<string>(),
+                ["type"] = "hello.ok",
+                ["seq"] = 0,
+                ["payload"] = new JsonObject
+                {
+                    ["version"] = 2,
+                    ["capabilities"] = new JsonArray("agent.step"),
+                },
+            }.ToJsonString());
+
+            var start = JsonNode.Parse(await ReceiveTextAsync(socket)) as JsonObject
+                ?? throw new InvalidOperationException();
+            observedStart.TrySetResult(start);
+            var correlation = start["correlation_id"]!.GetValue<string>();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = start["id"]!.GetValue<string>(),
+                ["type"] = "agent.step.done",
+                ["seq"] = 1,
+                ["correlation_id"] = correlation,
+                ["payload"] = new JsonObject
+                {
+                    ["text"] = "ok",
+                    ["tool_calls"] = new JsonArray(),
+                    ["finish_reason"] = "stop",
+                },
+            }.ToJsonString());
+        });
+
+        var options = new WorkerClientOptions { Uri = new Uri(_url), Token = _token };
+        var runner = new LoopbackModelStepRunner(options);
+        var context = new ModelContextSnapshot(
+            [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
+            Array.Empty<byte>());
+        var request = new ModelStepRequest(
+            new RunId("run_33333333333333333333333333333333"),
+            new ModelStepId("step_33333333333333333333333333333333"),
+            context,
+            AgentPermissionPreset.FullAccess,
+            1,
+            new string('c', 64));
+
+        await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        var observed = await observedStart.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.NotNull(observed);
+        var settingsNode = observed["payload"]!.AsObject()["settings"];
+        Assert.True(settingsNode is not null, observed.ToJsonString());
+        var settings = settingsNode!.AsObject();
+        var tools = settings["model_tools"]!.AsArray()
+            .Select(item => item!.AsObject())
+            .ToDictionary(item => item["tool_id"]!.GetValue<string>(), StringComparer.Ordinal);
+
+        Assert.Equal(
+            new[]
+            {
+                "files.list", "files.read", "files.glob", "files.search",
+                "files.write", "files.edit", "files.delete", "files.restore",
+                "terminal.run", "terminal.shell",
+            }.Order(StringComparer.Ordinal),
+            tools.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal(
+            ["workspace.read"],
+            tools["files.read"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Equal(
+            ["workspace.write"],
+            tools["files.write"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Equal(
+            ["terminal.execute"],
+            tools["terminal.run"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+    }
+
+    [Fact]
     public async Task Cancellation_emits_agent_step_cancel_before_closing()
     {
         var cancelReceived = new TaskCompletionSource<string>();

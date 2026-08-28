@@ -36,8 +36,11 @@ def _request(
     *,
     token: str | None,
     json_body: Mapping[str, object] | None = None,
+    additional_headers: Mapping[str, str] | None = None,
 ) -> object:
     headers = {"Authorization": f"Bearer {token}"} if token else {}
+    if additional_headers:
+        headers.update(additional_headers)
     kwargs: dict[str, object] = {"headers": headers}
     if json_body is not None:
         kwargs["json"] = dict(json_body)
@@ -168,6 +171,7 @@ def probe_http_routes(
                     url,
                     token=token,
                     json_body=request.json_body,
+                    additional_headers=request.headers,
                 )
                 status = _status_code(response)
                 if entry.path == "/sessions/new" and _valid_auth_status(status):

@@ -56,6 +56,8 @@ public sealed class StreamingProcessRunner
             .Where(seed => !string.IsNullOrEmpty(seed))
             .ToArray();
         _outputLimitBytes = Math.Clamp(outputLimitBytes, 1, 8 * 1024 * 1024);
+        ArgumentOutOfRangeException.ThrowIfNegative(headCapacityChars);
+        ArgumentOutOfRangeException.ThrowIfNegative(tailCapacityChars);
         _headCapacityChars = headCapacityChars;
         _tailCapacityChars = tailCapacityChars;
     }
@@ -66,6 +68,14 @@ public sealed class StreamingProcessRunner
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(spec);
+        if (spec.TimeoutMs is < 1 or > 300_000 || spec.OutputLimitBytes < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(spec));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var outputLimitBytes = Math.Min(spec.OutputLimitBytes, _outputLimitBytes);
         using var job = WindowsJobProcessTree.Create();
         var startInfo = BuildStartInfo(spec);
         var stopwatch = Stopwatch.StartNew();
@@ -82,6 +92,21 @@ public sealed class StreamingProcessRunner
         }
         catch (Exception error) when (error is Win32Exception or InvalidOperationException)
         {
+            // Process.Start may succeed before assigning the child to the Job
+            // Object fails. Do not leak that child when returning a stable start
+            // failure to the caller.
+            try
+            {
+                if (process is not null && !process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            process?.Dispose();
             return new StreamingProcessResult(
                 Status: "failed",
                 ExitCode: null,
@@ -107,23 +132,27 @@ public sealed class StreamingProcessRunner
         long nextSequence = 1;
         object sequenceLock = new();
 
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromMilliseconds(spec.TimeoutMs));
+        var drainToken = timeoutCts.Token;
+
         var stdoutTask = DrainAsync(
             process.StandardOutput,
             "stdout",
             stdoutBuffer,
-            spec.OutputLimitBytes,
+            outputLimitBytes,
             EmitAsync,
-            CancellationToken.None);
+            drainToken);
         var stderrTask = DrainAsync(
             process.StandardError,
             "stderr",
             stderrBuffer,
-            spec.OutputLimitBytes,
+            outputLimitBytes,
             EmitAsync,
-            CancellationToken.None);
+            drainToken);
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromMilliseconds(spec.TimeoutMs));
+        // Keep draining cancellable after a timeout/cancel so a slow output
+        // consumer cannot hold the run open after the process tree is killed.
         var status = "running";
         try
         {
@@ -147,7 +176,7 @@ public sealed class StreamingProcessRunner
             }
         }
 
-        await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
+        var droppedByLimit = await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
 
         stopwatch.Stop();
         return new StreamingProcessResult(
@@ -160,8 +189,8 @@ public sealed class StreamingProcessRunner
             StderrTail: stderrBuffer.Tail,
             StdoutBytes: stdoutBuffer.TotalBytes,
             StderrBytes: stderrBuffer.TotalBytes,
-            StdoutDroppedBytes: stdoutBuffer.DroppedBytes,
-            StderrDroppedBytes: stderrBuffer.DroppedBytes,
+            StdoutDroppedBytes: stdoutBuffer.DroppedBytes + droppedByLimit[0],
+            StderrDroppedBytes: stderrBuffer.DroppedBytes + droppedByLimit[1],
             FramesEmitted: Interlocked.Read(ref framesEmitted),
             FramesDropped: Interlocked.Read(ref framesDropped),
             WorkingDirectory: spec.WorkingDirectory);
@@ -187,10 +216,14 @@ public sealed class StreamingProcessRunner
 
             try
             {
-                await onDelta(stream, sequence, text, redacted, CancellationToken.None).ConfigureAwait(false);
+                await onDelta(stream, sequence, text, redacted, emitToken).ConfigureAwait(false);
                 Interlocked.Increment(ref framesEmitted);
             }
             catch (OperationCanceledException)
+            {
+                Interlocked.Increment(ref framesDropped);
+            }
+            catch (InvalidOperationException)
             {
                 Interlocked.Increment(ref framesDropped);
             }
@@ -224,7 +257,7 @@ public sealed class StreamingProcessRunner
         return info;
     }
 
-    private async Task DrainAsync(
+    private async Task<long> DrainAsync(
         StreamReader reader,
         string streamName,
         HeadTailOutputBuffer buffer,
@@ -234,30 +267,105 @@ public sealed class StreamingProcessRunner
     {
         var redactor = new ChunkRedactor(_redactionSeeds);
         var charBuffer = new char[DecoderChunkChars];
-        while (true)
+        long acceptedBytes = 0;
+        long droppedBytes = 0;
+
+        async ValueTask AppendBoundedAsync(string text, bool redacted)
         {
-            var count = await reader.ReadAsync(charBuffer).ConfigureAwait(false);
-            if (count == 0)
+            if (text.Length == 0)
+            {
+                return;
+            }
+
+            var encoded = Encoding.UTF8.GetBytes(text);
+            var remaining = Math.Max(0L, limitBytes - acceptedBytes);
+            if (remaining == 0)
+            {
+                droppedBytes += encoded.Length;
+                return;
+            }
+
+            if (encoded.Length <= remaining)
+            {
+                buffer.Append(text);
+                acceptedBytes += encoded.Length;
+                await emit(streamName, text, redacted, drainToken).ConfigureAwait(false);
+                return;
+            }
+
+            var clipped = TakeUtf8Prefix(text, checked((int)remaining), out var clippedBytes);
+            if (clipped.Length > 0)
+            {
+                buffer.Append(clipped);
+                acceptedBytes += clippedBytes;
+                await emit(streamName, clipped, redacted, drainToken).ConfigureAwait(false);
+            }
+
+            droppedBytes += encoded.Length - clippedBytes;
+        }
+
+        try
+        {
+            while (true)
+            {
+                var count = await reader.ReadAsync(charBuffer.AsMemory(), drainToken).ConfigureAwait(false);
+                if (count == 0)
+                {
+                    break;
+                }
+
+                var text = new string(charBuffer, 0, count);
+                var safeText = redactor.Push(text);
+                await AppendBoundedAsync(safeText, safeText != text || redactor.RedactedAnything).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (drainToken.IsCancellationRequested)
+        {
+            // The process was killed for cancellation/timeout. Keep the output
+            // already received and flush any redactor-held suffix below.
+        }
+        catch (IOException) when (drainToken.IsCancellationRequested)
+        {
+            // A killed child can close a redirected pipe concurrently with the
+            // cancellation token. Treat that as a bounded terminal drain.
+        }
+
+        var flush = redactor.Flush();
+        await AppendBoundedAsync(flush, redactor.RedactedAnything).ConfigureAwait(false);
+        return droppedBytes;
+    }
+
+    private static string TakeUtf8Prefix(string text, int maxBytes, out int usedBytes)
+    {
+        if (maxBytes <= 0 || text.Length == 0)
+        {
+            usedBytes = 0;
+            return string.Empty;
+        }
+
+        var chars = 0;
+        usedBytes = 0;
+        while (chars < text.Length)
+        {
+            var next = chars + 1;
+            if (char.IsHighSurrogate(text[chars])
+                && next < text.Length
+                && char.IsLowSurrogate(text[next]))
+            {
+                next++;
+            }
+
+            var candidateBytes = Encoding.UTF8.GetByteCount(text.AsSpan(chars, next - chars));
+            if (usedBytes + candidateBytes > maxBytes)
             {
                 break;
             }
 
-            var text = new string(charBuffer, 0, count);
-            var safeText = redactor.Push(text);
-            if (safeText.Length > 0)
-            {
-                buffer.Append(safeText);
-                await emit(streamName, safeText, safeText != text || redactor.RedactedAnything, drainToken)
-                    .ConfigureAwait(false);
-            }
+            usedBytes += candidateBytes;
+            chars = next;
         }
 
-        var flush = redactor.Flush();
-        if (flush.Length > 0)
-        {
-            buffer.Append(flush);
-            await emit(streamName, flush, redactor.RedactedAnything, drainToken).ConfigureAwait(false);
-        }
+        return text[..chars];
     }
 
     private sealed class ChunkRedactor(IReadOnlyList<string> seeds)

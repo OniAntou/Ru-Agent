@@ -80,7 +80,7 @@ public sealed class ModelContextLimitTests
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Provider_limit_blocks_the_step_before_any_model_invocation()
+    public async Task Provider_limit_compacts_before_blocking_when_the_projection_is_still_too_large()
     {
         var model = new FakeModelStepRunner();
         model.Enqueue(FinalStep("never reached"));
@@ -93,17 +93,23 @@ public sealed class ModelContextLimitTests
         Assert.Empty(model.Requests);
         Assert.Equal("context_limit_reached", result.ErrorCode);
 
-        var summaryCommit = Assert.Single(
+        var compactionCommit = Assert.Single(
             store.Commits,
-            commit => commit.Payloads.Any(payload => payload.Kind == HarnessPayloadKind.ContinuationSummary));
+            commit => commit.Payloads.Any(payload => payload.Kind == HarnessPayloadKind.ModelContextSummary));
         var summary = Assert.Single(
-            summaryCommit.Payloads,
-            payload => payload.Kind == HarnessPayloadKind.ContinuationSummary);
-        Assert.Equal(HarnessPayloadAudience.InternalOnly, summary.Audience);
-        var startEvent = Assert.Single(summaryCommit.Events);
-        Assert.Equal(HarnessEventKind.ModelStepStarted, startEvent.Kind);
-        Assert.Equal("context_limit_reached", startEvent.SafeCode);
-        Assert.Equal(summary.PayloadId, startEvent.PayloadId);
+            compactionCommit.Payloads,
+            payload => payload.Kind == HarnessPayloadKind.ModelContextSummary);
+        Assert.Equal(HarnessPayloadAudience.ModelContext, summary.Audience);
+        var compactedEvent = Assert.Single(
+            compactionCommit.Events,
+            item => item.Kind == HarnessEventKind.ContextCompacted);
+        Assert.Equal("context_compacted", compactedEvent.SafeCode);
+        Assert.Null(compactedEvent.PayloadId);
+        var limitEvent = Assert.Single(
+            store.Commits.SelectMany(commit => commit.Events),
+            item => item.SafeCode == "context_limit_reached");
+        Assert.Equal(HarnessEventKind.ModelStepStarted, limitEvent.Kind);
+        Assert.Null(limitEvent.PayloadId);
     }
 
     [Fact]
@@ -215,9 +221,10 @@ public sealed class ModelContextLimitTests
             CancellationToken cancellationToken)
         {
             var entry = TextEntry("large-1", 1, new string('z', 4096));
+            var current = TextEntry("current", 2, "current request");
             return Task.FromResult(new ModelContextSourceSnapshot(
                 Array.Empty<ModelContextEntry>(),
-                new[] { entry }));
+                new[] { entry, current }));
         }
     }
 

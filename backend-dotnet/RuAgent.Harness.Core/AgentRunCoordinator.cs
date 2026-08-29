@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
@@ -37,6 +38,8 @@ public sealed class AgentRunCoordinator
     private readonly IAgentReplyPolicy _replyPolicy;
     private readonly IAgentReplyEffectSink _replyEffects;
     private readonly ISystemPromptContextProvider _promptContextProvider;
+    private readonly ContextBudgetPolicy _contextBudgetPolicy;
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _compactionGates = new(StringComparer.Ordinal);
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -53,7 +56,8 @@ public sealed class AgentRunCoordinator
         IAgentActivitySink? activitySink = null,
         IAgentReplyPolicy? replyPolicy = null,
         IAgentReplyEffectSink? replyEffects = null,
-        ISystemPromptContextProvider? promptContextProvider = null)
+        ISystemPromptContextProvider? promptContextProvider = null,
+        ContextBudgetPolicy? contextBudgetPolicy = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -71,6 +75,7 @@ public sealed class AgentRunCoordinator
         _replyEffects = replyEffects ?? new NoopAgentReplyEffectSink();
         _promptContextProvider = promptContextProvider
             ?? throw new ArgumentNullException(nameof(promptContextProvider));
+        _contextBudgetPolicy = contextBudgetPolicy ?? new ContextBudgetPolicy();
         _tools = new AgentToolExecutionPipeline(
             gateway ?? throw new ArgumentNullException(nameof(gateway)),
             store,
@@ -97,59 +102,32 @@ public sealed class AgentRunCoordinator
         var context = await _contextAssembler
             .AssembleAsync(runId, cancellationToken)
             .ConfigureAwait(false);
-        var modelStepId = _ids.NewModelStepId();
-
-        var providerLimit = _contextLimit?.MaxPromptTokens(runId);
-        if (providerLimit is { } limitTokens
-            && ModelContextSizeEstimator.EstimateTokens(context) > limitTokens)
-        {
-            // Never silently drop earlier results: the bounded continuation summary is
-            // stored as a private payload and referenced from a safe event. Continue can
-            // retry, but while the assembled context still exceeds the true provider
-            // limit the step stays blocked.
-            var summary = ContinuationSummaryBuilder.Build(
+        var preflight = await PreflightContextAsync(
+                run,
                 context,
-                ContinuationSummaryBuilder.DefaultMaxChars);
-            var summaryBytes = Encoding.UTF8.GetBytes(summary.Text);
-            var summaryPayloadId = _ids.NewPayloadId();
-            var summaryPayload = new HarnessPayloadIntent(
-                summaryPayloadId,
-                HarnessPayloadKind.ContinuationSummary,
-                HarnessPayloadAudience.InternalOnly,
-                HarnessPayloadEncoding.Utf8Text,
-                Math.Max(summaryBytes.Length, 1),
-                summaryBytes);
-            var limitEvent = new HarnessEventIntent(
-                _ids.NewEventId(),
-                HarnessEventKind.ModelStepStarted,
-                modelStepId: modelStepId,
-                payloadId: summaryPayloadId,
-                safeCode: "context_limit_reached");
-            var limitTransition = AgentRunStateMachine.TryTransition(
-                run.Status,
-                HarnessRunTransition.ExhaustBudget);
-            if (!limitTransition.Accepted)
+                cancellationToken)
+            .ConfigureAwait(false);
+        run = preflight.Run ?? run;
+        if (preflight.ErrorCode is not null)
+        {
+            if (preflight.ErrorCode == "context_limit_reached")
             {
-                throw new InvalidOperationException(limitTransition.ErrorCode);
+                var limitModelStepId = _ids.NewModelStepId();
+                run = await CommitContextLimitAsync(
+                        run,
+                        limitModelStepId,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return AgentRunStepResult.Blocked(run, "context_limit_reached");
             }
 
-            var limitedNext = run.Advance(
-                limitTransition.Next,
-                run.BudgetWindow,
-                run.ModelStepsInWindow,
-                run.ToolCallsInWindow,
-                1,
-                _time.UtcNow);
-            run = await CommitAsync(
-                    run,
-                    limitedNext,
-                    new[] { limitEvent },
-                    new[] { summaryPayload },
-                    Array.Empty<ConversationOutboxIntent>(),
-                    cancellationToken)
-                .ConfigureAwait(false);
-            return AgentRunStepResult.Blocked(run, "context_limit_reached");
+            return AgentRunStepResult.Blocked(
+                preflight.Run ?? run,
+                preflight.ErrorCode);
         }
+
+        context = preflight.Context ?? context;
+        var modelStepId = _ids.NewModelStepId();
 
         var reservation = AgentBudgetPolicy.ReserveModelStep(run, _time.UtcNow);
         var startEvent = new HarnessEventIntent(
@@ -459,6 +437,56 @@ public sealed class AgentRunCoordinator
             .ConfigureAwait(false);
     }
 
+    public async Task<ContextCompactionResult> CompactAsync(
+        RunId runId,
+        ContextCompactionStrategy strategy,
+        ContextCompactionReason reason,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.IsDefined(strategy))
+        {
+            throw new ArgumentOutOfRangeException(nameof(strategy));
+        }
+
+        if (!Enum.IsDefined(reason))
+        {
+            throw new ArgumentOutOfRangeException(nameof(reason));
+        }
+
+        var gate = _compactionGates.GetOrAdd(runId.Value, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            if (run.State.IsTerminal())
+            {
+                return ContextCompactionResult.NoOp(run, strategy);
+            }
+
+            var providerLimit = _contextLimit?.MaxPromptTokens(runId);
+            if (providerLimit is not { } limitTokens)
+            {
+                return ContextCompactionResult.NotAvailable(run, strategy);
+            }
+
+            var context = await _contextAssembler
+                .AssembleAsync(runId, cancellationToken)
+                .ConfigureAwait(false);
+            return await CompactSnapshotLockedAsync(
+                    run,
+                    context,
+                    limitTokens,
+                    strategy,
+                    reason,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     /// <summary>
     /// Moves a Running run to WaitingApproval without consuming any budget counter.
     /// </summary>
@@ -566,6 +594,188 @@ public sealed class AgentRunCoordinator
                         HarnessEventKind.ReconciliationResolved,
                         safeCode: command.ToWireToken()),
                 },
+                Array.Empty<HarnessPayloadIntent>(),
+                Array.Empty<ConversationOutboxIntent>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<ContextPreflightResult> PreflightContextAsync(
+        AgentRun run,
+        ModelContextSnapshot context,
+        CancellationToken cancellationToken)
+    {
+        var providerLimit = _contextLimit?.MaxPromptTokens(run.RunId);
+        if (providerLimit is not { } limitTokens)
+        {
+            return new ContextPreflightResult(run, context, null);
+        }
+
+        var gate = _compactionGates.GetOrAdd(
+            run.RunId.Value,
+            _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var decision = _contextBudgetPolicy.Evaluate(
+                ModelContextSizeEstimator.EstimateTokens(context),
+                limitTokens,
+                ContextCompactionStrategy.Normal);
+            if (decision.NeedsCompaction)
+            {
+                var compaction = await CompactSnapshotLockedAsync(
+                        run,
+                        context,
+                        limitTokens,
+                        ContextCompactionStrategy.Normal,
+                        ContextCompactionReason.Automatic,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (compaction.Outcome == ContextCompactionOutcome.Committed)
+                {
+                    run = compaction.Run!;
+                    context = await _contextAssembler
+                        .AssembleAsync(run.RunId, cancellationToken)
+                        .ConfigureAwait(false);
+                    decision = _contextBudgetPolicy.Evaluate(
+                        ModelContextSizeEstimator.EstimateTokens(context),
+                        limitTokens,
+                        ContextCompactionStrategy.Normal);
+                }
+                else if (compaction.Outcome is ContextCompactionOutcome.CommitConflict
+                    or ContextCompactionOutcome.RunNotFound)
+                {
+                    return new ContextPreflightResult(
+                        compaction.Run ?? run,
+                        null,
+                        compaction.ErrorCode ?? "commit_conflict");
+                }
+            }
+
+            return ModelContextSizeEstimator.EstimateTokens(context) > decision.UsablePromptTokens
+                ? new ContextPreflightResult(run, null, "context_limit_reached")
+                : new ContextPreflightResult(run, context, null);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<ContextCompactionResult> CompactSnapshotLockedAsync(
+        AgentRun run,
+        ModelContextSnapshot context,
+        long limitTokens,
+        ContextCompactionStrategy strategy,
+        ContextCompactionReason reason,
+        CancellationToken cancellationToken)
+    {
+        var decision = _contextBudgetPolicy.Evaluate(
+            ModelContextSizeEstimator.EstimateTokens(context),
+            limitTokens,
+            strategy);
+        var eventId = _ids.NewEventId();
+        var plan = ContextCompactionPlanner.Plan(
+            context,
+            decision,
+            "compact-" + eventId.Value,
+            reason);
+        if (plan is null)
+        {
+            return ContextCompactionResult.NoOp(run, strategy);
+        }
+
+        var summaryBytes = Encoding.UTF8.GetBytes(plan.SummaryText);
+        var summaryPayload = new HarnessPayloadIntent(
+            _ids.NewPayloadId(),
+            HarnessPayloadKind.ModelContextSummary,
+            HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            Math.Max(summaryBytes.Length, 1),
+            summaryBytes);
+        var compactedEvent = new HarnessEventIntent(
+            eventId,
+            HarnessEventKind.ContextCompacted,
+            safeCount: checked((int)plan.CoveredEntries.Count),
+            safeCode: "context_compacted");
+        var next = run.Advance(
+            run.Status,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            appendedEventCount: 1,
+            updatedAt: _time.UtcNow);
+        var commit = await _store.CommitAsync(
+                new HarnessCommit(
+                    run.RunId,
+                    run.Version,
+                    next,
+                    [compactedEvent],
+                    [summaryPayload],
+                    Array.Empty<ConversationOutboxIntent>(),
+                    new ContextCompactionIntent(
+                        run.RunId,
+                        plan.CompactionId,
+                        summaryPayload.PayloadId,
+                        strategy,
+                        reason,
+                        plan.CoveredRanges,
+                        plan.BeforeTokens,
+                        plan.AfterTokens,
+                        plan.InputHash)),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return commit.Outcome switch
+        {
+            HarnessCommitOutcome.Committed => new ContextCompactionResult(
+                ContextCompactionOutcome.Committed,
+                commit.Run,
+                strategy,
+                plan.CompactionId,
+                plan.BeforeTokens,
+                plan.AfterTokens),
+            HarnessCommitOutcome.VersionConflict => new ContextCompactionResult(
+                ContextCompactionOutcome.CommitConflict,
+                commit.Run,
+                strategy,
+                ErrorCode: "commit_conflict"),
+            HarnessCommitOutcome.RunNotFound => new ContextCompactionResult(
+                ContextCompactionOutcome.RunNotFound,
+                null,
+                strategy,
+                ErrorCode: "run_not_found"),
+            _ => throw new InvalidOperationException("unknown_commit_outcome"),
+        };
+    }
+
+    private async Task<AgentRun> CommitContextLimitAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        CancellationToken cancellationToken)
+    {
+        var transition = AgentRunStateMachine.TryTransition(
+            run.Status,
+            HarnessRunTransition.ExhaustBudget);
+        if (!transition.Accepted)
+        {
+            throw new InvalidOperationException(transition.ErrorCode);
+        }
+
+        var next = run.Advance(
+            transition.Next,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            appendedEventCount: 1,
+            updatedAt: _time.UtcNow);
+        return await CommitAsync(
+                run,
+                next,
+                [new HarnessEventIntent(
+                    _ids.NewEventId(),
+                    HarnessEventKind.ModelStepStarted,
+                    modelStepId: modelStepId,
+                    safeCode: "context_limit_reached")],
                 Array.Empty<HarnessPayloadIntent>(),
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
@@ -826,4 +1036,9 @@ public sealed class AgentRunCoordinator
         HarnessRunState.Completed => "completed",
         _ => "state_changed",
     };
+
+    private sealed record ContextPreflightResult(
+        AgentRun? Run,
+        ModelContextSnapshot? Context,
+        string? ErrorCode);
 }

@@ -155,6 +155,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly RuInstructionLoader _instructionLoader;
     private readonly ISettingsStore _settings;
     private readonly ITimeProvider _time;
+    private readonly IModelContextLimitProvider _contextLimit;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -170,7 +171,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         IAgentReplyEffectSink? replyEffects = null,
         RuInstructionLoader? instructionLoader = null,
         ISettingsStore? settings = null,
-        ITimeProvider? time = null)
+        ITimeProvider? time = null,
+        IModelContextLimitProvider? contextLimit = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -186,6 +188,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _instructionLoader = instructionLoader ?? new RuInstructionLoader();
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _time = time ?? throw new ArgumentNullException(nameof(time));
+        _contextLimit = contextLimit
+            ?? new StaticModelContextLimitProvider(32_768);
     }
 
     public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null)
@@ -221,7 +225,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             new ToolCallScheduler(),
             frames,
             _transientRedactor ?? KnownSecretRedactor.Empty,
-            null,
+            _contextLimit,
             _inspectionGate,
             activitySink,
             _replyPolicy,

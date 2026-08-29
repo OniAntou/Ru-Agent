@@ -14,6 +14,8 @@ public sealed class InMemoryHarnessEventStore : IHarnessEventStore
 
     public List<HarnessCommit> Commits { get; } = new();
 
+    public bool ReturnVersionConflict { get; init; }
+
     public void Seed(AgentRun run)
     {
         lock (_gate)
@@ -60,6 +62,11 @@ public sealed class InMemoryHarnessEventStore : IHarnessEventStore
             }
 
             if (current.Version != commit.ExpectedVersion)
+            {
+                return Task.FromResult(HarnessCommitResult.VersionConflict(current));
+            }
+
+            if (ReturnVersionConflict)
             {
                 return Task.FromResult(HarnessCommitResult.VersionConflict(current));
             }
@@ -137,6 +144,7 @@ public sealed class InMemoryHarnessEventStore : IHarnessEventStore
         HarnessEventKind.ReconciliationResolved => "reconciliation.resolved",
         HarnessEventKind.TransientFramesDropped => "transient.frames_dropped",
         HarnessEventKind.ModelPromptComposed => "model.prompt_composed",
+        HarnessEventKind.ContextCompacted => "context.compacted",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 }

@@ -6,10 +6,24 @@ public sealed record VtsCatalog
         string modelId,
         IEnumerable<string> hotkeyCodes,
         IEnumerable<string> expressionCodes)
+        : this(modelId, string.Empty, hotkeyCodes, expressionCodes)
+    {
+    }
+
+    public VtsCatalog(
+        string modelId,
+        string modelName,
+        IEnumerable<string> hotkeyCodes,
+        IEnumerable<string> expressionCodes)
     {
         if (string.IsNullOrWhiteSpace(modelId) || modelId.Length > 256)
         {
             throw new ArgumentException("VTube Studio model id is invalid.", nameof(modelId));
+        }
+
+        if (modelName is null || modelName.Length > 256)
+        {
+            throw new ArgumentException("VTube Studio model name is invalid.", nameof(modelName));
         }
 
         HotkeyCodes = NormalizeCodes(hotkeyCodes, nameof(hotkeyCodes));
@@ -25,9 +39,11 @@ public sealed record VtsCatalog
         }
 
         ModelId = modelId;
+        ModelName = modelName;
     }
 
     public string ModelId { get; }
+    public string ModelName { get; }
     public IReadOnlySet<string> HotkeyCodes { get; }
     public IReadOnlySet<string> ExpressionCodes { get; }
     public IReadOnlySet<string> AllCodes => HotkeyCodes.Concat(ExpressionCodes).ToHashSet(StringComparer.Ordinal);
@@ -69,6 +85,11 @@ public sealed record VtsCatalog
     private static string NormalizeCode(string code)
     {
         if (string.IsNullOrWhiteSpace(code))
+        {
+            throw new ArgumentException("VTube Studio code is invalid.", nameof(code));
+        }
+
+        if (code.Any(char.IsControl))
         {
             throw new ArgumentException("VTube Studio code is invalid.", nameof(code));
         }

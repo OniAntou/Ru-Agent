@@ -90,21 +90,21 @@
 
 **Interfaces:** `GoogleSpeechRecognizer.RecognizeAsync(SpeechRequest, CancellationToken)` and `WavAudioValidator.Validate(ReadOnlySpan<byte>, int expectedRate, int channels)`.
 
-- [ ] Test valid 16 kHz mono PCM WAV, malformed RIFF/non-PCM/wrong rate/empty/oversized audio, whitespace normalization, no-match mapping, timeout/5xx mapping, and secret/response-body privacy.
-- [ ] Run focused Adapter/Worker filters; expected FAIL.
-- [ ] Implement language `vi-VN`, the existing 15-second budget, normalized non-empty transcripts, and no persistence. Use injected transport; if the anonymous `speech_recognition` endpoint cannot be reproduced with a stable C# request, keep it as an explicitly isolated provider and document that fact instead of silently changing the contract.
-- [ ] Run focused C# tests plus Python STT references sequentially; expected PASS.
-- [ ] Commit `git add backend-dotnet/RuAgent.Runtime.Adapters/Speech backend-dotnet/RuAgent.Runtime.Worker/WorkerV1RequestRouter.cs backend-dotnet/RuAgent.Runtime.Adapters.Tests/GoogleSpeechRecognizerTests.cs backend-dotnet/RuAgent.Runtime.Worker.Tests/SpeechV1HandlerTests.cs; git commit -m "feat: move speech recognition boundary to managed runtime"`.
+- [x] Test valid 16 kHz mono PCM WAV, malformed RIFF/non-PCM/wrong rate/empty/oversized audio, whitespace normalization, no-match mapping, timeout/5xx mapping, and secret/response-body privacy.
+- [x] Run focused Adapter/Worker filters; expected FAIL.
+- [x] Implement language `vi-VN`, the existing 15-second budget, normalized non-empty transcripts, and no persistence. Use injected transport; if the anonymous `speech_recognition` endpoint cannot be reproduced with a stable C# request, keep it as an explicitly isolated provider and document that fact instead of silently changing the contract.
+- [x] Run focused C# tests plus Python STT references sequentially; expected PASS.
+- [x] Commit `git add backend-dotnet/RuAgent.Runtime.Adapters/Speech backend-dotnet/RuAgent.Runtime.Worker/WorkerV1RequestRouter.cs backend-dotnet/RuAgent.Runtime.Adapters.Tests/GoogleSpeechRecognizerTests.cs backend-dotnet/RuAgent.Runtime.Worker.Tests/SpeechV1HandlerTests.cs; git commit -m "feat: move speech recognition boundary to managed runtime"`.
 
 ### Task 7: Port VTube Studio catalog/actions
 
 **Files:** Create `backend-dotnet/RuAgent.Runtime.Adapters/Devices/VtubeStudioClient.cs` and `VtubeStudioCatalog.cs`; bind in `WorkerV1RequestRouter.cs`; tests `VtubeStudioClientTests.cs` and `VtsV1HandlerTests.cs`.
 
-- [ ] Use an in-process WebSocket server to test authentication, fragmentation/size bounds, reconnect, model-change invalidation, catalog filtering, duplicate/unknown actions, and safe error mapping.
-- [ ] Run the focused Adapter filter; expected FAIL.
-- [ ] Implement the existing VTube Studio authentication/message flow with `ClientWebSocket`; revalidate the current catalog immediately before each action; accept at most three codes; strip private suffixes before any TTS/history/memory path.
-- [ ] Run focused C# tests plus Python VTS reference tests sequentially; expected PASS.
-- [ ] Commit `git add backend-dotnet/RuAgent.Runtime.Adapters/Devices backend-dotnet/RuAgent.Runtime.Worker/WorkerV1RequestRouter.cs backend-dotnet/RuAgent.Runtime.Adapters.Tests/VtubeStudioClientTests.cs backend-dotnet/RuAgent.Runtime.Worker.Tests/VtsV1HandlerTests.cs; git commit -m "feat: move VTube Studio adapter to managed runtime"`.
+- [x] Use an in-process WebSocket transport harness to test authentication, fragmentation/size bounds, reconnect, model-change invalidation, catalog filtering, duplicate/unknown actions, and safe error mapping.
+- [x] Run the focused Adapter filter; expected FAIL.
+- [x] Implement the existing VTube Studio authentication/message flow with `ClientWebSocket`; revalidate the current catalog immediately before each action; accept at most three codes; strip private suffixes before any TTS/history/memory path.
+- [x] Run focused C# tests plus Python VTS reference tests sequentially; expected PASS.
+- [x] Commit `git add backend-dotnet/RuAgent.Runtime.Adapters/Devices backend-dotnet/RuAgent.Runtime.Worker/WorkerV1RequestRouter.cs backend-dotnet/RuAgent.Runtime.Adapters.Tests/VtubeStudioClientTests.cs backend-dotnet/RuAgent.Runtime.Worker.Tests/VtsV1HandlerTests.cs; git commit -m "feat: move VTube Studio adapter to managed runtime"`.
 
 ### Task 8: Port Gemini observation and privacy filtering
 

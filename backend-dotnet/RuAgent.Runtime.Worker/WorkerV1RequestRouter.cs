@@ -5,6 +5,7 @@ using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Audio;
 using RuAgent.Runtime.Adapters.Runtime;
 using RuAgent.Runtime.Adapters.Speech;
+using RuAgent.Runtime.Adapters.Devices;
 using RuAgent.Runtime.Core.Contracts;
 
 namespace RuAgent.Runtime.Worker;
@@ -64,12 +65,14 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
     private readonly ManagedRuntimeSettingsService _settings;
     private readonly PrivateRuntimeRequestRouter _privateRouter;
     private readonly VoiceStreamCoordinator? _voice;
+    private readonly IVtubeStudioClient? _vts;
 
     public ManagedWorkerV1RequestRouter(
         ManagedRuntimeSettingsService settings,
         PrivateRuntimeRequestRouter privateRouter,
         VoiceStreamCoordinator? voice = null,
-        ISpeechRecognizer? speech = null)
+        ISpeechRecognizer? speech = null,
+        IVtubeStudioClient? vts = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         ArgumentNullException.ThrowIfNull(privateRouter);
@@ -80,6 +83,7 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
                 "/voice/transcribe",
                 new SpeechRuntimeRequestHandler(speech));
         _voice = voice;
+        _vts = vts;
     }
 
     public async IAsyncEnumerable<WorkerV1Reply> RouteAsync(
@@ -107,6 +111,12 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
                 }
 
                 yield break;
+            case WorkerV1Contracts.VtsCatalog:
+                yield return await HandleVtsCatalogAsync(payload, cancellationToken).ConfigureAwait(false);
+                yield break;
+            case WorkerV1Contracts.VtsAction:
+                yield return await HandleVtsActionAsync(payload, cancellationToken).ConfigureAwait(false);
+                yield break;
             default:
                 yield return Error(
                     type is WorkerV1Contracts.VoiceStart
@@ -116,6 +126,113 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
                             : "unsupported_operation",
                     retryable: true);
                 yield break;
+        }
+    }
+
+    private async Task<WorkerV1Reply> HandleVtsCatalogAsync(
+        JsonObject payload,
+        CancellationToken cancellationToken)
+    {
+        if (_vts is null)
+        {
+            return Error("vts_unavailable", retryable: true);
+        }
+
+        try
+        {
+            if (!string.Equals(OptionalText(payload, "operation", 32), "catalog", StringComparison.Ordinal))
+            {
+                return Error("invalid_request", retryable: false);
+            }
+
+            var catalog = await _vts.ReadCatalogAsync(cancellationToken).ConfigureAwait(false);
+            return new WorkerV1Reply(
+                WorkerV1Contracts.VtsCatalog,
+                new JsonObject
+                {
+                    ["model_id"] = catalog.ModelId,
+                    ["model_name"] = catalog.ModelName,
+                    ["hotkey_codes"] = new JsonArray(catalog.HotkeyCodes
+                        .OrderBy(code => code, StringComparer.Ordinal)
+                        .Select(code => (JsonNode?)code)
+                        .ToArray()),
+                    ["expression_codes"] = new JsonArray(catalog.ExpressionCodes
+                        .OrderBy(code => code, StringComparer.Ordinal)
+                        .Select(code => (JsonNode?)code)
+                        .ToArray()),
+                });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (VtubeStudioProviderException error)
+        {
+            return Error(error.Code, error.Retryable);
+        }
+        catch (ArgumentException)
+        {
+            return Error("invalid_request", retryable: false);
+        }
+        catch
+        {
+            return Error("vts_catalog_failed", retryable: true);
+        }
+    }
+
+    private async Task<WorkerV1Reply> HandleVtsActionAsync(
+        JsonObject payload,
+        CancellationToken cancellationToken)
+    {
+        if (_vts is null)
+        {
+            return Error("vts_unavailable", retryable: true);
+        }
+
+        try
+        {
+            if (!string.Equals(OptionalText(payload, "operation", 32), "action", StringComparison.Ordinal)
+                || payload["codes"] is not JsonArray codeArray
+                || codeArray.Count is < 1 or > RuntimeLimits.MaxVtsActionCodes)
+            {
+                return Error("invalid_request", retryable: false);
+            }
+
+            var codes = codeArray.Select(node => node is JsonValue value && value.TryGetValue<string>(out var code)
+                    ? code
+                    : throw new ArgumentException("VTube Studio action code is invalid.", nameof(payload)))
+                .ToArray();
+            var catalog = await _vts.ReadCatalogAsync(cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<string> normalized;
+            try
+            {
+                normalized = catalog.ValidateActionCodes(codes);
+            }
+            catch (ArgumentException)
+            {
+                return Error("unknown_vts_code", retryable: false);
+            }
+
+            await _vts.TriggerAsync(normalized, cancellationToken).ConfigureAwait(false);
+            return new WorkerV1Reply(
+                WorkerV1Contracts.VtsAction,
+                new JsonObject { ["status"] = "ok" });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (VtubeStudioProviderException error)
+        {
+            return Error(error.Code, error.Retryable);
+        }
+        catch (ArgumentException)
+        {
+            return Error("invalid_request", retryable: false);
+        }
+        catch
+        {
+            return Error("vts_action_failed", retryable: true);
         }
     }
 

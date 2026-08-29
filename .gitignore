@@ -21,8 +21,8 @@ backend-dotnet/*/obj/
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.venv/
-.venv311/
+.mypy_cache/
+.ruff_cache/
 
 # Data/cache (large or generated)
 .tmp/

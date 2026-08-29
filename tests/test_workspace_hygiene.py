@@ -4,6 +4,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+DEAD_CODE_TRACKED_PATHS = (
+    "src/ru_runtime/policy/safety_patterns.py",
+    "run_tests.py",
+    "scripts/probe_gemini_vision.py",
+)
+
 OBSOLETE_TRACKED_PATHS = (
     "scripts/test_inject.py",
     "scripts/test_keys.py",
@@ -14,6 +20,11 @@ OBSOLETE_TRACKED_PATHS = (
     "scripts/test_settings.py",
     "scripts/test_tts.py",
 )
+
+
+def test_disconnected_tracked_entrypoints_are_absent() -> None:
+    remaining = [path for path in DEAD_CODE_TRACKED_PATHS if (ROOT / path).exists()]
+    assert remaining == []
 
 
 def test_reviewed_one_off_probes_and_duplicate_reference_are_absent() -> None:

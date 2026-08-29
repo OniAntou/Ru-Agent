@@ -6,12 +6,16 @@ v2 surfaces (2026-08-29).
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
+This checkpoint includes declarative Skills only. Subagent orchestration, LSP,
+extension/plugin discovery, and MCP servers are intentionally outside the
+runtime surface.
+
 > **Current checkpoint (Agent-only generation, 2026-08-29):**
 > - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
 >   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
 >   `RuAgent.Client`. Worker v1 is a device/runtime adapter only; Agent
 >   generation runs on the v2 one-step protocol at `/worker/v2` and the
->   `/agent/v1/*` (13 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
+>   `/agent/v1/*` (15 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
 >   `id:<sequence>`/`Last-Event-ID`/`after_sequence` cursor, reconnect replay).
 >   This checkpoint exposes Broker-backed model tools (`files.list`,
 >   `files.glob`, `files.search`, `files.read` offset/limit, `files.write`,
@@ -34,7 +38,13 @@ is actually allowed to select. Those states are not interchangeable.
 >   cannot create global rules or confirm trust/approval.
 >   Headless terminal requests are available under the same policy/approval
 >   boundary; the managed Git commit workflow (Phase 3 Task 6) is not shipped.
-> - Public Contract is now **54 HTTP plus 1 WebSocket** (41 + 13 `/agent/v1/*`;
+>   Typed command dispatch is available through `POST /agent/v1/runs/{runId}/commands`;
+>   `/compact`, `/help`, `/skills`, and `/skill <id> {json}` use the shared
+>   Protocol parser and do not become model history. Declarative Skills are
+>   session-granted and execute through the Broker's existing scope/approval
+>   boundary. Configured `web.search` and `web.fetch` are optional read-only
+>   capabilities; their results are bounded, sanitized, and explicitly untrusted.
+> - Public Contract is now **56 HTTP plus 1 WebSocket** (41 + 15 `/agent/v1/*`;
 >   `/voice/stream` is the only public WebSocket).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,
@@ -49,25 +59,27 @@ is actually allowed to select. Those states are not interchangeable.
 
 ## Current capability matrix
 
-Model advertisement derives from the Agent session capability profile: a
-binding is visible to the model exactly when its manifest scopes fit the
-active profile's scope set. Standard grants the read/write/device scopes;
-Full Access broadens policy fallbacks and also advertises the
-`terminal.execute`/`terminal.network` scopes. The `network` argument on a
+The Worker v2 settings currently use one static core executable surface for both
+permission presets. The model therefore receives the same ten core bindings in
+Standard and Full Access; the preset changes Broker policy decisions and
+fallbacks, not the advertised list. Configured deployments may add the
+read-only `web.search` and `web.fetch` bindings only when WebOptions and the
+matching session scopes are present. The `network_intent` argument on a
 terminal request is descriptive input metadata, not a security boundary.
 
-| Capability | Agent (Standard) | Agent (Full Access) |
+| Worker v2 model capability | Agent (Standard) | Agent (Full Access) |
 | --- | --- | --- |
 | `files.list@1.0.0`, `files.glob@1.0.0`, `files.search@1.0.0`, `files.read@1.0.0` (`workspace.read`) | automatic | automatic |
-| `files.write@1.0.0`, `files.edit@1.0.0` (`workspace.write`) | `allow` for ordinary trusted-workspace create/edit; outside paths ask with `external_directory_required`; `workspace_changed` on preimage mismatch | `allow` fallback (never bypasses trust); protected/destructive/network/unknown actions retain approval |
-| `files.delete@1.0.0` (`workspace.write`, recoverable) | `ask` → approval card + preview; `recovery_too_large` beyond 1 MiB; opaque `recovery_id` | `ask` → same; Full Access never bypasses recovery or trust |
-| `files.restore@1.0.0` (`workspace.write`, one-time) | advertised only while the active run owns a valid `recovery_id`; replay returns `recovery_consumed` | same |
-| `notes.create@1.0.0` (`workspace.write`) | approval card + one-time token | approval card + one-time token |
-| `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | not advertised | explicit approval for every request; current Windows user; arbitrary host code/sockets |
-| `system.volume@1.0.0` (`system.write`) | yes, verified readback required | yes, verified readback required |
-| `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` (`system.read`) | Broker-internal | Broker-internal |
-| Web search/fetch, connectors, `app.open` | absent | absent |
-| Skills | disabled | disabled |
+| `files.write@1.0.0`, `files.edit@1.0.0` (`workspace.write`) | `allow` for ordinary trusted-workspace create/edit; outside paths ask with `external_directory_required`; `workspace_changed` on preimage mismatch | `allow` fallback (never bypasses trust or invariants) |
+| `files.delete@1.0.0` (`workspace.write`, recoverable) | `ask` → approval card + preview; `recovery_too_large` beyond 1 MiB; opaque `recovery_id` | ordinary targets use the Full fallback; protected/root targets still ask or deny; recovery remains bounded |
+| `files.restore@1.0.0` (`workspace.write`, one-time) | advertised; requires a live recovery record; replay returns `recovery_consumed` | advertised; same one-time recovery constraint |
+| `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | advertised; analyzer/rule/approval policy decides each request | advertised; well-formed calls normally use the Full fallback; extended timeouts still ask |
+| `system.volume@1.0.0` (`system.write`) | not a model-selection binding; deterministic parser with verified readback | same deterministic direct-action path |
+| `notes.create@1.0.0`, `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` | Broker-internal; not advertised | Broker-internal; not advertised |
+| `web.search@1.0.0` (`web.search`) | only when WebOptions.SearchEndpoint and session scope are present; bounded citations | same gate; optional approval |
+| `web.fetch@1.0.0` (`web.fetch`) | only when WebOptions.Enabled and session scope are present; bounded sanitized text | same gate; optional approval |
+| Connectors, `app.open` | Broker-internal; not advertised | Broker-internal; not advertised |
+| Declarative Skills (`skill.execute`) | only explicitly granted manifests; each step rechecks tool scope/approval | same explicit grant and checks |
 
 Standard allows ordinary trusted-workspace reads/creates/edits. An explicit
 absolute path outside that root is not silently rejected: the first request
@@ -78,7 +90,10 @@ directory grant); relative traversal still cannot escape the trusted root.
 Delete, protected paths, declared network, and unknown operations
 keep their own approval gates even after a directory grant;
 Full Access changes fallback but never bypasses workspace trust or protocol
-invariants and remains a current-Windows-user boundary. Durable approvals
+invariants and remains a current-Windows-user boundary. Full Access can allow
+well-formed terminal and ordinary file calls through its fallback; hard
+invariants, protected paths, and extended timeout thresholds still require the
+corresponding approval or denial. Durable approvals
 (`AllowOnce`/`AllowRun`/`AllowProject`/`Deny`) use first-writer-wins
 `approval_stale`, exact scope preview (the model cannot supply a broadening
 glob), 30-min expiry,
@@ -87,16 +102,16 @@ approval under snapshot N → persist reusable rule (or `reusable_rule_not_saved
 → execute already-authorized call under N → receipt → N+1 invalidates other
 pending N decisions. `network_intent` is descriptive audit/approval metadata,
 not network isolation. On the headless Agent v2 path, `terminal.run` and
-`terminal.shell` are available and execute as the current Windows user: they can
-run arbitrary host code and open sockets; Full Access advertises the terminal
-bindings but both `terminal.run` and `terminal.shell` require a fresh explicit
-approval for every request. Filesystem mutations remain trust- and
-approval-gated: a project/run external-directory grant covers only the
-canonical directory's read/create/edit operations; delete, protected paths,
-network, and unknown operations keep their own approval gates. `native_pending`
-means the volume binding has a native Windows adapter and deterministic
-contract/adapter evidence, but real endpoint and GUI acceptance are still
-pending until the user explicitly runs them.
+`terminal.shell` execute as the current Windows user and can run arbitrary host
+code or open sockets. Standard usually asks for shell, mutations, unknown
+commands, network intent, or other analyzer-risk cases; Full Access normally
+allows a well-formed request but still asks for an extended timeout and still
+fails hard invariants. Filesystem mutations remain trust- and policy-gated: a
+project/run external-directory grant covers only the canonical directory's
+read/create/edit operations; delete, protected paths, network, and unknown
+operations keep their own gates. The deterministic volume parser is the only
+current path that creates a `system.volume` request; it reads back the same
+endpoint before reporting success.
 
 `files.apply_patch` is intentionally absent from the runtime capability catalog
 and is not model-usable at this checkpoint. Any internal adapter or test fixture
@@ -105,9 +120,9 @@ for patch application does not create a public model capability.
 ## Model selection channel
 
 The model invokes its advertised bindings through a structured selection
-loop on every Agent run. Standard exposes the bounded workspace/device set;
-Full Access additionally exposes terminal bindings and broader policy
-fallbacks. Each step allows at most 10
+loop on every Agent run. Both presets receive the same ten core Worker v2
+bindings; configured web bindings are added only when enabled and granted.
+Full Access only changes policy fallbacks. Each step allows at most 10
 sequential tool selections; exhausting that budget forces one final wrap-up
 answer without tools. Approvals still gate mutating tools — a card with a
 bounded preview and an explicit user decision precede every side effect, in
@@ -141,9 +156,13 @@ wording produces deterministic clarification instead of an inferred action;
 unrelated conversation is never forced through the action parser.
 
 The Public Host derives `model_tools` from the active capability profile,
-requests one session grant covering that profile's scope set, and publishes
-the actual resulting grant as `agent.session`. WinUI renders that received
-grant; it does not infer workspace, terminal, Web, connector, or skill access.
+when a Broker session has been explicitly opened, and publishes the actual
+resulting grant as `agent.session`. Managed startup keeps skill package roots
+and WebOptions disabled by default; `/skills`, `/skill`, and Broker web
+bindings therefore require an explicit configured Broker plus session grant.
+The default headless model loop continues to use its in-process core gateway.
+WinUI renders a received grant; it does not infer workspace, terminal, Web,
+connector, or skill access.
 
 The Worker emits at most one tool request at a time and at most 10 sequential
 tool requests in one conversational turn. It receives only the bounded enabled
@@ -179,30 +198,55 @@ For deterministic Vietnamese commands, `tăng âm lượng lên N` is an absolut
 `set` target, while `tăng âm lượng thêm N` is a relative `increase`. Topic-free
 shorthand is not promoted into an action from conversation history.
 
-File, notes, and terminal bindings are advertised by capability profile as the
+File and terminal bindings are advertised by the Worker v2 settings as the
 matrix above shows. On the headless Agent v2 path (Phase 3), `terminal.run`/
-`terminal.shell` is available under explicit approval; it executes as the
-current Windows user and can run arbitrary host code or open sockets. The
-managed Git commit workflow (Phase 3 Task 6) is not shipped; Git commands are
-ordinary terminal requests rather than a separate managed capability. Full
-Access is intentionally not an
-OS-enforced filesystem/network sandbox; its `network` field and
-`network_intent` are descriptive input validation and audit/approval metadata,
-not an operating-system sandbox or network-isolation boundary. A zero exit is
-`succeeded`; non-zero exit and start failure are `failed`; timeout is
-`timed_out`. `files.write`/`files.edit` are `allow` for
-ordinary trusted-workspace create/edit in Standard and otherwise `ask`;
-`files.delete`/`files.restore` and protected/outside/network/unknown are always
-`ask` (even in Full Access trust still required); `notes.create` and both
-terminal bindings retain explicit approval where advertised. Every mutation
-requires `expected_sha256` (`missing` or 64-hex lowercase) and fails with
-`workspace_changed` on mismatch without writing; `files.delete` refuses
-`recovery_too_large` beyond
-1 MiB.
+`terminal.shell` execute as the current Windows user and can run arbitrary host
+code or open sockets; Standard applies analyzer/rule/approval decisions while
+Full Access uses its broader fallback for well-formed calls. The managed Git
+commit workflow (Phase 3 Task 6) is not shipped; Git commands are ordinary
+terminal requests rather than a separate managed capability. Full Access is
+intentionally not an OS-enforced filesystem/network sandbox; its `network`
+field and `network_intent` are descriptive input validation and audit/approval
+metadata, not an operating-system sandbox or network-isolation boundary. A
+zero exit is `succeeded`; non-zero exit and start failure are `failed`; timeout
+is `timed_out`. `files.write`/`files.edit` are `allow` for ordinary
+trusted-workspace create/edit in Standard and otherwise `ask`; Full Access
+uses its fallback for ordinary calls while protected paths and invariants stay
+gated. Every mutation requires `expected_sha256` (`missing` or 64-hex
+lowercase) and fails with `workspace_changed` on mismatch without writing;
+`files.delete` refuses `recovery_too_large` beyond 1 MiB.
 
-Skills are disabled at session-open and execution boundaries. No current
-skill package, Web connector, calendar/task/mail connector, workspace search,
-or application launcher is advertised to the model.
+Declarative Skills are available at session-open only when their validated
+manifest IDs are included in the session grant. `/skills` lists only those
+grants, and `/skill <id> {json}` resolves the highest granted version before
+the Broker rechecks required scopes, tool bindings, schema, step, output, and
+timeout limits. A Skill never bypasses policy or approval, and raw step output
+is not promoted to visible chat. `SkillEvent` and `SkillResult` failures keep
+the same bounded identity/state/error shape as successes, including when the
+session is missing, so clients can fail closed without parsing raw exceptions.
+Connectors, workspace search, and application launchers remain unadvertised.
+
+## Typed command channel
+
+`POST /agent/v1/runs/{runId}/commands` accepts only the bounded commands
+`/compact normal|aggressive`, `/help`, `/skills`, and `/skill <id> <json-object>`.
+The shared `AgentActionRouter` rejects unknown or malformed slash commands with
+stable `command_unknown`/`command_invalid` codes, without creating a prompt,
+history entry, or outbox message. `/compact` reuses the durable compaction
+contract; `/help` is static; `/skills` and `/skill` are session-scoped. The CLI
+adapter uses the same parser and renders only bounded result metadata.
+
+## Web tool gates
+
+`web.search` requires `WebOptions.Enabled`, a configured public HTTP(S)
+`SearchEndpoint`, and the `web.search` session scope. `web.fetch` requires the
+same enabled option and `web.fetch` scope. Automatic redirects are disabled or
+validated hop-by-hop; private, loopback, link-local, multicast, reserved, and
+test-net targets are rejected. Responses enforce a configured byte cap, strict
+UTF-8/content-type checks, sanitizer limits, and at most ten validated search
+citations. Tool results contain only bounded source/content fields plus an
+`untrusted` marker. This is a web-tool policy boundary, not the future
+OS-enforced filesystem/network sandbox.
 
 ## Agent activity shown in WinUI
 

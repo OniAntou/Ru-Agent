@@ -137,9 +137,7 @@ def test_deterministic_agent_harness_keeps_volume_metadata_only() -> None:
     deterministic_worker = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
 
     assert "yield return VolumeTools.Manifest;" in catalog
-    assert (
-        "ModelCapabilities(CapabilityProfile profile)" in binding_registry
-    )
+    assert "ModelCapabilities(" in binding_registry
     assert 'new HashSet<string>([ToolScope.SystemWrite]' in volume_tool
     assert 'RiskClass.Reversible' in volume_tool
     assert '"files.read"' in deterministic_worker

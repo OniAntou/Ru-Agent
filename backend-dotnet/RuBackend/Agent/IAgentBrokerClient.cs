@@ -8,6 +8,17 @@ public interface IAgentBrokerClient : IAsyncDisposable
         CapabilityProfile profile,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<AgentSkillDescriptor>> ListSkillsAsync(
+        string sessionId,
+        CancellationToken cancellationToken);
+
+    Task<AgentSkillExecutionResult> ExecuteSkillAsync(
+        string sessionId,
+        string skillId,
+        string version,
+        JsonObject input,
+        CancellationToken cancellationToken);
+
     Task<AgentSessionGrant> OpenSessionAsync(
         string sessionId,
         IReadOnlySet<string> scopes,

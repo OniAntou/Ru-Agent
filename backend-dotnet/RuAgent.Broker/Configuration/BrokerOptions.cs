@@ -8,4 +8,5 @@ public sealed record BrokerOptions(
     int DefaultTimeoutMs = 120_000,
     int HardTimeoutMs = 300_000,
     IReadOnlyList<string>? SkillPackageRoots = null,
-    IReadOnlyList<SkillManifest>? BuiltinSkills = null);
+    IReadOnlyList<SkillManifest>? BuiltinSkills = null,
+    WebOptions? Web = null);

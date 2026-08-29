@@ -22,6 +22,7 @@ public static class AgentV1Endpoints
         app.MapPost("/agent/v1/runs/{runId}/cancel", PostCancelAsync);
         app.MapPost("/agent/v1/runs/{runId}/continue", PostContinueAsync);
         app.MapPost("/agent/v1/runs/{runId}/compact", PostCompactAsync);
+        app.MapPost("/agent/v1/runs/{runId}/commands", PostCommandAsync);
         app.MapPost("/agent/v1/runs/{runId}/reconcile", PostReconcileAsync);
         app.MapGet("/agent/v1/sessions/{sessionId}/runs", GetSessionRunsAsync);
         app.MapGet("/agent/v1/policies", GetPoliciesAsync);
@@ -483,6 +484,55 @@ public static class AgentV1Endpoints
         }
 
         var result = await service.CompactAsync(runId, dto, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
+    }
+
+    private static async Task<IResult> PostCommandAsync(
+        string runId,
+        HttpContext context,
+        AgentV1Service service,
+        CancellationToken ct)
+    {
+        DispatchAgentCommandRequest? dto;
+        try
+        {
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+            }
+
+            using var document = JsonDocument.Parse(text);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || document.RootElement.EnumerateObject().Any(property =>
+                    !string.Equals(property.Name, "text", StringComparison.Ordinal)))
+            {
+                return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+            }
+
+            if (!document.RootElement.TryGetProperty("text", out var commandText)
+                || commandText.ValueKind != JsonValueKind.String
+                || commandText.GetString() is not { } value)
+            {
+                return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+            }
+
+            dto = new DispatchAgentCommandRequest(value);
+        }
+        catch (RequestBodyTooLargeException)
+        {
+            return Results.Json(new { error_code = "request_too_large" }, statusCode: 413);
+        }
+        catch (JsonException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+        catch (DecoderFallbackException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+
+        var result = await service.DispatchCommandAsync(runId, dto, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 

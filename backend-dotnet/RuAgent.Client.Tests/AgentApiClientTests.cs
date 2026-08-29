@@ -144,6 +144,36 @@ public sealed class AgentApiClientTests
         Assert.Equal(40, result.AfterTokens);
     }
 
+    [Fact]
+    public async Task DispatchCommand_sends_typed_text_and_parses_bounded_result()
+    {
+        var session = Session(new string('f', 64));
+        var handler = new FakeHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.EndsWith(
+                "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands",
+                request.RequestUri!.ToString(),
+                StringComparison.Ordinal);
+            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "{\"run_id\":\"run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"status\":\"succeeded\",\"code\":\"help\",\"data\":{\"commands\":[]},\"run_version\":3}",
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+        });
+        var client = new AgentApiClient(session, new HttpClient(handler));
+
+        var result = await client.DispatchCommandAsync(
+            "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "/help");
+
+        Assert.Equal("help", result.Code);
+        Assert.Equal(3, result.RunVersion);
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;

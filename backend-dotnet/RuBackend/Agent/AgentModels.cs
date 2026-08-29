@@ -58,3 +58,21 @@ public sealed record AgentToolResult(
     string? EndpointRole,
     string? EndpointHash,
     bool AdapterInvoked);
+
+public sealed record AgentSkillDescriptor(
+    string SkillId,
+    string Version,
+    IReadOnlySet<string> RequiredScopes,
+    IReadOnlySet<string> RequiredTools,
+    string TrustClass);
+
+public sealed record AgentSkillExecutionResult(
+    string RequestId,
+    string SkillId,
+    string Version,
+    string Status,
+    JsonObject Output,
+    string? ErrorCode,
+    string SafeSummary,
+    string? ReceiptId,
+    int StepCount);

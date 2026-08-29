@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Client;
@@ -234,6 +235,45 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         return ParseCompactResponseStrict(body, runId);
     }
 
+    public async Task<DispatchAgentCommandResponse> DispatchCommandAsync(
+        string runId,
+        string text,
+        CancellationToken ct = default)
+    {
+        ValidateRunId(runId);
+        if (text is null || Encoding.UTF8.GetByteCount(text) > AgentActionRouter.MaxInputBytes)
+        {
+            throw new AgentApiException("command_invalid", "Command text is too large or missing.");
+        }
+
+        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/commands");
+        var json = JsonSerializer.Serialize(new DispatchAgentCommandRequest(text));
+        using var req = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+        EnsureAuth(req);
+        using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
+        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+        {
+            throw new AgentApiException(
+                resp.StatusCode == HttpStatusCode.Unauthorized ? "unauthorized" : ExtractErrorCode(body) ?? "forbidden",
+                body,
+                (int)resp.StatusCode);
+        }
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            throw new AgentApiException(
+                ExtractErrorCode(body) ?? "command_failed",
+                body,
+                (int)resp.StatusCode);
+        }
+
+        return ParseDispatchCommandResponseStrict(body, runId);
+    }
+
     public async Task<JsonElement> ApproveAsync(string runId, string approvalId, string scope, CancellationToken ct = default)
     {
         ValidateRunId(runId);
@@ -439,6 +479,60 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         }
     }
 
+    private static DispatchAgentCommandResponse ParseDispatchCommandResponseStrict(
+        string json,
+        string expectedRunId)
+    {
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(json);
+        }
+        catch (JsonException exception)
+        {
+            throw new AgentApiException("invalid_response", exception.Message);
+        }
+
+        using (document)
+        {
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new AgentApiException("invalid_response", "Command response must be an object.");
+            }
+
+            var allowed = new HashSet<string>(
+                ["run_id", "status", "code", "data", "run_version"],
+                StringComparer.Ordinal);
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (!allowed.Contains(property.Name))
+                {
+                    throw new AgentApiException("unknown_field", $"Unexpected field {property.Name}");
+                }
+            }
+        }
+
+        try
+        {
+            var result = JsonSerializer.Deserialize<DispatchAgentCommandResponse>(json, JsonOptions);
+            if (result is null
+                || !string.Equals(result.RunId, expectedRunId, StringComparison.Ordinal)
+                || !ToolResultStatuses.Known.Contains(result.Status)
+                || !IsBoundedToken(result.Code)
+                || result.RunVersion < 0)
+            {
+                throw new AgentApiException("invalid_response", "Invalid command response.");
+            }
+
+            ValidateRunId(result.RunId);
+            return result;
+        }
+        catch (JsonException exception)
+        {
+            throw new AgentApiException("invalid_response", exception.Message);
+        }
+    }
+
     private static string? ExtractErrorCode(string json)
     {
         try
@@ -446,6 +540,8 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
             var doc = JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty("error_code", out var code) && code.ValueKind == JsonValueKind.String)
                 return code.GetString();
+            if (doc.RootElement.TryGetProperty("code", out var commandCode) && commandCode.ValueKind == JsonValueKind.String)
+                return commandCode.GetString();
         }
         catch { }
         return null;

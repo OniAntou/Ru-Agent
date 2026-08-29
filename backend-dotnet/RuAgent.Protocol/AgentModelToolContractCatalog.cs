@@ -81,6 +81,14 @@ public static class AgentModelToolContractCatalog
             ["title"] = "Tieu de",
             ["content"] = "Noi dung",
         }),
+        new("web.search", WebSearchSchema, () => new JsonObject
+        {
+            ["query"] = "latest Ru release",
+        }),
+        new("web.fetch", WebFetchSchema, () => new JsonObject
+        {
+            ["url"] = "https://example.com/",
+        }),
     ];
 
     private static readonly IReadOnlyDictionary<string, Definition> ById =
@@ -88,6 +96,9 @@ public static class AgentModelToolContractCatalog
 
     public static IReadOnlyList<string> ToolIds { get; } =
         Array.AsReadOnly(Definitions.Select(item => item.ToolId).ToArray());
+
+    public static IReadOnlySet<string> WebToolIds { get; } =
+        new HashSet<string>(["web.search", "web.fetch"], StringComparer.Ordinal);
 
     public static AgentModelToolContract Get(string toolId, string toolVersion)
     {
@@ -193,6 +204,14 @@ public static class AgentModelToolContractCatalog
             ("title", StringSchema()),
             ("content", StringSchema()),
         ]);
+
+    private static JsonObject WebSearchSchema() => ObjectSchema(
+        required: ["query"],
+        properties: [("query", StringSchema(maxLength: 512))]);
+
+    private static JsonObject WebFetchSchema() => ObjectSchema(
+        required: ["url"],
+        properties: [("url", StringSchema(maxLength: 2048))]);
 
     private static JsonObject VolumeSchema() => ObjectSchema(
         required: ["operation"],

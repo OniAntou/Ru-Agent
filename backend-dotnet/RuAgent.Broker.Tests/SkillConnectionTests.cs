@@ -83,6 +83,68 @@ public sealed class SkillConnectionTests
         Assert.Equal("request_conflict", conflict.Payload["error_code"]!.GetValue<string>());
     }
 
+    [Fact]
+    public async Task Skill_start_failure_uses_the_same_bounded_result_shape()
+    {
+        await using var fixture = await Fixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(fixture.WebSocketUri, cancellation.Token);
+
+        await SendAsync(socket, Envelope("hello", AgentMessageTypes.Hello, new JsonObject { ["profile"] = "agent" }), cancellation.Token);
+        _ = await ReceiveAsync(socket, cancellation.Token);
+        await SendAsync(socket, Envelope("open", AgentMessageTypes.SessionOpen, new JsonObject
+        {
+            ["scopes"] = new JsonArray(ToolScope.SystemRead, ToolScope.SkillExecute),
+            ["skill_ids"] = new JsonArray("system.time.skill"),
+        }), cancellation.Token);
+        _ = await ReceiveAsync(socket, cancellation.Token);
+
+        await SendAsync(socket, Envelope("bad-input", AgentMessageTypes.SkillStart, new JsonObject
+        {
+            ["skill_id"] = "system.time.skill",
+            ["version"] = "1.0.0",
+        }), cancellation.Token);
+        var result = await ReceiveAsync(socket, cancellation.Token);
+
+        Assert.Equal(AgentMessageTypes.SkillResult, result.MessageType);
+        Assert.Equal("schema_invalid", result.Payload["error_code"]!.GetValue<string>());
+        Assert.Equal("system.time.skill", result.Payload["skill_id"]!.GetValue<string>());
+        Assert.Equal("1.0.0", result.Payload["version"]!.GetValue<string>());
+        Assert.Equal("Failed", result.Payload["state"]!.GetValue<string>());
+        Assert.Equal(0, result.Payload["step_count"]!.GetValue<int>());
+        Assert.IsType<JsonObject>(result.Payload["output"]);
+    }
+
+    [Fact]
+    public async Task Skill_start_without_an_open_session_uses_the_same_bounded_result_shape()
+    {
+        await using var fixture = await Fixture.StartAsync();
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + fixture.Token);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await socket.ConnectAsync(fixture.WebSocketUri, cancellation.Token);
+
+        await SendAsync(socket, Envelope("hello", AgentMessageTypes.Hello, new JsonObject()), cancellation.Token);
+        _ = await ReceiveAsync(socket, cancellation.Token);
+        await SendAsync(socket, Envelope("not-open", AgentMessageTypes.SkillStart, new JsonObject
+        {
+            ["skill_id"] = "system.time.skill",
+            ["version"] = "1.0.0",
+            ["input"] = new JsonObject(),
+        }), cancellation.Token);
+
+        var result = await ReceiveAsync(socket, cancellation.Token);
+        Assert.Equal(AgentMessageTypes.SkillResult, result.MessageType);
+        Assert.Equal(ToolResultStatuses.Denied, result.Payload["status"]!.GetValue<string>());
+        Assert.Equal("broker_not_ready", result.Payload["error_code"]!.GetValue<string>());
+        Assert.Equal("system.time.skill", result.Payload["skill_id"]!.GetValue<string>());
+        Assert.Equal("1.0.0", result.Payload["version"]!.GetValue<string>());
+        Assert.Equal("Failed", result.Payload["state"]!.GetValue<string>());
+        Assert.IsType<JsonObject>(result.Payload["output"]);
+    }
+
     private static AgentEnvelope Envelope(string requestId, string type, JsonObject payload) =>
         new(1, requestId, type, "skill-session", null, 10_000, payload);
 

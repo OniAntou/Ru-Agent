@@ -67,6 +67,7 @@ public static class Program
                 PolicyRemoveCommand remove => await commands.PolicyRemoveAsync(remove, cts.Token).ConfigureAwait(false),
                 ReconcileCommand reconcile => await commands.ReconcileAsync(reconcile, cts.Token).ConfigureAwait(false),
                 OutputCommand output => await commands.OutputAsync(output, cts.Token).ConfigureAwait(false),
+                DispatchCommandCommand dispatch => await commands.DispatchCommandAsync(dispatch, cts.Token).ConfigureAwait(false),
                 _ => 1
             };
         }
@@ -112,5 +113,6 @@ public static class Program
         Console.Error.WriteLine("  agent policy list [--global | --workspace PATH] [--json]");
         Console.Error.WriteLine("  agent policy import --global FILE");
         Console.Error.WriteLine("  agent policy remove <rule-id>");
+        Console.Error.WriteLine("  agent command <run-id> \"/help|/skills|/compact ...|/skill ...\" [--json]");
     }
 }

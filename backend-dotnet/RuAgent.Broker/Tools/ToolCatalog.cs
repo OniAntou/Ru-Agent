@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
+using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Protocol;
@@ -11,22 +12,26 @@ public sealed class ToolCatalog
     private static readonly IReadOnlyList<string> BoundIds =
         AgentModelToolContractCatalog.ToolIds;
 
-    public ToolCatalog(IReadOnlyDictionary<string, ToolExecutor> executors)
+    public ToolCatalog(
+        IReadOnlyDictionary<string, ToolExecutor> executors,
+        WebOptions? webOptions = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
+        webOptions ??= new WebOptions();
+        var manifests = Manifests(webOptions).ToArray();
         var known = BoundIds.ToHashSet(StringComparer.Ordinal);
         if (executors.Keys.Any(id => !known.Contains(id)))
         {
             throw new InvalidOperationException("unknown_tool_executor");
         }
 
-        if (BoundIds.Any(id => !executors.TryGetValue(id, out var executor) || executor is null))
+        if (manifests.Any(manifest => !executors.TryGetValue(manifest.Id, out var executor) || executor is null))
         {
             throw new InvalidOperationException("incomplete_tool_binding");
         }
 
         Registry = new ToolBindingRegistry();
-        foreach (var manifest in Manifests())
+        foreach (var manifest in manifests)
         {
             var nativePending = manifest.Id == "system.volume";
             Registry.Register(new ToolBinding(
@@ -48,7 +53,7 @@ public sealed class ToolCatalog
             || manifest.RequiresApproval;
     }
 
-    private static IEnumerable<ToolManifest> Manifests()
+    private static IEnumerable<ToolManifest> Manifests(WebOptions webOptions)
     {
         yield return Manifest("system.time", ToolScope.SystemRead, RiskClass.Read, "builtin");
         yield return Manifest("system.status", ToolScope.SystemRead, RiskClass.Read, "builtin");
@@ -63,6 +68,15 @@ public sealed class ToolCatalog
         yield return TerminalManifests.Run;
         yield return TerminalManifests.Shell;
         yield return Manifest("notes.create", ToolScope.WorkspaceWrite, RiskClass.External, "builtin", workspace: true, requiresApproval: true);
+        if (webOptions.FetchEnabled)
+        {
+            yield return Manifest("web.fetch", ToolScope.WebFetch, RiskClass.Read, "web", requiresApproval: webOptions.RequireApproval);
+        }
+
+        if (webOptions.SearchEnabled)
+        {
+            yield return Manifest("web.search", ToolScope.WebSearch, RiskClass.Read, "web", requiresApproval: webOptions.RequireApproval);
+        }
     }
 
     private static ToolManifest Manifest(

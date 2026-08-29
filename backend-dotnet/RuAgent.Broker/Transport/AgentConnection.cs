@@ -294,7 +294,10 @@ public sealed class AgentConnection
     {
         if (!_session.Owns(request.SessionId))
         {
-            return [ToolError(request, "broker_not_ready", "session is not open")];
+            // SkillStart has a dedicated response stream (SkillEvent/SkillResult).
+            // Keep even pre-session failures on that stream so strict clients do
+            // not have to special-case a ToolResult with a different shape.
+            return [SkillResultError(request, "broker_not_ready", "session is not open")];
         }
 
         var skillId = ReadOptionalPayloadString(request.Payload, "skill_id");
@@ -444,13 +447,57 @@ public sealed class AgentConnection
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
 
-    private static AgentEnvelope SkillResultError(AgentEnvelope request, string errorCode, string summary) =>
-        Reply(request, AgentMessageTypes.SkillResult, new JsonObject
+    private static AgentEnvelope SkillResultError(AgentEnvelope request, string errorCode, string summary)
+    {
+        // SkillResult has one stable shape for both success and failure. Keep
+        // failure replies parseable by the strict host client without echoing
+        // untrusted request text: malformed identities use a fixed placeholder.
+        var skillId = ReadOptionalPayloadString(request.Payload, "skill_id");
+        if (skillId is null || !IsProtocolSkillId(skillId))
+        {
+            skillId = "invalid.skill";
+        }
+
+        var version = ReadOptionalPayloadString(request.Payload, "version");
+        if (version is null || !IsProtocolVersion(version))
+        {
+            version = "1.0.0";
+        }
+
+        var runId = "skill-error-" + Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(request.RequestId))).ToLowerInvariant();
+        return Reply(request, AgentMessageTypes.SkillResult, new JsonObject
         {
             ["status"] = ToolResultStatuses.Denied,
+            ["skill_id"] = skillId,
+            ["version"] = version,
+            ["run_id"] = runId,
+            ["state"] = SkillRunState.Failed.ToString(),
+            ["step_count"] = 0,
+            ["safe_summary"] = ClampProtocolText(summary),
             ["error_code"] = StableErrorCode(errorCode, "skill_failed"),
-            ["safe_summary"] = summary,
+            ["output"] = new JsonObject(),
         });
+    }
+
+    private static bool IsProtocolSkillId(string value) =>
+        value.Length is > 0 and <= 128
+        && value[0] is >= 'a' and <= 'z'
+        && value.Contains('.', StringComparison.Ordinal)
+        && value.Split('.').All(segment =>
+            segment.Length > 0
+            && (segment[0] is >= 'a' and <= 'z' or >= '0' and <= '9')
+            && segment.All(character => character is >= 'a' and <= 'z'
+                or >= '0' and <= '9'
+                or '_' or '-'));
+
+    private static bool IsProtocolVersion(string value)
+    {
+        var parts = value.Split('.');
+        return parts.Length == 3
+            && parts.All(part => part.Length > 0 && part.Length <= 8 && part.All(char.IsAsciiDigit))
+            && parts.All(part => part.Length == 1 || part[0] != '0');
+    }
 
     private static string ClampProtocolText(string? text) =>
         string.IsNullOrWhiteSpace(text)
@@ -1237,6 +1284,23 @@ public sealed class AgentConnection
             ? AgentEnvelopeCodec.ProtocolVersionV2
             : AgentEnvelopeCodec.ProtocolVersion;
         var capabilities = _capabilityProvider(profile);
+        // A capability is model-visible only when the active session actually
+        // owns every required scope. Before SessionOpen, keep optional web
+        // bindings hidden so a configured endpoint alone never advertises
+        // network access to an unauthenticated/ungranted session.
+        if (_session.Owns(request.SessionId))
+        {
+            capabilities = capabilities
+                .Where(capability => capability.Scopes.All(_session.Scopes.Contains))
+                .ToArray();
+        }
+        else
+        {
+            capabilities = capabilities
+                .Where(capability => !capability.Scopes.Contains(ToolScope.WebSearch)
+                    && !capability.Scopes.Contains(ToolScope.WebFetch))
+                .ToArray();
+        }
         if (request.ProtocolVersion == AgentEnvelopeCodec.ProtocolVersionV2 && _session.ActiveRunLease is { } lease)
         {
             // Filter capabilities to lease-advertised ones in v2.

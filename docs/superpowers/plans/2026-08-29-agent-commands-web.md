@@ -32,21 +32,21 @@
 - Consumes: bounded input text from a user composer or CLI adapter.
 - Produces: AgentCommandKind, AgentCommand, AgentCommandParseResult, and AgentActionRouter.Parse(string).
 
-- [ ] Step 1: Write failing parser tests
+- [x] Step 1: Write failing parser tests
 
 Assert Parse("/help"), Parse("  /compact aggressive"), Parse("/skills"), and
 Parse("/skill research.and_note {\"path\":\"src\"}") produce typed commands. Assert
 missing strategy, malformed JSON, unknown commands, input over 16 KiB, and JSON
 over 8 KiB return command_invalid/command_unknown and no executable action.
 
-- [ ] Step 2: Run the parser tests and verify the missing API
+- [x] Step 2: Run the parser tests and verify the missing API
 
 Run:
     dotnet test backend-dotnet/RuAgent.Cli.Tests/RuAgent.Cli.Tests.csproj --filter FullyQualifiedName~AgentActionRouterTests
 
 Expected: compile failure because AgentActionRouter and command values do not exist.
 
-- [ ] Step 3: Implement bounded immutable command values
+- [x] Step 3: Implement bounded immutable command values
 
 Add Compact, Help, Skills, and Skill enum values plus immutable records. Parse
 only the first non-whitespace slash token; accept normal/aggressive only for
@@ -54,7 +54,7 @@ compact; require a valid bounded skill ID and a JSON object for skill; reject
 trailing tokens. Return a parse result with Code and SafeMessage. Do not include
 raw command text in the result.
 
-- [ ] Step 4: Run parser tests and commit
+- [x] Step 4: Run parser tests and commit
 
 Run the command from Step 2. Expected: all parser tests pass.
 
@@ -79,14 +79,14 @@ Run the command from Step 2. Expected: all parser tests pass.
 - Produces: exact 1.0.0 contracts for web.search/web.fetch and capability lists that
 omit them unless WebOptions.Enabled plus the required endpoint/grant are present.
 
-- [ ] Step 1: Write failing manifest/configuration tests
+- [x] Step 1: Write failing manifest/configuration tests
 
 Assert web.search and web.fetch schemas reject missing/extra arguments, web.search
 is absent when the endpoint is null, web.fetch is absent when web is disabled,
 and Agent/Full scope evaluation includes web scopes only through explicit web
 configuration. Assert no credentials are serialized in capabilities.
 
-- [ ] Step 2: Run the tests and verify missing web contracts
+- [x] Step 2: Run the tests and verify missing web contracts
 
 Run:
     dotnet test backend-dotnet/RuAgent.Broker.Tests/RuAgent.Broker.Tests.csproj --filter "FullyQualifiedName~ToolCatalogTests|FullyQualifiedName~WebCapabilityTests"
@@ -94,7 +94,7 @@ Run:
 Expected: failure because the protocol catalog and production ToolCatalog have
 no web bindings/configuration.
 
-- [ ] Step 3: Implement contracts and options
+- [x] Step 3: Implement contracts and options
 
 Add bounded query/URI JSON schemas and example arguments to
 AgentModelToolContractCatalog. Add WebOptions with Enabled, SearchEndpoint,
@@ -103,7 +103,7 @@ oversized configuration at construction. Make ToolCatalog receive WebOptions and
 register web bindings only when enabled, with WebSearch/WebFetch scopes and
 read/external risk metadata. Keep default options disabled.
 
-- [ ] Step 4: Run manifest tests and commit
+- [x] Step 4: Run manifest tests and commit
 
 Run the command from Step 2. Expected: all catalog/configuration tests pass.
 
@@ -130,7 +130,7 @@ Run the command from Step 2. Expected: all catalog/configuration tests pass.
 - Produces: web.search/web.fetch ToolExecutionOutcome values with stable status,
   safe summary, citations/sanitized text, and adapter_invoked metadata.
 
-- [ ] Step 1: Write failing adapter/executor tests
+- [x] Step 1: Write failing adapter/executor tests
 
 Add a redirect handler whose first response points to a private host and assert
 the fetch never follows it. Assert oversized body, unsupported content type,
@@ -139,14 +139,14 @@ Assert valid search returns at most ten citations and valid fetch output contain
 the untrusted marker without script text. Assert ToolExecutionService dispatches
 both IDs only when enabled.
 
-- [ ] Step 2: Run web tests and verify the redirect/executor gap
+- [x] Step 2: Run web tests and verify the redirect/executor gap
 
 Run:
     dotnet test backend-dotnet/RuAgent.Broker.Tests/RuAgent.Broker.Tests.csproj --filter "FullyQualifiedName~WebAdapterTests|FullyQualifiedName~WebExecutorTests"
 
 Expected: failure for redirect validation and missing production executor bindings.
 
-- [ ] Step 3: Implement redirect-safe bounded HTTP and executors
+- [x] Step 3: Implement redirect-safe bounded HTTP and executors
 
 Use an HttpClientHandler with automatic redirects disabled, validate every 3xx
 Location with WebPolicy, and enforce the configured response cap before storing
@@ -156,7 +156,7 @@ citations/sanitized text, and let the normal scope/approval pipeline decide
 before adapter invocation. Pass WebOptions through BrokerHost with disabled
 defaults and no credentials in payloads.
 
-- [ ] Step 4: Run the web test slice and commit
+- [x] Step 4: Run the web test slice and commit
 
 Run the command from Step 2. Expected: all adapter/executor tests pass.
 
@@ -187,14 +187,14 @@ Run the command from Step 2. Expected: all adapter/executor tests pass.
   with strict SkillStart/SkillEvent/SkillResult round trips that retain web
   scope checks.
 
-- [ ] Step 1: Write failing client/protocol tests
+- [x] Step 1: Write failing client/protocol tests
 
 Assert capability parsing accepts web manifests only when advertised, rejects
 unbounded web capability fields, lists granted skill IDs, and executes one
 declared SkillStart. Assert a command-originated skill call still receives
 scope_denied or approval_required from the Broker rather than bypassing policy.
 
-- [ ] Step 2: Run client/protocol tests and verify missing methods
+- [x] Step 2: Run client/protocol tests and verify missing methods
 
 Run:
     dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --filter FullyQualifiedName~AgentBrokerClientTests
@@ -203,7 +203,7 @@ Run:
 Expected: compile or assertion failure for missing skill list/execute methods and
 the current skills_disabled response.
 
-- [ ] Step 3: Implement strict Broker client methods
+- [x] Step 3: Implement strict Broker client methods
 
 Add bounded SkillDescriptor and SkillExecutionResult records. Add
 ListSkillsAsync(sessionId) and ExecuteSkillAsync(sessionId, skillId, version,
@@ -212,7 +212,7 @@ delegates to resolve/list/execute skills, validate session ownership and request
 hashes, and return one bounded terminal SkillResult. Keep web tool calls on the
 existing ToolRequest path so they share capability/scope/approval validation.
 
-- [ ] Step 4: Run client/protocol tests and commit
+- [x] Step 4: Run client/protocol tests and commit
 
 Run the two commands from Step 2. Expected: all client/protocol tests pass.
 
@@ -239,7 +239,7 @@ Run the two commands from Step 2. Expected: all client/protocol tests pass.
   DispatchAgentCommandRequest, DispatchAgentCommandResponse, and
   AgentApiClient.DispatchCommandAsync.
 
-- [ ] Step 1: Write failing command endpoint tests
+- [x] Step 1: Write failing command endpoint tests
 
 Assert POST with /help returns static command data, /compact delegates with
 normal/aggressive strategy, /skills returns only the session's granted skills,
@@ -249,7 +249,7 @@ outbox entry, and preserve the run version unless the action itself changes it.
 Assert unauthorized, terminal-run, runtime-not-ready, conflict, and approval
 responses use stable HTTP codes.
 
-- [ ] Step 2: Run endpoint/client tests and verify missing route
+- [x] Step 2: Run endpoint/client tests and verify missing route
 
 Run:
     dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --filter "FullyQualifiedName~AgentV1EndpointTests|FullyQualifiedName~PublicRouteContractTests"
@@ -258,7 +258,7 @@ Run:
 Expected: route/client assertions fail because no command endpoint or client
 method exists.
 
-- [ ] Step 3: Implement Host dispatch and client method
+- [x] Step 3: Implement Host dispatch and client method
 
 Add bounded request text and response DTOs with status/code/data/run_version.
 Register the route beside other run actions. Validate run ID/session ownership,
@@ -267,7 +267,7 @@ dispatch skills through IAgentBrokerClient, and return static help/skill list da
 Do not persist command text as UserPrompt or ConversationOutbox. Map all errors to
 bounded safe response text.
 
-- [ ] Step 4: Run endpoint/client tests and commit
+- [x] Step 4: Run endpoint/client tests and commit
 
 Run the two commands from Step 2. Expected: all command route/client tests pass.
 
@@ -295,7 +295,7 @@ Run the two commands from Step 2. Expected: all command route/client tests pass.
 WinUI/Public Host, plus docs stating web configuration and the absence of
 subagents/LSP/extensions/plugins/MCP.
 
-- [ ] Step 1: Write failing CLI/docs assertions
+- [x] Step 1: Write failing CLI/docs assertions
 
 Assert the CLI accepts a command-text action without duplicating slash parsing,
 renders command_invalid/command_unknown consistently, and does not print raw
@@ -303,7 +303,7 @@ web body text outside the bounded result. Require current docs to mention
 /compact, /help, /skills, /skill, web.search/web.fetch, untrusted markers, and
 the explicit absence of subagents/LSP/extensions/plugins/MCP.
 
-- [ ] Step 2: Run the focused tests and documentation test
+- [x] Step 2: Run the focused tests and documentation test
 
 Run:
     dotnet test backend-dotnet/RuAgent.Cli.Tests/RuAgent.Cli.Tests.csproj --filter FullyQualifiedName~AgentCliParserTests
@@ -312,7 +312,7 @@ Run:
 Expected: CLI/docs assertions fail because the adapter and current documentation
 do not describe the new commands/web tools.
 
-- [ ] Step 3: Implement the thin CLI adapter and docs
+- [x] Step 3: Implement the thin CLI adapter and docs
 
 Call AgentActionRouter.Parse from the CLI command path, forward valid actions
 through AgentApiClient, and render only bounded structured data. Update current
@@ -320,7 +320,7 @@ docs and README sections with the actual feature gates, scope/approval behavior,
 redirect policy, and route. Leave historical design records and unrelated dirty
 docs unchanged.
 
-- [ ] Step 4: Run the final command/web verification slice
+- [x] Step 4: Run the final command/web verification slice
 
 Run sequentially:
     dotnet test backend-dotnet/RuAgent.Cli.Tests/RuAgent.Cli.Tests.csproj
@@ -330,7 +330,7 @@ Run sequentially:
 
 Expected: every command exits 0.
 
-- [ ] Step 5: Review and commit intended files
+- [x] Step 5: Review and commit intended files
 
 Run:
     git diff --check

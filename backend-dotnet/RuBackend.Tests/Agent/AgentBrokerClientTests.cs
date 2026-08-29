@@ -231,13 +231,13 @@ public sealed class AgentBrokerClientTests
     }
 
     [Fact]
-    public void Client_source_has_no_skill_execution_path()
+    public void Client_source_contains_the_bounded_skill_execution_path()
     {
         var source = File.ReadAllText(FindSource("AgentBrokerClient.cs"));
 
-        Assert.DoesNotContain("RunSkillAsync", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("RunSkillCoreAsync", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("skill_start", source, StringComparison.Ordinal);
+        Assert.Contains("ListSkillsAsync", source, StringComparison.Ordinal);
+        Assert.Contains("SkillRoundTripAsync", source, StringComparison.Ordinal);
+        Assert.Contains("AgentMessageTypes.SkillStart", source, StringComparison.Ordinal);
     }
 
     private static JsonArray DefaultTools() => new()

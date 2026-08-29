@@ -1,8 +1,9 @@
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace RuAgent.Cli;
 
-public enum AgentCommandKind
+public enum CliCommandKind
 {
     Run,
     Attach,
@@ -17,6 +18,7 @@ public enum AgentCommandKind
     PolicyRemove,
     Reconcile,
     Output,
+    Command,
 }
 
 public enum ApprovalScope
@@ -26,57 +28,57 @@ public enum ApprovalScope
     Project,
 }
 
-public abstract record AgentCommand(AgentCommandKind Kind, bool Json);
+public abstract record AgentCommand(CliCommandKind Kind, bool Json);
 
 public sealed record RunCommand(
     string WorkspacePath,
     string Prompt,
     string? SessionId,
     string Preset,
-    bool Json) : AgentCommand(AgentCommandKind.Run, Json);
+    bool Json) : AgentCommand(CliCommandKind.Run, Json);
 
 public sealed record AttachCommand(
     string RunId,
-    bool Json) : AgentCommand(AgentCommandKind.Attach, Json);
+    bool Json) : AgentCommand(CliCommandKind.Attach, Json);
 
 public sealed record TrustCommand(
     string RunId,
-    bool Approve) : AgentCommand(AgentCommandKind.Trust, false);
+    bool Approve) : AgentCommand(CliCommandKind.Trust, false);
 
 public sealed record CancelCommand(
-    string RunId) : AgentCommand(AgentCommandKind.Cancel, false);
+    string RunId) : AgentCommand(CliCommandKind.Cancel, false);
 
 public sealed record ContinueCommand(
-    string RunId) : AgentCommand(AgentCommandKind.Continue, false);
+    string RunId) : AgentCommand(CliCommandKind.Continue, false);
 
 public sealed record StatusCommand(
     string RunId,
-    bool Json) : AgentCommand(AgentCommandKind.Status, Json);
+    bool Json) : AgentCommand(CliCommandKind.Status, Json);
 
 public sealed record ApproveCommand(
     string RunId,
     string ApprovalId,
     ApprovalScope Scope,
-    bool Json) : AgentCommand(AgentCommandKind.Approve, Json);
+    bool Json) : AgentCommand(CliCommandKind.Approve, Json);
 
 public sealed record DenyCommand(
     string RunId,
     string ApprovalId,
-    bool Json) : AgentCommand(AgentCommandKind.Deny, Json);
+    bool Json) : AgentCommand(CliCommandKind.Deny, Json);
 
 public sealed record PolicyListCommand(
     bool Global,
     string? WorkspacePath,
-    bool Json) : AgentCommand(AgentCommandKind.PolicyList, Json);
+    bool Json) : AgentCommand(CliCommandKind.PolicyList, Json);
 
 public sealed record PolicyImportCommand(
     bool Global,
     string FilePath,
-    bool Json) : AgentCommand(AgentCommandKind.PolicyImport, Json);
+    bool Json) : AgentCommand(CliCommandKind.PolicyImport, Json);
 
 public sealed record PolicyRemoveCommand(
     string RuleId,
-    bool Json) : AgentCommand(AgentCommandKind.PolicyRemove, Json);
+    bool Json) : AgentCommand(CliCommandKind.PolicyRemove, Json);
 
 /// <summary>
 /// `agent reconcile <run-id> [--outcome applied|not-applied|unknown] [--hash SHA256]
@@ -86,7 +88,7 @@ public sealed record ReconcileCommand(
     string RunId,
     string? OutcomeToken,
     string? SnapshotHash,
-    bool Json) : AgentCommand(AgentCommandKind.Reconcile, Json)
+    bool Json) : AgentCommand(CliCommandKind.Reconcile, Json)
 {
     public string ToWireOutcome() => OutcomeToken switch
     {
@@ -104,7 +106,12 @@ public sealed record ReconcileCommand(
 public sealed record OutputCommand(
     string RunId,
     string PayloadId,
-    bool Json) : AgentCommand(AgentCommandKind.Output, Json);
+    bool Json) : AgentCommand(CliCommandKind.Output, Json);
+
+public sealed record DispatchCommandCommand(
+    string RunId,
+    string Text,
+    bool Json) : AgentCommand(CliCommandKind.Command, Json);
 
 public sealed record AgentCliParseResult(
     bool Success,
@@ -137,12 +144,14 @@ public static class AgentCliParser
         if (args.Length > MaxArgCount)
             return Fail("too_many_arguments", $"Argument count {args.Length} exceeds maximum {MaxArgCount}.");
 
+        var maxArgumentBytes = args.Length > 1 && string.Equals(args[1], "command", StringComparison.Ordinal)
+            ? 16 * 1024
+            : MaxPromptLength;
         foreach (var a in args)
         {
-            if (a is not null && a.Length > MaxPromptLength)
+            if (a is not null && Encoding.UTF8.GetByteCount(a) > maxArgumentBytes)
             {
-                if (a.Length > 8192)
-                    return Fail("argument_too_long", $"Argument too long ({a.Length}).");
+                return Fail("argument_too_long", $"Argument too long ({a.Length}).");
             }
         }
 
@@ -169,8 +178,56 @@ public static class AgentCliParser
             "policy" => ParsePolicy(args),
             "reconcile" => ParseReconcile(args),
             "output" => ParseOutput(args),
+            "command" => ParseDispatchCommand(args),
             _ => Fail("unknown_subcommand", $"Unknown agent subcommand '{sub}'.")
         };
+    }
+
+    private static AgentCliParseResult ParseDispatchCommand(string[] args)
+    {
+        // agent command <run-id> <command-text> [--json]
+        bool json = false;
+        bool jsonSeen = false;
+        string? runId = null;
+        string? text = null;
+
+        for (int i = 2; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (token == "--json")
+            {
+                if (jsonSeen)
+                    return Fail("duplicate_switch", "Duplicate --json.");
+                json = true;
+                jsonSeen = true;
+                continue;
+            }
+
+            if (runId is null)
+            {
+                var validation = ValidateRunId(token);
+                if (validation is not null) return validation;
+                runId = token;
+                continue;
+            }
+
+            if (token.StartsWith("-", StringComparison.Ordinal))
+                return Fail("unknown_switch", $"Unknown switch '{token}' for 'agent command'.");
+            if (text is not null)
+                return Fail("too_many_arguments", "Command text must be one argument; quote it when it contains spaces.");
+            if (token.Length == 0)
+                return Fail("missing_command_text", "Missing command text for 'agent command'.");
+            if (token.Length > 16 * 1024)
+                return Fail("command_too_long", "Command text is too long.");
+            text = token;
+        }
+
+        if (runId is null)
+            return Fail("missing_run_id", "Missing required <run-id> for 'agent command'.");
+        if (text is null)
+            return Fail("missing_command_text", "Missing required <command-text> for 'agent command'.");
+
+        return Success(new DispatchCommandCommand(runId, text, json));
     }
 
     private static AgentCliParseResult ParseReconcile(string[] args)

@@ -35,7 +35,8 @@ public sealed class BrokerHost : IAsyncDisposable
             ResolveWorkspaceRoot(),
             volumeController,
             options?.BuiltinSkills,
-            options?.SkillPackageRoots);
+            options?.SkillPackageRoots,
+            options?.Web);
         _cleanup = new BrokerCleanup(
             stopListener: cancellationToken => new ValueTask(_application.StopAsync(cancellationToken)),
             cancelRequests: () => _shutdown.Cancel(),

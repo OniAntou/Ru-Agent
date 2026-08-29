@@ -36,6 +36,36 @@ public sealed class WebAdapterTests
                 CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("::ffff:127.0.0.1")]
+    [InlineData("192.0.0.1")]
+    [InlineData("198.18.0.1")]
+    [InlineData("2001:db8::1")]
+    public async Task Fetch_rejects_mapped_and_reserved_hosts(string host)
+    {
+        using var http = new HttpClient(new FakeHandler("text/html", "not reached"));
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse(host) }));
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            new WebFetchAdapter(http, policy, new WebContentSanitizer()).FetchAsync(
+                new Uri(host.Contains(':')
+                    ? $"https://[{host}]/page"
+                    : $"https://{host}/page"),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Fetch_rejects_urls_with_embedded_credentials()
+    {
+        using var http = new HttpClient(new FakeHandler("text/html", "not reached"));
+        var policy = new WebPolicy((_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            new WebFetchAdapter(http, policy, new WebContentSanitizer()).FetchAsync(
+                new Uri("https://user:password@example.com/page"),
+                CancellationToken.None));
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly string _contentType;

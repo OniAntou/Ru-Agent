@@ -29,10 +29,12 @@ over a private lifecycle/TTS contract.
 _Avoid_: TTS web server, Flask voice server
 
 **Public Contract**:
-The stable authenticated surface of 54 HTTP method/path pairs plus the single
-`/voice/stream` WebSocket (41 legacy plus 13 additive `/agent/v1/*`; Agent v2 is
-feature-flagged at `/worker/v2` and `/agent/v1/*`, default `v1`). Text turns use
-the authenticated Agent HTTP/SSE path; there is no public Chat transport.
+The stable authenticated surface of 56 HTTP method/path pairs plus the single
+`/voice/stream` WebSocket (41 legacy plus 15 additive `/agent/v1/*`; Agent v2 is
+the current generation path at `/worker/v2` and `/agent/v1/*`). Text turns use
+the authenticated Agent HTTP/SSE path; there is no public Chat transport. The
+legacy `RuBackend:AgentHarness:Version` setting is compatibility-only and is
+not a product mode switch.
 _Avoid_: Compatibility routes
 
 **Worker Contract**:
@@ -66,10 +68,18 @@ It does not grant arbitrary filesystem paths, domains, credentials, or apps.
 _Avoid_: global allowlist
 
 **Capability Profile**:
-The Agent or Full Access session-scoped advertisement of model-visible tool
-bindings; Full Access only loosens execution policy, and every launch starts
-with the Agent Standard preset.
+The session-scoped Agent preset that controls the model-visible Worker v2
+bindings and Broker policy. The current Worker v2 advertisement is the same
+ten file/terminal bindings in Standard and Full Access; Full Access only
+loosens policy fallbacks, and every launch starts with the Agent Standard
+preset.
 _Avoid_: permanent permission
+
+**Deterministic Device Action**:
+A host-owned action resolved before model selection, such as
+`system.volume`, with typed arguments and verified readback. It is not a
+model-visible Worker v2 tool binding.
+_Avoid_: model-invented side effect
 
 **Approval Token**:
 A short-lived, one-time value bound to the exact request identity and

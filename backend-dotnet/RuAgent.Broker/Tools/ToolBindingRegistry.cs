@@ -51,9 +51,11 @@ public sealed class ToolBindingRegistry
         }
     }
 
-    public IEnumerable<ToolBinding> ModelCapabilities(CapabilityProfile profile)
+    public IEnumerable<ToolBinding> ModelCapabilities(
+        CapabilityProfile profile,
+        IReadOnlySet<string>? additionalScopes = null)
     {
-        var scopes = profile.Scopes();
+        var scopes = EffectiveScopes(profile, additionalScopes);
         lock (_gate)
         {
             return OrderedBindings()
@@ -70,11 +72,13 @@ public sealed class ToolBindingRegistry
         }
     }
 
-    public IReadOnlyList<AgentToolCapability> ListCapabilities(CapabilityProfile profile)
+    public IReadOnlyList<AgentToolCapability> ListCapabilities(
+        CapabilityProfile profile,
+        IReadOnlySet<string>? additionalScopes = null)
     {
         lock (_gate)
         {
-            var scopes = profile.Scopes();
+            var scopes = EffectiveScopes(profile, additionalScopes);
             return OrderedBindings()
                 .Where(binding => binding.Manifest.Scopes.All(scopes.Contains))
                 .Select(ToCapability)
@@ -86,6 +90,19 @@ public sealed class ToolBindingRegistry
         _bindings.Values
             .OrderBy(item => item.Manifest.Id, StringComparer.Ordinal)
             .ThenBy(item => item.Manifest.Version, StringComparer.Ordinal);
+
+    private static IReadOnlySet<string> EffectiveScopes(
+        CapabilityProfile profile,
+        IReadOnlySet<string>? additionalScopes)
+    {
+        var scopes = new HashSet<string>(profile.Scopes(), StringComparer.Ordinal);
+        if (additionalScopes is not null)
+        {
+            scopes.UnionWith(additionalScopes);
+        }
+
+        return scopes;
+    }
 
     private static AgentToolCapability ToCapability(ToolBinding binding) =>
         new(

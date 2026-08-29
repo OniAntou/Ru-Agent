@@ -54,6 +54,8 @@ EXPECTED_HTTP_ROUTES = {
     ("POST", "/agent/v1/runs/{runId}/trust"),
     ("POST", "/agent/v1/runs/{runId}/cancel"),
     ("POST", "/agent/v1/runs/{runId}/continue"),
+    ("POST", "/agent/v1/runs/{runId}/compact"),
+    ("POST", "/agent/v1/runs/{runId}/commands"),
     ("POST", "/agent/v1/runs/{runId}/reconcile"),
     ("GET", "/agent/v1/sessions/{sessionId}/runs"),
     ("GET", "/agent/v1/policies"),
@@ -67,7 +69,7 @@ EXPECTED_WEBSOCKET_ROUTES = {("WS", "/voice/stream")}
 def test_public_route_contract_matches_the_final_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    assert validate_route_contract(repo_root) == (54, 1)
+    assert validate_route_contract(repo_root) == (56, 1)
     contract = load_route_contract(repo_root)
 
     assert {
@@ -106,6 +108,8 @@ def test_every_public_route_has_one_final_aspnet_execution_class() -> None:
         "/agent/v1/runs/{runId}/trust",
         "/agent/v1/runs/{runId}/cancel",
         "/agent/v1/runs/{runId}/continue",
+        "/agent/v1/runs/{runId}/compact",
+        "/agent/v1/runs/{runId}/commands",
         "/agent/v1/runs/{runId}/reconcile",
         "/agent/v1/sessions/{sessionId}/runs",
         "/agent/v1/policies",

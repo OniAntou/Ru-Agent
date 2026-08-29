@@ -21,12 +21,19 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
     private static readonly IReadOnlySet<string> Availabilities = new HashSet<string>(
         ["executable", "native_pending"],
         StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> SkillTrustClasses = new HashSet<string>(
+        ["builtin", "signed"],
+        StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> SkillStepKinds = new HashSet<string>(
+        ["CallTool", "ValidateResult", "Branch", "NamedTransform"],
+        StringComparer.Ordinal);
 
     private readonly BrokerSessionDescriptor _descriptor;
     private readonly AgentSessionGrantStore _grants;
     private readonly object _capabilityGate = new();
     private readonly Dictionary<CapabilityProfile, IReadOnlyList<AgentToolCapability>> _capabilityLists = new();
     private IReadOnlyDictionary<(string ToolId, string ToolVersion), AgentToolCapability>? _capabilityIndex;
+    private string? _activeSessionId;
     private int _disposed;
 
     public AgentBrokerClient(
@@ -55,13 +62,76 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
                 AgentEnvelopeCodec.ProtocolVersion,
                 NewRequestId("capabilities"),
                 AgentMessageTypes.Health,
-                "capabilities",
+                CapabilitySessionId(),
                 null,
                 5_000,
                 new JsonObject()),
             cancellationToken).ConfigureAwait(false);
         return CapabilitySnapshot(profile)
             ?? throw new AgentBrokerException("invalid_capabilities");
+    }
+
+    public async Task<IReadOnlyList<AgentSkillDescriptor>> ListSkillsAsync(
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        ValidateSessionId(sessionId);
+        if (!_grants.TryGet(sessionId, "skill.execute", out _))
+        {
+            return Array.Empty<AgentSkillDescriptor>();
+        }
+
+        var request = new AgentEnvelope(
+            AgentEnvelopeCodec.ProtocolVersion,
+            NewRequestId("skills"),
+            AgentMessageTypes.Health,
+            sessionId,
+            null,
+            5_000,
+            new JsonObject());
+        var (hello, _) = await RoundTripWithHelloAsync(
+            CapabilityProfile.Agent,
+            request,
+            cancellationToken).ConfigureAwait(false);
+        return ParseSkills(hello.Payload);
+    }
+
+    public async Task<AgentSkillExecutionResult> ExecuteSkillAsync(
+        string sessionId,
+        string skillId,
+        string version,
+        JsonObject input,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        ValidateSessionId(sessionId);
+        ValidateSkillIdentity(skillId, version);
+        ArgumentNullException.ThrowIfNull(input);
+        if (!_grants.TryGet(sessionId, "skill.execute", out var grant)
+            || grant is null
+            || !grant.SkillIds.Contains(skillId))
+        {
+            return new AgentSkillExecutionResult(
+                NewRequestId("skill"), skillId, version, ToolResultStatuses.Denied,
+                new JsonObject(), "skill_not_granted", "Skill is not granted.", null, 0);
+        }
+
+        var requestId = NewRequestId("skill");
+        var request = new AgentEnvelope(
+            AgentEnvelopeCodec.ProtocolVersion,
+            requestId,
+            AgentMessageTypes.SkillStart,
+            sessionId,
+            null,
+            AgentEnvelopeCodec.MaxDeadlineMs,
+            new JsonObject
+            {
+                ["skill_id"] = skillId,
+                ["version"] = version,
+                ["input"] = input.DeepClone(),
+            });
+        return await SkillRoundTripAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<AgentSessionGrant> OpenSessionAsync(
@@ -117,6 +187,7 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
             actualSkillIds,
             _descriptor.ExpiresAt);
         _grants.Put(grant);
+        ResetSessionScopedCapabilityCache(sessionId);
         return grant;
     }
 
@@ -129,9 +200,12 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
         ArgumentNullException.ThrowIfNull(call);
         ValidateSessionId(call.SessionId);
         ValidateCall(call);
-        if (CapabilityIndex() is null)
+        var capabilityIndex = CapabilityIndex();
+        if (capabilityIndex is null
+            || (!capabilityIndex.ContainsKey((call.ToolId, call.ToolVersion))
+                && !capabilityIndex.Keys.Any(key => string.Equals(key.ToolId, call.ToolId, StringComparison.Ordinal))))
         {
-            _ = await GetCapabilitiesAsync(CapabilityProfile.Chat, cancellationToken)
+            _ = await GetCapabilitiesAsync(profile, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -237,6 +311,7 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
                 new JsonObject()),
             cancellationToken).ConfigureAwait(false);
         _grants.Remove(sessionId);
+        ClearCapabilityCache();
     }
 
     public ValueTask DisposeAsync()
@@ -249,7 +324,8 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
         lock (_capabilityGate)
         {
             _capabilityLists.Clear();
-            _capabilityIndex = new Dictionary<(string, string), AgentToolCapability>();
+            _capabilityIndex = null;
+            _activeSessionId = null;
         }
 
         _grants.Clear();
@@ -261,36 +337,17 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
         AgentEnvelope request,
         CancellationToken cancellationToken)
     {
-        ThrowIfDisposed();
-        ValidateDeadline(request.DeadlineMs);
-        using var socket = new ClientWebSocket();
-        socket.Options.SetRequestHeader("Authorization", "Bearer " + _descriptor.AuthToken);
-        var endpoint = new Uri(
-            _descriptor.BaseUrl.Replace("http://", "ws://", StringComparison.OrdinalIgnoreCase)
-                .Replace("https://", "wss://", StringComparison.OrdinalIgnoreCase).TrimEnd('/')
-                + "/agent");
-        await socket.ConnectAsync(endpoint, cancellationToken).ConfigureAwait(false);
+        var (_, reply) = await RoundTripWithHelloAsync(profile, request, cancellationToken).ConfigureAwait(false);
+        return reply;
+    }
 
-        var hello = request with
-        {
-            RequestId = NewRequestId("hello"),
-            MessageType = AgentMessageTypes.Hello,
-            Payload = new JsonObject
-            {
-                ["client"] = "RuBackend",
-                ["profile"] = profile.ToWireValue(),
-            },
-        };
-        await SendAsync(socket, hello, cancellationToken).ConfigureAwait(false);
-        var helloReply = await ReceiveAsync(socket, cancellationToken).ConfigureAwait(false);
-        if (helloReply.RequestId != hello.RequestId
-            || helloReply.MessageType != AgentMessageTypes.HelloOk
-            || ReadInt(helloReply.Payload, "protocol_version", "invalid_hello") != AgentEnvelopeCodec.ProtocolVersion)
-        {
-            throw new AgentBrokerException("invalid_hello");
-        }
-
-        CacheCapabilities(profile, ParseCapabilities(helloReply.Payload));
+    private async Task<(AgentEnvelope Hello, AgentEnvelope Reply)> RoundTripWithHelloAsync(
+        CapabilityProfile profile,
+        AgentEnvelope request,
+        CancellationToken cancellationToken)
+    {
+        var opened = await OpenSocketWithHelloAsync(profile, request, cancellationToken).ConfigureAwait(false);
+        using var socket = opened.Socket;
         await SendAsync(socket, request, cancellationToken).ConfigureAwait(false);
         var reply = await ReceiveAsync(socket, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(reply.RequestId, request.RequestId, StringComparison.Ordinal)
@@ -300,7 +357,86 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
             throw new AgentBrokerException("stale_agent_result");
         }
 
-        return reply;
+        return (opened.Hello, reply);
+    }
+
+    private async Task<(ClientWebSocket Socket, AgentEnvelope Hello)> OpenSocketWithHelloAsync(
+        CapabilityProfile profile,
+        AgentEnvelope request,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        ValidateDeadline(request.DeadlineMs);
+        var socket = new ClientWebSocket();
+        try
+        {
+            socket.Options.SetRequestHeader("Authorization", "Bearer " + _descriptor.AuthToken);
+            await socket.ConnectAsync(GetWebSocketEndpoint(), cancellationToken).ConfigureAwait(false);
+            var hello = request with
+            {
+                RequestId = NewRequestId("hello"),
+                MessageType = AgentMessageTypes.Hello,
+                Payload = new JsonObject
+                {
+                    ["client"] = "RuBackend",
+                    ["profile"] = profile.ToWireValue(),
+                },
+            };
+            await SendAsync(socket, hello, cancellationToken).ConfigureAwait(false);
+            var helloReply = await ReceiveAsync(socket, cancellationToken).ConfigureAwait(false);
+            if (helloReply.RequestId != hello.RequestId
+                || helloReply.MessageType != AgentMessageTypes.HelloOk
+                || ReadInt(helloReply.Payload, "protocol_version", "invalid_hello") != AgentEnvelopeCodec.ProtocolVersion)
+            {
+                throw new AgentBrokerException("invalid_hello");
+            }
+
+            CacheCapabilities(profile, ParseCapabilities(helloReply.Payload));
+            return (socket, helloReply);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
+    }
+
+    private Uri GetWebSocketEndpoint() => new(
+        _descriptor.BaseUrl.Replace("http://", "ws://", StringComparison.OrdinalIgnoreCase)
+            .Replace("https://", "wss://", StringComparison.OrdinalIgnoreCase).TrimEnd('/')
+            + "/agent");
+
+    private async Task<AgentSkillExecutionResult> SkillRoundTripAsync(
+        AgentEnvelope request,
+        CancellationToken cancellationToken)
+    {
+        var opened = await OpenSocketWithHelloAsync(CapabilityProfile.Agent, request, cancellationToken).ConfigureAwait(false);
+        using var socket = opened.Socket;
+        await SendAsync(socket, request, cancellationToken).ConfigureAwait(false);
+        for (var frame = 0; frame < 64; frame++)
+        {
+            var response = await ReceiveAsync(socket, cancellationToken).ConfigureAwait(false);
+            if (response.RequestId != request.RequestId
+                || response.SessionId != request.SessionId)
+            {
+                throw new AgentBrokerException("stale_agent_result");
+            }
+
+            if (response.MessageType == AgentMessageTypes.SkillEvent)
+            {
+                ValidateSkillEvent(response.Payload);
+                continue;
+            }
+
+            if (response.MessageType == AgentMessageTypes.SkillResult)
+            {
+                return ReadSkillResult(response, request);
+            }
+
+            throw new AgentBrokerException("invalid_skill_result");
+        }
+
+        throw new AgentBrokerException("skill_event_limit");
     }
 
     private static AgentEnvelope CreateRequest(
@@ -324,10 +460,12 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
         if (payload["tools"] is not JsonArray tools
             || tools.Count > 64
             || payload["skills"] is not JsonArray skills
-            || skills.Count != 0)
+            || skills.Count > 64)
         {
             throw new AgentBrokerException("invalid_capabilities");
         }
+
+        _ = ParseSkills(payload);
 
         var result = new Dictionary<(string ToolId, string ToolVersion), AgentToolCapability>();
         foreach (var node in tools)
@@ -375,6 +513,170 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
             .ToArray());
     }
 
+    private static IReadOnlyList<AgentSkillDescriptor> ParseSkills(JsonObject payload)
+    {
+        if (payload["skills"] is not JsonArray skills || skills.Count > 64)
+        {
+            throw new AgentBrokerException("invalid_skills");
+        }
+
+        var result = new List<AgentSkillDescriptor>();
+        foreach (var node in skills)
+        {
+            if (node is not JsonObject skill)
+            {
+                throw new AgentBrokerException("invalid_skills");
+            }
+
+            var allowedFields = new HashSet<string>(
+                ["skill_id", "version", "required_scopes", "required_tools", "trust_class"],
+                StringComparer.Ordinal);
+            if (skill.Any(property => !allowedFields.Contains(property.Key)))
+            {
+                throw new AgentBrokerException("invalid_skills");
+            }
+
+            var id = ReadRequiredString(skill, "skill_id", "invalid_skills");
+            var version = ReadRequiredString(skill, "version", "invalid_skills");
+            var scopes = ReadBoundedStringSet(skill["required_scopes"], 16, 64, "invalid_skills");
+            var tools = ReadBoundedStringSet(skill["required_tools"], 32, 128, "invalid_skills");
+            var trust = ReadRequiredString(skill, "trust_class", "invalid_skills");
+            if (!ToolIdPattern.IsMatch(id)
+                || id.Length > 128
+                || !VersionPattern.IsMatch(version)
+                || version.Length > 32
+                || !SkillTrustClasses.Contains(trust)
+                || scopes.Count == 0
+                || !scopes.Contains("skill.execute")
+                || scopes.Any(scope => !ScopePattern.IsMatch(scope))
+                || tools.Any(tool => !ToolIdPattern.IsMatch(tool))
+                || !result.All(existing => existing.SkillId != id || existing.Version != version))
+            {
+                throw new AgentBrokerException("invalid_skills");
+            }
+
+            result.Add(new AgentSkillDescriptor(id, version, scopes, tools, trust));
+        }
+
+        return result
+            .OrderBy(item => item.SkillId, StringComparer.Ordinal)
+            .ThenBy(item => item.Version, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static void ValidateSkillEvent(JsonObject payload)
+    {
+        var allowedFields = new HashSet<string>(
+            ["status", "skill_id", "step_index", "step_kind", "step_name", "tool_id", "safe_summary"],
+            StringComparer.Ordinal);
+        if (payload.Any(property => !allowedFields.Contains(property.Key))
+            || payload["step_index"] is not JsonValue stepValue
+            || !stepValue.TryGetValue<int>(out var stepIndex)
+            || stepIndex is < 0 or > 32)
+        {
+            throw new AgentBrokerException("invalid_skill_event");
+        }
+
+        var status = ReadRequiredString(payload, "status", "invalid_skill_event");
+        var skillId = ReadRequiredString(payload, "skill_id", "invalid_skill_event");
+        var stepKind = ReadRequiredString(payload, "step_kind", "invalid_skill_event");
+        var stepName = ReadRequiredString(payload, "step_name", "invalid_skill_event");
+        var safeSummary = ReadRequiredString(payload, "safe_summary", "invalid_skill_event");
+        var toolId = ReadOptionalString(payload, "tool_id", "invalid_skill_event");
+        if (!ToolResultStatuses.Known.Contains(status)
+            || !ToolIdPattern.IsMatch(skillId)
+            || skillId.Length > 128
+            || !SkillStepKinds.Contains(stepKind)
+            || stepName.Length > 128
+            || safeSummary.Length > 512
+            || toolId is not (null or { Length: <= 128 })
+            || toolId is not null && !ToolIdPattern.IsMatch(toolId))
+        {
+            throw new AgentBrokerException("invalid_skill_event");
+        }
+    }
+
+    private static AgentSkillExecutionResult ReadSkillResult(
+        AgentEnvelope envelope,
+        AgentEnvelope request)
+    {
+        var payload = envelope.Payload;
+        var allowedFields = new HashSet<string>(
+            ["status", "skill_id", "version", "run_id", "receipt_id", "state", "step_count", "safe_summary", "error_code", "output"],
+            StringComparer.Ordinal);
+        if (payload.Any(property => !allowedFields.Contains(property.Key)))
+        {
+            throw new AgentBrokerException("invalid_skill_result");
+        }
+
+        var status = ReadRequiredString(payload, "status", "invalid_skill_result");
+        if (!ToolResultStatuses.Known.Contains(status))
+        {
+            throw new AgentBrokerException("invalid_skill_result");
+        }
+
+        var skillId = ReadRequiredString(payload, "skill_id", "invalid_skill_result");
+        var version = ReadRequiredString(payload, "version", "invalid_skill_result");
+        var runId = ReadRequiredString(payload, "run_id", "invalid_skill_result");
+        var state = ReadRequiredString(payload, "state", "invalid_skill_result");
+        var safeSummary = ReadRequiredString(payload, "safe_summary", "invalid_skill_result");
+        var stepCount = ReadInt(payload, "step_count", "invalid_skill_result");
+        var errorCode = ReadOptionalString(payload, "error_code", "invalid_skill_result");
+        var receiptId = ReadOptionalString(payload, "receipt_id", "invalid_skill_result");
+        JsonObject output;
+        if (payload["output"] is JsonObject outputNode)
+        {
+            if (Encoding.UTF8.GetByteCount(outputNode.ToJsonString()) > 256 * 1024)
+            {
+                throw new AgentBrokerException("invalid_skill_result");
+            }
+
+            output = outputNode.DeepClone().AsObject();
+        }
+        else if (payload.ContainsKey("output"))
+        {
+            throw new AgentBrokerException("invalid_skill_result");
+        }
+        else
+        {
+            output = new JsonObject();
+        }
+
+        var expectedSkillId = ReadOptionalString(request.Payload, "skill_id", "invalid_skill_result");
+        var expectedVersion = ReadOptionalString(request.Payload, "version", "invalid_skill_result") ?? "1.0.0";
+        var knownStates = new HashSet<string>(
+            ["ApprovalRequired", "Cancelled", "Completed", "Failed"],
+            StringComparer.Ordinal);
+        if (!ToolIdPattern.IsMatch(skillId)
+            || skillId.Length > 128
+            || !VersionPattern.IsMatch(version)
+            || version.Length > 32
+            || !string.Equals(skillId, expectedSkillId, StringComparison.Ordinal)
+            || !string.Equals(version, expectedVersion, StringComparison.Ordinal)
+            || runId.Length > 128
+            || state.Length > 32
+            || !knownStates.Contains(state)
+            || safeSummary.Length > 512
+            || stepCount is < 0 or > 64
+            || errorCode is not (null or { Length: <= 64 })
+            || errorCode is not null && !Regex.IsMatch(errorCode, "^[a-z][a-z0-9_]{0,63}$")
+            || receiptId is not (null or { Length: >= 1 and <= 128 }))
+        {
+            throw new AgentBrokerException("invalid_skill_result");
+        }
+
+        return new AgentSkillExecutionResult(
+            envelope.RequestId,
+            skillId,
+            version,
+            status,
+            output,
+            errorCode,
+            safeSummary,
+            receiptId,
+            stepCount);
+    }
+
     private void CacheCapabilities(
         CapabilityProfile profile,
         IReadOnlyList<AgentToolCapability> snapshot)
@@ -409,6 +711,52 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
             _capabilityLists[profile] = snapshot;
             _capabilityIndex = index;
         }
+    }
+
+    private void ClearCapabilityCache()
+    {
+        lock (_capabilityGate)
+        {
+            _capabilityLists.Clear();
+            _capabilityIndex = null;
+            _activeSessionId = null;
+        }
+    }
+
+    private void ResetSessionScopedCapabilityCache(string sessionId)
+    {
+        lock (_capabilityGate)
+        {
+            _activeSessionId = sessionId;
+            foreach (var profile in _capabilityLists.Keys
+                         .Where(profile => profile != CapabilityProfile.Chat)
+                         .ToArray())
+            {
+                _capabilityLists.Remove(profile);
+            }
+
+            _capabilityIndex = BuildCapabilityIndex(_capabilityLists.Values.SelectMany(snapshot => snapshot));
+        }
+    }
+
+    private string CapabilitySessionId()
+    {
+        lock (_capabilityGate)
+        {
+            return _activeSessionId ?? "capabilities";
+        }
+    }
+
+    private static IReadOnlyDictionary<(string ToolId, string ToolVersion), AgentToolCapability> BuildCapabilityIndex(
+        IEnumerable<AgentToolCapability> capabilities)
+    {
+        var index = new Dictionary<(string ToolId, string ToolVersion), AgentToolCapability>();
+        foreach (var capability in capabilities)
+        {
+            index[(capability.ToolId, capability.ToolVersion)] = capability;
+        }
+
+        return index;
     }
 
     private IReadOnlyList<AgentToolCapability>? CapabilitySnapshot(CapabilityProfile profile)
@@ -625,6 +973,23 @@ public sealed class AgentBrokerClient : IAgentBrokerClient
         }
 
         ValidateDeadline(call.DeadlineMs);
+    }
+
+    private static void ValidateSkillIdentity(string skillId, string version)
+    {
+        if (string.IsNullOrWhiteSpace(skillId)
+            || skillId.Length > 128
+            || !ToolIdPattern.IsMatch(skillId))
+        {
+            throw new ArgumentException("Skill id is invalid.", nameof(skillId));
+        }
+
+        if (string.IsNullOrWhiteSpace(version)
+            || version.Length > 32
+            || !VersionPattern.IsMatch(version))
+        {
+            throw new ArgumentException("Skill version is invalid.", nameof(version));
+        }
     }
 
     private static void ValidateSessionId(string sessionId)

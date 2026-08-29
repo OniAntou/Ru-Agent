@@ -68,6 +68,16 @@ public sealed record CompactAgentRunResponse(
     [property: JsonPropertyName("after_tokens")] long? AfterTokens,
     [property: JsonPropertyName("run_version")] long RunVersion);
 
+public sealed record DispatchAgentCommandRequest(
+    [property: JsonPropertyName("text")] string Text);
+
+public sealed record DispatchAgentCommandResponse(
+    [property: JsonPropertyName("run_id")] string RunId,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("code")] string Code,
+    [property: JsonPropertyName("data")] object? Data,
+    [property: JsonPropertyName("run_version")] long RunVersion);
+
 public sealed record AgentErrorResponse(
     [property: JsonPropertyName("error_code")] string ErrorCode,
     [property: JsonPropertyName("message")] string? Message = null);

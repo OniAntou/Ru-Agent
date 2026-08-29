@@ -15,7 +15,9 @@ using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Policy;
 using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
+using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
+using RuBackend.Agent;
 using RuBackend.Business.Sessions;
 using RuBackend.Harness.Policy;
 using RuBackend.Harness.Workspace;
@@ -43,6 +45,7 @@ public sealed class AgentV1Service
     private readonly RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService? _snapshots;
     private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
+    private readonly IAgentBrokerClient? _agentBrokerClient;
 
     private const int ApprovalToolIdMaxLength = 128;
     private const int ApprovalToolVersionMaxLength = 32;
@@ -72,7 +75,8 @@ public sealed class AgentV1Service
         RuBackend.Harness.Reconciliation.WorkspaceStateSnapshotService? snapshots = null,
         ReconciliationInspectionGate? inspectionGate = null,
         RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null,
-        HarnessPolicySnapshotService? policySnapshotService = null)
+        HarnessPolicySnapshotService? policySnapshotService = null,
+        IAgentBrokerClient? agentBrokerClient = null)
     {
         _store = store;
         _options = options;
@@ -91,6 +95,7 @@ public sealed class AgentV1Service
         _snapshots = snapshots;
         _inspectionGate = inspectionGate;
         _approvalGrants = approvalGrants;
+        _agentBrokerClient = agentBrokerClient;
     }
 
     // Compatibility overload for tests that construct with old signature (fallback to ephemeral)
@@ -2283,6 +2288,259 @@ public sealed class AgentV1Service
             _ => BoundedError(500, "compact_failed", "Compaction failed."),
         };
     }
+
+    public async Task<AgentServiceResult> DispatchCommandAsync(
+        string runIdRaw,
+        DispatchAgentCommandRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsRunId(runIdRaw))
+        {
+            return BoundedError(400, "invalid_run_id", "run_id invalid.");
+        }
+
+        if (request is null || request.Text is null)
+        {
+            return BoundedError(400, "invalid_request", "Command text is required.");
+        }
+
+        var parsed = AgentActionRouter.Parse(request.Text);
+        if (!parsed.IsCommand)
+        {
+            return BoundedError(400, "command_invalid", "A typed Agent command is required.");
+        }
+
+        if (!parsed.Success || parsed.Command is null)
+        {
+            return BoundedError(
+                400,
+                parsed.Code ?? "command_invalid",
+                parsed.SafeMessage);
+        }
+
+        var runId = new RunId(runIdRaw);
+        var run = await _store.GetRunAsync(runId, cancellationToken).ConfigureAwait(false);
+        if (run is null)
+        {
+            return BoundedError(404, "run_not_found", "Run not found.");
+        }
+
+        var command = parsed.Command;
+        if (run.State.IsTerminal()
+            && command.Kind is AgentCommandKind.Compact or AgentCommandKind.Skill)
+        {
+            return BoundedError(409, "run_terminal", "Terminal runs cannot execute Agent commands.");
+        }
+
+        switch (command.Kind)
+        {
+            case AgentCommandKind.Help:
+                return CommandSucceeded(
+                    runIdRaw,
+                    "help",
+                    new
+                    {
+                        commands = new[]
+                        {
+                            new { name = "/compact", arguments = "normal|aggressive", description = "Compact the run context." },
+                            new { name = "/help", arguments = "", description = "List typed Agent commands." },
+                            new { name = "/skills", arguments = "", description = "List skills granted to this session." },
+                            new { name = "/skill", arguments = "<id> <json-object>", description = "Run one granted declarative skill." },
+                        },
+                    },
+                    run.Version);
+
+            case AgentCommandKind.Skills:
+                return await DispatchSkillsAsync(run, runIdRaw, cancellationToken).ConfigureAwait(false);
+
+            case AgentCommandKind.Compact:
+            {
+                var compact = await CompactAsync(
+                    runIdRaw,
+                    new CompactAgentRunRequest(command.Strategy),
+                    cancellationToken).ConfigureAwait(false);
+                if (compact.StatusCode != 200)
+                {
+                    return compact;
+                }
+
+                var runVersion = compact.Body is CompactAgentRunResponse response
+                    ? response.RunVersion
+                    : run.Version;
+                return CommandSucceeded(runIdRaw, "compact", compact.Body, runVersion);
+            }
+
+            case AgentCommandKind.Skill:
+                return await DispatchSkillAsync(run, runIdRaw, command, cancellationToken).ConfigureAwait(false);
+
+            default:
+                return BoundedError(400, "command_invalid", "Unsupported Agent command.");
+        }
+    }
+
+    private async Task<AgentServiceResult> DispatchSkillsAsync(
+        AgentRun run,
+        string runIdRaw,
+        CancellationToken cancellationToken)
+    {
+        if (_agentBrokerClient is null)
+        {
+            return BoundedError(409, "broker_not_ready", "The Agent Broker is not ready.");
+        }
+
+        IReadOnlyList<AgentSkillDescriptor> skills;
+        try
+        {
+            skills = await _agentBrokerClient
+                .ListSkillsAsync(run.SessionId.Value, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (AgentBrokerException exception)
+        {
+            return BrokerCommandError(exception.Code);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return BoundedError(502, "broker_unavailable", "The Agent Broker could not be reached.");
+        }
+
+        var items = skills
+            .OrderBy(skill => skill.SkillId, StringComparer.Ordinal)
+            .ThenBy(skill => skill.Version, StringComparer.Ordinal)
+            .Select(skill => new
+            {
+                skill_id = skill.SkillId,
+                version = skill.Version,
+                required_scopes = skill.RequiredScopes.Order(StringComparer.Ordinal).ToArray(),
+                required_tools = skill.RequiredTools.Order(StringComparer.Ordinal).ToArray(),
+                trust_class = skill.TrustClass,
+            })
+            .ToArray();
+        return CommandSucceeded(runIdRaw, "skills", new { items }, run.Version);
+    }
+
+    private async Task<AgentServiceResult> DispatchSkillAsync(
+        AgentRun run,
+        string runIdRaw,
+        AgentCommand command,
+        CancellationToken cancellationToken)
+    {
+        if (_agentBrokerClient is null)
+        {
+            return BoundedError(409, "broker_not_ready", "The Agent Broker is not ready.");
+        }
+
+        IReadOnlyList<AgentSkillDescriptor> skills;
+        try
+        {
+            skills = await _agentBrokerClient
+                .ListSkillsAsync(run.SessionId.Value, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (AgentBrokerException exception)
+        {
+            return BrokerCommandError(exception.Code);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return BoundedError(502, "broker_unavailable", "The Agent Broker could not be reached.");
+        }
+
+        var descriptor = skills
+            .Where(skill => string.Equals(skill.SkillId, command.SkillId, StringComparison.Ordinal))
+            .OrderByDescending(skill => ParseSkillVersion(skill.Version))
+            .ThenByDescending(skill => skill.Version, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (descriptor is null || command.JsonInput is null || command.SkillId is null)
+        {
+            return BoundedError(403, "skill_not_granted", "The requested skill is not granted.");
+        }
+
+        AgentSkillExecutionResult result;
+        try
+        {
+            result = await _agentBrokerClient
+                .ExecuteSkillAsync(
+                    run.SessionId.Value,
+                    command.SkillId,
+                    descriptor.Version,
+                    command.JsonInput,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (AgentBrokerException exception)
+        {
+            return BrokerCommandError(exception.Code);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return BoundedError(502, "broker_unavailable", "The Agent Broker could not be reached.");
+        }
+
+        var data = new
+        {
+            skill_id = result.SkillId,
+            version = result.Version,
+            safe_summary = result.SafeSummary,
+            receipt_id = result.ReceiptId,
+            step_count = result.StepCount,
+            output = result.Output,
+        };
+        var response = new DispatchAgentCommandResponse(
+            runIdRaw,
+            result.Status,
+            result.ErrorCode ?? "skill",
+            data,
+            run.Version);
+
+        return result.Status switch
+        {
+            ToolResultStatuses.Succeeded => new AgentServiceResult(200, response),
+            ToolResultStatuses.ApprovalRequired => new AgentServiceResult(409, response),
+            ToolResultStatuses.Denied => new AgentServiceResult(403, response),
+            ToolResultStatuses.Cancelled => new AgentServiceResult(409, response),
+            ToolResultStatuses.TimedOut => new AgentServiceResult(504, response),
+            _ => new AgentServiceResult(502, response),
+        };
+    }
+
+    private static AgentServiceResult CommandSucceeded(
+        string runId,
+        string code,
+        object? data,
+        long runVersion) => new(
+        200,
+        new DispatchAgentCommandResponse(
+            runId,
+            ToolResultStatuses.Succeeded,
+            code,
+            data,
+            runVersion));
+
+    private static AgentServiceResult BrokerCommandError(string code) => code switch
+    {
+        "skill_not_granted" or "scope_denied" or "session_expired" =>
+            BoundedError(403, code, "The Agent Broker denied the skill request."),
+        "approval_required" => BoundedError(409, code, "The skill requires user approval."),
+        "broker_not_ready" or "broker_unavailable" =>
+            BoundedError(409, "broker_not_ready", "The Agent Broker is not ready."),
+        _ => BoundedError(502, "broker_unavailable", "The Agent Broker rejected the request."),
+    };
+
+    private static Version ParseSkillVersion(string value) =>
+        Version.TryParse(value, out var version) ? version : new Version(0, 0, 0);
 
     private async Task<SqliteConnection> OpenHarnessConnectionAsync(CancellationToken cancellationToken)
     {

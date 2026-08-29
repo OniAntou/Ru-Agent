@@ -18,6 +18,7 @@ public sealed class AgentV1EndpointTests
         ("POST", "/agent/v1/runs/{runId}/cancel"),
         ("POST", "/agent/v1/runs/{runId}/continue"),
         ("POST", "/agent/v1/runs/{runId}/compact"),
+        ("POST", "/agent/v1/runs/{runId}/commands"),
         ("POST", "/agent/v1/runs/{runId}/reconcile"),
         ("GET", "/agent/v1/sessions/{sessionId}/runs"),
         ("GET", "/agent/v1/policies"),
@@ -26,7 +27,7 @@ public sealed class AgentV1EndpointTests
     };
 
     [Fact]
-    public void Route_manifest_contains_exact_13_agent_routes()
+    public void Route_manifest_contains_exact_15_agent_routes()
     {
         var contractPath = FindContractPath();
         var json = File.ReadAllText(contractPath);
@@ -38,7 +39,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(55, doc.RootElement.GetArrayLength() - 1); // minus 1 websocket, HTTP count 55
+        Assert.Equal(56, doc.RootElement.GetArrayLength() - 1); // minus 1 websocket, HTTP count 56
     }
 
     [Theory]
@@ -51,6 +52,7 @@ public sealed class AgentV1EndpointTests
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cancel")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/continue")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/compact")]
+    [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile")]
     [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runs")]
     [InlineData("GET", "/agent/v1/policies")]
@@ -80,6 +82,7 @@ public sealed class AgentV1EndpointTests
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cancel")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/continue")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/compact")]
+    [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/commands")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile")]
     [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runs")]
     [InlineData("GET", "/agent/v1/policies")]

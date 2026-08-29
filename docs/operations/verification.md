@@ -37,12 +37,26 @@ cmd /c D:\LLM\build.bat
 ```
 
 This is the local equivalent of the CI release gates and must run
-sequentially. The route checker must remain at 54 HTTP routes and 1 WebSocket
-route (`/voice/stream`; 41 legacy plus 13 additive `/agent/v1/*`). The compatibility Harness is
+sequentially. The route checker must remain at 56 HTTP routes and 1 WebSocket
+route (`/voice/stream`; 41 legacy plus 15 additive `/agent/v1/*`). The compatibility Harness is
 deterministic contract evidence. A successful build proves only compilation,
 publish output, and the incremental native overlay build/test invocation; it
 does not prove that a GUI, microphone, speaker, VTube Studio model, or Windows
 audio endpoint worked.
+
+The Worker v2 model inventory is deterministic and should stay aligned with
+`AgentRuntimeCoordinatorFactory.RuntimeCapabilities`: `files.list`,
+`files.read`, `files.glob`, `files.search`, `files.write`, `files.edit`,
+`files.delete`, `files.restore`, `terminal.run`, and `terminal.shell`. Standard
+and Full Access receive the same advertised list; policy fallback behavior is
+verified separately. `system.volume` is a direct deterministic action and is
+not a model-selection binding. `notes.create`, read-only `system.*`, and
+`app.list` remain Broker-internal. `files.apply_patch` remains unadvertised.
+Typed commands (`/compact`, `/help`, `/skills`, `/skill`) use the shared
+Protocol parser and are covered by CLI/Host tests. Web search/fetch are
+configuration- and session-scope-gated, bounded, redirect-safe, and marked
+untrusted; declarative Skills are explicit session grants with per-step policy
+checks. Connectors and `app.open` remain unadvertised.
 
 The desktop launcher and release build share one artifact:
 `gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe`.
@@ -90,10 +104,14 @@ allowlist:
 
 ```powershell
 $activeDocs = @(
+    'D:\LLM\README.md',
+    'D:\LLM\CONTEXT.md',
     'D:\LLM\docs\README.md',
     'D:\LLM\docs\architecture.md',
+    'D:\LLM\docs\operations\agent-tools.md',
     'D:\LLM\docs\operations\runtime-behavior.md',
-    'D:\LLM\docs\operations\verification.md'
+    'D:\LLM\docs\operations\verification.md',
+    'D:\LLM\docs\adr\0007-mode-capability-profiles.md'
 )
 $stalePattern = @(
     ('implementation not ' + 'started'),

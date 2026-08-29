@@ -179,6 +179,18 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
+    public void ParseCommand_preserves_text_for_shared_router()
+    {
+        var res = AgentCliParser.Parse(new[] { "agent", "command", ValidRunId, "/skill research.and_note {\"path\":\"src\"}", "--json" });
+
+        Assert.True(res.Success);
+        var command = Assert.IsType<DispatchCommandCommand>(res.Command);
+        Assert.Equal(ValidRunId, command.RunId);
+        Assert.Equal("/skill research.and_note {\"path\":\"src\"}", command.Text);
+        Assert.True(command.Json);
+    }
+
+    [Fact]
     public void ParseTrust_SucceedsApprove()
     {
         var args = new[] { "agent", "trust", ValidRunId, "--approve" };

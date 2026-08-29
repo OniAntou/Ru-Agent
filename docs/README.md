@@ -19,48 +19,34 @@ an operating contract.
 
 ## Implemented checkpoints (Phases 1–3 selected surfaces, 2026-08-29)
 
-- [Phase 1: Harness Foundation and Headless Read-Only Tracer](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-01-harness-foundation.md) — Public Host owns Worker/Broker in one Job Object, Worker v2 one-step `AssistantStep`, 54 HTTP + 1 WS (`/voice/stream`; 13 `/agent/v1/*` additive), encrypted SQLite harness store, SSE reconnect with durable `id:<sequence>`, and thin `RuAgent.Cli` tracer (safe NDJSON, no private payload auto-fetch). The current Agent-only cut routes text and microphone turns through the Agent API/SSE path, retires Worker v1 Chat generation, and exposes the same Agent path in the WinUI composer.
-- [Phase 2: Policy Authority and File Tools](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-02-policy-file-tools.md) — Standard allows ordinary trusted-workspace reads/creates/edits and asks for delete/protected/network/unknown; explicit absolute paths outside the root use `external_directory_required` and can be granted for the current run or project, while Full Access changes fallback but never bypasses trust; immutable encrypted-at-rest `PolicySnapshot`/`WorkspaceTrust` snapshots, `CanonicalPathResolver`/`ProtectedPathCatalog` `v1`, Broker v2 `PolicyContext`/`PolicySnapshotEvaluator`, durable approvals first-writer-wins `approval_stale` with exact scope preview and old-snapshot execution ordering, model-usable file tools (`list`/`glob`/`search`/`read`, hash-guarded `write`/`edit`, recoverable `delete`/`restore` one-time), CLI `policy list`/`import`/`remove` and `approve`/`deny` plus `run --preset full` interactive. `files.apply_patch` is not advertised or model-usable in the current runtime.
-- [Phase 3: Terminal and Git](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-03-terminal-git.md) — The headless Agent v2 path exposes policy-evaluated `terminal.run`/`terminal.shell` with explicit per-request approval, and the run reconciliation route is active. The managed Git commit workflow (Task 6) is not shipped; Git commands remain ordinary terminal requests and are not a managed commit capability.
-- Desktop entry point — the current WinUI build exposes one static Agent
-  indicator and a compact Agent preset selector (`Standard`/`Full Access`) in
-  the composer; there is no Chat mode switch or workspace editor there.
-  Technical Agent surfaces remain available under `Công cụ`, while Agent turns
-  use the shared `/agent/v1/*` API/SSE path.
-  The current run also gets a transient, safe-summary-only
-  activity feed inside the Chat transcript; it is separate from durable
-  history and clears on terminal, cancellation, disconnect, or reset.
-- Agent-only transport retirement (2026-08-29) — the [approved design](superpowers/specs/2026-08-29-ru-agent-only-chat-removal-design.md)
-  and [implementation plan](superpowers/plans/2026-08-29-ru-agent-only-chat-removal.md)
-  are now implemented through the deterministic release gates: the public host
-  exposes one `/voice/stream` WebSocket, Worker v1 is runtime/device-only, and
-  text and microphone turns share the authenticated Agent HTTP/SSE path. GUI,
-  audio, and VTube Studio smoke checks remain explicit user-owned acceptance.
-- OpenCode-style prompt composition (2026-08-29) — the [focused contract](superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md)
-  and [implementation plan](superpowers/plans/2026-08-29-ru-opencode-system-prompt-composer.md)
-  are shipped: every Agent step receives one freshly composed system message,
-  root-bound instruction context, and a digest-only internal receipt. See the
-  [current runtime contract](operations/runtime-behavior.md) and
-  [verification gates](operations/verification.md) for operator-facing rules.
+- [Phase 1: Harness Foundation and Headless Read-Only Tracer](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-01-harness-foundation.md) — Public Host owns Worker/Broker in one Job Object, Worker v2 one-step `AssistantStep`, 56 HTTP + 1 WebSocket (`/voice/stream`; 15 `/agent/v1/*` additive), encrypted SQLite harness store, SSE reconnect with durable `id:<sequence>`, and thin `RuAgent.Cli` tracer. Text and microphone turns now use the same authenticated Agent API/SSE path.
+- [Phase 2: Policy Authority and File Tools](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-02-policy-file-tools.md) — Standard and Full Access receive the same Worker v2 file/terminal advertisement; Standard applies ordinary-workspace and analyzer/rule decisions while Full Access broadens fallbacks without bypassing trust or invariants. Immutable encrypted-at-rest policy/workspace snapshots, exact-scope approvals, external-directory grants, hash-guarded mutations, recoverable delete/restore, and CLI policy controls are active. `files.apply_patch` is not advertised or model-usable.
+- [Phase 3: Terminal and reconciliation](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-03-terminal-git.md) — `terminal.run`/`terminal.shell`, bounded output, process-tree cancellation, and reconciliation are active on the headless Agent v2 path. The managed Git commit workflow (Task 6) is not shipped; Git commands remain ordinary terminal requests.
+- Desktop entry point — WinUI exposes one static Agent indicator and a compact `Standard`/`Full Access` selector in the composer. There is no Chat generation mode or workspace editor. The transient activity feed is safe-summary-only and separate from durable history.
+- Agent-only transport retirement — [design](superpowers/specs/2026-08-29-ru-agent-only-chat-removal-design.md) and [implementation plan](superpowers/plans/2026-08-29-ru-agent-only-chat-removal.md) are implemented through deterministic release gates: `/voice/stream` is the only public WebSocket, Worker v1 is runtime/device-only, and every text/voice turn uses Agent API/SSE.
+- OpenCode-style prompt composition — the [focused contract](superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md) and [implementation plan](superpowers/plans/2026-08-29-ru-opencode-system-prompt-composer.md) are shipped. Each Agent step receives one freshly composed system message, root-bound instruction context, and a digest-only internal receipt.
+- Typed Agent commands and bounded web tools — `/compact`, `/help`, `/skills`,
+  and `/skill` share one Protocol parser and Public Host route. `web.search`
+  and `web.fetch` are disabled by default and appear only with explicit web
+  configuration plus matching Broker scopes; results are bounded and marked
+  untrusted.
 
-## Approved future work (remaining Phase 3 work, Phase 4, and follow-up projects)
+## Approved future work
 
-- [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md)
-- [OpenCode/Pi coding-loop parity implementation program](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity.md)
+- [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md) and [implementation program](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity.md) — remaining managed Git/real-model acceptance and later session/extension milestones are tracked there.
+- OS-enforced filesystem/network sandbox — a separate security project. Policy rules, path checks, and `network_intent` are not a sandbox and must not be relabeled as one.
 
 ## Historical implementation records
 
 - [FastAPI decommission validation](aspnetcore-cutover-validation.md)
-- [2026-08-24 codebase security and reliability remediation design](superpowers/specs/2026-08-24-codebase-security-reliability-remediation-design.md)
-- [2026-08-24 codebase security and reliability remediation plan](superpowers/plans/2026-08-24-codebase-security-reliability-remediation.md)
-- [Action execution kernel v1 design](superpowers/specs/2026-08-22-ru-action-execution-kernel-v1-design.md)
-- [Action execution kernel v1 implementation plan](superpowers/plans/2026-08-22-ru-action-execution-kernel-v1.md)
-- [Superseded volume vertical-slice design](superpowers/specs/2026-08-22-ru-volume-tool-vertical-slice-design.md)
-- [Superseded volume vertical-slice plan](superpowers/plans/2026-08-22-ru-volume-tool-vertical-slice.md)
+- [2026-08-24 codebase security and reliability remediation](superpowers/specs/2026-08-24-codebase-security-reliability-remediation-design.md)
+- [Action execution kernel v1](superpowers/specs/2026-08-22-ru-action-execution-kernel-v1-design.md) and its [implementation plan](superpowers/plans/2026-08-22-ru-action-execution-kernel-v1.md)
 - [Agent tools and skills roadmap](superpowers/plans/2026-08-22-ru-agent-tools-skills.md)
-- [Superseded Agent-only/OpenCode umbrella design](superpowers/specs/2026-08-29-ru-agent-only-opencode-prompt-composer-design.md)
 
-Superseded local-model, training, and evaluation plans were removed after the
-current decisions were consolidated into the architecture, ADRs, runtime
-behavior, and verification documents. Git history remains the recovery source
-for implementation records.
+The remaining dated UI, voice, logging, policy, and harness plans/specs remain
+in the tree only as implementation history. They are not operating contracts;
+the current documents above are authoritative. Each retained record is
+bannered as historical or future work so an old checklist is not mistaken for
+an active task. Superseded records, when present in a working tree, follow the
+same historical-only rule. Git history remains the recovery source for those
+records.

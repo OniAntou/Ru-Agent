@@ -76,17 +76,17 @@ def test_architecture_records_current_ownership_and_privacy() -> None:
     aspnet_adr = _text("docs/adr/0001-aspnet-core-public-host.md")
     cli_readme = _text("backend-dotnet/RuAgent.Cli/README.md")
     assert "ASP.NET Core" in architecture
-    assert "54 HTTP" in architecture
+    assert "56 HTTP" in architecture
     assert "1 WebSocket" in architecture
     assert "typed worker protocol v2" in architecture.lower() or "worker v2" in architecture.lower()
     assert "assistant text" in architecture
     assert "private VTS" in architecture
     # Phase-2 headless harness foundation + policy/file tools facts
-    assert "54 HTTP" in readme
-    assert "54 HTTP" in backend_readme
-    assert "54 HTTP" in context
-    assert "54 HTTP routes" in aspnet_adr
-    assert "13 `/agent/v1/*`" in aspnet_adr
+    assert "56 HTTP" in readme
+    assert "56 HTTP" in backend_readme
+    assert "56 HTTP" in context
+    assert "56 HTTP routes" in aspnet_adr
+    assert "15 `/agent/v1/*`" in aspnet_adr
     assert "Public Host" in architecture
     assert "Worker/Broker" in architecture
     assert "RuBackend.exe --managed-runtime" in architecture or "Public Host" in backend_readme
@@ -104,10 +104,10 @@ def test_architecture_records_current_ownership_and_privacy() -> None:
     # stale WinUI ownership must be gone
     assert "RuApp owns all three" not in backend_readme
     assert "RuApp owns the desktop lifecycle. It creates" not in architecture
-    # public contract is 54+1
+    # public contract is 56+1
     contract = _text("backend-dotnet/public-route-contract.json")
     assert '"/agent/v1/runs"' in contract
-    assert contract.count('"method"') == 55
+    assert contract.count('"method"') == 57
 
 
 def test_current_docs_do_not_publish_retired_operating_instructions() -> None:
@@ -144,9 +144,6 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
     verification = _text("docs/operations/verification.md")
     docs_index = _text("docs/README.md")
     root_readme = _text("README.md")
-    old_volume_design = _text(
-        "docs/superpowers/specs/2026-08-22-ru-volume-tool-vertical-slice-design.md"
-    )
 
     # Phase-2 complete files.* matrix
     assert (
@@ -162,25 +159,28 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
     assert "recovery_consumed" in agent_tools or "recovery_target_exists" in agent_tools
     assert "expected_sha256" in agent_tools or "expected_sha256" in root_readme
     assert "Standard allows ordinary" in root_readme or "Standard automatically allows" in root_readme
-    assert "Full Access changes fallback" in root_readme or "Full Access changes fallback" in agent_tools
+    assert (
+        "Full Access changes fallback" in root_readme
+        or "Full Access changes fallback" in agent_tools
+        or "broader fallback" in root_readme
+    )
     assert "workspace_changed" in agent_tools or "workspace_changed" in root_readme
     assert "approval_stale" in agent_tools or "first-writer-wins" in agent_tools
     assert "exact scope" in agent_tools or "exact scope preview" in agent_tools
 
     assert (
         "| `system.volume@1.0.0` (`system.write`) | "
-        "yes, verified readback required | yes, verified readback required |"
+        "not a model-selection binding; deterministic parser with verified readback | "
+        "same deterministic direct-action path |"
     ) in agent_tools
-    assert "| Skills | disabled | disabled |" in agent_tools
-    assert (
-        "| Web search/fetch, connectors, `app.open` "
-        "| absent | absent |"
-    ) in agent_tools or "| Web search/fetch, connectors" in agent_tools
+    assert "| Declarative Skills (`skill.execute`) |" in agent_tools
+    assert "`web.search@1.0.0`" in agent_tools
+    assert "`web.fetch@1.0.0`" in agent_tools
     assert "terminal.run" in agent_tools and "terminal.shell" in agent_tools
     assert "open sockets" in agent_tools
-    assert "arbitrary host code" in agent_tools
+    assert "arbitrary host" in agent_tools or "can execute host code" in agent_tools
     assert "network_intent" in agent_tools
-    assert "`terminal.execute`/`terminal.network` scopes" in agent_tools
+    assert "`terminal.execute`" in agent_tools
     assert "descriptive input metadata, not a security boundary" in agent_tools
     assert "files.edit@1.0.0" in agent_tools
     assert "evidence_class: contract" in verification
@@ -189,7 +189,6 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
     assert "tests/test_volume_control.py" not in verification
     assert "pycaw" not in agent_tools.casefold()
     assert "comtypes" not in agent_tools.casefold()
-    assert "Superseded" in old_volume_design
     assert "operations/agent-tools.md" in docs_index
     assert "agent-volume-contract" in root_readme
     assert "agent-terminal-approval" not in root_readme
@@ -203,17 +202,24 @@ def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -
     root_readme = _text("README.md")
 
     for row in (
-        "| `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` "
-        "(`system.read`) | Broker-internal | Broker-internal |",
+        "| `notes.create@1.0.0`, `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` "
+        "| Broker-internal; not advertised | Broker-internal; not advertised |",
         "| `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | "
-        "not advertised | explicit approval for every request",
+        "advertised; analyzer/rule/approval policy decides each request | "
+        "advertised; well-formed calls normally use the Full fallback; extended timeouts still ask |",
     ):
         assert row in agent_tools
 
     assert "one compact preset dropdown" in root_readme
     assert "The first usable tool set" not in agent_tools
-    assert "Skill packages are declarative" not in agent_tools
+    assert "Declarative Skills are available" in agent_tools
     assert "gives Ru bounded workspace" not in root_readme
+
+
+def test_current_doc_index_links_current_replacements() -> None:
+    docs_index = _text("docs/README.md")
+    assert "2026-08-29-ru-opencode-system-prompt-composer-design.md" in docs_index
+    assert "2026-08-29-ru-agent-only-opencode-prompt-composer-design.md" not in docs_index
 
 
 def test_current_docs_describe_the_compact_desktop_agent_entry_point() -> None:
@@ -328,7 +334,7 @@ def test_phase2_policy_and_file_tools_are_documented() -> None:
         )
 
     assert "Standard automatically allows" in readme or "Standard `allow`" in agent_tools
-    assert "Full Access changes fallback" in readme
+    assert "Full Access changes fallback" in readme or "broader fallback" in readme
     assert "never bypasses" in readme or "never bypasses workspace trust" in agent_tools
 
     # Complete files.* contract
@@ -357,9 +363,10 @@ def test_phase2_policy_and_file_tools_are_documented() -> None:
 
     # No sandboxing claim
     readme_lower = readme.lower()
-    # Only allowed sandbox mention is deferral in TODO.md, not in main docs claiming policy is sandbox
+    # Main docs may explicitly state that policy metadata is not network isolation;
+    # they must not claim that policy itself provides isolation.
     assert "filesystem sandbox" not in readme_lower
-    assert "network isolation" not in readme_lower
+    assert "not\n  network isolation" in readme_lower or "not network isolation" in readme_lower
 
     # Docs index records the implemented Phase 2 and selected Phase 3 surfaces.
     assert "Phase 2" in docs_index

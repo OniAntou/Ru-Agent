@@ -34,14 +34,15 @@ ASP.NET Core is the only public backend. It owns authentication, validation,
 settings and credentials, sessions/history, activity, structured memory, Agent
 run ordering, public errors, durable Agent harness (Core + SQLite
 `agent_harness.db` + AES-GCM payloads, conversation outbox, workspace trust,
-session permissions, encrypted policy snapshots), and all 54 HTTP plus
-1 WebSocket route (`/voice/stream`; 41 pre-existing HTTP routes plus 13 additive
+session permissions, encrypted policy snapshots), and all 56 HTTP plus
+1 WebSocket route (`/voice/stream`; 41 pre-existing HTTP routes plus 15 additive
 `/agent/v1/*`).
-Agent v2 (`/worker/v2` one-step `AssistantStep` and `/agent/v1/*` 13-route
-API/SSE with bearer auth, `id:<sequence>`/`Last-Event-ID` cursor, idempotency
-409, `workspace_busy` 409, `preset_mismatch` 409) is additive and
-feature-flagged behind `RuBackend:AgentHarness:Version` (default `v1`);
-policy/approval endpoints (`GET`/`POST`/`DELETE /agent/v1/policies`, `POST
+The public Agent path uses Worker v2 (`/worker/v2` one-step `AssistantStep` and
+`/agent/v1/*` 15-route API/SSE with bearer auth, `id:<sequence>`/
+`Last-Event-ID` cursor, idempotency 409, `workspace_busy` 409,
+`preset_mismatch` 409). The legacy `RuBackend:AgentHarness:Version` setting is
+still accepted by compatibility Harness construction, but it is not a product
+mode switch and cannot re-enable Chat. Policy/approval endpoints (`GET`/`POST`/`DELETE /agent/v1/policies`, `POST
 /agent/v1/runs/{runId}/approvals/{approvalId}` with first-writer-wins
 `approval_stale` and exact scope preview) are active with durable
 encrypted-at-rest snapshots and global interactive header
@@ -127,43 +128,43 @@ the Runtime Worker or voice engine as independent public services.
   the conversation transcript can show a transient safe activity feed for the
   current run. The feed is separate from durable messages and never places raw
   tool payloads in the transcript.
-- Tool capability is an Agent preset selector. Standard advertises workspace
-  discovery/read (`files.list`, `files.glob`, `files.search`, `files.read` with
-  offset/limit, streaming enumeration, hidden/binary/protected handling,
-  bounded `truncated` metadata), plus the approved Agent mutation and device
-  tools. Full Access broadens policy fallbacks without bypassing trust or
-  approval. The
-  headless Agent v2 worker also advertises `terminal.run` and `terminal.shell`;
-  both are policy-evaluated and require explicit approval before execution.
-  `files.apply_patch` is not advertised or model-usable in the current runtime.
-  Standard automatically allows
-  ordinary trusted-workspace reads, creates and edits. An explicit absolute
-  path outside the project asks first with `external_directory_required`; the
-  user can grant only that intent, the canonical directory for the run, or a
-  project-scoped directory rule. Delete, protected paths, declared network use,
-  and unknown operations retain their own approval gates;
-  Full Access changes fallback decisions but never bypasses workspace trust
-  or protocol invariants and remains a current-Windows-user boundary. Allow
-  once/run/project and Deny are durable; rule/snapshot replacement follows
-  approved old-snapshot execution ordering with Broker as authoritative
-  evaluator and Core persisting `tool.execution_requested` before dispatch.
-  Current model-usable file tools are `files.list`/`files.glob`/
-  `files.search`/`files.read` and hash-guarded `files.write`/`files.edit`
-  (`expected_sha256` `missing` or 64-hex), plus `files.delete` (recoverable cap 1 MiB, opaque
-  `recovery_id`) and one-time `files.restore` (`recovery_consumed` on replay).
-  Every mutation uses preimage checks, atomic same-volume replacement where
-  supported, before/after hashes, bounded diff summary, run attribution, and
-  recoverable semantics. CLI exposes `agent approve --scope once|run|project`,
-  `agent deny`, `agent policy list`/`import --global FILE`/`remove`
-  (versioned JSON, `X-Interactive-Confirmed: true`, `--json` cannot bypass),
-  and `agent run --preset full` interactive warning (`--json` cannot confirm).
-  Terminal (`terminal.run`/`terminal.shell`) is available only on the headless
-  Agent v2 path, under policy and per-request approval; it runs as the current
-  Windows user and can execute host code or open sockets. The managed Git commit
-  workflow (Phase 3 Task 6) is not shipped yet. The preset resets to Standard on every launch and Full
-  Access needs one explicit confirmation per run. WinUI displays typed
-  activity from actual Host events, and a success is visible only after a
-  matching verified Broker receipt.
+- The current Worker v2 model surface is exactly ten bindings in both presets:
+  `files.list`, `files.glob`, `files.search`, `files.read`, `files.write`,
+  `files.edit`, `files.delete`, `files.restore`, `terminal.run`, and
+  `terminal.shell`. Standard automatically allows ordinary trusted-workspace
+  file reads/creates/edits and applies analyzer/rule/approval decisions to
+  terminal calls. Full Access keeps the same advertised list but normally uses
+  its broader fallback for well-formed calls; protected paths, hard invariants,
+  and extended timeout thresholds remain gated. `files.apply_patch` is not
+  advertised or model-usable in the current runtime.
+  Explicit absolute paths outside the project ask with
+  `external_directory_required`; the user can grant only the canonical
+  directory for the run or project, and that grant covers read/create/edit
+  operations only. Every file mutation uses `expected_sha256`, preimage checks,
+  atomic same-volume replacement where supported, before/after hashes, bounded
+  diff summary, run attribution, and recoverable delete/one-time restore
+  semantics. Terminal calls run as the current Windows user and can execute
+  host code or open sockets; `network_intent` is audit/approval metadata, not
+  network isolation. The managed Git commit workflow (Phase 3 Task 6) is not
+  shipped; Git commands are ordinary terminal requests.
+  `system.volume` is a deterministic direct-action path with same-endpoint
+  readback verification, not a model-selection binding. `notes.create`,
+  read-only `system.*`, and `app.list` remain Broker-internal. CLI exposes
+  `agent approve --scope once|run|project`, `agent deny`, `agent policy
+  list`/`import --global FILE`/`remove`, and `agent run --preset full` with
+  interactive confirmation (`--json` cannot bypass). The preset resets to
+  Standard on every launch and Full Access needs one explicit confirmation per
+  run. WinUI displays typed activity from actual Host events, and a success is
+  visible only after a matching verified Broker receipt.
+  The authenticated `POST /agent/v1/runs/{runId}/commands` route and CLI
+  `agent command` adapter share one bounded parser for `/compact
+  normal|aggressive`, `/help`, `/skills`, and `/skill <id> <json-object>`;
+  malformed or unknown slash commands never enter history. Declarative Skills
+  require explicit session grants and re-enter normal Broker policy/approval
+  checks. Optional `web.search` and `web.fetch` are advertised only when
+  WebOptions and matching scopes are configured; responses are bounded,
+  redirect-safe, sanitized, and marked `untrusted`. Connectors and `app.open`
+  remain internal.
 - Screen observation is opt-in from Settings. When a Gemini Vision key and a
   supported hosted generation backend are configured, the private worker
   captures bounded JPEG frames and publishes reaction events. WinUI consumes
@@ -192,8 +193,8 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 cmd /c D:\LLM\build.bat
 ```
 
-The backend artifact covers 54 HTTP routes and 1 WebSocket route (`/voice/stream`; 41 legacy
-plus 13 `/agent/v1/*`), requires correct-bearer success plus
+The backend artifact covers 56 HTTP routes and 1 WebSocket route (`/voice/stream`; 41 legacy
+plus 15 `/agent/v1/*`), requires correct-bearer success plus
 wrong/missing-bearer rejection, and records observation routes as explicit
 hardware/external skips. It uses synthetic STT/TTS and records only statuses,
 timings, counts, event types, and cleanup state. In deterministic mode it also

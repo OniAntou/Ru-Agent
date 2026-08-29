@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using RuAgent.Client;
+using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli;
@@ -293,6 +294,61 @@ public sealed class AgentCommands
         {
             await _agentClient.ContinueAsync(cmd.RunId, cancellationToken).ConfigureAwait(false);
             await _out.WriteLineAsync($"continued {cmd.RunId}").ConfigureAwait(false);
+            return 0;
+        }
+        catch (AgentApiException ex)
+        {
+            await _err.WriteLineAsync($"{ex.ErrorCode}: {ex.Message}").ConfigureAwait(false);
+            return 1;
+        }
+    }
+
+    public async Task<int> DispatchCommandAsync(
+        DispatchCommandCommand cmd,
+        CancellationToken cancellationToken)
+    {
+        var parsed = AgentActionRouter.Parse(cmd.Text);
+        if (!parsed.Success || parsed.Command is null)
+        {
+            var code = parsed.Code ?? "command_invalid";
+            await _err.WriteLineAsync($"{code}: {parsed.SafeMessage}").ConfigureAwait(false);
+            return 1;
+        }
+
+        try
+        {
+            var result = await _agentClient
+                .DispatchCommandAsync(cmd.RunId, cmd.Text, cancellationToken)
+                .ConfigureAwait(false);
+            if (cmd.Json)
+            {
+                await _out.WriteLineAsync(JsonSerializer.Serialize(new
+                {
+                    v = 1,
+                    type = "command",
+                    run_id = result.RunId,
+                    status = result.Status,
+                    code = result.Code,
+                    data = result.Data,
+                    run_version = result.RunVersion,
+                })).ConfigureAwait(false);
+            }
+            else
+            {
+                await _out.WriteLineAsync($"run_id: {result.RunId}").ConfigureAwait(false);
+                await _out.WriteLineAsync($"status: {result.Status}").ConfigureAwait(false);
+                await _out.WriteLineAsync($"code: {result.Code}").ConfigureAwait(false);
+                await _out.WriteLineAsync($"run_version: {result.RunVersion}").ConfigureAwait(false);
+                if (parsed.Command.Kind is RuAgent.Protocol.AgentCommandKind.Help or RuAgent.Protocol.AgentCommandKind.Skills)
+                {
+                    await _out.WriteLineAsync(JsonSerializer.Serialize(result.Data)).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _out.WriteLineAsync("result: bounded; see --json for structured metadata").ConfigureAwait(false);
+                }
+            }
+
             return 0;
         }
         catch (AgentApiException ex)

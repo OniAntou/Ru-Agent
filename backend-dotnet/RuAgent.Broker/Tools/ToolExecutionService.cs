@@ -3,12 +3,14 @@ using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using RuAgent.Broker.Policy;
+using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Runtime;
 using RuAgent.Broker.Skills;
 using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Notes;
 using RuAgent.Broker.Tools.Terminal;
+using RuAgent.Broker.Tools.Web;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools;
@@ -42,13 +44,18 @@ public sealed class ToolExecutionService : IToolInvoker
     private readonly NotesAdapter _notes;
     private readonly SkillRegistry _skills;
     private readonly SkillOrchestrator _skillOrchestrator;
+    private readonly WebOptions _webOptions;
+    private readonly WebSearchAdapter? _webSearch;
+    private readonly WebFetchAdapter? _webFetch;
 
     public ToolExecutionService(
         BrokerSession session,
         string workspaceRoot,
         IVolumeController? volumeController = null,
         IEnumerable<SkillManifest>? builtinSkills = null,
-        IEnumerable<string>? skillPackageRoots = null)
+        IEnumerable<string>? skillPackageRoots = null,
+        WebOptions? webOptions = null,
+        HttpClient? webHttpClient = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _workspace = new WorkspacePathGuard(workspaceRoot);
@@ -64,7 +71,20 @@ public sealed class ToolExecutionService : IToolInvoker
             _approvalTokens);
         _volume = new Lazy<VolumeTools>(
             () => new VolumeTools(volumeController ?? new WindowsCoreAudioVolumeController()));
-        _catalog = new ToolCatalog(BuildExecutors());
+        _webOptions = webOptions ?? new WebOptions();
+        if (_webOptions.Enabled)
+        {
+            var webClient = webHttpClient ?? CreateWebHttpClient();
+            var webPolicy = new WebPolicy();
+            var sanitizer = new WebContentSanitizer();
+            _webFetch = new WebFetchAdapter(webClient, webPolicy, sanitizer, _webOptions.MaxResponseBytes);
+            if (_webOptions.SearchEndpoint is not null)
+            {
+                _webSearch = new WebSearchAdapter(webClient, webPolicy, sanitizer, _webOptions.SearchEndpoint, _webOptions.MaxResponseBytes);
+            }
+        }
+
+        _catalog = new ToolCatalog(BuildExecutors(), _webOptions);
         _skills = new SkillRegistry();
         foreach (var skill in builtinSkills ?? Array.Empty<SkillManifest>())
         {
@@ -104,7 +124,7 @@ public sealed class ToolExecutionService : IToolInvoker
         _catalog.Registry.ListCapabilities();
 
     public IReadOnlyList<AgentToolCapability> ListCapabilities(CapabilityProfile profile) =>
-        _catalog.Registry.ListCapabilities(profile);
+        _catalog.Registry.ListCapabilities(profile, EnabledWebScopes());
 
     public IReadOnlyList<SkillManifest> ListSkills() => _skills.List();
 
@@ -176,6 +196,22 @@ public sealed class ToolExecutionService : IToolInvoker
             _session.Scopes,
             _session.Descriptor.ExpiresAt,
             _session.SkillIds);
+
+    private IReadOnlySet<string> EnabledWebScopes()
+    {
+        var scopes = new HashSet<string>(StringComparer.Ordinal);
+        if (_webOptions.FetchEnabled)
+        {
+            scopes.Add(ToolScope.WebFetch);
+        }
+
+        if (_webOptions.SearchEnabled)
+        {
+            scopes.Add(ToolScope.WebSearch);
+        }
+
+        return scopes;
+    }
 
     public void RemoveSession(string sessionId) => _approvals.RemoveSession(sessionId);
 
@@ -469,22 +505,57 @@ public sealed class ToolExecutionService : IToolInvoker
         }
     }
 
-    public Task<ToolResult> ExecuteSkillAsync(
+    public async Task<ToolResult> ExecuteSkillAsync(
         AgentEnvelope request,
         CancellationToken cancellationToken)
     {
         var started = Stopwatch.StartNew();
-        return Task.FromResult(Result(
+        try
+        {
+            var skillId = ReadString(request.Payload, "skill_id");
+            var version = ReadOptionalString(request.Payload, "version") ?? "1.0.0";
+            var input = request.Payload["input"] is JsonObject objectNode
+                ? objectNode
+                : throw new ToolExecutionException("schema_invalid");
+            var run = await ExecuteSkillAsync(
+                request.SessionId,
+                skillId,
+                version,
+                input,
+                cancellationToken).ConfigureAwait(false);
+            var status = run.State switch
+            {
+                SkillRunState.Completed => ToolResultStatuses.Succeeded,
+                SkillRunState.Cancelled => ToolResultStatuses.Cancelled,
+                SkillRunState.ApprovalRequired => ToolResultStatuses.ApprovalRequired,
+                _ => ToolResultStatuses.Failed,
+            };
+            return Result(
                 request,
-                ToolResultStatuses.Denied,
-                new JsonObject(),
-                "skills_disabled",
-                "Skills are disabled.",
-                started));
+                status,
+                run.Output?.DeepClone().AsObject() ?? new JsonObject(),
+                run.ErrorCode,
+                run.SafeSummary,
+                started,
+                ToolVerificationStates.NotRequired,
+                adapterInvoked: run.StepReceipts.Any(step => step.ToolId is not null));
+        }
+        catch (ToolExecutionException error)
+        {
+            return Result(request, ToolResultStatuses.Denied, new JsonObject(), error.Code, "Skill request was rejected.", started);
+        }
+        catch (Exception)
+        {
+            return Result(request, ToolResultStatuses.Failed, new JsonObject(), "skill_failed", "Skill failed.", started);
+        }
     }
 
     private IReadOnlyDictionary<string, ToolExecutor> BuildExecutors() =>
-        new Dictionary<string, ToolExecutor>(StringComparer.Ordinal)
+        BuildExecutorsCore();
+
+    private IReadOnlyDictionary<string, ToolExecutor> BuildExecutorsCore()
+    {
+        var executors = new Dictionary<string, ToolExecutor>(StringComparer.Ordinal)
         {
             ["system.time"] = (_, _, _) => Succeeded(_system.Time(), "System time read."),
             ["system.status"] = (_, _, _) => Succeeded(_system.Status(), "System status read."),
@@ -519,6 +590,28 @@ public sealed class ToolExecutionService : IToolInvoker
                     context.Approved),
                 "Workspace note created."),
         };
+
+        if (_webFetch is not null)
+        {
+            executors["web.fetch"] = ExecuteWebFetchAsync;
+        }
+
+        if (_webSearch is not null)
+        {
+            executors["web.search"] = ExecuteWebSearchAsync;
+        }
+
+        return executors;
+    }
+
+    private static HttpClient CreateWebHttpClient()
+    {
+        var handler = new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+        };
+        return new HttpClient(handler, disposeHandler: true);
+    }
 
     private async Task<ToolResult> ExecuteBindingAsync(
         AgentEnvelope receiptRequest,
@@ -626,6 +719,13 @@ public sealed class ToolExecutionService : IToolInvoker
                 "Tool input or output failed.",
                 VerificationFailure(binding));
         }
+        catch (InvalidDataException error)
+        {
+            outcome = ToolExecutionOutcome.Failed(
+                StableCode(error.Message, "invalid_data"),
+                "Tool response data was rejected.",
+                VerificationFailure(binding));
+        }
         catch (Exception)
         {
             outcome = ToolExecutionOutcome.Failed(
@@ -646,6 +746,68 @@ public sealed class ToolExecutionService : IToolInvoker
         JsonObject arguments,
         CancellationToken cancellationToken)
         => ValueTask.FromResult(_volume.Value.Execute(arguments));
+
+    private async ValueTask<ToolExecutionOutcome> ExecuteWebSearchAsync(
+        ToolExecutionContext context,
+        JsonObject arguments,
+        CancellationToken cancellationToken)
+    {
+        if (_webSearch is null)
+        {
+            throw new UnauthorizedAccessException("web_disabled");
+        }
+
+        var citations = await _webSearch.SearchAsync(
+            ReadString(arguments, "query"),
+            cancellationToken).ConfigureAwait(false);
+        var output = new JsonObject
+        {
+            ["untrusted"] = true,
+            ["citations"] = new JsonArray(citations.Select(ToJson).Cast<JsonNode?>().ToArray()),
+        };
+        return ToolExecutionOutcome.Succeeded(
+            output,
+            ToolVerificationStates.NotRequired,
+            "Web search completed.");
+    }
+
+    private async ValueTask<ToolExecutionOutcome> ExecuteWebFetchAsync(
+        ToolExecutionContext context,
+        JsonObject arguments,
+        CancellationToken cancellationToken)
+    {
+        if (_webFetch is null)
+        {
+            throw new UnauthorizedAccessException("web_disabled");
+        }
+
+        var rawUri = ReadString(arguments, "url");
+        if (!Uri.TryCreate(rawUri, UriKind.Absolute, out var uri))
+        {
+            throw new ArgumentException("web_uri_invalid");
+        }
+
+        var fetched = await _webFetch.FetchAsync(uri, cancellationToken).ConfigureAwait(false);
+        return ToolExecutionOutcome.Succeeded(
+            new JsonObject
+            {
+                ["untrusted"] = true,
+                ["source"] = ToJson(fetched.Source),
+                ["content"] = fetched.SanitizedText,
+                ["content_type"] = fetched.ContentType,
+            },
+            ToolVerificationStates.NotRequired,
+            "Web page fetched.");
+    }
+
+    private static JsonObject ToJson(SourceCitation citation) => new()
+    {
+        ["title"] = citation.Title.Length <= 256 ? citation.Title : citation.Title[..256],
+        ["url"] = citation.Url.ToString(),
+        ["snippet"] = citation.Snippet is null
+            ? null
+            : citation.Snippet.Length <= 512 ? citation.Snippet : citation.Snippet[..512],
+    };
 
     private ValueTask<ToolExecutionOutcome> ExecuteFileEdit(JsonObject arguments)
     {

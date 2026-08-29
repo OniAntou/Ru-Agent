@@ -63,9 +63,10 @@ advertised only when the Host has an authenticated capability for it.
 
 Prompt composition is not a security boundary: Broker policy, workspace trust,
 approvals, protected paths, external-directory grants, and cancellation remain
-authoritative. Skills/MCP discovery, arbitrary system overrides, Chat
-compatibility, UI redesign, and the OS-enforced filesystem/network sandbox are
-outside this implementation.
+authoritative. Declarative Skills are available only through explicit session
+grants; subagent orchestration, LSP, extension/plugin/MCP discovery, arbitrary
+system overrides, Chat compatibility, UI redesign, and the OS-enforced
+filesystem/network sandbox are outside this implementation.
 
 ## Voice output
 
@@ -211,13 +212,16 @@ looped or filled with an earlier response.
 
 ## Action execution kernel v1
 
-Capability profiles gate everything: Agent Standard advertises workspace
-discovery/read tools (`files.list`, `files.glob`, `files.search`, and `files.read`)
-plus approved workspace mutation/device tools. On the headless Agent v2 path,
-`terminal.run` and `terminal.shell` are also advertised and
-require a fresh per-request approval. Full Access retains that approval
-requirement. After approval, the terminal runs as the current Windows user and
-is intentionally not an OS-enforced filesystem/network sandbox. File tools may
+The Worker v2 settings currently advertise the same ten bindings in both
+presets: `files.list`, `files.read`, `files.glob`, `files.search`,
+`files.write`, `files.edit`, `files.delete`, `files.restore`, `terminal.run`,
+and `terminal.shell`. Standard and Full Access differ in Broker policy, not in
+the model-visible list. Standard automatically allows ordinary trusted-workspace
+file reads/creates/edits and applies analyzer/rule/approval decisions to
+terminal requests; Full Access uses a broader fallback for well-formed calls,
+while protected paths, hard invariants, and extended timeout thresholds remain
+gated. Terminal execution runs as the current Windows user and is intentionally
+not an OS-enforced filesystem/network sandbox. File tools may
 request an explicit absolute path outside the project; the user can grant that
 canonical directory for the current run or project. That grant covers the
 directory's read/create/edit operations only; protected and destructive
@@ -226,7 +230,8 @@ is not advertised or model-usable in the current runtime.
 Explicit, unambiguous volume commands use a deterministic parser before
 generation in Agent Standard and Full Access. The parser creates one typed
 `system.volume@1.0.0` request and does not call the configured model for action
-selection. Ambiguous volume wording returns a bounded clarification.
+selection; volume is not in the Worker v2 model-tool list. Ambiguous volume
+wording returns a bounded clarification.
 
 The model selection channel is active for every Agent run: each step allows up
 to ten model-initiated tool calls through the Agent Broker pipeline. Selection
@@ -234,8 +239,9 @@ JSON is never streamed into
 the visible transcript, history, mood state, or diagnostics; a malformed
 selection ends the turn with fixed copy and one bounded diagnostic.
 Mutating tools (`files.write`, `files.edit`, `files.delete`, `files.restore`,
-`notes.create`, and the two headless terminal bindings) require per-action approval cards with bounded
-previews; reads and verified volume operations do not. The Public Host opens
+and terminal requests that the active policy marks `ask`) use bounded approval
+cards; reads and verified volume operations do not. `notes.create` is Broker-
+internal and is not model-selectable. The Public Host opens
 one profile-scoped Broker session per turn loop, and RuAgentBroker executes and
 verifies adapters. The Worker may render native-volume success only from a
 matching `succeeded` receipt whose verification state is `verified` and whose
@@ -251,12 +257,44 @@ Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
 memory, reviewed examples, TTS, or VTS metadata.
 
-Model-enabled bindings follow the capability profiles above; `files.edit@1.0.0`
-and `notes.create@1.0.0` join the Agent/Full catalog, while read-only system
-bindings, unbound connectors, and `app.open` remain Broker-internal; skills are
-disabled. The managed Git commit workflow (Phase 3 Task 6) is not shipped;
-Git commands are ordinary explicitly approved terminal requests. The GUI
-renders the actual `agent.session` grant received from the Host.
+The ten Worker v2 bindings above are the core model surface. Configured
+`web.search`/`web.fetch` bindings are added only when WebOptions and the
+matching session scopes are present; their bounded responses carry an explicit
+`untrusted` marker and never become instructions. `notes.create`, read-only
+system bindings, unbound connectors, and `app.open` remain Broker-internal.
+Declarative Skills are added only from validated manifests explicitly included
+in the session grant; each Skill step re-enters normal tool scope, schema,
+approval, timeout, and output limits. The managed Git commit workflow (Phase 3
+Task 6) is not shipped; Git commands are ordinary terminal requests governed
+by the active preset and policy. The GUI renders the actual `agent.session`
+grant received from the Host. Managed startup does not auto-load skill package
+roots or WebOptions, and the default model loop does not advertise those
+optional Broker bindings; an explicit Broker configuration and session grant
+are required before `/skills`, `/skill`, or web execution can be used.
+
+### Typed commands
+
+The authenticated `POST /agent/v1/runs/{runId}/commands` route handles
+`/compact normal|aggressive`, `/help`, `/skills`, and
+`/skill <id> <json-object>`. `AgentActionRouter` is shared by Public Host and
+CLI, bounds input, rejects unknown or malformed slash commands with stable
+codes, and prevents command text from entering prompts, history, or the
+conversation outbox. `/compact` uses the durable context-compaction contract;
+the other commands return bounded static or session-scoped data.
+
+### Web access
+
+`web.search` requires an enabled WebOptions object, a public HTTP(S) search
+endpoint, and `web.search` in the authenticated grant. `web.fetch` requires
+the enabled option and `web.fetch` scope. Redirects are disabled or validated
+at every hop, private/reserved targets are rejected, and response bytes,
+content types, UTF-8, sanitizer output, and citation count are capped. Web
+payloads are data only and cannot grant tools, permissions, paths, approvals,
+or preset changes; embedded URL credentials are rejected as well. These gates
+are not an OS-enforced network sandbox.
+
+Declarative Skills are the only workflow extension surface in this checkpoint;
+subagents, LSP, extensions, plugins, and MCP are not loaded or discoverable.
 
 Selecting a preset while idle does not add a composer status row, so the empty
 conversation welcome content keeps its position. The Agent inline status appears only

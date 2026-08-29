@@ -5,11 +5,12 @@ date: 2026-08-29
 
 # Agent capability profiles (Standard / Full Access)
 
-Ru exposes one generation mode: Agent. The Standard preset advertises bounded
-workspace reads/writes and device tools; Full Access adds the terminal
-bindings and broadens policy fallbacks. Filesystem mutations, external paths,
-destructive actions, and terminal requests retain their trust and approval
-gates in both presets.
+Ru exposes one generation mode: Agent. The Worker v2 settings currently
+advertise the same ten file/terminal bindings in Standard and Full Access.
+Standard applies the stricter Broker analyzer/rule/approval decisions; Full
+Access broadens policy fallbacks for well-formed calls. Workspace trust, hard
+invariants, protected paths, and extended timeout thresholds remain
+authoritative in both presets.
 
 Grants remain session-scoped. Every launch starts in Agent Standard, Full
 Access requires one explicit confirmation per run, and no grant survives
@@ -25,8 +26,8 @@ installation stay out of scope with no adapters.
   prevents a spawned process from reaching the network. OS-level enforcement
   is deferred to the separate sandbox project.
 - Deterministic volume intent is available in Agent Standard and Full Access;
-  explicit commands produce a typed, readback-verified request before model
-  selection.
+  explicit commands produce a typed, readback-verified `system.volume` request
+  before model selection. `system.volume` is not a Worker v2 model binding.
 - The bounded model selection loop allows at most ten sequential tool calls;
   approvals still gate mutations. The former Worker v1 conversational
   generation branch is retired; Worker v1 now carries only runtime/device

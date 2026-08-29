@@ -14,7 +14,10 @@ public sealed class WebPolicy
 
     public async Task ValidateAsync(Uri uri, CancellationToken cancellationToken)
     {
-        if (uri is null || uri.Scheme is not ("http" or "https") || string.IsNullOrWhiteSpace(uri.Host))
+        if (uri is null
+            || uri.Scheme is not ("http" or "https")
+            || string.IsNullOrWhiteSpace(uri.Host)
+            || !string.IsNullOrEmpty(uri.UserInfo))
         {
             throw new UnauthorizedAccessException("web_uri_not_allowed");
         }
@@ -40,9 +43,21 @@ public sealed class WebPolicy
         }
     }
 
+    public static bool IsPrivateAddress(IPAddress address) => IsPrivate(address);
+
     private static bool IsPrivate(IPAddress address)
     {
-        if (IPAddress.IsLoopback(address) || address.Equals(IPAddress.IPv6Any))
+        // IPv4-mapped IPv6 literals otherwise fall through to the IPv6 checks
+        // and could bypass the private IPv4 ranges below.
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        if (IPAddress.IsLoopback(address)
+            || address.Equals(IPAddress.Any)
+            || address.Equals(IPAddress.IPv6Any)
+            || IsMulticast(address))
         {
             return true;
         }
@@ -54,10 +69,32 @@ public sealed class WebPolicy
                 || bytes[0] == 127
                 || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31)
                 || (bytes[0] == 192 && bytes[1] == 168)
-                || (bytes[0] == 169 && bytes[1] == 254);
+                || (bytes[0] == 169 && bytes[1] == 254)
+                || (bytes[0] == 100 && bytes[1] is >= 64 and <= 127)
+                || bytes[0] == 0
+                || (bytes[0] == 192 && bytes[1] == 0)
+                || (bytes[0] == 198 && bytes[1] is >= 18 and <= 19)
+                || (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100)
+                || (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113)
+                || bytes[0] >= 240;
         }
 
         var segments = address.GetAddressBytes();
-        return (segments[0] & 0xfe) == 0xfc || segments[0] == 0xfe && (segments[1] & 0xc0) == 0x80;
+        return (segments[0] & 0xfe) == 0xfc
+            || segments[0] == 0xfe && (segments[1] & 0xc0) == 0x80
+            || segments[0] == 0xfe && (segments[1] & 0xc0) == 0xc0
+            || segments[0] == 0x20 && segments[1] == 0x01
+                && segments[2] == 0x0d && segments[3] == 0xb8
+            || segments[0] == 0x20 && segments[1] == 0x01
+                && segments[2] == 0x00 && segments[3] == 0x00
+            || segments.All(segment => segment == 0);
+    }
+
+    private static bool IsMulticast(IPAddress address)
+    {
+        var bytes = address.GetAddressBytes();
+        return address.AddressFamily == AddressFamily.InterNetwork
+            ? bytes[0] is >= 224 and <= 239
+            : bytes.Length > 0 && bytes[0] == 0xff;
     }
 }

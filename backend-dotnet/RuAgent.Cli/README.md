@@ -12,6 +12,7 @@ agent approve <run-id> <approval-id> --scope once|run|project
 agent deny <run-id> <approval-id>
 agent cancel <run-id>
 agent continue <run-id>
+agent command <run-id> "<slash-command>" [--json]
 agent reconcile <run-id> [--outcome applied|not-applied|unknown] [--hash SHA256] [--json]
 agent output <run-id> <payload-id> [--json]
 agent status <run-id> [--json]
@@ -27,8 +28,34 @@ agent policy remove <rule-id>
 - `approve` and `deny` wrap `POST /agent/v1/runs/{runId}/approvals/{approvalId}` with `--scope once|run|project`. Approval is first-writer wins; second concurrent response returns `approval_stale` (409). Exact scope preview strips globs and is displayed before confirmation. `global` scope via approval is rejected (`approval_cannot_create_global`). `--json` cannot confirm approval.
 - `policy list` wraps `GET /agent/v1/policies` (scope filter). `policy import --global FILE` validates versioned JSON (rejects unknown version/fields, normalizes and displays matchers/decision before confirmation) and posts each rule with `X-Interactive-Confirmed: true`; sensitive matcher values are encrypted at rest via Host API. `--json` cannot bypass confirmation. `policy remove` wraps `DELETE /agent/v1/policies/{ruleId}` and requires interactive confirmation for global rules.
 - `cancel`/`continue`/`status` are thin HTTP wrappers.
+- `command` forwards `/compact normal|aggressive`, `/help`, `/skills`, or
+  `/skill <id> <json-object>` through `AgentApiClient.DispatchCommandAsync`.
+  Slash parsing is shared with the Public Host; malformed or unknown commands
+  return stable `command_invalid`/`command_unknown` codes and are never sent as
+  prompts. Human output prints only bounded metadata; `--json` emits the
+  versioned response envelope without raw tool output.
 - `reconcile` wraps `POST /agent/v1/runs/{runId}/reconcile`. Without `--outcome` it fetches the run (showing the `intent_code` and a fresh `snapshot_hash`), prompts for `applied|not-applied|unknown`, then posts the decision with the freshly read hash. `--outcome applied|not-applied|unknown` maps to wire tokens `applied`/`not_applied`/`unknown_continue`. `--hash` must be a 64-char hex SHA-256; a stale `--hash` returns `reconcile_stale` and exits non-zero. `--json` never prompts: it prints the info payload and exits without sending a decision; an `--outcome` given without `--hash` in `--json` mode fails locally (exit 1) and sends no request.
 - `output` wraps `GET /agent/v1/runs/{runId}/payloads/{payloadId}` — the explicit user action that fetches final head/tail tool output bytes. Nothing in the tracer fetches private payloads implicitly; the event stream only references payloads by opaque `payload_ref`. `--json` prints the versioned payload envelope.
+
+## Current model tool surface
+
+The Agent Worker v2 advertisement contains exactly ten core bindings in both
+Standard and Full Access: `files.list`, `files.read`, `files.glob`,
+`files.search`, `files.write`, `files.edit`, `files.delete`, `files.restore`,
+`terminal.run`, and `terminal.shell`. Standard applies the stricter
+analyzer/rule/approval policy; Full Access normally uses its broader fallback
+for well-formed calls, but neither preset is an OS-enforced sandbox. Terminal
+calls run as the current Windows user and can execute host code or open
+sockets. `system.volume` is handled by a deterministic direct-action parser,
+not model selection; `notes.create`, read-only `system.*`, and `app.list` are
+Broker-internal. `files.apply_patch`, connectors, and `app.open` are not
+model-usable. Optional `web.search`/`web.fetch` appear only when WebOptions and
+matching session scopes are present; results are bounded and marked untrusted.
+Declarative Skills appear only when explicitly granted and retain normal
+Broker policy/approval checks. Managed startup keeps skill package roots and
+WebOptions disabled by default, so a caller must explicitly configure the
+Broker and open a session grant before these optional commands can run.
+Subagents, LSP, extensions, plugins, and MCP are not part of this CLI surface.
 
 All commands ensure the Public Host is running via `PublicHostStarter.GetOrStartAsync` before any API call and use `PublicHostSession` bearer auth.
 

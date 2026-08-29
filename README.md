@@ -1,9 +1,10 @@
 # Ru
 
 Ru is a Vietnamese-English conversational companion built around a WinUI 3
-desktop app, an ASP.NET Core public backend, and a private Python runtime
-worker. Conversational generation is cloud-first; the repository no longer
-ships an in-process conversational model or training pipeline.
+desktop app, an ASP.NET Core public backend, a managed C# Agent Worker, and a
+private Python Device Worker. Conversational generation is cloud-first; the
+repository no longer ships an in-process conversational model or training
+pipeline.
 
 Current maintainer documentation:
 
@@ -21,12 +22,12 @@ and the headless `RuAgent.Cli` tracer start-or-attach the Public Host through
 the shared `RuAgent.Client` (`PublicHostStarter`/`PublicHostLocator`), which
 validates an ACL-restricted loopback descriptor (`protocol_version`, `base_url`,
 bearer, PID/start-time/nonce) and `GET /status` bearer. On first start the
-Public Host creates per-run secrets, starts the private Runtime Worker on
-loopback port 8005 via the shared `ru_runtime.worker.server` multiplexer
-(`/worker/v1` runtime/voice/VTS adapters and `/worker/v2` one-step Agent), starts the isolated
-`RuAgentBroker` on a dynamic loopback port, binds the ASP.NET Core Public Host
-on port 8000, waits for public readiness, and assigns Worker/Broker to one Job
-Object. Idle Public Host exits after 10 minutes without an active Agent run,
+Public Host creates separate per-run Agent and Device Worker secrets, starts the
+C# Agent Worker v2 on loopback port 8005 and the Python Device Worker v1
+(`--v1-only`) on loopback port 8006, starts the isolated `RuAgentBroker` on a
+dynamic loopback port, binds the ASP.NET Core Public Host on port 8000, waits
+for public readiness, and assigns all children to one Job Object. Idle Public
+Host exits after 10 minutes without an active Agent run,
 approval, or long-lived Agent SSE lease. Broker descriptors and
 grants are session-scoped and removed during shutdown.
 
@@ -49,15 +50,16 @@ encrypted-at-rest snapshots and global interactive header
 `X-Interactive-Confirmed: true`; `POST /agent/v1/runs/{runId}/reconcile`
 is active on the headless Agent v2 path and resolves an ambiguous dispatch
 outcome before the run continues.
-Python is an authenticated private implementation boundary for Agent model
-steps (Worker v2), provider adapters, STT execution,
-VTube Studio, observation, and the current voice engine coordination. The CLI
+The C# Agent Worker owns authenticated Agent model steps (Worker v2) and the
+provider adapter; the Python Device Worker is the v1-only boundary for runtime,
+STT, VTube Studio, observation, and current voice-engine coordination. The CLI
 tracer `RuAgent.Cli` is a thin headless client: it delegates start/attach to
 `RuAgent.Client` and all run behavior to authenticated HTTP/SSE.
 
 The canonical route inventory is
 [`backend-dotnet/public-route-contract.json`](backend-dotnet/public-route-contract.json).
-There is no public Python HTTP fallback or alternate backend mode.
+There is no public Python HTTP fallback or public backend mode switch;
+`PythonCompatibility` is a trusted startup-only rollback for Agent v2.
 
 ## Setup
 
@@ -87,11 +89,14 @@ Run the desktop-owned stack:
 
 `build.bat` publishes the canonical self-contained Release GUI at
 `gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe`
-and stops with an error if that artifact is missing. `start_dev.bat` launches
-only that Release publish output; it never falls back to a Debug build, so a
-successful build must reach `[12/12] Build complete!` before using a shortcut.
-These commands produce and start `RuApp.exe` plus `RuBackend.exe`. Do not start
-the Runtime Worker or voice engine as independent public services.
+and the managed Agent Worker at
+`backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Worker.exe`;
+it stops with an error if either artifact is missing. `start_dev.bat` launches
+only that Release GUI after confirming both artifacts exist; it never falls
+back to a Debug build, so a successful build must reach `[13/13] Build complete!`
+before using a shortcut. These commands produce and start `RuApp.exe` plus
+`RuBackend.exe`; the backend owns the C# Agent Worker and Python Device Worker.
+Do not start either worker or the voice engine as independent public services.
 
 ## Current behavior
 

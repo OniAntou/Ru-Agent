@@ -10,6 +10,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
 {
     private const int MaxResponseBytes = 5 * 1024 * 1024;
     private const int MaxLineBytes = 256 * 1024;
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly HttpClient _httpClient;
 
     public OpenAiCompatibleModelProvider(HttpClient httpClient)
@@ -63,9 +64,9 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
             }
 
             using (stream)
-            using (var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: false))
+            using (var reader = new StreamReader(stream, StrictUtf8, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: false))
             {
-                var responseBytes = 0;
+                long responseBytes = 0;
                 var sawData = false;
                 while (true)
                 {
@@ -77,6 +78,10 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                     catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                     {
                         throw new ModelProviderException("timeout", retryable: true);
+                    }
+                    catch (DecoderFallbackException error)
+                    {
+                        throw new ModelProviderException("malformed_payload", retryable: false, error);
                     }
 
                     if (line is null)
@@ -166,7 +171,11 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
         };
         foreach (var property in request.Settings)
         {
-            if (property.Key is not ("model" or "messages" or "stream"))
+            // model_tools is a private Host/Worker selection contract. The
+            // managed Agent asks the model for a single JSON selection through
+            // its composed prompt; provider-native function calling is not part
+            // of this adapter contract.
+            if (property.Key is not ("model" or "messages" or "stream" or "model_tools"))
             {
                 body[property.Key] = property.Value?.DeepClone();
             }
@@ -177,12 +186,7 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
 
     private static string? ReadText(JsonObject delta)
     {
-        if (delta["content"] is JsonValue value && value.TryGetValue<string>(out var text))
-        {
-            return text;
-        }
-
-        return null;
+        return ReadOptionalString(delta["content"]);
     }
 
     private static List<ModelToolFragment> ReadToolFragments(JsonObject delta)
@@ -205,10 +209,14 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
                 throw new ModelProviderException("malformed_payload", retryable: false);
             }
 
-            var providerCallId = call["id"]?.GetValue<string>();
-            var function = call["function"] as JsonObject;
-            var name = function?["name"]?.GetValue<string>() ?? string.Empty;
-            var arguments = function?["arguments"]?.GetValue<string>() ?? string.Empty;
+            var providerCallId = ReadOptionalString(call["id"]);
+            if (call["function"] is not JsonObject function)
+            {
+                throw new ModelProviderException("malformed_payload", retryable: false);
+            }
+
+            var name = ReadOptionalString(function["name"]) ?? string.Empty;
+            var arguments = ReadOptionalString(function["arguments"]) ?? string.Empty;
             try
             {
                 fragments.Add(new ModelToolFragment(providerCallId, name, arguments));
@@ -229,10 +237,25 @@ public sealed class OpenAiCompatibleModelProvider : IModelProvider
             return null;
         }
 
-        var reason = choice["finish_reason"]?.GetValue<string>();
+        var reason = ReadOptionalString(choice["finish_reason"]);
         return reason is "stop" or "tool_calls" or "length"
             ? reason
             : throw new ModelProviderException("malformed_payload", retryable: false);
+    }
+
+    private static string? ReadOptionalString(JsonNode? node)
+    {
+        if (node is null || node.GetValueKind() == JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        if (node is JsonValue value && value.TryGetValue<string>(out var text))
+        {
+            return text;
+        }
+
+        throw new ModelProviderException("malformed_payload", retryable: false);
     }
 
     private static ModelProviderException MapStatus(HttpStatusCode statusCode) => statusCode switch

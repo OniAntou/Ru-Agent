@@ -1,6 +1,7 @@
 # Python runtime boundary
 
-Status: Phase 0 baseline for the Python-to-C# Agent migration, 2026-08-29.
+Status: Phase 1 managed Agent cutover, with the Phase 0 inventory retained for
+classification evidence, 2026-08-30.
 
 The deterministic inventory is generated with:
 
@@ -26,10 +27,11 @@ Current boundary classes are:
 - `tooling`: scripts, tests, and build/verification helpers;
 - `legacy`: retired corpus and other files outside managed startup reachability.
 
-The current default checkout still starts the Python Worker multiplexer. Its
-v1 runtime/device handlers and v2 Agent reference implementation are both kept
-for compatibility while Phase 1 is implemented. The Phase 1 target is a
-separate C# Agent Worker v2 plus a Python v1-only device Worker, with an
-explicit trusted Python-compatibility rollback. This inventory is a baseline,
-not evidence that the migration or the later OS-enforced filesystem/network
-sandbox is complete.
+The managed default now starts a separate C# Agent Worker v2 and Python
+Device Worker v1 (`--v1-only`) on distinct loopback endpoints, with separate
+tokens and a single-use DPAPI-protected provider bootstrap. The Python v2
+generation implementation remains available only through the explicit,
+trusted `PythonCompatibility` startup rollback; it is not a public request or
+UI mode and there is no automatic fallback. This inventory is classification
+evidence, not evidence that the later voice/device migration or the
+OS-enforced filesystem/network sandbox is complete.

@@ -82,6 +82,19 @@ public sealed class WorkerBrokerLaunchPlanTests
         }
     }
 
+    [Fact]
+    public void Failed_plan_validation_does_not_publish_a_stale_broker_descriptor()
+    {
+        using var project = TemporaryProject.Create();
+        var startup = project.DotnetStartup(18097, 18098, 18099);
+        project.DeleteAgentWorker();
+
+        Assert.Throws<FileNotFoundException>(() =>
+            WorkerBrokerLaunchPlan.Create(project.Root, startup, project.LogRoot));
+
+        Assert.False(File.Exists(Path.Combine(project.LogRoot, "agent", "session", "broker.json")));
+    }
+
     private sealed class TemporaryProject : IDisposable
     {
         public string Root { get; }
@@ -124,6 +137,21 @@ public sealed class WorkerBrokerLaunchPlanTests
                 devicePort,
                 brokerPort,
                 BrokerExecutable);
+        }
+
+        public void DeleteAgentWorker()
+        {
+            var worker = Path.Combine(
+                Root,
+                "backend-dotnet",
+                "RuAgent.Runtime.Worker",
+                "bin",
+                "Release",
+                "net10.0",
+                "win-x64",
+                "publish",
+                "RuAgent.Runtime.Worker.exe");
+            File.Delete(worker);
         }
 
         public void Dispose()

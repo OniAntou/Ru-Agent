@@ -73,6 +73,46 @@ public sealed class OpenAiCompatibleModelProviderTests
     }
 
     [Fact]
+    public async Task GenerateAsync_maps_malformed_tool_fields_to_a_bounded_payload_error()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"id\":42,\"function\":{\"name\":\"files.read\",\"arguments\":\"{}\"}}]}}]}\n\n",
+                Encoding.UTF8,
+                "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        var error = await Assert.ThrowsAsync<ModelProviderException>(async () =>
+            await provider.GenerateAsync(Request(), CancellationToken.None).ToListAsync());
+
+        Assert.Equal("malformed_payload", error.Code);
+        Assert.False(error.Retryable);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_does_not_forward_internal_model_tools_to_the_provider()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+        });
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        _ = await provider.GenerateAsync(
+            Request(new JsonObject
+            {
+                ["temperature"] = 0.7,
+                ["model_tools"] = new JsonArray(new JsonObject { ["tool_id"] = "files.read" }),
+            }),
+            CancellationToken.None).ToListAsync();
+
+        var body = handler.RequestBody!;
+        Assert.DoesNotContain("model_tools", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task GenerateAsync_observes_cancellation()
     {
         using var cancellation = new CancellationTokenSource();
@@ -89,12 +129,12 @@ public sealed class OpenAiCompatibleModelProviderTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await task);
     }
 
-    private static ModelRequest Request() => new(
+    private static ModelRequest Request(JsonObject? settings = null) => new(
         "test-model",
         "system prompt",
         "hello",
         Array.Empty<ModelTurn>(),
-        new JsonObject { ["temperature"] = 0.7 },
+        settings ?? new JsonObject { ["temperature"] = 0.7 },
         new Uri("https://provider.invalid/v1/chat/completions"),
         "provider-secret");
 
@@ -102,6 +142,7 @@ public sealed class OpenAiCompatibleModelProviderTests
     {
         private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _handler;
         public HttpRequestMessage Request { get; private set; } = null!;
+        public string? RequestBody { get; private set; }
 
         public RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> handler)
             : this((request, _) => Task.FromResult(handler(request)))
@@ -116,6 +157,7 @@ public sealed class OpenAiCompatibleModelProviderTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Request = request;
+            RequestBody = request.Content?.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult();
             return await _handler(request, cancellationToken);
         }
     }

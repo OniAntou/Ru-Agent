@@ -13,6 +13,9 @@ dotnet restore D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Hosting.Tests\RuAgent.Hosting.Tests.csproj --nologo
+dotnet restore D:\LLM\backend-dotnet\RuAgent.Protocol.Tests\RuAgent.Protocol.Tests.csproj --nologo
+dotnet restore D:\LLM\backend-dotnet\RuAgent.Runtime.Adapters.Tests\RuAgent.Runtime.Adapters.Tests.csproj --nologo
+dotnet restore D:\LLM\backend-dotnet\RuAgent.Runtime.Worker.Tests\RuAgent.Runtime.Worker.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Client.Tests\RuAgent.Client.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Cli.Tests\RuAgent.Cli.Tests.csproj --nologo
 dotnet restore D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
@@ -20,6 +23,7 @@ dotnet restore D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe -m ruff check D:\LLM\src D:\LLM\tests D:\LLM\scripts D:\LLM\tools
 & D:\LLM\.venv\Scripts\python.exe -m mypy D:\LLM\src
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\measure_phase1_runtime.py --root D:\LLM
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output "$env:TEMP\ru-prompt-composer-harness.json"
 & D:\LLM\.venv\Scripts\python.exe -m pip check
@@ -28,6 +32,9 @@ dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Te
 dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuAgent.Hosting.Tests\RuAgent.Hosting.Tests.csproj -c Release --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Protocol.Tests\RuAgent.Protocol.Tests.csproj -c Release --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Runtime.Adapters.Tests\RuAgent.Runtime.Adapters.Tests.csproj -c Release --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Runtime.Worker.Tests\RuAgent.Runtime.Worker.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuAgent.Client.Tests\RuAgent.Client.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuAgent.Cli.Tests\RuAgent.Cli.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Release --no-restore --nologo
@@ -44,6 +51,20 @@ publish output, and the incremental native overlay build/test invocation; it
 does not prove that a GUI, microphone, speaker, VTube Studio model, or Windows
 audio endpoint worked.
 
+The managed runtime topology is deterministic: C# Agent Worker v2 is on the
+Agent loopback endpoint (`/worker/v2`), Python Device Worker v1 is on the
+separate device endpoint (`/worker/v1`), and only the latter receives runtime/
+voice/STT/VTS/observation calls. Worker tokens are distinct; provider
+credentials are carried only by the single-use DPAPI bootstrap and never by
+Python configuration, descriptors, logs, or public responses.
+
+The Phase 1 measurement command times deterministic prompt/tool operations in
+small batches to amortize sub-millisecond scheduler noise, then measures their
+allocation peak in a separate `tracemalloc` pass. It compares p50, p95, and
+peak bytes with the checked-in baseline using the ten-percent gate plus a
+bounded 0.05 ms timing-jitter floor; it never loads a model or contacts a
+device.
+
 The Worker v2 model inventory is deterministic and should stay aligned with
 `AgentRuntimeCoordinatorFactory.RuntimeCapabilities`: `files.list`,
 `files.read`, `files.glob`, `files.search`, `files.write`, `files.edit`,
@@ -58,9 +79,11 @@ configuration- and session-scope-gated, bounded, redirect-safe, and marked
 untrusted; declarative Skills are explicit session grants with per-step policy
 checks. Connectors and `app.open` remain unadvertised.
 
-The desktop launcher and release build share one artifact:
+The desktop launcher and release build share one GUI artifact, and the release
+build publishes the managed Agent Worker before the backend:
 `gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe`.
-`build.bat` fails if the GUI publish is absent, and `start_dev.bat` refuses to
+`backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Worker.exe`.
+`build.bat` fails if either publish is absent, and `start_dev.bat` refuses to
 run when that Release artifact is missing instead of silently selecting a stale
 Debug executable. Any Windows shortcut should target `start_dev.bat` so it uses
 the same release-path check.

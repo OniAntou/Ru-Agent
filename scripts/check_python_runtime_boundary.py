@@ -10,9 +10,10 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import importlib.util
 import json
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 
@@ -67,6 +68,14 @@ def _relative_files(root: Path) -> tuple[Path, ...]:
             continue
         for path in directory.rglob("*"):
             if not path.is_file() or any(part in _IGNORED_PARTS for part in path.parts):
+                continue
+            # Do not hash or parse a symlink/reparse target outside the
+            # requested root.  ``Path.rglob`` yields the lexical path, so an
+            # explicit resolved-root check is required for boundary safety.
+            try:
+                if not path.resolve().is_relative_to(root):
+                    continue
+            except (OSError, RuntimeError):
                 continue
             # Source and metadata files are useful to boundary review.  Skip
             # large binary artifacts and build outputs by construction.
@@ -153,8 +162,9 @@ def _managed_reachability(root: Path, paths: tuple[Path, ...]) -> dict[str, tupl
 
 
 def _bounded_sha256(path: Path) -> tuple[str, int]:
-    data = path.read_bytes()
-    return hashlib.sha256(data[:_MAX_HASH_BYTES]).hexdigest(), len(data)
+    with path.open("rb") as handle:
+        data = handle.read(_MAX_HASH_BYTES)
+    return hashlib.sha256(data).hexdigest(), path.stat().st_size
 
 
 def scan_runtime_boundary(root: Path) -> tuple[RuntimeBoundaryRecord, ...]:
@@ -184,15 +194,142 @@ def scan_runtime_boundary(root: Path) -> tuple[RuntimeBoundaryRecord, ...]:
     return tuple(records)
 
 
-def _reference_cases() -> list[dict[str, object]]:
-    """Return deterministic, bounded Phase 1 reference cases."""
+def _reference_functions(root: Path) -> tuple[
+    Callable[..., object],
+    Callable[[object], object],
+    Callable[..., str],
+    Callable[[str], str],
+    int,
+]:
+    """Import the deterministic Python reference composers used for golden values.
+
+    Only ``write_baseline_fixture`` may call this; the inventory itself stays
+    filesystem-only.
+    """
+
+    src = root / "src"
+    if not src.is_dir():
+        raise ValueError("root must contain a src directory for the reference fixture")
+    if src.is_dir() and str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from ru_runtime.generation.prompt_context import (
+        MAX_PROMPT_INSTRUCTION_BYTES,
+        normalize_text,
+        parse_system_prompt_context,
+        sha256_utf8,
+    )
+    from ru_runtime.generation.system_prompt_composer import compose_system_prompt
+
+    return (
+        compose_system_prompt,
+        parse_system_prompt_context,
+        normalize_text,
+        sha256_utf8,
+        MAX_PROMPT_INSTRUCTION_BYTES,
+    )
+
+
+_PRIVATE_MARKER = "sk-PHASE1-PRIVATE-MARKER"
+_INSTRUCTION_CONTENT = "Root guidance for the reference context.\nLine two."
+
+
+def _reference_prompt_input(
+    normalize_text: Callable[..., str],
+    sha256_utf8: Callable[[str], str],
+    max_instruction_bytes: int,
+) -> dict[str, object]:
+    """Build the one golden prompt context shared by every Phase 1 consumer."""
+
+    return {
+        "schema_version": 1,
+        "agent_profile": "ru-agent",
+        "preset": "standard",
+        "environment": {
+            "model": "phase1-reference-model",
+            "platform": "windows",
+            "locale": "vi-VN",
+            "timezone": "Asia/Bangkok",
+            "date": "2026-08-29",
+            "workspace_label": "LLM",
+        },
+        "instruction_blocks": [
+            {
+                "source_id": "root:Ru.md",
+                "display_name": "Ru.md",
+                "content": _INSTRUCTION_CONTENT,
+                "content_sha256": sha256_utf8(
+                    normalize_text(_INSTRUCTION_CONTENT, maximum_bytes=max_instruction_bytes)
+                ),
+            }
+        ],
+        "capabilities": [
+            {
+                "id": "files.read",
+                "version": "1.2.0",
+                "summary": "Read workspace files with bounded output",
+                "input_schema_digest": sha256_utf8("files.read schema"),
+                "policy_summary": "workspace.read",
+                "availability": "enabled",
+            },
+            {
+                "id": "web.search",
+                "version": "1.0.0",
+                "summary": "Search the hosted web boundary",
+                "input_schema_digest": sha256_utf8("web.search schema"),
+                "policy_summary": "web.search",
+                "availability": "disabled",
+            },
+        ],
+        "runtime_context": {
+            "memory": "User prefers concise answers.",
+            "mood": None,
+            "voice": None,
+            "vts": None,
+            "hardware": None,
+            "references": [
+                {
+                    "kind": "doc",
+                    "label": "Phase 1 note",
+                    "content": "Reference material must stay untrusted.",
+                }
+            ],
+        },
+    }
+
+
+def _reference_cases(root: Path) -> list[dict[str, object]]:
+    """Return deterministic, bounded Phase 1 reference cases with golden values."""
+
+    (
+        compose_system_prompt,
+        parse_system_prompt_context,
+        normalize_text,
+        sha256_utf8,
+        max_instruction_bytes,
+    ) = _reference_functions(root)
+    prompt_input = _reference_prompt_input(normalize_text, sha256_utf8, max_instruction_bytes)
+    snapshot = compose_system_prompt(parse_system_prompt_context(prompt_input))
+    tool_arguments = {"path": "README.md", "limit": 64}
+    tool_text = json.dumps(
+        {"tool_id": "files.read", "tool_version": "1.0.0", "arguments": tool_arguments},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
     return [
         {
             "id": "prompt.basic",
             "group": "prompt",
-            "input": {"schema_version": 1, "agent_profile": "ru-agent", "preset": "standard"},
-            "expected": {"composer_version": "1.0.0"},
+            "input": prompt_input,
+            "expected": {
+                "composer_version": snapshot.receipt.composer_version,
+                "prompt_sha256": snapshot.receipt.prompt_sha256,
+                "block_digests": [
+                    {"block_id": block.block_id, "sha256": block.sha256}
+                    for block in snapshot.receipt.block_digests
+                ],
+                "private_marker": _PRIVATE_MARKER,
+            },
         },
         {
             "id": "compaction.basic",
@@ -203,28 +340,82 @@ def _reference_cases() -> list[dict[str, object]]:
         {
             "id": "tool_selection.valid",
             "group": "tool_selection",
-            "input": {"tool_id": "files.read", "tool_version": "1.0.0", "arguments": {}},
+            "input": {
+                "text": tool_text,
+                "tool_id": "files.read",
+                "tool_version": "1.0.0",
+                "arguments": tool_arguments,
+                "advertised": ["files.read", "terminal.run"],
+            },
             "expected": {"accepted": True},
         },
         {
             "id": "protocol.unknown_type",
             "group": "protocol",
-            "input": {"code": "unknown_type"},
-            "expected": {"retryable": False},
+            "input": {
+                "envelope": {"v": 1, "id": "phase1-probe", "type": "agent.unknown", "payload": {}},
+            },
+            "expected": {"code": "unknown_type", "retryable": False},
         },
         {
             "id": "cancellation.before_dispatch",
             "group": "cancellation",
-            "input": {"cancelled": True},
+            "input": {"prompt": "xin chào anh", "cancelled": True},
             "expected": {"completed": False},
         },
         {
             "id": "privacy.redaction",
             "group": "privacy",
-            "input": {"prompt_text": "<redacted>", "credential": "<redacted>"},
+            "input": {
+                "prompt_text": "PRIVATE-PROMPT-9f1c",
+                "credential": "sk-PRIVATE-CREDENTIAL-77ae",
+            },
             "expected": {"prompt_text_visible": False, "credential_visible": False},
         },
     ]
+
+
+def _measurement_section(root: Path, cases: list[dict[str, object]]) -> dict[str, object]:
+    """Measure the deterministic baseline recorded next to the reference cases."""
+
+    measurement_module_path = root / "scripts" / "measure_phase1_runtime.py"
+    if not measurement_module_path.is_file():
+        raise ValueError("root must contain scripts/measure_phase1_runtime.py")
+    module_spec = importlib.util.spec_from_file_location(
+        "ru_phase1_measurement_reference",
+        measurement_module_path,
+    )
+    if module_spec is None or module_spec.loader is None:
+        raise ValueError("could not load the Phase 1 measurement helper")
+    module = importlib.util.module_from_spec(module_spec)
+    sys.modules[module_spec.name] = module
+    try:
+        module_spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(module_spec.name, None)
+    MIN_SAMPLES = module.MIN_SAMPLES
+    measure_runtime = module.measure_runtime
+
+    prompt_input = next(case["input"] for case in cases if case["id"] == "prompt.basic")
+    tool_case = next(case for case in cases if case["id"] == "tool_selection.valid")
+    records = measure_runtime(
+        root,
+        MIN_SAMPLES,
+        prompt_input=prompt_input,
+        tool_selection_text=str(tool_case["input"]["text"]),
+    )
+    return {
+        "min_samples": MIN_SAMPLES,
+        "regression_tolerance": 0.10,
+        "baseline": {
+            record.operation: {
+                "p50_ms": record.p50_ms,
+                "p95_ms": record.p95_ms,
+                "peak_bytes": record.peak_bytes,
+            }
+            for record in records
+        },
+    }
 
 
 def write_baseline_fixture(root: Path, destination: Path) -> None:
@@ -236,8 +427,15 @@ def write_baseline_fixture(root: Path, destination: Path) -> None:
     if not root.is_dir():
         raise ValueError("root must be a directory")
     destination = destination.resolve()
+    if destination == root or not destination.is_relative_to(root):
+        raise ValueError("baseline destination must be below root")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"schema_version": 1, "cases": _reference_cases()}
+    cases = _reference_cases(root)
+    payload = {
+        "schema_version": 1,
+        "cases": cases,
+        "measurement": _measurement_section(root, cases),
+    }
     destination.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

@@ -10,6 +10,7 @@ namespace RuAgent.Runtime.Worker;
 
 public sealed class WorkerV2Server
 {
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private readonly string _token;
     private readonly WorkerV2StepService _steps;
 
@@ -59,7 +60,18 @@ public sealed class WorkerV2Server
 
         try
         {
-            var helloFrame = await ReceiveTextAsync(socket, connectionCancellation).ConfigureAwait(false);
+            string? helloFrame;
+            try
+            {
+                helloFrame = await ReceiveTextAsync(socket, connectionCancellation).ConfigureAwait(false);
+            }
+            catch (AgentProtocolException error)
+            {
+                await SendErrorAsync(socket, sendLock, "connection", error.Code, false, NextSequence("connection"), connectionCancellation).ConfigureAwait(false);
+                await CloseAsync(socket, WebSocketCloseStatus.PolicyViolation, connectionCancellation).ConfigureAwait(false);
+                return;
+            }
+
             if (helloFrame is null)
             {
                 return;
@@ -104,7 +116,17 @@ public sealed class WorkerV2Server
 
             while (socket.State == WebSocketState.Open && !connectionCancellation.IsCancellationRequested)
             {
-                var frame = await ReceiveTextAsync(socket, connectionCancellation).ConfigureAwait(false);
+                string? frame;
+                try
+                {
+                    frame = await ReceiveTextAsync(socket, connectionCancellation).ConfigureAwait(false);
+                }
+                catch (AgentProtocolException error)
+                {
+                    await SendErrorAsync(socket, sendLock, "connection", error.Code, false, NextSequence("connection"), connectionCancellation).ConfigureAwait(false);
+                    continue;
+                }
+
                 if (frame is null)
                 {
                     break;
@@ -197,7 +219,22 @@ public sealed class WorkerV2Server
     {
         try
         {
-            var result = await _steps.RunAsync(envelope.Payload, cancellationSource.Token).ConfigureAwait(false);
+            async ValueTask PublishDeltaAsync(string text)
+            {
+                await SendAsync(socket, sendLock, new WorkerV2Envelope(
+                    WorkerV2Contracts.ProtocolVersion,
+                    envelope.Id,
+                    WorkerV2Contracts.AgentStepDelta,
+                    nextSequence(envelope.Id),
+                    envelope.CorrelationId,
+                    new JsonObject { ["text"] = text }),
+                    cancellationSource.Token).ConfigureAwait(false);
+            }
+
+            var result = await _steps.RunAsync(
+                envelope.Payload,
+                PublishDeltaAsync,
+                cancellationSource.Token).ConfigureAwait(false);
             var toolCalls = new JsonArray();
             foreach (var call in result.ToolCalls)
             {
@@ -300,7 +337,14 @@ public sealed class WorkerV2Server
 
             if (result.EndOfMessage)
             {
-                return Encoding.UTF8.GetString(stream.ToArray());
+                try
+                {
+                    return StrictUtf8.GetString(stream.ToArray());
+                }
+                catch (DecoderFallbackException error)
+                {
+                    throw new AgentProtocolException("invalid_utf8", error.Message);
+                }
             }
         }
     }

@@ -23,6 +23,7 @@ using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Hosting;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Adapters.Bootstrap;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -151,6 +152,19 @@ if (isManagedRuntime)
         .GetResult();
     if (!workerStarted)
     {
+        if (migrationMode == RuntimeMigrationMode.Dotnet
+            && !string.IsNullOrWhiteSpace(providerBootstrapPath))
+        {
+            try
+            {
+                ProtectedProviderBootstrap.Delete(bootstrapRoot, providerBootstrapPath);
+            }
+            catch
+            {
+                // Startup must still fail closed; do not expose cleanup details.
+            }
+        }
+
         Console.Error.WriteLine($"Worker/Broker start failed: {managedWorkerBrokerManager.LastError}");
         Environment.Exit(4);
     }

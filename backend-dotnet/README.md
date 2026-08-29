@@ -16,11 +16,10 @@ RuApp / RuAgent.Cli (thin client via RuAgent.Client start-or-attach)
         v
 ASP.NET Core Public Host :8000 (RuBackend.exe --managed-runtime)
         |\
-        | \-- owned Worker/Broker in one kill-on-close Job Object
-        |      |-- Python runtime worker :8005 (ru_runtime.worker.server multiplex: /worker/v1 runtime/voice/VTS, /worker/v2 one-step AssistantStep)
-        |      |     +-- hosted / external OpenAI-compatible provider adapters
-        |      |     +-- OmniVoice and Google STT
-        |      |     +-- VTube Studio and observation runtime
+        | \-- owned Agent/Device Workers and Broker in one kill-on-close Job Object
+        |      |-- C# Agent Worker v2 :8005 (managed provider adapter, one-step AssistantStep)
+        |      |     `-- single-use DPAPI provider bootstrap
+        |      |-- Python Device Worker v1 :8006 (runtime/voice/STT/VTS/observation, --v1-only)
         |      `-- private RuAgentBroker (leased loopback endpoint, profile-scoped file/terminal tools)
         |
         | durable Harness: Core + SQLite (agent_harness.db) + encrypted payloads + idempotent history
@@ -28,23 +27,26 @@ Public Host owns Worker/Broker in one Job Object; RuApp/CLI only own the
 Public Host descriptor lease and long-lived WebSocket/SSE client leases.
 ```
 
-There is no public Python HTTP server, forwarding catch-all, WebSocket relay,
-host-mode selector, or automatic fallback. Git commit `e023fd3` is the final
-pre-decommission rollback checkpoint if repository-level recovery is required.
+There is no public Python HTTP server, forwarding catch-all, WebSocket relay, or
+automatic fallback. `PythonCompatibility` is a trusted startup rollback that
+routes only Agent v2 to the legacy Python worker; it is not a public request or
+UI mode. Git commit `e023fd3` is the final pre-decommission rollback checkpoint
+if repository-level recovery is required.
 
 ## Ownership
 
 ASP.NET Core directly owns authentication, request-size boundaries, settings,
 credentials, sessions, history, activity, structured memory, Agent run ordering,
-metadata filtering, and every public endpoint contract. Runtime-dependent work
-uses the authenticated `ws://127.0.0.1:8005/worker/v1` protocol:
+metadata filtering, and every public endpoint contract. Agent generation uses
+the authenticated C# `ws://127.0.0.1:8005/worker/v2` protocol; runtime/device
+work uses the separate Python `ws://127.0.0.1:8006/worker/v1` protocol:
 
-- runtime transitions (Agent model steps use the typed `/worker/v2` adapter);
+- runtime transitions (Agent model steps use the typed C# `/worker/v2` adapter);
 - TTS, streaming voice, STT, and GPU lifecycle calls;
 - VTube Studio connection, motion, catalog, action, and overlay state;
 - structured observation reactions and model/provider status.
 
-The worker is private implementation code, not another public framework. WAV
+The workers are private implementation code, not another public framework. WAV
 payloads stay binary instead of being expanded into base64. Agent replies, TTS, history,
 memory, activity, and logs keep private voice/VTS metadata out of visible and
 persistent text.
@@ -54,17 +56,23 @@ persistent text.
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `RU_DESKTOP_TOKEN` | required per run | Authenticates public REST/WebSocket clients. |
-| `RU_WORKER_TOKEN` | required per run | Authenticates ASP.NET to the private worker. |
-| `RU_BACKEND_WORKER_PORT` | `8005` | Private worker loopback port selected by RuApp. |
+| `RU_AGENT_WORKER_TOKEN` | generated per managed run | Authenticates ASP.NET to the C# Agent Worker v2. |
+| `RU_WORKER_TOKEN` | generated per managed run | Authenticates ASP.NET to the Python Device Worker v1. |
+| `RU_BACKEND_AGENT_WORKER_PORT` | `8005` | Private Agent Worker loopback port. |
+| `RU_BACKEND_DEVICE_WORKER_PORT` | `8006` | Private Device Worker loopback port. |
 | `RuBackend__BindUrl` | `http://127.0.0.1:8010` standalone | Public ASP.NET bind URL; RuApp sets port `8000`. |
-| `RuBackend__WorkerUrl` | `ws://127.0.0.1:8005/worker/v1` standalone | Private worker protocol URL; RuApp overrides it. |
+| `RuBackend__AgentWorkerUrl` | `ws://127.0.0.1:8005/worker/v2` standalone | Private Agent Worker protocol URL. |
+| `RuBackend__DeviceWorkerUrl` | `ws://127.0.0.1:8006/worker/v1` standalone | Private Device Worker protocol URL. |
+| `RuBackend__RuntimeMigrationMode` | `Dotnet` | Trusted startup selector; `PythonCompatibility` is rollback-only. |
 | `RU_DATA_ROOT` | project/user data default | Isolates settings, sessions, activity, and memory for tests. |
 
 Public Host (`RuBackend.exe --managed-runtime`) generates distinct 256-bit
-desktop and worker secrets, starts the private Worker (shared
-`ru_runtime.worker.server`) and RuAgentBroker before serving public traffic,
-assigns Worker/Broker to one kill-on-close Windows Job Object, publishes an
-ACL-restricted loopback descriptor for `RuAgent.Client` start-or-attach,
+desktop, Agent Worker, and Device Worker secrets, writes a single-use
+DPAPI-protected provider bootstrap for the managed C# Agent Worker, starts the
+C# Agent Worker v2, Python Device Worker v1 (`--v1-only`), and RuAgentBroker
+before serving public traffic, assigns all owned children to one kill-on-close
+Windows Job Object, publishes an ACL-restricted loopback descriptor for
+`RuAgent.Client` start-or-attach,
 probes public readiness, and terminates the owned Worker/Broker tree on
 shutdown or failure. `RuApp` and `RuAgent.Cli` never start Worker/Broker
 directly; they validate the descriptor and `GET /status` bearer, and poll for a

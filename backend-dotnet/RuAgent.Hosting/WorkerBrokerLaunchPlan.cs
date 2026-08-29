@@ -54,7 +54,6 @@ public sealed class WorkerBrokerLaunchPlan
         var root = Path.GetFullPath(projectRoot);
         var resolvedLogRoot = ResolveLogRoot(root, configuredLogRoot);
         var brokerSessionRoot = Path.Combine(resolvedLogRoot, "agent", "session");
-        Directory.CreateDirectory(brokerSessionRoot);
         var selectedBrokerPort = startup.BrokerPort ?? FindFreeLoopbackPort();
         ValidatePortSet(publicPort, startup.AgentWorkerPort, startup.DeviceWorkerPort, selectedBrokerPort);
 
@@ -80,41 +79,40 @@ public sealed class WorkerBrokerLaunchPlan
             throw new FileNotFoundException($"Published RuAgent.Broker.exe was not found at '{publishedBroker}'. Run build.bat before selecting Agent mode.", publishedBroker);
         }
 
-        var descriptorPath = Path.Combine(brokerSessionRoot, "broker.json");
-        var descriptor = new BrokerSessionDescriptor(
-            $"http://127.0.0.1:{selectedBrokerPort}",
-            GenerateSecret(),
-            AgentEnvelopeCodec.ProtocolVersion,
-            brokerSessionRoot,
-            DateTimeOffset.UtcNow.AddHours(1));
-        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
-
-        var bootstrapRoot = Path.Combine(resolvedLogRoot, "bootstrap");
-        Directory.CreateDirectory(bootstrapRoot);
-        var children = new List<WorkerBrokerProcessSpec>();
+        string? workerExecutable = null;
+        string? providerBootstrapPath = null;
         if (startup.Mode == RuntimeMigrationMode.Dotnet)
         {
-            var workerExecutable = Path.Combine(root, "backend-dotnet", "RuAgent.Runtime.Worker", "bin", "Release", "net10.0", "win-x64", "publish", "RuAgent.Runtime.Worker.exe");
+            workerExecutable = Path.Combine(root, "backend-dotnet", "RuAgent.Runtime.Worker", "bin", "Release", "net10.0", "win-x64", "publish", "RuAgent.Runtime.Worker.exe");
             if (!File.Exists(workerExecutable))
             {
                 throw new FileNotFoundException($"Published RuAgent.Runtime.Worker.exe was not found at '{workerExecutable}'. Run build.bat before selecting Agent mode.", workerExecutable);
             }
 
-            var bootstrapPath = Path.GetFullPath(startup.ProviderBootstrapPath);
-            if (!IsOwnedPath(brokerSessionRoot, bootstrapPath) || !File.Exists(bootstrapPath))
+            providerBootstrapPath = Path.GetFullPath(startup.ProviderBootstrapPath);
+            if (!File.Exists(providerBootstrapPath)
+                || !IsOwnedPath(brokerSessionRoot, providerBootstrapPath))
             {
                 throw new ArgumentException("Provider bootstrap path must be an existing file below the owned session root.", nameof(startup));
             }
+        }
 
+        Directory.CreateDirectory(brokerSessionRoot);
+        var descriptorPath = Path.Combine(brokerSessionRoot, "broker.json");
+        var bootstrapRoot = Path.Combine(resolvedLogRoot, "bootstrap");
+        Directory.CreateDirectory(bootstrapRoot);
+        var children = new List<WorkerBrokerProcessSpec>();
+        if (startup.Mode == RuntimeMigrationMode.Dotnet)
+        {
             children.Add(new WorkerBrokerProcessSpec(
                 "dotnet-agent-worker",
-                workerExecutable,
+                workerExecutable!,
                 $"--host 127.0.0.1 --port {startup.AgentWorkerPort}",
                 root,
                 new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["RU_AGENT_WORKER_TOKEN"] = startup.AgentWorkerToken,
-                    ["RU_AGENT_PROVIDER_BOOTSTRAP"] = bootstrapPath,
+                    ["RU_AGENT_PROVIDER_BOOTSTRAP"] = providerBootstrapPath!,
                     ["RU_LOG_ROOT"] = resolvedLogRoot,
                 },
                 Path.Combine(bootstrapRoot, "agent_worker_out.jsonl"),
@@ -155,12 +153,20 @@ public sealed class WorkerBrokerLaunchPlan
             string.Empty,
             root,
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["RU_AGENT_BROKER_DESCRIPTOR"] = descriptorPath,
-                ["RU_LOG_ROOT"] = resolvedLogRoot,
-            },
+                {
+                    ["RU_AGENT_BROKER_DESCRIPTOR"] = descriptorPath,
+                    ["RU_LOG_ROOT"] = resolvedLogRoot,
+                },
             Path.Combine(bootstrapRoot, "backend_broker_out.jsonl"),
             Path.Combine(bootstrapRoot, "backend_broker_err.jsonl")));
+
+        var descriptor = new BrokerSessionDescriptor(
+            $"http://127.0.0.1:{selectedBrokerPort}",
+            GenerateSecret(),
+            AgentEnvelopeCodec.ProtocolVersion,
+            brokerSessionRoot,
+            DateTimeOffset.UtcNow.AddHours(1));
+        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
 
         return new WorkerBrokerLaunchPlan(startup.AgentWorkerPort, startup.DeviceWorkerPort, selectedBrokerPort, descriptorPath, brokerSessionRoot, children);
     }

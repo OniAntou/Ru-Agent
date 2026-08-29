@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Execution status:** Complete on 2026-08-30. Tasks 1–11 were implemented
+> and verified on `main`; the unchecked boxes below are retained as the
+> original execution transcript. Current ownership and release evidence live
+> in `docs/operations/verification.md` and `docs/operations/python-runtime-boundary.md`.
+> Final revalidation on 2026-08-30 also covers streamed Worker deltas,
+> split structured tool selections, and the self-contained release build.
+
 **Goal:** Move the Agent generation path and its Worker v2 control plane to C#/.NET with golden parity and an explicit compatibility switch, while retaining Python only behind the private Worker v1 device boundary during Phase 1.
 
 **Architecture:** The existing `RuAgent.Harness.Core` and `RuAgent.Harness.Persistence` assemblies are the concrete managed implementation of the logical `RuAgent.Runtime.Core` and storage boundaries; Phase 1 extends them instead of introducing a duplicate core assembly. A focused adapters assembly owns provider-neutral model requests and OpenAI-compatible streaming, and a focused Worker process owns authenticated v2 WebSockets. The Public Host keeps public routes, Broker, policy, persistence, Job Object, and descriptor contracts unchanged; it starts a C# Agent Worker and a Python v1 device Worker on separate loopback ports.

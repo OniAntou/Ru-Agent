@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the current main branch, 2026-08-29.
+Status: operating contract for the current main branch, 2026-08-30.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -29,10 +29,20 @@ cannot update a newer bubble. A disconnect marks the active run as a bounded
 retryable connection error; Ru does not automatically replay an ambiguous
 request and risk duplicate history.
 
-The private Worker v1 protocol is now a runtime/device adapter boundary for
-runtime load/request, voice/STT, VTS, observation, and health. It rejects the
-retired conversation message types as `unknown_type`; Agent generation is
-owned by the typed Worker v2 step protocol.
+The private Python Device Worker v1 protocol is the runtime/device adapter
+boundary for runtime load/request, voice/STT, VTS, observation, and health. It
+rejects the retired conversation message types as `unknown_type`; Agent
+generation is owned by the managed C# Agent Worker v2 step protocol. The two
+workers have separate loopback ports and tokens. The Device Worker never
+receives the provider bootstrap or provider credentials.
+
+Managed startup launches `RuAgent.Runtime.Worker.exe` at
+`ws://127.0.0.1:8005/worker/v2` and `ru_runtime.worker.server --v1-only` at
+`ws://127.0.0.1:8006/worker/v1`, followed by the private Broker. A single-use
+DPAPI bootstrap carries only the selected provider endpoint/model/credential to
+the C# worker and is deleted after it is read. `PythonCompatibility` is an
+explicit rollback mode; it is never selected by a public Agent request or UI
+state.
 
 ### Agent system-prompt composition
 
@@ -70,8 +80,8 @@ filesystem/network sandbox are outside this implementation.
 
 ## Voice output
 
-OmniVoice is the supported local TTS engine. Today the Runtime Worker owns its
-lifecycle and reaches the isolated `omnivoice_env` service over loopback HTTP.
+OmniVoice is the supported local TTS engine. Today the Python Device Worker
+owns its lifecycle and reaches the isolated `omnivoice_env` service over loopback HTTP.
 Architecture v2 later replaces that listener with a
 bounded framed child-process protocol; the target is not current behavior yet.
 

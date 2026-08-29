@@ -79,7 +79,7 @@ exception text are forbidden.
 
 ### Intent-resolution diagnostics
 
-Before dispatch, the Runtime Worker emits exactly one of these bounded event
+Before dispatch, the Python Device Worker emits exactly one of these bounded event
 codes when explicit volume wording reaches a deterministic terminal decision:
 
 - `tool.intent.resolved`: one valid typed volume intent was created;
@@ -95,7 +95,7 @@ action result.
 
 ### Selection diagnostics
 
-The Runtime Worker emits `selection_invalid` once per Agent turn when a
+The C# Agent Worker emits `selection_invalid` once per Agent turn when a
 braced candidate reply fails structured selection parsing or validation; it
 carries no reply text or arguments. There is no mode-clamping or Chat request
 compatibility event. The remaining diagnostic is a bounded, fixed-field event:

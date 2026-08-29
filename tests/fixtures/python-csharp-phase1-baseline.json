@@ -2,13 +2,93 @@
   "cases": [
     {
       "expected": {
-        "composer_version": "1.0.0"
+        "block_digests": [
+          {
+            "block_id": "ru.persona",
+            "sha256": "2f46adf9949bc27466ce8ae67cefe4323e178cda3de95e4b0225c6c458044af9"
+          },
+          {
+            "block_id": "agent.contract",
+            "sha256": "98359f907797b899bc76105cbc1c7fbac968477109f24ff7acc5fc75e09db878"
+          },
+          {
+            "block_id": "environment",
+            "sha256": "fa2638c4eee02029cce4809489f2a352240328dc522e66833fbd099739862e87"
+          },
+          {
+            "block_id": "instruction.root:Ru.md",
+            "sha256": "bce56d097302d30b7e72962ed8db4586cd0a70418836de6acdecaa644a261ec4"
+          },
+          {
+            "block_id": "profile",
+            "sha256": "ed22ea51280f50112da08792a4cef56a88ea873015f69c56929c03e178d3991b"
+          },
+          {
+            "block_id": "capabilities",
+            "sha256": "2455f79d8bf0c8a166948f6b5255405193a73d5caf3fbadc734f3518152f6281"
+          },
+          {
+            "block_id": "runtime",
+            "sha256": "f623d688c71ca8312426f428c1642b64ec0193207df283a5e48c07061c900af6"
+          }
+        ],
+        "composer_version": "1.0.0",
+        "private_marker": "sk-PHASE1-PRIVATE-MARKER",
+        "prompt_sha256": "ac39671bbba1bf62bc16c34621b9176e0a7c7446d60c009ae0ac3a5fdbb8eedd"
       },
       "group": "prompt",
       "id": "prompt.basic",
       "input": {
         "agent_profile": "ru-agent",
+        "capabilities": [
+          {
+            "availability": "enabled",
+            "id": "files.read",
+            "input_schema_digest": "850023b88abc964b674c7c576520a77bbadd2bb1b6a50913e2e54209f75b65ca",
+            "policy_summary": "workspace.read",
+            "summary": "Read workspace files with bounded output",
+            "version": "1.2.0"
+          },
+          {
+            "availability": "disabled",
+            "id": "web.search",
+            "input_schema_digest": "285410df0fbae7a60bcbe6aaaae54f2e035884960f25d6d637fb9f394176bbbf",
+            "policy_summary": "web.search",
+            "summary": "Search the hosted web boundary",
+            "version": "1.0.0"
+          }
+        ],
+        "environment": {
+          "date": "2026-08-29",
+          "locale": "vi-VN",
+          "model": "phase1-reference-model",
+          "platform": "windows",
+          "timezone": "Asia/Bangkok",
+          "workspace_label": "LLM"
+        },
+        "instruction_blocks": [
+          {
+            "content": "Root guidance for the reference context.\nLine two.",
+            "content_sha256": "bce56d097302d30b7e72962ed8db4586cd0a70418836de6acdecaa644a261ec4",
+            "display_name": "Ru.md",
+            "source_id": "root:Ru.md"
+          }
+        ],
         "preset": "standard",
+        "runtime_context": {
+          "hardware": null,
+          "memory": "User prefers concise answers.",
+          "mood": null,
+          "references": [
+            {
+              "content": "Reference material must stay untrusted.",
+              "kind": "doc",
+              "label": "Phase 1 note"
+            }
+          ],
+          "voice": null,
+          "vts": null
+        },
         "schema_version": 1
       }
     },
@@ -30,19 +110,33 @@
       "group": "tool_selection",
       "id": "tool_selection.valid",
       "input": {
-        "arguments": {},
+        "advertised": [
+          "files.read",
+          "terminal.run"
+        ],
+        "arguments": {
+          "limit": 64,
+          "path": "README.md"
+        },
+        "text": "{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"path\":\"README.md\",\"limit\":64}}",
         "tool_id": "files.read",
         "tool_version": "1.0.0"
       }
     },
     {
       "expected": {
+        "code": "unknown_type",
         "retryable": false
       },
       "group": "protocol",
       "id": "protocol.unknown_type",
       "input": {
-        "code": "unknown_type"
+        "envelope": {
+          "id": "phase1-probe",
+          "payload": {},
+          "type": "agent.unknown",
+          "v": 1
+        }
       }
     },
     {
@@ -52,7 +146,8 @@
       "group": "cancellation",
       "id": "cancellation.before_dispatch",
       "input": {
-        "cancelled": true
+        "cancelled": true,
+        "prompt": "xin chào anh"
       }
     },
     {
@@ -63,10 +158,26 @@
       "group": "privacy",
       "id": "privacy.redaction",
       "input": {
-        "credential": "<redacted>",
-        "prompt_text": "<redacted>"
+        "credential": "sk-PRIVATE-CREDENTIAL-77ae",
+        "prompt_text": "PRIVATE-PROMPT-9f1c"
       }
     }
   ],
+  "measurement": {
+    "baseline": {
+      "prompt.compose": {
+        "p50_ms": 0.04506015625,
+        "p95_ms": 0.05308296875,
+        "peak_bytes": 94508
+      },
+      "tool_selection.parse": {
+        "p50_ms": 0.0042726562499999995,
+        "p95_ms": 0.006937734375,
+        "peak_bytes": 1915
+      }
+    },
+    "min_samples": 20,
+    "regression_tolerance": 0.1
+  },
   "schema_version": 1
 }

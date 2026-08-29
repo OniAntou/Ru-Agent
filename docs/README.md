@@ -25,6 +25,7 @@ an operating contract.
 - Desktop entry point — WinUI exposes one static Agent indicator and a compact `Standard`/`Full Access` selector in the composer. There is no Chat generation mode or workspace editor. The transient activity feed is safe-summary-only and separate from durable history.
 - Agent-only transport retirement — [design](superpowers/specs/2026-08-29-ru-agent-only-chat-removal-design.md) and [implementation plan](superpowers/plans/2026-08-29-ru-agent-only-chat-removal.md) are implemented through deterministic release gates: `/voice/stream` is the only public WebSocket, Worker v1 is runtime/device-only, and every text/voice turn uses Agent API/SSE.
 - OpenCode-style prompt composition — the [focused contract](superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md) and [implementation plan](superpowers/plans/2026-08-29-ru-opencode-system-prompt-composer.md) are shipped. Each Agent step receives one freshly composed system message, root-bound instruction context, and a digest-only internal receipt.
+- Managed runtime Phase 1 — the [migration design](superpowers/specs/2026-08-29-python-to-csharp-runtime-migration-design.md) and [Phase 1 plan](superpowers/plans/2026-08-29-python-to-csharp-runtime-phase-1.md) are implemented. C# owns Agent prompt/provider/Worker v2; Python remains a v1-only Device Worker for runtime, voice, STT, VTS, and observation. Separate worker ports/tokens and a single-use DPAPI provider bootstrap keep the boundary explicit. Golden parity, integration, privacy, and deterministic performance gates are shipped.
 - Typed Agent commands and bounded web tools — `/compact`, `/help`, `/skills`,
   and `/skill` share one Protocol parser and Public Host route. `web.search`
   and `web.fetch` are disabled by default and appear only with explicit web
@@ -33,8 +34,8 @@ an operating contract.
 
 ## Approved future work
 
-- [Python-to-C# runtime migration design](superpowers/specs/2026-08-29-python-to-csharp-runtime-migration-design.md) — staged replacement of the production Python runtime with C#/.NET while preserving the public and Worker contracts.
-- [Python-to-C# Runtime Phase 1 implementation plan](superpowers/plans/2026-08-29-python-to-csharp-runtime-phase-1.md) — baseline/parity work, managed prompt/provider/Worker v2, and the explicit Python v1 compatibility boundary. Phase 2 voice/device and Phase 3 Python retirement remain separate plans.
+- [Python-to-C# runtime migration design](superpowers/specs/2026-08-29-python-to-csharp-runtime-migration-design.md) — the staged replacement record; Phase 1 is shipped while later voice/device and Python-retirement phases remain future work.
+- [Python-to-C# Runtime Phase 1 implementation plan](superpowers/plans/2026-08-29-python-to-csharp-runtime-phase-1.md) — completed baseline/parity work, managed prompt/provider/Worker v2, explicit Python v1 compatibility boundary, and release/build gates. Phase 2 voice/device and Phase 3 Python retirement remain separate plans.
 - [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md) and [implementation program](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity.md) — remaining managed Git/real-model acceptance and later session/extension milestones are tracked there.
 - OS-enforced filesystem/network sandbox — a separate security project. Policy rules, path checks, and `network_intent` are not a sandbox and must not be relabeled as one.
 

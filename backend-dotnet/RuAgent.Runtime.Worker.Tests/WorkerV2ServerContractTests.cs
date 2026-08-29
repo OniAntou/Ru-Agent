@@ -28,9 +28,13 @@ public sealed class WorkerV2ServerContractTests
         Assert.Equal(0, hello.Seq);
 
         await SendTextAsync(socket, WorkerV2EnvelopeCodec.Serialize(new WorkerV2Envelope(2, "request-1", "agent.step.start", null, StartPayload())));
+        var delta = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+        Assert.Equal("agent.step.delta", delta.Type);
+        Assert.Equal(1, delta.Seq);
+        Assert.Equal("done", delta.Payload["text"]!.GetValue<string>());
         var done = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
         Assert.Equal("agent.step.done", done.Type);
-        Assert.Equal(1, done.Seq);
+        Assert.Equal(2, done.Seq);
     }
 
     [Fact]
@@ -44,6 +48,37 @@ public sealed class WorkerV2ServerContractTests
         var result = await socket.ReceiveAsync(buffer, CancellationToken.None);
         Assert.Equal(WebSocketMessageType.Close, result.MessageType);
         Assert.Equal(WebSocketCloseStatus.PolicyViolation, socket.CloseStatus);
+    }
+
+    [Fact]
+    public async Task Server_maps_non_text_control_frames_to_a_bounded_error()
+    {
+        await using var host = await StartHostAsync(new FakeModelProvider(new ModelDelta("done", Array.Empty<ModelToolFragment>(), true, "stop")));
+        using var socket = await host.GetTestServer().CreateWebSocketClient().ConnectAsync(new Uri("ws://localhost/worker/v2"), CancellationToken.None);
+        await SendTextAsync(socket, WorkerV2EnvelopeCodec.Serialize(new WorkerV2Envelope(2, "hello-1", "hello", null, new JsonObject { ["token"] = "worker-secret" })));
+        _ = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+
+        await socket.SendAsync(new ArraySegment<byte>([1, 2, 3]), WebSocketMessageType.Binary, true, CancellationToken.None);
+
+        var error = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+        Assert.Equal("error", error.Type);
+        Assert.Equal("connection", error.Id);
+        Assert.Equal("text_control_required", error.Payload["code"]!.GetValue<string>());
+        Assert.False(error.Payload["retryable"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Server_rejects_invalid_utf8_control_frames_without_replacement_text()
+    {
+        await using var host = await StartHostAsync(new FakeModelProvider(new ModelDelta("done", Array.Empty<ModelToolFragment>(), true, "stop")));
+        using var socket = await host.GetTestServer().CreateWebSocketClient().ConnectAsync(new Uri("ws://localhost/worker/v2"), CancellationToken.None);
+        await socket.SendAsync(new ArraySegment<byte>([0xC3, 0x28]), WebSocketMessageType.Text, true, CancellationToken.None);
+
+        var error = WorkerV2EnvelopeCodec.Parse(await ReceiveTextAsync(socket));
+        Assert.Equal("error", error.Type);
+        Assert.Equal("connection", error.Id);
+        Assert.Equal("invalid_utf8", error.Payload["code"]!.GetValue<string>());
+        Assert.False(error.Payload["retryable"]!.GetValue<bool>());
     }
 
     private static async Task<WebApplication> StartHostAsync(IModelProvider provider)

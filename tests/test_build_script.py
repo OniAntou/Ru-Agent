@@ -23,9 +23,11 @@ def _write_stub_commands(root: Path, *, gui_publish_exists: bool = True) -> None
         "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Broker\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
         "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuBackend\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
         "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Cli\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
+        "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Runtime.Worker\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
         "  echo broker > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Broker\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Broker.exe\"\n"
         "  echo backend > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuBackend\\bin\\Release\\net10.0\\win-x64\\publish\\RuBackend.exe\"\n"
         "  echo cli > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Cli\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Cli.exe\"\n"
+        "  echo worker > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Runtime.Worker\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Runtime.Worker.exe\"\n"
         f"{gui_publish}"
         ")\n"
         "exit /b 0\n",
@@ -58,10 +60,14 @@ def _run_build_script(
     (build_root / "gui-winui3" / "RuApp.csproj").write_text("stub\n", encoding="utf-8")
     (build_root / "backend-dotnet" / "RuAgent.Broker").mkdir(parents=True)
     (build_root / "backend-dotnet" / "RuBackend").mkdir(parents=True)
+    (build_root / "backend-dotnet" / "RuAgent.Runtime.Worker").mkdir(parents=True)
     (build_root / "backend-dotnet" / "RuAgent.Broker" / "RuAgent.Broker.csproj").write_text(
         "stub\n", encoding="utf-8"
     )
     (build_root / "backend-dotnet" / "RuBackend" / "RuBackend.csproj").write_text(
+        "stub\n", encoding="utf-8"
+    )
+    (build_root / "backend-dotnet" / "RuAgent.Runtime.Worker" / "RuAgent.Runtime.Worker.csproj").write_text(
         "stub\n", encoding="utf-8"
     )
     (build_root / "scripts").mkdir()
@@ -100,8 +106,8 @@ def test_existing_overlay_still_runs_incremental_native_build(tmp_path: Path) ->
     assert "cmake --build" in (
         tmp_path / "checkout" / "cmake.invocations"
     ).read_text(encoding="utf-8")
-    assert "[1/12]" in result.stdout
-    assert "[12/12]" in result.stdout
+    assert "[1/13]" in result.stdout
+    assert "[13/13]" in result.stdout
     assert "RuAgent.Cli" in result.stdout
     assert "RuAgent.Harness.Core" in result.stdout
 
@@ -153,3 +159,31 @@ def test_start_dev_rejects_debug_fallback_when_release_is_missing(tmp_path: Path
     assert result.returncode != 0
     assert "Release publish" in result.stdout
     assert "Debug" not in result.stdout
+
+
+def test_start_dev_requires_the_managed_worker_publish(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    script = tmp_path / "start_dev.bat"
+    shutil.copy2(repo_root / "start_dev.bat", script)
+    release = (
+        tmp_path
+        / "gui-winui3"
+        / "bin"
+        / "Release"
+        / "net10.0-windows10.0.26100.0"
+        / "win-x64"
+        / "publish"
+    )
+    release.mkdir(parents=True)
+    (release / "RuApp.exe").write_text("release placeholder\n", encoding="utf-8")
+
+    result = subprocess.run(
+        ["cmd", "/d", "/c", str(script)],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Managed Agent Worker publish output not found" in result.stdout

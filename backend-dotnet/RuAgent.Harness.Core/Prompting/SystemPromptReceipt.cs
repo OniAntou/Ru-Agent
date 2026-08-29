@@ -116,4 +116,14 @@ public sealed record SystemPromptReceipt
             }
         }
     }
+
+    public void ValidateAgainst(SystemPromptContext context, string text)
+    {
+        ValidateAgainst(context);
+        ArgumentNullException.ThrowIfNull(text);
+        if (!string.Equals(PromptHash.Sha256(text), PromptSha256, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Prompt receipt does not match rendered prompt text.", nameof(text));
+        }
+    }
 }

@@ -7,7 +7,7 @@ using RuAgent.Runtime.Core.Contracts;
 
 namespace RuAgent.Runtime.Adapters.Audio;
 
-public sealed class OmniVoiceHttpProvider : IVoiceProvider
+public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -15,17 +15,23 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider
     };
     private readonly HttpClient _httpClient;
     private readonly OmniVoiceProviderOptions _options;
+    private readonly OmniVoiceProcessController? _processController;
 
-    public OmniVoiceHttpProvider(HttpClient httpClient, OmniVoiceProviderOptions options)
+    public OmniVoiceHttpProvider(
+        HttpClient httpClient,
+        OmniVoiceProviderOptions options,
+        OmniVoiceProcessController? processController = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _options.Validate();
+        _processController = processController;
     }
 
     public async Task WarmupAsync(string voiceProfile, CancellationToken cancellationToken)
     {
         var profile = MapProfile(voiceProfile);
+        await EnsureProviderStartedAsync(cancellationToken).ConfigureAwait(false);
         _ = await SendJsonAsync(
             HttpMethod.Post,
             "warmup",
@@ -35,6 +41,13 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider
 
     public async Task ReleaseAsync(CancellationToken cancellationToken)
     {
+        // A process that was never used must not be started merely to release it.
+        // Composition owns the final process stop during Worker shutdown.
+        if (_processController is not null && !_processController.IsRunning)
+        {
+            return;
+        }
+
         _ = await SendJsonAsync(HttpMethod.Post, "release", new JsonObject(), cancellationToken)
             .ConfigureAwait(false);
     }
@@ -44,13 +57,15 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var profile = MapProfile(request.VoiceProfile);
+        await EnsureProviderStartedAsync(cancellationToken).ConfigureAwait(false);
         var response = await SendAsync(
             HttpMethod.Post,
             "tts",
             new JsonObject
             {
                 ["text"] = request.Text.Trim(),
-                ["voice_profile"] = MapProfile(request.VoiceProfile),
+                ["voice_profile"] = profile,
                 ["speed"] = request.Speed,
                 ["voice_style_id"] = request.VoiceStyleId,
             },
@@ -66,13 +81,15 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        var profile = MapProfile(request.VoiceProfile);
+        await EnsureProviderStartedAsync(cancellationToken).ConfigureAwait(false);
         var response = await SendAsync(
             HttpMethod.Post,
             "tts_stream",
             new JsonObject
             {
                 ["text"] = request.Text.Trim(),
-                ["voice_profile"] = MapProfile(request.VoiceProfile),
+                ["voice_profile"] = profile,
                 ["speed"] = request.Speed,
                 ["voice_style_id"] = request.VoiceStyleId,
             },
@@ -102,6 +119,11 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider
             throw new OmniVoiceProviderException("invalid_response", retryable: false, error);
         }
     }
+
+    private Task EnsureProviderStartedAsync(CancellationToken cancellationToken) =>
+        _processController is null
+            ? Task.CompletedTask
+            : _processController.StartAsync(cancellationToken);
 
     private async Task<ProviderResponse> SendAsync(
         HttpMethod method,

@@ -120,11 +120,11 @@
 
 **Files:** Create `backend-dotnet/RuAgent.Runtime.Worker/ManagedWorkerComposition.cs`; modify `Program.cs`, Worker project references, `backend-dotnet/RuBackend/Worker/WorkerConnection.cs`, and `LoopbackWorkerClient.cs`; tests `ManagedWorkerCompositionTests.cs` and existing loopback client tests.
 
-- [ ] Test that v1/v2 share one lease coordinator but use distinct tokens, v1 receives no provider bootstrap, and all existing client methods parse unchanged envelopes/binary frames.
-- [ ] Run focused Worker/Backend filters; expected FAIL.
-- [ ] Compose settings, voice, STT, VTS, observation, and runtime handlers through dependency injection; pass `--device-port`, `RU_DEVICE_WORKER_TOKEN`, `RU_PROJECT_ROOT`, and `RU_LOG_ROOT`; start OmniVoice lazily and stop it on worker shutdown.
-- [ ] Run all Worker tests and backend worker/runtime/speech tests sequentially; expected PASS.
-- [ ] Commit `git add backend-dotnet/RuAgent.Runtime.Worker backend-dotnet/RuBackend/Worker backend-dotnet/RuAgent.Runtime.Worker.Tests backend-dotnet/RuBackend.Tests/Worker backend-dotnet/RuBackend.Tests/Speech; git commit -m "feat: compose managed v1 runtime adapters"`.
+- [x] Test that v1/v2 share one lease coordinator but use distinct tokens, v1 receives no provider bootstrap, and all existing client methods parse unchanged envelopes/binary frames.
+- [x] Run focused Worker/Backend filters; expected FAIL.
+- [x] Compose settings, voice, STT, VTS, observation, and runtime handlers through dependency injection; pass `--device-port`, `RU_DEVICE_WORKER_TOKEN`, `RU_PROJECT_ROOT`, and `RU_LOG_ROOT`; start OmniVoice lazily and stop it on worker shutdown.
+- [x] Run all Worker tests and backend worker/runtime/speech tests sequentially; expected PASS.
+- [x] Commit `git add backend-dotnet/RuAgent.Runtime.Worker backend-dotnet/RuBackend/Worker backend-dotnet/RuAgent.Runtime.Worker.Tests backend-dotnet/RuBackend.Tests/Worker backend-dotnet/RuBackend.Tests/Speech; git commit -m "feat: compose managed v1 runtime adapters"`.
 
 ### Task 10: Cut managed v1 into startup with explicit rollback
 

@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Runtime.Adapters.Models;
+using RuAgent.Runtime.Core.Lifecycle;
 
 namespace RuAgent.Runtime.Worker;
 
@@ -37,13 +38,26 @@ public sealed class WorkerV2StepService
         string.Empty);
     private readonly IModelProvider _provider;
     private readonly WorkerV2Options _options;
+    private readonly RuntimeLeaseCoordinator? _leases;
     private readonly SemaphoreSlim _providerGate = new(1, 1);
 
-    public WorkerV2StepService(IModelProvider provider, WorkerV2Options? options = null)
+    public WorkerV2StepService(
+        IModelProvider provider,
+        WorkerV2Options? options = null,
+        RuntimeLeaseCoordinator? leases = null)
     {
         _provider = provider ?? throw new ArgumentNullException(nameof(provider));
         _options = options ?? DefaultOptions;
+        _leases = leases;
     }
+
+    /// <summary>
+    /// The coordinator is shared with the v1 device adapters by the managed
+    /// composition. Generation holds the observation lease so an observation
+    /// request can fail fast with <c>generation_busy</c> instead of competing
+    /// with the active model call.
+    /// </summary>
+    public RuntimeLeaseCoordinator? Leases => _leases;
 
     public async Task<WorkerV2StepResult> RunAsync(JsonObject startPayload, CancellationToken cancellationToken)
         => await RunAsync(startPayload, null, cancellationToken).ConfigureAwait(false);
@@ -76,9 +90,19 @@ public sealed class WorkerV2StepService
             _options.ProviderCredential);
         var holdback = new DeltaHoldback(onDelta);
 
-        await _providerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        RuntimeLease? generationLease = null;
+        var providerGateEntered = false;
         try
         {
+            if (_leases is not null)
+            {
+                generationLease = await _leases
+                    .AcquireAsync(ResourceKind.Observation, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await _providerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            providerGateEntered = true;
             var text = new StringBuilder();
             var toolFragments = new List<ModelToolFragment>();
             string? finishReason = null;
@@ -145,7 +169,15 @@ public sealed class WorkerV2StepService
         }
         finally
         {
-            _providerGate.Release();
+            if (providerGateEntered)
+            {
+                _providerGate.Release();
+            }
+
+            if (generationLease is not null)
+            {
+                await generationLease.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 

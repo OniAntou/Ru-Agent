@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Models;
+using RuAgent.Runtime.Core.Lifecycle;
 using RuAgent.Runtime.Worker;
 using Xunit;
 
@@ -148,6 +149,25 @@ public sealed class WorkerV2StepServiceTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await task);
         Assert.True(provider.Cancelled.Task.IsCompleted);
+    }
+
+    [Fact]
+    public async Task Step_service_holds_and_releases_the_shared_generation_lease()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await using var leases = new RuntimeLeaseCoordinator();
+        var provider = new BlockingProvider();
+        var task = new WorkerV2StepService(provider, leases: leases)
+            .RunAsync(StartPayload(), cancellation.Token);
+
+        await provider.Started.Task;
+        Assert.False(leases.TryAcquire(ResourceKind.Observation, out var blocked));
+        Assert.Null(blocked);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await task);
+        Assert.True(leases.TryAcquire(ResourceKind.Observation, out var released));
+        await released!.DisposeAsync();
     }
 
     private static JsonObject StartPayload(bool includeTool = false)

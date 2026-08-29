@@ -11,6 +11,19 @@ public interface IVoiceProvider
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Optional lifecycle operations exposed by providers that own a warmable
+/// inference process. Keeping this separate from <see cref="IVoiceProvider"/>
+/// lets deterministic providers implement synthesis without pretending to own
+/// process lifecycle.
+/// </summary>
+public interface IVoiceLifecycle
+{
+    Task WarmupAsync(string voiceProfile, CancellationToken cancellationToken);
+
+    Task ReleaseAsync(CancellationToken cancellationToken);
+}
+
 public interface ISpeechRecognizer
 {
     Task<string> RecognizeAsync(

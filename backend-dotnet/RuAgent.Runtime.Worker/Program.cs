@@ -44,25 +44,31 @@ internal static class WorkerEntryPoint
 
         var token = Environment.GetEnvironmentVariable("RU_AGENT_WORKER_TOKEN")
             ?? throw new InvalidOperationException("RU_AGENT_WORKER_TOKEN is required.");
-        var deviceToken = Environment.GetEnvironmentVariable("RU_DEVICE_WORKER_TOKEN") ?? token;
+        var deviceToken = Environment.GetEnvironmentVariable("RU_DEVICE_WORKER_TOKEN")
+            ?? throw new InvalidOperationException("RU_DEVICE_WORKER_TOKEN is required.");
         var bootstrapPath = Environment.GetEnvironmentVariable("RU_AGENT_PROVIDER_BOOTSTRAP")
             ?? throw new InvalidOperationException("RU_AGENT_PROVIDER_BOOTSTRAP is required.");
         var sessionRoot = Path.GetDirectoryName(Path.GetFullPath(bootstrapPath))
             ?? throw new InvalidOperationException("Provider bootstrap root is invalid.");
         var providerData = ProtectedProviderBootstrap.ReadAndDelete(sessionRoot, bootstrapPath);
-        var provider = new OpenAiCompatibleModelProvider(new HttpClient());
-        var options = new WorkerV2Options(
-            port,
-            token,
-            providerData.Endpoint,
-            providerData.Model,
-            providerData.Credential);
-        var server = new WorkerV2Server(
-            token,
-            new WorkerV2StepService(provider, options));
-        var deviceServer = new WorkerV1Server(
-            deviceToken,
-            new UnavailableWorkerV1RequestRouter());
+        // The bootstrap is an agent-only handoff. Remove the path from the
+        // process environment before composing the device v1 graph so a v1
+        // adapter cannot rediscover the provider credential channel.
+        Environment.SetEnvironmentVariable("RU_AGENT_PROVIDER_BOOTSTRAP", null);
+        var projectRoot = Environment.GetEnvironmentVariable("RU_PROJECT_ROOT")
+            ?? Directory.GetCurrentDirectory();
+        var logRoot = Environment.GetEnvironmentVariable("RU_LOG_ROOT");
+        var composition = ManagedWorkerComposition.Create(
+            new ManagedWorkerCompositionOptions(
+                port,
+                devicePort,
+                token,
+                deviceToken,
+                providerData,
+                projectRoot)
+            {
+                LogRoot = logRoot,
+            });
 
         var builder = WebApplication.CreateBuilder();
         var urls = devicePort == port
@@ -71,9 +77,16 @@ internal static class WorkerEntryPoint
         builder.WebHost.UseUrls(urls);
         var app = builder.Build();
         app.UseWebSockets();
-        app.Run(context => string.Equals(context.Request.Path, "/worker/v1", StringComparison.Ordinal)
-            ? deviceServer.HandleAsync(context)
-            : server.HandleAsync(context));
-        await app.RunAsync();
+        try
+        {
+            app.Run(context => string.Equals(context.Request.Path, "/worker/v1", StringComparison.Ordinal)
+                ? composition.DeviceServer.HandleAsync(context)
+                : composition.AgentServer.HandleAsync(context));
+            await app.RunAsync();
+        }
+        finally
+        {
+            await composition.DisposeAsync().ConfigureAwait(false);
+        }
     }
 }

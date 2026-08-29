@@ -16,6 +16,7 @@ public sealed class HarnessSqliteSchemaTests
         "agent_run_rules",
         "agent_workspaces",
         "agent_session_settings",
+        "agent_context_compactions",
     ];
 
     private static readonly string[] RequiredIndexes =
@@ -25,6 +26,7 @@ public sealed class HarnessSqliteSchemaTests
         "ux_agent_payloads_context_source",
         "ux_agent_payloads_context_sequence",
         "ix_agent_conversation_outbox_dispatch",
+        "ix_agent_context_compactions_run_created",
     ];
 
     [Fact]
@@ -135,6 +137,74 @@ public sealed class HarnessSqliteSchemaTests
             }
 
             Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Initialize_migrates_version_two_additively_and_preserves_existing_rows()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "ru-harness-schema-migration",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var databasePath = Path.Combine(root, "agent_harness.db");
+        try
+        {
+            var options = new HarnessSqliteOptions(databasePath);
+            var initial = await HarnessSqliteSchema.InitializeAsync(
+                options,
+                CancellationToken.None);
+            Assert.True(initial.IsAvailable, initial.ErrorCode);
+
+            await using (var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    INSERT INTO agent_session_settings(session_id, preset, version, updated_at_utc)
+                    VALUES ('migration-sentinel', 0, 7, '2026-08-29T00:00:00.0000000+00:00');
+                    DROP INDEX IF EXISTS ix_agent_context_compactions_run_created;
+                    DROP TABLE IF EXISTS agent_context_compactions;
+                    PRAGMA user_version = 2;
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var migrated = await HarnessSqliteSchema.InitializeAsync(
+                options,
+                CancellationToken.None);
+
+            Assert.True(migrated.IsAvailable, migrated.ErrorCode);
+            Assert.Equal(3, migrated.SchemaVersion);
+            await using var verify = new SqliteConnection($"Data Source={databasePath};Pooling=False");
+            await verify.OpenAsync();
+            await using var sentinel = verify.CreateCommand();
+            sentinel.CommandText =
+                "SELECT version FROM agent_session_settings WHERE session_id = 'migration-sentinel'";
+            Assert.Equal(7L, (long)(await sentinel.ExecuteScalarAsync() ?? 0L));
+            await using var table = verify.CreateCommand();
+            table.CommandText =
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'agent_context_compactions'";
+            Assert.Equal(1L, (long)(await table.ExecuteScalarAsync() ?? 0L));
+        }
+        finally
+        {
+            using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Shared,
+                Pooling = true,
+            }.ToString()))
+            {
+                SqliteConnection.ClearPool(pool);
+            }
+
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
         }
     }
 }

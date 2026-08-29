@@ -1,13 +1,192 @@
 using System.Text;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Persistence.Context;
 using Xunit;
 
 namespace RuAgent.Harness.Persistence.Tests;
 
 public sealed class HarnessProjectionTransactionTests
 {
+    [Fact]
+    public async Task Context_compaction_projects_a_summary_and_hides_covered_entries_after_restart()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var eventStore = fixture.CreateEventStore();
+        var request = fixture.NewRun(1, 1, 1);
+        await eventStore.TryCreateRunAsync(request, CancellationToken.None);
+        await fixture.PayloadStore.CaptureBaseContextAsync(
+            request.Run.RunId,
+            [new HarnessBaseContextEntry(
+                HarnessStoreTestFixture.Payload(190),
+                "base:system",
+                1,
+                ModelContextRole.System,
+                "system rules")],
+            HarnessStoreTestFixture.Timestamp,
+            CancellationToken.None);
+
+        var coveredPayload = UserPayload(191, "old context that should be summarized");
+        var runWithContext = HarnessEventStoreTests.CopyRun(
+            request.Run,
+            new HarnessRunStatus(HarnessRunState.Running),
+            version: 1,
+            lastSequence: 2);
+        await eventStore.CommitAsync(
+            new HarnessCommit(
+                request.Run.RunId,
+                0,
+                runWithContext,
+                [new HarnessEventIntent(
+                    HarnessStoreTestFixture.Event(191),
+                    HarnessEventKind.ModelStepCompleted,
+                    payloadId: coveredPayload.PayloadId)],
+                [coveredPayload],
+                []),
+            CancellationToken.None);
+
+        var summaryText = "[context_compaction id=compact-1 untrusted=true]\nold context retained\n[/context_compaction]";
+        var summaryBytes = Encoding.UTF8.GetBytes(summaryText);
+        var summaryPayload = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(192),
+            HarnessPayloadKind.ModelContextSummary,
+            HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            4096,
+            summaryBytes);
+        var compactedRun = HarnessEventStoreTests.CopyRun(
+            runWithContext,
+            new HarnessRunStatus(HarnessRunState.Running),
+            version: 2,
+            lastSequence: 3);
+        var coveredRange = new ContextEntryRange(
+            $"event:{HarnessStoreTestFixture.Event(191).Value}",
+            2,
+            2);
+        var compacted = await eventStore.CommitAsync(
+            new HarnessCommit(
+                request.Run.RunId,
+                1,
+                compactedRun,
+                [new HarnessEventIntent(
+                    HarnessStoreTestFixture.Event(192),
+                    HarnessEventKind.ContextCompacted,
+                    safeCode: "context_compacted",
+                    safeCount: 1)],
+                [summaryPayload],
+                [],
+                new ContextCompactionIntent(
+                    request.Run.RunId,
+                    "compact-1",
+                    summaryPayload.PayloadId,
+                    ContextCompactionStrategy.Normal,
+                    ContextCompactionReason.Manual,
+                    [coveredRange],
+                    beforeTokens: 120,
+                    afterTokens: 40,
+                    inputHash: HarnessStoreTestFixture.Sha('d'))),
+            CancellationToken.None);
+
+        Assert.Equal(HarnessCommitOutcome.Committed, compacted.Outcome);
+        var first = await new AgentContextAssembler(
+                new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))
+            .AssembleAsync(request.Run.RunId, CancellationToken.None);
+        var afterRestart = await new AgentContextAssembler(
+                new SqliteModelContextSource(fixture.Options, fixture.PayloadStore))
+            .AssembleAsync(request.Run.RunId, CancellationToken.None);
+
+        Assert.DoesNotContain(first.Entries, entry => entry.SourceId == $"event:{HarnessStoreTestFixture.Event(191).Value}");
+        var summary = Assert.Single(first.Entries, entry => entry.Kind == ModelContextEntryKind.Summary);
+        Assert.Equal("compact-1", summary.SourceId);
+        Assert.Equal(summaryText, summary.Content);
+        Assert.Equal([coveredRange], summary.SummaryRanges);
+        Assert.Equal(first.CanonicalUtf8.ToArray(), afterRestart.CanonicalUtf8.ToArray());
+        Assert.Equal(1L, await ScalarAsync(fixture, "SELECT COUNT(*) FROM agent_context_compactions"));
+        var events = new List<HarnessEventEnvelope>();
+        await foreach (var envelope in eventStore.ReadEventsAsync(
+                           request.Run.RunId,
+                           0,
+                           CancellationToken.None))
+        {
+            events.Add(envelope);
+        }
+
+        Assert.Contains(events, item => item.Event.Kind == "context.compacted");
+        Assert.All(events.Where(item => item.Event.Kind == "context.compacted"),
+            item => Assert.Null(item.Event.PayloadId));
+    }
+
+    [Fact]
+    public async Task Failed_compaction_projection_rolls_back_summary_and_compaction_row()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var eventStore = fixture.CreateEventStore();
+        var request = fixture.NewRun(1, 1, 1);
+        await eventStore.TryCreateRunAsync(request, CancellationToken.None);
+        var current = HarnessEventStoreTests.CopyRun(
+            request.Run,
+            new HarnessRunStatus(HarnessRunState.Running),
+            version: 1,
+            lastSequence: 2);
+        await eventStore.CommitAsync(
+            new HarnessCommit(
+                request.Run.RunId,
+                0,
+                current,
+                [new HarnessEventIntent(
+                    HarnessStoreTestFixture.Event(193),
+                    HarnessEventKind.RunStateChanged)],
+                [],
+                []),
+            CancellationToken.None);
+
+        var summaryPayload = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(194),
+            HarnessPayloadKind.ModelContextSummary,
+            HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            1024,
+            Encoding.UTF8.GetBytes("summary"));
+        var next = HarnessEventStoreTests.CopyRun(
+            current,
+            new HarnessRunStatus(HarnessRunState.Running),
+            version: 2,
+            lastSequence: 3);
+        var failing = new HarnessCommit(
+            request.Run.RunId,
+            1,
+            next,
+            [new HarnessEventIntent(
+                HarnessStoreTestFixture.Event(193),
+                HarnessEventKind.ContextCompacted)],
+            [summaryPayload],
+            [],
+            new ContextCompactionIntent(
+                request.Run.RunId,
+                "compact-rollback",
+                summaryPayload.PayloadId,
+                ContextCompactionStrategy.Normal,
+                ContextCompactionReason.Automatic,
+                [new ContextEntryRange("event:missing", 2, 2)],
+                beforeTokens: 100,
+                afterTokens: 50,
+                inputHash: HarnessStoreTestFixture.Sha('e')));
+
+        var exception = await Assert.ThrowsAsync<HarnessStoreException>(
+            () => eventStore.CommitAsync(failing, CancellationToken.None));
+
+        Assert.Equal("harness_commit_failed", exception.Code);
+        Assert.Equal(1, (await eventStore.GetRunAsync(request.Run.RunId, CancellationToken.None))!.Version);
+        Assert.Equal(0L, await ScalarAsync(
+            fixture,
+            $"SELECT COUNT(*) FROM agent_payloads WHERE payload_id = '{summaryPayload.PayloadId.Value}'"));
+        Assert.Equal(0L, await ScalarAsync(fixture, "SELECT COUNT(*) FROM agent_context_compactions"));
+    }
+
     [Fact]
     public async Task Event_projection_payload_and_outbox_commit_atomically()
     {

@@ -82,12 +82,140 @@ public sealed class SqliteModelContextSource : IModelContextSource
             }
         }
 
+        await ApplyCompactionsAsync(
+                connection,
+                runId,
+                runLocal,
+                cancellationToken)
+            .ConfigureAwait(false);
+
         if (sessionBase.Count != expectedBaseCount)
         {
             throw new HarnessStoreException("context_base_incomplete");
         }
 
         return new ModelContextSourceSnapshot(sessionBase, runLocal);
+    }
+
+    private async Task ApplyCompactionsAsync(
+        SqliteConnection connection,
+        RunId runId,
+        List<ModelContextEntry> runLocal,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT c.compaction_id,
+                   c.summary_payload_id,
+                   c.covered_ranges_json,
+                   p.kind,
+                   p.audience,
+                   p.encoding,
+                   p.byte_cap,
+                   p.protected_content,
+                   p.protection_version,
+                   p.nonce,
+                   p.authentication_tag
+            FROM agent_context_compactions AS c
+            LEFT JOIN agent_payloads AS p
+              ON p.run_id = c.run_id
+             AND p.payload_id = c.summary_payload_id
+            WHERE c.run_id = $run_id
+            ORDER BY c.created_at_utc, c.compaction_id
+            """;
+        command.Parameters.AddWithValue("$run_id", runId.Value);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken)
+            .ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            if (reader.IsDBNull(3)
+                || reader.IsDBNull(4)
+                || reader.IsDBNull(5)
+                || reader.IsDBNull(6)
+                || reader.IsDBNull(7)
+                || reader.IsDBNull(8)
+                || reader.IsDBNull(9)
+                || reader.IsDBNull(10))
+            {
+                throw new HarnessStoreException("context_compaction_payload_missing");
+            }
+
+            var payloadId = new PayloadId(reader.GetString(1));
+            var metadata = new HarnessPayloadIntent(
+                payloadId,
+                (HarnessPayloadKind)reader.GetInt32(3),
+                (HarnessPayloadAudience)reader.GetInt32(4),
+                (HarnessPayloadEncoding)reader.GetInt32(5),
+                reader.GetInt32(6),
+                ReadOnlyMemory<byte>.Empty);
+            if (metadata.Kind != HarnessPayloadKind.ModelContextSummary
+                || metadata.Audience != HarnessPayloadAudience.ModelContext
+                || metadata.Encoding != HarnessPayloadEncoding.Utf8Text
+                || !HarnessPayloadStore.CanReadForModel(metadata))
+            {
+                throw new HarnessStoreException("context_compaction_payload_invalid");
+            }
+
+            var encrypted = new EncryptedHarnessPayload(
+                reader.GetInt32(8),
+                (byte[])reader[9],
+                (byte[])reader[7],
+                (byte[])reader[10]);
+            var plaintext = await _payloadStore.DecryptAsync(
+                    runId,
+                    metadata,
+                    encrypted,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            string summaryText;
+            try
+            {
+                summaryText = StrictUtf8.GetString(plaintext.Span);
+            }
+            catch (DecoderFallbackException exception)
+            {
+                throw new HarnessStoreException("context_compaction_payload_invalid", exception);
+            }
+
+            var ranges = ContextCompactionStoreCodec.DeserializeRanges(reader.GetString(2));
+            var summary = ModelContextEntry.Summary(
+                reader.GetString(0),
+                ranges.Min(range => range.StartSequence),
+                summaryText,
+                ranges);
+            ApplyCompaction(runLocal, summary);
+        }
+    }
+
+    private static void ApplyCompaction(
+        List<ModelContextEntry> runLocal,
+        ModelContextEntry summary)
+    {
+        var ranges = summary.SummaryRanges!;
+        var covered = runLocal
+            .Where(entry => ranges.Any(range =>
+                string.Equals(entry.SourceId, range.SourceId, StringComparison.Ordinal)
+                && entry.Sequence >= range.StartSequence
+                && entry.Sequence <= range.EndSequence))
+            .ToHashSet();
+        if (covered.Count == 0)
+        {
+            throw new HarnessStoreException("context_compaction_range_missing");
+        }
+
+        var insertionIndex = runLocal.FindIndex(entry => covered.Contains(entry));
+        runLocal.RemoveAll(entry => covered.Contains(entry));
+        if (insertionIndex < 0)
+        {
+            insertionIndex = runLocal.FindIndex(entry => entry.Sequence > summary.Sequence);
+        }
+
+        if (insertionIndex < 0 || insertionIndex > runLocal.Count)
+        {
+            insertionIndex = runLocal.Count;
+        }
+
+        runLocal.Insert(insertionIndex, summary);
     }
 
     private static async Task<int> ReadBaseCountAsync(

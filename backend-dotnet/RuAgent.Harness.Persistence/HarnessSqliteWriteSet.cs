@@ -60,6 +60,7 @@ internal static class HarnessSqliteWriteSet
             commit.ConversationOutbox,
             current.SessionId,
             nameof(commit));
+        ValidateCompaction(commit, nameof(commit));
         ValidateOutboxBoundary(
             current,
             commit.NextRun,
@@ -271,6 +272,59 @@ internal static class HarnessSqliteWriteSet
         }
     }
 
+    internal static async Task InsertCompactionAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ContextCompactionIntent compaction,
+        long expectedRunVersion,
+        DateTimeOffset occurredAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(compaction);
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO agent_context_compactions(
+                compaction_id,
+                run_id,
+                summary_payload_id,
+                expected_run_version,
+                strategy,
+                reason,
+                covered_ranges_json,
+                before_tokens,
+                after_tokens,
+                input_hash,
+                created_at_utc)
+            VALUES (
+                $compaction_id,
+                $run_id,
+                $summary_payload_id,
+                $expected_run_version,
+                $strategy,
+                $reason,
+                $covered_ranges_json,
+                $before_tokens,
+                $after_tokens,
+                $input_hash,
+                $created_at)
+            """;
+        command.Parameters.AddWithValue("$compaction_id", compaction.CompactionId);
+        command.Parameters.AddWithValue("$run_id", compaction.RunId.Value);
+        command.Parameters.AddWithValue("$summary_payload_id", compaction.SummaryPayloadId.Value);
+        command.Parameters.AddWithValue("$expected_run_version", expectedRunVersion);
+        command.Parameters.AddWithValue("$strategy", compaction.Strategy.ToString().ToLowerInvariant());
+        command.Parameters.AddWithValue("$reason", compaction.Reason.ToString().ToLowerInvariant());
+        command.Parameters.AddWithValue(
+            "$covered_ranges_json",
+            ContextCompactionStoreCodec.SerializeRanges(compaction.CoveredRanges));
+        command.Parameters.AddWithValue("$before_tokens", compaction.BeforeTokens);
+        command.Parameters.AddWithValue("$after_tokens", compaction.AfterTokens);
+        command.Parameters.AddWithValue("$input_hash", compaction.InputHash);
+        command.Parameters.AddWithValue("$created_at", HarnessSqliteMapper.Utc(occurredAt));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     internal static async Task DeleteRunRulesIfTerminalAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -385,6 +439,47 @@ internal static class HarnessSqliteWriteSet
         if (payload.Kind != expectedKind)
         {
             throw new HarnessStoreException("outbox_payload_kind_invalid");
+        }
+    }
+
+    private static void ValidateCompaction(HarnessCommit commit, string parameterName)
+    {
+        if (commit.ContextCompaction is null)
+        {
+            if (commit.Events.Any(item => item.Kind == HarnessEventKind.ContextCompacted))
+            {
+                throw new HarnessStoreException("context_compaction_intent_missing");
+            }
+
+            return;
+        }
+
+        if (commit.Events.Count(item => item.Kind == HarnessEventKind.ContextCompacted) != 1)
+        {
+            throw new HarnessStoreException("context_compaction_event_invalid");
+        }
+
+        var eventIntent = commit.Events.Single(item => item.Kind == HarnessEventKind.ContextCompacted);
+        if (eventIntent.PayloadId is not null)
+        {
+            throw new HarnessStoreException("context_compaction_event_payload_forbidden");
+        }
+
+        var summary = commit.Payloads.FirstOrDefault(
+            item => item.PayloadId == commit.ContextCompaction.SummaryPayloadId);
+        if (summary is null
+            || summary.Kind != HarnessPayloadKind.ModelContextSummary
+            || summary.Audience != HarnessPayloadAudience.ModelContext
+            || summary.Encoding != HarnessPayloadEncoding.Utf8Text)
+        {
+            throw new HarnessStoreException("context_compaction_payload_invalid");
+        }
+
+        if (commit.ContextCompaction.RunId != commit.RunId)
+        {
+            throw new ArgumentException(
+                "Compaction run ID does not match the commit.",
+                parameterName);
         }
     }
 

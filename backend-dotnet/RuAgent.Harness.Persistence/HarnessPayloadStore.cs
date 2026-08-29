@@ -122,6 +122,10 @@ public sealed partial class HarnessPayloadStore
                 4 * 1024 * 1024,
                 HarnessPayloadAudience.ModelContext,
                 [HarnessPayloadEncoding.Utf8Text]),
+            [HarnessPayloadKind.ModelContextSummary] = new(
+                4 * 1024 * 1024,
+                HarnessPayloadAudience.ModelContext,
+                [HarnessPayloadEncoding.Utf8Text]),
             [HarnessPayloadKind.PromptReceipt] = new(
                 16 * 1024,
                 HarnessPayloadAudience.InternalOnly,

@@ -234,6 +234,17 @@ public sealed class SqliteHarnessEventStore : IHarnessEventStore
                     commit.NextRun.UpdatedAt,
                     cancellationToken)
                 .ConfigureAwait(false);
+            if (commit.ContextCompaction is not null)
+            {
+                await HarnessSqliteWriteSet.InsertCompactionAsync(
+                        connection,
+                        transaction,
+                        commit.ContextCompaction,
+                        commit.ExpectedVersion,
+                        commit.NextRun.UpdatedAt,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
             await HarnessSqliteWriteSet.InsertEventsAsync(
                     connection,
                     transaction,

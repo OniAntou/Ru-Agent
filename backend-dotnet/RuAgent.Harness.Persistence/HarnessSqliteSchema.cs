@@ -13,7 +13,7 @@ public sealed record HarnessStoreHealth(bool IsAvailable, int SchemaVersion, str
 
 public static class HarnessSqliteSchema
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     public static async Task<HarnessStoreHealth> InitializeAsync(
         HarnessSqliteOptions options,
@@ -33,14 +33,24 @@ public static class HarnessSqliteSchema
                 .ConfigureAwait(false);
             var existingVersion = await ReadUserVersionAsync(connection, cancellationToken)
                 .ConfigureAwait(false);
-            if (existingVersion is not 0 and not CurrentVersion)
+            if (existingVersion is not 0 and not 2 and not CurrentVersion)
             {
                 return HarnessStoreHealth.Unavailable("harness_schema_incompatible");
             }
 
-            await using var command = connection.CreateCommand();
-            command.CommandText = SchemaVersionTwo;
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (existingVersion == 2)
+            {
+                await using var migration = connection.CreateCommand();
+                migration.CommandText = SchemaVersionTwoToThree;
+                await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 0)
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = SchemaVersionThree;
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             if (!await HarnessSqliteSchemaValidator.ValidateAsync(connection, cancellationToken)
                 .ConfigureAwait(false))
             {
@@ -75,7 +85,7 @@ public static class HarnessSqliteSchema
             or ArgumentException
             or NotSupportedException;
 
-    private const string SchemaVersionTwo = """
+    private const string SchemaVersionThree = """
         PRAGMA journal_mode = WAL;
         PRAGMA foreign_keys = ON;
 
@@ -152,7 +162,7 @@ public static class HarnessSqliteSchema
             context_source_id TEXT NULL CHECK(length(context_source_id) BETWEEN 1 AND 128),
             context_sequence INTEGER NULL CHECK(context_sequence > 0),
             context_role INTEGER NULL CHECK(context_role BETWEEN 0 AND 3),
-            context_entry_kind INTEGER NULL CHECK(context_entry_kind BETWEEN 0 AND 2),
+            context_entry_kind INTEGER NULL CHECK(context_entry_kind BETWEEN 0 AND 3),
             created_at_utc TEXT NOT NULL
         );
 
@@ -230,6 +240,47 @@ public static class HarnessSqliteSchema
             created_at_utc TEXT NOT NULL
         );
 
-        PRAGMA user_version = 2;
+        CREATE TABLE IF NOT EXISTS agent_context_compactions (
+            compaction_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES agent_runs(run_id) ON DELETE CASCADE,
+            summary_payload_id TEXT NOT NULL REFERENCES agent_payloads(payload_id) ON DELETE RESTRICT,
+            expected_run_version INTEGER NOT NULL CHECK(expected_run_version >= 0),
+            strategy TEXT NOT NULL CHECK(length(strategy) BETWEEN 1 AND 32),
+            reason TEXT NOT NULL CHECK(length(reason) BETWEEN 1 AND 32),
+            covered_ranges_json TEXT NOT NULL CHECK(length(covered_ranges_json) BETWEEN 2 AND 1048576),
+            before_tokens INTEGER NOT NULL CHECK(before_tokens >= 0),
+            after_tokens INTEGER NOT NULL CHECK(after_tokens >= 0 AND after_tokens <= before_tokens),
+            input_hash TEXT NOT NULL CHECK(length(input_hash) = 64),
+            created_at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_agent_context_compactions_run_created
+            ON agent_context_compactions(run_id, created_at_utc, compaction_id);
+
+        PRAGMA user_version = 3;
+        """;
+
+    private const string SchemaVersionTwoToThree = """
+        PRAGMA journal_mode = WAL;
+        PRAGMA foreign_keys = ON;
+
+        CREATE TABLE IF NOT EXISTS agent_context_compactions (
+            compaction_id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL REFERENCES agent_runs(run_id) ON DELETE CASCADE,
+            summary_payload_id TEXT NOT NULL REFERENCES agent_payloads(payload_id) ON DELETE RESTRICT,
+            expected_run_version INTEGER NOT NULL CHECK(expected_run_version >= 0),
+            strategy TEXT NOT NULL CHECK(length(strategy) BETWEEN 1 AND 32),
+            reason TEXT NOT NULL CHECK(length(reason) BETWEEN 1 AND 32),
+            covered_ranges_json TEXT NOT NULL CHECK(length(covered_ranges_json) BETWEEN 2 AND 1048576),
+            before_tokens INTEGER NOT NULL CHECK(before_tokens >= 0),
+            after_tokens INTEGER NOT NULL CHECK(after_tokens >= 0 AND after_tokens <= before_tokens),
+            input_hash TEXT NOT NULL CHECK(length(input_hash) = 64),
+            created_at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_agent_context_compactions_run_created
+            ON agent_context_compactions(run_id, created_at_utc, compaction_id);
+
+        PRAGMA user_version = 3;
         """;
 }

@@ -74,6 +74,20 @@ internal static class HarnessSqliteSchemaValidator
             ["agent_global_rules"] = ["rule_id", "rule_document", "version"],
             ["agent_project_rules"] = ["rule_id", "workspace_id", "rule_document"],
             ["agent_run_rules"] = ["rule_id", "run_id", "rule_document"],
+            ["agent_context_compactions"] =
+            [
+                "compaction_id",
+                "run_id",
+                "summary_payload_id",
+                "expected_run_version",
+                "strategy",
+                "reason",
+                "covered_ranges_json",
+                "before_tokens",
+                "after_tokens",
+                "input_hash",
+                "created_at_utc",
+            ],
         };
 
     internal static async Task<bool> ValidateAsync(
@@ -118,10 +132,11 @@ internal static class HarnessSqliteSchemaValidator
                   'ux_agent_runs_active_workspace',
                   'ux_agent_payloads_context_source',
                   'ux_agent_payloads_context_sequence',
-                  'ix_agent_conversation_outbox_dispatch')
+                  'ix_agent_conversation_outbox_dispatch',
+                  'ix_agent_context_compactions_run_created')
             """;
         return (long)(await indexCommand.ExecuteScalarAsync(cancellationToken)
-            .ConfigureAwait(false) ?? 0L) == 5;
+            .ConfigureAwait(false) ?? 0L) == 6;
     }
 
     private static async Task<HashSet<string>> ReadColumnsAsync(

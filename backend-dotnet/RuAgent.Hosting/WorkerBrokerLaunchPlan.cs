@@ -107,12 +107,14 @@ public sealed class WorkerBrokerLaunchPlan
             children.Add(new WorkerBrokerProcessSpec(
                 "dotnet-agent-worker",
                 workerExecutable!,
-                $"--host 127.0.0.1 --port {startup.AgentWorkerPort}",
+                $"--host 127.0.0.1 --port {startup.AgentWorkerPort} --device-port {startup.DeviceWorkerPort}",
                 root,
                 new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["RU_AGENT_WORKER_TOKEN"] = startup.AgentWorkerToken,
+                    ["RU_DEVICE_WORKER_TOKEN"] = startup.DeviceWorkerToken,
                     ["RU_AGENT_PROVIDER_BOOTSTRAP"] = providerBootstrapPath!,
+                    ["RU_PROJECT_ROOT"] = root,
                     ["RU_LOG_ROOT"] = resolvedLogRoot,
                 },
                 Path.Combine(bootstrapRoot, "agent_worker_out.jsonl"),
@@ -134,18 +136,21 @@ public sealed class WorkerBrokerLaunchPlan
                 Path.Combine(bootstrapRoot, "agent_worker_err.jsonl")));
         }
 
-        children.Add(new WorkerBrokerProcessSpec(
-            "python-device-worker",
-            pythonExecutable,
-            $"-m ru_runtime.worker.server --host 127.0.0.1 --port {startup.DeviceWorkerPort} --v1-only",
-            root,
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["RU_WORKER_TOKEN"] = startup.DeviceWorkerToken,
-                ["RU_LOG_ROOT"] = resolvedLogRoot,
-            },
-            Path.Combine(bootstrapRoot, "device_worker_out.jsonl"),
-            Path.Combine(bootstrapRoot, "device_worker_err.jsonl")));
+        if (startup.Mode == RuntimeMigrationMode.PythonCompatibility)
+        {
+            children.Add(new WorkerBrokerProcessSpec(
+                "python-device-worker",
+                pythonExecutable,
+                $"-m ru_runtime.worker.server --host 127.0.0.1 --port {startup.DeviceWorkerPort} --v1-only",
+                root,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["RU_WORKER_TOKEN"] = startup.DeviceWorkerToken,
+                    ["RU_LOG_ROOT"] = resolvedLogRoot,
+                },
+                Path.Combine(bootstrapRoot, "device_worker_out.jsonl"),
+                Path.Combine(bootstrapRoot, "device_worker_err.jsonl")));
+        }
 
         children.Add(new WorkerBrokerProcessSpec(
             "ru-agent-broker",

@@ -5,39 +5,37 @@ namespace RuAgent.Hosting.Tests;
 public sealed class WorkerBrokerLaunchPlanTests
 {
     [Fact]
-    public void Dotnet_mode_owns_agent_device_and_broker_in_order()
+    public void Dotnet_mode_owns_both_worker_ports_in_one_managed_process()
     {
         using var project = TemporaryProject.Create();
         var startup = project.DotnetStartup(18080, 18081, 18082);
 
         var plan = WorkerBrokerLaunchPlan.Create(project.Root, startup, project.LogRoot);
 
-        Assert.Equal(new[] { "dotnet-agent-worker", "python-device-worker", "ru-agent-broker" }, plan.Children.Select(child => child.Role));
+        Assert.Equal(new[] { "dotnet-agent-worker", "ru-agent-broker" }, plan.Children.Select(child => child.Role));
         Assert.Equal(18080, plan.AgentWorkerPort);
         Assert.Equal(18081, plan.DeviceWorkerPort);
         Assert.Equal(18082, plan.BrokerPort);
-        Assert.Contains("--host 127.0.0.1 --port 18080", plan.Children[0].Arguments, StringComparison.Ordinal);
-        Assert.Contains("--v1-only", plan.Children[1].Arguments, StringComparison.Ordinal);
+        Assert.Contains("--host 127.0.0.1 --port 18080 --device-port 18081", plan.Children[0].Arguments, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Dotnet_worker_never_receives_device_token_and_python_never_receives_provider_bootstrap()
+    public void Managed_worker_receives_both_private_tokens_but_no_python_device_child()
     {
         using var project = TemporaryProject.Create();
         var startup = project.DotnetStartup(18083, 18084, 18085);
         var plan = WorkerBrokerLaunchPlan.Create(project.Root, startup, project.LogRoot);
 
         var agent = plan.Children[0].Environment;
-        var device = plan.Children[1].Environment;
-        var broker = plan.Children[2].Environment;
+        var broker = plan.Children[1].Environment;
         Assert.Equal(startup.AgentWorkerToken, agent["RU_AGENT_WORKER_TOKEN"]);
+        Assert.Equal(startup.DeviceWorkerToken, agent["RU_DEVICE_WORKER_TOKEN"]);
         Assert.Equal(startup.ProviderBootstrapPath, agent["RU_AGENT_PROVIDER_BOOTSTRAP"]);
+        Assert.Equal(project.Root, agent["RU_PROJECT_ROOT"]);
+        Assert.Equal(project.LogRoot, agent["RU_LOG_ROOT"]);
         Assert.False(agent.ContainsKey("RU_WORKER_TOKEN"));
-        Assert.Equal(startup.DeviceWorkerToken, device["RU_WORKER_TOKEN"]);
-        Assert.False(device.ContainsKey("RU_AGENT_WORKER_TOKEN"));
-        Assert.False(device.ContainsKey("RU_AGENT_PROVIDER_BOOTSTRAP"));
         Assert.DoesNotContain(broker.Keys, key => key.Contains("TOKEN", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(device.Keys, key => key.Contains("OPENAI", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(plan.Children, child => child.Role == "python-device-worker");
     }
 
     [Fact]

@@ -130,11 +130,11 @@
 
 **Files:** Modify `backend-dotnet/RuAgent.Hosting/WorkerBrokerLaunchPlan.cs`, `WorkerBrokerProcessManager.cs`, `backend-dotnet/RuBackend/Program.cs`, hosting tests, and add startup tests under `backend-dotnet/RuBackend.Tests`.
 
-- [ ] Write failing topology tests requiring one `dotnet-agent-worker` process with both ports/tokens in Dotnet mode, no Python Device Worker there, and the old Python topology only in `PythonCompatibility` mode. Readiness must probe Agent, Device, and Broker ports; failure must kill every child and remove only owned artifacts.
-- [ ] Run focused Hosting/Backend filters; expected FAIL because Dotnet mode starts Python v1.
-- [ ] Change the managed launch arguments to `--host 127.0.0.1 --port {agentPort} --device-port {devicePort}`, pass both worker tokens/project/log roots, and keep Python compatibility launch unchanged. Preserve public descriptor/routes and separate client options.
-- [ ] Run Hosting/Backend tests and `D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py`; expected PASS and `56 HTTP + 1 WebSocket`.
-- [ ] Commit the exact Hosting/Backend files with `git commit -m "feat: make managed Worker the default device runtime"`.
+- [x] Write failing topology tests requiring one `dotnet-agent-worker` process with both ports/tokens in Dotnet mode, no Python Device Worker there, and the old Python topology only in `PythonCompatibility` mode. Readiness must probe Agent, Device, and Broker ports; failure must kill every child and remove only owned artifacts.
+- [x] Run focused Hosting/Backend filters; expected FAIL because Dotnet mode starts Python v1.
+- [x] Change the managed launch arguments to `--host 127.0.0.1 --port {agentPort} --device-port {devicePort}`, pass both worker tokens/project/log roots, and keep Python compatibility launch unchanged. Preserve public descriptor/routes and separate client options.
+- [x] Run Hosting/Backend tests and `D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py`; expected PASS and `56 HTTP + 1 WebSocket`.
+- [x] Commit the exact Hosting/Backend files with `git commit -m "feat: make managed Worker the default device runtime"`.
 
 ### Task 11: Add parity, privacy, manual acceptance, and current documentation
 

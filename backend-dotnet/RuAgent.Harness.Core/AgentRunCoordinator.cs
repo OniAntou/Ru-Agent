@@ -36,6 +36,7 @@ public sealed class AgentRunCoordinator
     private readonly IAgentActivitySink? _activitySink;
     private readonly IAgentReplyPolicy _replyPolicy;
     private readonly IAgentReplyEffectSink _replyEffects;
+    private readonly ISystemPromptContextProvider? _promptContextProvider;
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -51,7 +52,8 @@ public sealed class AgentRunCoordinator
         ReconciliationInspectionGate? inspectionGate = null,
         IAgentActivitySink? activitySink = null,
         IAgentReplyPolicy? replyPolicy = null,
-        IAgentReplyEffectSink? replyEffects = null)
+        IAgentReplyEffectSink? replyEffects = null,
+        ISystemPromptContextProvider? promptContextProvider = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -67,6 +69,7 @@ public sealed class AgentRunCoordinator
         _activitySink = activitySink;
         _replyPolicy = replyPolicy ?? new PassthroughAgentReplyPolicy();
         _replyEffects = replyEffects ?? new NoopAgentReplyEffectSink();
+        _promptContextProvider = promptContextProvider;
         _tools = new AgentToolExecutionPipeline(
             gateway ?? throw new ArgumentNullException(nameof(gateway)),
             store,
@@ -177,10 +180,16 @@ public sealed class AgentRunCoordinator
                 AgentActivityState.Started,
                 safeCode: "in_progress"));
 
+        var promptContext = _promptContextProvider is null
+            ? SystemPromptContext.Empty
+            : await _promptContextProvider
+                .BuildAsync(run, context, cancellationToken)
+                .ConfigureAwait(false);
         var request = new ModelStepRequest(
             run.RunId,
             modelStepId,
             context,
+            promptContext,
             run.Preset,
             run.PolicySnapshotVersion,
             run.PolicySnapshotSha256);

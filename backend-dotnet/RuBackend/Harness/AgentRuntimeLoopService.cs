@@ -4,9 +4,12 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Reconciliation;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Context;
+using RuBackend.Business.Settings;
+using RuBackend.Harness.Prompting;
 
 namespace RuBackend.Harness;
 
@@ -149,6 +152,9 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly AgentRunSummaryLivePublisher? _summaryPublisher;
     private readonly IAgentReplyPolicy? _replyPolicy;
     private readonly IAgentReplyEffectSink? _replyEffects;
+    private readonly RuInstructionLoader _instructionLoader;
+    private readonly ISettingsStore _settings;
+    private readonly ITimeProvider _time;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -161,7 +167,10 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         HarnessLiveEventHub? liveEvents = null,
         AgentRunSummaryLivePublisher? summaryPublisher = null,
         IAgentReplyPolicy? replyPolicy = null,
-        IAgentReplyEffectSink? replyEffects = null)
+        IAgentReplyEffectSink? replyEffects = null,
+        RuInstructionLoader? instructionLoader = null,
+        ISettingsStore? settings = null,
+        ITimeProvider? time = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -174,6 +183,9 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _summaryPublisher = summaryPublisher;
         _replyPolicy = replyPolicy;
         _replyEffects = replyEffects;
+        _instructionLoader = instructionLoader ?? new RuInstructionLoader();
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _time = time ?? throw new ArgumentNullException(nameof(time));
     }
 
     public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null)
@@ -193,13 +205,19 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             : _liveEvents is null
                 ? null
                 : new AgentActivityLivePublisher(_liveEvents);
+        var promptContextProvider = new RuPromptContextProvider(
+            workspaceRoot,
+            _instructionLoader,
+            _settings,
+            _time,
+            webSearchAuthenticated: false);
         return new AgentRunCoordinator(
             _model,
             gateway,
             _store,
             new AgentContextAssembler(new SqliteModelContextSource(_sqliteOptions, _payloadStore)),
             new CryptographicIdGenerator(),
-            new SystemTimeProvider(),
+            _time,
             new ToolCallScheduler(),
             frames,
             _transientRedactor ?? KnownSecretRedactor.Empty,
@@ -207,7 +225,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             _inspectionGate,
             activitySink,
             _replyPolicy,
-            _replyEffects);
+            _replyEffects,
+            promptContextProvider);
     }
 
     private static void PublishLiveFrame(HarnessLiveEventHub hub, HarnessTransientFrame frame)

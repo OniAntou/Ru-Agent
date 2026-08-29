@@ -188,6 +188,7 @@ builder.Services.AddSingleton(services => new HarnessSqliteOptions(
 builder.Services.AddSingleton<HarnessFeatureOptions>(services =>
     new HarnessFeatureOptions(services.GetRequiredService<IConfiguration>()["RuBackend:AgentHarness:Version"]));
 builder.Services.AddSingleton<WindowsWorkspaceIdentityResolver>();
+builder.Services.AddSingleton<RuBackend.Harness.Prompting.RuInstructionLoader>();
 builder.Services.AddSingleton<SqliteWorkspaceStore>(services =>
     new SqliteWorkspaceStore(services.GetRequiredService<HarnessSqliteOptions>()));
 builder.Services.AddSingleton<WorkspaceTrustRequestStore>(services =>

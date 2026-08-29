@@ -15,6 +15,8 @@ from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from ru_runtime.generation.prompt_context import PromptContextError, parse_system_prompt_context
+from ru_runtime.generation.system_prompt_composer import compose_system_prompt
 from ru_runtime.worker.server import serve_worker
 from ru_runtime.worker.v1.protocol import (
     ERROR,
@@ -27,6 +29,7 @@ from ru_runtime.worker.v1.protocol import (
 )
 from ru_runtime.worker.v1.server import WorkerHandlers, WorkerReply
 from ru_runtime.worker.v2.handlers import StepReply
+from ru_runtime.worker.v2.model_step import StepGenerationError
 from ru_runtime.worker.v2.protocol import AGENT_STEP_DONE
 
 from .voice_fixtures import build_synthetic_wav, is_valid_transcription_fixture
@@ -61,6 +64,17 @@ def _harness_delay_seconds(name: str) -> float:
 _agent_step_counts: dict[str, int] = {}
 
 
+def _prompt_receipt(payload: Mapping[str, Any]) -> dict[str, object]:
+    raw_context = payload.get("system_prompt_context")
+    if not isinstance(raw_context, Mapping):
+        raise StepGenerationError("prompt_contract_invalid")
+    try:
+        context = parse_system_prompt_context(raw_context)
+        return compose_system_prompt(context).receipt.to_payload()
+    except PromptContextError:
+        raise StepGenerationError("prompt_contract_invalid") from None
+
+
 async def _agent_step(
     payload: dict[str, Any],
     cancelled: asyncio.Event,
@@ -79,6 +93,7 @@ async def _agent_step(
 
     prompt = payload.get("prompt")
     settings = payload.get("settings")
+    receipt = _prompt_receipt(payload)
     model_tools = settings.get("model_tools") if isinstance(settings, Mapping) else None
     if not isinstance(prompt, str) or not isinstance(model_tools, list):
         yield StepReply(
@@ -87,6 +102,7 @@ async def _agent_step(
                 "text": "Deterministic worker completed the request.",
                 "tool_calls": [],
                 "finish_reason": "stop",
+                "prompt_receipt": receipt,
             },
         )
         return
@@ -121,6 +137,7 @@ async def _agent_step(
                     }
                 ],
                 "finish_reason": "tool_calls",
+                "prompt_receipt": receipt,
             },
         )
         return
@@ -131,6 +148,7 @@ async def _agent_step(
             "text": "Harness agent tool loop completed.",
             "tool_calls": [],
             "finish_reason": "stop",
+            "prompt_receipt": receipt,
         },
     )
 

@@ -1,0 +1,72 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "composer_version": "1.0.0"
+      },
+      "group": "prompt",
+      "id": "prompt.basic",
+      "input": {
+        "agent_profile": "ru-agent",
+        "preset": "standard",
+        "schema_version": 1
+      }
+    },
+    {
+      "expected": {
+        "bounded": true
+      },
+      "group": "compaction",
+      "id": "compaction.basic",
+      "input": {
+        "budget_bytes": 4096,
+        "message_count": 4
+      }
+    },
+    {
+      "expected": {
+        "accepted": true
+      },
+      "group": "tool_selection",
+      "id": "tool_selection.valid",
+      "input": {
+        "arguments": {},
+        "tool_id": "files.read",
+        "tool_version": "1.0.0"
+      }
+    },
+    {
+      "expected": {
+        "retryable": false
+      },
+      "group": "protocol",
+      "id": "protocol.unknown_type",
+      "input": {
+        "code": "unknown_type"
+      }
+    },
+    {
+      "expected": {
+        "completed": false
+      },
+      "group": "cancellation",
+      "id": "cancellation.before_dispatch",
+      "input": {
+        "cancelled": true
+      }
+    },
+    {
+      "expected": {
+        "credential_visible": false,
+        "prompt_text_visible": false
+      },
+      "group": "privacy",
+      "id": "privacy.redaction",
+      "input": {
+        "credential": "<redacted>",
+        "prompt_text": "<redacted>"
+      }
+    }
+  ],
+  "schema_version": 1
+}

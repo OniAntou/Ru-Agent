@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+    <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
+    <ProjectReference Include="..\RuAgent.Harness.Core\RuAgent.Harness.Core.csproj" />
+  </ItemGroup>
+</Project>

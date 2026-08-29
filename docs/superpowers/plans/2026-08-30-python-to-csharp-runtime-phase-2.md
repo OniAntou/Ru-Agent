@@ -54,11 +54,11 @@
 
 **Interfaces:** `VoiceRequest`, `VoiceAudio`, `VoiceChunk(string State, long Sequence, ReadOnlyMemory<byte> Audio)`, `SpeechRequest`, `VtsCatalog`, `ObservationRequest`, `VisionObservation`, `RuntimeSettingsSnapshot`, `ResourceKind`, and `RuntimeLeaseCoordinator.AcquireAsync(ResourceKind, CancellationToken)`.
 
-- [ ] Write failing tests for UTF-8/text/audio/count limits, `original` voice style, mono 24 kHz voice audio, mono 16 kHz STT audio, at most 512 VTS codes, at most three action codes, numeric observation clamping, and second concurrent lease waiting until disposal.
-- [ ] Run the new core test project; expected FAIL because the project does not exist.
-- [ ] Implement BCL-only immutable records and idempotent async leases. Keep process, socket, ASP.NET, JSON-node, and device APIs out of this project.
-- [ ] Run core tests plus Release builds of Adapters and Worker; expected PASS.
-- [ ] Commit `git add backend-dotnet/RuAgent.Runtime.Core backend-dotnet/RuAgent.Runtime.Core.Tests backend-dotnet/RuAgent.Runtime.Adapters/RuAgent.Runtime.Adapters.csproj backend-dotnet/RuAgent.Runtime.Worker/RuAgent.Runtime.Worker.csproj backend-dotnet/RuAgent.Runtime.Worker.Tests/RuAgent.Runtime.Worker.Tests.csproj; git commit -m "feat: add managed runtime device contracts"`.
+- [x] Write failing tests for UTF-8/text/audio/count limits, `original` voice style, mono 24 kHz voice audio, mono 16 kHz STT audio, at most 512 VTS codes, at most three action codes, numeric observation clamping, and second concurrent lease waiting until disposal.
+- [x] Run the new core test project; expected FAIL because the project does not exist.
+- [x] Implement BCL-only immutable records and idempotent async leases. Keep process, socket, ASP.NET, JSON-node, and device APIs out of this project.
+- [x] Run core tests plus Release builds of Adapters and Worker; expected PASS.
+- [x] Commit `git add backend-dotnet/RuAgent.Runtime.Core backend-dotnet/RuAgent.Runtime.Core.Tests backend-dotnet/RuAgent.Runtime.Adapters/RuAgent.Runtime.Adapters.csproj backend-dotnet/RuAgent.Runtime.Worker/RuAgent.Runtime.Worker.csproj backend-dotnet/RuAgent.Runtime.Worker.Tests/RuAgent.Runtime.Worker.Tests.csproj; git commit -m "feat: add managed runtime device contracts"`.
 
 ### Task 4: Port runtime settings and private request routing
 

@@ -9,5 +9,6 @@
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
     <ProjectReference Include="..\RuAgent.Harness.Core\RuAgent.Harness.Core.csproj" />
     <ProjectReference Include="..\RuAgent.Runtime.Adapters\RuAgent.Runtime.Adapters.csproj" />
+    <ProjectReference Include="..\RuAgent.Runtime.Core\RuAgent.Runtime.Core.csproj" />
   </ItemGroup>
 </Project>

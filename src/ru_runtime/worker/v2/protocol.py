@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any, Literal
 
+from ru_runtime.generation.system_prompt_composer import SystemPromptReceipt
+
 PROTOCOL_VERSION = 2
 MAX_REQUEST_ID_CHARS = 128
 MAX_CORRELATION_ID_CHARS = 128
@@ -254,7 +256,11 @@ def validate_envelope(value: object) -> dict[str, Any]:
     return result
 
 
-def step_to_payload(step: AssistantStep) -> dict[str, Any]:
+def step_to_payload(result: Any) -> dict[str, Any]:
+    step = getattr(result, "step", None)
+    receipt = getattr(result, "prompt_receipt", None)
+    if not isinstance(step, AssistantStep) or not isinstance(receipt, SystemPromptReceipt):
+        raise ValueError("model step result must include a prompt receipt")
     return {
         "text": step.text,
         "tool_calls": [
@@ -267,6 +273,7 @@ def step_to_payload(step: AssistantStep) -> dict[str, Any]:
             for call in step.tool_calls
         ],
         "finish_reason": step.finish_reason,
+        "prompt_receipt": receipt.to_payload(),
     }
 
 

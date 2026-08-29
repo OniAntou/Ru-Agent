@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from hashlib import sha256
 
 import pytest
 
@@ -37,7 +38,7 @@ def step_payload() -> dict:
     return {
         "prompt": "Đọc README",
         "turns": [],
-        "memory_context": None,
+        "system_prompt_context": prompt_context_payload(),
         "settings": {
             "max_tokens": 128,
             "temperature": 0.4,
@@ -64,6 +65,58 @@ def step_payload() -> dict:
     }
 
 
+def prompt_context_payload() -> dict:
+    instruction = "root guidance"
+    return {
+        "schema_version": 1,
+        "agent_profile": "ru-agent",
+        "preset": "standard",
+        "environment": {
+            "model": "test-model",
+            "platform": "windows",
+            "locale": "vi-VN",
+            "timezone": "Asia/Bangkok",
+            "date": "2026-08-29",
+            "workspace_label": "LLM",
+        },
+        "instruction_blocks": [
+            {
+                "source_id": "root:Ru.md",
+                "display_name": "Ru.md",
+                "content": instruction,
+                "content_sha256": sha256(instruction.encode()).hexdigest(),
+            }
+        ],
+        "capabilities": [
+            {
+                "id": "files.read",
+                "version": "1.0.0",
+                "summary": "Read a file",
+                "input_schema_digest": "a" * 64,
+                "policy_summary": "workspace.read",
+                "availability": "enabled",
+            }
+        ],
+        "runtime_context": {
+            "memory": None,
+            "mood": None,
+            "voice": None,
+            "vts": None,
+            "hardware": None,
+            "references": [],
+        },
+    }
+
+
+def minimal_step_payload() -> dict:
+    return {
+        "prompt": "x",
+        "turns": [],
+        "system_prompt_context": prompt_context_payload(),
+        "settings": {"model_tools": []},
+    }
+
+
 def test_one_step_calls_runner_once_and_converts_selection_to_one_tool_call() -> None:
     async def scenario() -> None:
         runner = FakeRunner(
@@ -72,10 +125,12 @@ def test_one_step_calls_runner_once_and_converts_selection_to_one_tool_call() ->
         step = await run_model_step(runner, step_payload(), asyncio.Event())
 
         assert len(runner.calls) == 1
-        assert step.text is None
-        assert len(step.tool_calls) == 1
-        assert step.tool_calls[0].tool_id == "files.read"
-        assert step.finish_reason == "tool_calls"
+        assert step.step.text is None
+        assert len(step.step.tool_calls) == 1
+        assert step.step.tool_calls[0].tool_id == "files.read"
+        assert step.step.finish_reason == "tool_calls"
+        assert step.prompt_receipt.composer_version == "1.0.0"
+        assert "UNTRUSTED DATA" in runner.calls[0]["system_prompt_snapshot"].text
         assert '"required":["path"]' in runner.calls[0]["action_capabilities"][0].hint
 
     asyncio.run(scenario())
@@ -89,7 +144,7 @@ def test_runtime_step_handler_waits_for_and_releases_generation_locks() -> None:
         cancelled = asyncio.Event()
         stream = build_step_handler(
             StepDependencies(runner, generation_locks=(generation_lock,))
-        )({"prompt": "x", "settings": {"model_tools": []}}, cancelled)
+        )(minimal_step_payload(), cancelled)
 
         pending = asyncio.create_task(anext(stream))
         await asyncio.sleep(0.03)
@@ -117,7 +172,7 @@ def test_prose_is_text_and_braced_selection_never_reaches_delta_sink() -> None:
             asyncio.Event(),
             on_delta=prose_deltas.append,
         )
-        assert prose.text == "Em đã kiểm tra."
+        assert prose.step.text == "Em đã kiểm tra."
         assert prose_deltas == ["Em đã kiểm tra."]
 
         selection_deltas: list[str] = []
@@ -176,7 +231,7 @@ def test_retry_after_visible_partial_delta_fails_instead_of_corrupting_stream() 
         with pytest.raises(StepGenerationError, match="provider_unavailable") as captured:
             await run_model_step(
                 ResettingRunner(),
-                {"prompt": "x", "settings": {"model_tools": []}},
+                minimal_step_payload(),
                 asyncio.Event(),
                 on_delta=deltas.append,
             )
@@ -210,7 +265,7 @@ def test_structured_retry_resets_do_not_reset_the_per_step_delta_bound() -> None
         with pytest.raises(StepGenerationError, match="protocol_failure"):
             await run_model_step(
                 RepeatedStructuredResetRunner(),
-                {"prompt": "x", "settings": {"model_tools": []}},
+                minimal_step_payload(),
                 asyncio.Event(),
                 on_delta=deltas.append,
             )
@@ -259,10 +314,7 @@ def test_cancellation_with_queued_delta_waits_for_provider_thread() -> None:
     async def scenario() -> None:
         runner = QueuedDeltaRunner()
         cancelled = asyncio.Event()
-        stream = build_step_handler(StepDependencies(runner))(
-            {"prompt": "x", "settings": {"model_tools": []}},
-            cancelled,
-        )
+        stream = build_step_handler(StepDependencies(runner))(minimal_step_payload(), cancelled)
         first = await anext(stream)
         assert first.payload == {"text": "first"}
         assert await asyncio.to_thread(runner.second_delta_queued.wait, 2)
@@ -297,10 +349,7 @@ def test_completed_step_wins_a_late_cancel_after_generation_finishes() -> None:
     async def scenario() -> None:
         runner = CompletingRunner()
         cancelled = asyncio.Event()
-        stream = build_step_handler(StepDependencies(runner))(
-            {"prompt": "x", "settings": {"model_tools": []}},
-            cancelled,
-        )
+        stream = build_step_handler(StepDependencies(runner))(minimal_step_payload(), cancelled)
         assert (await anext(stream)).type == AGENT_STEP_DELTA
 
         runner.release.set()
@@ -336,10 +385,7 @@ def test_delta_bridge_backpressures_a_bursting_provider() -> None:
     async def scenario() -> None:
         runner = BurstRunner()
         cancelled = asyncio.Event()
-        stream = build_step_handler(StepDependencies(runner))(
-            {"prompt": "x", "settings": {"model_tools": []}},
-            cancelled,
-        )
+        stream = build_step_handler(StepDependencies(runner))(minimal_step_payload(), cancelled)
         first = await anext(stream)
         assert first.type == AGENT_STEP_DELTA
 

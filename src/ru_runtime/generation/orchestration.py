@@ -67,6 +67,7 @@ def execute_reply(
     on_complete_timing: Callable[[float], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     agent_follow_up: bool = False,
+    suppress_legacy_system_messages: bool = False,
 ) -> str:
     messages = build_conversation_messages(
         system_instruction,
@@ -74,6 +75,7 @@ def execute_reply(
         turns_history,
         memory_context=memory_context,
         mood_context=mood_context,
+        suppress_legacy_system_messages=suppress_legacy_system_messages,
     )
     response = generate(
         messages,

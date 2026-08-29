@@ -11,6 +11,7 @@ from ru_runtime.generation.openai import (
 )
 from ru_runtime.generation.orchestration import execute_reply
 from ru_runtime.generation.search import perform_web_search
+from ru_runtime.generation.system_prompt_composer import SystemPromptSnapshot
 from ru_runtime.generation.turns import ConversationTurn
 from ru_runtime.policy.style import (
     RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT,
@@ -159,8 +160,12 @@ class ModelRunner:
         structured_tools_only: bool = False,
         agent_follow_up: bool = False,
         action_capabilities=(),
+        system_prompt_snapshot: SystemPromptSnapshot | None = None,
     ) -> str:
-        if agent_follow_up:
+        if system_prompt_snapshot is not None:
+            system_prompt = system_prompt_snapshot.text
+            private_instruction = ""
+        elif agent_follow_up:
             system_prompt = RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT
             private_instruction = VTS_ACTION_INSTRUCTION + VOICE_PACE_INSTRUCTION + vts_instruction
         elif structured_tools_only:
@@ -186,6 +191,7 @@ class ModelRunner:
             on_complete_timing=on_complete_timing,
             is_cancelled=is_cancelled,
             agent_follow_up=agent_follow_up,
+            suppress_legacy_system_messages=system_prompt_snapshot is not None,
         )
 
     def generate_screen_reaction(

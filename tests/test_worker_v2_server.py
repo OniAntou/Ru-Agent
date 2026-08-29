@@ -105,11 +105,45 @@ def start_v2() -> str:
             "payload": {
                 "prompt": "Đọc README",
                 "turns": [],
-                "memory_context": None,
+                "system_prompt_context": prompt_context_payload(),
                 "settings": {"model_tools": []},
             },
         }
     )
+
+
+def prompt_context_payload() -> dict:
+    return {
+        "schema_version": 1,
+        "agent_profile": "ru-agent",
+        "preset": "standard",
+        "environment": {
+            "model": "test-model",
+            "platform": "windows",
+            "locale": "vi-VN",
+            "timezone": "Asia/Bangkok",
+            "date": "2026-08-29",
+            "workspace_label": "LLM",
+        },
+        "instruction_blocks": [],
+        "capabilities": [],
+        "runtime_context": {
+            "memory": None,
+            "mood": None,
+            "voice": None,
+            "vts": None,
+            "hardware": None,
+            "references": [],
+        },
+    }
+
+
+def prompt_receipt_payload() -> dict:
+    return {
+        "composer_version": "1.0.0",
+        "prompt_sha256": "a" * 64,
+        "block_digests": [],
+    }
 
 
 def test_authenticated_v2_hello_emits_versioned_step_done() -> None:
@@ -335,11 +369,21 @@ def test_server_explicitly_closes_handler_generator_after_first_final() -> None:
             try:
                 yield StepReply(
                     AGENT_STEP_DONE,
-                    {"text": "done", "tool_calls": [], "finish_reason": "stop"},
+                    {
+                        "text": "done",
+                        "tool_calls": [],
+                        "finish_reason": "stop",
+                        "prompt_receipt": prompt_receipt_payload(),
+                    },
                 )
                 yield StepReply(
                     AGENT_STEP_DONE,
-                    {"text": "duplicate", "tool_calls": [], "finish_reason": "stop"},
+                    {
+                        "text": "duplicate",
+                        "tool_calls": [],
+                        "finish_reason": "stop",
+                        "prompt_receipt": prompt_receipt_payload(),
+                    },
                 )
             finally:
                 cleaned.set()

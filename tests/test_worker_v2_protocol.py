@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from ru_runtime.generation.system_prompt_composer import SystemPromptReceipt
+from ru_runtime.worker.v2.model_step import ModelStepResult
 from ru_runtime.worker.v2.protocol import (
     AGENT_STEP_CANCEL,
     AGENT_STEP_DELTA,
@@ -220,7 +222,7 @@ def test_v2_envelope_round_trips_authenticated_message_types() -> None:
         assert validate_envelope(json.loads(encode_envelope(envelope))) == envelope
 
 
-def test_v2_step_shape_has_one_bounded_tool_call_without_receipt() -> None:
+def test_v2_step_shape_has_one_bounded_tool_call_with_receipt() -> None:
     step = AssistantStep(
         text=None,
         tool_calls=(
@@ -234,7 +236,12 @@ def test_v2_step_shape_has_one_bounded_tool_call_without_receipt() -> None:
         finish_reason="tool_calls",
     )
 
-    assert step_to_payload(step) == {
+    result = ModelStepResult(
+        step=step,
+        prompt_receipt=SystemPromptReceipt("1.0.0", "a" * 64, ()),
+    )
+
+    assert step_to_payload(result) == {
         "text": None,
         "tool_calls": [
             {
@@ -245,6 +252,11 @@ def test_v2_step_shape_has_one_bounded_tool_call_without_receipt() -> None:
             }
         ],
         "finish_reason": "tool_calls",
+        "prompt_receipt": {
+            "composer_version": "1.0.0",
+            "prompt_sha256": "a" * 64,
+            "block_digests": [],
+        },
     }
 
 

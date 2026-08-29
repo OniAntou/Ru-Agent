@@ -3,9 +3,19 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
+from ru_runtime.generation.prompt_context import (
+    PromptContextError,
+    SystemPromptContext,
+    parse_system_prompt_context,
+)
+from ru_runtime.generation.system_prompt_composer import (
+    SystemPromptReceipt,
+    SystemPromptSnapshot,
+    compose_system_prompt,
+)
 from ru_runtime.generation.tool_calls import ToolCallParseError, parse_tool_call
 from ru_runtime.generation.turns import ConversationTurn
 from ru_runtime.worker.v1.action_loop import (
@@ -23,6 +33,7 @@ _PUBLIC_STEP_ERROR_CODES = frozenset(
         "provider_timeout",
         "provider_unavailable",
         "protocol_failure",
+        "prompt_contract_invalid",
         "generation_failed",
         "invalid_selection",
         "capability_unavailable",
@@ -51,6 +62,7 @@ class RuntimeRunner(Protocol):
         structured_tools_only: bool = False,
         agent_follow_up: bool = False,
         action_capabilities: Sequence[ModelCapability] = (),
+        system_prompt_snapshot: SystemPromptSnapshot | None = None,
     ) -> str: ...
 
 
@@ -74,14 +86,26 @@ class StepGenerationError(RuntimeError):
         return self._retryable
 
 
+@dataclass(frozen=True, slots=True)
+class ModelStepResult:
+    """A visible AssistantStep paired with its digest-only prompt receipt."""
+
+    step: AssistantStep
+    prompt_receipt: SystemPromptReceipt
+
+
 async def run_model_step(
     runner: RuntimeRunner,
     payload: Mapping[str, Any],
     cancelled: asyncio.Event,
     *,
     on_delta: Callable[[str], None] | None = None,
-) -> AssistantStep:
+) -> ModelStepResult:
     request = _parse_step_request(payload)
+    try:
+        snapshot = compose_system_prompt(request.prompt_context)
+    except PromptContextError:
+        raise StepGenerationError("prompt_contract_invalid") from None
     holdback = _DeltaHoldback(sink=on_delta)
 
     def stream_delta(delta: str) -> None:
@@ -100,8 +124,8 @@ async def run_model_step(
             temperature=request.temperature,
             top_k=request.top_k,
             turns_history=request.turns,
-            memory_context=request.memory_context,
-            allow_web_search=False,
+            allow_web_search=request.allow_web_search,
+            system_prompt_snapshot=snapshot,
             on_stream_delta=stream_delta,
             on_stream_reset=stream_reset,
             is_cancelled=cancelled.is_set,
@@ -134,20 +158,26 @@ async def run_model_step(
 
     selection = _parse_selection(raw_reply, request.capabilities)
     if selection is not None:
-        return AssistantStep(
-            text=None,
-            tool_calls=(
-                ModelToolCall(
-                    provider_call_id=None,
-                    tool_id=selection.tool_id,
-                    tool_version=selection.tool_version,
-                    arguments=selection.arguments,
+        return ModelStepResult(
+            step=AssistantStep(
+                text=None,
+                tool_calls=(
+                    ModelToolCall(
+                        provider_call_id=None,
+                        tool_id=selection.tool_id,
+                        tool_version=selection.tool_version,
+                        arguments=selection.arguments,
+                    ),
                 ),
+                finish_reason="tool_calls",
             ),
-            finish_reason="tool_calls",
+            prompt_receipt=snapshot.receipt,
         )
     holdback.release()
-    return AssistantStep(text=raw_reply, tool_calls=(), finish_reason="stop")
+    return ModelStepResult(
+        step=AssistantStep(text=raw_reply, tool_calls=(), finish_reason="stop"),
+        prompt_receipt=snapshot.receipt,
+    )
 
 
 generate_model_step = run_model_step
@@ -157,7 +187,8 @@ class _StepRequest:
     __slots__ = (
         "prompt",
         "turns",
-        "memory_context",
+        "prompt_context",
+        "allow_web_search",
         "max_tokens",
         "temperature",
         "top_k",
@@ -168,7 +199,8 @@ class _StepRequest:
         self,
         prompt: str,
         turns: tuple[ConversationTurn, ...],
-        memory_context: str | None,
+        prompt_context: SystemPromptContext,
+        allow_web_search: bool,
         max_tokens: int,
         temperature: float,
         top_k: int,
@@ -176,7 +208,8 @@ class _StepRequest:
     ) -> None:
         self.prompt = prompt
         self.turns = turns
-        self.memory_context = memory_context
+        self.prompt_context = prompt_context
+        self.allow_web_search = allow_web_search
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.top_k = top_k
@@ -214,11 +247,10 @@ def _parse_step_request(payload: Mapping[str, Any]) -> _StepRequest:
         except ValueError:
             raise StepGenerationError("invalid_request") from None
 
-    memory_context = payload.get("memory_context")
-    if memory_context is not None and (
-        not isinstance(memory_context, str) or len(memory_context) > 100_000
-    ):
-        raise StepGenerationError("invalid_request")
+    try:
+        prompt_context = parse_system_prompt_context(payload["system_prompt_context"])
+    except (KeyError, PromptContextError):
+        raise StepGenerationError("prompt_contract_invalid") from None
     settings = payload.get("settings", {})
     if not isinstance(settings, Mapping):
         raise StepGenerationError("invalid_request")
@@ -244,10 +276,16 @@ def _parse_step_request(payload: Mapping[str, Any]) -> _StepRequest:
         replace(capability, hint=_tool_prompt_hint(capability.hint, schema))
         for capability, schema in zip(parsed_capabilities, schemas, strict=True)
     )
+    requested_web_search = settings.get("allow_web_search", False)
+    allow_web_search = requested_web_search and any(
+        capability.id == "web.search" and capability.availability == "enabled"
+        for capability in prompt_context.capabilities
+    )
     return _StepRequest(
         prompt=prompt,
         turns=tuple(turns),
-        memory_context=memory_context,
+        prompt_context=prompt_context,
+        allow_web_search=allow_web_search,
         max_tokens=_bounded_int(settings.get("max_tokens", 256), 1, 1024),
         temperature=_bounded_float(settings.get("temperature", 0.7), 0.1, 2.0),
         top_k=_bounded_int(settings.get("top_k", 50), 1, 200),

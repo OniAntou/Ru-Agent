@@ -6,6 +6,22 @@ import pytest
 
 from ru_runtime.generation import runner as runner_module
 from ru_runtime.generation.runner import ModelRunner
+from ru_runtime.generation.system_prompt_composer import (
+    PromptBlockDigest,
+    SystemPromptReceipt,
+    SystemPromptSnapshot,
+)
+
+
+def composed_snapshot() -> SystemPromptSnapshot:
+    return SystemPromptSnapshot(
+        text="## ru.persona\nRu",
+        receipt=SystemPromptReceipt(
+            composer_version="1.0.0",
+            prompt_sha256="a" * 64,
+            block_digests=(PromptBlockDigest("ru.persona", "b" * 64),),
+        ),
+    )
 
 
 def test_load_records_load_error_and_re_raises(monkeypatch) -> None:
@@ -128,3 +144,31 @@ def test_non_selection_prompts_do_not_advertise_structured_capabilities(
     )
 
     assert "system.volume@1.0.0" not in str(captured["system_instruction"])
+
+
+def test_composed_snapshot_is_used_without_private_suffix_or_legacy_messages(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_execute_reply(_generate, **kwargs):
+        captured.update(kwargs)
+        return "reply"
+
+    snapshot = composed_snapshot()
+    monkeypatch.setattr(runner_module, "execute_reply", fake_execute_reply)
+
+    reply = ModelRunner().generate_reply(
+        "ping",
+        128,
+        0.7,
+        40,
+        memory_context="legacy memory",
+        mood_context="legacy mood",
+        vts_instruction="private VTS",
+        agent_follow_up=True,
+        structured_tools_only=True,
+        system_prompt_snapshot=snapshot,
+    )
+
+    assert reply == "reply"
+    assert captured["system_instruction"] == snapshot.text
+    assert captured["suppress_legacy_system_messages"] is True

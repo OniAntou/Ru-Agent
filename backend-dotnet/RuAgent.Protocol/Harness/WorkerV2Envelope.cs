@@ -1,11 +1,12 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using RuAgent.Protocol;
-using RuAgent.Protocol.Harness;
 
-namespace RuBackend.Harness.Worker;
+namespace RuAgent.Protocol.Harness;
 
+/// <summary>
+/// Shared authenticated envelope for the private Worker v2 WebSocket.
+/// </summary>
 public sealed record WorkerV2Envelope(
     int V,
     string Id,
@@ -30,8 +31,7 @@ public static class WorkerV2EnvelopeCodec
             throw new AgentProtocolException("message_too_large");
         }
 
-        // Detect duplicate keys at top-level (at least for seq, v, id, type, payload, correlation_id)
-        DetectDuplicateKeys(json);
+        DetectDuplicateTopLevelKeys(json);
 
         JsonNode? node;
         try
@@ -49,8 +49,8 @@ public static class WorkerV2EnvelopeCodec
         }
 
         var allowed = new HashSet<string>(["v", "id", "type", "seq", "correlation_id", "payload"], StringComparer.Ordinal);
-        var fields = obj.Select(p => p.Key).ToHashSet(StringComparer.Ordinal);
         var required = new HashSet<string>(["v", "id", "type", "payload"], StringComparer.Ordinal);
+        var fields = obj.Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal);
         if (!required.IsSubsetOf(fields) || !fields.IsSubsetOf(allowed))
         {
             throw new AgentProtocolException("invalid_envelope");
@@ -63,7 +63,7 @@ public static class WorkerV2EnvelopeCodec
         }
 
         var id = ReadString(obj, "id", "invalid_id");
-        if (string.IsNullOrWhiteSpace(id) || id.Length > WorkerV2Contracts.MaxRequestIdChars || !IsSafeIdentifier(id))
+        if (id.Length > WorkerV2Contracts.MaxRequestIdChars || !IsSafeIdentifier(id))
         {
             throw new AgentProtocolException("invalid_id");
         }
@@ -100,7 +100,8 @@ public static class WorkerV2EnvelopeCodec
             throw new AgentProtocolException("invalid_sequence");
         }
 
-        if (hasSeq && WorkerV2Contracts.OrderedResponseTypes.Contains(type) && type != WorkerV2Contracts.HelloOk && seq < 1)
+        if (hasSeq && WorkerV2Contracts.OrderedResponseTypes.Contains(type)
+            && type != WorkerV2Contracts.HelloOk && seq < 1)
         {
             throw new AgentProtocolException("invalid_sequence");
         }
@@ -108,32 +109,24 @@ public static class WorkerV2EnvelopeCodec
         string? correlationId = null;
         if (obj.ContainsKey("correlation_id"))
         {
-            var cNode = obj["correlation_id"];
-            if (cNode is JsonValue cv && cv.TryGetValue<string>(out var cStr) && !string.IsNullOrWhiteSpace(cStr))
-            {
-                if (cStr.Length > WorkerV2Contracts.MaxCorrelationIdChars || !IsSafeIdentifier(cStr))
-                {
-                    throw new AgentProtocolException("invalid_correlation_id");
-                }
-
-                correlationId = cStr;
-            }
-            else if (cNode is not null)
+            var correlation = obj["correlation_id"];
+            if (correlation is not JsonValue value || !value.TryGetValue<string>(out var text)
+                || string.IsNullOrWhiteSpace(text) || text.Length > WorkerV2Contracts.MaxCorrelationIdChars
+                || !IsSafeIdentifier(text))
             {
                 throw new AgentProtocolException("invalid_correlation_id");
             }
+
+            correlationId = text;
         }
 
-        var payloadNode = obj["payload"];
-        if (payloadNode is not JsonObject payload)
+        if (obj["payload"] is not JsonObject payload)
         {
             throw new AgentProtocolException("invalid_payload");
         }
 
-        var envelope = new WorkerV2Envelope(version, id, type, seq, correlationId, (JsonObject)payload.DeepClone());
-        // Re-validate via contracts for payload specifics (hello, start etc)
         WorkerV2Contracts.ValidateEnvelope(obj);
-        return envelope;
+        return new WorkerV2Envelope(version, id, type, seq, correlationId, (JsonObject)payload.DeepClone());
     }
 
     public static string Serialize(WorkerV2Envelope envelope)
@@ -166,40 +159,52 @@ public static class WorkerV2EnvelopeCodec
         return json;
     }
 
-    private static void DetectDuplicateKeys(string json)
+    private static void DetectDuplicateTopLevelKeys(string json)
     {
-        var bytes = Encoding.UTF8.GetBytes(json);
-        var reader = new Utf8JsonReader(bytes, new JsonReaderOptions { AllowTrailingCommas = false, CommentHandling = JsonCommentHandling.Disallow });
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        int depth = 0;
-        while (reader.Read())
+        try
         {
-            switch (reader.TokenType)
+            var bytes = Encoding.UTF8.GetBytes(json);
+            var reader = new Utf8JsonReader(bytes, new JsonReaderOptions
             {
-                case JsonTokenType.StartObject:
-                case JsonTokenType.StartArray:
-                    depth++;
-                    break;
-                case JsonTokenType.EndObject:
-                case JsonTokenType.EndArray:
-                    depth--;
-                    break;
-                case JsonTokenType.PropertyName when depth == 1:
-                    var name = reader.GetString()!;
-                    if (!seen.Add(name))
-                    {
-                        throw new AgentProtocolException("duplicate_field");
-                    }
+                AllowTrailingCommas = false,
+                CommentHandling = JsonCommentHandling.Disallow,
+            });
+            var depth = 0;
+            var keys = new HashSet<string>(StringComparer.Ordinal);
+            while (reader.Read())
+            {
+                switch (reader.TokenType)
+                {
+                    case JsonTokenType.StartObject:
+                        depth++;
+                        break;
+                    case JsonTokenType.EndObject:
+                        depth--;
+                        break;
+                    case JsonTokenType.PropertyName when depth == 1:
+                        if (!keys.Add(reader.GetString()!))
+                        {
+                            throw new AgentProtocolException("duplicate_field");
+                        }
 
-                    break;
+                        break;
+                }
             }
+        }
+        catch (AgentProtocolException)
+        {
+            throw;
+        }
+        catch (JsonException error)
+        {
+            throw new AgentProtocolException("invalid_json", error.Message);
         }
     }
 
     private static string ReadString(JsonObject obj, string key, string code)
     {
-        var node = obj[key];
-        if (node is JsonValue value && value.TryGetValue<string>(out var result) && !string.IsNullOrWhiteSpace(result))
+        if (obj[key] is JsonValue value && value.TryGetValue<string>(out var result)
+            && !string.IsNullOrWhiteSpace(result))
         {
             return result;
         }
@@ -209,15 +214,15 @@ public static class WorkerV2EnvelopeCodec
 
     private static int ReadInt(JsonObject obj, string key, string code)
     {
-        var node = obj[key];
-        if (node is JsonValue value && value.TryGetValue<int>(out var result))
+        if (obj[key] is JsonValue value && value.TryGetValue<int>(out var result))
         {
             return result;
         }
 
-        if (node is JsonValue lv && lv.TryGetValue<long>(out var l) && l >= int.MinValue && l <= int.MaxValue)
+        if (obj[key] is JsonValue longValue && longValue.TryGetValue<long>(out var longResult)
+            && longResult >= int.MinValue && longResult <= int.MaxValue)
         {
-            return (int)l;
+            return (int)longResult;
         }
 
         throw new AgentProtocolException(code);
@@ -225,19 +230,22 @@ public static class WorkerV2EnvelopeCodec
 
     private static long ReadLong(JsonObject obj, string key, string code)
     {
-        var node = obj[key];
-        if (node is JsonValue value && value.TryGetValue<long>(out var result))
+        if (obj[key] is JsonValue value && value.TryGetValue<long>(out var result))
         {
             return result;
         }
 
-        if (node is JsonValue iv && iv.TryGetValue<int>(out var i))
+        if (obj[key] is JsonValue intValue && intValue.TryGetValue<int>(out var intResult))
         {
-            return i;
+            return intResult;
         }
 
         throw new AgentProtocolException(code);
     }
 
-    private static bool IsSafeIdentifier(string value) => System.Text.RegularExpressions.Regex.IsMatch(value, @"^[A-Za-z0-9_.-]+$");
+    private static bool IsSafeIdentifier(string value) => value.All(character =>
+        character is (>= 'A' and <= 'Z')
+            or (>= 'a' and <= 'z')
+            or (>= '0' and <= '9')
+            or '.' or '-' or '_');
 }

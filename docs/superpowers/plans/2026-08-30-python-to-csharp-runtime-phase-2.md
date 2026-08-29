@@ -78,11 +78,11 @@
 
 **Interfaces:** `OmniVoiceHttpProvider` calls `/warmup`, `/release`, `/tts`, `/tts_stream`; `OmniVoiceProcessController.StartAsync/StopAsync`; `VoiceStreamCoordinator.StreamAsync(VoiceRequest, CancellationToken)` returns `IAsyncEnumerable<VoiceChunk>`.
 
-- [ ] Write failing tests with fake `HttpMessageHandler` and fake process handle for loopback URI validation, request serialization, timeout/cancellation, empty/invalid WAV, sentence ordering, first-audio ordering, pre-first-chunk complete-WAV fallback, and lock release.
-- [ ] Run the focused Adapter/Worker filters; expected FAIL.
-- [ ] Implement C# HTTP validation and bounded error mapping. Keep `omnivoice_env`, model files, and `omnivoice_server.py` untouched; the controller may launch that thin provider shim with hidden Windows startup and owns only its process lifetime. Hold the GPU/audio lease for the full provider call and never log text/audio.
-- [ ] Run focused C# voice tests plus Python `tests/test_voice_stream.py`, `test_voice_pacing.py`, and `test_omnivoice_tts_server.py` sequentially; expected PASS.
-- [ ] Commit `git add backend-dotnet/RuAgent.Runtime.Adapters/Audio backend-dotnet/RuAgent.Runtime.Worker/WorkerV1RequestRouter.cs backend-dotnet/RuAgent.Runtime.Adapters.Tests/OmniVoiceProviderTests.cs backend-dotnet/RuAgent.Runtime.Adapters.Tests/VoiceStreamCoordinatorTests.cs backend-dotnet/RuAgent.Runtime.Worker.Tests/VoiceV1HandlerTests.cs; git commit -m "feat: move voice orchestration behind managed OmniVoice provider"`.
+- [x] Write failing tests with fake `HttpMessageHandler` and fake process handle for loopback URI validation, request serialization, timeout/cancellation, empty/invalid WAV, sentence ordering, first-audio ordering, pre-first-chunk complete-WAV fallback, and lock release.
+- [x] Run the focused Adapter/Worker filters; expected FAIL.
+- [x] Implement C# HTTP validation and bounded error mapping. Keep `omnivoice_env`, model files, and `omnivoice_server.py` untouched; the controller may launch that thin provider shim with hidden Windows startup and owns only its process lifetime. Hold the GPU/audio lease for the full provider call and never log text/audio.
+- [x] Run focused C# voice tests plus Python `tests/test_voice_stream.py`, `test_voice_pacing.py`, and `test_omnivoice_tts_server.py` sequentially; expected PASS.
+- [x] Commit `git add backend-dotnet/RuAgent.Runtime.Adapters/Audio backend-dotnet/RuAgent.Runtime.Worker/WorkerV1RequestRouter.cs backend-dotnet/RuAgent.Runtime.Adapters.Tests/OmniVoiceProviderTests.cs backend-dotnet/RuAgent.Runtime.Adapters.Tests/VoiceStreamCoordinatorTests.cs backend-dotnet/RuAgent.Runtime.Worker.Tests/VoiceV1HandlerTests.cs; git commit -m "feat: move voice orchestration behind managed OmniVoice provider"`.
 
 ### Task 6: Port speech-to-text and audio validation
 

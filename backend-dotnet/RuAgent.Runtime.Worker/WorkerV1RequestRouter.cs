@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Text.Json.Nodes;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Adapters.Audio;
 using RuAgent.Runtime.Adapters.Runtime;
 using RuAgent.Runtime.Core.Contracts;
 
@@ -61,13 +62,16 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
 
     private readonly ManagedRuntimeSettingsService _settings;
     private readonly PrivateRuntimeRequestRouter _privateRouter;
+    private readonly VoiceStreamCoordinator? _voice;
 
     public ManagedWorkerV1RequestRouter(
         ManagedRuntimeSettingsService settings,
-        PrivateRuntimeRequestRouter privateRouter)
+        PrivateRuntimeRequestRouter privateRouter,
+        VoiceStreamCoordinator? voice = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _privateRouter = privateRouter ?? throw new ArgumentNullException(nameof(privateRouter));
+        _voice = voice;
     }
 
     public async IAsyncEnumerable<WorkerV1Reply> RouteAsync(
@@ -86,6 +90,15 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
             case WorkerV1Contracts.RuntimeRequest:
                 yield return await HandleRuntimeRequestAsync(payload, cancellationToken).ConfigureAwait(false);
                 yield break;
+            case WorkerV1Contracts.VoiceStart:
+                await foreach (var reply in HandleVoiceAsync(payload, cancellationToken)
+                    .WithCancellation(cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    yield return reply;
+                }
+
+                yield break;
             default:
                 yield return Error(
                     type is WorkerV1Contracts.VoiceStart
@@ -95,6 +108,121 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
                             : "unsupported_operation",
                     retryable: true);
                 yield break;
+        }
+    }
+
+    private async IAsyncEnumerable<WorkerV1Reply> HandleVoiceAsync(
+        JsonObject payload,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (_voice is null)
+        {
+            yield return Error("voice_unavailable", retryable: true);
+            yield break;
+        }
+
+        if (!TryBuildVoiceRequest(payload, out var requestId, out var request))
+        {
+            yield return Error("invalid_request", retryable: false);
+            yield break;
+        }
+
+        yield return new WorkerV1Reply(
+            WorkerV1Contracts.VoiceControl,
+            new JsonObject
+            {
+                ["type"] = "started",
+                ["request_id"] = requestId,
+                ["sequence"] = 0,
+            });
+
+        var capture = await ConsumeVoiceAsync(_voice, request, cancellationToken).ConfigureAwait(false);
+        foreach (var chunk in capture.Chunks)
+        {
+            if (chunk.State == "audio")
+            {
+                yield return new WorkerV1Reply(
+                    WorkerV1Contracts.VoiceControl,
+                    new JsonObject
+                    {
+                        ["type"] = "audio",
+                        ["request_id"] = requestId,
+                        ["sequence"] = chunk.Sequence,
+                        ["state"] = "audio_ready",
+                    },
+                    chunk.Audio);
+            }
+            else if (chunk.State == "ended")
+            {
+                yield return new WorkerV1Reply(
+                    WorkerV1Contracts.VoiceDone,
+                    new JsonObject
+                    {
+                        ["type"] = "ended",
+                        ["request_id"] = requestId,
+                        ["sequence"] = chunk.Sequence,
+                        ["state"] = "done",
+                    });
+            }
+        }
+
+        if (capture.Error is VoiceProviderException error)
+        {
+            yield return Error(error.Code, error.Retryable);
+        }
+        else if (capture.Error is not null)
+        {
+            yield return Error("voice_failed", retryable: true);
+        }
+    }
+
+    private static async Task<VoiceCapture> ConsumeVoiceAsync(
+        VoiceStreamCoordinator voice,
+        VoiceRequest request,
+        CancellationToken cancellationToken)
+    {
+        var chunks = new List<VoiceChunk>();
+        try
+        {
+            await foreach (var chunk in voice.StreamAsync(request, cancellationToken)
+                .WithCancellation(cancellationToken)
+                .ConfigureAwait(false))
+            {
+                chunks.Add(chunk);
+            }
+
+            return new VoiceCapture(chunks, null);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            return new VoiceCapture(chunks, error);
+        }
+    }
+
+    private static bool TryBuildVoiceRequest(
+        JsonObject payload,
+        out string requestId,
+        out VoiceRequest request)
+    {
+        requestId = string.Empty;
+        request = null!;
+        try
+        {
+            requestId = RequiredText(payload, "request_id", 128);
+            var text = RequiredText(payload, "text", RuntimeLimits.MaxVoiceTextBytes);
+            var voiceLabel = OptionalText(payload, "voice_label", 128) ?? "Ru (OmniVoice)";
+            var speed = OptionalDouble(payload, "speed") ?? 1.0;
+            var style = OptionalText(payload, "voice_style_id", 32) ?? "original";
+            request = new VoiceRequest(text, voiceLabel, speed, style);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
         }
     }
 
@@ -259,6 +387,30 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
         throw new ArgumentException("Runtime boolean field is invalid.", nameof(payload));
     }
 
+    private static double? OptionalDouble(JsonObject payload, string key)
+    {
+        if (!payload.TryGetPropertyValue(key, out var node) || node is null)
+        {
+            return null;
+        }
+
+        if (node is JsonValue value
+            && value.TryGetValue<double>(out var parsed)
+            && double.IsFinite(parsed))
+        {
+            return parsed;
+        }
+
+        if (node is JsonValue integerValue
+            && integerValue.TryGetValue<int>(out var integer)
+            && double.IsFinite(integer))
+        {
+            return integer;
+        }
+
+        throw new ArgumentException("Runtime number field is invalid.", nameof(payload));
+    }
+
     private static void RejectSensitiveKeys(JsonNode node)
     {
         if (node is JsonObject obj)
@@ -308,4 +460,8 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
             ["code"] = code,
             ["retryable"] = retryable,
         });
+
+    private sealed record VoiceCapture(
+        IReadOnlyList<VoiceChunk> Chunks,
+        Exception? Error);
 }

@@ -11,6 +11,7 @@ internal static class WorkerEntryPoint
     {
         var host = "127.0.0.1";
         var port = 0;
+        var devicePort = 0;
         for (var index = 0; index < args.Length; index++)
         {
             switch (args[index])
@@ -21,18 +22,29 @@ internal static class WorkerEntryPoint
                 case "--port" when index + 1 < args.Length && int.TryParse(args[++index], out var parsedPort):
                     port = parsedPort;
                     break;
+                case "--device-port" when index + 1 < args.Length && int.TryParse(args[++index], out var parsedDevicePort):
+                    devicePort = parsedDevicePort;
+                    break;
                 default:
-                    throw new ArgumentException("Only --host and --port are supported.");
+                    throw new ArgumentException("Only --host, --port, and --device-port are supported.");
             }
         }
 
-        if (host != "127.0.0.1" || port is < 1 or > 65_535)
+        if (devicePort == 0)
         {
-            throw new ArgumentException("Worker binds only to 127.0.0.1 and a valid port.");
+            devicePort = port;
+        }
+
+        if (host != "127.0.0.1"
+            || port is < 1 or > 65_535
+            || devicePort is < 1 or > 65_535)
+        {
+            throw new ArgumentException("Worker binds only to 127.0.0.1 and valid ports.");
         }
 
         var token = Environment.GetEnvironmentVariable("RU_AGENT_WORKER_TOKEN")
             ?? throw new InvalidOperationException("RU_AGENT_WORKER_TOKEN is required.");
+        var deviceToken = Environment.GetEnvironmentVariable("RU_DEVICE_WORKER_TOKEN") ?? token;
         var bootstrapPath = Environment.GetEnvironmentVariable("RU_AGENT_PROVIDER_BOOTSTRAP")
             ?? throw new InvalidOperationException("RU_AGENT_PROVIDER_BOOTSTRAP is required.");
         var sessionRoot = Path.GetDirectoryName(Path.GetFullPath(bootstrapPath))
@@ -48,12 +60,20 @@ internal static class WorkerEntryPoint
         var server = new WorkerV2Server(
             token,
             new WorkerV2StepService(provider, options));
+        var deviceServer = new WorkerV1Server(
+            deviceToken,
+            new UnavailableWorkerV1RequestRouter());
 
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseUrls($"http://{host}:{port}");
+        var urls = devicePort == port
+            ? new[] { $"http://{host}:{port}" }
+            : new[] { $"http://{host}:{port}", $"http://{host}:{devicePort}" };
+        builder.WebHost.UseUrls(urls);
         var app = builder.Build();
         app.UseWebSockets();
-        app.Run(server.HandleAsync);
+        app.Run(context => string.Equals(context.Request.Path, "/worker/v1", StringComparison.Ordinal)
+            ? deviceServer.HandleAsync(context)
+            : server.HandleAsync(context));
         await app.RunAsync();
     }
 }

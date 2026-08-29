@@ -41,12 +41,12 @@
 
 **Interfaces:** `IWorkerV1RequestRouter.RouteAsync(string type, JsonObject payload, CancellationToken)` returns `IAsyncEnumerable<WorkerV1Reply>`; `WorkerV1Reply(string Type, JsonObject Payload, ReadOnlyMemory<byte> Binary)`; `WorkerV1Server.HandleAsync(HttpContext)` serves `/worker/v1`.
 
-- [ ] Write in-process WebSocket tests for hello/health, wrong token `4401`, wrong path `4404`, malformed JSON, duplicate/in-flight requests, ordered sequence, binary announcement/attachment, cancellation, and peer cleanup.
-- [ ] Run `dotnet test D:\LLM\backend-dotnet\RuAgent.Runtime.Worker.Tests\RuAgent.Runtime.Worker.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~WorkerV1"`; expected FAIL.
-- [ ] Mirror Python lifecycle: authenticate the first text hello with fixed-time comparison; advertise `runtime`, `voice`, `vts`, `observation`; keep one send semaphore; track request cancellation sources; await every request in `finally`; map failures only to bounded codes.
-- [ ] Extend `Program.cs` to accept `--device-port` and `RU_DEVICE_WORKER_TOKEN`, listen on both loopback URLs, and route `/worker/v2` to the existing server and `/worker/v1` to the new server. Initial v1 handlers may return typed unavailable errors until later tasks bind adapters.
-- [ ] Run all Worker tests sequentially in Release; expected PASS.
-- [ ] Commit `git add backend-dotnet/RuAgent.Runtime.Worker backend-dotnet/RuAgent.Runtime.Worker.Tests/WorkerV1ServerContractTests.cs; git commit -m "feat: add managed Worker v1 server"`.
+- [x] Write in-process WebSocket tests for hello/health, wrong token `4401`, wrong path `4404`, malformed JSON, duplicate/in-flight requests, ordered sequence, binary announcement/attachment, cancellation, and peer cleanup.
+- [x] Run `dotnet test D:\LLM\backend-dotnet\RuAgent.Runtime.Worker.Tests\RuAgent.Runtime.Worker.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~WorkerV1"`; expected FAIL.
+- [x] Mirror Python lifecycle: authenticate the first text hello with fixed-time comparison; advertise `runtime`, `voice`, `vts`, `observation`; keep one send semaphore; track request cancellation sources; await every request in `finally`; map failures only to bounded codes.
+- [x] Extend `Program.cs` to accept `--device-port` and `RU_DEVICE_WORKER_TOKEN`, listen on both loopback URLs, and route `/worker/v2` to the existing server and `/worker/v1` to the new server. Initial v1 handlers may return typed unavailable errors until later tasks bind adapters.
+- [x] Run all Worker tests sequentially in Release; expected PASS.
+- [x] Commit `git add backend-dotnet/RuAgent.Runtime.Worker backend-dotnet/RuAgent.Runtime.Worker.Tests/WorkerV1ServerContractTests.cs; git commit -m "feat: add managed Worker v1 server"`.
 
 ### Task 3: Create focused managed runtime/device contracts and leases
 

@@ -24,6 +24,17 @@
                     <Color x:Key="RuSuccessColor">#2F6F51</Color>
                     <Color x:Key="RuWarningColor">#9A6C1F</Color>
                     <Color x:Key="RuDangerColor">#A73A3A</Color>
+
+                    <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#A84B38" />
+                    <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#8E3E2E" />
+                    <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="#743325" />
+                    <SolidColorBrush x:Key="ToggleSwitchStrokeOn" Color="#A84B38" />
+                    <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="#8E3E2E" />
+                    <SolidColorBrush x:Key="ToggleSwitchStrokeOnPressed" Color="#743325" />
+                    <SolidColorBrush x:Key="SliderTrackValueFill" Color="#A84B38" />
+                    <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#8E3E2E" />
+                    <SolidColorBrush x:Key="SliderThumbBackground" Color="#A84B38" />
+                    <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#8E3E2E" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <Color x:Key="RuCanvasColor">#191C19</Color>
@@ -37,6 +48,17 @@
                     <Color x:Key="RuSuccessColor">#75B28D</Color>
                     <Color x:Key="RuWarningColor">#D7A759</Color>
                     <Color x:Key="RuDangerColor">#E38181</Color>
+
+                    <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#C76A52" />
+                    <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#D87D65" />
+                    <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="#E0907A" />
+                    <SolidColorBrush x:Key="ToggleSwitchStrokeOn" Color="#C76A52" />
+                    <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="#D87D65" />
+                    <SolidColorBrush x:Key="ToggleSwitchStrokeOnPressed" Color="#E0907A" />
+                    <SolidColorBrush x:Key="SliderTrackValueFill" Color="#C76A52" />
+                    <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#D87D65" />
+                    <SolidColorBrush x:Key="SliderThumbBackground" Color="#C76A52" />
+                    <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#D87D65" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 

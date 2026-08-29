@@ -293,7 +293,7 @@ namespace RuApp
             var accent = (SolidColorBrush)Application.Current.Resources["RuAccentBrush"];
             var surface = (SolidColorBrush)Application.Current.Resources["RuSurfaceBrush"];
 
-            foreach (var button in new[] { NavChat, NavVoice, NavTools, NavSettings })
+            foreach (var button in new[] { NavChat, NavVoice, NavSettings })
             {
                 button.Background = transparent;
                 button.Foreground = muted;
@@ -358,12 +358,10 @@ namespace RuApp
                 "audit" => _auditPanel,
                 _ => _chatView
             };
-            SetActiveNav(NavTools);
         }
 
         public void NavigateToDiagnostics(string? correlationId = null)
         {
-            SetActiveNav(NavTools);
             ContentFrame.Content = _diagnosticsView;
             if (!string.IsNullOrWhiteSpace(correlationId))
             {

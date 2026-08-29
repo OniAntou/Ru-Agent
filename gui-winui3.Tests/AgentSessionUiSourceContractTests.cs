@@ -30,19 +30,21 @@ public sealed class AgentSessionUiSourceContractTests
     }
 
     [Fact]
-    public void Composer_keeps_the_agent_preset_next_to_a_right_aligned_mic_and_send_pair()
+    public void Composer_places_left_aligned_mic_and_agent_selectors_with_right_aligned_send_button()
     {
         string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
 
-        int composerStart = xaml.IndexOf("ColumnDefinitions=\"Auto,Auto,*,Auto,Auto\"", StringComparison.Ordinal);
-        Assert.True(composerStart >= 0, "Composer columns must reserve a spacer before the action buttons.");
+        int composerStart = xaml.IndexOf("ColumnDefinitions=\"Auto,Auto,Auto,*,Auto\"", StringComparison.Ordinal);
+        Assert.True(composerStart >= 0, "Composer columns must place mic, agent button, and preset on the left, followed by a spacer and send button.");
 
-        int presetStart = xaml.IndexOf("x:Name=\"AgentPresetBox\"", composerStart, StringComparison.Ordinal);
         int micStart = xaml.IndexOf("x:Name=\"MicButton\"", composerStart, StringComparison.Ordinal);
+        int agentModeStart = xaml.IndexOf("x:Name=\"AgentModeButton\"", composerStart, StringComparison.Ordinal);
+        int presetStart = xaml.IndexOf("x:Name=\"AgentPresetBox\"", composerStart, StringComparison.Ordinal);
         int sendStart = xaml.IndexOf("x:Name=\"SendButton\"", composerStart, StringComparison.Ordinal);
-        Assert.True(presetStart >= composerStart && micStart > presetStart && sendStart > micStart);
-        Assert.Contains("Grid.Column=\"1\"", xaml[presetStart..micStart], StringComparison.Ordinal);
-        Assert.Contains("Grid.Column=\"3\"", xaml[micStart..sendStart], StringComparison.Ordinal);
+        Assert.True(micStart >= composerStart && agentModeStart > micStart && presetStart > agentModeStart && sendStart > presetStart);
+        Assert.Contains("Grid.Column=\"0\"", xaml[micStart..agentModeStart], StringComparison.Ordinal);
+        Assert.Contains("Grid.Column=\"1\"", xaml[agentModeStart..presetStart], StringComparison.Ordinal);
+        Assert.Contains("Grid.Column=\"2\"", xaml[presetStart..sendStart], StringComparison.Ordinal);
         Assert.Contains("Grid.Column=\"4\"", xaml[sendStart..], StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.AutomationId=\"MicButton\"", xaml, StringComparison.Ordinal);
     }

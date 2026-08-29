@@ -7,21 +7,32 @@
     xmlns:models="using:RuApp.Models"
     mc:Ignorable="d">
 
-    <Grid RowDefinitions="Auto,*" Padding="36,24,36,36" Background="Transparent">
+    <Grid RowDefinitions="Auto,*" Padding="36,16,36,36" Background="Transparent" MaxWidth="960" HorizontalAlignment="Stretch">
         <!-- Header -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,24">
-            <StackPanel Grid.Column="0" Spacing="4">
-                <TextBlock Text="Bộ nhớ dài hạn đã lưu" FontSize="22" FontFamily="{StaticResource RuDisplayFontFamily}" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                <TextBlock Text="Ru tự động trích xuất các thông tin cá nhân và sở thích từ cuộc trò chuyện để cá nhân hóa phản hồi." Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="13.5"/>
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,20">
+            <StackPanel Grid.Column="0" Spacing="3">
+                <TextBlock Text="Bộ nhớ dài hạn đã lưu"
+                           FontSize="22"
+                           FontFamily="{StaticResource RuDisplayFontFamily}"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource RuInkBrush}"/>
+                <TextBlock Text="Ru tự động trích xuất các thông tin cá nhân và sở thích từ cuộc trò chuyện để cá nhân hóa phản hồi."
+                           Foreground="{StaticResource RuMutedBrush}"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontSize="13"/>
             </StackPanel>
 
             <Button x:Name="ClearMemoryButton" Grid.Column="1" Click="OnClearMemoryClick" 
-                    Background="{StaticResource AppDangerSubtleBrush}" BorderBrush="{StaticResource AppDangerBrush}" 
-                    BorderThickness="1" CornerRadius="{StaticResource AppControlCornerRadius}" 
-                    VerticalAlignment="Center" Padding="16,9">
+                    Background="{StaticResource RuAccentSoftBrush}" BorderBrush="{StaticResource RuDangerBrush}" 
+                    BorderThickness="1" CornerRadius="{StaticResource RuControlCornerRadius}" 
+                    VerticalAlignment="Center" Padding="14,8">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon Glyph="&#xE74D;" FontSize="14" Foreground="{StaticResource AppDangerBrush}"/>
-                    <TextBlock Text="Xóa toàn bộ bộ nhớ" Foreground="{StaticResource AppDangerBrush}" FontWeight="SemiBold"/>
+                    <FontIcon Glyph="&#xE74D;" FontSize="13" Foreground="{StaticResource RuDangerBrush}"/>
+                    <TextBlock Text="Xóa toàn bộ bộ nhớ"
+                               Foreground="{StaticResource RuDangerBrush}"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               FontWeight="SemiBold"
+                               FontSize="13"/>
                 </StackPanel>
             </Button>
         </Grid>
@@ -31,14 +42,26 @@
             <!-- Empty State Placeholder -->
             <StackPanel x:Name="EmptyMemoryPanel" HorizontalAlignment="Center" VerticalAlignment="Center" 
                         Spacing="12" Margin="0,40,0,0" Visibility="Collapsed">
-                <Border Width="56" Height="56" CornerRadius="28" Background="{StaticResource AppAccentSubtleBrush}" 
-                        BorderBrush="{StaticResource AppAccentBrush}" BorderThickness="1.5" HorizontalAlignment="Center">
-                    <TextBlock Text="🧠" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Border Width="48" Height="48" CornerRadius="{StaticResource RuControlCornerRadius}"
+                        Background="{StaticResource RuAccentSoftBrush}" 
+                        BorderBrush="{StaticResource RuLineBrush}" BorderThickness="1" HorizontalAlignment="Center">
+                    <FontIcon Glyph="&#xE968;" FontSize="20" Foreground="{StaticResource RuAccentBrush}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
-                <TextBlock Text="Chưa có dữ liệu ghi nhớ nào" FontSize="16" FontWeight="SemiBold" 
-                           Foreground="{StaticResource AppTextPrimaryBrush}" HorizontalAlignment="Center"/>
+                <TextBlock Text="Chưa có dữ liệu ghi nhớ nào"
+                           FontSize="15"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           FontWeight="SemiBold" 
+                           Foreground="{StaticResource RuInkBrush}"
+                           HorizontalAlignment="Center"/>
                 <TextBlock Text="Ru sẽ tự động học và lưu lại sở thích cũng như thông tin của anh trong lúc trò chuyện nha!" 
-                           FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}" HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="440" TextAlignment="Center"/>
+                           FontSize="12.5"
+                           FontFamily="{StaticResource RuUiFontFamily}"
+                           Foreground="{StaticResource RuMutedBrush}"
+                           HorizontalAlignment="Center"
+                           TextWrapping="Wrap"
+                           MaxWidth="440"
+                           TextAlignment="Center"/>
             </StackPanel>
 
             <!-- Memory List View -->
@@ -47,24 +70,39 @@
                     <Style TargetType="ListViewItem">
                         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                         <Setter Property="Padding" Value="0"/>
-                        <Setter Property="Margin" Value="0,0,0,10"/>
+                        <Setter Property="Margin" Value="0,0,0,8"/>
                     </Style>
                 </ListView.ItemContainerStyle>
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="models:MemoryItemDto">
                         <Border Style="{StaticResource FluentCardStyle}" Padding="16,14">
                             <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel Grid.Column="0" Spacing="8">
-                                    <TextBlock Text="{x:Bind Text}" FontSize="14.5" FontWeight="Medium" TextWrapping="Wrap" Foreground="{StaticResource AppTextPrimaryBrush}"/>
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="{x:Bind Text}"
+                                               FontSize="14"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontWeight="Medium"
+                                               TextWrapping="Wrap"
+                                               Foreground="{StaticResource RuInkBrush}"/>
                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <Border Background="{StaticResource AppAccentSubtleBrush}" CornerRadius="6" Padding="8,2">
-                                            <TextBlock Text="{x:Bind Category}" FontSize="11.5" FontWeight="SemiBold" Foreground="{StaticResource AppAccentHoverBrush}"/>
+                                        <Border Background="{StaticResource RuAccentSoftBrush}"
+                                                CornerRadius="{StaticResource RuControlCornerRadius}"
+                                                Padding="8,3">
+                                            <TextBlock Text="{x:Bind Category}"
+                                                       FontSize="11.5"
+                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource RuAccentBrush}"/>
                                         </Border>
                                     </StackPanel>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top" Margin="12,0,0,0">
-                                    <FontIcon Glyph="&#xE823;" FontSize="11" Foreground="{StaticResource AppTextTertiaryBrush}" VerticalAlignment="Center"/>
-                                    <TextBlock Text="{x:Bind CreatedAt}" FontSize="11.5" Foreground="{StaticResource AppTextTertiaryBrush}" VerticalAlignment="Center"/>
+                                    <FontIcon Glyph="&#xE823;" FontSize="11" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{x:Bind CreatedAt}"
+                                               FontSize="11.5"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               Foreground="{StaticResource RuMutedBrush}"
+                                               VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Grid>
                         </Border>

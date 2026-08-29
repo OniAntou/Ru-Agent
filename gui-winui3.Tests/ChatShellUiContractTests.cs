@@ -5,15 +5,14 @@ namespace RuApp.Tests;
 public sealed class ChatShellUiContractTests
 {
     [Fact]
-    public void Shell_groups_technical_surfaces_under_one_tools_entry()
+    public void Shell_keeps_side_panel_clean_without_user_facing_tools_entry()
     {
         string xaml = File.ReadAllText(FindSource("MainWindow.xaml"));
 
-        Assert.Contains("x:Name=\"NavTools\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"ToolsLogItem\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"ToolsDiagnosticsItem\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"ToolsPolicyItem\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"ToolsAuditItem\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"NavChat\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"NavVoice\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"NavSettings\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"NavTools\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"NavLog\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"NavDiagnostics\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"NavAgent\"", xaml, StringComparison.Ordinal);

@@ -494,10 +494,32 @@
                     </TextBox>
 
                     <Grid Grid.Row="1"
-                          ColumnDefinitions="Auto,Auto,*,Auto,Auto"
+                          ColumnDefinitions="Auto,Auto,Auto,*,Auto"
                           Margin="0,4,0,0">
-                        <Button x:Name="AgentModeButton"
+                        <Button x:Name="MicButton"
                                 Grid.Column="0"
+                                Click="OnMicClick"
+                                Width="32"
+                                Height="32"
+                                Padding="0"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center"
+                                CornerRadius="{StaticResource RuControlCornerRadius}"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                VerticalAlignment="Center"
+                                Margin="0,0,2,0"
+                                AutomationProperties.AutomationId="MicButton"
+                                AutomationProperties.Name="Bắt đầu trò chuyện bằng giọng nói"
+                                ToolTipService.ToolTip="Nói chuyện với Ru bằng giọng nói">
+                            <FontIcon x:Name="MicIcon"
+                                      Glyph="&#xE720;"
+                                      FontSize="14"
+                                      Foreground="{StaticResource RuMutedBrush}" />
+                        </Button>
+
+                        <Button x:Name="AgentModeButton"
+                                Grid.Column="1"
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Padding="6,4"
@@ -522,7 +544,7 @@
                         </Button>
 
                         <ComboBox x:Name="AgentPresetBox"
-                                  Grid.Column="1"
+                                  Grid.Column="2"
                                   Visibility="Visible"
                                   SelectedIndex="0"
                                   SelectionChanged="OnAgentPresetChanged"
@@ -706,29 +728,6 @@
                             <ComboBoxItem Content="Standard" Tag="standard" />
                             <ComboBoxItem Content="Full Access" Tag="full_access" />
                         </ComboBox>
-
-                        <Button x:Name="MicButton"
-                                Grid.Column="3"
-                                Click="OnMicClick"
-                                Width="32"
-                                Height="32"
-                                Padding="0"
-                                HorizontalContentAlignment="Center"
-                                VerticalContentAlignment="Center"
-                                CornerRadius="{StaticResource RuControlCornerRadius}"
-                                Background="Transparent"
-                                BorderThickness="0"
-                                VerticalAlignment="Center"
-                                AutomationProperties.AutomationId="MicButton"
-                                AutomationProperties.Name="Bắt đầu trò chuyện bằng giọng nói"
-                                ToolTipService.ToolTip="Nói chuyện với Ru bằng giọng nói">
-                            <FontIcon x:Name="MicIcon"
-                                      Glyph="&#xE720;"
-                                      FontSize="14"
-                                      Foreground="{StaticResource RuMutedBrush}" />
-                        </Button>
-
-
 
                         <Button x:Name="SendButton"
                                 Grid.Column="4"

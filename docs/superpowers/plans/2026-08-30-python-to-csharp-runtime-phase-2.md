@@ -29,11 +29,11 @@
 
 **Interfaces:** `WorkerV1Envelope(int Version, string Id, string Type, long? Sequence, string? CorrelationId, JsonObject Payload)`; `WorkerV1EnvelopeCodec.Parse(string)` and `Serialize(WorkerV1Envelope)`.
 
-- [ ] Write tests for valid requests, `correlationId` normalization, unsupported version, unknown type, missing/non-negative sequence, invalid IDs, and frame-size rejection.
-- [ ] Run `dotnet test D:\LLM\backend-dotnet\RuAgent.Protocol.Tests\RuAgent.Protocol.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~WorkerV1Envelope"`; expected FAIL because types do not exist.
-- [ ] Implement protocol `1`, ID limit `128`, correlation limit `64`, frame limit `8 MiB`, exact known/ordered type sets from `src/ru_runtime/worker/v1/protocol.py`, strict JSON object payloads, and canonical `correlation_id` serialization.
-- [ ] Run the same filter in Release with `--no-restore`; expected PASS.
-- [ ] Commit `git add backend-dotnet/RuAgent.Protocol/Harness/WorkerV1Contracts.cs backend-dotnet/RuAgent.Protocol/Harness/WorkerV1Envelope.cs backend-dotnet/RuAgent.Protocol/Harness/WorkerV1EnvelopeCodec.cs backend-dotnet/RuAgent.Protocol.Tests/WorkerV1EnvelopeTests.cs; git commit -m "feat: add shared Worker v1 protocol contracts"`.
+- [x] Write tests for valid requests, `correlationId` normalization, unsupported version, unknown type, missing/non-negative sequence, invalid IDs, and frame-size rejection.
+- [x] Run `dotnet test D:\LLM\backend-dotnet\RuAgent.Protocol.Tests\RuAgent.Protocol.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~WorkerV1Envelope"`; expected FAIL because types do not exist.
+- [x] Implement protocol `1`, ID limit `128`, correlation limit `64`, frame limit `8 MiB`, exact known/ordered type sets from `src/ru_runtime/worker/v1/protocol.py`, strict JSON object payloads, and canonical `correlation_id` serialization.
+- [x] Run the same filter in Release with `--no-restore`; expected PASS.
+- [x] Commit `git add backend-dotnet/RuAgent.Protocol/Harness/WorkerV1Contracts.cs backend-dotnet/RuAgent.Protocol/Harness/WorkerV1Envelope.cs backend-dotnet/RuAgent.Protocol/Harness/WorkerV1EnvelopeCodec.cs backend-dotnet/RuAgent.Protocol.Tests/WorkerV1EnvelopeTests.cs; git commit -m "feat: add shared Worker v1 protocol contracts"`.
 
 ### Task 2: Add the managed Worker v1 connection server
 

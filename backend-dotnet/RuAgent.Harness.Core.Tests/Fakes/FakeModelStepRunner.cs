@@ -11,8 +11,13 @@ public sealed class FakeModelStepRunner : IModelStepRunner
 
     public List<ModelStepRequest> Requests { get; } = new();
 
+    public List<SystemPromptContext> PromptContexts { get; } = new();
+
     public void Enqueue(AssistantStep step, params string[] deltas) =>
-        _steps.Enqueue(new QueuedStep(step, deltas));
+        _steps.Enqueue(new QueuedStep(null, step, deltas));
+
+    public void Enqueue(ModelStepResult result, params string[] deltas) =>
+        _steps.Enqueue(new QueuedStep(result, null, deltas));
 
     public async Task<ModelStepResult> RunStepAsync(
         ModelStepRequest request,
@@ -20,6 +25,7 @@ public sealed class FakeModelStepRunner : IModelStepRunner
         CancellationToken cancellationToken)
     {
         Requests.Add(request);
+        PromptContexts.Add(request.PromptContext);
         _trace?.Add($"model:{Requests.Count}");
         if (_steps.Count == 0)
         {
@@ -35,8 +41,31 @@ public sealed class FakeModelStepRunner : IModelStepRunner
                 queued.Deltas[index]));
         }
 
-        return new ModelStepResult(queued.Step, SystemPromptReceipt.Empty);
+        return queued.Result
+            ?? new ModelStepResult(queued.Step!, ReceiptFor(request.PromptContext));
     }
 
-    private sealed record QueuedStep(AssistantStep Step, IReadOnlyList<string> Deltas);
+    private static SystemPromptReceipt ReceiptFor(SystemPromptContext context)
+    {
+        var blocks = new List<PromptBlockDigest>
+        {
+            new("ru.persona", new string('0', 64)),
+            new("agent.contract", new string('0', 64)),
+            new("environment", new string('0', 64)),
+        };
+        blocks.AddRange(context.InstructionBlocks.Select(instruction =>
+            new PromptBlockDigest($"instruction.{instruction.SourceId}", instruction.ContentSha256)));
+        blocks.Add(new PromptBlockDigest("profile", new string('0', 64)));
+        blocks.Add(new PromptBlockDigest("capabilities", new string('0', 64)));
+        blocks.Add(new PromptBlockDigest("runtime", new string('0', 64)));
+        return new SystemPromptReceipt(
+            SystemPromptReceipt.SupportedComposerVersion,
+            new string('0', 64),
+            blocks);
+    }
+
+    private sealed record QueuedStep(
+        ModelStepResult? Result,
+        AssistantStep? Step,
+        IReadOnlyList<string> Deltas);
 }

@@ -114,6 +114,7 @@ internal static class HarnessSqliteMapper
         HarnessEventKind.ReconciliationRequired => "reconciliation.required",
         HarnessEventKind.ReconciliationResolved => "reconciliation.resolved",
         HarnessEventKind.TransientFramesDropped => "transient.frames_dropped",
+        HarnessEventKind.ModelPromptComposed => "model.prompt_composed",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

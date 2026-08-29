@@ -45,6 +45,80 @@ public sealed class HarnessProjectionTransactionTests
     }
 
     [Fact]
+    public async Task Prompt_receipt_and_composed_event_commit_atomically_as_internal_data()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var store = fixture.CreateEventStore();
+        var request = fixture.NewRun(1, 1, 1);
+        await store.TryCreateRunAsync(request, CancellationToken.None);
+
+        var bytes = Encoding.UTF8.GetBytes(
+            "{\"composer_version\":\"1.0.0\",\"prompt_sha256\":\"" +
+            new string('0', 64) + "\",\"block_digests\":[]}");
+        var payload = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(101),
+            HarnessPayloadKind.PromptReceipt,
+            HarnessPayloadAudience.InternalOnly,
+            HarnessPayloadEncoding.Json,
+            16 * 1024,
+            bytes);
+        var next = HarnessEventStoreTests.CopyRun(
+            request.Run,
+            new HarnessRunStatus(HarnessRunState.Running),
+            version: 1,
+            lastSequence: 3);
+        var composed = new HarnessEventIntent(
+            HarnessStoreTestFixture.Event(101),
+            HarnessEventKind.ModelPromptComposed,
+            modelStepId: new ModelStepId("step_" + new string('1', 32)),
+            payloadId: payload.PayloadId,
+            safeCode: "composed");
+        var completion = new HarnessEventIntent(
+            HarnessStoreTestFixture.Event(102),
+            HarnessEventKind.ModelStepCompleted,
+            modelStepId: composed.ModelStepId);
+
+        var result = await store.CommitAsync(
+            new HarnessCommit(
+                request.Run.RunId,
+                expectedVersion: 0,
+                next,
+                [composed, completion],
+                [payload],
+                []),
+            CancellationToken.None);
+
+        Assert.Equal(HarnessCommitOutcome.Committed, result.Outcome);
+        Assert.Equal(1L, await ScalarAsync(
+            fixture,
+            "SELECT COUNT(*) FROM agent_payloads WHERE kind = " +
+            (int)HarnessPayloadKind.PromptReceipt));
+        Assert.Equal(1L, await ScalarAsync(
+            fixture,
+            "SELECT COUNT(*) FROM agent_events WHERE kind = 'model.prompt_composed'"));
+        Assert.Equal(0L, await ScalarAsync(
+            fixture,
+            "SELECT COUNT(*) FROM agent_payloads WHERE kind = " +
+            (int)HarnessPayloadKind.PromptReceipt + " AND context_scope IS NOT NULL"));
+        var events = new List<HarnessEventEnvelope>();
+        await foreach (var envelope in store.ReadEventsAsync(
+                           request.Run.RunId,
+                           0,
+                           CancellationToken.None))
+        {
+            events.Add(envelope);
+        }
+        Assert.Contains(events, item => item.Event.Kind == "model.prompt_composed");
+        var clientError = await Assert.ThrowsAsync<HarnessStoreException>(() =>
+            fixture.PayloadStore.ReadForClientAsync(
+                request.Run.RunId,
+                payload.PayloadId,
+                CancellationToken.None));
+        Assert.Equal("payload_client_forbidden", clientError.Code);
+    }
+
+    [Fact]
     public async Task Failed_event_insert_rolls_back_projection_payload_and_outbox()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();

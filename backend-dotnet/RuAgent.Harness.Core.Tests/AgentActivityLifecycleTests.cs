@@ -122,7 +122,8 @@ public sealed class AgentActivityLifecycleTests
             new IncrementingTimeProvider(Epoch),
             new ToolCallScheduler(),
             new TransientFrameBuffer(32),
-            activitySink: sink);
+            activitySink: sink,
+            promptContextProvider: new FakeSystemPromptContextProvider());
 
     private static AssistantStep ToolStep() =>
         new(

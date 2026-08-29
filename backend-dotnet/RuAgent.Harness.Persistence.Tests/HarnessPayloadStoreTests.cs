@@ -169,6 +169,47 @@ public sealed class HarnessPayloadStoreTests
     }
 
     [Fact]
+    public async Task Prompt_receipt_payload_is_internal_only_and_json_bounded()
+    {
+        var store = new HarnessPayloadStore(
+            new HarnessPayloadCryptography(new FakeHarnessKeyStore()),
+            KnownSecretRedactor.Empty);
+        var bytes = Encoding.UTF8.GetBytes(
+            "{\"composer_version\":\"1.0.0\",\"prompt_sha256\":\"" +
+            new string('0', 64) + "\",\"block_digests\":[]}");
+        var intent = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(3),
+            HarnessPayloadKind.PromptReceipt,
+            HarnessPayloadAudience.InternalOnly,
+            HarnessPayloadEncoding.Json,
+            16 * 1024,
+            bytes);
+
+        var protectedPayload = await store.ProtectAsync(
+            HarnessStoreTestFixture.Run(3),
+            intent,
+            CancellationToken.None);
+
+        Assert.Equal(HarnessPayloadKind.PromptReceipt, protectedPayload.Intent.Kind);
+        Assert.False(HarnessPayloadStore.CanReadForClient(intent));
+        Assert.False(HarnessPayloadStore.CanReadForModel(intent));
+        var wrongAudience = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(4),
+            HarnessPayloadKind.PromptReceipt,
+            HarnessPayloadAudience.AuthenticatedClient
+                | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Json,
+            16 * 1024,
+            bytes);
+        var error = await Assert.ThrowsAsync<HarnessStoreException>(() =>
+            store.ProtectAsync(
+                HarnessStoreTestFixture.Run(3),
+                wrongAudience,
+                CancellationToken.None).AsTask());
+        Assert.Equal("payload_audience_invalid", error.Code);
+    }
+
+    [Fact]
     public async Task Sqlite_payloads_are_ciphertext_and_recovery_is_internal_active_run_once_only()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();

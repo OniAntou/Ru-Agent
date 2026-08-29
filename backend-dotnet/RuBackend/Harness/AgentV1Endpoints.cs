@@ -198,6 +198,18 @@ public static class AgentV1Endpoints
             await foreach (var envelope in store.ReadEventsAsync(runIdObj, lastSent, ct))
             {
                 any = true;
+                // Prompt receipts are durable host-internal evidence. Advance the
+                // durable cursor without mapping or exposing their payload reference;
+                // reconnecting clients must not replay the suppressed event.
+                if (string.Equals(
+                        envelope.Event.Kind,
+                        "model.prompt_composed",
+                        StringComparison.Ordinal))
+                {
+                    lastSent = envelope.Event.Sequence;
+                    continue;
+                }
+
                 var safe = HarnessEventMapper.ToSafeEnvelope(envelope.Event, run);
                 // Verify safe envelope not containing forbidden fields
                 var json = JsonSerializer.Serialize(safe);

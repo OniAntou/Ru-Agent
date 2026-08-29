@@ -11,6 +11,7 @@ public enum HarnessPayloadKind
     RecoveryOpaque,
     AssistantStep,
     ModelContextBase,
+    PromptReceipt,
 }
 
 [Flags]

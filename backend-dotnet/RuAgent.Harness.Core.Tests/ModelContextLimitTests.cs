@@ -161,7 +161,8 @@ public sealed class ModelContextLimitTests
             new ToolCallScheduler(),
             new TransientFrameBuffer(32),
             null,
-            new StaticModelContextLimitProvider(limitTokens));
+            new StaticModelContextLimitProvider(limitTokens),
+            promptContextProvider: new FakeSystemPromptContextProvider());
 
     private static async Task<ModelContextSnapshot> SnapshotAsync(params string[] texts)
     {

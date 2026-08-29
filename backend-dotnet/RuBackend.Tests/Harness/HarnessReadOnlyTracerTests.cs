@@ -123,12 +123,12 @@ public sealed class HarnessReadOnlyTracerTests
             var toolCallRead = new ModelToolCall(null, "files.read", "1.0.0", JsonDocument.Parse("{\"path\":\"a.txt\"}").RootElement);
             var toolCallWrite = new ModelToolCall(null, "files.write", "1.0.0", JsonDocument.Parse("{\"path\":\"b.txt\",\"content\":\"x\"}").RootElement);
             var fakeRunner = new SimpleModelRunner(new[] { new AssistantStep(null, new[] { toolCallRead }, AssistantFinishReason.ToolCalls, 0) });
-            var coordinator = new AgentRunCoordinator(fakeRunner, gateway, store, contextAssembler, ids, time, scheduler, frames);
+            var coordinator = new AgentRunCoordinator(fakeRunner, gateway, store, contextAssembler, ids, time, scheduler, frames, promptContextProvider: new EmptyPromptContextProvider());
             var result = await coordinator.RunOneStepAsync(run.RunId, CancellationToken.None);
             Assert.NotNull(result);
 
             var fakeRunner2 = new SimpleModelRunner(new[] { new AssistantStep(null, new[] { toolCallWrite }, AssistantFinishReason.ToolCalls, 0) });
-            var coordinator2 = new AgentRunCoordinator(fakeRunner2, gateway, store, contextAssembler, ids, time, scheduler, frames);
+            var coordinator2 = new AgentRunCoordinator(fakeRunner2, gateway, store, contextAssembler, ids, time, scheduler, frames, promptContextProvider: new EmptyPromptContextProvider());
             var result2 = await coordinator2.RunOneStepAsync(run.RunId, CancellationToken.None);
             Assert.NotNull(result2);
             var events = await ToListAsync(store.ReadEventsAsync(run.RunId, 0, CancellationToken.None));
@@ -151,7 +151,7 @@ public sealed class HarnessReadOnlyTracerTests
         var scheduler = new ToolCallScheduler();
         var frames = new TransientFrameBuffer(1024);
         var fakeRunner = new SimpleModelRunner(new[] { new AssistantStep("final answer", Array.Empty<ModelToolCall>(), AssistantFinishReason.Stop, 0) });
-        var coordinator = new AgentRunCoordinator(fakeRunner, gateway, store, contextAssembler, ids, time, scheduler, frames);
+        var coordinator = new AgentRunCoordinator(fakeRunner, gateway, store, contextAssembler, ids, time, scheduler, frames, promptContextProvider: new EmptyPromptContextProvider());
 
         var wsIdentity = new RuAgent.Harness.Core.Workspace.WorkspaceIdentity(
             new WorkspaceId("ws_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
@@ -473,6 +473,15 @@ public sealed class HarnessReadOnlyTracerTests
         }
     }
 
+    private sealed class EmptyPromptContextProvider : ISystemPromptContextProvider
+    {
+        public Task<SystemPromptContext> BuildAsync(
+            AgentRun run,
+            ModelContextSnapshot modelContext,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(SystemPromptContext.Empty);
+    }
+
     private sealed class SimpleInMemoryStore : IHarnessEventStore
     {
         private readonly Dictionary<string, AgentRun> _runs = new();
@@ -532,6 +541,7 @@ public sealed class HarnessReadOnlyTracerTests
                     HarnessEventKind.ApprovalRequested => "approval.requested",
                     HarnessEventKind.ContinueRequested => "continue.requested",
                     HarnessEventKind.ReconciliationRequired => "reconciliation.required",
+                    HarnessEventKind.ModelPromptComposed => "model.prompt_composed",
                     HarnessEventKind.TransientFramesDropped => "transient.frames_dropped",
                     _ => "unknown",
                 };

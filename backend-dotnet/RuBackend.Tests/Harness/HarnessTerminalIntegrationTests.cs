@@ -1127,7 +1127,8 @@ public sealed class HarnessTerminalIntegrationTests
             Ids,
             new FixedTime(FixedNow),
             new ToolCallScheduler(),
-            Frames);
+            Frames,
+            promptContextProvider: new EmptyPromptContextProvider());
 
         public async Task<AgentRun> RequireRunAsync()
         {
@@ -1192,6 +1193,15 @@ public sealed class HarnessTerminalIntegrationTests
             var entry = ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt");
             return Task.FromResult(new ModelContextSourceSnapshot(new[] { entry }, Array.Empty<ModelContextEntry>()));
         }
+    }
+
+    private sealed class EmptyPromptContextProvider : ISystemPromptContextProvider
+    {
+        public Task<SystemPromptContext> BuildAsync(
+            AgentRun run,
+            ModelContextSnapshot modelContext,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(SystemPromptContext.Empty);
     }
 
     private sealed class ScriptedModelRunner : IModelStepRunner
@@ -1280,6 +1290,7 @@ public sealed class HarnessTerminalIntegrationTests
                     HarnessEventKind.ApprovalRequested => "approval.requested",
                     HarnessEventKind.ContinueRequested => "continue.requested",
                     HarnessEventKind.ReconciliationRequired => "reconciliation.required",
+                    HarnessEventKind.ModelPromptComposed => "model.prompt_composed",
                     HarnessEventKind.TransientFramesDropped => "transient.frames_dropped",
                     _ => "unknown",
                 };

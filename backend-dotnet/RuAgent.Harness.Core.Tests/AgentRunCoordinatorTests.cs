@@ -43,7 +43,8 @@ public sealed class AgentRunCoordinatorTests
         var finalCommit = Assert.Single(
             store.Commits,
             commit => commit.ConversationOutbox.Count == 1);
-        Assert.Single(finalCommit.Payloads);
+        Assert.Contains(finalCommit.Payloads, payload => payload.Kind == HarnessPayloadKind.PromptReceipt);
+        Assert.Contains(finalCommit.Payloads, payload => payload.Kind == HarnessPayloadKind.AssistantText);
 
         var blockedBeforeFinalHistory = await coordinator.RunOneStepAsync(
             RunId(),
@@ -81,9 +82,10 @@ public sealed class AgentRunCoordinatorTests
         var commit = Assert.Single(
             store.Commits,
             item => item.ConversationOutbox.Count == 1);
-        Assert.Equal(
-            "visible",
-            Encoding.UTF8.GetString(Assert.Single(commit.Payloads).Plaintext.Span));
+        var assistantPayload = Assert.Single(
+            commit.Payloads,
+            payload => payload.Kind == HarnessPayloadKind.AssistantText);
+        Assert.Equal("visible", Encoding.UTF8.GetString(assistantPayload.Plaintext.Span));
         Assert.Equal("visible", effects.Reply?.VisibleText);
         Assert.Equal(2, effects.RunVersionAtCall);
     }
@@ -184,7 +186,9 @@ public sealed class AgentRunCoordinatorTests
             store.Commits,
             commit => commit.Events.Any(item =>
                 item.Kind == HarnessEventKind.ModelStepCompleted));
-        var assistantPayload = Assert.Single(modelCompletedCommit.Payloads);
+        var assistantPayload = Assert.Single(
+            modelCompletedCommit.Payloads,
+            payload => payload.Kind == HarnessPayloadKind.AssistantStep);
         Assert.Equal(HarnessPayloadKind.AssistantStep, assistantPayload.Kind);
         Assert.Equal(
             "files.read",
@@ -463,7 +467,7 @@ public sealed class AgentRunCoordinatorTests
 
         var persistedDropped = Assert.Single(
             persisted,
-            envelope => envelope.Event.Kind == "transient.frames.dropped");
+            envelope => envelope.Event.Kind == "transient.frames_dropped");
         Assert.Equal(2, persistedDropped.Event.SafeCount);
     }
 
@@ -534,7 +538,8 @@ public sealed class AgentRunCoordinatorTests
             frames ?? new TransientFrameBuffer(32),
             redactor,
             replyPolicy: replyPolicy,
-            replyEffects: replyEffects);
+            replyEffects: replyEffects,
+            promptContextProvider: new FakeSystemPromptContextProvider());
 
     private static async Task<HarnessTransientFrame> ReadOneFrameAsync(
         TransientFrameBuffer frames)

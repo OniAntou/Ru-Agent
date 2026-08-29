@@ -122,11 +122,21 @@ public sealed class InMemoryHarnessEventStore : IHarnessEventStore
         }
     }
 
-    private static string EventKindName(HarnessEventKind kind) =>
-        kind.ToString()
-            .SelectMany((character, index) =>
-                char.IsUpper(character) && index > 0
-                    ? new[] { '.', char.ToLowerInvariant(character) }
-                    : new[] { char.ToLowerInvariant(character) })
-            .Aggregate(string.Empty, (value, character) => value + character);
+    private static string EventKindName(HarnessEventKind kind) => kind switch
+    {
+        HarnessEventKind.RunStateChanged => "run.state_changed",
+        HarnessEventKind.RunFailed => "run.failed",
+        HarnessEventKind.ModelStepStarted => "model.step_started",
+        HarnessEventKind.ModelStepCompleted => "model.step_completed",
+        HarnessEventKind.ToolProposed => "tool.proposed",
+        HarnessEventKind.ToolExecutionRequested => "tool.execution_requested",
+        HarnessEventKind.ToolExecutionCompleted => "tool.execution_completed",
+        HarnessEventKind.ApprovalRequested => "approval.requested",
+        HarnessEventKind.ContinueRequested => "continue.requested",
+        HarnessEventKind.ReconciliationRequired => "reconciliation.required",
+        HarnessEventKind.ReconciliationResolved => "reconciliation.resolved",
+        HarnessEventKind.TransientFramesDropped => "transient.frames_dropped",
+        HarnessEventKind.ModelPromptComposed => "model.prompt_composed",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
 }

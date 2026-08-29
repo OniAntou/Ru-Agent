@@ -3,6 +3,9 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Persistence;
+using RuAgent.Protocol.Harness;
 using Xunit;
 using RuBackend.Harness;
 
@@ -140,6 +143,84 @@ public sealed class AgentSseReconnectTests
     }
 
     [Fact]
+    public async Task Sse_suppresses_internal_prompt_receipt_while_advancing_cursor()
+    {
+        using var tmp = TempWorkspace.Create();
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths);
+        using var client = factory.CreateAuthenticatedClient();
+        var session = await CreateSessionAsync(client);
+        var runId = await CreateRunAsync(
+            client,
+            session,
+            tmp.Path + "-receipt-sse-" + Guid.NewGuid().ToString("N"),
+            "prompt receipt",
+            "receipt-sse-" + Guid.NewGuid().ToString("N"));
+
+        var store = factory.Services.GetRequiredService<IHarnessEventStore>();
+        var run = await store.GetRunAsync(new RunId(runId), CancellationToken.None)
+            ?? throw new InvalidOperationException("run not found");
+        var payloadId = new PayloadId("payload_" + new string('d', 32));
+        var receiptBytes = Encoding.UTF8.GetBytes(
+            "{\"composer_version\":\"1.0.0\",\"prompt_sha256\":\"" +
+            new string('0', 64) + "\",\"block_digests\":[]}");
+        var receiptPayload = new HarnessPayloadIntent(
+            payloadId,
+            HarnessPayloadKind.PromptReceipt,
+            HarnessPayloadAudience.InternalOnly,
+            HarnessPayloadEncoding.Json,
+            16 * 1024,
+            receiptBytes);
+        var modelStepId = new ModelStepId("step_" + new string('d', 32));
+        var composedEvent = new HarnessEventIntent(
+            new EventId("evt_" + new string('d', 32)),
+            HarnessEventKind.ModelPromptComposed,
+            modelStepId: modelStepId,
+            payloadId: payloadId,
+            safeCode: "composed");
+        var composedRun = CopyRun(run, run.Version + 1, run.LastSequence + 1);
+        await store.CommitAsync(
+            new HarnessCommit(
+                run.RunId,
+                run.Version,
+                composedRun,
+                [composedEvent],
+                [receiptPayload],
+                []),
+            CancellationToken.None);
+
+        var completionEvent = new HarnessEventIntent(
+            new EventId("evt_" + new string('e', 32)),
+            HarnessEventKind.ModelStepCompleted,
+            modelStepId: modelStepId);
+        var completedRun = CopyRun(composedRun, composedRun.Version + 1, composedRun.LastSequence + 1);
+        await store.CommitAsync(
+            new HarnessCommit(
+                run.RunId,
+                composedRun.Version,
+                completedRun,
+                [completionEvent],
+                [],
+                []),
+            CancellationToken.None);
+
+        var sse = await GetSseAsync(
+            client,
+            $"/agent/v1/runs/{runId}/events?live=0&after_sequence=0");
+        Assert.Contains("id: 1", sse);
+        Assert.Contains("id: 3", sse);
+        Assert.DoesNotContain("id: 2", sse);
+        Assert.DoesNotContain("model.prompt_composed", sse, StringComparison.Ordinal);
+        Assert.DoesNotContain(payloadId.Value, sse, StringComparison.Ordinal);
+        Assert.False(HarnessEventContractValidator.IsAllowedEventType("model.prompt_composed"));
+
+        var afterReceipt = await GetSseAsync(
+            client,
+            $"/agent/v1/runs/{runId}/events?live=0&after_sequence=2");
+        Assert.Contains("id: 3", afterReceipt);
+        Assert.DoesNotContain("id: 2", afterReceipt);
+    }
+
+    [Fact]
     public async Task Sse_terminal_final_snapshot_and_clean_close()
     {
         using var tmp = TempWorkspace.Create();
@@ -174,6 +255,25 @@ public sealed class AgentSseReconnectTests
         var body = await resp.Content.ReadAsStringAsync(cts.Token);
         return body;
     }
+
+    private static AgentRun CopyRun(AgentRun current, long version, long lastSequence) =>
+        new(
+            current.RunId,
+            current.SessionId,
+            current.WorkspaceId,
+            current.Status,
+            version,
+            lastSequence,
+            current.BudgetWindow,
+            current.ModelStepsInWindow,
+            current.ToolCallsInWindow,
+            current.Preset,
+            current.PolicySnapshotVersion,
+            current.PolicySnapshotSha256,
+            current.CreatedAt,
+            current.UpdatedAt.AddTicks(1),
+            current.TerminalAt,
+            current.TerminalErrorCode);
 
     private static async Task<string> CreateSessionAsync(HttpClient client)
     {

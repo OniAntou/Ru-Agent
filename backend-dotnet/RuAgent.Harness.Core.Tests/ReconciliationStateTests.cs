@@ -262,7 +262,8 @@ public sealed class ReconciliationStateTests
             new TransientFrameBuffer(32),
             null,
             null,
-            gate ?? new ReconciliationInspectionGate());
+            gate ?? new ReconciliationInspectionGate(),
+            promptContextProvider: new FakeSystemPromptContextProvider());
 
     private static AssistantStep ToolStep() =>
         new(

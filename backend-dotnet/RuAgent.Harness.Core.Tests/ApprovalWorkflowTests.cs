@@ -267,7 +267,8 @@ public sealed class ApprovalWorkflowTests
             new SequenceIdGenerator(),
             new FixedTimeProvider(Epoch),
             new ToolCallScheduler(),
-            new TransientFrameBuffer(32));
+            new TransientFrameBuffer(32),
+            promptContextProvider: new FakeSystemPromptContextProvider());
 
     private static AgentRun Run(
         HarnessRunState state,

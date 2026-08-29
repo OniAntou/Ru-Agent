@@ -36,7 +36,7 @@ public sealed class AgentRunCoordinator
     private readonly IAgentActivitySink? _activitySink;
     private readonly IAgentReplyPolicy _replyPolicy;
     private readonly IAgentReplyEffectSink _replyEffects;
-    private readonly ISystemPromptContextProvider? _promptContextProvider;
+    private readonly ISystemPromptContextProvider _promptContextProvider;
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -69,7 +69,8 @@ public sealed class AgentRunCoordinator
         _activitySink = activitySink;
         _replyPolicy = replyPolicy ?? new PassthroughAgentReplyPolicy();
         _replyEffects = replyEffects ?? new NoopAgentReplyEffectSink();
-        _promptContextProvider = promptContextProvider;
+        _promptContextProvider = promptContextProvider
+            ?? throw new ArgumentNullException(nameof(promptContextProvider));
         _tools = new AgentToolExecutionPipeline(
             gateway ?? throw new ArgumentNullException(nameof(gateway)),
             store,
@@ -180,11 +181,33 @@ public sealed class AgentRunCoordinator
                 AgentActivityState.Started,
                 safeCode: "in_progress"));
 
-        var promptContext = _promptContextProvider is null
-            ? SystemPromptContext.Empty
-            : await _promptContextProvider
+        SystemPromptContext promptContext;
+        try
+        {
+            promptContext = await _promptContextProvider
                 .BuildAsync(run, context, cancellationToken)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException("prompt_context_null");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            AgentActivityProjector.PublishSafe(
+                _activitySink,
+                run.RunId,
+                AgentActivityProjector.ProjectModelStep(
+                    modelStepId,
+                    AgentActivityState.Failed,
+                    ElapsedMilliseconds(thinkingStartedAt),
+                    safeCode: "cancelled"));
+            throw;
+        }
+        catch (Exception)
+        {
+            await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt)
                 .ConfigureAwait(false);
+            throw new InvalidOperationException("prompt_contract_invalid");
+        }
+
         var request = new ModelStepRequest(
             run.RunId,
             modelStepId,
@@ -236,6 +259,58 @@ public sealed class AgentRunCoordinator
                     safeCode: "model_failed"));
             throw;
         }
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            modelResult.PromptReceipt.ValidateAgainst(promptContext);
+        }
+        catch (OperationCanceledException)
+        {
+            assistantStream.Complete();
+            AgentActivityProjector.PublishSafe(
+                _activitySink,
+                run.RunId,
+                AgentActivityProjector.ProjectModelStep(
+                    modelStepId,
+                    AgentActivityState.Failed,
+                    ElapsedMilliseconds(thinkingStartedAt),
+                    safeCode: "cancelled"));
+            throw;
+        }
+        catch (ArgumentException)
+        {
+            assistantStream.Complete();
+            await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt)
+                .ConfigureAwait(false);
+            throw new InvalidOperationException("prompt_contract_invalid");
+        }
+
+        HarnessPayloadIntent promptReceiptPayload;
+        try
+        {
+            var receiptBytes = PromptReceiptPayloadCodec.Serialize(modelResult.PromptReceipt);
+            promptReceiptPayload = new HarnessPayloadIntent(
+                _ids.NewPayloadId(),
+                HarnessPayloadKind.PromptReceipt,
+                HarnessPayloadAudience.InternalOnly,
+                HarnessPayloadEncoding.Json,
+                PromptReceiptPayloadCodec.MaximumBytes,
+                receiptBytes);
+        }
+        catch (Exception)
+        {
+            assistantStream.Complete();
+            await MarkPromptContractFailureAsync(run, modelStepId, thinkingStartedAt)
+                .ConfigureAwait(false);
+            throw new InvalidOperationException("prompt_contract_invalid");
+        }
+
+        var promptComposedEvent = new HarnessEventIntent(
+            _ids.NewEventId(),
+            HarnessEventKind.ModelPromptComposed,
+            modelStepId: modelStepId,
+            payloadId: promptReceiptPayload.PayloadId,
+            safeCode: "composed");
         var step = modelResult.Step;
         assistantStream.Complete();
         AgentActivityProjector.PublishSafe(
@@ -265,6 +340,8 @@ public sealed class AgentRunCoordinator
                     modelStepId,
                     step,
                     modelDroppedCount,
+                    promptReceiptPayload,
+                    promptComposedEvent,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -274,6 +351,8 @@ public sealed class AgentRunCoordinator
                 modelStepId,
                 step,
                 modelDroppedCount,
+                promptReceiptPayload,
+                promptComposedEvent,
                 cancellationToken)
             .ConfigureAwait(false);
     }
@@ -498,6 +577,8 @@ public sealed class AgentRunCoordinator
         ModelStepId modelStepId,
         AssistantStep step,
         int modelDroppedCount,
+        HarnessPayloadIntent promptReceiptPayload,
+        HarnessEventIntent promptComposedEvent,
         CancellationToken cancellationToken)
     {
         var reservation = AgentBudgetPolicy.ReserveToolCalls(
@@ -515,11 +596,23 @@ public sealed class AgentRunCoordinator
             Math.Max(assistantBytes.Length, 1),
             assistantBytes);
 
+        // ReserveToolCalls computes counters for a one-event commit. The prompt
+        // receipt is persisted beside the model completion, so advance the same
+        // counters with the complete two-event write set.
+        var reservationNext = run.Advance(
+            reservation.NextRun.Status,
+            reservation.NextRun.BudgetWindow,
+            reservation.NextRun.ModelStepsInWindow,
+            reservation.NextRun.ToolCallsInWindow,
+            appendedEventCount: 2,
+            updatedAt: _time.UtcNow,
+            terminalErrorCode: reservation.NextRun.TerminalErrorCode);
         run = await CommitAsync(
                 run,
-                reservation.NextRun,
+                reservationNext,
                 new[]
                 {
+                    promptComposedEvent,
                     new HarnessEventIntent(
                         _ids.NewEventId(),
                         reservation.Granted
@@ -530,7 +623,7 @@ public sealed class AgentRunCoordinator
                         safeCount: step.ToolCalls.Count,
                         safeCode: reservation.ErrorCode),
                 },
-                new[] { modelPayload },
+                new[] { promptReceiptPayload, modelPayload },
                 Array.Empty<ConversationOutboxIntent>(),
                 cancellationToken)
             .ConfigureAwait(false);
@@ -554,6 +647,8 @@ public sealed class AgentRunCoordinator
         ModelStepId modelStepId,
         AssistantStep step,
         int droppedCount,
+        HarnessPayloadIntent promptReceiptPayload,
+        HarnessEventIntent promptComposedEvent,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(step.Text))
@@ -583,6 +678,7 @@ public sealed class AgentRunCoordinator
             bytes);
         var events = new List<HarnessEventIntent>
         {
+            promptComposedEvent,
             new(
                 _ids.NewEventId(),
                 HarnessEventKind.ModelStepCompleted,
@@ -609,7 +705,7 @@ public sealed class AgentRunCoordinator
                 run,
                 next,
                 events,
-                new[] { payload },
+                new[] { promptReceiptPayload, payload },
                 new[]
                 {
                     new ConversationOutboxIntent(
@@ -653,6 +749,26 @@ public sealed class AgentRunCoordinator
 
         stream.Append(delta.Content);
         return ValueTask.CompletedTask;
+    }
+
+    private async Task MarkPromptContractFailureAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        DateTimeOffset startedAt)
+    {
+        await FailAsync(
+                run.RunId,
+                "prompt_contract_invalid",
+                CancellationToken.None)
+            .ConfigureAwait(false);
+        AgentActivityProjector.PublishSafe(
+            _activitySink,
+            run.RunId,
+            AgentActivityProjector.ProjectModelStep(
+                modelStepId,
+                AgentActivityState.Failed,
+                ElapsedMilliseconds(startedAt),
+                safeCode: "prompt_contract_invalid"));
     }
 
     private int? ElapsedMilliseconds(DateTimeOffset startedAt)

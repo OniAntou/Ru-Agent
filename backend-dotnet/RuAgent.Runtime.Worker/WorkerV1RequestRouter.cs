@@ -266,6 +266,7 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
             new JsonObject
             {
                 ["type"] = "started",
+                ["state"] = "control",
                 ["request_id"] = requestId,
                 ["sequence"] = 0,
             });

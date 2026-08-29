@@ -28,6 +28,7 @@ def _write_stub_commands(root: Path, *, gui_publish_exists: bool = True) -> None
         "  echo backend > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuBackend\\bin\\Release\\net10.0\\win-x64\\publish\\RuBackend.exe\"\n"
         "  echo cli > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Cli\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Cli.exe\"\n"
         "  echo worker > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Runtime.Worker\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Runtime.Worker.exe\"\n"
+        "  echo runtime-core > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Runtime.Worker\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Runtime.Core.dll\"\n"
         f"{gui_publish}"
         ")\n"
         "exit /b 0\n",
@@ -186,4 +187,4 @@ def test_start_dev_requires_the_managed_worker_publish(tmp_path: Path) -> None:
     )
 
     assert result.returncode != 0
-    assert "Managed Agent Worker publish output not found" in result.stdout
+    assert "Managed Worker publish output not found" in result.stdout

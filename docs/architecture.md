@@ -14,32 +14,32 @@ and the headless `RuAgent.Cli` start-or-attach the Public Host through the
 shared `RuAgent.Client` (`PublicHostStarter`/`PublicHostLocator` with
 ACL-restricted loopback descriptor and bearer probe). On first start the Public
 Host creates per-run desktop and separate Agent/device worker secrets, starts
-the managed C# Agent Worker v2 on loopback port 8005 and the Python
-compatibility Device Worker v1 on loopback port 8006, starts the isolated
-`RuAgentBroker` on a dynamic loopback port, binds ASP.NET Core on port
-8000, waits for public readiness, and assigns Worker/Broker to one Job Object.
-Idle Public Host exits after 10 minutes without an active Agent run, approval,
-or long-lived Agent SSE lease. All three owned children still
-enter one Job Object, but ownership is Public Host, not WinUI. Startup succeeds
-only after public readiness; shutdown or startup failure terminates the owned
+one managed C# Worker serving Agent v2 on loopback port 8005 and Device v1
+on loopback port 8006, starts the isolated `RuAgentBroker` on a dynamic
+loopback port, binds ASP.NET Core on port 8000, waits for public readiness,
+and assigns the Worker/Broker to one Job Object. The explicit
+`PythonCompatibility` rollback starts the legacy Python Agent and Device
+workers instead. Idle Public Host exits after 10 minutes without an active
+Agent run, approval, or long-lived Agent SSE lease. Both owned children enter
+one Job Object, but ownership is Public Host, not WinUI. Startup succeeds only
+after public readiness; shutdown or startup failure terminates the owned
 Worker/Broker tree.
 
-The current process flow (Phase 1 headless harness foundation) is:
+The current managed process flow (Phase 2 cutover) is:
 
 ```text
 RuApp / RuAgent.Cli  --start-or-attach via RuAgent.Client-->  ASP.NET Core Public Host :8000
                                                                 (RuBackend.exe --managed-runtime, owns one kill-on-close Job Object)
                                                                   |-- direct business, persistence, and durable Harness (Core + SQLite agent_harness.db + encrypted payloads)
-                                                                  |-- private call to C# Agent Worker :8005 (Worker v2 one-step AssistantStep)
-                                                                  |-- private call to Python Device Worker :8006 (Worker v1 runtime/voice/STT/VTS/observation)
+                                                                  |-- private call to managed C# Worker :8005 (Worker v2 one-step AssistantStep)
+                                                                  |-- private call to managed C# Worker :8006 (Worker v1 runtime/voice/STT/VTS/observation)
                                                                          `-- private call to RuAgentBroker execution boundary (profile-scoped file/terminal tools)
                                                                 Worker/Broker owned children:
-                                                                  |-- C# Agent Worker :8005
+                                                                  |-- managed C# Worker :8005/:8006
                                                                   |     |-- bounded OpenAI-compatible provider adapter
-                                                                  |     `-- protected single-use provider bootstrap
-                                                                  |-- Python Device Worker :8006 (v1-only compatibility)
-                                                                  |     |-- Google STT, VTube Studio, and observation implementations
-                                                                  |     `-- OmniVoice Flask service :5052 in omnivoice_env
+                                                                  |     |-- typed runtime, voice, STT, VTube Studio, and observation adapters
+                                                                  |     |-- protected single-use provider bootstrap (v2 only)
+                                                                  |     `-- isolated OmniVoice Flask service :5052 in omnivoice_env
                                                                   `-- RuAgentBroker
                                                                         `-- policy, approvals, and local action adapters
 ```
@@ -61,9 +61,9 @@ reconciliation surfaces from Phase 3:
 The current Agent flow is:
 
 ```text
-RuApp -> ASP.NET Core public contract -> typed worker protocol v2 -> C# Agent Worker
-ASP.NET Core public device calls -> typed worker protocol v1 -> Python Device Worker
-C# Agent Worker -> model adapter; Python Device Worker -> Voice Engine / STT / VTS / observation
+RuApp -> ASP.NET Core public contract -> typed worker protocol v2 -> managed C# Worker
+ASP.NET Core public device calls -> typed worker protocol v1 -> managed C# Worker
+managed C# Worker -> model adapter and typed runtime/device adapters -> Voice Engine / STT / VTS / observation
 ```
 
 The typed Worker protocol v2 is the active Agent execution path. The framed
@@ -143,8 +143,8 @@ as connected.
 | --- | --- |
 | RuApp / RuAgent.Cli (via RuAgent.Client) | Desktop views (RuApp) or headless rendering (CLI), playback, microphone capture, public client calls via `AgentApiClient`/`SessionApiClient`/`AgentSseClient`, and user-visible state; start-or-attach Public Host through validated descriptor + `GET /status` bearer, but do not directly own Worker/Broker. |
 | ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 56 HTTP and 1 WebSocket route (41 + 15 `/agent/v1/*`), settings transactions, credentials, sessions, history, activity, structured memory, Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering `consume → persist reusable rule → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Worker/Broker child ownership in one kill-on-close Job Object with 10-min idle lease (active run/approval/long-lived lease suppresses exit). |
-| C# Agent Worker | Managed provider adapter and Worker v2 Agent generation. It receives only a single-use DPAPI-protected provider bootstrap and never exposes a public route or device metadata. |
-| Python Device Worker | Compatibility-only Worker v1 endpoint for runtime load/request, voice, STT, VTS, observation, and health. It receives only its device token and no provider bootstrap or provider credentials. |
+| Managed C# Worker | Default private Worker v2 Agent generation and Worker v1 runtime/device orchestration on separate loopback ports. It receives the single-use DPAPI provider bootstrap for v2 plus a distinct device token for v1; the bootstrap path is cleared before the v1 graph is composed. |
+| Python Compatibility Workers | Explicit rollback-only Python Agent/Device topology. These workers are not started in `Dotnet` mode and receive no managed provider bootstrap. |
 | RuAgentBroker | Private execution boundary for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; private `run.open` lease binds the immutable `PolicySnapshot` (preset, workspace identity, ordered rules, SHA-256) and canonical workspace root, validates hash before capabilities, and advertises model-usable `files.*` (`list`/`glob`/`search`/`read`/`write`/`edit`/`delete`/`restore` one-time). Explicit absolute paths outside the root can receive a host-generated canonical-directory grant for the current run or project; that grant is limited to read/create/edit and never bypasses protected/destructive gates. The Broker also exposes headless terminal bindings, `system.volume`, and `notes.create`. `files.apply_patch` is not advertised. It has no public HTTP contract. |
 | Voice Engine | OmniVoice model lifecycle and native WAV synthesis inside its isolated environment; currently reached through Flask and replaced by framed process I/O in a later plan. |
 
@@ -164,7 +164,7 @@ with durable `id: <sequence>` and reconnect via `Last-Event-ID` or
 
 Worker contracts are versioned typed WebSockets:
 
-- Protocol v1 (`/worker/v1`) is the private Python Device Worker adapter: `runtime.request`/`runtime.response`, voice, VTS, health, and observation operations remain; it has no generation or memory-extract messages.
+- Protocol v1 (`/worker/v1`) is the private managed C# Worker device adapter by default: `runtime.request`/`runtime.response`, voice, VTS, health, and observation operations remain; it has no generation or memory-extract messages. The Python implementation is compatibility-only.
 - Protocol v2 (`/worker/v2`) is the private C# Agent Worker contract: `agent.step.start` → `agent.step.delta`* → `agent.step.done`/`error`, with `agent.step.cancel`, bounded schemas, `AssistantStep(text, tool_calls, finish_reason)` (one `generate_reply` per step), and stable `worker.*` error codes; it never accepts `chat.tool.result`.
 
 Protocol v2 removes HTTP-shaped fields in favor of typed domain commands,
@@ -173,8 +173,8 @@ errors. `RuAgent.Cli` never speaks Worker protocols directly; it is a thin
 HTTP/SSE client.
 
 Public `/voice/stream` audio is carried as binary WAV frames. In the current
-implementation the Python Device Worker reaches OmniVoice over loopback HTTP
-on port 5052. The accepted Voice Engine target uses bounded stdin/stdout control and
+implementation the managed C# Worker reaches OmniVoice over loopback HTTP on
+port 5052. The accepted Voice Engine target uses bounded stdin/stdout control and
 binary frames, keeps native-speed audio, and exposes no network listener.
 
 Text turns are authenticated Agent runs consumed through the durable Agent SSE

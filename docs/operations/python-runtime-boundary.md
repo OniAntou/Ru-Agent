@@ -1,7 +1,8 @@
 # Python runtime boundary
 
-Status: Phase 2 managed Worker composition is implemented opt-in; the Phase 1
-startup topology and Phase 0 inventory remain the current default, 2026-08-30.
+Status: Phase 2 managed Worker startup is the current default, 2026-08-30.
+Python runtime modules remain available only behind the explicit trusted
+`PythonCompatibility` rollback while retirement evidence is collected.
 
 The deterministic inventory is generated with:
 
@@ -27,23 +28,20 @@ Current boundary classes are:
 - `tooling`: scripts, tests, and build/verification helpers;
 - `legacy`: retired corpus and other files outside managed startup reachability.
 
-The managed default still starts a separate C# Agent Worker v2 and Python
-Device Worker v1 (`--v1-only`) on distinct loopback endpoints, with separate
-tokens and a single-use DPAPI-protected provider bootstrap. The C# Worker now
-has an opt-in composition that serves both `/worker/v2` and `/worker/v1`: the
-v1 graph owns typed runtime settings, voice/STT/VTS/observation adapters, one
-shared lease coordinator, and OmniVoice process shutdown. The bootstrap is
-read only for the v2 model provider and its environment path is cleared before
-the v1 graph is composed; v1 never receives the provider credential. Startup
-cutover to this composition is a later rollout gate, so Python remains the
-default device compatibility path until Task 10 and the parity/manual gates
-pass. The Python v2 generation implementation remains available only through
-the explicit, trusted `PythonCompatibility` startup rollback; it is not a
-public request or UI mode and there is no automatic fallback. This inventory is
-classification evidence, not evidence that the OS-enforced
+The managed default starts one C# Worker process that serves `/worker/v2` and
+`/worker/v1` on distinct loopback endpoints, with separate tokens and a
+single-use DPAPI-protected provider bootstrap. Its v1 graph owns typed runtime
+settings, voice/STT/VTS/observation adapters, one shared lease coordinator,
+and OmniVoice process shutdown. The bootstrap is read only for the v2 model
+provider and its environment path is cleared before the v1 graph is composed;
+v1 never receives the provider credential. The Python Agent + Device topology
+remains available only through the explicit, trusted `PythonCompatibility`
+startup rollback; it is not a public request or UI mode and there is no
+automatic fallback. This inventory is classification evidence, not evidence
+that the OS-enforced
 filesystem/network sandbox is complete.
 
-## Managed speech adapter boundary (Phase 2, opt-in)
+## Managed speech adapter boundary (Phase 2)
 
 The managed runtime now owns the speech request boundary when a C# Worker v1
 router is composed with `GoogleSpeechRecognizer`: it accepts only bounded
@@ -57,14 +55,13 @@ anonymous `speech_recognition` implementation converts captured PCM to FLAC
 and relies on a package-managed request shape; it is not silently replaced by
 an unverified C# HTTP approximation. The managed Worker composition binds this
 boundary to a safe default that returns `speech_unavailable` until a concrete
-transport is supplied. Until a stable transport is composed and the startup
-cutover gates pass, the shipped default remains the Python Device Worker path
-described above. This section records an opt-in adapter contract, not a claim
-that managed STT is the default or that Python can be retired.
+transport is supplied. The legacy Python STT path remains reachable only in
+`PythonCompatibility`; it is not the managed default and cannot be selected by
+a public request.
 
-## Managed Gemini observation adapter boundary (Phase 2, opt-in)
+## Managed Gemini observation adapter boundary (Phase 2)
 
-The managed runtime also has an opt-in `IObservationProvider` implementation.
+The managed runtime also owns an `IObservationProvider` implementation.
 It owns bounded screenshot/prompt input, the Gemini `generateContent` request,
 model fallback, JSON parsing, numeric clamping, and redaction of returned scene,
 event, reaction, and visible-text fields. The API key is accepted only through
@@ -77,7 +74,6 @@ Screen capture, reaction scheduling, and the public observation lifecycle are
 not silently moved by this adapter. The managed Worker composition binds the
 provider with an empty-key default, so missing credentials produce a stable
 skipped result and no network call; a trusted credential channel is still a
-separate rollout concern. Until startup cutover is complete, the shipped
-default remains the Python Device Worker observation path above. This section
-records an opt-in C# provider contract, not live Gemini or Python-retirement
-evidence.
+separate rollout concern. The legacy Python observation path remains reachable
+only in `PythonCompatibility`. This section records the managed C# boundary,
+not live Gemini or Python-retirement evidence.

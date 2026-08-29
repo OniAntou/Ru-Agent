@@ -29,20 +29,20 @@ cannot update a newer bubble. A disconnect marks the active run as a bounded
 retryable connection error; Ru does not automatically replay an ambiguous
 request and risk duplicate history.
 
-The private Python Device Worker v1 protocol is the runtime/device adapter
+The managed C# Worker v1 protocol is the default runtime/device adapter
 boundary for runtime load/request, voice/STT, VTS, observation, and health. It
 rejects the retired conversation message types as `unknown_type`; Agent
-generation is owned by the managed C# Agent Worker v2 step protocol. The two
-workers have separate loopback ports and tokens. The Device Worker never
-receives the provider bootstrap or provider credentials.
+generation uses the same process through the managed v2 step protocol. The two
+private ports and tokens remain distinct even though the process is shared. The
+v1 graph receives typed settings and adapters, never the provider credential.
 
-Managed startup launches `RuAgent.Runtime.Worker.exe` at
-`ws://127.0.0.1:8005/worker/v2` and `ru_runtime.worker.server --v1-only` at
-`ws://127.0.0.1:8006/worker/v1`, followed by the private Broker. A single-use
-DPAPI bootstrap carries only the selected provider endpoint/model/credential to
-the C# worker and is deleted after it is read. `PythonCompatibility` is an
-explicit rollback mode; it is never selected by a public Agent request or UI
-state.
+Managed startup launches one `RuAgent.Runtime.Worker.exe` with
+`ws://127.0.0.1:8005/worker/v2` and `ws://127.0.0.1:8006/worker/v1`, followed
+by the private Broker. A single-use DPAPI bootstrap carries only the selected
+provider endpoint/model/credential to the C# v2 graph and is deleted after it
+is read. `PythonCompatibility` is an explicit rollback mode that restores the
+legacy Python Agent + Device topology; it is never selected by a public Agent
+request or UI state.
 
 ### Agent system-prompt composition
 
@@ -80,9 +80,9 @@ filesystem/network sandbox are outside this implementation.
 
 ## Voice output
 
-OmniVoice is the supported local TTS engine. Today the Python Device Worker
-owns its lifecycle and reaches the isolated `omnivoice_env` service over loopback HTTP.
-Architecture v2 later replaces that listener with a
+OmniVoice is the supported local TTS engine. Today the managed C# Worker owns
+its lifecycle and reaches the isolated `omnivoice_env` service over loopback
+HTTP. Architecture v2 later replaces that listener with a
 bounded framed child-process protocol; the target is not current behavior yet.
 
 Only the `original` voice style is accepted. Exactly 1.00x omits native speed
@@ -336,8 +336,8 @@ credentials, bearer values, request bodies, user/session identifiers,
 transcripts, raw audio, assistant responses, or private VTS/voice metadata.
 
 Technical diagnostics are structured JSONL under `RU_LOG_ROOT` (defaulting to
-`%LOCALAPPDATA%\Ru\logs`) with bounded ASP.NET, Python-worker, and WinUI
-writers. The HTTP boundary records fixed route categories and durations; the
+`%LOCALAPPDATA%\Ru\logs`) with bounded ASP.NET, managed-worker,
+compatibility Python-worker, and WinUI writers. The HTTP boundary records fixed route categories and durations; the
 diagnostics API rejects invalid/oversized queries and caps exports at 2 MB.
 Activity Timeline writes continue through the private worker outbox and
 ASP.NET ingestion path, with read-time re-sanitization for legacy records.

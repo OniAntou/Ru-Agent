@@ -952,7 +952,13 @@ class HarnessSession:
                 "RU_AGENT_BROKER_DESCRIPTOR": str(self._broker_descriptor_path),
                 "RU_WORKSPACE_ROOT": str(workspace_root),
                 "RuBackend__BindUrl": self.edge_base_url,
-                "RuBackend__WorkerUrl": f"ws://127.0.0.1:{self.worker_port}/worker/v1",
+                # The deterministic Harness owns one synthetic Python worker
+                # process. Select the explicit compatibility topology and point
+                # both protocol clients at its v2/v1 paths instead of relying on
+                # the managed-runtime defaults (8005/8006).
+                "RuBackend__RuntimeMigrationMode": "PythonCompatibility",
+                "RuBackend__AgentWorkerUrl": f"ws://127.0.0.1:{self.worker_port}/worker/v2",
+                "RuBackend__DeviceWorkerUrl": f"ws://127.0.0.1:{self.worker_port}/worker/v1",
                 "NO_PROXY": "127.0.0.1,localhost",
                 "no_proxy": "127.0.0.1,localhost",
                 "PYTHONPATH": os.pathsep.join(python_paths),

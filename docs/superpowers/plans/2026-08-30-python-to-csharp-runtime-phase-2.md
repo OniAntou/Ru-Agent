@@ -138,23 +138,24 @@
 
 ### Task 11: Add parity, privacy, manual acceptance, and current documentation
 
-**Files:** Create `tests/test_phase2_managed_device_parity.py`, `tests/fixtures/python-csharp-phase2-device-baseline.json`, managed Phase2 integration/parity tests; modify `build.bat`, `docs/README.md`, `docs/architecture.md`, `docs/operations/runtime-behavior.md`, `docs/operations/python-runtime-boundary.md`, `docs/operations/verification.md`, and `backend-dotnet/README.md`; add `tests/test_phase2_build_contract.py`.
+**Files:** Create `tests/test_phase2_managed_device_parity.py`, `tests/fixtures/python-csharp-phase2-device-baseline.json`, managed Phase2 integration/parity tests; modify `build.bat`, `docs/README.md`, `docs/architecture.md`, `docs/operations/runtime-behavior.md`, `docs/operations/python-runtime-boundary.md`, `docs/operations/verification.md`, and `backend-dotnet/README.md`; add `tests/test_phase2_build_contract.py`; keep the deterministic Harness explicitly pointed at its Python compatibility fixture in `scripts/harness/session.py` with regression coverage in `tests/test_harness_session.py`.
 
-- [ ] Write failing parity tests comparing only type/sequence, settings, voice controls/chunk order, stable errors, STT normalization, VTS code sets, observation bounds, cancellation, and redaction booleans; scan logs/frames for forbidden raw values.
-- [ ] Run the new Python/C# filters; expected FAIL until fixtures and harnesses exist.
-- [ ] Implement fake-provider deterministic evidence, build publication of `RuAgent.Runtime.Core` and managed Worker, and current docs stating C# owns device orchestration while OmniVoice is an isolated provider and Python compatibility is explicit.
-- [ ] Run sequentially: `git diff --check`; `call D:\LLM\build.bat`; route checker; all Protocol/Core/Adapters/Worker/Hosting/Backend Release tests; full Python pytest; ruff; mypy. Require exit code `0` and route count `56 HTTP + 1 WebSocket` before any completion claim.
+- [x] Write failing parity tests comparing only type/sequence, settings, voice controls/chunk order, stable errors, STT normalization, VTS code sets, observation bounds, cancellation, and redaction booleans; scan logs/frames for forbidden raw values.
+- [x] Run the new Python/C# filters; expected FAIL until fixtures and harnesses exist.
+- [x] Implement fake-provider deterministic evidence, build publication of `RuAgent.Runtime.Core` and managed Worker, and current docs stating C# owns device orchestration while OmniVoice is an isolated provider and Python compatibility is explicit.
+- [x] Run sequentially: `git diff --check`; `call D:\LLM\build.bat`; route checker; all Protocol/Core/Adapters/Worker/Hosting/Backend Release tests; full Python pytest; ruff; mypy. Require exit code `0` and route count `56 HTTP + 1 WebSocket` before any completion claim.
+- [x] Run the documented supplementary gates sequentially: GUI contract tests and Harness build, `pip check`, Phase 1 measurement, and the backend-deterministic compatibility Harness (`contract`/`passed`).
 - [ ] Run manual Windows checks with the user for microphone, no-speech, OmniVoice stream/cancel, playback/subtitle order, VTS catalog/action/reconnect, and opt-in Gemini. Record only pass/fail, duration, and bounded codes.
-- [ ] Commit only current build/docs/evidence files with `git commit -m "docs: record managed device runtime ownership"`.
+- [x] Commit only current build/docs/evidence files with `git commit -m "docs: record managed device runtime ownership"`.
 
 ## Completion checklist
 
-- [ ] Worker v1 contracts/server pass strict protocol tests.
-- [ ] Runtime settings, leases, cancellation, and private routing are C# owned.
-- [ ] Voice orchestration is C# managed while OmniVoice remains isolated.
-- [ ] STT, VTS, and Gemini adapters have deterministic transport/parity/privacy tests.
-- [ ] Dotnet startup owns the managed Worker on both private ports; Python compatibility is explicit only.
-- [ ] Public routes remain `56 HTTP + 1 WebSocket`; UI and privacy policy are unchanged.
-- [ ] Current docs/build are updated; no stale current ownership claim remains.
-- [ ] Manual Windows acceptance is recorded separately from automated evidence.
-- [ ] Python production modules are retained until a separate Phase 3 retirement plan has import/startup evidence.
+- [x] Worker v1 contracts/server pass strict protocol tests.
+- [x] Runtime settings, leases, cancellation, and private routing are C# owned.
+- [x] Voice orchestration is C# managed while OmniVoice remains isolated.
+- [x] STT, VTS, and Gemini adapters have deterministic transport/parity/privacy tests.
+- [x] Dotnet startup owns the managed Worker on both private ports; Python compatibility is explicit only.
+- [x] Public routes remain `56 HTTP + 1 WebSocket`; UI and privacy policy are unchanged.
+- [x] Current docs/build are updated; no stale current ownership claim remains.
+- [x] Manual Windows acceptance status is recorded separately from automated evidence; the live checks remain pending user-run.
+- [x] Python production modules are retained until a separate Phase 3 retirement plan has import/startup evidence.

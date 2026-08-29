@@ -139,7 +139,7 @@ Agent text and voice turns share the same execution ownership chain:
 ```text
 WinUI authenticated Agent composer
         -> ASP.NET Core Public Host and session grant
-        -> Python Device Worker deterministic volume parser
+        -> managed C# Worker deterministic volume parser
         -> private RuAgentBroker policy and canonical binding
         -> bounded adapter plus readback verification
         -> typed receipt back to Worker

@@ -16,10 +16,11 @@ RuApp / RuAgent.Cli (thin client via RuAgent.Client start-or-attach)
         v
 ASP.NET Core Public Host :8000 (RuBackend.exe --managed-runtime)
         |\
-        | \-- owned Agent/Device Workers and Broker in one kill-on-close Job Object
-        |      |-- C# Agent Worker v2 :8005 (managed provider adapter, one-step AssistantStep)
-        |      |     `-- single-use DPAPI provider bootstrap
-        |      |-- Python Device Worker v1 :8006 (runtime/voice/STT/VTS/observation, --v1-only)
+        | \-- owned managed Worker and Broker in one kill-on-close Job Object
+        |      |-- C# Worker process
+        |      |     |-- `/worker/v2` :8005 (managed provider adapter, one-step AssistantStep)
+        |      |     |-- `/worker/v1` :8006 (runtime/voice/STT/VTS/observation)
+        |      |     `-- single-use DPAPI provider bootstrap (v2 only)
         |      `-- private RuAgentBroker (leased loopback endpoint, profile-scoped file/terminal tools)
         |
         | durable Harness: Core + SQLite (agent_harness.db) + encrypted payloads + idempotent history
@@ -38,8 +39,8 @@ if repository-level recovery is required.
 ASP.NET Core directly owns authentication, request-size boundaries, settings,
 credentials, sessions, history, activity, structured memory, Agent run ordering,
 metadata filtering, and every public endpoint contract. Agent generation uses
-the authenticated C# `ws://127.0.0.1:8005/worker/v2` protocol; runtime/device
-work uses the separate Python `ws://127.0.0.1:8006/worker/v1` protocol:
+the authenticated managed C# `ws://127.0.0.1:8005/worker/v2` protocol; runtime/device
+work uses the same managed process at `ws://127.0.0.1:8006/worker/v1`:
 
 - runtime transitions (Agent model steps use the typed C# `/worker/v2` adapter);
 - TTS, streaming voice, STT, and GPU lifecycle calls;
@@ -57,7 +58,8 @@ persistent text.
 | --- | --- | --- |
 | `RU_DESKTOP_TOKEN` | required per run | Authenticates public REST/WebSocket clients. |
 | `RU_AGENT_WORKER_TOKEN` | generated per managed run | Authenticates ASP.NET to the C# Agent Worker v2. |
-| `RU_WORKER_TOKEN` | generated per managed run | Authenticates ASP.NET to the Python Device Worker v1. |
+| `RU_DEVICE_WORKER_TOKEN` | generated per managed run | Authenticates ASP.NET to the managed Worker v1 device endpoint. |
+| `RU_WORKER_TOKEN` | compatibility-only | Authenticates ASP.NET to the Python Device Worker v1 in `PythonCompatibility`. |
 | `RU_BACKEND_AGENT_WORKER_PORT` | `8005` | Private Agent Worker loopback port. |
 | `RU_BACKEND_DEVICE_WORKER_PORT` | `8006` | Private Device Worker loopback port. |
 | `RuBackend__BindUrl` | `http://127.0.0.1:8010` standalone | Public ASP.NET bind URL; RuApp sets port `8000`. |
@@ -68,10 +70,10 @@ persistent text.
 
 Public Host (`RuBackend.exe --managed-runtime`) generates distinct 256-bit
 desktop, Agent Worker, and Device Worker secrets, writes a single-use
-DPAPI-protected provider bootstrap for the managed C# Agent Worker, starts the
-C# Agent Worker v2, Python Device Worker v1 (`--v1-only`), and RuAgentBroker
-before serving public traffic, assigns all owned children to one kill-on-close
-Windows Job Object, publishes an ACL-restricted loopback descriptor for
+DPAPI-protected provider bootstrap for the managed C# Worker, starts one C#
+Worker serving v2 and v1 plus RuAgentBroker before serving public traffic,
+assigns all owned children to one kill-on-close Windows Job Object, publishes an
+ACL-restricted loopback descriptor for
 `RuAgent.Client` start-or-attach,
 probes public readiness, and terminates the owned Worker/Broker tree on
 shutdown or failure. `RuApp` and `RuAgent.Cli` never start Worker/Broker

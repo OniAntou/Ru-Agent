@@ -79,7 +79,7 @@ exception text are forbidden.
 
 ### Intent-resolution diagnostics
 
-Before dispatch, the Python Device Worker emits exactly one of these bounded event
+Before dispatch, the managed Worker emits exactly one of these bounded event
 codes when explicit volume wording reaches a deterministic terminal decision:
 
 - `tool.intent.resolved`: one valid typed volume intent was created;

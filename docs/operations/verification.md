@@ -14,6 +14,7 @@ dotnet restore D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Hosting.Tests\RuAgent.Hosting.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Protocol.Tests\RuAgent.Protocol.Tests.csproj --nologo
+dotnet restore D:\LLM\backend-dotnet\RuAgent.Runtime.Core.Tests\RuAgent.Runtime.Core.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Runtime.Adapters.Tests\RuAgent.Runtime.Adapters.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Runtime.Worker.Tests\RuAgent.Runtime.Worker.Tests.csproj --nologo
 dotnet restore D:\LLM\backend-dotnet\RuAgent.Client.Tests\RuAgent.Client.Tests.csproj --nologo
@@ -33,6 +34,7 @@ dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Cor
 dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuAgent.Hosting.Tests\RuAgent.Hosting.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuAgent.Protocol.Tests\RuAgent.Protocol.Tests.csproj -c Release --no-restore --nologo
+dotnet test D:\LLM\backend-dotnet\RuAgent.Runtime.Core.Tests\RuAgent.Runtime.Core.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuAgent.Runtime.Adapters.Tests\RuAgent.Runtime.Adapters.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuAgent.Runtime.Worker.Tests\RuAgent.Runtime.Worker.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuAgent.Client.Tests\RuAgent.Client.Tests.csproj -c Release --no-restore --nologo
@@ -51,12 +53,11 @@ publish output, and the incremental native overlay build/test invocation; it
 does not prove that a GUI, microphone, speaker, VTube Studio model, or Windows
 audio endpoint worked.
 
-The managed runtime topology is deterministic: C# Agent Worker v2 is on the
-Agent loopback endpoint (`/worker/v2`), Python Device Worker v1 is on the
-separate device endpoint (`/worker/v1`), and only the latter receives runtime/
-voice/STT/VTS/observation calls. Worker tokens are distinct; provider
-credentials are carried only by the single-use DPAPI bootstrap and never by
-Python configuration, descriptors, logs, or public responses.
+The managed runtime topology is deterministic: one C# Worker serves the Agent
+loopback endpoint (`/worker/v2`) and the separate device endpoint
+(`/worker/v1`). Worker tokens are distinct; provider credentials are carried
+only by the single-use DPAPI bootstrap and never by the device graph,
+compatibility Python configuration, descriptors, logs, or public responses.
 
 The Phase 1 measurement command times deterministic prompt/tool operations in
 small batches to amortize sub-millisecond scheduler noise, then measures their
@@ -80,17 +81,44 @@ untrusted; declarative Skills are explicit session grants with per-step policy
 checks. Connectors and `app.open` remain unadvertised.
 
 The desktop launcher and release build share one GUI artifact, and the release
-build publishes the managed Agent Worker before the backend:
+build publishes the managed Worker before the backend:
 `gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe`.
 `backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Worker.exe`.
-`build.bat` fails if either publish is absent, and `start_dev.bat` refuses to
-run when that Release artifact is missing instead of silently selecting a stale
-Debug executable. Any Windows shortcut should target `start_dev.bat` so it uses
-the same release-path check.
+`backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Core.dll`.
+`build.bat` fails if any of these managed artifacts is absent, and `start_dev.bat`
+refuses to run when the Worker Release artifact is missing instead of silently
+selecting a stale Debug executable. Any Windows shortcut should target
+`start_dev.bat` so it uses the same release-path check.
+
+Phase 2 parity is deterministic and status-only. The shared fixture
+`tests/fixtures/python-csharp-phase2-device-baseline.json` is exercised by
+`tests/test_phase2_managed_device_parity.py` and
+`RuAgent.Runtime.Worker.Tests/Phase2ManagedDeviceParityTests.cs`; those tests
+cover v1 types/sequences, settings shape, voice control ordering, stable
+errors, STT normalization, VTS code sets, observation bounds, cancellation,
+and forbidden-value redaction without starting a provider or device.
 
 Ruff, Mypy, and `pip check` are required dependency/tooling gates; do not hide
 findings with permanent ignores or `continue-on-error`. Live microphone,
 speaker, volume, and VTube Studio acceptance remain explicit user-run checks.
+
+### Phase 2 manual acceptance record (2026-08-30)
+
+The deterministic release gates are automated and do not stand in for native
+device behavior. The following checks are intentionally pending a user-owned
+Windows run; no GUI, microphone, speaker, VTube Studio, or provider process was
+started by the automated verification:
+
+| Check | Status | Recorded evidence |
+| --- | --- | --- |
+| Microphone capture and no-speech handling | pending user-run | not collected |
+| OmniVoice stream, cancellation, playback, and subtitle order | pending user-run | not collected |
+| VTube Studio catalog, action, and reconnect | pending user-run | not collected |
+| Opt-in Gemini observation | pending user-run | not collected |
+
+When these checks are run, record only pass/fail, duration, and bounded reason
+codes. Never copy prompts, transcripts, audio, credentials, paths, provider
+responses, or device values into this document or its artifacts.
 
 ## Prompt composer contract checks
 
@@ -117,6 +145,12 @@ arguments, filesystem paths, and provider secrets. `model.prompt_composed` is a
 durable internal event only; it must remain absent from the public event
 allowlist and from CLI/WinUI rendering. Deterministic checks do not replace
 live microphone, speaker, VTube Studio, or real Windows endpoint acceptance.
+
+The backend-deterministic Harness is a separate synthetic fixture topology: it
+explicitly selects `PythonCompatibility` and points both v2 and v1 clients at
+one in-process Python fixture worker. This keeps its contract probes isolated
+from the published managed Worker while the normal desktop startup remains
+managed C# by default.
 
 ## Documentation contract check
 

@@ -10,7 +10,7 @@ if not exist "%EXE%" (
     exit /b 1
 )
 if not exist "%WORKER_EXE%" (
-    echo Managed Agent Worker publish output not found. Run build.bat and wait for [13/13] Build complete.
+    echo Managed Worker publish output not found. Run build.bat and wait for [13/13] Build complete.
     echo Expected: "%WORKER_EXE%"
     endlocal
     exit /b 1

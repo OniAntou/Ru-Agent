@@ -235,6 +235,7 @@ def test_dotnet_projects_are_prebuilt_before_any_child_launch(
 ) -> None:
     session = HarnessSession.for_test(readiness=True)
     calls: list[tuple[str, tuple[str, ...]]] = []
+    environments: list[dict[str, str]] = []
 
     def record_prebuild() -> None:
         calls.append(("prebuild", ()))
@@ -243,6 +244,9 @@ def test_dotnet_projects_are_prebuilt_before_any_child_launch(
         role = kwargs["role"]
         assert isinstance(role, str)
         calls.append((role, tuple(command)))
+        environment = kwargs["environment"]
+        assert isinstance(environment, dict)
+        environments.append(environment)
         return object()
 
     monkeypatch.setattr(
@@ -258,6 +262,9 @@ def test_dotnet_projects_are_prebuilt_before_any_child_launch(
         assert [role for role, _ in calls] == ["prebuild", "worker", "broker", "edge"]
         assert "--no-build" in calls[2][1]
         assert "--no-build" in calls[3][1]
+        assert environments[0]["RuBackend__RuntimeMigrationMode"] == "PythonCompatibility"
+        assert environments[2]["RuBackend__AgentWorkerUrl"].endswith("/worker/v2")
+        assert environments[2]["RuBackend__DeviceWorkerUrl"].endswith("/worker/v1")
     finally:
         session._children.clear()
         session.close()

@@ -17,6 +17,7 @@ set "CLI_PROJECT=%~dp0backend-dotnet\RuAgent.Cli\RuAgent.Cli.csproj"
 set "CLI_PUBLISH_DIR=%~dp0backend-dotnet\RuAgent.Cli\bin\Release\net10.0\win-x64\publish"
 set "WORKER_PROJECT=%~dp0backend-dotnet\RuAgent.Runtime.Worker\RuAgent.Runtime.Worker.csproj"
 set "WORKER_PUBLISH_DIR=%~dp0backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish"
+set "RUNTIME_CORE_PUBLISH_DLL=%WORKER_PUBLISH_DIR%\RuAgent.Runtime.Core.dll"
 set "BROKER_PROJECT=%~dp0backend-dotnet\RuAgent.Broker\RuAgent.Broker.csproj"
 set "BROKER_PUBLISH_DIR=%~dp0backend-dotnet\RuAgent.Broker\bin\Release\net10.0\win-x64\publish"
 set "BACKEND_PROJECT=%~dp0backend-dotnet\RuBackend\RuBackend.csproj"
@@ -76,7 +77,7 @@ if not exist "%CLI_PUBLISH_DIR%\RuAgent.Cli.exe" (
     exit /b 1
 )
 
-echo [7/13] Publishing managed Agent Worker v2 (self-contained, win-x64)...
+echo [7/13] Publishing managed Worker v1/v2 plus Runtime.Core (self-contained, win-x64)...
 call dotnet publish "%WORKER_PROJECT%" -c Release -r win-x64 --self-contained true
 if errorlevel 1 (
     echo.
@@ -86,6 +87,11 @@ if errorlevel 1 (
 if not exist "%WORKER_PUBLISH_DIR%\RuAgent.Runtime.Worker.exe" (
     echo.
     echo MANAGED WORKER BUILD FAILED: RuAgent.Runtime.Worker.exe was not created.
+    exit /b 1
+)
+if not exist "%RUNTIME_CORE_PUBLISH_DLL%" (
+    echo.
+    echo MANAGED WORKER BUILD FAILED: RuAgent.Runtime.Core.dll was not published.
     exit /b 1
 )
 
@@ -158,7 +164,8 @@ echo  Harness.Persistence:%HARNESS_PERSISTENCE_PROJECT%
 echo  Hosting:            %HOSTING_PROJECT%
 echo  Client:             %CLIENT_PROJECT%
 echo  CLI:                %CLI_PUBLISH_DIR%\RuAgent.Cli.exe
-echo  Agent Worker:       %WORKER_PUBLISH_DIR%\RuAgent.Runtime.Worker.exe
+echo  Managed Worker:     %WORKER_PUBLISH_DIR%\RuAgent.Runtime.Worker.exe
+echo  Runtime.Core:        %RUNTIME_CORE_PUBLISH_DLL%
 echo  Broker:             %BROKER_PUBLISH_DIR%\RuAgent.Broker.exe
 echo  Backend:            %BACKEND_PUBLISH_DIR%\RuBackend.exe
 echo  Output:             %PUBLISH_DIR%\RuApp.exe

@@ -52,3 +52,20 @@ an unverified C# HTTP approximation. Until a stable transport is composed and
 the startup cutover gates pass, the shipped default remains the Python Device
 Worker path described above. This section records an opt-in adapter contract,
 not a claim that managed STT is the default or that Python can be retired.
+
+## Managed Gemini observation adapter boundary (Phase 2, opt-in)
+
+The managed runtime also has an opt-in `IObservationProvider` implementation.
+It owns bounded screenshot/prompt input, the Gemini `generateContent` request,
+model fallback, JSON parsing, numeric clamping, and redaction of returned scene,
+event, reaction, and visible-text fields. The API key is accepted only through
+the provider configuration and sent only as the `x-goog-api-key` header. A
+shared observation lease can fail closed with `generation_busy`; missing
+credentials return a stable skipped result. Provider response bodies and raw
+failure text never cross the Worker response boundary.
+
+Screen capture, reaction scheduling, and the public observation lifecycle are
+not silently moved by this adapter. Until managed composition and startup
+cutover are complete, the shipped default remains the Python Device Worker
+observation path above; this section records an opt-in C# provider contract,
+not live Gemini or Python-retirement evidence.

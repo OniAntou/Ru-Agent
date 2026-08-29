@@ -131,6 +131,7 @@ public sealed class PrivateRuntimeRequestRouter
             ("POST", "/voice/warmup"),
             ("POST", "/voice/release"),
             ("POST", "/voice/transcribe"),
+            ("POST", "/observation/analyze"),
             ("GET", "/vts/mouse-look"),
             ("POST", "/vts/mouse-look"),
             ("GET", "/vts/overlay"),

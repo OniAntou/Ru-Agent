@@ -6,6 +6,7 @@ using RuAgent.Runtime.Adapters.Audio;
 using RuAgent.Runtime.Adapters.Runtime;
 using RuAgent.Runtime.Adapters.Speech;
 using RuAgent.Runtime.Adapters.Devices;
+using RuAgent.Runtime.Adapters.Observation;
 using RuAgent.Runtime.Core.Contracts;
 
 namespace RuAgent.Runtime.Worker;
@@ -72,7 +73,8 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
         PrivateRuntimeRequestRouter privateRouter,
         VoiceStreamCoordinator? voice = null,
         ISpeechRecognizer? speech = null,
-        IVtubeStudioClient? vts = null)
+        IVtubeStudioClient? vts = null,
+        IObservationProvider? observation = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         ArgumentNullException.ThrowIfNull(privateRouter);
@@ -84,6 +86,13 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
                 new SpeechRuntimeRequestHandler(speech));
         _voice = voice;
         _vts = vts;
+        if (observation is not null)
+        {
+            _privateRouter = _privateRouter.WithRouteHandler(
+                "POST",
+                "/observation/analyze",
+                new ObservationRuntimeRequestHandler(observation));
+        }
     }
 
     public async IAsyncEnumerable<WorkerV1Reply> RouteAsync(

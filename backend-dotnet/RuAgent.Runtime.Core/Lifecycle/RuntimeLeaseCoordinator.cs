@@ -30,6 +30,24 @@ public sealed class RuntimeLeaseCoordinator : IAsyncDisposable
         return new RuntimeLease(gate);
     }
 
+    public bool TryAcquire(ResourceKind kind, out RuntimeLease? lease)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        if (!_gates.TryGetValue(kind, out var gate))
+        {
+            throw new ArgumentOutOfRangeException(nameof(kind));
+        }
+
+        if (!gate.Wait(0))
+        {
+            lease = null;
+            return false;
+        }
+
+        lease = new RuntimeLease(gate);
+        return true;
+    }
+
     public ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 0)

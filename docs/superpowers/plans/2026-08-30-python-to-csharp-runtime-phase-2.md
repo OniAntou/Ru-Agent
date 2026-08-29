@@ -110,11 +110,11 @@
 
 **Files:** Create `backend-dotnet/RuAgent.Runtime.Adapters/Observation/GeminiVisionProvider.cs` and `VisionObservationParser.cs`; bind in `WorkerV1RequestRouter.cs`; tests `GeminiVisionProviderTests.cs` and `ObservationV1HandlerTests.cs`.
 
-- [ ] Test model fallback, model-specific sampling config, fenced JSON, malformed candidates, missing key/image, byte/field bounds, redaction, and provider-body privacy using fake HTTP handlers.
-- [ ] Run focused Adapter/Worker filters; expected FAIL.
-- [ ] Implement the current `generateContent` JSON shape and model cascade with `HttpClient`; send API key only in the header; clamp numeric fields to `0..1`; return `observation_skipped` for missing key/busy lock and `observation_failed` for bounded provider failures.
-- [ ] Run focused C# tests plus Python observation references sequentially; expected PASS.
-- [ ] Commit `git add backend-dotnet/RuAgent.Runtime.Adapters/Observation backend-dotnet/RuAgent.Runtime.Worker/WorkerV1RequestRouter.cs backend-dotnet/RuAgent.Runtime.Adapters.Tests/GeminiVisionProviderTests.cs backend-dotnet/RuAgent.Runtime.Worker.Tests/ObservationV1HandlerTests.cs; git commit -m "feat: move Gemini observation adapter to managed runtime"`.
+- [x] Test model fallback, model-specific sampling config, fenced JSON, malformed candidates, missing key/image, byte/field bounds, redaction, busy observation lease, and provider-body privacy using fake HTTP handlers.
+- [x] Run focused Adapter/Worker filters; expected FAIL before implementation, then PASS.
+- [x] Implement the current `generateContent` JSON shape and model cascade with `HttpClient`; send API key only in the header; clamp numeric fields to `0..1`; return `observation_skipped` for missing key/busy lock and `observation_failed` for bounded provider failures.
+- [x] Run focused C# tests plus Python observation references sequentially; expected PASS.
+- [x] Commit `git add backend-dotnet/RuAgent.Runtime.Adapters/Observation backend-dotnet/RuAgent.Runtime.Core/Lifecycle/RuntimeLeaseCoordinator.cs backend-dotnet/RuAgent.Runtime.Worker/WorkerV1RequestRouter.cs backend-dotnet/RuAgent.Runtime.Adapters.Tests/GeminiVisionProviderTests.cs backend-dotnet/RuAgent.Runtime.Core.Tests/RuntimeContractTests.cs backend-dotnet/RuAgent.Runtime.Worker.Tests/ObservationV1HandlerTests.cs docs/operations/python-runtime-boundary.md; git commit -m "feat: move Gemini observation adapter to managed runtime"`.
 
 ### Task 9: Compose managed handlers and preserve backend clients
 

@@ -65,4 +65,14 @@ public sealed class RuntimeContractTests
         Assert.True(acquired.Wait(TimeSpan.FromSeconds(2)));
         await second;
     }
+
+    [Fact]
+    public async Task Lease_coordinator_try_acquire_reports_busy_without_waiting()
+    {
+        await using var coordinator = new RuntimeLeaseCoordinator();
+        await using var first = await coordinator.AcquireAsync(ResourceKind.Observation, CancellationToken.None);
+
+        Assert.False(coordinator.TryAcquire(ResourceKind.Observation, out var second));
+        Assert.Null(second);
+    }
 }

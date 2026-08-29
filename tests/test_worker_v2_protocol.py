@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -33,10 +34,125 @@ def start_envelope() -> dict:
         "payload": {
             "prompt": "đọc README",
             "turns": [],
-            "memory_context": None,
+            "system_prompt_context": prompt_context_payload(),
             "settings": {"model_tools": []},
         },
     }
+
+
+def prompt_context_payload() -> dict:
+    instruction = "root guidance"
+    return {
+        "schema_version": 1,
+        "agent_profile": "ru-agent",
+        "preset": "standard",
+        "environment": {
+            "model": "test-model",
+            "platform": "windows",
+            "locale": "vi-VN",
+            "timezone": "Asia/Bangkok",
+            "date": "2026-08-29",
+            "workspace_label": "LLM",
+        },
+        "instruction_blocks": [
+            {
+                "source_id": "root:Ru.md",
+                "display_name": "Ru.md",
+                "content": instruction,
+                "content_sha256": sha256(instruction.encode()).hexdigest(),
+            }
+        ],
+        "capabilities": [
+            {
+                "id": "files.read",
+                "version": "1.0.0",
+                "summary": "Read a file",
+                "input_schema_digest": "a" * 64,
+                "policy_summary": "workspace.read",
+                "availability": "enabled",
+            }
+        ],
+        "runtime_context": {
+            "memory": None,
+            "mood": None,
+            "voice": None,
+            "vts": None,
+            "hardware": None,
+            "references": [],
+        },
+    }
+
+
+def prompt_start_envelope() -> dict:
+    envelope = start_envelope()
+    payload = envelope["payload"]
+    payload.pop("memory_context", None)
+    payload["system_prompt_context"] = prompt_context_payload()
+    return envelope
+
+
+def prompt_done_envelope() -> dict:
+    return {
+        "v": 2,
+        "id": "step-1",
+        "type": AGENT_STEP_DONE,
+        "seq": 1,
+        "correlation_id": "corr-1",
+        "payload": {
+            "text": "Xong.",
+            "tool_calls": [],
+            "finish_reason": "stop",
+            "prompt_receipt": prompt_receipt_payload(),
+        },
+    }
+
+
+def prompt_receipt_payload() -> dict:
+    return {
+        "composer_version": "1.0.0",
+        "prompt_sha256": "a" * 64,
+        "block_digests": [
+            {"block_id": "ru.persona", "sha256": "b" * 64},
+            {"block_id": "agent.contract", "sha256": "c" * 64},
+        ],
+    }
+
+
+def test_prompt_contract_requires_context_and_receipt_shapes() -> None:
+    assert validate_envelope(prompt_start_envelope())["type"] == AGENT_STEP_START
+    assert validate_envelope(prompt_done_envelope())["type"] == AGENT_STEP_DONE
+
+    missing_context = prompt_start_envelope()
+    del missing_context["payload"]["system_prompt_context"]
+    with pytest.raises(ProtocolError, match="invalid_request"):
+        validate_envelope(missing_context)
+
+    top_level_memory = prompt_start_envelope()
+    top_level_memory["payload"]["memory_context"] = "legacy"
+    with pytest.raises(ProtocolError, match="invalid_request"):
+        validate_envelope(top_level_memory)
+
+    unknown_context = prompt_start_envelope()
+    unknown_context["payload"]["system_prompt_context"]["unexpected"] = True
+    with pytest.raises(ProtocolError, match="invalid_request"):
+        validate_envelope(unknown_context)
+
+    missing_receipt = prompt_done_envelope()
+    del missing_receipt["payload"]["prompt_receipt"]
+    with pytest.raises(ProtocolError, match="invalid_step"):
+        validate_envelope(missing_receipt)
+
+    duplicate_receipt_block = prompt_done_envelope()
+    duplicate_receipt_block["payload"]["prompt_receipt"]["block_digests"].append(
+        {"block_id": "ru.persona", "sha256": "d" * 64}
+    )
+    with pytest.raises(ProtocolError, match="invalid_step"):
+        validate_envelope(duplicate_receipt_block)
+
+    invalid_receipt_hash = prompt_done_envelope()
+    invalid_receipt_hash["payload"]["prompt_receipt"]["prompt_sha256"] = "A" * 64
+    with pytest.raises(ProtocolError, match="invalid_step"):
+        validate_envelope(invalid_receipt_hash)
 
 
 def test_worker_v2_golden_fixtures_lock_python_and_csharp_wire_contract() -> None:
@@ -70,9 +186,24 @@ def test_v2_envelope_round_trips_authenticated_message_types() -> None:
     for message_type, payload in (
         (HELLO, {"token": "secret"}),
         (HELLO_OK, {"version": 2, "capabilities": ["agent.step"]}),
-        (AGENT_STEP_START, {"prompt": "đọc README", "settings": {"model_tools": []}}),
-        (AGENT_STEP_DELTA, {"text": "Em đang đọc."}),
-        (AGENT_STEP_DONE, {"text": "Xong.", "tool_calls": [], "finish_reason": "stop"}),
+            (
+                AGENT_STEP_START,
+                {
+                    "prompt": "đọc README",
+                    "system_prompt_context": prompt_context_payload(),
+                    "settings": {"model_tools": []},
+                },
+            ),
+            (AGENT_STEP_DELTA, {"text": "Em đang đọc."}),
+            (
+                AGENT_STEP_DONE,
+                {
+                    "text": "Xong.",
+                    "tool_calls": [],
+                    "finish_reason": "stop",
+                    "prompt_receipt": prompt_receipt_payload(),
+                },
+            ),
         (AGENT_STEP_CANCEL, {}),
         (ERROR, {"code": "provider_timeout", "retryable": True}),
     ):

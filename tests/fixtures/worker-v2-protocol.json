@@ -30,7 +30,45 @@
         "payload": {
           "prompt": "Đọc README",
           "turns": [],
-          "memory_context": null,
+          "system_prompt_context": {
+            "schema_version": 1,
+            "agent_profile": "ru-agent",
+            "preset": "standard",
+            "environment": {
+              "model": "test-model",
+              "platform": "windows",
+              "locale": "vi-VN",
+              "timezone": "Asia/Bangkok",
+              "date": "2026-08-29",
+              "workspace_label": "LLM"
+            },
+            "instruction_blocks": [
+              {
+                "source_id": "root:Ru.md",
+                "display_name": "Ru.md",
+                "content": "root guidance",
+                "content_sha256": "9be3ca7b30ed9ac2b18b1c72ac9562e051667e37f4dcb5748bf802886acfb8e0"
+              }
+            ],
+            "capabilities": [
+              {
+                "id": "files.read",
+                "version": "1.0.0",
+                "summary": "Read a file",
+                "input_schema_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "policy_summary": "workspace.read",
+                "availability": "enabled"
+              }
+            ],
+            "runtime_context": {
+              "memory": null,
+              "mood": null,
+              "voice": null,
+              "vts": null,
+              "hardware": null,
+              "references": []
+            }
+          },
           "settings": {
             "max_tokens": 128,
             "temperature": 0.4,
@@ -87,7 +125,15 @@
               "arguments": { "path": "README.md" }
             }
           ],
-          "finish_reason": "tool_calls"
+          "finish_reason": "tool_calls",
+          "prompt_receipt": {
+            "composer_version": "1.0.0",
+            "prompt_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "block_digests": [
+              { "block_id": "ru.persona", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+              { "block_id": "agent.contract", "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+            ]
+          }
         }
       }
     },

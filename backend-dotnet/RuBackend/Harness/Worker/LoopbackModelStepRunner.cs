@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using RuBackend.Worker;
@@ -55,7 +56,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
     private ClientWebSocket CreateSocket() => _socketFactory?.Invoke() ?? new ClientWebSocket();
 
-    public async Task<AssistantStep> RunStepAsync(
+    public async Task<ModelStepResult> RunStepAsync(
         ModelStepRequest request,
         Func<AssistantDelta, ValueTask> publishDelta,
         CancellationToken cancellationToken)
@@ -114,21 +115,9 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         {
             ["prompt"] = prompt,
             ["turns"] = turns,
-            ["memory_context"] = request.Context.Entries.Count > 0 ? null : null,
+            ["system_prompt_context"] = SerializePromptContext(request.PromptContext),
             ["settings"] = settings,
         };
-        // Remove null memory_context if not needed; but protocol expects maybe null allowed? We'll keep if null not needed.
-        // Ensure memory_context is present as null or string; fixture shows null. We'll include as null if missing.
-        if (startPayload["memory_context"] is null)
-        {
-            // Keep as null (JsonValue null) or remove? Python's validate allows None. We'll send null.
-            startPayload["memory_context"] = JsonValue.Create((string?)null);
-            // JsonValue with null string creates Json null? Actually JsonValue.Create<string?>(null) yields null node => need to explicitly set.
-            // Simpler: if null, keep as JsonValue.Create<string?>(null) which is null node, but JsonObject will treat null as unset. We can leave as null but serializer will omit? Better set to null via JsonValue.Create<string>(null) not allowed.
-            // We'll just not include memory_context if null, but validation allows omission? The StartFields includes memory_context optional? Actually _START_FIELDS = {"prompt","turns","memory_context","settings"} and _validate_start checks if not subset, but requires prompt present. So memory_context can be omitted or null? We'll include only if not null.
-            startPayload.Remove("memory_context");
-        }
-
         var startEnvelope = new WorkerV2Envelope(
             WorkerV2Contracts.ProtocolVersion,
             request.ModelStepId.Value,
@@ -141,6 +130,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
         long expectedSeq = 1;
         AssistantStep? finalStep = null;
+        SystemPromptReceipt? finalReceipt = null;
         bool doneReceived = false;
 
         while (!cancellationToken.IsCancellationRequested)
@@ -257,6 +247,15 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
                     // Enforce one-step constraint: at most one tool call (checked in AssistantStep)
                     finalStep = new AssistantStep(finalText, toolCalls, mappedReason, estimatedInputTokens: 0);
+                    finalReceipt = ParsePromptReceipt(payload["prompt_receipt"]);
+                    try
+                    {
+                        finalReceipt.ValidateAgainst(request.PromptContext);
+                    }
+                    catch (ArgumentException)
+                    {
+                        throw new WorkerProtocolException("invalid_step");
+                    }
                     // Done is terminal; break loop.
                     expectedSeq++;
                     goto Done;
@@ -284,7 +283,114 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         }
 
         // Ensure exactly one final step was received.
-        return finalStep;
+        return new ModelStepResult(
+            finalStep,
+            finalReceipt ?? throw new WorkerProtocolException("missing_prompt_receipt"));
+    }
+
+    private static JsonObject SerializePromptContext(SystemPromptContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var instructions = new JsonArray();
+        foreach (var instruction in context.InstructionBlocks)
+        {
+            instructions.Add(new JsonObject
+            {
+                ["source_id"] = instruction.SourceId,
+                ["display_name"] = instruction.DisplayName,
+                ["content"] = instruction.Content,
+                ["content_sha256"] = instruction.ContentSha256,
+            });
+        }
+
+        var capabilities = new JsonArray();
+        foreach (var capability in context.Capabilities)
+        {
+            capabilities.Add(new JsonObject
+            {
+                ["id"] = capability.Id,
+                ["version"] = capability.Version,
+                ["summary"] = capability.Summary,
+                ["input_schema_digest"] = capability.InputSchemaDigest,
+                ["policy_summary"] = capability.PolicySummary,
+                ["availability"] = capability.Availability,
+            });
+        }
+
+        var references = new JsonArray();
+        foreach (var reference in context.RuntimeContext.References)
+        {
+            references.Add(new JsonObject
+            {
+                ["kind"] = reference.Kind,
+                ["label"] = reference.Label,
+                ["content"] = reference.Content,
+            });
+        }
+
+        return new JsonObject
+        {
+            ["schema_version"] = context.SchemaVersion,
+            ["agent_profile"] = context.AgentProfile,
+            ["preset"] = context.Preset,
+            ["environment"] = new JsonObject
+            {
+                ["model"] = context.Environment.Model,
+                ["platform"] = context.Environment.Platform,
+                ["locale"] = context.Environment.Locale,
+                ["timezone"] = context.Environment.Timezone,
+                ["date"] = context.Environment.Date,
+                ["workspace_label"] = context.Environment.WorkspaceLabel,
+            },
+            ["instruction_blocks"] = instructions,
+            ["capabilities"] = capabilities,
+            ["runtime_context"] = new JsonObject
+            {
+                ["memory"] = context.RuntimeContext.Memory,
+                ["mood"] = context.RuntimeContext.Mood,
+                ["voice"] = context.RuntimeContext.Voice,
+                ["vts"] = context.RuntimeContext.Vts,
+                ["hardware"] = context.RuntimeContext.Hardware,
+                ["references"] = references,
+            },
+        };
+    }
+
+    private static SystemPromptReceipt ParsePromptReceipt(JsonNode? node)
+    {
+        if (node is not JsonObject receipt
+            || receipt["composer_version"] is not JsonValue composerValue
+            || !composerValue.TryGetValue<string>(out var composerVersion)
+            || receipt["prompt_sha256"] is not JsonValue hashValue
+            || !hashValue.TryGetValue<string>(out var promptSha256)
+            || receipt["block_digests"] is not JsonArray blocks)
+        {
+            throw new WorkerProtocolException("invalid_step");
+        }
+
+        var blockDigests = new List<PromptBlockDigest>();
+        try
+        {
+            foreach (var blockNode in blocks)
+            {
+                if (blockNode is not JsonObject block
+                    || block["block_id"] is not JsonValue idValue
+                    || !idValue.TryGetValue<string>(out var blockId)
+                    || block["sha256"] is not JsonValue digestValue
+                    || !digestValue.TryGetValue<string>(out var digest))
+                {
+                    throw new WorkerProtocolException("invalid_step");
+                }
+
+                blockDigests.Add(new PromptBlockDigest(blockId, digest));
+            }
+
+            return new SystemPromptReceipt(composerVersion, promptSha256, blockDigests);
+        }
+        catch (ArgumentException)
+        {
+            throw new WorkerProtocolException("invalid_step");
+        }
     }
 
     private static string ExtractPrompt(ModelContextSnapshot context)

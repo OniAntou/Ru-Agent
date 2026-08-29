@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Prompting;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -116,7 +117,7 @@ public sealed class HeadlessCodingLoopTests
 
         public void Enqueue(AssistantStep step) => _steps.Enqueue(step);
 
-        public Task<AssistantStep> RunStepAsync(
+        public Task<ModelStepResult> RunStepAsync(
             ModelStepRequest request,
             Func<AssistantDelta, ValueTask> publishDelta,
             CancellationToken cancellationToken)
@@ -126,7 +127,7 @@ public sealed class HeadlessCodingLoopTests
             var step = _steps.Count > 0
                 ? _steps.Dequeue()
                 : FinalStep("script exhausted; done");
-            return Task.FromResult(step);
+            return Task.FromResult(new ModelStepResult(step, SystemPromptReceipt.Empty));
         }
     }
 

@@ -5,6 +5,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
+using RuAgent.Harness.Core.Prompting;
 using RuBackend.Harness.Broker;
 using Xunit;
 
@@ -1199,7 +1200,7 @@ public sealed class HarnessTerminalIntegrationTests
 
         public ScriptedModelRunner(params AssistantStep[] steps) => _steps = new Queue<AssistantStep>(steps);
 
-        public Task<AssistantStep> RunStepAsync(
+        public Task<ModelStepResult> RunStepAsync(
             ModelStepRequest request,
             Func<AssistantDelta, ValueTask> publishDelta,
             CancellationToken cancellationToken)
@@ -1209,7 +1210,7 @@ public sealed class HarnessTerminalIntegrationTests
                 throw new InvalidOperationException("no scripted step left");
             }
 
-            return Task.FromResult(_steps.Dequeue());
+            return Task.FromResult(new ModelStepResult(_steps.Dequeue(), SystemPromptReceipt.Empty));
         }
     }
 

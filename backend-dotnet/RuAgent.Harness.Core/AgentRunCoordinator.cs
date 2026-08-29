@@ -1,6 +1,7 @@
 using System.Text;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Core.Reconciliation;
 
 // Generic preparation payload handling: PreparedPayloads with kind RecoveryOpaque are kept byte-exact
@@ -190,10 +191,10 @@ public sealed class AgentRunCoordinator
             run.RunId,
             TransientFrameKind.AssistantDelta,
             modelStepId: modelStepId);
-        AssistantStep step;
+        ModelStepResult modelResult;
         try
         {
-            step = await _model.RunStepAsync(
+            modelResult = await _model.RunStepAsync(
                     request,
                     delta => PublishAssistantDelta(modelStepId, assistantStream, delta),
                     cancellationToken)
@@ -226,6 +227,7 @@ public sealed class AgentRunCoordinator
                     safeCode: "model_failed"));
             throw;
         }
+        var step = modelResult.Step;
         assistantStream.Complete();
         AgentActivityProjector.PublishSafe(
             _activitySink,

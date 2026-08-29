@@ -1,4 +1,5 @@
 using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Prompting;
 
 namespace RuAgent.Harness.Core;
 
@@ -11,10 +12,30 @@ public sealed record ModelStepRequest
         AgentPermissionPreset preset,
         long policySnapshotVersion,
         string policySnapshotSha256)
+        : this(
+            runId,
+            modelStepId,
+            context,
+            SystemPromptContext.Empty,
+            preset,
+            policySnapshotVersion,
+            policySnapshotSha256)
+    {
+    }
+
+    public ModelStepRequest(
+        RunId runId,
+        ModelStepId modelStepId,
+        ModelContextSnapshot context,
+        SystemPromptContext promptContext,
+        AgentPermissionPreset preset,
+        long policySnapshotVersion,
+        string policySnapshotSha256)
     {
         _ = runId.Value;
         _ = modelStepId.Value;
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(promptContext);
         if (!Enum.IsDefined(preset))
         {
             throw new ArgumentOutOfRangeException(nameof(preset));
@@ -35,6 +56,7 @@ public sealed record ModelStepRequest
         RunId = runId;
         ModelStepId = modelStepId;
         Context = context;
+        PromptContext = promptContext;
         Preset = preset;
         PolicySnapshotVersion = policySnapshotVersion;
         PolicySnapshotSha256 = policySnapshotSha256;
@@ -43,6 +65,7 @@ public sealed record ModelStepRequest
     public RunId RunId { get; }
     public ModelStepId ModelStepId { get; }
     public ModelContextSnapshot Context { get; }
+    public SystemPromptContext PromptContext { get; }
     public AgentPermissionPreset Preset { get; }
     public long PolicySnapshotVersion { get; }
     public string PolicySnapshotSha256 { get; }

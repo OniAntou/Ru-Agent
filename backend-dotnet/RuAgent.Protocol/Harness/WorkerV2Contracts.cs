@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 
 namespace RuAgent.Protocol.Harness;
 
@@ -20,6 +21,14 @@ public static class WorkerV2Contracts
     public const int MaxToolSchemaBytes = 32 * 1024;
     public const int MaxSettingsBytes = 128 * 1024;
     public const int MaxFrameBytes = 5 * 1024 * 1024;
+    public const int PromptContextSchemaVersion = 1;
+    public const int MaxPromptContextBytes = 512 * 1024;
+    public const int MaxPromptInstructionBytes = 64 * 1024;
+    public const int MaxCombinedPromptInstructionBytes = 256 * 1024;
+    public const int MaxPromptMemoryBytes = 100 * 1024;
+    public const int MaxPromptReferenceBytes = 32 * 1024;
+    public const int MaxPromptCollectionItems = 16;
+    public const int MaxPromptReceiptBlocks = 32;
     public const long MaxSequence = long.MaxValue;
 
     public const string Hello = "hello";
@@ -44,14 +53,24 @@ public static class WorkerV2Contracts
 
     private static readonly Regex SemVer = new(@"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$", RegexOptions.Compiled);
     private static readonly Regex SafeIdentifier = new(@"^[A-Za-z0-9_.-]+$", RegexOptions.Compiled);
+    private static readonly Regex PromptSourceIdentifier = new(@"^[A-Za-z0-9_.:-]+$", RegexOptions.Compiled);
     private static readonly Regex ErrorCode = new(@"^[a-z][a-z0-9_.-]{0,63}$", RegexOptions.Compiled);
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly IReadOnlySet<string> EnvelopeFields = new HashSet<string>(["v", "id", "type", "seq", "correlation_id", "payload"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> EnvelopeRequired = new HashSet<string>(["v", "id", "type", "payload"], StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> StartFields = new HashSet<string>(["prompt", "turns", "memory_context", "settings"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> StartFields = new HashSet<string>(["prompt", "turns", "system_prompt_context", "settings"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> TurnFields = new HashSet<string>(["prompt", "response"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> SettingFields = new HashSet<string>(["max_tokens", "temperature", "top_k", "allow_web_search", "model_tools"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ModelToolFields = new HashSet<string>(["tool_id", "tool_version", "scopes", "availability", "model_enabled", "capability_class", "verification_required"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ModelToolOptional = new HashSet<string>(["hint", "input_schema"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptContextFields = new HashSet<string>(["schema_version", "agent_profile", "preset", "environment", "instruction_blocks", "capabilities", "runtime_context"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptEnvironmentFields = new HashSet<string>(["model", "platform", "locale", "timezone", "date", "workspace_label"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptInstructionFields = new HashSet<string>(["source_id", "display_name", "content", "content_sha256"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptCapabilityFields = new HashSet<string>(["id", "version", "summary", "input_schema_digest", "policy_summary", "availability"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptRuntimeFields = new HashSet<string>(["memory", "mood", "voice", "vts", "hardware", "references"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptReferenceFields = new HashSet<string>(["kind", "label", "content"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptReceiptFields = new HashSet<string>(["composer_version", "prompt_sha256", "block_digests"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptBlockDigestFields = new HashSet<string>(["block_id", "sha256"], StringComparer.Ordinal);
 
     public static void ValidateEnvelope(JsonObject envelope)
     {
@@ -252,32 +271,13 @@ public static class WorkerV2Contracts
             }
         }
 
-        var memNode = payload["memory_context"];
-        if (memNode is not null && memNode is not JsonValue)
+        var promptContextNode = payload["system_prompt_context"];
+        if (promptContextNode is not JsonObject promptContext)
         {
             throw new AgentProtocolException("invalid_request");
         }
 
-        if (memNode is JsonValue mv && mv.TryGetValue<string>(out var memStr) && memStr.Length > 100_000)
-        {
-            throw new AgentProtocolException("invalid_request");
-        }
-
-        if (memNode is JsonValue mv2 && !mv2.TryGetValue<string>(out _) && mv2.GetValueKind() != JsonValueKind.Null)
-        {
-            // If it's not string and not null, invalid.
-            // JsonValue null is represented as null node, not JsonValue.
-            throw new AgentProtocolException("invalid_request");
-        }
-
-        if (payload["memory_context"] is JsonValue memVal && memVal.TryGetValue<string>(out var memText) == false && memNode is not null)
-        {
-            // if memory_context is present but not string (e.g., number), fail
-            if (memNode.GetValueKind() != JsonValueKind.Null)
-            {
-                throw new AgentProtocolException("invalid_request");
-            }
-        }
+        var webSearchCapabilityEnabled = ValidatePromptContext(promptContext);
 
         var settingsNode = payload["settings"];
         JsonObject settings = settingsNode as JsonObject ?? new JsonObject();
@@ -309,7 +309,12 @@ public static class WorkerV2Contracts
         if (settings.ContainsKey("allow_web_search"))
         {
             var node = settings["allow_web_search"];
-            if (node is not JsonValue bv || !bv.TryGetValue<bool>(out var b) || b != false)
+            if (node is not JsonValue bv || !bv.TryGetValue<bool>(out var b))
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+
+            if (b && !webSearchCapabilityEnabled)
             {
                 throw new AgentProtocolException("invalid_request");
             }
@@ -340,6 +345,309 @@ public static class WorkerV2Contracts
         }
     }
 
+    private static bool ValidatePromptContext(JsonObject context)
+    {
+        if (!HasExactFields(context, PromptContextFields))
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        if (!TryGetInt(context["schema_version"], out var schemaVersion)
+            || schemaVersion != PromptContextSchemaVersion)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        if (!TryGetString(context["agent_profile"], 64, out var profile)
+            || !string.Equals(profile, "ru-agent", StringComparison.Ordinal))
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        if (!TryGetString(context["preset"], 32, out var preset)
+            || (preset != "standard" && preset != "full_access"))
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        if (context["environment"] is not JsonObject environment
+            || !HasExactFields(environment, PromptEnvironmentFields)
+            || !TryGetString(environment["model"], 256, out _)
+            || !TryGetString(environment["platform"], 64, out _)
+            || !TryGetString(environment["locale"], 64, out _)
+            || !TryGetString(environment["timezone"], 128, out _)
+            || !TryGetString(environment["date"], 32, out _)
+            || !TryGetNullableString(environment["workspace_label"], 128, out _))
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        var instructionNode = context["instruction_blocks"];
+        if (instructionNode is not JsonArray instructions || instructions.Count > MaxPromptCollectionItems)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        var instructionIds = new HashSet<string>(StringComparer.Ordinal);
+        var combinedInstructionBytes = 0;
+        foreach (var instructionNodeItem in instructions)
+        {
+            if (instructionNodeItem is not JsonObject instruction
+                || !HasExactFields(instruction, PromptInstructionFields)
+                || !TryGetPromptIdentifier(instruction["source_id"], 128, allowColon: true, out var sourceId)
+                || !TryGetString(instruction["display_name"], 256, out _)
+                || !TryGetString(instruction["content"], MaxPromptInstructionBytes, out var content)
+                || !TryGetDigest(instruction["content_sha256"], out var contentDigest)
+                || !instructionIds.Add(sourceId))
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+
+            var normalizedContent = NormalizePromptText(content);
+            var contentBytes = PromptUtf8ByteCount(normalizedContent);
+            if (contentBytes == 0 || contentBytes > MaxPromptInstructionBytes)
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+
+            combinedInstructionBytes = checked(combinedInstructionBytes + contentBytes);
+            if (!string.Equals(contentDigest, ComputeSha256(normalizedContent), StringComparison.Ordinal))
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+        }
+
+        if (combinedInstructionBytes > MaxCombinedPromptInstructionBytes)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        var capabilityNode = context["capabilities"];
+        if (capabilityNode is not JsonArray capabilities || capabilities.Count > MaxPromptCollectionItems)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        var capabilityIds = new HashSet<string>(StringComparer.Ordinal);
+        var webSearchEnabled = false;
+        foreach (var capabilityNodeItem in capabilities)
+        {
+            if (capabilityNodeItem is not JsonObject capability
+                || !HasExactFields(capability, PromptCapabilityFields)
+                || !TryGetPromptIdentifier(capability["id"], 128, allowColon: false, out var capabilityId)
+                || !TryGetSemVer(capability["version"], out _)
+                || !TryGetString(capability["summary"], 2 * 1024, out _)
+                || !TryGetDigest(capability["input_schema_digest"], out _)
+                || !TryGetString(capability["policy_summary"], 2 * 1024, out _)
+                || !TryGetPromptIdentifier(capability["availability"], 32, allowColon: false, out var availability)
+                || !capabilityIds.Add(capabilityId))
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+
+            if (capabilityId == "web.search" && availability == "enabled")
+            {
+                webSearchEnabled = true;
+            }
+        }
+
+        if (context["runtime_context"] is not JsonObject runtime
+            || !HasExactFields(runtime, PromptRuntimeFields)
+            || !TryGetNullableString(runtime["memory"], MaxPromptMemoryBytes, out var memory)
+            || !TryGetNullableString(runtime["mood"], 256, out _)
+            || !TryGetNullableString(runtime["voice"], 2 * 1024, out _)
+            || !TryGetNullableString(runtime["vts"], 2 * 1024, out _)
+            || !TryGetNullableString(runtime["hardware"], 2 * 1024, out _))
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        if (memory is not null && PromptUtf8ByteCount(memory) > MaxPromptMemoryBytes)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        if (runtime["references"] is not JsonArray references || references.Count > MaxPromptCollectionItems)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        foreach (var referenceNode in references)
+        {
+            if (referenceNode is not JsonObject reference
+                || !HasExactFields(reference, PromptReferenceFields)
+                || !TryGetPromptIdentifier(reference["kind"], 64, allowColon: false, out _)
+                || !TryGetString(reference["label"], 256, out _)
+                || !TryGetString(reference["content"], MaxPromptReferenceBytes, out var referenceContent)
+                || PromptUtf8ByteCount(NormalizePromptText(referenceContent)) > MaxPromptReferenceBytes)
+            {
+                throw new AgentProtocolException("invalid_request");
+            }
+        }
+
+        if (PromptUtf8ByteCount(CanonicalJson(context)) > MaxPromptContextBytes)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+
+        return webSearchEnabled;
+    }
+
+    private static void ValidatePromptReceipt(JsonObject receipt)
+    {
+        if (!HasExactFields(receipt, PromptReceiptFields)
+            || !TryGetString(receipt["composer_version"], 32, out var composerVersion)
+            || composerVersion != "1.0.0"
+            || !TryGetDigest(receipt["prompt_sha256"], out _)
+            || receipt["block_digests"] is not JsonArray blocks
+            || blocks.Count > MaxPromptReceiptBlocks)
+        {
+            throw new AgentProtocolException("invalid_step");
+        }
+
+        var blockIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var blockNode in blocks)
+        {
+            if (blockNode is not JsonObject block
+                || !HasExactFields(block, PromptBlockDigestFields)
+                || !TryGetPromptIdentifier(block["block_id"], 256, allowColon: true, out var blockId)
+                || !TryGetDigest(block["sha256"], out _)
+                || !blockIds.Add(blockId))
+            {
+                throw new AgentProtocolException("invalid_step");
+            }
+        }
+    }
+
+    private static bool HasExactFields(JsonObject value, IReadOnlySet<string> expected)
+    {
+        return value.Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal).SetEquals(expected);
+    }
+
+    private static bool TryGetString(JsonNode? node, int maxChars, out string value)
+    {
+        value = string.Empty;
+        if (node is not JsonValue jsonValue
+            || !jsonValue.TryGetValue<string>(out var text)
+            || string.IsNullOrWhiteSpace(text)
+            || text.Length > maxChars
+            || text.Contains('\0'))
+        {
+            return false;
+        }
+
+        try
+        {
+            _ = StrictUtf8.GetByteCount(text);
+            value = text;
+            return true;
+        }
+        catch (EncoderFallbackException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetNullableString(JsonNode? node, int maxCharsOrBytes, out string? value)
+    {
+        value = null;
+        if (node is null)
+        {
+            return true;
+        }
+
+        if (node is not JsonValue jsonValue
+            || !jsonValue.TryGetValue<string>(out var text)
+            || text.Contains('\0')
+            || text.Length > maxCharsOrBytes)
+        {
+            return false;
+        }
+
+        try
+        {
+            _ = StrictUtf8.GetByteCount(text);
+            value = text;
+            return true;
+        }
+        catch (EncoderFallbackException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetPromptIdentifier(JsonNode? node, int maxChars, bool allowColon, out string value)
+    {
+        value = string.Empty;
+        if (!TryGetString(node, maxChars, out var text)
+            || (allowColon ? !PromptSourceIdentifier.IsMatch(text) : !SafeIdentifier.IsMatch(text)))
+        {
+            return false;
+        }
+
+        value = text;
+        return true;
+    }
+
+    private static bool TryGetDigest(JsonNode? node, out string value)
+    {
+        value = string.Empty;
+        if (node is not JsonValue jsonValue
+            || !jsonValue.TryGetValue<string>(out var text)
+            || text.Length != 64
+            || text.Any(character => character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f')))
+        {
+            return false;
+        }
+
+        value = text;
+        return true;
+    }
+
+    private static bool TryGetSemVer(JsonNode? node, out string value)
+    {
+        value = string.Empty;
+        if (!TryGetString(node, MaxToolVersionChars, out var text) || !SemVer.IsMatch(text))
+        {
+            return false;
+        }
+
+        value = text;
+        return true;
+    }
+
+    private static bool TryGetInt(JsonNode? node, out int value)
+    {
+        value = 0;
+        return node is JsonValue jsonValue
+            && jsonValue.TryGetValue<int>(out value)
+            && !jsonValue.TryGetValue<bool>(out _);
+    }
+
+    private static string NormalizePromptText(string value)
+    {
+        return value.Normalize(NormalizationForm.FormC)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+    }
+
+    private static string ComputeSha256(string value)
+    {
+        return Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(value))).ToLowerInvariant();
+    }
+
+    private static int PromptUtf8ByteCount(string value)
+    {
+        try
+        {
+            return StrictUtf8.GetByteCount(value);
+        }
+        catch (EncoderFallbackException)
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
+    }
+
     public static void ValidateDelta(JsonObject payload)
     {
         if (payload.Count != 1 || !payload.ContainsKey("text"))
@@ -356,10 +664,17 @@ public static class WorkerV2Contracts
 
     public static void ValidateStepDone(JsonObject payload)
     {
-        if (payload.Count != 3 || !payload.ContainsKey("text") || !payload.ContainsKey("tool_calls") || !payload.ContainsKey("finish_reason"))
+        if (payload.Count != 4 || !payload.ContainsKey("text") || !payload.ContainsKey("tool_calls") || !payload.ContainsKey("finish_reason") || !payload.ContainsKey("prompt_receipt"))
         {
             throw new AgentProtocolException("invalid_step");
         }
+
+        if (payload["prompt_receipt"] is not JsonObject promptReceipt)
+        {
+            throw new AgentProtocolException("invalid_step");
+        }
+
+        ValidatePromptReceipt(promptReceipt);
 
         var textNode = payload["text"];
         if (textNode is not null && textNode.GetValueKind() != JsonValueKind.Null)

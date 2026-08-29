@@ -114,6 +114,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                     ["text"] = "Hello world",
                     ["tool_calls"] = new JsonArray(),
                     ["finish_reason"] = "stop",
+                    ["prompt_receipt"] = PromptReceiptJson(),
                 },
             };
             await SendTextAsync(socket, done.ToJsonString());
@@ -129,9 +130,9 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         var request = new ModelStepRequest(new RunId("run_11111111111111111111111111111111"), new ModelStepId("step_11111111111111111111111111111111"), context, AgentPermissionPreset.Standard, 1, new string('a', 64));
         var deltas = new List<string>();
         var step = await runner.RunStepAsync(request, delta => { deltas.Add(delta.Content); return ValueTask.CompletedTask; }, CancellationToken.None);
-        Assert.Equal("Hello world", step.Text);
-        Assert.Empty(step.ToolCalls);
-        Assert.Equal(AssistantFinishReason.Stop, step.FinishReason);
+        Assert.Equal("Hello world", step.Step.Text);
+        Assert.Empty(step.Step.ToolCalls);
+        Assert.Equal(AssistantFinishReason.Stop, step.Step.FinishReason);
         Assert.Equal(2, deltas.Count);
         Assert.Equal("Hello ", deltas[0]);
         Assert.Equal("world", deltas[1]);
@@ -183,6 +184,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                     ["text"] = "ok",
                     ["tool_calls"] = new JsonArray(),
                     ["finish_reason"] = "stop",
+                    ["prompt_receipt"] = PromptReceiptJson(),
                 },
             }.ToJsonString());
         });
@@ -311,6 +313,19 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         var cancelJson = await cancelReceived.Task.WaitAsync(TimeSpan.FromSeconds(3));
         Assert.Contains("agent.step.cancel", cancelJson);
     }
+
+    private static JsonObject PromptReceiptJson() => new()
+    {
+        ["composer_version"] = "1.0.0",
+        ["prompt_sha256"] = new string('0', 64),
+        ["block_digests"] = new JsonArray(
+            new JsonObject { ["block_id"] = "ru.persona", ["sha256"] = new string('0', 64) },
+            new JsonObject { ["block_id"] = "agent.contract", ["sha256"] = new string('0', 64) },
+            new JsonObject { ["block_id"] = "environment", ["sha256"] = new string('0', 64) },
+            new JsonObject { ["block_id"] = "profile", ["sha256"] = new string('0', 64) },
+            new JsonObject { ["block_id"] = "capabilities", ["sha256"] = new string('0', 64) },
+            new JsonObject { ["block_id"] = "runtime", ["sha256"] = new string('0', 64) }),
+    };
 
     private static async Task<string> ReceiveTextAsync(WebSocket socket)
     {

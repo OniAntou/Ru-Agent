@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using RuAgent.Harness.Core.Prompting;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -167,7 +168,7 @@ public sealed class Phase1RemediationTests
         private readonly Queue<RuAgent.Harness.Core.AssistantStep> _steps;
         public ScriptedStepRunner(Queue<RuAgent.Harness.Core.AssistantStep> steps) => _steps = steps;
 
-        public Task<RuAgent.Harness.Core.AssistantStep> RunStepAsync(
+        public Task<ModelStepResult> RunStepAsync(
             RuAgent.Harness.Core.ModelStepRequest request,
             Func<RuAgent.Harness.Core.AssistantDelta, ValueTask> publishDelta,
             CancellationToken cancellationToken)
@@ -177,7 +178,7 @@ public sealed class Phase1RemediationTests
                 throw new InvalidOperationException("no scripted step left");
             }
 
-            return Task.FromResult(_steps.Dequeue());
+            return Task.FromResult(new ModelStepResult(_steps.Dequeue(), SystemPromptReceipt.Empty));
         }
     }
 

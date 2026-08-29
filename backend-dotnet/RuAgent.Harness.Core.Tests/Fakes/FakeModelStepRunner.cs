@@ -1,5 +1,7 @@
 namespace RuAgent.Harness.Core.Tests.Fakes;
 
+using RuAgent.Harness.Core.Prompting;
+
 public sealed class FakeModelStepRunner : IModelStepRunner
 {
     private readonly Queue<QueuedStep> _steps = new();
@@ -12,7 +14,7 @@ public sealed class FakeModelStepRunner : IModelStepRunner
     public void Enqueue(AssistantStep step, params string[] deltas) =>
         _steps.Enqueue(new QueuedStep(step, deltas));
 
-    public async Task<AssistantStep> RunStepAsync(
+    public async Task<ModelStepResult> RunStepAsync(
         ModelStepRequest request,
         Func<AssistantDelta, ValueTask> publishDelta,
         CancellationToken cancellationToken)
@@ -33,7 +35,7 @@ public sealed class FakeModelStepRunner : IModelStepRunner
                 queued.Deltas[index]));
         }
 
-        return queued.Step;
+        return new ModelStepResult(queued.Step, SystemPromptReceipt.Empty);
     }
 
     private sealed record QueuedStep(AssistantStep Step, IReadOnlyList<string> Deltas);

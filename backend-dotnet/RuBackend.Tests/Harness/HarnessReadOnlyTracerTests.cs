@@ -5,6 +5,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
+using RuAgent.Harness.Core.Prompting;
 using RuBackend.Harness.Broker;
 using Xunit;
 
@@ -465,10 +466,10 @@ public sealed class HarnessReadOnlyTracerTests
     {
         private readonly Queue<AssistantStep> _steps;
         public SimpleModelRunner(IEnumerable<AssistantStep> steps) => _steps = new Queue<AssistantStep>(steps);
-        public Task<AssistantStep> RunStepAsync(ModelStepRequest request, Func<AssistantDelta, ValueTask> publishDelta, CancellationToken cancellationToken)
+        public Task<ModelStepResult> RunStepAsync(ModelStepRequest request, Func<AssistantDelta, ValueTask> publishDelta, CancellationToken cancellationToken)
         {
             if (_steps.Count == 0) throw new InvalidOperationException("no step");
-            return Task.FromResult(_steps.Dequeue());
+            return Task.FromResult(new ModelStepResult(_steps.Dequeue(), SystemPromptReceipt.Empty));
         }
     }
 

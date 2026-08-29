@@ -167,10 +167,35 @@ public sealed class PrivateRuntimeRequestRouter
         StringComparer.OrdinalIgnoreCase);
 
     private readonly IPrivateRuntimeRequestHandler _handler;
+    private readonly IReadOnlyDictionary<(string Method, string Path), IPrivateRuntimeRequestHandler> _routeHandlers;
 
-    public PrivateRuntimeRequestRouter(IPrivateRuntimeRequestHandler handler)
+    public PrivateRuntimeRequestRouter(
+        IPrivateRuntimeRequestHandler handler,
+        IReadOnlyDictionary<(string Method, string Path), IPrivateRuntimeRequestHandler>? routeHandlers = null)
     {
         _handler = handler ?? throw new ArgumentNullException(nameof(handler));
+        _routeHandlers = routeHandlers is null
+            ? new Dictionary<(string Method, string Path), IPrivateRuntimeRequestHandler>()
+            : new Dictionary<(string Method, string Path), IPrivateRuntimeRequestHandler>(routeHandlers);
+    }
+
+    public PrivateRuntimeRequestRouter WithRouteHandler(
+        string method,
+        string path,
+        IPrivateRuntimeRequestHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var key = (method.Trim().ToUpperInvariant(), path);
+        if (!AllowlistedRoutes.Contains(key))
+        {
+            throw new ArgumentException("Runtime route is not allowlisted.", nameof(path));
+        }
+
+        var routeHandlers = new Dictionary<(string Method, string Path), IPrivateRuntimeRequestHandler>(_routeHandlers)
+        {
+            [key] = handler,
+        };
+        return new PrivateRuntimeRequestRouter(_handler, routeHandlers);
     }
 
     public async Task<PrivateRuntimeResponse> InvokeAsync(
@@ -196,7 +221,12 @@ public sealed class PrivateRuntimeRequestRouter
         PrivateRuntimeResponse response;
         try
         {
-            response = await _handler.InvokeAsync(
+            var handler = _routeHandlers.TryGetValue(
+                    (normalizedMethod, uri.AbsolutePath),
+                    out var routeHandler)
+                ? routeHandler
+                : _handler;
+            response = await handler.InvokeAsync(
                 new PrivateRuntimeRequest(
                     normalizedMethod,
                     request.PathAndQuery,

@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Audio;
 using RuAgent.Runtime.Adapters.Runtime;
+using RuAgent.Runtime.Adapters.Speech;
 using RuAgent.Runtime.Core.Contracts;
 
 namespace RuAgent.Runtime.Worker;
@@ -67,10 +68,17 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
     public ManagedWorkerV1RequestRouter(
         ManagedRuntimeSettingsService settings,
         PrivateRuntimeRequestRouter privateRouter,
-        VoiceStreamCoordinator? voice = null)
+        VoiceStreamCoordinator? voice = null,
+        ISpeechRecognizer? speech = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _privateRouter = privateRouter ?? throw new ArgumentNullException(nameof(privateRouter));
+        ArgumentNullException.ThrowIfNull(privateRouter);
+        _privateRouter = speech is null
+            ? privateRouter
+            : privateRouter.WithRouteHandler(
+                "POST",
+                "/voice/transcribe",
+                new SpeechRuntimeRequestHandler(speech));
         _voice = voice;
     }
 

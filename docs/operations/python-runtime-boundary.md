@@ -35,3 +35,20 @@ trusted `PythonCompatibility` startup rollback; it is not a public request or
 UI mode and there is no automatic fallback. This inventory is classification
 evidence, not evidence that the later voice/device migration or the
 OS-enforced filesystem/network sandbox is complete.
+
+## Managed speech adapter boundary (Phase 2, opt-in)
+
+The managed runtime now owns the speech request boundary when a C# Worker v1
+router is composed with `GoogleSpeechRecognizer`: it accepts only bounded
+16 kHz mono PCM/WAV input, validates RIFF chunks before provider I/O, forces
+`vi-VN`, applies the existing 15-second timeout, normalizes non-empty
+transcripts, and maps provider failures to fixed codes without returning raw
+audio or provider bodies.
+
+The Google transport itself remains an injected, isolated provider seam. The
+anonymous `speech_recognition` implementation converts captured PCM to FLAC
+and relies on a package-managed request shape; it is not silently replaced by
+an unverified C# HTTP approximation. Until a stable transport is composed and
+the startup cutover gates pass, the shipped default remains the Python Device
+Worker path described above. This section records an opt-in adapter contract,
+not a claim that managed STT is the default or that Python can be retired.

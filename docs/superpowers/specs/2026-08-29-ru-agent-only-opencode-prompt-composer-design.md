@@ -2,11 +2,13 @@
 
 ## Status
 
-Superseded by
-`docs/superpowers/specs/2026-08-29-ru-agent-only-chat-removal-design.md`.
-This earlier umbrella document records the broader Agent-only and
-OpenCode-style prompt direction for later reference. The current implementation
-cut deliberately narrows the scope to Chat removal and voice migration.
+Historical and superseded. The Agent-only transport portion is documented by
+[`ru-agent-only-chat-removal-design.md`](2026-08-29-ru-agent-only-chat-removal-design.md),
+while the shipped prompt contract is defined by the focused
+[`ru-opencode-system-prompt-composer-design.md`](2026-08-29-ru-opencode-system-prompt-composer-design.md)
+and its [implementation plan](../plans/2026-08-29-ru-opencode-system-prompt-composer.md).
+This umbrella document preserves the earlier combined proposal and
+pre-implementation evidence; it is not an active schema or operating contract.
 
 ## Date
 

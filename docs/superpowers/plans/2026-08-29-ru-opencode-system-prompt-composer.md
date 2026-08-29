@@ -2,6 +2,10 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** Implemented on `main` on 2026-08-29. Tasks 1–7 and their release
+gates are complete; the deterministic Harness Worker receipt regression found
+during the final gate is included in the shipped fixture and test below.
+
 **Goal:** Make every Agent model step receive one deterministic, freshly composed system prompt with bounded Ru instruction context and a digest-only receipt.
 
 **Architecture:** The ASP.NET Core Host selects and bounds Ru-owned context under the existing run root and immutable Broker policy. Worker v2 validates that typed context, composes the final prompt in the Python Generation Kernel from the canonical `style.py` persona, and returns a receipt; the Host persists only an internal receipt payload/event. `AssistantStep` stays pure model output, and the existing Agent-only transport/authority boundaries remain unchanged.
@@ -45,7 +49,9 @@ new files focused; do not grow `LoopbackModelStepRunner.cs`,
 | `src/ru_runtime/generation/runner.py` | Consume a precomposed snapshot on Agent Worker calls. |
 | `src/ru_runtime/worker/v2/model_step.py` | Parse context, compose snapshot, pass it to the runner, and return receipt. |
 | `src/ru_runtime/worker/v2/handlers.py` | Serialize `ModelStepResult` receipt in done payload. |
+| `scripts/harness/deterministic_worker.py` | Keep the deterministic Agent fixture aligned with the Worker v2 receipt contract. |
 | `tests/test_system_prompt_composer.py` | Python context/composer golden and privacy tests. |
+| `tests/test_harness_voice.py` | Regression coverage for deterministic Agent done receipts. |
 | `tests/test_worker_v2_protocol.py`, `tests/test_worker_v2_step.py`, `tests/test_worker_v2_server.py` | Update wire fixtures and Worker behavior tests. |
 | `backend-dotnet/RuAgent.Harness.Core.Tests/Prompting/*` | Core record/provider/coordinator contract tests and fakes. |
 | `backend-dotnet/RuAgent.Harness.Core.Tests/Fakes/FakeModelStepRunner.cs` | Queue typed model results and capture prompt contexts in lifecycle tests. |
@@ -69,7 +75,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
 - Test: `backend-dotnet/RuBackend.Tests/Worker/WorkerV2PromptContractTests.cs`
 - Test: `tests/test_worker_v2_protocol.py`
 
-- [ ] **Step 1: Add RED tests for required context and receipt shapes.**
+- [x] **Step 1: Add RED tests for required context and receipt shapes.**
 
   Add a Core test fixture that constructs a valid context and asserts that
   `SystemPromptContext`, `SystemPromptReceipt`, and `ModelStepResult` expose
@@ -103,7 +109,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   an unknown context field, or removing the receipt raises
   `ProtocolError("invalid_request" or "invalid_step")` at the wire boundary.
 
-- [ ] **Step 2: Run the RED tests and record the expected missing-type failures.**
+- [x] **Step 2: Run the RED tests and record the expected missing-type failures.**
 
   Run:
 
@@ -116,7 +122,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   accepted yet, and .NET fails to compile the new Core types. Do not change
   production code before both failures are observed.
 
-- [ ] **Step 3: Add the Core records with exact bounds.**
+- [x] **Step 3: Add the Core records with exact bounds.**
 
   Implement the records in `RuAgent.Harness.Core.Prompting` with constructor
   validation and defensive copies. Use these public shapes:
@@ -174,7 +180,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   shared lowercase-digest check in an internal `PromptHash.IsLowerHexSha256`
   helper so receipt and context validation cannot drift.
 
-- [ ] **Step 4: Add receipt and runner result records.**
+- [x] **Step 4: Add receipt and runner result records.**
 
   Implement these shapes in `SystemPromptReceipt.cs` and
   `ModelStepResult.cs`:
@@ -228,7 +234,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   parameter/property to `ModelStepRequest` and retain the existing run,
   policy-version, and policy-hash validation.
 
-- [ ] **Step 5: Make the C# and Python wire validators strict.**
+- [x] **Step 5: Make the C# and Python wire validators strict.**
 
   In `WorkerV2Contracts.cs` and `src/ru_runtime/worker/v2/protocol.py`:
 
@@ -247,7 +253,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   `PromptContextSchemaVersion == 1`. Preserve the existing envelope/frame
   validation and bounded `invalid_request`/`invalid_step` codes.
 
-- [ ] **Step 6: Run the contract tests and commit the stable schema.**
+- [x] **Step 6: Run the contract tests and commit the stable schema.**
 
   Run:
 
@@ -260,7 +266,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   Expected result: all new contract tests and the updated Worker v2 fixture
   tests pass with the required context and receipt fields.
 
-- [ ] **Step 7: Commit the contract slice.**
+- [x] **Step 7: Commit the contract slice.**
 
   ```powershell
   git add backend-dotnet/RuAgent.Harness.Core/Prompting backend-dotnet/RuAgent.Harness.Core/IModelStepRunner.cs backend-dotnet/RuAgent.Harness.Core/ModelStepRequest.cs backend-dotnet/RuAgent.Protocol/Harness/WorkerV2Contracts.cs backend-dotnet/RuAgent.Harness.Core.Tests/Prompting backend-dotnet/RuBackend.Tests/Worker/WorkerV2PromptContractTests.cs tests/test_worker_v2_protocol.py
@@ -278,7 +284,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
 - Test: `backend-dotnet/RuBackend.Tests/Harness/RuInstructionLoaderTests.cs`
 - Test: `backend-dotnet/RuBackend.Tests/Harness/RuPromptContextProviderTests.cs`
 
-- [ ] **Step 1: Add RED loader tests for the exact candidate set and bounds.**
+- [x] **Step 1: Add RED loader tests for the exact candidate set and bounds.**
 
   Create a temporary directory fixture with these files:
 
@@ -295,7 +301,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   UTF-8, NUL content, 64 KiB + 1 byte content, combined 256 KiB + 1 byte,
   duplicate source IDs, and a `.ru` junction/symlink resolving outside root.
 
-- [ ] **Step 2: Run the loader RED tests.**
+- [x] **Step 2: Run the loader RED tests.**
 
   ```powershell
   dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~RuInstructionLoader"
@@ -305,7 +311,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   exist. Keep the temporary root cleanup in `finally` and do not run any live
   device or network operation from these tests.
 
-- [ ] **Step 3: Implement `RuInstructionLoader` with final-path containment.**
+- [x] **Step 3: Implement `RuInstructionLoader` with final-path containment.**
 
   Use a fixed candidate table and no directory traversal:
 
@@ -328,7 +334,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   (`missing`, `invalid_encoding`, `contains_nul`, `oversize`, `outside_root`)
   without raw paths in the reason.
 
-- [ ] **Step 4: Add the per-coordinator context provider.**
+- [x] **Step 4: Add the per-coordinator context provider.**
 
   Define the Core seam:
 
@@ -363,7 +369,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   Rebuild the entire object on every `BuildAsync` call; do not cache instruction
   contents or a receipt across model steps.
 
-- [ ] **Step 5: Inject the provider into production and test factories.**
+- [x] **Step 5: Inject the provider into production and test factories.**
 
   Add a `RuInstructionLoader` registration in `Program.cs`. Change
   `AgentRuntimeCoordinatorFactory` to accept the loader/settings/time provider
@@ -374,7 +380,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   `ApprovalWorkflowTests.cs`, and `ModelContextLimitTests.cs`) with a static
   provider returning a valid deterministic fixture.
 
-- [ ] **Step 6: Run Host provider tests and commit.**
+- [x] **Step 6: Run Host provider tests and commit.**
 
   ```powershell
   dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~RuInstructionLoader|FullyQualifiedName~RuPromptContextProvider"
@@ -384,7 +390,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   Expected result: loader/provider tests pass, including link escape and size
   cases, and existing coordinator tests still construct a valid context.
 
-- [ ] **Step 7: Commit the Host context slice.**
+- [x] **Step 7: Commit the Host context slice.**
 
   ```powershell
   git add backend-dotnet/RuBackend/Harness/Prompting backend-dotnet/RuBackend/Harness/AgentRuntimeLoopService.cs backend-dotnet/RuBackend/Program.cs backend-dotnet/RuBackend.Tests/Harness/RuInstructionLoaderTests.cs backend-dotnet/RuBackend.Tests/Harness/RuPromptContextProviderTests.cs backend-dotnet/RuAgent.Harness.Core/Prompting/ISystemPromptContextProvider.cs backend-dotnet/RuAgent.Harness.Core.Tests
@@ -400,7 +406,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
 - Create: `tests/test_system_prompt_composer.py`
 - Modify: `tests/test_ru_style.py`
 
-- [ ] **Step 1: Add RED tests for normalization, order, and digest stability.**
+- [x] **Step 1: Add RED tests for normalization, order, and digest stability.**
 
   Create a `valid_context()` helper returning the exact seven-layer fixture.
   The first tests must assert the observable contract:
@@ -427,7 +433,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   `text` field must never be included in a Host persistence or public event
   serialization.
 
-- [ ] **Step 2: Run the Python RED tests.**
+- [x] **Step 2: Run the Python RED tests.**
 
   ```powershell
   & D:\LLM\.venv\Scripts\python.exe -m pytest D:\LLM\tests\test_system_prompt_composer.py -q
@@ -436,7 +442,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   Expected result: collection fails because the typed context/composer modules
   do not exist. Keep this failure isolated from the Worker server tests.
 
-- [ ] **Step 3: Implement `prompt_context.py` with strict typed parsing.**
+- [x] **Step 3: Implement `prompt_context.py` with strict typed parsing.**
 
   Add frozen, slotted dataclasses and a safe parser with these public names:
 
@@ -506,7 +512,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   and unsupported values with `PromptContextError("prompt_contract_invalid")`;
   never silently truncate.
 
-- [ ] **Step 4: Expose canonical persona blocks without copying prose.**
+- [x] **Step 4: Expose canonical persona blocks without copying prose.**
 
   In `style.py`, retain all existing public constants and tests, then expose
   only small accessors that reuse the current strings:
@@ -525,7 +531,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   `RU_CLOUD_SYSTEM_PROMPT` and `RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT` remain
   unchanged for non-composer callers.
 
-- [ ] **Step 5: Implement deterministic `system_prompt_composer.py`.**
+- [x] **Step 5: Implement deterministic `system_prompt_composer.py`.**
 
   Add the following stable API and block construction rules:
 
@@ -563,7 +569,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   BLOCK`. Compute each block digest and the final digest over the canonical
   UTF-8 text. The receipt contains IDs/digests only, never `text`.
 
-- [ ] **Step 6: Run composer/style tests and commit.**
+- [x] **Step 6: Run composer/style tests and commit.**
 
   ```powershell
   & D:\LLM\.venv\Scripts\python.exe -m pytest D:\LLM\tests/test_system_prompt_composer.py D:\LLM\tests/test_ru_style.py -q
@@ -572,7 +578,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
 
   Expected result: all composer/style tests pass and Ruff reports no findings.
 
-- [ ] **Step 7: Commit the pure composer slice.**
+- [x] **Step 7: Commit the pure composer slice.**
 
   ```powershell
   git add src/ru_runtime/generation/prompt_context.py src/ru_runtime/generation/system_prompt_composer.py src/ru_runtime/policy/style.py tests/test_system_prompt_composer.py tests/test_ru_style.py
@@ -595,7 +601,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
 - Modify: `tests/test_runner_status.py`
 - Modify: `tests/fixtures/worker-v2-protocol.json`
 
-- [ ] **Step 1: Add RED tests for one system message and a required receipt.**
+- [x] **Step 1: Add RED tests for one system message and a required receipt.**
 
   Update every Agent v2 start fixture to include `system_prompt_context` and
   remove top-level `memory_context`. Update fake runners to accept the new
@@ -614,7 +620,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   IDs, and a receipt whose `prompt_sha256` is not 64 lowercase hex. Keep the
   existing structured tool-selection and cancellation assertions.
 
-- [ ] **Step 2: Run the Worker RED tests.**
+- [x] **Step 2: Run the Worker RED tests.**
 
   ```powershell
   & D:\LLM\.venv\Scripts\python.exe -m pytest D:\LLM\tests/test_worker_v2_protocol.py D:\LLM\tests/test_worker_v2_step.py D:\LLM\tests/test_worker_v2_server.py -q
@@ -623,7 +629,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   Expected result: tests fail at the new context/receipt fields and the runner
   call signature. No C# code is changed in this task.
 
-- [ ] **Step 3: Parse context and compose once per accepted Worker step.**
+- [x] **Step 3: Parse context and compose once per accepted Worker step.**
 
   In `model_step.py`, extend `_StepRequest` with
   `prompt_context: SystemPromptContext` and `allow_web_search: bool`. Parse
@@ -654,7 +660,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   to `StepGenerationError("prompt_contract_invalid")` and add that code to the
   bounded public set; never fall back to the old static prompt.
 
-- [ ] **Step 4: Make the runner consume the snapshot without duplicate systems.**
+- [x] **Step 4: Make the runner consume the snapshot without duplicate systems.**
 
   Extend `RuntimeRunner.generate_reply` and `ModelRunner.generate_reply` with
   `system_prompt_snapshot: SystemPromptSnapshot | None = None`. When supplied,
@@ -668,7 +674,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   use `messages[:-1]` and add only an untrusted user reference, preserving one
   system tuple.
 
-- [ ] **Step 5: Serialize the receipt in `agent.step.done`.**
+- [x] **Step 5: Serialize the receipt in `agent.step.done`.**
 
   Change `step_to_payload` to accept `ModelStepResult` and emit:
 
@@ -689,7 +695,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   and call the new serializer. The receipt is sent only in the terminal done
   frame; it is never streamed as visible delta text.
 
-- [ ] **Step 6: Run the complete Python Worker slice and commit.**
+- [x] **Step 6: Run the complete Python Worker slice and commit.**
 
   ```powershell
   & D:\LLM\.venv\Scripts\python.exe -m pytest D:\LLM\tests/test_system_prompt_composer.py D:\LLM\tests/test_reply_orchestration.py D:\LLM\tests/test_runner_status.py D:\LLM\tests/test_worker_v2_protocol.py D:\LLM\tests/test_worker_v2_step.py D:\LLM\tests/test_worker_v2_server.py -q
@@ -700,7 +706,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   Expected result: all targeted tests, Ruff, and Mypy pass. Keep all existing
   direct `execute_reply`/v1 behavior tests green.
 
-- [ ] **Step 7: Commit the Python Worker slice.**
+- [x] **Step 7: Commit the Python Worker slice.**
 
   ```powershell
   git add src/ru_runtime/worker/v2/protocol.py src/ru_runtime/worker/v2/model_step.py src/ru_runtime/worker/v2/handlers.py src/ru_runtime/generation/context.py src/ru_runtime/generation/orchestration.py src/ru_runtime/generation/runner.py tests/test_worker_v2_protocol.py tests/test_worker_v2_step.py tests/test_worker_v2_server.py tests/test_reply_orchestration.py tests/test_runner_status.py tests/fixtures/worker-v2-protocol.json
@@ -716,7 +722,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
 - Modify: `backend-dotnet/RuBackend.Tests/Worker/WorkerV2ClientTests.cs`
 - Modify: `backend-dotnet/RuBackend.Tests/Worker/WorkerV2ContractTests.cs`
 
-- [ ] **Step 1: Add RED tests for the C# start/done wire mapping.**
+- [x] **Step 1: Add RED tests for the C# start/done wire mapping.**
 
   Add a valid `ModelStepRequest` fixture containing one instruction, one
   executable file capability, one `web.search` capability, and one untrusted
@@ -728,7 +734,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   instruction digest, and an uppercase digest each raise the bounded
   `WorkerProtocolException("invalid_step")` code.
 
-- [ ] **Step 2: Run the C# wire RED tests.**
+- [x] **Step 2: Run the C# wire RED tests.**
 
   ```powershell
   dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~WorkerV2Prompt|FullyQualifiedName~LoopbackWorkerClient|FullyQualifiedName~WorkerV2Client"
@@ -738,7 +744,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   `memory_context`/three-field done contract. No production wire code is
   changed before the failure is observed.
 
-- [ ] **Step 3: Implement `WorkerV2PromptWire` as the only C# prompt JSON edge.**
+- [x] **Step 3: Implement `WorkerV2PromptWire` as the only C# prompt JSON edge.**
 
   Create an internal codec with `WriteContext(SystemPromptContext)`,
   `ReadReceipt(JsonObject, SystemPromptContext)`, and
@@ -752,7 +758,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   and return only the typed receipt; it must never return raw JSON or prompt
   text to Core.
 
-- [ ] **Step 4: Update `LoopbackModelStepRunner` to send and bind the contract.**
+- [x] **Step 4: Update `LoopbackModelStepRunner` to send and bind the contract.**
 
   Replace the legacy start object with `WorkerV2PromptWire.WriteContext` and
   remove the null `memory_context` construction and its stale comments. Change
@@ -770,7 +776,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   partial model output. Preserve cancellation, sequence, correlation,
   duplicate-done, frame-size, and Worker error behavior.
 
-- [ ] **Step 5: Cover prose, tool-call, cancellation, and privacy paths.**
+- [x] **Step 5: Cover prose, tool-call, cancellation, and privacy paths.**
 
   Update fake sockets and test helpers so every successful done frame carries
   a receipt whose instruction digests match the start context. Assert that a
@@ -780,7 +786,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   publish buffered deltas; malformed receipt metadata never reaches a public
   event sink.
 
-- [ ] **Step 6: Run the wire slice and commit.**
+- [x] **Step 6: Run the wire slice and commit.**
 
   ```powershell
   dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~WorkerV2Prompt|FullyQualifiedName~LoopbackWorkerClient|FullyQualifiedName~WorkerV2Client"
@@ -790,7 +796,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   Expected result: all wire tests pass, the C# client returns a bound
   `ModelStepResult`, and no fixture contains a top-level `memory_context`.
 
-- [ ] **Step 7: Commit the C# Worker wire slice.**
+- [x] **Step 7: Commit the C# Worker wire slice.**
 
   ```powershell
   git add backend-dotnet/RuBackend/Harness/Worker/WorkerV2PromptWire.cs backend-dotnet/RuBackend/Harness/Worker/LoopbackModelStepRunner.cs backend-dotnet/RuBackend.Tests/Worker/LoopbackWorkerClientTests.cs backend-dotnet/RuBackend.Tests/Worker/WorkerV2ClientTests.cs backend-dotnet/RuBackend.Tests/Worker/WorkerV2ContractTests.cs
@@ -819,7 +825,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
 - Modify: `backend-dotnet/RuAgent.Harness.Persistence.Tests/HarnessEventStoreTests.cs`
 - Modify: `backend-dotnet/RuAgent.Harness.Persistence.Tests/HarnessProjectionTransactionTests.cs`
 
-- [ ] **Step 1: Add RED lifecycle, persistence, and SSE privacy tests.**
+- [x] **Step 1: Add RED lifecycle, persistence, and SSE privacy tests.**
 
   Extend `FakeModelStepRunner` with a queue of `ModelStepResult` values and
   record every received `SystemPromptContext`. Add tests proving that two
@@ -835,7 +841,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   the following public event. Assert that the public event allowlist does not
   gain the internal event name.
 
-- [ ] **Step 2: Run the lifecycle RED tests.**
+- [x] **Step 2: Run the lifecycle RED tests.**
 
   ```powershell
   dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~AgentPromptReceipt|FullyQualifiedName~AgentRunCoordinator|FullyQualifiedName~AgentActivityLifecycle|FullyQualifiedName~ReconciliationState|FullyQualifiedName~ApprovalWorkflow|FullyQualifiedName~ModelContextLimit"
@@ -846,7 +852,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   Expected result: compilation fails on the new result/provider seam and the
   tests still observe a public-safe mapping for every durable event.
 
-- [ ] **Step 3: Compose and validate inside `AgentRunCoordinator` per step.**
+- [x] **Step 3: Compose and validate inside `AgentRunCoordinator` per step.**
 
   Inject `ISystemPromptContextProvider`. After model-context assembly and
   before constructing `ModelStepRequest`, call `BuildAsync` with the current
@@ -866,7 +872,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   step. Keep `AssistantStep` pure and keep the receipt out of conversation
   outbox payloads and user-visible reply text.
 
-- [ ] **Step 4: Add durable enum/policy/mapping support without renumbering.**
+- [x] **Step 4: Add durable enum/policy/mapping support without renumbering.**
 
   Append `PromptReceipt` to `HarnessPayloadKind` after the existing last value;
   never change existing numeric values. Add `ModelPromptComposed` to
@@ -876,7 +882,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   context binding. Keep the event absent from `HarnessEventContractValidator`
   and the public SSE allowlist.
 
-- [ ] **Step 5: Suppress internal events while advancing SSE cursors.**
+- [x] **Step 5: Suppress internal events while advancing SSE cursors.**
 
   In `AgentV1Endpoints.StreamDurablesAsync`, recognize
   `model.prompt_composed` before calling the public safe-envelope mapper. Set
@@ -886,7 +892,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   reconnecting from the returned cursor cannot replay or skip the public
   completion.
 
-- [ ] **Step 6: Run Core, persistence, and endpoint tests and commit.**
+- [x] **Step 6: Run Core, persistence, and endpoint tests and commit.**
 
   ```powershell
   dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Debug --nologo
@@ -897,7 +903,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   Expected result: the full Core and persistence suites pass; receipt events
   remain durable and internal; public SSE cursor tests pass.
 
-- [ ] **Step 7: Commit the lifecycle and privacy slice.**
+- [x] **Step 7: Commit the lifecycle and privacy slice.**
 
   ```powershell
   git add backend-dotnet/RuAgent.Harness.Core/AgentRunCoordinator.cs backend-dotnet/RuAgent.Harness.Core.Tests backend-dotnet/RuAgent.Harness.Persistence/HarnessPayloadStore.cs backend-dotnet/RuAgent.Harness.Persistence/HarnessSqliteMapper.cs backend-dotnet/RuAgent.Harness.Persistence.Tests backend-dotnet/RuAgent.Protocol/Harness/HarnessEventContracts.cs backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs backend-dotnet/RuBackend.Tests/Harness/AgentV1EndpointTests.cs
@@ -914,7 +920,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
 - Modify: `docs/superpowers/specs/2026-08-29-ru-agent-only-opencode-prompt-composer-design.md`
 - Test: documentation link and stale-contract checks from the commands below
 
-- [ ] **Step 1: Capture the pre-change documentation failures.**
+- [x] **Step 1: Capture the pre-change documentation failures.**
 
   Run these read-only checks before editing so the new documentation gate has
   an observable RED state:
@@ -929,7 +935,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   is old; classify it as current, historical, or superseded before changing
   links.
 
-- [ ] **Step 2: Document the shipped Agent-only prompt contract.**
+- [x] **Step 2: Document the shipped Agent-only prompt contract.**
 
   In `docs/architecture.md` and `docs/operations/runtime-behavior.md`, record
   that every Agent step (text, voice, and tool/coding) rebuilds a fresh prompt
@@ -948,7 +954,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   implementation plan; do not leave two documents claiming different active
   schemas.
 
-- [ ] **Step 3: Make verification and privacy checks executable.**
+- [x] **Step 3: Make verification and privacy checks executable.**
 
   Extend `docs/operations/verification.md` with targeted commands for the
   composer, Worker v2 receipt, root-escape loader, C# wire, persistence, and
@@ -974,7 +980,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   if ($stale) { throw "stale composer status remains in active docs" }
   ```
 
-- [ ] **Step 4: Run focused documentation and source-contract checks.**
+- [x] **Step 4: Run focused documentation and source-contract checks.**
 
   ```powershell
   if (Select-String -Path D:\LLM\docs\README.md,D:\LLM\docs\architecture.md,D:\LLM\docs\operations\runtime-behavior.md,D:\LLM\docs\operations\verification.md -Pattern 'implementation not started|not implemented') { throw 'stale active documentation' }
@@ -989,7 +995,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   reports no whitespace errors. A legacy direct/v1 memory argument may remain
   only where the documented compatibility branch explicitly requires it.
 
-- [ ] **Step 5: Run every release gate sequentially.**
+- [x] **Step 5: Run every release gate sequentially.**
 
   Run the existing restore, Python, route, compatibility, package, .NET, GUI,
   and publish gates one at a time, stopping on the first non-zero exit:
@@ -1031,7 +1037,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   release artifact without selecting a stale Debug executable. Do not claim
   live voice or GUI acceptance from these deterministic gates.
 
-- [ ] **Step 6: Commit the documentation and release-gate slice.**
+- [x] **Step 6: Commit the documentation and release-gate slice.**
 
   ```powershell
   git add docs/architecture.md docs/operations/runtime-behavior.md docs/operations/verification.md docs/README.md docs/superpowers/specs/2026-08-29-ru-agent-only-opencode-prompt-composer-design.md

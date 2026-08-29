@@ -36,10 +36,15 @@ an operating contract.
   exposes one `/voice/stream` WebSocket, Worker v1 is runtime/device-only, and
   text and microphone turns share the authenticated Agent HTTP/SSE path. GUI,
   audio, and VTube Studio smoke checks remain explicit user-owned acceptance.
+- OpenCode-style prompt composition (2026-08-29) — the [focused contract](superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md)
+  and [implementation plan](superpowers/plans/2026-08-29-ru-opencode-system-prompt-composer.md)
+  are shipped: every Agent step receives one freshly composed system message,
+  root-bound instruction context, and a digest-only internal receipt. See the
+  [current runtime contract](operations/runtime-behavior.md) and
+  [verification gates](operations/verification.md) for operator-facing rules.
 
 ## Approved future work (remaining Phase 3 work, Phase 4, and follow-up projects)
 
-- [OpenCode-style system-prompt composer design](superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md) — proposed Agent-only prompt composition with one deterministic system message per model step, root-only Ru instruction files, and digest-only receipts; implementation is not started.
 - [OpenCode/Pi coding-loop parity design](superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md)
 - [OpenCode/Pi coding-loop parity implementation program](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity.md)
 
@@ -53,6 +58,7 @@ an operating contract.
 - [Superseded volume vertical-slice design](superpowers/specs/2026-08-22-ru-volume-tool-vertical-slice-design.md)
 - [Superseded volume vertical-slice plan](superpowers/plans/2026-08-22-ru-volume-tool-vertical-slice.md)
 - [Agent tools and skills roadmap](superpowers/plans/2026-08-22-ru-agent-tools-skills.md)
+- [Superseded Agent-only/OpenCode umbrella design](superpowers/specs/2026-08-29-ru-agent-only-opencode-prompt-composer-design.md)
 
 Superseded local-model, training, and evaluation plans were removed after the
 current decisions were consolidated into the architecture, ADRs, runtime

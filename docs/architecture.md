@@ -43,7 +43,7 @@ RuApp / RuAgent.Cli  --start-or-attach via RuAgent.Client-->  ASP.NET Core Publi
 
 Additional harness surfaces (additive, feature-flagged `RuBackend:AgentHarness:Version=v1` default; durable policy/file-tool slice complete, with headless terminal and reconciliation surfaces from Phase 3):
 
-- Worker v2: one `agent.step.start` → exactly one `generate_reply` → `AssistantStep(text, tool_calls, finish_reason)`, with braced JSON never streaming as delta and provider errors mapped to bounded `worker.*` codes.
+- Worker v2: one `agent.step.start` → exactly one `generate_reply` → `AssistantStep(text, tool_calls, finish_reason)`, with braced JSON never streaming as delta and provider errors mapped to bounded `worker.*` codes. Every accepted Agent step also carries a fresh host-built `SystemPromptContext`; the Python Generation Kernel composes one system message from seven ordered layers and returns a digest-only receipt that Core validates before completion or tool dispatch.
 - Agent API/SSE: 13 `/agent/v1/*` routes plus durable `HarnessEvent` SSE (`id:<sequence>`, `Last-Event-ID`/`after_sequence` cursors, reconnect replay, transient non-durable deltas) with bearer auth, idempotency 409, `workspace_busy` 409, `preset_mismatch` 409, active `GET`/`POST`/`DELETE /agent/v1/policies` (global requires `X-Interactive-Confirmed: true`, versioned JSON, encrypted matcher values) and `POST /agent/v1/runs/{runId}/approvals/{approvalId}` (first-writer-wins `approval_stale`, exact scope preview, `approval_cannot_create_global`, 30-min expiry, old-snapshot execution ordering); `reconcile` is active on the Agent v2 headless path (Phase 3).
 - Broker v2: immutable `PolicySnapshot` (version, preset, workspace identity `VolumeSerial`/`RootFileId`/`DisplayHash` `ws_*`, ordered `PolicyRule`/`PolicyMatcher` with tool/path/executable/argv/cwd/operation/network, SHA-256 canonical JSON), `BrokerRunLease` binding and hash validation, `PolicyContext`/`PolicySnapshotEvaluator` authoritative (invariants first, last-match wins, Standard `allow` for ordinary reads/creates/edits and `ask` for delete/protected/outside/network/unknown, Full `allow` fallback never bypassing trust), explicit absolute external paths with run-scoped directory grants and host-generated project descendant rules, `CanonicalPathResolver`/`ProtectedPathCatalog` (DB/key/descriptor/rule locations, credentials, `.git/**`, `.env*`, version `1`), and approval `PendingApprovalStore`/`ApprovalTokenService` (30-min wait, 60-s token, `approval_stale` on replay, old-snapshot execution ordering, `reusable_rule_not_saved` still permits once-only execution).
 - File tools: `files.list`/`files.glob`/`files.search`/`files.read` (streaming enumeration, ordinal relative paths, hidden/binary/protected skip with counts, result/byte/time caps, offset beyond EOF, UTF-8 boundary, bounded `truncated` metadata, junction/symlink containment, no unbounded allocation) plus hash-guarded `files.write`/`files.edit` (required `expected_sha256` `missing`/64-hex, `workspace_changed` on mismatch, same-volume temp + flush/atomic replacement, 4 MiB cap, UTF-8, exact occurrences, before/after hashes, bounded diff summary, run-attributed change set) and recoverable `files.delete`/`files.restore` (encrypted recovery copy capped 1 MiB, `recovery_too_large`, opaque `recovery_id`, one-time `recovery_consumed`/`recovery_target_exists`, byte-identity, never in diagnostics). `files.apply_patch` remains an internal/non-advertised adapter and is not model-usable.
@@ -59,10 +59,38 @@ Runtime Worker -> model adapters / Voice Engine / STT / VTS / observation
 
 The typed Worker protocol v2 is the active Agent execution path. The framed
 Voice Engine remains an accepted future target, not a claim about the current
-Flask-backed implementation. The proposed [OpenCode-style system-prompt
+Flask-backed implementation. The shipped [OpenCode-style system-prompt
 composer](superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md)
-remains a separate follow-up and must not reintroduce a second conversation
-transport; it is not implemented in this architecture snapshot yet.
+does not introduce a second conversation transport: text, voice, coding, and
+tool-selection steps all use the same Agent run and Worker v2 path.
+
+## Agent prompt contract
+
+For every accepted model step, the Host rebuilds a bounded context and the
+private Worker composes exactly one `system` message. The seven ordered layers
+are Ru persona/safety, Agent execution contract, environment, root-selected Ru
+instructions, profile/preset, host-derived capabilities, and runtime context.
+The Host persists only the receipt digest metadata in an `InternalOnly`
+`PromptReceipt` payload referenced by `model.prompt_composed`; the raw prompt,
+instruction text, memory, tool results, arguments, paths, and provider data do
+not enter history, diagnostics, or public SSE. Public SSE advances over the
+internal event without emitting it or its payload reference.
+
+The instruction loader considers only `Ru.md`, `.ru/AGENTS.md`, and
+`.ru/CONTEXT.md` below the selected run root. It performs final-path containment,
+strict UTF-8 decoding, NFC and newline normalization, a 64 KiB per-file cap,
+and a 256 KiB combined instruction cap. The typed context has bounded memory
+(100 KiB), references (32 KiB each), and a 512 KiB serialized-context cap.
+Invalid context or receipt metadata fails closed with the bounded
+`prompt_contract_invalid` path; there is no static-prompt fallback or reduced-
+context retry. `web.search` is advertised only from a host-authenticated
+capability, while memory and tool/search references remain untrusted data.
+
+Prompt composition is not an authority boundary. Broker policy, approvals,
+workspace trust, protected paths, external-directory grants, and cancellation
+remain authoritative. Skills/MCP discovery, arbitrary system overrides, Chat
+compatibility, UI redesign, and the future OS-enforced filesystem/network
+sandbox are outside this implementation.
 
 ## Harness ownership
 

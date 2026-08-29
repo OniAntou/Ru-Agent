@@ -21,7 +21,7 @@ dotnet restore D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe -m mypy D:\LLM\src
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output "$env:TEMP\ru-remediation-harness.json"
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output "$env:TEMP\ru-prompt-composer-harness.json"
 & D:\LLM\.venv\Scripts\python.exe -m pip check
 dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj -c Release --no-restore --nologo
 dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj -c Release --no-restore --nologo
@@ -54,6 +54,64 @@ the same release-path check.
 Ruff, Mypy, and `pip check` are required dependency/tooling gates; do not hide
 findings with permanent ignores or `continue-on-error`. Live microphone,
 speaker, volume, and VTube Studio acceptance remain explicit user-run checks.
+
+## Prompt composer contract checks
+
+Run these focused checks when changing prompt context, composition, Worker v2,
+or receipt persistence. Run them sequentially. They cover the canonical seven
+layers, strict context/receipt validation, root-only instruction loading and
+final-path escape handling, the C# wire codec, internal persistence, and public
+SSE cursor suppression.
+
+```powershell
+& D:\LLM\.venv\Scripts\python.exe -m pytest -q `
+  D:\LLM\tests\test_system_prompt_composer.py `
+  D:\LLM\tests\test_worker_v2_protocol.py `
+  D:\LLM\tests\test_worker_v2_step.py `
+  D:\LLM\tests\test_worker_v2_server.py
+dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~AgentPromptReceipt|FullyQualifiedName~SystemPromptContract"
+dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~RuInstructionLoader|FullyQualifiedName~RuPromptContextProvider|FullyQualifiedName~WorkerV2Prompt|FullyQualifiedName~WorkerV2Contract|FullyQualifiedName~WorkerV2Client|FullyQualifiedName~AgentSseReconnect"
+dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~HarnessPayloadStore|FullyQualifiedName~HarnessProjectionTransaction"
+```
+
+The compatibility artifact is status-only contract evidence. It and all public
+events must exclude prompt text, receipts, raw instruction contents, tool
+arguments, filesystem paths, and provider secrets. `model.prompt_composed` is a
+durable internal event only; it must remain absent from the public event
+allowlist and from CLI/WinUI rendering. Deterministic checks do not replace
+live microphone, speaker, VTube Studio, or real Windows endpoint acceptance.
+
+## Documentation contract check
+
+The check below prevents active documents from claiming that the shipped
+composer is pending, and verifies that Worker v2 has no top-level
+`memory_context` field while the internal receipt event stays out of the public
+allowlist:
+
+```powershell
+$activeDocs = @(
+    'D:\LLM\docs\README.md',
+    'D:\LLM\docs\architecture.md',
+    'D:\LLM\docs\operations\runtime-behavior.md',
+    'D:\LLM\docs\operations\verification.md'
+)
+$stalePattern = @(
+    ('implementation not ' + 'started'),
+    ('not ' + 'implemented')
+)
+$stale = Select-String -Path $activeDocs -Pattern $stalePattern
+if ($stale) { throw 'stale composer status remains in active docs' }
+$workerPaths = @(
+    'D:\LLM\src\ru_runtime\worker\v2',
+    'D:\LLM\backend-dotnet\RuBackend\Harness\Worker',
+    'D:\LLM\backend-dotnet\RuAgent.Protocol\Harness'
+)
+$legacyMemory = & rg -n ('"memory' + '_context"') $workerPaths
+if ($LASTEXITCODE -eq 0) { throw 'top-level Worker v2 memory field remains' }
+if (Select-String -Path 'D:\LLM\backend-dotnet\RuAgent.Protocol\Harness\HarnessEventContracts.cs' -Pattern ('model' + '\.prompt_composed')) {
+    throw 'internal prompt event is documented as public'
+}
+```
 
 ## evidence_class: contract
 

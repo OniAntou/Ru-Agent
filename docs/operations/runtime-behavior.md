@@ -34,6 +34,39 @@ runtime load/request, voice/STT, VTS, observation, and health. It rejects the
 retired conversation message types as `unknown_type`; Agent generation is
 owned by the typed Worker v2 step protocol.
 
+### Agent system-prompt composition
+
+Every accepted Agent model step—typed text, microphone/voice, coding, tool
+selection, and continuation—rebuilds a fresh prompt context before the Worker
+request. The private Generation Kernel emits exactly one `system` message from
+these ordered layers: Ru persona and safety, Agent execution contract,
+environment, root-selected Ru instruction files, profile/preset, validated
+host capabilities, and bounded runtime context. The model then receives the
+ordered user/assistant/tool turns; clock, mood, memory, voice/VTS state, and
+references are not appended as separate system messages.
+
+The Host reads only `Ru.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` below the
+selected run root. It applies final-path containment, strict UTF-8 decoding,
+NFC/newline normalization, a 64 KiB per-file limit, and a 256 KiB combined
+instruction limit. Context values remain bounded (100 KiB memory, 32 KiB per
+reference, and 512 KiB serialized context). Instruction text, memory, and
+tool/search results are model data marked untrusted; they cannot grant tools,
+permissions, approvals, paths, network access, or preset changes.
+
+The Worker returns only a versioned SHA-256 receipt. Core validates it against
+the exact context before committing model completion or dispatching tools, then
+stores the receipt as an `InternalOnly` payload. Public Agent SSE suppresses
+`model.prompt_composed` and its payload while advancing the durable cursor.
+Invalid context or receipt metadata fails closed with `prompt_contract_invalid`;
+there is no static-prompt fallback or reduced-context retry. `web.search` is
+advertised only when the Host has an authenticated capability for it.
+
+Prompt composition is not a security boundary: Broker policy, workspace trust,
+approvals, protected paths, external-directory grants, and cancellation remain
+authoritative. Skills/MCP discovery, arbitrary system overrides, Chat
+compatibility, UI redesign, and the OS-enforced filesystem/network sandbox are
+outside this implementation.
+
 ## Voice output
 
 OmniVoice is the supported local TTS engine. Today the Runtime Worker owns its

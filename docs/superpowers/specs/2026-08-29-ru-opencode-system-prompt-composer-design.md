@@ -2,8 +2,13 @@
 
 ## Status
 
-Proposed design. The three design sections were approved in discussion; this
-document still requires document-level review before implementation planning.
+Implemented on `main` on 2026-08-29. The typed prompt context, deterministic
+composer, Worker v2 receipt, Host validation, internal persistence, and public
+SSE cursor behavior described here are shipped. The implementation is tracked
+in the [implementation plan](../plans/2026-08-29-ru-opencode-system-prompt-composer.md);
+operator-facing behavior and release commands live in
+[`operations/runtime-behavior.md`](../../operations/runtime-behavior.md) and
+[`operations/verification.md`](../../operations/verification.md).
 
 ## Date
 
@@ -46,7 +51,7 @@ version-pinned OpenCode API. They describe rebuilding a system prompt per
 request and merging built-in guidance, environment, instruction files, agent
 profile, capabilities, and runtime references into one system-role message.
 
-The current Ru seams and the gaps this design addresses are:
+The pre-implementation Ru seams and gaps this design addressed were:
 
 - `src/ru_runtime/policy/style.py` owns the canonical Ru persona, language,
   privacy, no-emoji, voice/VTube, and safety guidance. `runner.py` currently
@@ -557,8 +562,11 @@ contradictions. The implementation plan must point to focused tests and a
 release checklist. A failed manual device check blocks a claim of voice
 acceptance but never justifies weakening the deterministic prompt contract.
 
-## Approval boundary
+## Maintenance boundary
 
-Approval of this document authorizes writing the detailed implementation plan.
-It does not authorize changing source code until that plan is separately
-reviewed and execution begins.
+This document is the current prompt-composer contract for the shipped Agent
+path. Changes to the schema, layer order, instruction roots, receipt fields, or
+privacy boundary require an updated implementation plan, focused regression
+tests, and the sequential release gates. The future OS-enforced
+filesystem/network sandbox remains a separate project and must not be implied
+by this prompt contract.

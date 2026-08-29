@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
+    <ProjectReference Include="..\RuAgent.Harness.Core\RuAgent.Harness.Core.csproj" />
+    <ProjectReference Include="..\RuAgent.Runtime.Adapters\RuAgent.Runtime.Adapters.csproj" />
+  </ItemGroup>
+</Project>

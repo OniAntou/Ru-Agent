@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
 using RuBackend.Harness.Worker;
 using RuBackend.Worker;
@@ -140,6 +142,218 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task RunStepAsync_maps_tool_calls_after_validating_prompt_receipt()
+    {
+        await StartServer(async context =>
+        {
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var hello = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = hello["id"]!.GetValue<string>(),
+                ["type"] = "hello.ok",
+                ["seq"] = 0,
+                ["payload"] = new JsonObject
+                {
+                    ["version"] = 2,
+                    ["capabilities"] = new JsonArray("agent.step"),
+                },
+            }.ToJsonString());
+
+            var start = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = start["id"]!.GetValue<string>(),
+                ["type"] = "agent.step.done",
+                ["seq"] = 1,
+                ["correlation_id"] = start["correlation_id"]!.GetValue<string>(),
+                ["payload"] = new JsonObject
+                {
+                    ["text"] = null,
+                    ["tool_calls"] = new JsonArray(new JsonObject
+                    {
+                        ["provider_call_id"] = "call-1",
+                        ["tool_id"] = "files.read",
+                        ["tool_version"] = "1.0.0",
+                        ["arguments"] = new JsonObject { ["path"] = "README.md" },
+                    }),
+                    ["finish_reason"] = "tool_calls",
+                    ["prompt_receipt"] = PromptReceiptJson(),
+                },
+            }.ToJsonString());
+        });
+
+        await using var runner = new LoopbackModelStepRunner(
+            new WorkerClientOptions { Uri = new Uri(_url), Token = _token });
+        var request = new ModelStepRequest(
+            new RunId("run_44444444444444444444444444444444"),
+            new ModelStepId("step_44444444444444444444444444444444"),
+            new ModelContextSnapshot(
+                [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "read README")],
+                Array.Empty<byte>()),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('f', 64));
+
+        var result = await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        Assert.Equal(AssistantFinishReason.ToolCalls, result.Step.FinishReason);
+        var call = Assert.Single(result.Step.ToolCalls);
+        Assert.Equal("call-1", call.ProviderCallId);
+        Assert.Equal("files.read", call.ToolId);
+        Assert.Equal("README.md", call.Arguments.GetProperty("path").GetString());
+    }
+
+    [Fact]
+    public async Task RunStepAsync_sends_only_typed_prompt_context_and_derives_web_search_capability()
+    {
+        JsonObject? observedStart = null;
+        var promptContext = PromptContextFixture.Create();
+        await StartServer(async context =>
+        {
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var hello = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = hello["id"]!.GetValue<string>(),
+                ["type"] = "hello.ok",
+                ["seq"] = 0,
+                ["payload"] = new JsonObject
+                {
+                    ["version"] = 2,
+                    ["capabilities"] = new JsonArray("agent.step"),
+                },
+            }.ToJsonString());
+
+            observedStart = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            var correlation = observedStart["correlation_id"]!.GetValue<string>();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = observedStart["id"]!.GetValue<string>(),
+                ["type"] = "agent.step.done",
+                ["seq"] = 1,
+                ["correlation_id"] = correlation,
+                ["payload"] = new JsonObject
+                {
+                    ["text"] = "ok",
+                    ["tool_calls"] = new JsonArray(),
+                    ["finish_reason"] = "stop",
+                    ["prompt_receipt"] = PromptReceiptJson(promptContext),
+                },
+            }.ToJsonString());
+        });
+
+        await using var runner = new LoopbackModelStepRunner(
+            new WorkerClientOptions { Uri = new Uri(_url), Token = _token });
+        var request = new ModelStepRequest(
+            new RunId("run_11111111111111111111111111111111"),
+            new ModelStepId("step_11111111111111111111111111111111"),
+            new ModelContextSnapshot(
+                [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
+                Array.Empty<byte>()),
+            promptContext,
+            AgentPermissionPreset.Standard,
+            1,
+            new string('d', 64));
+
+        await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        var payload = observedStart!["payload"]!.AsObject();
+        Assert.Equal(
+            ["prompt", "turns", "system_prompt_context", "settings"],
+            payload.Select(property => property.Key));
+        Assert.False(payload.ContainsKey("memory_context"));
+        Assert.True(payload["settings"]!.AsObject()["allow_web_search"]!.GetValue<bool>());
+        Assert.Equal(
+            "untrusted tool result",
+            payload["system_prompt_context"]!.AsObject()["runtime_context"]!.AsObject()["references"]!.AsArray()[0]!["content"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task RunStepAsync_does_not_publish_deltas_before_receipt_validation()
+    {
+        await StartServer(async context =>
+        {
+            using var socket = await context.WebSockets.AcceptWebSocketAsync();
+            var hello = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = hello["id"]!.GetValue<string>(),
+                ["type"] = "hello.ok",
+                ["seq"] = 0,
+                ["payload"] = new JsonObject
+                {
+                    ["version"] = 2,
+                    ["capabilities"] = new JsonArray("agent.step"),
+                },
+            }.ToJsonString());
+
+            var start = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+            var correlation = start["correlation_id"]!.GetValue<string>();
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = start["id"]!.GetValue<string>(),
+                ["type"] = "agent.step.delta",
+                ["seq"] = 1,
+                ["correlation_id"] = correlation,
+                ["payload"] = new JsonObject { ["text"] = "must stay buffered" },
+            }.ToJsonString());
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = start["id"]!.GetValue<string>(),
+                ["type"] = "agent.step.done",
+                ["seq"] = 2,
+                ["correlation_id"] = correlation,
+                ["payload"] = new JsonObject
+                {
+                    ["text"] = "done",
+                    ["tool_calls"] = new JsonArray(),
+                    ["finish_reason"] = "stop",
+                    ["prompt_receipt"] = new JsonObject
+                    {
+                        ["composer_version"] = "1.0.0",
+                        ["prompt_sha256"] = new string('0', 64),
+                        ["block_digests"] = new JsonArray(),
+                    },
+                },
+            }.ToJsonString());
+        });
+
+        await using var runner = new LoopbackModelStepRunner(
+            new WorkerClientOptions { Uri = new Uri(_url), Token = _token });
+        var deltas = new List<string>();
+        var request = new ModelStepRequest(
+            new RunId("run_22222222222222222222222222222222"),
+            new ModelStepId("step_22222222222222222222222222222222"),
+            new ModelContextSnapshot(
+                [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
+                Array.Empty<byte>()),
+            AgentPermissionPreset.Standard,
+            1,
+            new string('e', 64));
+
+        var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
+            runner.RunStepAsync(
+                request,
+                delta =>
+                {
+                    deltas.Add(delta.Content);
+                    return ValueTask.CompletedTask;
+                },
+                CancellationToken.None));
+
+        Assert.Equal("invalid_step", error.Code);
+        Assert.Empty(deltas);
+    }
+
+    [Fact]
     public async Task RunStepAsync_advertises_every_runtime_tool_with_its_scope()
     {
         var observedStart = new TaskCompletionSource<JsonObject>(
@@ -263,6 +477,16 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
             var startJson = JsonNode.Parse(start) as JsonObject ?? throw new InvalidOperationException();
             var requestId = startJson["id"]!.GetValue<string>();
 
+            await SendTextAsync(socket, new JsonObject
+            {
+                ["v"] = 2,
+                ["id"] = requestId,
+                ["type"] = "agent.step.delta",
+                ["seq"] = 1,
+                ["correlation_id"] = startJson["correlation_id"]!.GetValue<string>(),
+                ["payload"] = new JsonObject { ["text"] = "buffered" },
+            }.ToJsonString());
+
             // Wait for cancel
             var next = await ReceiveTextAsync(socket);
             var nextJson = JsonNode.Parse(next) as JsonObject ?? throw new InvalidOperationException();
@@ -293,7 +517,12 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
             Array.Empty<byte>());
         var request = new ModelStepRequest(new RunId("run_22222222222222222222222222222222"), new ModelStepId("step_22222222222222222222222222222222"), context, AgentPermissionPreset.Standard, 1, new string('b', 64));
         using var cts = new CancellationTokenSource();
-        var runTask = runner.RunStepAsync(request, _ => ValueTask.CompletedTask, cts.Token);
+        var deltas = new List<string>();
+        var runTask = runner.RunStepAsync(request, delta =>
+        {
+            deltas.Add(delta.Content);
+            return ValueTask.CompletedTask;
+        }, cts.Token);
         await Task.Delay(200);
         cts.Cancel();
         try
@@ -312,20 +541,69 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
 
         var cancelJson = await cancelReceived.Task.WaitAsync(TimeSpan.FromSeconds(3));
         Assert.Contains("agent.step.cancel", cancelJson);
+        Assert.Empty(deltas);
     }
 
-    private static JsonObject PromptReceiptJson() => new()
+    private static JsonObject PromptReceiptJson(SystemPromptContext? context = null)
     {
-        ["composer_version"] = "1.0.0",
-        ["prompt_sha256"] = new string('0', 64),
-        ["block_digests"] = new JsonArray(
+        var blocks = new JsonArray(
             new JsonObject { ["block_id"] = "ru.persona", ["sha256"] = new string('0', 64) },
             new JsonObject { ["block_id"] = "agent.contract", ["sha256"] = new string('0', 64) },
             new JsonObject { ["block_id"] = "environment", ["sha256"] = new string('0', 64) },
             new JsonObject { ["block_id"] = "profile", ["sha256"] = new string('0', 64) },
             new JsonObject { ["block_id"] = "capabilities", ["sha256"] = new string('0', 64) },
-            new JsonObject { ["block_id"] = "runtime", ["sha256"] = new string('0', 64) }),
-    };
+            new JsonObject { ["block_id"] = "runtime", ["sha256"] = new string('0', 64) });
+        if (context is not null)
+        {
+            var insertionIndex = 3;
+            foreach (var instruction in context.InstructionBlocks)
+            {
+                blocks.Insert(
+                    insertionIndex++,
+                    new JsonObject
+                    {
+                        ["block_id"] = $"instruction.{instruction.SourceId}",
+                        ["sha256"] = instruction.ContentSha256,
+                    });
+            }
+        }
+
+        return new JsonObject
+        {
+            ["composer_version"] = "1.0.0",
+            ["prompt_sha256"] = new string('0', 64),
+            ["block_digests"] = blocks,
+        };
+    }
+
+    private static class PromptContextFixture
+    {
+        public static SystemPromptContext Create()
+        {
+            const string content = "root guidance";
+            return new SystemPromptContext(
+                1,
+                "ru-agent",
+                "standard",
+                new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM"),
+                [new PromptInstructionBlock(
+                    "root:Ru.md",
+                    "Ru.md",
+                    content,
+                    Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant())],
+                [
+                    new PromptCapability("files.read", "1.0.0", "Read a file", new string('a', 64), "workspace.read", "enabled"),
+                    new PromptCapability("web.search", "1.0.0", "Search the web", new string('b', 64), "network.search", "enabled"),
+                ],
+                new PromptRuntimeContext(
+                    "remembered preference",
+                    null,
+                    null,
+                    null,
+                    null,
+                    [new PromptReference("tool_result", "untrusted", "untrusted tool result")]));
+        }
+    }
 
     private static async Task<string> ReceiveTextAsync(WebSocket socket)
     {

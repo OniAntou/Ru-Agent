@@ -1,9 +1,13 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Security.Cryptography;
+using RuAgent.Harness.Core.Context;
+using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using RuBackend.Harness.Worker;
+using RuBackend.Worker;
 using Xunit;
 
 namespace RuBackend.Tests.Worker;
@@ -185,5 +189,119 @@ public sealed class WorkerV2ContractTests
         var rawJson = $"{{\"v\":2,\"id\":\"step-1\",\"type\":\"agent.step.delta\",\"seq\":1,\"payload\":{{\"text\":\"{largeText}\"}}}}";
         var ex = Assert.Throws<AgentProtocolException>(() => WorkerV2EnvelopeCodec.Parse(rawJson));
         Assert.Equal("message_too_large", ex.Code);
+    }
+
+    [Fact]
+    public void Prompt_wire_writes_typed_context_without_legacy_memory_field()
+    {
+        var context = PromptContextFixture.Create();
+
+        var payload = WorkerV2PromptWire.WriteContext(context);
+
+        Assert.Equal(
+            ["schema_version", "agent_profile", "preset", "environment", "instruction_blocks", "capabilities", "runtime_context"],
+            payload.Select(property => property.Key));
+        Assert.False(payload.ContainsKey("memory_context"));
+        Assert.Equal(
+            ["root:Ru.md"],
+            payload["instruction_blocks"]!.AsArray()
+                .Select(item => item!["source_id"]!.GetValue<string>()));
+        Assert.Equal(
+            ["files.read", "web.search"],
+            payload["capabilities"]!.AsArray()
+                .Select(item => item!["id"]!.GetValue<string>()));
+        Assert.Equal(
+            "untrusted tool result",
+            payload["runtime_context"]!.AsObject()["references"]!.AsArray()[0]!["content"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Prompt_wire_receipt_is_strictly_bound_to_context_and_contains_no_prompt_text()
+    {
+        var context = PromptContextFixture.Create();
+        var receipt = PromptContextFixture.Receipt(context);
+
+        var parsed = WorkerV2PromptWire.ReadReceipt(receipt, context);
+        Assert.Equal("1.0.0", parsed.ComposerVersion);
+        Assert.DoesNotContain("text", WorkerV2PromptWire.WriteReceipt(parsed).ToJsonString(), StringComparison.Ordinal);
+
+        var unknown = (JsonObject)receipt.DeepClone();
+        unknown["unexpected"] = true;
+        AssertInvalidReceipt(unknown, context);
+
+        var duplicate = (JsonObject)receipt.DeepClone();
+        duplicate["block_digests"]!.AsArray().Add(
+            new JsonObject { ["block_id"] = "ru.persona", ["sha256"] = new string('d', 64) });
+        AssertInvalidReceipt(duplicate, context);
+
+        var mismatchedInstruction = (JsonObject)receipt.DeepClone();
+        var instruction = mismatchedInstruction["block_digests"]!.AsArray()
+            .Single(item => item!["block_id"]!.GetValue<string>() == "instruction.root:Ru.md")!;
+        instruction["sha256"] = new string('e', 64);
+        AssertInvalidReceipt(mismatchedInstruction, context);
+
+        var uppercase = (JsonObject)receipt.DeepClone();
+        uppercase["prompt_sha256"] = new string('A', 64);
+        AssertInvalidReceipt(uppercase, context);
+        Assert.Throws<WorkerProtocolException>(() => WorkerV2PromptWire.ReadReceipt(null, context));
+    }
+
+    private static void AssertInvalidReceipt(JsonObject receipt, SystemPromptContext context)
+    {
+        var error = Assert.Throws<WorkerProtocolException>(() =>
+            WorkerV2PromptWire.ReadReceipt(receipt, context));
+        Assert.Equal("invalid_step", error.Code);
+    }
+
+    private static class PromptContextFixture
+    {
+        public static SystemPromptContext Create()
+        {
+            const string content = "root guidance";
+            return new SystemPromptContext(
+                1,
+                "ru-agent",
+                "standard",
+                new PromptEnvironment("test-model", "windows", "vi-VN", "Asia/Bangkok", "2026-08-29", "LLM"),
+                [new PromptInstructionBlock(
+                    "root:Ru.md",
+                    "Ru.md",
+                    content,
+                    Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant())],
+                [
+                    new PromptCapability("files.read", "1.0.0", "Read a file", new string('a', 64), "workspace.read", "enabled"),
+                    new PromptCapability("web.search", "1.0.0", "Search the web", new string('b', 64), "network.search", "enabled"),
+                ],
+                new PromptRuntimeContext(
+                    "remembered preference",
+                    null,
+                    null,
+                    null,
+                    null,
+                    [new PromptReference("tool_result", "untrusted", "untrusted tool result")]));
+        }
+
+        public static JsonObject Receipt(SystemPromptContext context)
+        {
+            var zero = new string('0', 64);
+            var blocks = new JsonArray(
+                new JsonObject { ["block_id"] = "ru.persona", ["sha256"] = zero },
+                new JsonObject { ["block_id"] = "agent.contract", ["sha256"] = zero },
+                new JsonObject { ["block_id"] = "environment", ["sha256"] = zero },
+                new JsonObject
+                {
+                    ["block_id"] = "instruction.root:Ru.md",
+                    ["sha256"] = context.InstructionBlocks[0].ContentSha256,
+                },
+                new JsonObject { ["block_id"] = "profile", ["sha256"] = zero },
+                new JsonObject { ["block_id"] = "capabilities", ["sha256"] = zero },
+                new JsonObject { ["block_id"] = "runtime", ["sha256"] = zero });
+            return new JsonObject
+            {
+                ["composer_version"] = "1.0.0",
+                ["prompt_sha256"] = zero,
+                ["block_digests"] = blocks,
+            };
+        }
     }
 }

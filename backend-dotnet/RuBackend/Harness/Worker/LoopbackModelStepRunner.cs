@@ -109,13 +109,13 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         // Prepare start payload
         var prompt = ExtractPrompt(request.Context);
         var turns = ExtractTurns(request.Context);
-        var settings = BuildSettings();
+        var settings = BuildSettings(request.PromptContext);
 
         var startPayload = new JsonObject
         {
             ["prompt"] = prompt,
             ["turns"] = turns,
-            ["system_prompt_context"] = SerializePromptContext(request.PromptContext),
+            ["system_prompt_context"] = WorkerV2PromptWire.WriteContext(request.PromptContext),
             ["settings"] = settings,
         };
         var startEnvelope = new WorkerV2Envelope(
@@ -131,6 +131,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         long expectedSeq = 1;
         AssistantStep? finalStep = null;
         SystemPromptReceipt? finalReceipt = null;
+        var bufferedDeltas = new List<AssistantDelta>();
         bool doneReceived = false;
 
         while (!cancellationToken.IsCancellationRequested)
@@ -194,7 +195,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                 case WorkerV2Contracts.AgentStepDelta:
                     var text = reply.Payload["text"] is JsonValue tv && tv.TryGetValue<string>(out var t) ? t : throw new WorkerProtocolException("invalid_delta");
                     var delta = new AssistantDelta(request.ModelStepId, expectedSeq, text);
-                    await publishDelta(delta).ConfigureAwait(false);
+                    bufferedDeltas.Add(delta);
                     expectedSeq++;
                     break;
 
@@ -247,15 +248,10 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
                     // Enforce one-step constraint: at most one tool call (checked in AssistantStep)
                     finalStep = new AssistantStep(finalText, toolCalls, mappedReason, estimatedInputTokens: 0);
-                    finalReceipt = ParsePromptReceipt(payload["prompt_receipt"]);
-                    try
-                    {
-                        finalReceipt.ValidateAgainst(request.PromptContext);
-                    }
-                    catch (ArgumentException)
-                    {
-                        throw new WorkerProtocolException("invalid_step");
-                    }
+                    finalReceipt = WorkerV2PromptWire.ReadReceipt(
+                        payload["prompt_receipt"] as JsonObject
+                        ?? throw new WorkerProtocolException("invalid_step"),
+                        request.PromptContext);
                     // Done is terminal; break loop.
                     expectedSeq++;
                     goto Done;
@@ -282,115 +278,16 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             throw new WorkerProtocolException("missing_done");
         }
 
+        foreach (var delta in bufferedDeltas)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await publishDelta(delta).ConfigureAwait(false);
+        }
+
         // Ensure exactly one final step was received.
         return new ModelStepResult(
             finalStep,
             finalReceipt ?? throw new WorkerProtocolException("missing_prompt_receipt"));
-    }
-
-    private static JsonObject SerializePromptContext(SystemPromptContext context)
-    {
-        ArgumentNullException.ThrowIfNull(context);
-        var instructions = new JsonArray();
-        foreach (var instruction in context.InstructionBlocks)
-        {
-            instructions.Add(new JsonObject
-            {
-                ["source_id"] = instruction.SourceId,
-                ["display_name"] = instruction.DisplayName,
-                ["content"] = instruction.Content,
-                ["content_sha256"] = instruction.ContentSha256,
-            });
-        }
-
-        var capabilities = new JsonArray();
-        foreach (var capability in context.Capabilities)
-        {
-            capabilities.Add(new JsonObject
-            {
-                ["id"] = capability.Id,
-                ["version"] = capability.Version,
-                ["summary"] = capability.Summary,
-                ["input_schema_digest"] = capability.InputSchemaDigest,
-                ["policy_summary"] = capability.PolicySummary,
-                ["availability"] = capability.Availability,
-            });
-        }
-
-        var references = new JsonArray();
-        foreach (var reference in context.RuntimeContext.References)
-        {
-            references.Add(new JsonObject
-            {
-                ["kind"] = reference.Kind,
-                ["label"] = reference.Label,
-                ["content"] = reference.Content,
-            });
-        }
-
-        return new JsonObject
-        {
-            ["schema_version"] = context.SchemaVersion,
-            ["agent_profile"] = context.AgentProfile,
-            ["preset"] = context.Preset,
-            ["environment"] = new JsonObject
-            {
-                ["model"] = context.Environment.Model,
-                ["platform"] = context.Environment.Platform,
-                ["locale"] = context.Environment.Locale,
-                ["timezone"] = context.Environment.Timezone,
-                ["date"] = context.Environment.Date,
-                ["workspace_label"] = context.Environment.WorkspaceLabel,
-            },
-            ["instruction_blocks"] = instructions,
-            ["capabilities"] = capabilities,
-            ["runtime_context"] = new JsonObject
-            {
-                ["memory"] = context.RuntimeContext.Memory,
-                ["mood"] = context.RuntimeContext.Mood,
-                ["voice"] = context.RuntimeContext.Voice,
-                ["vts"] = context.RuntimeContext.Vts,
-                ["hardware"] = context.RuntimeContext.Hardware,
-                ["references"] = references,
-            },
-        };
-    }
-
-    private static SystemPromptReceipt ParsePromptReceipt(JsonNode? node)
-    {
-        if (node is not JsonObject receipt
-            || receipt["composer_version"] is not JsonValue composerValue
-            || !composerValue.TryGetValue<string>(out var composerVersion)
-            || receipt["prompt_sha256"] is not JsonValue hashValue
-            || !hashValue.TryGetValue<string>(out var promptSha256)
-            || receipt["block_digests"] is not JsonArray blocks)
-        {
-            throw new WorkerProtocolException("invalid_step");
-        }
-
-        var blockDigests = new List<PromptBlockDigest>();
-        try
-        {
-            foreach (var blockNode in blocks)
-            {
-                if (blockNode is not JsonObject block
-                    || block["block_id"] is not JsonValue idValue
-                    || !idValue.TryGetValue<string>(out var blockId)
-                    || block["sha256"] is not JsonValue digestValue
-                    || !digestValue.TryGetValue<string>(out var digest))
-                {
-                    throw new WorkerProtocolException("invalid_step");
-                }
-
-                blockDigests.Add(new PromptBlockDigest(blockId, digest));
-            }
-
-            return new SystemPromptReceipt(composerVersion, promptSha256, blockDigests);
-        }
-        catch (ArgumentException)
-        {
-            throw new WorkerProtocolException("invalid_step");
-        }
     }
 
     private static string ExtractPrompt(ModelContextSnapshot context)
@@ -416,27 +313,37 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
     private static JsonArray ExtractTurns(ModelContextSnapshot context)
     {
-        // Simplify: group consecutive user/assistant pairs as turns (max 8).
         var turns = new JsonArray();
-        // Collect text entries in order, pair them as prompt/response.
-        // For simplicity, take all Text entries and pair them sequentially.
-        var textEntries = context.Entries.Where(e => e.Kind == ModelContextEntryKind.Text).ToArray();
-        // Pair them: assume alternating user/assistant starting with user.
-        for (int i = 0; i + 1 < textEntries.Length && turns.Count < 8; i += 2)
+        string? pendingUser = null;
+        foreach (var entry in context.Entries)
         {
-            var prompt = textEntries[i].Content ?? string.Empty;
-            var response = textEntries[i + 1].Content ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(prompt) || string.IsNullOrWhiteSpace(response))
+            if (entry.Role == ModelContextRole.User
+                && entry.Kind == ModelContextEntryKind.Text
+                && !string.IsNullOrWhiteSpace(entry.Content))
+            {
+                pendingUser = entry.Content;
+                continue;
+            }
+
+            if (pendingUser is null
+                || entry.Role != ModelContextRole.Assistant
+                || entry.Kind != ModelContextEntryKind.AssistantStep
+                || string.IsNullOrWhiteSpace(entry.AssistantStep?.Text))
             {
                 continue;
             }
 
-            if (prompt.Length > WorkerV2Contracts.MaxPromptChars || response.Length > 32_000)
+            var response = entry.AssistantStep.Text;
+            if (pendingUser.Length <= WorkerV2Contracts.MaxPromptChars && response.Length <= 32_000)
             {
-                continue;
+                turns.Add(new JsonObject { ["prompt"] = pendingUser, ["response"] = response });
             }
 
-            turns.Add(new JsonObject { ["prompt"] = prompt, ["response"] = response });
+            pendingUser = null;
+            if (turns.Count >= 8)
+            {
+                break;
+            }
         }
 
         return turns;
@@ -456,7 +363,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         ("terminal.shell", "terminal.execute"),
     ];
 
-    private static JsonObject BuildSettings()
+    private static JsonObject BuildSettings(SystemPromptContext context)
     {
         // The worker receives the same executable surface as the Host gateway. Policy
         // decides whether a proposed call is allowed; hiding mutation tools here would
@@ -471,7 +378,8 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             ["max_tokens"] = 256,
             ["temperature"] = 0.7,
             ["top_k"] = 50,
-            ["allow_web_search"] = false,
+            ["allow_web_search"] = context.Capabilities.Any(
+                capability => capability.Id == "web.search" && capability.Availability == "enabled"),
             ["model_tools"] = tools,
         };
     }
@@ -569,7 +477,14 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                     throw new WorkerProtocolException("invalid_utf8");
                 }
 
-                return WorkerV2EnvelopeCodec.Parse(json);
+                try
+                {
+                    return WorkerV2EnvelopeCodec.Parse(json);
+                }
+                catch (AgentProtocolException error)
+                {
+                    throw new WorkerProtocolException(error.Code);
+                }
             }
         }
     }

@@ -8,13 +8,20 @@ public sealed class PublicHostRuntimeOptions
 {
     public const int DefaultPublicPort = 8000;
     public const int DefaultWorkerPort = 8005;
+    public const int DefaultDeviceWorkerPort = 8006;
     public const int DefaultBrokerPortRangeStart = 1024;
     public const int DefaultBrokerPortRangeEnd = 65535;
     public const string DefaultBindUrl = "http://127.0.0.1:8000";
     public static readonly TimeSpan DefaultIdleTimeout = TimeSpan.FromMinutes(10);
 
     public int PublicPort { get; init; } = DefaultPublicPort;
-    public int WorkerPort { get; init; } = DefaultWorkerPort;
+    public int AgentWorkerPort { get; init; } = DefaultWorkerPort;
+    public int DeviceWorkerPort { get; init; } = DefaultDeviceWorkerPort;
+    public int WorkerPort
+    {
+        get => AgentWorkerPort;
+        init => AgentWorkerPort = value;
+    }
     public int BrokerPort { get; init; }
     public string ProjectRoot { get; init; } = Directory.GetCurrentDirectory();
     public string DataRoot { get; init; } = string.Empty;
@@ -29,12 +36,16 @@ public sealed class PublicHostRuntimeOptions
         int publicPort = DefaultPublicPort,
         int workerPort = DefaultWorkerPort,
         int? brokerPort = null,
-        string? instanceNonce = null)
+        string? instanceNonce = null,
+        int? deviceWorkerPort = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
         if (publicPort is < 1024 or > 65535) throw new ArgumentOutOfRangeException(nameof(publicPort));
         if (workerPort is < 1024 or > 65535) throw new ArgumentOutOfRangeException(nameof(workerPort));
-        if (publicPort == workerPort || publicPort == 8001 || workerPort == 8001)
+        var selectedDeviceWorkerPort = deviceWorkerPort ?? (workerPort == DefaultWorkerPort ? DefaultDeviceWorkerPort : FindFreeLoopbackPort());
+        if (selectedDeviceWorkerPort is < 1024 or > 65535)
+            throw new ArgumentOutOfRangeException(nameof(deviceWorkerPort));
+        if (publicPort == workerPort || publicPort == selectedDeviceWorkerPort || publicPort == 8001 || workerPort == 8001 || selectedDeviceWorkerPort == 8001 || workerPort == selectedDeviceWorkerPort)
             throw new ArgumentException("Ports must not collide with 8000 or 8001.");
         var resolvedProjectRoot = Path.GetFullPath(projectRoot);
         var resolvedDataRoot = string.IsNullOrWhiteSpace(dataRoot) ? string.Empty : Path.GetFullPath(dataRoot.Trim());
@@ -42,13 +53,14 @@ public sealed class PublicHostRuntimeOptions
         var descriptorPath = ResolveDescriptorPath(resolvedDataRoot, resolvedLogRoot, resolvedProjectRoot);
         var selectedBrokerPort = brokerPort ?? FindFreeLoopbackPort();
         if (selectedBrokerPort is < 1024 or > 65535) throw new ArgumentOutOfRangeException(nameof(brokerPort));
-        if (selectedBrokerPort == publicPort || selectedBrokerPort == workerPort || selectedBrokerPort == 8001)
+        if (selectedBrokerPort == publicPort || selectedBrokerPort == workerPort || selectedBrokerPort == selectedDeviceWorkerPort || selectedBrokerPort == 8001)
             throw new ArgumentException("Broker port must not collide.");
 
         return new PublicHostRuntimeOptions
         {
             PublicPort = publicPort,
-            WorkerPort = workerPort,
+            AgentWorkerPort = workerPort,
+            DeviceWorkerPort = selectedDeviceWorkerPort,
             BrokerPort = selectedBrokerPort,
             ProjectRoot = resolvedProjectRoot,
             DataRoot = resolvedDataRoot,

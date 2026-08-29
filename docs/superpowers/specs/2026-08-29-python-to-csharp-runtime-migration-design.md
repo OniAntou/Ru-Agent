@@ -1,7 +1,7 @@
 # Python-to-C# Runtime Migration Design
 
 **Date:** 2026-08-29
-**Status:** Design approved in conversation; written-spec review pending
+**Status:** Design and written specification approved in conversation, 2026-08-29
 
 ## Goal
 

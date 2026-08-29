@@ -10,7 +10,8 @@ public sealed record HarnessCommit
         AgentRun nextRun,
         IReadOnlyList<HarnessEventIntent> events,
         IReadOnlyList<HarnessPayloadIntent> payloads,
-        IReadOnlyList<ConversationOutboxIntent> conversationOutbox)
+        IReadOnlyList<ConversationOutboxIntent> conversationOutbox,
+        ContextCompactionIntent? contextCompaction = null)
     {
         _ = runId.Value;
         if (expectedVersion < 0)
@@ -41,6 +42,22 @@ public sealed record HarnessCommit
         }
 
         RejectDuplicateIds(copiedEvents, copiedPayloads, copiedOutbox);
+        if (contextCompaction is not null)
+        {
+            if (contextCompaction.RunId != runId)
+            {
+                throw new ArgumentException("Compaction run ID does not match the commit.", nameof(contextCompaction));
+            }
+
+            var summaryPayload = copiedPayloads.FirstOrDefault(
+                payload => payload.PayloadId == contextCompaction.SummaryPayloadId);
+            if (summaryPayload is null || summaryPayload.Kind != HarnessPayloadKind.ModelContextSummary)
+            {
+                throw new ArgumentException(
+                    "Compaction must reference a summary payload in the same commit.",
+                    nameof(contextCompaction));
+            }
+        }
         // Outbox intents may reference a payload created in this commit or one already
         // durable from an earlier commit (e.g. the user prompt created at run creation
         // and delivered after workspace trust approval). Existence is verified by the
@@ -52,6 +69,7 @@ public sealed record HarnessCommit
         Events = copiedEvents;
         Payloads = copiedPayloads;
         ConversationOutbox = copiedOutbox;
+        ContextCompaction = contextCompaction;
     }
 
     public RunId RunId { get; }
@@ -65,6 +83,8 @@ public sealed record HarnessCommit
     public IReadOnlyList<HarnessPayloadIntent> Payloads { get; }
 
     public IReadOnlyList<ConversationOutboxIntent> ConversationOutbox { get; }
+
+    public ContextCompactionIntent? ContextCompaction { get; }
 
     private static IReadOnlyList<T> Copy<T>(IReadOnlyList<T> source, string parameterName)
         where T : class

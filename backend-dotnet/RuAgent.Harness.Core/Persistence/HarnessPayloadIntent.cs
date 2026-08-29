@@ -11,6 +11,7 @@ public enum HarnessPayloadKind
     RecoveryOpaque,
     AssistantStep,
     ModelContextBase,
+    ModelContextSummary,
     PromptReceipt,
 }
 
@@ -119,6 +120,15 @@ public sealed record HarnessPayloadIntent
         {
             throw new ArgumentException(
                 "RecoveryOpaque must be opaque and internal-only.",
+                nameof(kind));
+        }
+
+        if (kind == HarnessPayloadKind.ModelContextSummary
+            && (audience != HarnessPayloadAudience.ModelContext
+                || encoding != HarnessPayloadEncoding.Utf8Text))
+        {
+            throw new ArgumentException(
+                "ModelContextSummary must be UTF-8 and model-only.",
                 nameof(kind));
         }
 

@@ -1,4 +1,5 @@
 using System.Text;
+using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using Xunit;
 
@@ -157,6 +158,79 @@ public sealed class HarnessCommitContractTests
             8,
             new byte[] { 0, 255, 1 });
         Assert.Equal(new byte[] { 0, 255, 1 }, recovery.Plaintext.ToArray());
+    }
+
+    [Fact]
+    public void Context_summary_payload_is_model_only()
+    {
+        var bytes = Encoding.UTF8.GetBytes("compact summary");
+        var payload = new HarnessPayloadIntent(
+            PayloadId(),
+            HarnessPayloadKind.ModelContextSummary,
+            HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            bytes.Length,
+            bytes);
+
+        Assert.Equal(HarnessPayloadKind.ModelContextSummary, payload.Kind);
+        Assert.Throws<ArgumentException>(() => new HarnessPayloadIntent(
+            PayloadId(),
+            HarnessPayloadKind.ModelContextSummary,
+            HarnessPayloadAudience.AuthenticatedClient,
+            HarnessPayloadEncoding.Utf8Text,
+            bytes.Length,
+            bytes));
+    }
+
+    [Fact]
+    public void Compaction_intent_requires_ranges_hash_and_same_commit_payload()
+    {
+        var summaryPayload = new HarnessPayloadIntent(
+            PayloadId(),
+            HarnessPayloadKind.ModelContextSummary,
+            HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            16,
+            Encoding.UTF8.GetBytes("summary"));
+        var valid = new ContextCompactionIntent(
+            RunId(),
+            "compact-11111111111111111111111111111111",
+            summaryPayload.PayloadId,
+            ContextCompactionStrategy.Normal,
+            ContextCompactionReason.Automatic,
+            [new ContextEntryRange("old", 1, 2)],
+            200,
+            100,
+            new string('a', 64));
+
+        Assert.Throws<ArgumentException>(() => new ContextCompactionIntent(
+            RunId(),
+            "compact-11111111111111111111111111111111",
+            summaryPayload.PayloadId,
+            ContextCompactionStrategy.Normal,
+            ContextCompactionReason.Automatic,
+            Array.Empty<ContextEntryRange>(),
+            200,
+            100,
+            new string('a', 64)));
+        Assert.Throws<ArgumentException>(() => new ContextCompactionIntent(
+            RunId(),
+            "compact-11111111111111111111111111111111",
+            summaryPayload.PayloadId,
+            ContextCompactionStrategy.Normal,
+            ContextCompactionReason.Automatic,
+            [new ContextEntryRange("old", 1, 2)],
+            200,
+            100,
+            "ABC"));
+        Assert.Throws<ArgumentException>(() => new HarnessCommit(
+            RunId(),
+            7,
+            Run(version: 8, lastSequence: 12),
+            new[] { Event("evt_11111111111111111111111111111111") },
+            Array.Empty<HarnessPayloadIntent>(),
+            Array.Empty<ConversationOutboxIntent>(),
+            valid));
     }
 
     [Fact]

@@ -15,6 +15,7 @@ public enum HarnessEventKind
     ReconciliationResolved,
     TransientFramesDropped,
     ModelPromptComposed,
+    ContextCompacted,
 }
 
 public sealed record HarnessEventIntent

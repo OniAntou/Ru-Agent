@@ -66,11 +66,11 @@
 
 **Interfaces:** `RuntimeSettingsInput(string Backend, string ModelName, string? BaseUrl, string ApiVariant, bool KiloReasoningEnabled)`; `ManagedRuntimeSettingsService.LoadAsync(RuntimeSettingsInput, CancellationToken)`; `PrivateRuntimeRequest(string Method, string PathAndQuery, string? ContentType, ReadOnlyMemory<byte> Body)`; and `PrivateRuntimeRequestRouter.InvokeAsync(PrivateRuntimeRequest, CancellationToken)`.
 
-- [ ] Test persisted backend/model/base URL round-trip, rollback on load failure, secret-like request keys returning `invalid_request`, allowlisted settings/status/model paths, and rejection of unallowlisted paths without provider invocation.
-- [ ] Run the focused Worker/Backend filters; expected FAIL because managed v1 settings are absent.
-- [ ] Reuse the trusted C# settings/credential stores; duplicate no persistence. Apply the existing backend mapping and rollback semantics from `runtime_services.py`. Require an explicit `binary=true` response announcement before returning bytes.
-- [ ] Run focused Release tests and existing `RuntimeSettingsLoader` tests; expected PASS.
-- [ ] Commit `git add backend-dotnet/RuAgent.Runtime.Adapters/Runtime backend-dotnet/RuAgent.Runtime.Worker/WorkerV1RequestRouter.cs backend-dotnet/RuBackend.Tests/Worker/ManagedRuntimeClientTests.cs backend-dotnet/RuAgent.Runtime.Worker.Tests/RuntimeV1HandlerTests.cs; git commit -m "feat: own runtime settings in managed Worker"`.
+- [x] Test persisted backend/model/base URL round-trip, rollback on load failure, secret-like request keys returning `invalid_request`, allowlisted settings/status/model paths, and rejection of unallowlisted paths without provider invocation.
+- [x] Run the focused Worker/Backend filters; expected FAIL because managed v1 settings are absent.
+- [x] Keep persistence in the trusted Host settings/credential stores rather than duplicating it in the worker. Apply the existing backend mapping and rollback semantics from `runtime_services.py`. Require an explicit `binary=true` response announcement before returning bytes.
+- [x] Run focused Release tests and existing `RuntimeSettingsLoader` tests; expected PASS.
+- [x] Commit `git add backend-dotnet/RuAgent.Runtime.Adapters/Runtime backend-dotnet/RuAgent.Runtime.Worker/WorkerV1RequestRouter.cs backend-dotnet/RuBackend.Tests/Worker/ManagedRuntimeClientTests.cs backend-dotnet/RuAgent.Runtime.Worker.Tests/RuntimeV1HandlerTests.cs; git commit -m "feat: own runtime settings in managed Worker"`.
 
 ### Task 5: Port voice orchestration while keeping OmniVoice isolated
 

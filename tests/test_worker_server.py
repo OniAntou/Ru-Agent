@@ -9,7 +9,7 @@ import pytest
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
-from ru_runtime.worker.server import serve_worker
+from ru_runtime.worker.server import parse_args, serve_worker
 from ru_runtime.worker.v1.protocol import (
     ERROR,
     HELLO,
@@ -250,6 +250,50 @@ def test_runtime_server_binds_the_runtime_handler_factory(monkeypatch) -> None:
 
     asyncio.run(scenario())
     assert observed == ["created"]
+
+
+def test_v1_only_closes_v2_before_constructing_a_v2_handler(monkeypatch) -> None:
+    constructed = []
+
+    def forbidden_factory(*_args, **_kwargs):
+        constructed.append("v2")
+        raise AssertionError("v2 handler must not be constructed in v1-only mode")
+
+    monkeypatch.setattr("ru_runtime.worker.server.create_runtime_step_handler", forbidden_factory, raising=False)
+
+    async def scenario() -> None:
+        port = unused_port()
+        stop = asyncio.Event()
+        ready = asyncio.Event()
+        task = asyncio.create_task(
+            serve_worker(
+                "127.0.0.1",
+                port,
+                "worker-secret",
+                default_handlers(),
+                v1_only=True,
+                stop_event=stop,
+                ready_event=ready,
+            )
+        )
+        await asyncio.wait_for(ready.wait(), timeout=2)
+        async with connect(f"ws://127.0.0.1:{port}/worker/v2") as websocket:
+            with pytest.raises(ConnectionClosed):
+                await websocket.recv()
+            assert websocket.close_code == 4404
+        stop.set()
+        await asyncio.wait_for(task, timeout=2)
+
+    asyncio.run(scenario())
+    assert constructed == []
+
+
+def test_worker_cli_exposes_an_explicit_v1_only_flag() -> None:
+    args = parse_args(["--host", "127.0.0.1", "--port", "8123", "--v1-only"])
+
+    assert args.host == "127.0.0.1"
+    assert args.port == 8123
+    assert args.v1_only is True
 
 
 class running_server:

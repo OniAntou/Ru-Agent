@@ -5,7 +5,6 @@ from pathlib import Path
 
 from scripts.check_python_runtime_boundary import RuntimeBoundaryRecord, scan_runtime_boundary
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

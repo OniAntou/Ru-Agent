@@ -10,7 +10,7 @@ import logging
 import os
 from collections.abc import AsyncIterator, Callable, Mapping
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
@@ -21,8 +21,6 @@ from ru_runtime.persistence.diagnostic_log import (
 )
 from ru_runtime.worker.v1.server import WorkerHandlers
 from ru_runtime.worker.v1.server import handle_connection as handle_v1_connection
-from ru_runtime.worker.v2.handlers import StepReply, create_runtime_step_handler
-from ru_runtime.worker.v2.model_step import StepGenerationError
 from ru_runtime.worker.v2.protocol import (
     AGENT_STEP_CANCEL,
     AGENT_STEP_DELTA,
@@ -41,6 +39,10 @@ from ru_runtime.worker.v2.protocol import (
 )
 
 logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from ru_runtime.worker.v2.handlers import StepReply
+else:
+    StepReply = Any
 V2Handler = Callable[[dict[str, Any], asyncio.Event], AsyncIterator[StepReply]]
 _MAX_REQUESTS_PER_CONNECTION = 1024
 
@@ -55,6 +57,7 @@ async def serve_worker(
     v2_runner: Any = None,
     stop_event: asyncio.Event | None = None,
     ready_event: asyncio.Event | None = None,
+    v1_only: bool = False,
 ) -> None:
     if host != "127.0.0.1":
         raise ValueError("worker host must be 127.0.0.1")
@@ -62,12 +65,13 @@ async def serve_worker(
         raise ValueError("worker port is out of range")
     if not isinstance(token, str) or not token.strip():
         raise ValueError("worker token is required")
-    if v2_handler is not None and v2_runner is not None:
-        raise ValueError("choose one v2 handler")
-    if v2_handler is None and v2_runner is not None:
-        from ru_runtime.worker.v2.handlers import StepDependencies, build_step_handler
+    if not v1_only:
+        if v2_handler is not None and v2_runner is not None:
+            raise ValueError("choose one v2 handler")
+        if v2_handler is None and v2_runner is not None:
+            from ru_runtime.worker.v2.handlers import StepDependencies, build_step_handler
 
-        v2_handler = build_step_handler(StepDependencies(v2_runner))
+            v2_handler = build_step_handler(StepDependencies(v2_runner))
     install_diagnostic_logging_handler(get_diagnostic_log_writer())
     shutdown = stop_event or asyncio.Event()
 
@@ -77,6 +81,9 @@ async def serve_worker(
         if path == "/worker/v1":
             await handle_v1_connection(connection, token, handlers)
         elif path == "/worker/v2":
+            if v1_only:
+                await connection.close(code=4404, reason="worker endpoint not found")
+                return
             await _handle_v2_connection(connection, token, v2_handler)
         else:
             await connection.close(code=4404, reason="worker endpoint not found")
@@ -103,9 +110,16 @@ async def serve_runtime_worker(
     *,
     stop_event: asyncio.Event | None = None,
     ready_event: asyncio.Event | None = None,
+    v1_only: bool = False,
 ) -> None:
     from ru_runtime.worker.v1.handlers import create_runtime_handlers
     from ru_runtime.worker.v1.runtime_services import _apply_settings_on_startup, _shutdown_runtime
+
+    v2_handler = None
+    if not v1_only:
+        from ru_runtime.worker.v2.handlers import create_runtime_step_handler
+
+        v2_handler = create_runtime_step_handler()
 
     _apply_settings_on_startup()
     try:
@@ -114,9 +128,10 @@ async def serve_runtime_worker(
             port,
             token,
             create_runtime_handlers(),
-            v2_handler=create_runtime_step_handler(),
+            v2_handler=v2_handler,
             stop_event=stop_event,
             ready_event=ready_event,
+            v1_only=v1_only,
         )
     finally:
         from ru_runtime.generation.search import shutdown_search_executor
@@ -338,6 +353,8 @@ async def _run_v2_request(
     cancelled: asyncio.Event,
     take_sequence: Callable[[str], int],
 ) -> None:
+    from ru_runtime.worker.v2.model_step import StepGenerationError
+
     final_sent = False
     replies: AsyncIterator[StepReply] | None = None
     try:
@@ -498,16 +515,21 @@ def _correlation_log_ref(correlation_id: str | None) -> str:
     return hashlib.sha256(correlation_id.encode("ascii")).hexdigest()[:12]
 
 
-def main(argv: list[str] | None = None) -> int:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ru private protocol worker")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8005)
-    args = parser.parse_args(argv)
+    parser.add_argument("--v1-only", action="store_true", help="serve only the private Worker v1 device boundary")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     token = os.environ.get("RU_WORKER_TOKEN", "").strip()
     if not token:
-        parser.error("RU_WORKER_TOKEN is required")
+        raise SystemExit("RU_WORKER_TOKEN is required")
     try:
-        asyncio.run(serve_runtime_worker(args.host, args.port, token))
+        asyncio.run(serve_runtime_worker(args.host, args.port, token, v1_only=args.v1_only))
     except KeyboardInterrupt:
         return 130
     return 0

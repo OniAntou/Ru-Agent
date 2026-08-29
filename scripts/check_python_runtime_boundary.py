@@ -11,12 +11,10 @@ import argparse
 import ast
 import hashlib
 import json
-import re
 import sys
+from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
-from typing import Iterable, Sequence
-
 
 _SCAN_ROOTS = ("src/ru_runtime", "scripts", "tools", "tests", "backend-dotnet")
 _IGNORED_PARTS = {"__pycache__", ".pytest_cache", "bin", "obj", ".git"}
@@ -70,7 +68,6 @@ def _relative_files(root: Path) -> tuple[Path, ...]:
         for path in directory.rglob("*"):
             if not path.is_file() or any(part in _IGNORED_PARTS for part in path.parts):
                 continue
-            rel = path.relative_to(root).as_posix()
             # Source and metadata files are useful to boundary review.  Skip
             # large binary artifacts and build outputs by construction.
             if path.suffix.lower() in {".py", ".cs", ".csproj", ".json", ".md", ".bat", ".ps1", ".toml", ".txt"}:

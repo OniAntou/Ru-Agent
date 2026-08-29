@@ -24,9 +24,9 @@ public sealed class RuInstructionLoaderTests
         Assert.Equal(
             new[] { "root:Ru.md", "ru:AGENTS.md", "ru:CONTEXT.md" },
             result.Blocks.Select(block => block.SourceId));
-        Assert.Equal("root guidance\n", result.Blocks[0].Content);
+        Assert.Equal("root guidance", result.Blocks[0].Content);
         Assert.Equal(
-            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("root guidance\n"))).ToLowerInvariant(),
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("root guidance"))).ToLowerInvariant(),
             result.Blocks[0].ContentSha256);
         Assert.DoesNotContain(result.Blocks, block => block.Content.Contains("parent", StringComparison.Ordinal));
         Assert.DoesNotContain(result.Blocks, block => block.Content.Contains("arbitrary", StringComparison.Ordinal));

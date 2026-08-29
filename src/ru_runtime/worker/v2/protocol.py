@@ -478,7 +478,7 @@ def _validate_prompt_receipt(receipt: Mapping[str, Any]) -> None:
 
 
 def _normalize_prompt_text(value: str) -> str:
-    return unicodedata.normalize("NFC", value).replace("\r\n", "\n").replace("\r", "\n")
+    return unicodedata.normalize("NFC", value).replace("\r\n", "\n").replace("\r", "\n").rstrip()
 
 
 def _require_prompt_string(value: object, maximum: int, *, code: str = "invalid_request") -> str:

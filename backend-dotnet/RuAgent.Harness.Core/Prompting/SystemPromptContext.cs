@@ -396,7 +396,8 @@ internal static class PromptText
         ArgumentNullException.ThrowIfNull(value, parameterName);
         var normalized = value.Normalize(NormalizationForm.FormC)
             .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n');
+            .Replace('\r', '\n')
+            .TrimEnd();
         if (string.IsNullOrWhiteSpace(normalized) || normalized.Contains('\0'))
         {
             throw new ArgumentException("Value must be non-empty and contain no NUL.", parameterName);

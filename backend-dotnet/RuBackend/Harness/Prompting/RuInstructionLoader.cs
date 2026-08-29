@@ -144,7 +144,8 @@ public sealed class RuInstructionLoader
             var content = StrictUtf8.GetString(bytes, 0, count)
                 .Normalize(NormalizationForm.FormC)
                 .Replace("\r\n", "\n", StringComparison.Ordinal)
-                .Replace('\r', '\n');
+                .Replace('\r', '\n')
+                .TrimEnd();
             if (content.Contains('\0'))
             {
                 return (null, "contains_nul");

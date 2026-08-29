@@ -114,6 +114,18 @@ RU_AGENT_FOLLOW_UP_SYSTEM_PROMPT = (
 )
 
 
+def ru_agent_persona_block() -> str:
+    """Return the canonical persona contract used by the Agent composer."""
+
+    return _AGENT_BASE_PROMPT + "\n\n" + _CLOUD_ADDENDUM
+
+
+def ru_agent_execution_contract_block() -> str:
+    """Return the canonical Agent execution/follow-up contract."""
+
+    return _AGENT_FOLLOW_UP_INSTRUCTION
+
+
 class _SelectionCapability(Protocol):
     tool_id: str
     tool_version: str

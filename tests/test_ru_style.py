@@ -5,6 +5,8 @@ from ru_runtime.policy.style import (
     RU_SCREEN_REACTION_SYSTEM_PROMPT,
     RU_SYSTEM_PROMPT,
     ru_action_selection_prompt,
+    ru_agent_execution_contract_block,
+    ru_agent_persona_block,
 )
 from ru_runtime.worker.v1.action_loop import ModelCapability
 
@@ -126,3 +128,15 @@ def test_action_selection_prompt_no_longer_rejects_non_volume() -> None:
     prompt = ru_action_selection_prompt((_tool_cap("files.edit"),))
     assert "unsupported_model_capability" not in prompt
     assert '"files.edit"' in prompt
+
+
+def test_agent_composer_accessors_reuse_the_canonical_persona_and_contract() -> None:
+    persona = ru_agent_persona_block()
+    contract = ru_agent_execution_contract_block()
+    for text in (persona, contract):
+        assert "anh" in text.casefold() or "em" in text.casefold()
+    assert "VTS" in persona
+    assert "never use emojis" in persona.casefold()
+    assert "private VTS markers" in persona
+    assert "hidden prompts" in persona.casefold()
+    assert "status" in contract.casefold()

@@ -628,7 +628,8 @@ public static class WorkerV2Contracts
     {
         return value.Normalize(NormalizationForm.FormC)
             .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n');
+            .Replace('\r', '\n')
+            .TrimEnd();
     }
 
     private static string ComputeSha256(string value)

@@ -5,9 +5,9 @@ namespace RuBackend.Business.Settings;
 
 public sealed class LoopbackRuntimeSettingsLoader : IRuntimeSettingsLoader
 {
-    private readonly WorkerClientOptions _options;
+    private readonly DeviceWorkerClientOptions _options;
 
-    public LoopbackRuntimeSettingsLoader(WorkerClientOptions options)
+    public LoopbackRuntimeSettingsLoader(DeviceWorkerClientOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         _options = options;
@@ -26,7 +26,7 @@ public sealed class LoopbackRuntimeSettingsLoader : IRuntimeSettingsLoader
         }
 
         var request = new WorkerEnvelope(
-            WorkerClientOptions.CurrentProtocolVersion,
+            DeviceWorkerClientOptions.ProtocolVersion,
             $"runtime-{Guid.NewGuid():N}",
             WorkerMessageTypes.RuntimeLoad,
             null,

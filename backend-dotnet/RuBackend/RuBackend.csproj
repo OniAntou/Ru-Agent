@@ -11,6 +11,8 @@
     <ProjectReference Include="..\RuAgent.Harness.Persistence\RuAgent.Harness.Persistence.csproj" />
     <ProjectReference Include="..\RuAgent.Hosting\RuAgent.Hosting.csproj" />
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
+    <ProjectReference Include="..\RuAgent.Runtime.Adapters\RuAgent.Runtime.Adapters.csproj" />
+    <ProjectReference Include="..\RuAgent.Runtime.Worker\RuAgent.Runtime.Worker.csproj" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
   </ItemGroup>
 </Project>

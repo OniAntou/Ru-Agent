@@ -13,12 +13,12 @@ public sealed class LoopbackWorkerClient :
     IVoiceProtocolClient,
     IVtsProtocolClient
 {
-    private readonly WorkerClientOptions _options;
+    private readonly DeviceWorkerClientOptions _options;
     private readonly ConcurrentDictionary<string, WorkerConnection> _activeRequests =
         new(StringComparer.Ordinal);
     private int _disposed;
 
-    public LoopbackWorkerClient(WorkerClientOptions options)
+    public LoopbackWorkerClient(DeviceWorkerClientOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
@@ -41,7 +41,7 @@ public sealed class LoopbackWorkerClient :
         var hello = await connection.ConnectAsync(cancellationToken);
         EnsureCapability(hello.Capabilities, "vts");
         var request = new WorkerEnvelope(
-            _options.ProtocolVersion,
+            DeviceWorkerClientOptions.ProtocolVersion,
             requestId,
             WorkerMessageTypes.VtsCatalog,
             null,
@@ -85,7 +85,7 @@ public sealed class LoopbackWorkerClient :
         var hello = await connection.ConnectAsync(cancellationToken);
         EnsureCapability(hello.Capabilities, "vts");
         var request = new WorkerEnvelope(
-            _options.ProtocolVersion,
+            DeviceWorkerClientOptions.ProtocolVersion,
             requestId,
             WorkerMessageTypes.VtsAction,
             null,
@@ -125,7 +125,7 @@ public sealed class LoopbackWorkerClient :
         await using var connection = new WorkerConnection(_options);
         await connection.ConnectAsync(cancellationToken);
         var request = new WorkerEnvelope(
-            _options.ProtocolVersion,
+            DeviceWorkerClientOptions.ProtocolVersion,
             $"health-{Guid.NewGuid():N}",
             WorkerMessageTypes.WorkerHealth,
             null,
@@ -170,7 +170,7 @@ public sealed class LoopbackWorkerClient :
         var hello = await connection.ConnectAsync(cancellationToken);
         EnsureCapability(hello.Capabilities, "runtime");
         var envelope = new WorkerEnvelope(
-            _options.ProtocolVersion,
+            DeviceWorkerClientOptions.ProtocolVersion,
             request.RequestId,
             WorkerMessageTypes.RuntimeRequest,
             null,
@@ -242,7 +242,7 @@ public sealed class LoopbackWorkerClient :
         try
         {
             var envelope = new WorkerEnvelope(
-                _options.ProtocolVersion,
+                DeviceWorkerClientOptions.ProtocolVersion,
                 request.RequestId,
                 WorkerMessageTypes.VoiceStart,
                 null,

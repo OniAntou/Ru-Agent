@@ -33,13 +33,13 @@ public sealed class WorkerConnection : IAsyncDisposable
         ],
         StringComparer.Ordinal);
 
-    private readonly WorkerClientOptions _options;
+    private readonly DeviceWorkerClientOptions _options;
     private readonly ClientWebSocket _socket = new();
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private bool _connected;
     private bool _disposed;
 
-    public WorkerConnection(WorkerClientOptions options)
+    public WorkerConnection(DeviceWorkerClientOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
@@ -60,14 +60,14 @@ public sealed class WorkerConnection : IAsyncDisposable
             await _socket.ConnectAsync(_options.Uri, cancellationToken);
             var requestId = $"hello-{Guid.NewGuid():N}";
             var request = new WorkerEnvelope(
-                _options.ProtocolVersion,
+                DeviceWorkerClientOptions.ProtocolVersion,
                 requestId,
                 WorkerMessageTypes.Hello,
                 null,
                 new JsonObject
                 {
                     ["token"] = _options.Token,
-                    ["version"] = _options.ProtocolVersion,
+                    ["version"] = DeviceWorkerClientOptions.ProtocolVersion,
                     ["capabilities"] = new JsonArray(
                         "runtime",
                         "voice",
@@ -91,7 +91,7 @@ public sealed class WorkerConnection : IAsyncDisposable
             }
 
             var version = ReadInt32(response.Payload["version"], "invalid_hello");
-            if (version != _options.ProtocolVersion)
+            if (version != DeviceWorkerClientOptions.ProtocolVersion)
             {
                 throw new WorkerProtocolException("unsupported_version");
             }

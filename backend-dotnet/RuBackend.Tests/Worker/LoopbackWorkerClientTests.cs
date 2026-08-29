@@ -261,11 +261,9 @@ public sealed class LoopbackWorkerClientTests
                 new JsonObject { ["state"] = "audio_ready", ["byte_length"] = 4 }));
             await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "no binary", CancellationToken.None);
         });
-        await using var connection = new WorkerConnection(new WorkerClientOptions
-        {
-            Uri = server.Uri,
-            Token = "worker-secret",
-        });
+        await using var connection = new WorkerConnection(new DeviceWorkerClientOptions(
+            server.Uri,
+            "worker-secret"));
         await connection.ConnectAsync(CancellationToken.None);
         var request = new WorkerEnvelope(1, "voice-missing", WorkerMessageTypes.VoiceStart, null, []);
 
@@ -330,7 +328,7 @@ public sealed class LoopbackWorkerClientTests
     }
 
     private static LoopbackWorkerClient CreateClient(Uri uri, string token = "worker-secret") =>
-        new(new WorkerClientOptions { Uri = uri, Token = token });
+        new(new DeviceWorkerClientOptions(uri, token));
 
     private static WorkerEnvelope HelloOk(string requestId, params string[] capabilities) =>
         Event(

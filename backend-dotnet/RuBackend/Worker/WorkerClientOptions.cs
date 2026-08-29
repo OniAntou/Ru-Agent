@@ -1,42 +1,62 @@
 namespace RuBackend.Worker;
 
-public sealed class WorkerClientOptions
+public sealed record AgentWorkerClientOptions(Uri Uri, string Token)
 {
-    public const int CurrentProtocolVersion = 1;
+    public const int ProtocolVersion = 2;
     public const int DefaultMaxMessageBytes = 8 * 1024 * 1024;
-
-    public Uri Uri { get; init; } = new("ws://127.0.0.1:8005/worker/v1");
-
-    public string Token { get; init; } = string.Empty;
-
-    public int ProtocolVersion { get; init; } = CurrentProtocolVersion;
 
     public int MaxMessageBytes { get; init; } = DefaultMaxMessageBytes;
 
-    internal void Validate()
+    public void Validate() => WorkerClientOptionValidation.Validate(
+        Uri,
+        Token,
+        "/worker/v2",
+        MaxMessageBytes);
+}
+
+public sealed record DeviceWorkerClientOptions(Uri Uri, string Token)
+{
+    public const int ProtocolVersion = 1;
+    public const int DefaultMaxMessageBytes = 8 * 1024 * 1024;
+
+    public int MaxMessageBytes { get; init; } = DefaultMaxMessageBytes;
+
+    public void Validate() => WorkerClientOptionValidation.Validate(
+        Uri,
+        Token,
+        "/worker/v1",
+        MaxMessageBytes);
+}
+
+internal static class WorkerClientOptionValidation
+{
+    public static void Validate(
+        Uri? uri,
+        string? token,
+        string expectedPath,
+        int maxMessageBytes)
     {
-        if (!Uri.IsAbsoluteUri
-            || !Uri.IsLoopback
-            || (Uri.Scheme != "ws" && Uri.Scheme != "wss"))
+        if (uri is null
+            || !uri.IsAbsoluteUri
+            || !uri.IsLoopback
+            || (uri.Scheme != "ws" && uri.Scheme != "wss")
+            || !string.Equals(uri.AbsolutePath, expectedPath, StringComparison.Ordinal))
         {
-            throw new ArgumentException("Worker URI must be an absolute loopback WebSocket URI.", nameof(Uri));
+            throw new ArgumentException(
+                $"Worker URI must be an absolute loopback WebSocket URI at {expectedPath}.",
+                nameof(uri));
         }
 
-        if (string.IsNullOrWhiteSpace(Token))
+        if (string.IsNullOrWhiteSpace(token)
+            || token.Length > 4096
+            || token.Any(character => character > 127 || char.IsControl(character)))
         {
-            throw new ArgumentException("Worker token is required.", nameof(Token));
+            throw new ArgumentException("Worker token is invalid.", nameof(token));
         }
 
-        if (ProtocolVersion != CurrentProtocolVersion)
+        if (maxMessageBytes <= 0)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(ProtocolVersion),
-                "Only worker protocol version 1 is supported.");
-        }
-
-        if (MaxMessageBytes <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(MaxMessageBytes));
+            throw new ArgumentOutOfRangeException(nameof(maxMessageBytes));
         }
     }
 }
@@ -44,7 +64,7 @@ public sealed class WorkerClientOptions
 public sealed class WorkerUnavailableException : Exception
 {
     public WorkerUnavailableException(Exception? innerException = null)
-        : base("Python runtime worker is unavailable.", innerException)
+        : base("Runtime worker is unavailable.", innerException)
     {
     }
 }

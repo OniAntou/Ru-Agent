@@ -32,8 +32,14 @@ RuAgent.Hosting.PublicHostSingleInstance? managedSingleInstance = null;
 RuAgent.Hosting.WorkerBrokerProcessManager? managedWorkerBrokerManager = null;
 RuAgent.Hosting.RuntimeDescriptorWriter? managedDescriptorWriter = null;
 RuAgent.Hosting.RuntimeClientLeaseRegistry? managedLeaseRegistry = null;
+var managedAgentWorkerToken = string.Empty;
+var managedDeviceWorkerToken = string.Empty;
+var managedAgentWorkerPort = PublicHostRuntimeOptions.DefaultWorkerPort;
+var managedDeviceWorkerPort = PublicHostRuntimeOptions.DefaultDeviceWorkerPort;
 
 var builder = WebApplication.CreateBuilder(args);
+var migrationMode = RuntimeMigrationModeParser.Parse(
+    builder.Configuration["RuBackend:RuntimeMigrationMode"]);
 builder.Logging.ClearProviders();
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Routing.EndpointMiddleware", LogLevel.Warning);
@@ -85,8 +91,9 @@ if (isManagedRuntime)
         }
     }
 
-    // Generate private credentials
-    var workerSecret = RuAgent.Hosting.PublicHostRuntimeOptions.GenerateBearerToken();
+    // Generate independent private credentials for the Agent and device workers.
+    managedAgentWorkerToken = RuAgent.Hosting.PublicHostRuntimeOptions.GenerateBearerToken();
+    managedDeviceWorkerToken = RuAgent.Hosting.PublicHostRuntimeOptions.GenerateBearerToken();
     managedPublicBearer = builder.Configuration["RU_DESKTOP_TOKEN"] ?? Environment.GetEnvironmentVariable("RU_DESKTOP_TOKEN");
     if (string.IsNullOrWhiteSpace(managedPublicBearer))
     {
@@ -95,24 +102,61 @@ if (isManagedRuntime)
         builder.Configuration["RU_DESKTOP_TOKEN"] = managedPublicBearer;
         builder.Configuration["RuBackend:DesktopToken"] = managedPublicBearer;
     }
-    // Ensure worker token is available for Worker and RuBackend's Loopback client
-    Environment.SetEnvironmentVariable("RU_WORKER_TOKEN", workerSecret);
-    builder.Configuration["RU_WORKER_TOKEN"] = workerSecret;
+    var configuredLogRoot = builder.Configuration["RU_LOG_ROOT"]
+        ?? Environment.GetEnvironmentVariable("RU_LOG_ROOT");
+    var managedLogRoot = PublicHostRuntimeOptions.ResolveLogRoot(projectRoot, configuredLogRoot);
+    Environment.SetEnvironmentVariable("RU_LOG_ROOT", managedLogRoot);
+    builder.Configuration["RU_LOG_ROOT"] = managedLogRoot;
 
-    // Determine worker port
-    int workerPort = 8005;
-    var workerPortRaw = Environment.GetEnvironmentVariable("RU_BACKEND_WORKER_PORT");
-    if (!string.IsNullOrWhiteSpace(workerPortRaw) && int.TryParse(workerPortRaw, out var parsedWorkerPort))
-        workerPort = parsedWorkerPort;
+    // Resolve ports before creating the protected bootstrap. The manager uses the
+    // same log/session root and returns the final values after readiness succeeds.
+    managedAgentWorkerPort = ReadConfiguredPort(
+        builder.Configuration["RuBackend:AgentWorkerPort"]
+            ?? Environment.GetEnvironmentVariable("RU_BACKEND_AGENT_WORKER_PORT")
+            ?? Environment.GetEnvironmentVariable("RU_BACKEND_WORKER_PORT"),
+        PublicHostRuntimeOptions.DefaultWorkerPort);
+    managedDeviceWorkerPort = ReadConfiguredPort(
+        builder.Configuration["RuBackend:DeviceWorkerPort"]
+            ?? Environment.GetEnvironmentVariable("RU_BACKEND_DEVICE_WORKER_PORT"),
+        PublicHostRuntimeOptions.DefaultDeviceWorkerPort);
+
+    var startupSettings = new SettingsStore(BuildDataPaths(builder.Configuration));
+    var startupCredentials = new WindowsCredentialStore();
+    var bootstrapRoot = Path.Combine(managedLogRoot, "agent", "session");
+    var providerBootstrapPath = migrationMode == RuntimeMigrationMode.Dotnet
+        ? new ManagedProviderBootstrapFactory()
+            .CreateAsync(
+                bootstrapRoot,
+                startupSettings.ReadAsync(CancellationToken.None).GetAwaiter().GetResult(),
+                startupCredentials,
+                CancellationToken.None)
+            .GetAwaiter()
+            .GetResult()
+        : string.Empty;
 
     // Start Worker and Broker in one Job
     managedWorkerBrokerManager = new RuAgent.Hosting.WorkerBrokerProcessManager();
-    var workerStarted = managedWorkerBrokerManager.StartAsync(projectRoot, workerSecret, workerPort).GetAwaiter().GetResult();
+    var startup = new WorkerBrokerStartupOptions(
+        migrationMode,
+        managedAgentWorkerToken,
+        managedDeviceWorkerToken,
+        providerBootstrapPath,
+        managedAgentWorkerPort,
+        managedDeviceWorkerPort,
+        null,
+        Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE"));
+    var workerStarted = managedWorkerBrokerManager
+        .StartAsync(projectRoot, startup)
+        .GetAwaiter()
+        .GetResult();
     if (!workerStarted)
     {
         Console.Error.WriteLine($"Worker/Broker start failed: {managedWorkerBrokerManager.LastError}");
         Environment.Exit(4);
     }
+
+    managedAgentWorkerPort = managedWorkerBrokerManager.AgentWorkerPort;
+    managedDeviceWorkerPort = managedWorkerBrokerManager.DeviceWorkerPort;
 
     // Propagate broker descriptor to Host's env for Broker client
     var brokerDescriptorPath = managedWorkerBrokerManager.BrokerDescriptorPath;
@@ -151,7 +195,15 @@ builder.Services.Configure<BackendOptions>(options =>
     }
 });
 builder.Services.AddSingleton(BuildDataPaths(builder.Configuration));
-builder.Services.AddSingleton(BuildWorkerClientOptions(builder.Configuration));
+builder.Services.AddSingleton(BuildAgentWorkerClientOptions(
+    builder.Configuration,
+    migrationMode,
+    managedAgentWorkerPort,
+    managedAgentWorkerToken));
+builder.Services.AddSingleton(BuildDeviceWorkerClientOptions(
+    builder.Configuration,
+    managedDeviceWorkerPort,
+    managedDeviceWorkerToken));
 builder.Services.AddSingleton<LoopbackWorkerClient>();
 builder.Services.AddSingleton<IWorkerConnectionClient>(services =>
     services.GetRequiredService<LoopbackWorkerClient>());
@@ -267,7 +319,7 @@ builder.Services.AddHostedService<AgentRuntimeLoopService>();
 builder.Services.AddSingleton<AgentV1Service>();
 // Harness Core adapters: Worker v2 and ToolGateway via factory
 builder.Services.AddSingleton<LoopbackModelStepRunner>(services =>
-    new LoopbackModelStepRunner(services.GetRequiredService<WorkerClientOptions>()));
+    new LoopbackModelStepRunner(services.GetRequiredService<AgentWorkerClientOptions>()));
 builder.Services.AddSingleton<IModelStepRunner>(services => services.GetRequiredService<LoopbackModelStepRunner>());
 // Lease registry and idle monitor singletons (managed or not)
 if (managedLeaseRegistry is not null)
@@ -452,19 +504,66 @@ static KnownSecretRedactor BuildKnownSecretRedactor()
     return new KnownSecretRedactor(secrets);
 }
 
-static WorkerClientOptions BuildWorkerClientOptions(IConfiguration configuration){
-    var workerUrl = configuration["RuBackend:WorkerUrl"];
-    var workerToken = configuration["RU_WORKER_TOKEN"]
-        ?? Environment.GetEnvironmentVariable("RU_WORKER_TOKEN")
-        ?? string.Empty;
+static AgentWorkerClientOptions BuildAgentWorkerClientOptions(
+    IConfiguration configuration,
+    RuntimeMigrationMode migrationMode,
+    int managedPort,
+    string managedToken)
+{
+    var configuredUrl = configuration["RuBackend:AgentWorkerUrl"];
+    var workerUrl = !string.IsNullOrWhiteSpace(managedToken)
+        ? $"ws://127.0.0.1:{managedPort}/worker/v2"
+        : configuredUrl;
+    var workerToken = !string.IsNullOrWhiteSpace(managedToken)
+        ? managedToken
+        : configuration["RU_AGENT_WORKER_TOKEN"]
+            ?? Environment.GetEnvironmentVariable("RU_AGENT_WORKER_TOKEN")
+            ?? configuration["RU_WORKER_TOKEN"]
+            ?? Environment.GetEnvironmentVariable("RU_WORKER_TOKEN")
+            ?? string.Empty;
 
-    return new WorkerClientOptions
-    {
-        Uri = string.IsNullOrWhiteSpace(workerUrl)
-            ? new Uri("ws://127.0.0.1:8005/worker/v1")
+    // The mode is intentionally consumed only by startup selection. The client
+    // contract remains explicit even for the trusted Python compatibility mode.
+    _ = migrationMode;
+    return new AgentWorkerClientOptions(
+        string.IsNullOrWhiteSpace(workerUrl)
+            ? new Uri("ws://127.0.0.1:8005/worker/v2")
             : new Uri(workerUrl, UriKind.Absolute),
-        Token = workerToken,
-    };
+        workerToken);
+}
+
+static DeviceWorkerClientOptions BuildDeviceWorkerClientOptions(
+    IConfiguration configuration,
+    int managedPort,
+    string managedToken)
+{
+    var configuredUrl = configuration["RuBackend:DeviceWorkerUrl"];
+    var workerUrl = !string.IsNullOrWhiteSpace(managedToken)
+        ? $"ws://127.0.0.1:{managedPort}/worker/v1"
+        : configuredUrl;
+    var workerToken = !string.IsNullOrWhiteSpace(managedToken)
+        ? managedToken
+        : configuration["RU_DEVICE_WORKER_TOKEN"]
+            ?? Environment.GetEnvironmentVariable("RU_DEVICE_WORKER_TOKEN")
+            ?? configuration["RU_WORKER_TOKEN"]
+            ?? Environment.GetEnvironmentVariable("RU_WORKER_TOKEN")
+            ?? string.Empty;
+
+    return new DeviceWorkerClientOptions(
+        string.IsNullOrWhiteSpace(workerUrl)
+            ? new Uri("ws://127.0.0.1:8006/worker/v1")
+            : new Uri(workerUrl, UriKind.Absolute),
+        workerToken);
+}
+
+static int ReadConfiguredPort(string? raw, int fallback)
+{
+    if (string.IsNullOrWhiteSpace(raw))
+    {
+        return fallback;
+    }
+
+    return int.TryParse(raw, out var parsed) ? parsed : fallback;
 }
 
 internal sealed class EphemeralHarnessKeyStore : RuAgent.Harness.Persistence.Privacy.IHarnessKeyStore

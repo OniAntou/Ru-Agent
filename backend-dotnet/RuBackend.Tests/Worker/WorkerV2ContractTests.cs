@@ -6,6 +6,7 @@ using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Worker;
 using RuBackend.Harness.Worker;
 using RuBackend.Worker;
 using Xunit;
@@ -196,7 +197,7 @@ public sealed class WorkerV2ContractTests
     {
         var context = PromptContextFixture.Create();
 
-        var payload = WorkerV2PromptWire.WriteContext(context);
+        var payload = WorkerV2PromptCodec.WriteContext(context);
 
         Assert.Equal(
             ["schema_version", "agent_profile", "preset", "environment", "instruction_blocks", "capabilities", "runtime_context"],
@@ -221,9 +222,9 @@ public sealed class WorkerV2ContractTests
         var context = PromptContextFixture.Create();
         var receipt = PromptContextFixture.Receipt(context);
 
-        var parsed = WorkerV2PromptWire.ReadReceipt(receipt, context);
+        var parsed = WorkerV2PromptCodec.ReadReceipt(receipt, context);
         Assert.Equal("1.0.0", parsed.ComposerVersion);
-        Assert.DoesNotContain("text", WorkerV2PromptWire.WriteReceipt(parsed).ToJsonString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("text", WorkerV2PromptCodec.WriteReceipt(parsed).ToJsonString(), StringComparison.Ordinal);
 
         var unknown = (JsonObject)receipt.DeepClone();
         unknown["unexpected"] = true;
@@ -243,13 +244,15 @@ public sealed class WorkerV2ContractTests
         var uppercase = (JsonObject)receipt.DeepClone();
         uppercase["prompt_sha256"] = new string('A', 64);
         AssertInvalidReceipt(uppercase, context);
-        Assert.Throws<WorkerProtocolException>(() => WorkerV2PromptWire.ReadReceipt(null, context));
+        Assert.Throws<AgentProtocolException>(() => WorkerV2PromptCodec.ReadReceipt(null, context));
     }
 
     private static void AssertInvalidReceipt(JsonObject receipt, SystemPromptContext context)
     {
-        var error = Assert.Throws<WorkerProtocolException>(() =>
-            WorkerV2PromptWire.ReadReceipt(receipt, context));
+        // The shared codec is protocol-owned, so it raises the protocol exception;
+        // LoopbackModelStepRunner maps it to the host WorkerProtocolException.
+        var error = Assert.Throws<AgentProtocolException>(() =>
+            WorkerV2PromptCodec.ReadReceipt(receipt, context));
         Assert.Equal("invalid_step", error.Code);
     }
 

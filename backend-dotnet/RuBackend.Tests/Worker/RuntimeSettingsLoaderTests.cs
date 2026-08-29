@@ -35,11 +35,9 @@ public sealed class RuntimeSettingsLoaderTests
                     ["backend"] = "OpenCode Zen",
                 }));
         });
-        var loader = new LoopbackRuntimeSettingsLoader(new WorkerClientOptions
-        {
-            Uri = server.Uri,
-            Token = "worker-secret",
-        });
+        var loader = new LoopbackRuntimeSettingsLoader(new DeviceWorkerClientOptions(
+            server.Uri,
+            "worker-secret"));
         var candidate = Snapshot(new JsonObject
         {
             ["api_key"] = "must-not-cross-worker-boundary",
@@ -75,11 +73,9 @@ public sealed class RuntimeSettingsLoaderTests
                     ["retryable"] = false,
                 }));
         });
-        var loader = new LoopbackRuntimeSettingsLoader(new WorkerClientOptions
-        {
-            Uri = server.Uri,
-            Token = "worker-secret",
-        });
+        var loader = new LoopbackRuntimeSettingsLoader(new DeviceWorkerClientOptions(
+            server.Uri,
+            "worker-secret"));
 
         var error = await Assert.ThrowsAsync<WorkerProtocolException>(() =>
             loader.LoadAsync(Snapshot([]), CancellationToken.None));
@@ -108,11 +104,9 @@ public sealed class RuntimeSettingsLoaderTests
                     ["backend"] = "Ollama",
                 }));
         });
-        var loader = new LoopbackRuntimeSettingsLoader(new WorkerClientOptions
-        {
-            Uri = server.Uri,
-            Token = "worker-secret",
-        });
+        var loader = new LoopbackRuntimeSettingsLoader(new DeviceWorkerClientOptions(
+            server.Uri,
+            "worker-secret"));
         var candidate = Snapshot(new JsonObject()) with
         {
             Backend = "Ollama",

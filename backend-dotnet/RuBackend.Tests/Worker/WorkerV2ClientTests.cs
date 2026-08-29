@@ -9,6 +9,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Worker;
 using RuBackend.Harness.Worker;
 using RuBackend.Worker;
 using Xunit;
@@ -124,7 +125,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
             tcs.TrySetResult();
         });
 
-        var options = new WorkerClientOptions { Uri = new Uri(_url), Token = _token };
+        var options = new AgentWorkerClientOptions(new Uri(_url), _token);
         var runner = new LoopbackModelStepRunner(options);
         var context = new ModelContextSnapshot(
             new[] { RuAgent.Harness.Core.Context.ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "test prompt") },
@@ -186,7 +187,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         });
 
         await using var runner = new LoopbackModelStepRunner(
-            new WorkerClientOptions { Uri = new Uri(_url), Token = _token });
+            new AgentWorkerClientOptions(new Uri(_url), _token));
         var request = new ModelStepRequest(
             new RunId("run_44444444444444444444444444444444"),
             new ModelStepId("step_44444444444444444444444444444444"),
@@ -248,7 +249,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         });
 
         await using var runner = new LoopbackModelStepRunner(
-            new WorkerClientOptions { Uri = new Uri(_url), Token = _token });
+            new AgentWorkerClientOptions(new Uri(_url), _token));
         var request = new ModelStepRequest(
             new RunId("run_11111111111111111111111111111111"),
             new ModelStepId("step_11111111111111111111111111111111"),
@@ -327,7 +328,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         });
 
         await using var runner = new LoopbackModelStepRunner(
-            new WorkerClientOptions { Uri = new Uri(_url), Token = _token });
+            new AgentWorkerClientOptions(new Uri(_url), _token));
         var deltas = new List<string>();
         var request = new ModelStepRequest(
             new RunId("run_22222222222222222222222222222222"),
@@ -403,7 +404,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
             }.ToJsonString());
         });
 
-        var options = new WorkerClientOptions { Uri = new Uri(_url), Token = _token };
+        var options = new AgentWorkerClientOptions(new Uri(_url), _token);
         var runner = new LoopbackModelStepRunner(options);
         var context = new ModelContextSnapshot(
             [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
@@ -510,7 +511,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
             }
         });
 
-        var options = new WorkerClientOptions { Uri = new Uri(_url), Token = _token };
+        var options = new AgentWorkerClientOptions(new Uri(_url), _token);
         var runner = new LoopbackModelStepRunner(options);
         var context = new ModelContextSnapshot(
             new[] { RuAgent.Harness.Core.Context.ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt") },

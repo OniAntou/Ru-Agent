@@ -7,6 +7,7 @@ using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Worker;
 using RuBackend.Worker;
 
 namespace RuBackend.Harness.Worker;
@@ -14,39 +15,20 @@ namespace RuBackend.Harness.Worker;
 public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 {
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
-    private readonly WorkerClientOptions _options;
+    private readonly AgentWorkerClientOptions _options;
     private readonly TimeSpan _connectTimeout = TimeSpan.FromSeconds(5);
     private readonly TimeSpan _receiveTimeout = TimeSpan.FromSeconds(30);
 
-    public LoopbackModelStepRunner(WorkerClientOptions options)
+    public LoopbackModelStepRunner(AgentWorkerClientOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         // Validation happens lazily at connect time so the runner can sit in DI on
         // hosts that never drive model steps (tests, diagnostics-only processes).
-        // Transform v1 URI to v2: replace /worker/v1 with /worker/v2
-        var uriString = options.Uri?.ToString() ?? string.Empty;
-        if (uriString.Contains("/worker/v1", StringComparison.Ordinal))
-        {
-            uriString = uriString.Replace("/worker/v1", "/worker/v2", StringComparison.Ordinal);
-        }
-        else if (!uriString.Contains("/worker/v2", StringComparison.Ordinal) && uriString.Length > 0)
-        {
-            uriString = uriString.TrimEnd('/') + "/worker/v2";
-        }
-
-        _options = new WorkerClientOptions
-        {
-            Uri = Uri.TryCreate(uriString, UriKind.Absolute, out var parsedUri)
-                ? parsedUri
-                : new Uri("ws://127.0.0.1:8005/worker/v2", UriKind.Absolute),
-            Token = options.Token,
-            ProtocolVersion = options.ProtocolVersion,
-            MaxMessageBytes = options.MaxMessageBytes,
-        };
+        _options = options;
     }
 
     // Test-only injection for fake WebSocket handling.
-    internal LoopbackModelStepRunner(WorkerClientOptions options, Func<ClientWebSocket>? socketFactory)
+    internal LoopbackModelStepRunner(AgentWorkerClientOptions options, Func<ClientWebSocket>? socketFactory)
         : this(options)
     {
         _socketFactory = socketFactory;
@@ -115,7 +97,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         {
             ["prompt"] = prompt,
             ["turns"] = turns,
-            ["system_prompt_context"] = WorkerV2PromptWire.WriteContext(request.PromptContext),
+            ["system_prompt_context"] = WorkerV2PromptCodec.WriteContext(request.PromptContext),
             ["settings"] = settings,
         };
         var startEnvelope = new WorkerV2Envelope(
@@ -248,10 +230,17 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
                     // Enforce one-step constraint: at most one tool call (checked in AssistantStep)
                     finalStep = new AssistantStep(finalText, toolCalls, mappedReason, estimatedInputTokens: 0);
-                    finalReceipt = WorkerV2PromptWire.ReadReceipt(
-                        payload["prompt_receipt"] as JsonObject
-                        ?? throw new WorkerProtocolException("invalid_step"),
-                        request.PromptContext);
+                    try
+                    {
+                        finalReceipt = WorkerV2PromptCodec.ReadReceipt(
+                            payload["prompt_receipt"] as JsonObject
+                            ?? throw new WorkerProtocolException("invalid_step"),
+                            request.PromptContext);
+                    }
+                    catch (AgentProtocolException error)
+                    {
+                        throw new WorkerProtocolException(error.Code);
+                    }
                     // Done is terminal; break loop.
                     expectedSeq++;
                     goto Done;

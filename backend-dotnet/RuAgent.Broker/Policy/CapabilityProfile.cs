@@ -12,11 +12,11 @@ public static class CapabilityProfileExtensions
         {
             CapabilityProfile.Agent => new HashSet<string>(
                 [ToolScope.WorkspaceRead, ToolScope.WorkspaceWrite,
-                 ToolScope.SystemWrite], StringComparer.Ordinal),
+                 ToolScope.SystemWrite, ToolScope.SkillExecute], StringComparer.Ordinal),
             CapabilityProfile.Full => new HashSet<string>(
                 [ToolScope.WorkspaceRead, ToolScope.WorkspaceWrite,
                  ToolScope.TerminalExecute, ToolScope.SystemWrite,
-                 ToolScope.TerminalNetwork], StringComparer.Ordinal),
+                 ToolScope.TerminalNetwork, ToolScope.SkillExecute], StringComparer.Ordinal),
             _ => new HashSet<string>([ToolScope.WorkspaceRead], StringComparer.Ordinal),
         };
 }

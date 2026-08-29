@@ -48,6 +48,39 @@ public sealed class PolicyTests
     }
 
     [Fact]
+    public void Agent_and_full_profiles_enable_skills_but_chat_does_not()
+    {
+        Assert.Contains(ToolScope.SkillExecute, CapabilityProfile.Agent.Scopes());
+        Assert.Contains(ToolScope.SkillExecute, CapabilityProfile.Full.Scopes());
+        Assert.DoesNotContain(ToolScope.SkillExecute, CapabilityProfile.Chat.Scopes());
+    }
+
+    [Fact]
+    public void Skill_policy_requires_explicit_id_and_scope_then_tool_scope()
+    {
+        var engine = new ToolPolicyEngine();
+        var required = new HashSet<string>([ToolScope.SkillExecute, ToolScope.WorkspaceRead]);
+
+        var missingId = engine.EvaluateSkill(
+            new PolicyGrant("s", required, DateTimeOffset.UtcNow.AddMinutes(1), new HashSet<string>()),
+            "demo.skill",
+            required);
+        Assert.Equal("skill_not_granted", missingId.Code);
+
+        var missingSkillScope = engine.EvaluateSkill(
+            new PolicyGrant("s", new HashSet<string>([ToolScope.WorkspaceRead]), DateTimeOffset.UtcNow.AddMinutes(1), new HashSet<string>(["demo.skill"])),
+            "demo.skill",
+            required);
+        Assert.Equal("scope_denied", missingSkillScope.Code);
+
+        var allowed = engine.EvaluateSkill(
+            new PolicyGrant("s", required, DateTimeOffset.UtcNow.AddMinutes(1), new HashSet<string>(["demo.skill"])),
+            "demo.skill",
+            required);
+        Assert.True(allowed.Allowed);
+    }
+
+    [Fact]
     public void ReversibleWriteRequiresApprovalByFlag()
     {
         var manifest = MakeManifest("files.write", ToolScope.WorkspaceWrite,

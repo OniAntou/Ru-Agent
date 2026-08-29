@@ -40,11 +40,15 @@ public sealed class ToolExecutionService : IToolInvoker
     private readonly Lazy<VolumeTools> _volume;
     private readonly TerminalAdapter _terminal;
     private readonly NotesAdapter _notes;
+    private readonly SkillRegistry _skills;
+    private readonly SkillOrchestrator _skillOrchestrator;
 
     public ToolExecutionService(
         BrokerSession session,
         string workspaceRoot,
-        IVolumeController? volumeController = null)
+        IVolumeController? volumeController = null,
+        IEnumerable<SkillManifest>? builtinSkills = null,
+        IEnumerable<string>? skillPackageRoots = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _workspace = new WorkspacePathGuard(workspaceRoot);
@@ -61,6 +65,36 @@ public sealed class ToolExecutionService : IToolInvoker
         _volume = new Lazy<VolumeTools>(
             () => new VolumeTools(volumeController ?? new WindowsCoreAudioVolumeController()));
         _catalog = new ToolCatalog(BuildExecutors());
+        _skills = new SkillRegistry();
+        foreach (var skill in builtinSkills ?? Array.Empty<SkillManifest>())
+        {
+            _skills.Register(skill, _catalog.Registry.Manifests);
+        }
+
+        if (skillPackageRoots is not null)
+        {
+            var loader = new SkillPackageLoader();
+            foreach (var packageRoot in skillPackageRoots)
+            {
+                if (string.IsNullOrWhiteSpace(packageRoot))
+                {
+                    continue;
+                }
+
+                var root = Path.GetFullPath(packageRoot);
+                if (!Directory.Exists(root))
+                {
+                    continue;
+                }
+
+                foreach (var directory in Directory.EnumerateDirectories(root))
+                {
+                    _skills.Register(loader.Load(directory), _catalog.Registry.Manifests);
+                }
+            }
+        }
+
+        _skillOrchestrator = new SkillOrchestrator(_catalog.Registry.Manifests, _policy, this);
     }
 
     public IReadOnlyList<ToolManifest> ListTools() =>
@@ -72,7 +106,76 @@ public sealed class ToolExecutionService : IToolInvoker
     public IReadOnlyList<AgentToolCapability> ListCapabilities(CapabilityProfile profile) =>
         _catalog.Registry.ListCapabilities(profile);
 
-    public IReadOnlyList<SkillManifest> ListSkills() => Array.Empty<SkillManifest>();
+    public IReadOnlyList<SkillManifest> ListSkills() => _skills.List();
+
+    public IReadOnlyList<SkillManifest> ListSkills(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId) || !_session.Owns(sessionId))
+        {
+            return Array.Empty<SkillManifest>();
+        }
+
+        return _skills.ListGranted(CreateSkillGrant(sessionId));
+    }
+
+    public SkillManifest? ResolveSkill(string id, string version)
+    {
+        try
+        {
+            return _skills.Resolve(id, version);
+        }
+        catch (KeyNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    public IReadOnlyList<SkillManifest> ListAllSkills() => _skills.List();
+
+    public async Task<SkillRun> ExecuteSkillAsync(
+        string sessionId,
+        string skillId,
+        string version,
+        JsonObject input,
+        CancellationToken cancellationToken)
+    {
+        var runId = $"skill-{Guid.NewGuid():N}";
+        if (string.IsNullOrWhiteSpace(sessionId) || !_session.Owns(sessionId))
+        {
+            return new SkillRun(runId, sessionId, skillId, SkillRunState.Failed, 0, "Skill is not granted.", "skill_not_granted", null, null, runId);
+        }
+
+        SkillManifest skill;
+        try
+        {
+            skill = _skills.Resolve(skillId, version);
+        }
+        catch (KeyNotFoundException)
+        {
+            return new SkillRun(runId, sessionId, skillId, SkillRunState.Failed, 0, "Skill is not available.", "skill_not_granted", null, null, runId);
+        }
+
+        var grant = CreateSkillGrant(sessionId);
+        var decision = _policy.EvaluateSkill(grant, skill.Id, skill.RequiredScopes);
+        if (!decision.Allowed)
+        {
+            return new SkillRun(runId, sessionId, skill.Id, SkillRunState.Failed, 0, "Skill is not granted.", decision.Code, null, null, runId);
+        }
+
+        return await _skillOrchestrator.RunAsync(
+            sessionId,
+            skill,
+            grant,
+            input,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private PolicyGrant CreateSkillGrant(string sessionId) =>
+        new(
+            sessionId,
+            _session.Scopes,
+            _session.Descriptor.ExpiresAt,
+            _session.SkillIds);
 
     public void RemoveSession(string sessionId) => _approvals.RemoveSession(sessionId);
 

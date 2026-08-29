@@ -1,10 +1,12 @@
 using System.Buffers;
 using System.Globalization;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Runtime;
+using RuAgent.Broker.Skills;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Transport;
@@ -21,6 +23,15 @@ public sealed class AgentConnection
     private readonly Action<string>? _sessionClosedHandler;
     private readonly PendingApprovalStore _pendingV2;
     private readonly ApprovalTokenService _authTokens;
+    private readonly Func<string, IReadOnlyList<SkillManifest>>? _skillListProvider;
+    private readonly Func<IReadOnlyList<SkillManifest>>? _skillCatalogProvider;
+    private readonly Func<string, string, SkillManifest?>? _skillResolver;
+    private readonly Func<string, string, string, JsonObject, CancellationToken, Task<SkillRun>>? _skillExecutor;
+    private readonly Dictionary<string, SkillRequestReplay> _skillRequests = new(StringComparer.Ordinal);
+
+    private sealed record SkillRequestReplay(
+        string CanonicalHash,
+        IReadOnlyList<AgentEnvelope> Messages);
 
     public AgentConnection(
         BrokerSession session,
@@ -30,7 +41,11 @@ public sealed class AgentConnection
         Func<AgentEnvelope, CancellationToken, Task<AgentEnvelope>>? approvalHandler = null,
         Action<string>? sessionClosedHandler = null,
         PendingApprovalStore? pendingV2Store = null,
-        ApprovalTokenService? approvalTokenService = null)
+        ApprovalTokenService? approvalTokenService = null,
+        Func<string, IReadOnlyList<SkillManifest>>? skillListProvider = null,
+        Func<IReadOnlyList<SkillManifest>>? skillCatalogProvider = null,
+        Func<string, string, SkillManifest?>? skillResolver = null,
+        Func<string, string, string, JsonObject, CancellationToken, Task<SkillRun>>? skillExecutor = null)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _capabilityProvider = capabilityProvider ?? throw new ArgumentNullException(nameof(capabilityProvider));
@@ -45,6 +60,10 @@ public sealed class AgentConnection
         // approvals/tokens with unrelated hosts or test instances.
         _pendingV2 = pendingV2Store ?? new PendingApprovalStore();
         _authTokens = approvalTokenService ?? new ApprovalTokenService();
+        _skillListProvider = skillListProvider;
+        _skillCatalogProvider = skillCatalogProvider;
+        _skillResolver = skillResolver;
+        _skillExecutor = skillExecutor;
     }
 
     internal PendingApprovalStore PendingV2Store => _pendingV2;
@@ -87,6 +106,17 @@ public sealed class AgentConnection
                 {
                     await SendAsync(socket, ProtocolErrorEnvelope(error.Code), cancellationToken)
                         .ConfigureAwait(false);
+                    continue;
+                }
+
+                if (request.MessageType == AgentMessageTypes.SkillStart)
+                {
+                    var skillMessages = await HandleSkillStartAsync(request, cancellationToken).ConfigureAwait(false);
+                    foreach (var skillMessage in skillMessages)
+                    {
+                        await SendAsync(socket, skillMessage, cancellationToken).ConfigureAwait(false);
+                    }
+
                     continue;
                 }
 
@@ -150,12 +180,8 @@ public sealed class AgentConnection
                     ["safe_summary"] = "tool output delta is reserved for phase 3",
                 });
             case AgentMessageTypes.SkillStart:
-                if (!_session.Owns(request.SessionId))
-                {
-                    return ToolError(request, "broker_not_ready", "session is not open");
-                }
-
-                return ToolError(request, "skills_disabled", "skills are disabled");
+                var skillMessages = await HandleSkillStartAsync(request, cancellationToken).ConfigureAwait(false);
+                return skillMessages[^1];
             case AgentMessageTypes.ApprovalResponse:
                 if (!_session.Owns(request.SessionId))
                 {
@@ -191,10 +217,14 @@ public sealed class AgentConnection
 
     private AgentEnvelope OpenSession(AgentEnvelope request)
     {
-        var skillIds = ReadSkillIds(request.Payload);
-        if (skillIds.Count > 0)
+        IReadOnlySet<string> skillIds;
+        try
         {
-            return ToolError(request, "skills_disabled", "skills are disabled");
+            skillIds = ReadSkillIds(request.Payload);
+        }
+        catch (AgentProtocolException error)
+        {
+            return ToolError(request, error.Code, "invalid skill grant");
         }
 
         var scopes = ReadScopes(request.Payload);
@@ -203,7 +233,27 @@ public sealed class AgentConnection
             return ToolError(request, "scope_unavailable", "scope is not executable");
         }
 
-        if (!_session.Open(request.SessionId, scopes, new HashSet<string>(StringComparer.Ordinal)))
+        var resolvedSkills = new List<SkillManifest>();
+        foreach (var requestedId in skillIds)
+        {
+            var requested = ResolveRequestedSkill(requestedId, request.SessionId);
+            if (requested is null)
+            {
+                return ToolError(request, "skill_not_granted", "skill is not available");
+            }
+
+            if (!scopes.Contains(ToolScope.SkillExecute)
+                || !requested.RequiredScopes.All(scopes.Contains))
+            {
+                return ToolError(request, "scope_denied", "skill scope is not granted");
+            }
+
+            resolvedSkills.Add(requested);
+        }
+
+        if (!_session.Open(request.SessionId, scopes, resolvedSkills
+            .Select(skill => skill.Id)
+            .ToHashSet(StringComparer.Ordinal)))
         {
             return ToolError(request, "session_conflict", "session is already owned");
         }
@@ -214,7 +264,10 @@ public sealed class AgentConnection
             ["scopes"] = new JsonArray(_session.Scopes
                 .OrderBy(scope => scope, StringComparer.Ordinal)
                 .Select(scope => (JsonNode?)scope).ToArray()),
-            ["skill_ids"] = new JsonArray(),
+            ["skill_ids"] = new JsonArray(resolvedSkills
+                .Select(skill => (JsonNode?)skill.Id)
+                .Distinct()
+                .ToArray()),
             ["safe_summary"] = "session opened",
         });
     }
@@ -225,6 +278,7 @@ public sealed class AgentConnection
         _session.Close(request.SessionId);
         if (owned)
         {
+            _skillRequests.Clear();
             _sessionClosedHandler?.Invoke(request.SessionId);
         }
         return Reply(request, AgentMessageTypes.SkillResult, new JsonObject
@@ -232,6 +286,187 @@ public sealed class AgentConnection
             ["status"] = "succeeded",
             ["safe_summary"] = "session closed",
         });
+    }
+
+    private async Task<IReadOnlyList<AgentEnvelope>> HandleSkillStartAsync(
+        AgentEnvelope request,
+        CancellationToken cancellationToken)
+    {
+        if (!_session.Owns(request.SessionId))
+        {
+            return [ToolError(request, "broker_not_ready", "session is not open")];
+        }
+
+        var skillId = ReadOptionalPayloadString(request.Payload, "skill_id");
+        var version = ReadOptionalPayloadString(request.Payload, "version") ?? "1.0.0";
+        if (skillId is null || version is null)
+        {
+            return [SkillResultError(request, "invalid_skill", "skill identity is invalid")];
+        }
+
+        if (request.Payload["input"] is not JsonObject input)
+        {
+            return [SkillResultError(request, "schema_invalid", "skill input must be an object")];
+        }
+
+        var skill = _skillResolver?.Invoke(skillId, version)
+            ?? _skillListProvider?.Invoke(request.SessionId)
+                .FirstOrDefault(item => string.Equals(item.Id, skillId, StringComparison.Ordinal)
+                    && string.Equals(item.Version, version, StringComparison.Ordinal));
+        if (skill is null || !_session.SkillIds.Contains(skillId))
+        {
+            return [SkillResultError(request, "skill_not_granted", "skill is not granted")];
+        }
+
+        var canonicalHash = ComputeSkillRequestHash(skillId, version, input);
+        if (_skillRequests.TryGetValue(request.RequestId, out var replay))
+        {
+            if (!string.Equals(replay.CanonicalHash, canonicalHash, StringComparison.Ordinal))
+            {
+                return [SkillResultError(request, "request_conflict", "request id is already bound to another skill input")];
+            }
+
+            return replay.Messages
+                .Select(message => message with { Payload = (JsonObject)message.Payload.DeepClone() })
+                .ToArray();
+        }
+
+        if (_skillExecutor is null)
+        {
+            return [SkillResultError(request, "broker_not_ready", "skill execution is not registered")];
+        }
+
+        SkillRun run;
+        try
+        {
+            run = await _skillExecutor(
+                request.SessionId,
+                skillId,
+                version,
+                (JsonObject)input.DeepClone(),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            run = new SkillRun(
+                $"skill-{Guid.NewGuid():N}",
+                request.SessionId,
+                skillId,
+                SkillRunState.Cancelled,
+                0,
+                "Skill cancelled.",
+                "cancelled");
+        }
+        catch (Exception)
+        {
+            run = new SkillRun(
+                $"skill-{Guid.NewGuid():N}",
+                request.SessionId,
+                skillId,
+                SkillRunState.Failed,
+                0,
+                "Skill failed.",
+                "skill_failed");
+        }
+
+        var messages = new List<AgentEnvelope>();
+        foreach (var step in run.StepReceipts)
+        {
+            messages.Add(Reply(request, AgentMessageTypes.SkillEvent, new JsonObject
+            {
+                ["status"] = step.Status,
+                ["skill_id"] = run.SkillId,
+                ["step_index"] = step.StepIndex,
+                ["step_kind"] = step.Kind.ToString(),
+                ["step_name"] = step.Name,
+                ["tool_id"] = step.ToolId,
+                ["safe_summary"] = ClampProtocolText(step.SafeSummary),
+            }));
+        }
+
+        var resultPayload = new JsonObject
+        {
+            ["status"] = run.State switch
+            {
+                SkillRunState.Completed => ToolResultStatuses.Succeeded,
+                SkillRunState.Cancelled => ToolResultStatuses.Cancelled,
+                SkillRunState.ApprovalRequired => ToolResultStatuses.ApprovalRequired,
+                _ => ToolResultStatuses.Failed,
+            },
+            ["skill_id"] = run.SkillId,
+            ["version"] = version,
+            ["run_id"] = run.RunId,
+            ["receipt_id"] = run.Receipt,
+            ["state"] = run.State.ToString(),
+            ["step_count"] = run.StepReceipts.Count,
+            ["safe_summary"] = ClampProtocolText(run.SafeSummary),
+        };
+        if (run.ErrorCode is not null)
+        {
+            resultPayload["error_code"] = StableErrorCode(run.ErrorCode, "skill_failed");
+        }
+
+        if (run.Output is not null && run.Output.ToJsonString().Length <= 256 * 1024)
+        {
+            resultPayload["output"] = run.Output.DeepClone();
+        }
+
+        messages.Add(Reply(request, AgentMessageTypes.SkillResult, resultPayload));
+        _skillRequests[request.RequestId] = new SkillRequestReplay(canonicalHash, messages.ToArray());
+        return messages;
+    }
+
+    private SkillManifest? ResolveRequestedSkill(string requestedId, string sessionId)
+    {
+        var separator = requestedId.LastIndexOf('@');
+        if (separator > 0 && separator < requestedId.Length - 1)
+        {
+            var id = requestedId[..separator];
+            var version = requestedId[(separator + 1)..];
+            return _skillResolver?.Invoke(id, version)
+                ?? _skillListProvider?.Invoke(sessionId)
+                    .FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.Ordinal)
+                        && string.Equals(item.Version, version, StringComparison.Ordinal));
+        }
+
+        var catalog = _skillCatalogProvider?.Invoke()
+            ?? _skillListProvider?.Invoke(sessionId)
+            ?? Array.Empty<SkillManifest>();
+        return catalog
+            .Where(item => string.Equals(item.Id, requestedId, StringComparison.Ordinal))
+            .OrderByDescending(item => item.Version, StringComparer.Ordinal)
+            .FirstOrDefault();
+    }
+
+    private static string ComputeSkillRequestHash(string skillId, string version, JsonObject input)
+    {
+        var canonical = skillId + "\n" + version + "\n" + input.ToJsonString();
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    private static AgentEnvelope SkillResultError(AgentEnvelope request, string errorCode, string summary) =>
+        Reply(request, AgentMessageTypes.SkillResult, new JsonObject
+        {
+            ["status"] = ToolResultStatuses.Denied,
+            ["error_code"] = StableErrorCode(errorCode, "skill_failed"),
+            ["safe_summary"] = summary,
+        });
+
+    private static string ClampProtocolText(string? text) =>
+        string.IsNullOrWhiteSpace(text)
+            ? "Skill step completed."
+            : text.Length <= 512 ? text : text[..512];
+
+    private static string StableErrorCode(string? code, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(code)
+            || code.Length > 64
+            || code.Any(character => character is not (>= 'a' and <= 'z') and not (>= '0' and <= '9') and not '_'))
+        {
+            return fallback;
+        }
+
+        return code;
     }
 
     private AgentEnvelope HandleRunOpen(AgentEnvelope request)
@@ -946,9 +1181,14 @@ public sealed class AgentConnection
 
     private static IReadOnlySet<string> ReadSkillIds(JsonObject payload)
     {
-        if (payload["skill_ids"] is not JsonArray values)
+        if (!payload.TryGetPropertyValue("skill_ids", out var raw) || raw is null)
         {
             return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        if (raw is not JsonArray values)
+        {
+            throw new AgentProtocolException("invalid_skill_ids");
         }
 
         var result = new HashSet<string>(StringComparer.Ordinal);
@@ -957,10 +1197,13 @@ public sealed class AgentConnection
             if (value is JsonValue item
                 && item.TryGetValue<string>(out var skillId)
                 && !string.IsNullOrWhiteSpace(skillId)
-                && skillId.Length <= 128)
+                && skillId.Length <= 128
+                && result.Add(skillId))
             {
-                result.Add(skillId);
+                continue;
             }
+
+            throw new AgentProtocolException("invalid_skill_ids");
         }
 
         return result;
@@ -1006,13 +1249,18 @@ public sealed class AgentConnection
             capabilities = capabilities.Where(c => fallback.Contains(c.ToolId)).ToArray();
         }
 
+        var skills = _session.Owns(request.SessionId)
+            ? _skillListProvider?.Invoke(request.SessionId) ?? Array.Empty<SkillManifest>()
+            : Array.Empty<SkillManifest>();
         return Reply(request, AgentMessageTypes.HelloOk, new JsonObject
         {
             ["status"] = "ready",
             ["protocol_version"] = advertisedVersion,
             ["tools"] = new JsonArray(capabilities
                 .Select(capability => (JsonNode?)ToJson(capability)).ToArray()),
-            ["skills"] = new JsonArray(),
+            ["skills"] = new JsonArray(skills
+                .Select(skill => (JsonNode?)ToJson(skill))
+                .ToArray()),
         });
     }
 
@@ -1055,6 +1303,21 @@ public sealed class AgentConnection
         ["risk"] = capability.Risk,
         ["availability"] = capability.Availability,
         ["model_enabled"] = capability.ModelEnabled,
+    };
+
+    private static JsonObject ToJson(SkillManifest skill) => new()
+    {
+        ["skill_id"] = skill.Id,
+        ["version"] = skill.Version,
+        ["required_scopes"] = new JsonArray(skill.RequiredScopes
+            .OrderBy(scope => scope, StringComparer.Ordinal)
+            .Select(scope => (JsonNode?)scope)
+            .ToArray()),
+        ["required_tools"] = new JsonArray(skill.RequiredToolIds
+            .OrderBy(tool => tool, StringComparer.Ordinal)
+            .Select(tool => (JsonNode?)tool)
+            .ToArray()),
+        ["trust_class"] = skill.TrustClass,
     };
 
     private static AgentEnvelope Reply(AgentEnvelope request, string type, JsonObject payload)

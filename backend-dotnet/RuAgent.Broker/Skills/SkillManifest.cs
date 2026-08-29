@@ -15,7 +15,11 @@ public sealed record SkillStep(
     string Name,
     string? ToolId = null,
     JsonObject? Arguments = null,
-    string? BranchOn = null);
+    string? BranchOn = null,
+    int? TrueIndex = null,
+    int? FalseIndex = null,
+    string? Transform = null,
+    string? ToolVersion = null);
 
 public sealed record SkillManifest(
     string Id,

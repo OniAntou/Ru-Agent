@@ -222,7 +222,7 @@ public sealed class BrokerHostTests
         var reply = await ReceiveAsync(socket, cancellation.Token);
 
         Assert.Equal(ToolResultStatuses.Denied, reply.Payload["status"]!.GetValue<string>());
-        Assert.Equal("skills_disabled", reply.Payload["error_code"]!.GetValue<string>());
+        Assert.Equal("skill_not_granted", reply.Payload["error_code"]!.GetValue<string>());
         Assert.Empty(fixture.Host.Session.SkillIds);
         Assert.False(fixture.Host.Session.IsReady);
     }
@@ -279,7 +279,7 @@ public sealed class BrokerHostTests
             cancellation.Token);
         var skillReply = await ReceiveAsync(socket, cancellation.Token);
         Assert.Equal(ToolResultStatuses.Denied, skillReply.Payload["status"]!.GetValue<string>());
-        Assert.Equal("skills_disabled", skillReply.Payload["error_code"]!.GetValue<string>());
+        Assert.Equal("skill_not_granted", skillReply.Payload["error_code"]!.GetValue<string>());
     }
 
     [Fact]

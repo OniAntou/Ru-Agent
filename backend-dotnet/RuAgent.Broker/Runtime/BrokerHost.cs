@@ -2,7 +2,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebSockets;
+using RuAgent.Broker.Configuration;
 using RuAgent.Broker.Policy;
+using RuAgent.Broker.Skills;
 using RuAgent.Broker.Transport;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Desktop;
@@ -23,11 +25,17 @@ public sealed class BrokerHost : IAsyncDisposable
     private BrokerHost(
         WebApplication application,
         BrokerSession session,
-        IVolumeController? volumeController)
+        IVolumeController? volumeController,
+        BrokerOptions? options)
     {
         _application = application;
         _session = session;
-        _tools = new ToolExecutionService(session, ResolveWorkspaceRoot(), volumeController);
+        _tools = new ToolExecutionService(
+            session,
+            ResolveWorkspaceRoot(),
+            volumeController,
+            options?.BuiltinSkills,
+            options?.SkillPackageRoots);
         _cleanup = new BrokerCleanup(
             stopListener: cancellationToken => new ValueTask(_application.StopAsync(cancellationToken)),
             cancelRequests: () => _shutdown.Cancel(),
@@ -44,7 +52,7 @@ public sealed class BrokerHost : IAsyncDisposable
         string descriptorPath,
         CancellationToken cancellationToken = default)
     {
-        return await StartCoreAsync(descriptorPath, null, cancellationToken).ConfigureAwait(false);
+        return await StartCoreAsync(descriptorPath, null, null, cancellationToken).ConfigureAwait(false);
     }
 
     public static async Task<BrokerHost> StartAsync(
@@ -53,12 +61,25 @@ public sealed class BrokerHost : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(volumeController);
-        return await StartCoreAsync(descriptorPath, volumeController, cancellationToken).ConfigureAwait(false);
+        return await StartCoreAsync(descriptorPath, volumeController, null, cancellationToken).ConfigureAwait(false);
+    }
+
+    public static async Task<BrokerHost> StartAsync(
+        BrokerOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return await StartCoreAsync(
+            options.DescriptorPath,
+            null,
+            options,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<BrokerHost> StartCoreAsync(
         string descriptorPath,
         IVolumeController? volumeController,
+        BrokerOptions? options,
         CancellationToken cancellationToken)
     {
         var session = BrokerSession.Load(descriptorPath);
@@ -76,7 +97,7 @@ public sealed class BrokerHost : IAsyncDisposable
             KeepAliveInterval = TimeSpan.FromSeconds(20),
         });
 
-        var host = new BrokerHost(application, session, volumeController);
+        var host = new BrokerHost(application, session, volumeController, options);
         application.MapGet("/health", host.HandleHealthAsync);
         application.Map("/agent", host.HandleAgentAsync);
         await application.StartAsync(cancellationToken).ConfigureAwait(false);
@@ -141,12 +162,17 @@ public sealed class BrokerHost : IAsyncDisposable
             profile => _tools.ListCapabilities(profile),
             _tools.ListCapabilities()
                 .SelectMany(capability => capability.Scopes)
+                .Append(ToolScope.SkillExecute)
                 .ToHashSet(StringComparer.Ordinal),
             (request, token) => ExecuteToolAsync(request, token),
             (request, token) => ExecuteApprovalAsync(request, token),
             sessionId => _tools.RemoveSession(sessionId),
             pendingV2Store: _pendingV2,
-            approvalTokenService: _authTokens)
+            approvalTokenService: _authTokens,
+            skillListProvider: _tools.ListSkills,
+            skillCatalogProvider: _tools.ListAllSkills,
+            skillResolver: _tools.ResolveSkill,
+            skillExecutor: _tools.ExecuteSkillAsync)
             .RunAsync(socket, linkedCancellation.Token).ConfigureAwait(false);
     }
 

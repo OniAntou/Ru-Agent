@@ -65,6 +65,22 @@ public sealed record ModelContextSnapshot
             case ModelContextEntryKind.ToolResult:
                 WriteToolResult(writer, entry.ToolReceipt!, entry.Content!);
                 break;
+            case ModelContextEntryKind.Summary:
+                writer.WriteString("compaction_id", entry.SourceId);
+                writer.WriteString("text", entry.Content);
+                writer.WritePropertyName("covered_ranges");
+                writer.WriteStartArray();
+                foreach (var range in entry.SummaryRanges!)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("source_id", range.SourceId);
+                    writer.WriteNumber("start_sequence", range.StartSequence);
+                    writer.WriteNumber("end_sequence", range.EndSequence);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(entry));
         }
@@ -190,6 +206,7 @@ public sealed record ModelContextSnapshot
         ModelContextEntryKind.Text => "text",
         ModelContextEntryKind.AssistantStep => "assistant_step",
         ModelContextEntryKind.ToolResult => "tool_result",
+        ModelContextEntryKind.Summary => "summary",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 

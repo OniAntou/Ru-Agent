@@ -5,6 +5,7 @@ public enum ModelContextEntryKind
     Text,
     AssistantStep,
     ToolResult,
+    Summary,
 }
 
 public enum ModelContextRole
@@ -24,7 +25,8 @@ public sealed record ModelContextEntry
         ModelContextEntryKind kind,
         string? text,
         AssistantStep? assistantStep,
-        ToolExecutionReceipt? toolReceipt)
+        ToolExecutionReceipt? toolReceipt,
+        IReadOnlyList<ContextEntryRange>? summaryRanges)
     {
         if (!IsSourceId(sourceId))
         {
@@ -50,6 +52,7 @@ public sealed record ModelContextEntry
         Content = text;
         AssistantStep = assistantStep;
         ToolReceipt = toolReceipt;
+        SummaryRanges = summaryRanges;
     }
 
     public string SourceId { get; }
@@ -65,6 +68,8 @@ public sealed record ModelContextEntry
     public AssistantStep? AssistantStep { get; }
 
     public ToolExecutionReceipt? ToolReceipt { get; }
+
+    public IReadOnlyList<ContextEntryRange>? SummaryRanges { get; }
 
     public static ModelContextEntry Text(
         string sourceId,
@@ -85,6 +90,7 @@ public sealed record ModelContextEntry
             ModelContextEntryKind.Text,
             text,
             null,
+            null,
             null);
     }
 
@@ -101,6 +107,7 @@ public sealed record ModelContextEntry
             ModelContextEntryKind.AssistantStep,
             null,
             step,
+            null,
             null);
     }
 
@@ -119,7 +126,38 @@ public sealed record ModelContextEntry
             ModelContextEntryKind.ToolResult,
             modelContent,
             null,
-            receipt);
+            receipt,
+            null);
+    }
+
+    public static ModelContextEntry Summary(
+        string compactionId,
+        long projectionSequence,
+        string text,
+        IReadOnlyList<ContextEntryRange> coveredRanges)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(coveredRanges);
+        if (coveredRanges.Count == 0)
+        {
+            throw new ArgumentException("Summary must cover at least one context range.", nameof(coveredRanges));
+        }
+
+        var copiedRanges = coveredRanges.ToArray();
+        if (copiedRanges.Any(range => range is null))
+        {
+            throw new ArgumentException("Summary ranges cannot contain null.", nameof(coveredRanges));
+        }
+
+        return new ModelContextEntry(
+            compactionId,
+            projectionSequence,
+            ModelContextRole.Tool,
+            ModelContextEntryKind.Summary,
+            text,
+            null,
+            null,
+            copiedRanges);
     }
 
     private static bool IsSourceId(string? value)

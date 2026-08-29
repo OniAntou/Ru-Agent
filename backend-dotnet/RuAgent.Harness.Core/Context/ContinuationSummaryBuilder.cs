@@ -56,6 +56,7 @@ public static class ContinuationSummaryBuilder
             ModelContextEntryKind.Text => entry.Content ?? string.Empty,
             ModelContextEntryKind.AssistantStep => entry.AssistantStep?.Text ?? string.Empty,
             ModelContextEntryKind.ToolResult => entry.Content ?? string.Empty,
+            ModelContextEntryKind.Summary => entry.Content ?? string.Empty,
             _ => string.Empty,
         };
         if (content.Length > MaxEntryHeadChars)

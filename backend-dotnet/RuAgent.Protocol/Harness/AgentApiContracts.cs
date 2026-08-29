@@ -56,6 +56,18 @@ public sealed record AgentRunTrustResponse(
     [property: JsonPropertyName("trust_request_id")] string TrustRequestId,
     [property: JsonPropertyName("status")] string Status);
 
+public sealed record CompactAgentRunRequest(
+    [property: JsonPropertyName("strategy")] string? Strategy = null);
+
+public sealed record CompactAgentRunResponse(
+    [property: JsonPropertyName("run_id")] string RunId,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("strategy")] string Strategy,
+    [property: JsonPropertyName("compaction_id")] string? CompactionId,
+    [property: JsonPropertyName("before_tokens")] long? BeforeTokens,
+    [property: JsonPropertyName("after_tokens")] long? AfterTokens,
+    [property: JsonPropertyName("run_version")] long RunVersion);
+
 public sealed record AgentErrorResponse(
     [property: JsonPropertyName("error_code")] string ErrorCode,
     [property: JsonPropertyName("message")] string? Message = null);

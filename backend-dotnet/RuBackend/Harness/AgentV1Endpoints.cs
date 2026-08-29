@@ -21,6 +21,7 @@ public static class AgentV1Endpoints
         app.MapPost("/agent/v1/runs/{runId}/trust", PostTrustAsync);
         app.MapPost("/agent/v1/runs/{runId}/cancel", PostCancelAsync);
         app.MapPost("/agent/v1/runs/{runId}/continue", PostContinueAsync);
+        app.MapPost("/agent/v1/runs/{runId}/compact", PostCompactAsync);
         app.MapPost("/agent/v1/runs/{runId}/reconcile", PostReconcileAsync);
         app.MapGet("/agent/v1/sessions/{sessionId}/runs", GetSessionRunsAsync);
         app.MapGet("/agent/v1/policies", GetPoliciesAsync);
@@ -429,6 +430,59 @@ public static class AgentV1Endpoints
     private static async Task<IResult> PostContinueAsync(string runId, AgentV1Service service, CancellationToken ct)
     {
         var result = await service.ContinueAsync(runId, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
+    }
+
+    private static async Task<IResult> PostCompactAsync(
+        string runId,
+        HttpContext context,
+        AgentV1Service service,
+        CancellationToken ct)
+    {
+        CompactAgentRunRequest? dto;
+        try
+        {
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                dto = new CompactAgentRunRequest();
+            }
+            else
+            {
+                using var document = JsonDocument.Parse(text);
+                if (document.RootElement.ValueKind != JsonValueKind.Object
+                    || document.RootElement.EnumerateObject().Any(property =>
+                        !string.Equals(property.Name, "strategy", StringComparison.Ordinal)))
+                {
+                    return Results.Json(
+                        new { error_code = "invalid_request" },
+                        statusCode: 400);
+                }
+
+                var strategy = document.RootElement.TryGetProperty("strategy", out var value)
+                    ? value.ValueKind == JsonValueKind.Null
+                        ? null
+                        : value.ValueKind == JsonValueKind.String
+                            ? value.GetString()
+                            : throw new JsonException("strategy must be a string")
+                    : null;
+                dto = new CompactAgentRunRequest(strategy);
+            }
+        }
+        catch (RequestBodyTooLargeException)
+        {
+            return Results.Json(new { error_code = "request_too_large" }, statusCode: 413);
+        }
+        catch (JsonException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+        catch (DecoderFallbackException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+
+        var result = await service.CompactAsync(runId, dto, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 

@@ -29,6 +29,8 @@ public interface IAgentRuntimeRootRegistry
 
     void RegisterCoordinator(RunId runId, AgentRunCoordinator coordinator);
 
+    bool TryGetCoordinator(RunId runId, out AgentRunCoordinator? coordinator);
+
     Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken);
 
     void Remove(RunId runId);
@@ -102,6 +104,19 @@ public sealed class AgentRuntimeRootRegistry : IAgentRuntimeRootRegistry
                 return;
             }
         }
+    }
+
+    public bool TryGetCoordinator(RunId runId, out AgentRunCoordinator? coordinator)
+    {
+        if (_roots.TryGetValue(runId.Value, out var registration)
+            && registration.Coordinator is { } value)
+        {
+            coordinator = value;
+            return true;
+        }
+
+        coordinator = null;
+        return false;
     }
 
     public async Task CancelRunningToolsAsync(RunId runId, CancellationToken cancellationToken)

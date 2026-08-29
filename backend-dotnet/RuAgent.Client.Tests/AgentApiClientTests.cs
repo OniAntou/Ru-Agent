@@ -112,6 +112,38 @@ public sealed class AgentApiClientTests
         Assert.Equal("invalid_workspace", ex.ErrorCode);
     }
 
+    [Fact]
+    public async Task Compact_sends_bearer_and_parses_metadata_only_response()
+    {
+        var bearer = new string('e', 64);
+        var session = Session(bearer);
+        var handler = new FakeHandler(request =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.EndsWith(
+                "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/compact",
+                request.RequestUri!.ToString(),
+                StringComparison.Ordinal);
+            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+            Assert.Equal(bearer, request.Headers.Authorization?.Parameter);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "{\"run_id\":\"run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"status\":\"running\",\"strategy\":\"aggressive\",\"compaction_id\":\"compact-1\",\"before_tokens\":100,\"after_tokens\":40,\"run_version\":2}",
+                    Encoding.UTF8,
+                    "application/json"),
+            };
+        });
+        var client = new AgentApiClient(session, new HttpClient(handler));
+
+        var result = await client.CompactAsync(
+            "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            new CompactAgentRunRequest("aggressive"));
+
+        Assert.Equal("compact-1", result.CompactionId);
+        Assert.Equal(40, result.AfterTokens);
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _func;

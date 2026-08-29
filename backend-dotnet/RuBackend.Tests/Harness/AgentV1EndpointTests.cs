@@ -17,6 +17,7 @@ public sealed class AgentV1EndpointTests
         ("POST", "/agent/v1/runs/{runId}/trust"),
         ("POST", "/agent/v1/runs/{runId}/cancel"),
         ("POST", "/agent/v1/runs/{runId}/continue"),
+        ("POST", "/agent/v1/runs/{runId}/compact"),
         ("POST", "/agent/v1/runs/{runId}/reconcile"),
         ("GET", "/agent/v1/sessions/{sessionId}/runs"),
         ("GET", "/agent/v1/policies"),
@@ -37,7 +38,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(54, doc.RootElement.GetArrayLength() - 1); // minus 1 websocket, HTTP count 54
+        Assert.Equal(55, doc.RootElement.GetArrayLength() - 1); // minus 1 websocket, HTTP count 55
     }
 
     [Theory]
@@ -49,6 +50,7 @@ public sealed class AgentV1EndpointTests
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/trust")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cancel")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/continue")]
+    [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/compact")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile")]
     [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runs")]
     [InlineData("GET", "/agent/v1/policies")]
@@ -77,6 +79,7 @@ public sealed class AgentV1EndpointTests
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/trust")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cancel")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/continue")]
+    [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/compact")]
     [InlineData("POST", "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/reconcile")]
     [InlineData("GET", "/agent/v1/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runs")]
     [InlineData("GET", "/agent/v1/policies")]
@@ -133,6 +136,21 @@ public sealed class AgentV1EndpointTests
         Assert.Equal(400, (int)rec.StatusCode);
         var recJson = await rec.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("invalid_snapshot_hash", recJson.GetProperty("error_code").GetString());
+    }
+
+    [Fact]
+    public async Task Compact_route_reports_runtime_not_ready_without_a_live_coordinator()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/agent/v1/runs/run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/compact",
+            new { });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("runtime_not_ready", json.GetProperty("error_code").GetString());
     }
 
     [Fact]

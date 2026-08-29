@@ -6,6 +6,7 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Approval;
+using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Harness.Core.Reconciliation;
@@ -2188,6 +2189,99 @@ public sealed class AgentV1Service
         }
 
         return new AgentServiceResult(200, MapRun(result.Run!));
+    }
+
+    public async Task<AgentServiceResult> CompactAsync(
+        string runIdRaw,
+        CompactAgentRunRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsRunId(runIdRaw))
+        {
+            return BoundedError(400, "invalid_run_id", "run_id invalid.");
+        }
+
+        var strategyRaw = request?.Strategy?.Trim().ToLowerInvariant();
+        var strategy = strategyRaw switch
+        {
+            null or "" or "normal" => ContextCompactionStrategy.Normal,
+            "aggressive" => ContextCompactionStrategy.Aggressive,
+            _ => (ContextCompactionStrategy?)null,
+        };
+        if (strategy is null)
+        {
+            return BoundedError(
+                400,
+                "invalid_compaction_strategy",
+                "strategy must be normal or aggressive.");
+        }
+
+        var runId = new RunId(runIdRaw);
+        if (_runtimeRoots is null
+            || !_runtimeRoots.TryGetCoordinator(runId, out var coordinator)
+            || coordinator is null)
+        {
+            return BoundedError(
+                409,
+                "runtime_not_ready",
+                "The run runtime is not ready for compaction.");
+        }
+
+        ContextCompactionResult result;
+        try
+        {
+            result = await coordinator.CompactAsync(
+                    runId,
+                    strategy.Value,
+                    ContextCompactionReason.Manual,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (KeyNotFoundException)
+        {
+            return BoundedError(404, "run_not_found", "Run not found.");
+        }
+        catch (InvalidOperationException exception) when (exception.Message == "run_not_found")
+        {
+            return BoundedError(404, "run_not_found", "Run not found.");
+        }
+
+        return result.Outcome switch
+        {
+            ContextCompactionOutcome.Committed => new AgentServiceResult(
+                200,
+                new CompactAgentRunResponse(
+                    runIdRaw,
+                    MapRunState(result.Run!.Status),
+                    strategyRaw is "aggressive" ? "aggressive" : "normal",
+                    result.CompactionId,
+                    result.BeforeTokens,
+                    result.AfterTokens,
+                    result.Run.Version)),
+            ContextCompactionOutcome.NoOp => new AgentServiceResult(
+                200,
+                new CompactAgentRunResponse(
+                    runIdRaw,
+                    "no_op",
+                    strategyRaw is "aggressive" ? "aggressive" : "normal",
+                    null,
+                    null,
+                    null,
+                    result.Run?.Version ?? 0)),
+            ContextCompactionOutcome.NotAvailable => BoundedError(
+                409,
+                "compact_not_available",
+                "Context compaction is not available."),
+            ContextCompactionOutcome.CommitConflict => BoundedError(
+                409,
+                "commit_conflict",
+                "Commit conflict."),
+            ContextCompactionOutcome.RunNotFound => BoundedError(
+                404,
+                "run_not_found",
+                "Run not found."),
+            _ => BoundedError(500, "compact_failed", "Compaction failed."),
+        };
     }
 
     private async Task<SqliteConnection> OpenHarnessConnectionAsync(CancellationToken cancellationToken)

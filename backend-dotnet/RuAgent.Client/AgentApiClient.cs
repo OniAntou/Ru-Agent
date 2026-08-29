@@ -193,6 +193,47 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
             throw new AgentApiException(ExtractErrorCode(body) ?? "continue_failed", body, (int)resp.StatusCode);
     }
 
+    public async Task<CompactAgentRunResponse> CompactAsync(
+        string runId,
+        CompactAgentRunRequest? request = null,
+        CancellationToken ct = default)
+    {
+        ValidateRunId(runId);
+        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/compact");
+        using var req = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(request ?? new CompactAgentRunRequest()),
+                Encoding.UTF8,
+                "application/json"),
+        };
+        EnsureAuth(req);
+        using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
+        var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+        {
+            throw new AgentApiException("unauthorized", "Bearer rejected", (int)resp.StatusCode);
+        }
+
+        if (resp.StatusCode == HttpStatusCode.Conflict)
+        {
+            throw new AgentApiException(
+                ExtractErrorCode(body) ?? "conflict",
+                body,
+                (int)resp.StatusCode);
+        }
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            throw new AgentApiException(
+                ExtractErrorCode(body) ?? "compact_failed",
+                body,
+                (int)resp.StatusCode);
+        }
+
+        return ParseCompactResponseStrict(body, runId);
+    }
+
     public async Task<JsonElement> ApproveAsync(string runId, string approvalId, string scope, CancellationToken ct = default)
     {
         ValidateRunId(runId);
@@ -341,6 +382,63 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
     }
 
+    private static CompactAgentRunResponse ParseCompactResponseStrict(
+        string json,
+        string expectedRunId)
+    {
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(json);
+        }
+        catch (JsonException exception)
+        {
+            throw new AgentApiException("invalid_response", exception.Message);
+        }
+
+        using (document)
+        {
+            var allowed = new HashSet<string>(
+                ["run_id", "status", "strategy", "compaction_id", "before_tokens", "after_tokens", "run_version"],
+                StringComparer.Ordinal);
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (!allowed.Contains(property.Name))
+                {
+                    throw new AgentApiException(
+                        "unknown_field",
+                        $"Unexpected field {property.Name}");
+                }
+            }
+        }
+
+        try
+        {
+            var result = JsonSerializer.Deserialize<CompactAgentRunResponse>(json, JsonOptions);
+            if (result is null
+                || !string.Equals(result.RunId, expectedRunId, StringComparison.Ordinal)
+                || string.IsNullOrWhiteSpace(result.Status)
+                || result.Strategy is not ("normal" or "aggressive")
+                || result.RunVersion < 0
+                || (result.CompactionId is not null && !IsBoundedToken(result.CompactionId))
+                || (result.BeforeTokens is null) != (result.AfterTokens is null)
+                || (result.BeforeTokens is not null
+                    && result.AfterTokens is not null
+                    && (result.BeforeTokens < 0 || result.AfterTokens < 0
+                        || result.AfterTokens > result.BeforeTokens)))
+            {
+                throw new AgentApiException("invalid_response", "Invalid compaction response.");
+            }
+
+            ValidateRunId(result.RunId);
+            return result;
+        }
+        catch (JsonException exception)
+        {
+            throw new AgentApiException("invalid_response", exception.Message);
+        }
+    }
+
     private static string? ExtractErrorCode(string json)
     {
         try
@@ -383,4 +481,14 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
 
         return true;
     }
+
+    private static bool IsBoundedToken(string value) =>
+        value is { Length: >= 1 and <= 128 }
+        && value.All(character =>
+            character is (>= 'a' and <= 'z')
+                or (>= 'A' and <= 'Z')
+                or (>= '0' and <= '9')
+                or '-'
+                or '_'
+                or '.');
 }

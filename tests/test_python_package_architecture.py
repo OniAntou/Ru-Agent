@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 DOMAIN_PACKAGES = {
-    "generation",
+    # Phase 3: generation retired (C# Harness.Core/Adapters owns it)
     "memory",
     "models",
     "observation",
@@ -63,7 +63,10 @@ def test_runtime_modules_are_owned_by_explicit_domain_packages() -> None:
 
     for package in DOMAIN_PACKAGES:
         assert (package_root / package / "__init__.py").is_file(), package
-    assert (package_root / "worker/v1/__init__.py").is_file()
+    # Phase 3: worker/v1 retired (C# Runtime.Worker owns it), so the package
+    # may be absent; if present it must still be valid, but absence is not a failure.
+    if (package_root / "worker/v1").exists():
+        assert (package_root / "worker/v1/__init__.py").is_file()
 
     root_modules = sorted(path.name for path in package_root.glob("*.py"))
     assert root_modules == ["__init__.py"]
@@ -91,6 +94,9 @@ def test_python_runtime_has_no_native_volume_owner() -> None:
 
 def test_reply_orchestration_has_no_desktop_side_effect_imports() -> None:
     path = ROOT / "src/ru_runtime/generation/orchestration.py"
+    if not path.is_file():
+        # Phase 3: generation retired - C# owns orchestration, no Python file to check
+        return
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     imports: set[str] = set()
     for node in ast.walk(tree):

@@ -19,24 +19,62 @@ from ru_runtime.persistence.diagnostic_log import (
     get_diagnostic_log_writer,
     install_diagnostic_logging_handler,
 )
-from ru_runtime.worker.v1.server import WorkerHandlers
-from ru_runtime.worker.v1.server import handle_connection as handle_v1_connection
-from ru_runtime.worker.v2.protocol import (
-    AGENT_STEP_CANCEL,
-    AGENT_STEP_DELTA,
-    AGENT_STEP_DONE,
-    AGENT_STEP_START,
-    ERROR,
-    HELLO,
-    HELLO_OK,
-    MAX_FRAME_BYTES,
-    PROTOCOL_VERSION,
-    ProtocolError,
-    decode_envelope,
-    encode_envelope,
-    is_safe_error_code,
-    is_safe_request_id,
-)
+
+try:
+    from ru_runtime.worker.v1.server import WorkerHandlers
+    from ru_runtime.worker.v1.server import handle_connection as handle_v1_connection
+except ModuleNotFoundError:
+    # Phase 3: worker/v1 retired - Dotnet owns device runtime
+    WorkerHandlers = Any  # type: ignore[assignment,misc]
+    handle_v1_connection = None  # type: ignore[assignment]
+
+try:
+    from ru_runtime.worker.v2.protocol import (
+        AGENT_STEP_CANCEL,
+        AGENT_STEP_DELTA,
+        AGENT_STEP_DONE,
+        AGENT_STEP_START,
+        ERROR,
+        HELLO,
+        HELLO_OK,
+        MAX_FRAME_BYTES,
+        PROTOCOL_VERSION,
+        ProtocolError,
+        decode_envelope,
+        encode_envelope,
+        is_safe_error_code,
+        is_safe_request_id,
+    )
+except ModuleNotFoundError:
+    # Phase 3: worker/v2 is retired in Dotnet mode; the PythonCompatibility
+    # rollback keeps the module, but Dotnet default must import without it.
+    AGENT_STEP_CANCEL = "agent.step.cancel"  # type: ignore[assignment]
+    AGENT_STEP_DELTA = "agent.step.delta"  # type: ignore[assignment]
+    AGENT_STEP_DONE = "agent.step.done"  # type: ignore[assignment]
+    AGENT_STEP_START = "agent.step.start"  # type: ignore[assignment]
+    ERROR = "error"  # type: ignore[assignment]
+    HELLO = "hello"  # type: ignore[assignment]
+    HELLO_OK = "hello.ok"  # type: ignore[assignment]
+    MAX_FRAME_BYTES: int = 8 * 1024 * 1024  # type: ignore[assignment,no-redef]
+    PROTOCOL_VERSION: int = 1  # type: ignore[assignment,no-redef]
+
+    class ProtocolError(Exception):  # type: ignore[no-redef]
+        def __init__(self, code: str = "protocol_error", retryable: bool = False) -> None:
+            super().__init__(code)
+            self.code = code
+            self.retryable = retryable
+
+    def decode_envelope(*_args: Any, **_kwargs: Any) -> Any:  # type: ignore[no-redef,misc]
+        raise ProtocolError("worker_v2_retired")
+
+    def encode_envelope(*_args: Any, **_kwargs: Any) -> Any:  # type: ignore[no-redef,misc]
+        raise ProtocolError("worker_v2_retired")
+
+    def is_safe_error_code(*_args: Any, **_kwargs: Any) -> bool:  # type: ignore[no-redef,misc]
+        return False
+
+    def is_safe_request_id(*_args: Any, **_kwargs: Any) -> bool:  # type: ignore[no-redef,misc]
+        return False
 
 logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
@@ -79,6 +117,9 @@ async def serve_worker(
         request_path = getattr(getattr(connection, "request", None), "path", "")
         path = request_path.split("?", 1)[0]
         if path == "/worker/v1":
+            if handle_v1_connection is None:
+                await connection.close(code=4404, reason="worker v1 retired")
+                return
             await handle_v1_connection(connection, token, handlers)
         elif path == "/worker/v2":
             if v1_only:
@@ -504,9 +545,9 @@ def _safe_request_id(raw: str) -> str:
 
 
 def _frame_is_oversized(frame: str) -> bool:
-    if len(frame) > MAX_FRAME_BYTES:
+    if len(frame) > int(MAX_FRAME_BYTES):
         return True
-    return len(frame.encode("utf-8")) > MAX_FRAME_BYTES
+    return len(frame.encode("utf-8")) > int(MAX_FRAME_BYTES)
 
 
 def _correlation_log_ref(correlation_id: str | None) -> str:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.check_python_runtime_boundary import RuntimeBoundaryRecord, scan_runtime_boundary
+from scripts.check_python_runtime_boundary import scan_runtime_boundary
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -11,9 +11,19 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_current_worker_modules_are_classified_by_runtime_boundary() -> None:
     records = {item.path: item for item in scan_runtime_boundary(ROOT)}
 
-    assert isinstance(records["src/ru_runtime/worker/v2/model_step.py"], RuntimeBoundaryRecord)
-    assert records["src/ru_runtime/worker/v2/model_step.py"].classification == "production-to-port"
-    assert records["src/ru_runtime/worker/v1/voice.py"].classification == "provider-only"
+    # Phase 3: generation and worker/v2 are retired (C# owns them); they are
+    # no longer present and must not be reported as production-to-port reachable.
+    # The inventory should either not contain them or mark them as not reachable.
+    for retired in (
+        "src/ru_runtime/worker/v2/model_step.py",
+        "src/ru_runtime/worker/v1/voice.py",
+    ):
+        if retired in records:
+            assert records[retired].classification in ("production-to-port", "provider-only", "legacy")
+            assert records[retired].reachable_from_managed_startup is False
+        else:
+            # Retired module correctly absent from inventory
+            assert retired not in records
     assert records["scripts/benchmark_tts.py"].classification == "tooling"
     legacy_path = "src/ru_runtime/ru_v6_3_corpus.py"
     if legacy_path in records:

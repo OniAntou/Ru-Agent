@@ -89,10 +89,14 @@ build publishes the managed Worker before the backend:
 `gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe`.
 `backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Worker.exe`.
 `backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Core.dll`.
-`build.bat` fails if any of these managed artifacts is absent, and `start_dev.bat`
-refuses to run when the Worker Release artifact is missing instead of silently
-selecting a stale Debug executable. Any Windows shortcut should target
-`start_dev.bat` so it uses the same release-path check.
+`build.bat` fails if any of these managed artifacts is absent and verifies that
+the GUI runtimeconfig contains `includedFrameworks`, proving the publish is
+self-contained. `start_dev.bat` refuses to run when the Worker Release artifact
+is missing instead of silently selecting a stale Debug executable; it passes the
+workspace directory to a short startup probe so an immediate `RuApp.exe`
+failure remains visible. A clean exit code from a second launch is accepted when
+the existing single-instance GUI remains alive. Any Windows shortcut should
+target `start_dev.bat` so it uses the same release-path and startup checks.
 
 Phase 2 parity is deterministic and status-only. The shared fixture
 `tests/fixtures/python-csharp-phase2-device-baseline.json` is exercised by

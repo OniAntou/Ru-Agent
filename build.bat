@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 echo ============================================
 echo  Ru Desktop - Build + PRI Generation Script
 echo  .NET 10 + ASP.NET Core + WinUI 3 (Unpackaged Self-Contained)
-echo  Agent-only runtime (56 HTTP + 1 WS, Worker v1 device/runtime, Worker v2 Agent, CLI tracer)
+echo  Agent-only runtime (56 HTTP + 1 WS, managed C# Worker, CLI tracer)
 echo ============================================
 echo.
 
@@ -122,7 +122,16 @@ if not exist "%BACKEND_PUBLISH_DIR%\RuBackend.exe" (
 )
 
 echo [10/13] Publishing Release GUI (self-contained, win-x64)...
-call dotnet publish "%CSPROJ%" -c Release -r win-x64 --self-contained true
+if exist "%PUBLISH_DIR%" (
+    echo Removing stale GUI publish output...
+    rmdir /s /q "%PUBLISH_DIR%"
+    if exist "%PUBLISH_DIR%" (
+        echo.
+        echo BUILD FAILED: Could not remove stale GUI publish output.
+        exit /b 1
+    )
+)
+call dotnet publish "%CSPROJ%" -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:SelfContained=true
 if errorlevel 1 (
     echo.
     echo BUILD FAILED!
@@ -132,6 +141,18 @@ if not exist "%PUBLISH_DIR%\RuApp.exe" (
     echo.
     echo BUILD FAILED: RuApp.exe was not created at:
     echo   "%PUBLISH_DIR%\RuApp.exe"
+    exit /b 1
+)
+if not exist "%PUBLISH_DIR%\RuApp.runtimeconfig.json" (
+    echo.
+    echo BUILD FAILED: RuApp.runtimeconfig.json was not created.
+    exit /b 1
+)
+findstr /C:"includedFrameworks" "%PUBLISH_DIR%\RuApp.runtimeconfig.json" >nul
+if errorlevel 1 (
+    echo.
+    echo BUILD FAILED: GUI publish is not self-contained.
+    echo Expected includedFrameworks in "%PUBLISH_DIR%\RuApp.runtimeconfig.json".
     exit /b 1
 )
 

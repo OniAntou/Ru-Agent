@@ -97,10 +97,12 @@ Run the desktop-owned stack:
 `gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe`
 and the managed Agent Worker at
 `backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Worker.exe`;
-it stops with an error if either artifact is missing. `start_dev.bat` launches
-only that Release GUI after confirming both artifacts exist; it never falls
-back to a Debug build, so a successful build must reach `[13/13] Build complete!`
-before using a shortcut. These commands produce and start `RuApp.exe` plus
+it stops with an error if either artifact is missing or if the GUI runtimeconfig
+does not prove a self-contained publish. `start_dev.bat` launches only that
+Release GUI after confirming both artifacts exist, preserves `D:\LLM` as the
+working directory, and reports an immediate startup failure instead of closing
+silently. It never falls back to a Debug build, so a successful build must
+reach `[13/13] Build complete!` before using a shortcut. These commands produce and start `RuApp.exe` plus
 `RuBackend.exe`; the backend owns the managed C# Worker on both private ports.
 Do not start either worker or the voice engine as independent public services.
 
@@ -234,7 +236,7 @@ physical boundaries, runs the typed UI Automation driver for turn/stop/cancel/
 stale-session scenarios, and writes a separate schema-v2 artifact:
 
 ~~~powershell
-dotnet publish D:\LLM\gui-winui3\RuApp.csproj -c Release -r win-x64 --self-contained true --nologo
+dotnet publish D:\LLM\gui-winui3\RuApp.csproj -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:SelfContained=true --nologo
 dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --nologo
 & D:\LLM\scripts\run_gui_voice_harness.ps1 -AppPath D:\LLM\gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.exe -DriverProject D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -OutputPath D:\LLM\artifacts\gui\ru-harness-vnext-gui.json
 ~~~

@@ -3,7 +3,7 @@
 **Date:** 2026-08-30
 **Status:** Completed 2026-08-30; managed production startup is C#-only,
 legacy Python startup is retired, and native hardware acceptance remains
-separate.
+separate. GUI publish and launcher hardening completed 2026-08-31.
 
 ## Objective
 
@@ -78,6 +78,26 @@ The voice-focused GUI runner was not counted as a production success gate: its
 first synthetic turn reached capture/transcription but timed out before the
 reply lifecycle. This remains separate from the native microphone, speaker,
 OmniVoice, VTube Studio, and Gemini acceptance table below.
+
+## GUI publish and launcher follow-up (2026-08-31)
+
+The existing desktop shortcut correctly targets `start_dev.bat`, but the
+published GUI artifact had a framework-dependent runtimeconfig and failed before
+creating a window on a host where the x64 runtime was not resolved. The release
+build now explicitly selects `Platform=x64`, `RuntimeIdentifier=win-x64`, and
+`SelfContained=true`, removes the stale GUI publish directory, and fails unless
+`RuApp.runtimeconfig.json` contains `includedFrameworks`. `start_dev.bat` passes
+the repository workspace as the GUI working directory and uses
+`scripts/launch_gui.ps1` to keep immediate startup failures visible.
+The probe treats a clean exit as successful as well, which preserves normal
+single-instance handoff when the GUI is already open.
+
+Verification on 2026-08-31 passed: the Python suite completed 506/506, the
+13-project C# Release matrix completed 2,086/2,086, `build.bat` reached
+`[13/13] Build complete`, and the published runtimeconfig contained
+`includedFrameworks` with the native self-contained host files present. A
+direct startup-probe run returned exit code 0 with `RuApp.exe` still alive;
+the missing-executable probe returned exit code 1 as expected.
 
 ## Exit criteria
 

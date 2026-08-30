@@ -1,8 +1,6 @@
 # Python runtime boundary
 
-Status: Phase 2 managed Worker startup is the current default, 2026-08-30.
-Python runtime modules remain available only behind the explicit trusted
-`PythonCompatibility` rollback while retirement evidence is collected.
+Status: Phase 3 retirement in progress, Dotnet is the only production startup. Scanner 2026-08-30 reports 2 reachable (both C# managed startup) and 0 production-to-port/provider-only reachable in Dotnet mode. Python runtime modules remain on disk only for the explicit trusted `PythonCompatibility` harness rollback and will be deleted per-group after parity gates; they are not part of the default managed installation.
 
 The deterministic inventory is generated with:
 
@@ -15,9 +13,11 @@ D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_python_runtime_boundary.py 
 The scanner records relative paths, a bounded content hash, byte count,
 classification, and whether an explicit managed-startup edge reaches the file.
 It parses Python imports without importing or executing product modules. The
-managed startup's `ru_runtime.worker.server` argument is recorded as a
-subprocess edge, not as a Python import edge. Output is count-only on stdout;
-the baseline fixture contains only deterministic bounded reference values.
+`ru_runtime.worker.server` string lives only inside the `PythonCompatibility`
+fallback in `WorkerBrokerLaunchPlan.cs`; the Dotnet default launches only
+`dotnet-agent-worker` and the scanner no longer counts that string as reachable.
+Output is count-only on stdout; the baseline fixture contains only deterministic
+bounded reference values.
 
 Current boundary classes are:
 

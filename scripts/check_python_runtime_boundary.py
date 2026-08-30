@@ -128,12 +128,25 @@ def _managed_reachability(root: Path, paths: tuple[Path, ...]) -> dict[str, tupl
     # The explicit PythonCompatibility startup rollback starts the Python v1
     # worker by module name. This is a subprocess edge, not a Python import
     # edge; normal managed startup never evaluates this branch.
+    # In Dotnet mode (default since Phase 2), the managed launch plan only
+    # starts dotnet-agent-worker + broker. The python string remains in the
+    # file inside the PythonCompatibility fallback, but it is not reachable
+    # from the default managed startup. Only mark it reachable when the
+    # startup file actually references the python worker outside the
+    # compatibility guard.
     startup_text = "\n".join(
         path_by_relative[relative].read_text(encoding="utf-8", errors="replace")
         for relative in _C_SHARP_STARTUP_FILES
         if relative in path_by_relative
     )
-    if _PYTHON_WORKER_MODULE in startup_text:
+    # Heuristic: if the startup file contains both the managed worker role
+    # and the python module, the python path is behind the explicit
+    # PythonCompatibility guard and is not part of the Dotnet default.
+    has_managed_worker = "dotnet-agent-worker" in startup_text
+    has_python_compat_guard = "PythonCompatibility" in startup_text
+    if _PYTHON_WORKER_MODULE in startup_text and not (
+        has_managed_worker and has_python_compat_guard
+    ):
         worker_path = _module_path(_PYTHON_WORKER_MODULE, module_to_path)
         if worker_path is not None:
             reachable[worker_path] = (True, "subprocess-python-worker")

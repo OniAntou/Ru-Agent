@@ -71,7 +71,7 @@
 - Consumes: existing settings persistence and `AppSettingsDto` API shape.
 - Produces: a settings snapshot/API that has no active online-search field, while old JSON keys are removed from the canonical raw settings object.
 
-- [ ] **Step 1: Write failing settings-retirement tests**
+- [x] **Step 1: Write failing settings-retirement tests**
 
 Add assertions that reading a JSON file containing both legacy keys removes
 `allow_web_search` and `allow_online_search` from `SettingsSnapshot.Raw`, that
@@ -90,7 +90,7 @@ Assert.False(persisted.ContainsKey("allow_web_search"));
 Assert.False(persisted.ContainsKey("allow_online_search"));
 ```
 
-- [ ] **Step 2: Run the focused tests and verify the old contract fails**
+- [x] **Step 2: Run the focused tests and verify the old contract fails**
 
 Run:
 
@@ -101,7 +101,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj -c Release --n
 Expected: the new assertions fail or the build reports the old
 `AllowWebSearch`/`AllowOnlineSearch` members still shape the contract.
 
-- [ ] **Step 3: Remove the field without changing neighboring settings**
+- [x] **Step 3: Remove the field without changing neighboring settings**
 
 Remove the property/constructor slot and all active reads/writes. In
 `SettingsStore`, add the two legacy JSON names to the retired-field list so
@@ -111,7 +111,7 @@ both fields from the business response. Remove the XAML row and only its
 event/load/save references; leave the self-learning/cloud-memory rows and the
 user's unrelated XAML redesign intact.
 
-- [ ] **Step 4: Run the focused tests and commit**
+- [x] **Step 4: Run the focused tests and commit**
 
 Run the command from Step 2. Expected: all focused settings tests pass.
 
@@ -136,7 +136,7 @@ git commit -m "refactor: remove online search setting"
   host-owned selection settings; web availability is represented by tool
   bindings, not a boolean.
 
-- [ ] **Step 1: Write failing wire-contract tests**
+- [x] **Step 1: Write failing wire-contract tests**
 
 Assert the loopback start payload contains `model_tools` entries for
 `web.search` and `web.fetch` when the prompt context advertises them, and does
@@ -150,7 +150,7 @@ Assert.Contains(settings["model_tools"]!.AsArray(), node => node!["tool_id"]!.Ge
 Assert.Contains(settings["model_tools"]!.AsArray(), node => node!["tool_id"]!.GetValue<string>() == "web.fetch");
 ```
 
-- [ ] **Step 2: Run the focused Worker tests and verify failure**
+- [x] **Step 2: Run the focused Worker tests and verify failure**
 
 Run:
 
@@ -161,14 +161,14 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj -c Release --n
 Expected: the new assertions fail because the old boolean is still emitted or
 the current runtime tool list does not contain web bindings.
 
-- [ ] **Step 3: Remove the boolean from the protocol allow-list and payload**
+- [x] **Step 3: Remove the boolean from the protocol allow-list and payload**
 
 Change `SettingFields` to contain `model_tools` only, delete its boolean
 validation, and make `LoopbackModelStepRunner.BuildSettings` serialize the
 runtime tool list without `allow_web_search`. Keep schema/version validation
 for every model tool unchanged.
 
-- [ ] **Step 4: Run the focused Worker tests and commit**
+- [x] **Step 4: Run the focused Worker tests and commit**
 
 Run the command from Step 2. Expected: all focused Worker tests pass.
 
@@ -194,7 +194,7 @@ git commit -m "refactor: remove legacy web search wire flag"
   and `Task<JsonObject> ExecuteAsync(string toolId, JsonObject arguments,
   CancellationToken cancellationToken)`.
 
-- [ ] **Step 1: Write failing executor tests**
+- [x] **Step 1: Write failing executor tests**
 
 Use a fake `HttpMessageHandler` and an enabled `WebOptions` endpoint pointed at
 a public-looking test host. Assert search returns no more than ten citations,
@@ -212,7 +212,7 @@ Assert.True(output["untrusted"]!.GetValue<bool>());
 Assert.Equal(1, handler.RequestCount);
 ```
 
-- [ ] **Step 2: Run the new executor test and verify the missing type**
+- [x] **Step 2: Run the new executor test and verify the missing type**
 
 Run:
 
@@ -223,7 +223,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj -c Release --n
 Expected: compile failure because the Host executor and project reference do
 not exist.
 
-- [ ] **Step 3: Implement the adapter with one default runtime configuration**
+- [x] **Step 3: Implement the adapter with one default runtime configuration**
 
 Add the project reference and implement a small dispatcher that owns one
 `WebOptions` instance and the two existing adapters. The production factory
@@ -242,7 +242,7 @@ shape as the Broker service: `{untrusted:true, citations:[...]}` for search
 and `{untrusted:true, source:{...}, content, content_type}` for fetch. It does
 not serialize exceptions or request headers.
 
-- [ ] **Step 4: Run the executor tests and commit**
+- [x] **Step 4: Run the executor tests and commit**
 
 Run the command from Step 2. Expected: all executor tests pass, including
 private/redirect/size/sanitizer cases delegated to the existing adapter tests.
@@ -267,7 +267,7 @@ git commit -m "feat: add managed agent web executor"
 - Produces: normal read-only receipts for `web.search` and `web.fetch` after
   evaluate → prepare → execute, with no workspace mutation side effect.
 
-- [ ] **Step 1: Write failing gateway lifecycle tests**
+- [x] **Step 1: Write failing gateway lifecycle tests**
 
 Create a public `ToolProposal` for each web tool, evaluate it with both
 Standard and Full presets, prepare the allowed execution, and execute it with a
@@ -288,7 +288,7 @@ Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
 Assert.False(receipt.SideEffectsPossible);
 ```
 
-- [ ] **Step 2: Run the gateway test and verify it fails**
+- [x] **Step 2: Run the gateway test and verify it fails**
 
 Run:
 
@@ -299,7 +299,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj -c Release --n
 Expected: web evaluation returns `phase_not_available` or execution falls
 through to the file-only branch.
 
-- [ ] **Step 3: Add web IDs, validation, and receipt dispatch**
+- [x] **Step 3: Add web IDs, validation, and receipt dispatch**
 
 In `HarnessToolGateway`:
 
@@ -318,7 +318,7 @@ In `HarnessToolGateway`:
 The canonical token remains the existing tool/version/argument hash, so web
 calls retain the same stale/forged-preparation protection as other tools.
 
-- [ ] **Step 4: Run gateway tests and commit**
+- [x] **Step 4: Run gateway tests and commit**
 
 Run the command from Step 2. Expected: web lifecycle tests pass and existing
 filesystem/terminal read-only tests remain green.
@@ -347,7 +347,7 @@ git commit -m "feat: execute web tools through agent gateway"
   `web.search@1.0.0` (`network.search`) and `web.fetch@1.0.0`
   (`network.fetch`) on the active managed Agent path.
 
-- [ ] **Step 1: Write failing capability tests**
+- [x] **Step 1: Write failing capability tests**
 
 Extend the prompt provider test to build with `webEnabled: true` and assert
 both web IDs are present; build with `webEnabled: false` and assert neither is
@@ -359,7 +359,7 @@ Assert.Contains(context.Capabilities, item => item.Id == "web.search" && item.Po
 Assert.Contains(context.Capabilities, item => item.Id == "web.fetch" && item.PolicySummary == "network.fetch");
 ```
 
-- [ ] **Step 2: Run the focused capability tests and verify failure**
+- [x] **Step 2: Run the focused capability tests and verify failure**
 
 Run:
 
@@ -370,7 +370,7 @@ dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj -c Release --n
 Expected: the web capabilities are absent or still depend on the deleted
 settings field.
 
-- [ ] **Step 3: Wire the enabled executor and both capability IDs**
+- [x] **Step 3: Wire the enabled executor and both capability IDs**
 
 Register one `AgentWebToolExecutor` in `Program.cs` with the DuckDuckGo
 `WebOptions`, inject it into `AgentRuntimeCoordinatorFactory`, and pass it to
@@ -380,7 +380,7 @@ each newly-created `HarnessToolGateway`. Add `web.search` and `web.fetch` to
 `webEnabled` runtime check and add the two scope mappings. Add both bindings to
 the loopback Worker tool list. Do not add a settings/API switch.
 
-- [ ] **Step 4: Run focused capability tests and commit**
+- [x] **Step 4: Run focused capability tests and commit**
 
 Run the command from Step 2. Expected: prompt, runtime, and Worker contract
 tests pass.
@@ -406,7 +406,7 @@ git commit -m "feat: advertise web tools to managed agent"
 - Produces: current docs that accurately say DuckDuckGo-backed `web.search`
   and `web.fetch` are active in the managed Agent path.
 
-- [ ] **Step 1: Write failing documentation assertions**
+- [x] **Step 1: Write failing documentation assertions**
 
 Require current docs to mention the DuckDuckGo endpoint, both tool IDs, the
 untrusted marker, and the absence of `allow_online_search` as a product
@@ -414,7 +414,7 @@ setting. Require them not to claim that managed startup leaves WebOptions
 disabled by default or that an explicit caller configuration is required for
 the standard GUI path.
 
-- [ ] **Step 2: Run the documentation test and verify the stale claim**
+- [x] **Step 2: Run the documentation test and verify the stale claim**
 
 Run:
 
@@ -425,14 +425,14 @@ Run:
 Expected: the new assertions fail against the current “optional/disabled by
 default” wording.
 
-- [ ] **Step 3: Update only current operational docs**
+- [x] **Step 3: Update only current operational docs**
 
 Document the fixed default endpoint, read-only policy, bounded/sanitized
 output, and the distinction between `files.search` and `web.search`. Remove
 the stale disabled-by-default claims. Keep historical plans and draft design
 records unchanged.
 
-- [ ] **Step 4: Run the documentation test and commit**
+- [x] **Step 4: Run the documentation test and commit**
 
 Run the command from Step 2. Expected: all current documentation assertions
 pass.
@@ -454,7 +454,7 @@ git commit -m "docs: describe enabled agent web tools"
 - Consumes: all committed implementation slices and current dirty-worktree protections.
 - Produces: verified GUI/backend release artifacts and a status report that separates deterministic tests from live network behavior.
 
-- [ ] **Step 1: Run focused regression slices sequentially**
+- [x] **Step 1: Run focused regression slices sequentially**
 
 Run:
 
@@ -465,7 +465,7 @@ dotnet test backend-dotnet/RuAgent.Broker.Tests/RuAgent.Broker.Tests.csproj -c R
 
 Expected: all new wiring and existing Broker web safety tests pass.
 
-- [ ] **Step 2: Run the full relevant C# projects sequentially**
+- [x] **Step 2: Run the full relevant C# projects sequentially**
 
 Run:
 
@@ -477,7 +477,7 @@ dotnet test backend-dotnet/RuAgent.Runtime.Worker.Tests/RuAgent.Runtime.Worker.T
 
 Expected: all tests pass without parallel process pressure.
 
-- [ ] **Step 3: Run docs, diff, and build checks**
+- [x] **Step 3: Run docs, diff, and build checks**
 
 Run:
 
@@ -490,7 +490,7 @@ git diff --check
 Expected: documentation tests pass, no whitespace errors are reported, and
 the release build reaches its normal completion marker.
 
-- [ ] **Step 4: Review docs and dirty state before handoff**
+- [x] **Step 4: Review docs and dirty state before handoff**
 
 Run:
 

@@ -17,7 +17,6 @@ public sealed class SettingsStoreTests
         Assert.Equal("OpenCode Zen", snapshot.Backend);
         Assert.Equal(string.Empty, snapshot.Model);
         Assert.Equal("Default", snapshot.ApiVariant);
-        Assert.True(snapshot.AllowWebSearch);
         Assert.True(snapshot.EnableSelfLearning);
         Assert.True(snapshot.ShareMemoryWithCloud);
         Assert.Equal("Ru (OmniVoice)", snapshot.VoiceLabel);
@@ -41,6 +40,8 @@ public sealed class SettingsStoreTests
               "max_tokens": 9999,
               "temperature": 99,
               "top_k": 0,
+              "allow_web_search": false,
+              "allow_online_search": false,
               "voice_speed": 99,
               "show_subtitles": "yes",
               "voice_style_id": "low_pitch",
@@ -56,6 +57,8 @@ public sealed class SettingsStoreTests
         Assert.Null(snapshot.Raw["max_new_tokens"]);
         Assert.Null(snapshot.Raw["temperature"]);
         Assert.Null(snapshot.Raw["top_k"]);
+        Assert.Null(snapshot.Raw["allow_web_search"]);
+        Assert.Null(snapshot.Raw["allow_online_search"]);
         Assert.Equal(2.0, snapshot.VoiceSpeed);
         Assert.False(snapshot.ShowSubtitles);
         Assert.Equal("original", snapshot.VoiceStyleId);
@@ -88,6 +91,8 @@ public sealed class SettingsStoreTests
               "max_new_tokens": 512,
               "temperature": 0.7,
               "top_k": 50,
+              "allow_web_search": false,
+              "allow_online_search": false,
               "api_key": "must-not-survive",
               "opencode_api_key": "must-not-survive",
               "kilo_api_key": "must-not-survive",
@@ -109,6 +114,8 @@ public sealed class SettingsStoreTests
         Assert.Null(persisted["max_new_tokens"]);
         Assert.Null(persisted["temperature"]);
         Assert.Null(persisted["top_k"]);
+        Assert.Null(persisted["allow_web_search"]);
+        Assert.Null(persisted["allow_online_search"]);
         Assert.Null(persisted["api_key"]);
         Assert.Null(persisted["opencode_api_key"]);
         Assert.Null(persisted["kilo_api_key"]);

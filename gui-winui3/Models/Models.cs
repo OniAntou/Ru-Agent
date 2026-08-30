@@ -250,9 +250,6 @@ namespace RuApp.Models
         [JsonPropertyName("subtitle_pos_y")]
         public int SubtitlePosY { get; set; } = -1;
 
-        [JsonPropertyName("allow_online_search")]
-        public bool AllowOnlineSearch { get; set; } = true;
-
         [JsonPropertyName("self_learning_enabled")]
         public bool SelfLearningEnabled { get; set; } = true;
 

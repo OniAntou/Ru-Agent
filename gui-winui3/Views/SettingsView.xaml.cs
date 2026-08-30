@@ -93,7 +93,6 @@ namespace RuApp.Views
             CustomEndpointUrlBox.TextChanged += (_, __) => ScheduleAutoSave();
             CustomApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
             ApiVariantComboBox.SelectionChanged += (_, __) => ScheduleAutoSave();
-            AllowOnlineSearchToggle.Toggled += (_, __) => ScheduleAutoSave();
             SelfLearningToggle.Toggled += (_, __) => ScheduleAutoSave();
             CloudMemoryConsentToggle.Toggled += (_, __) => ScheduleAutoSave();
             KiloReasoningToggle.Toggled += (_, __) => ScheduleAutoSave();
@@ -155,7 +154,6 @@ namespace RuApp.Views
                     }
                 }
 
-                AllowOnlineSearchToggle.IsOn = settings.AllowOnlineSearch;
                 SelfLearningToggle.IsOn = settings.SelfLearningEnabled;
                 CloudMemoryConsentToggle.IsOn = settings.CloudMemoryConsent;
                 KiloReasoningToggle.IsOn = settings.KiloReasoningEnabled;
@@ -336,7 +334,6 @@ namespace RuApp.Views
                     CustomModel = backend == "custom" ? modelChoice : "default",
                     CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
                     CustomApiKey = CustomApiKeyBox.Password,
-                    AllowOnlineSearch = AllowOnlineSearchToggle.IsOn,
                     SelfLearningEnabled = SelfLearningToggle.IsOn,
                     CloudMemoryConsent = CloudMemoryConsentToggle.IsOn,
                     KiloReasoningEnabled = KiloReasoningToggle.IsOn

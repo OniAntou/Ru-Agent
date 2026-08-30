@@ -89,7 +89,6 @@ public sealed class RuPromptContextProviderTests
         "test-model",
         "test-model",
         "Default",
-        AllowWebSearch: true,
         EnableSelfLearning: false,
         ShareMemoryWithCloud: false,
         KiloReasoningEnabled: false,

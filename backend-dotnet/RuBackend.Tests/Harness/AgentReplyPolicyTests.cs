@@ -387,7 +387,6 @@ public sealed class AgentReplyPolicyTests
                 "open/free",
                 "kilo/free",
                 "Default",
-                true,
                 EnableSelfLearning,
                 ShareMemoryWithCloud,
                 false,

@@ -33,12 +33,14 @@ public sealed class SettingsStore : ISettingsStore
         "custom_api_key",
     ];
 
-    private static readonly string[] RetiredGenerationFields =
+    private static readonly string[] RetiredSettingsFields =
     [
         "max_tokens",
         "max_new_tokens",
         "temperature",
         "top_k",
+        "allow_web_search",
+        "allow_online_search",
     ];
 
     private readonly string _settingsFile;
@@ -78,7 +80,7 @@ public sealed class SettingsStore : ISettingsStore
             {
                 persisted.Remove(field);
             }
-            foreach (var field in RetiredGenerationFields)
+            foreach (var field in RetiredSettingsFields)
             {
                 persisted.Remove(field);
             }
@@ -92,7 +94,6 @@ public sealed class SettingsStore : ISettingsStore
             persisted["opencode_model"] = candidate.OpenCodeModel;
             persisted["kilo_model"] = candidate.KiloModel;
             persisted["api_variant"] = candidate.ApiVariant;
-            persisted["allow_web_search"] = candidate.AllowWebSearch;
             persisted["enable_self_learning"] = candidate.EnableSelfLearning;
             persisted["share_memory_with_cloud"] = candidate.ShareMemoryWithCloud;
             persisted["kilo_reasoning_enabled"] = candidate.KiloReasoningEnabled;
@@ -153,7 +154,7 @@ public sealed class SettingsStore : ISettingsStore
         {
             raw.Remove(field);
         }
-        foreach (var field in RetiredGenerationFields)
+        foreach (var field in RetiredSettingsFields)
         {
             raw.Remove(field);
         }
@@ -180,7 +181,6 @@ public sealed class SettingsStore : ISettingsStore
             openCodeModel,
             kiloModel,
             ReadString(raw, "api_variant", "Default"),
-            ReadBoolean(raw, "allow_web_search", true),
             ReadBoolean(raw, "enable_self_learning", true),
             ReadBoolean(raw, "share_memory_with_cloud", true),
             ReadBoolean(raw, "kilo_reasoning_enabled", false),

@@ -206,9 +206,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             openCodeModel,
             kiloModel,
             apiVariant,
-            OptionalBoolean(payload, "allow_web_search")
-                ?? OptionalBoolean(payload, "allow_online_search")
-                ?? current.AllowWebSearch,
             OptionalBoolean(payload, "enable_self_learning")
                 ?? OptionalBoolean(payload, "self_learning_enabled")
                 ?? current.EnableSelfLearning,

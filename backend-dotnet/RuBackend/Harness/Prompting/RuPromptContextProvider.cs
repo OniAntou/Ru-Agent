@@ -132,7 +132,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
                 "enabled"));
         }
 
-        if (settings.AllowWebSearch && _webSearchAuthenticated)
+        if (_webSearchAuthenticated)
         {
             capabilities.Add(new PromptCapability(
                 "web.search",

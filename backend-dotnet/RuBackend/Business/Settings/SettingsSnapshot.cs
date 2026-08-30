@@ -9,7 +9,6 @@ public sealed record SettingsSnapshot(
     string OpenCodeModel,
     string KiloModel,
     string ApiVariant,
-    bool AllowWebSearch,
     bool EnableSelfLearning,
     bool ShareMemoryWithCloud,
     bool KiloReasoningEnabled,

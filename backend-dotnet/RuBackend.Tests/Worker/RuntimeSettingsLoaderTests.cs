@@ -140,7 +140,6 @@ public sealed class RuntimeSettingsLoaderTests
         "Default",
         true,
         true,
-        true,
         false,
         "Ru (OmniVoice)",
         "original",

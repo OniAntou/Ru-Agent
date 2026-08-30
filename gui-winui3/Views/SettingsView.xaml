@@ -289,18 +289,6 @@
                                                VerticalAlignment="Center"/>
                                 </StackPanel>
 
-                                <!-- Online Search Toggle -->
-                                <StackPanel x:Name="OnlineSearchRow" Spacing="16">
-                                    <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.5"/>
-                                    <Grid ColumnDefinitions="*,Auto" MinHeight="42">
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                            <TextBlock Text="Tìm kiếm Web trực tuyến" Style="{StaticResource SettingLabelStyle}"/>
-                                            <TextBlock Text="Cho phép Ru tra cứu thông tin thời gian thực qua công cụ tìm kiếm" Style="{StaticResource SettingDescStyle}"/>
-                                        </StackPanel>
-                                        <ToggleSwitch x:Name="AllowOnlineSearchToggle" Grid.Column="1" IsOn="True"/>
-                                    </Grid>
-                                </StackPanel>
-
                                 <!-- Self-Learning Toggle -->
                                 <StackPanel x:Name="SelfLearningRow" Spacing="16">
                                     <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.5"/>

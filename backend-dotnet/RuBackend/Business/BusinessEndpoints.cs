@@ -307,6 +307,8 @@ public static class BusinessEndpoints
                      "kilo_api_key",
                      "gemini_vision_api_key",
                      "custom_api_key",
+                     "allow_web_search",
+                     "allow_online_search",
                  })
         {
             result.Remove(key);
@@ -326,8 +328,6 @@ public static class BusinessEndpoints
         result["custom_url"] = value.CustomUrl;
         result["api_variant"] = value.ApiVariant;
         result["kilo_reasoning_enabled"] = value.KiloReasoningEnabled;
-        result["allow_web_search"] = value.AllowWebSearch;
-        result["allow_online_search"] = value.AllowWebSearch;
         result["enable_self_learning"] = value.EnableSelfLearning;
         result["self_learning_enabled"] = value.EnableSelfLearning;
         result["share_memory_with_cloud"] = value.ShareMemoryWithCloud;

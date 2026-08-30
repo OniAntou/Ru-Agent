@@ -37,7 +37,8 @@ public sealed class BusinessEndpointTests
         Assert.DoesNotContain("max_new_tokens", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("temperature", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("top_k", raw, StringComparison.Ordinal);
-        Assert.False(payload.GetProperty("allow_online_search").GetBoolean());
+        Assert.DoesNotContain("allow_web_search", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("allow_online_search", raw, StringComparison.Ordinal);
         Assert.True(payload.GetProperty("has_opencode_key").GetBoolean());
         Assert.Equal(string.Empty, payload.GetProperty("opencode_api_key").GetString());
         Assert.DoesNotContain("private-opencode-key", raw, StringComparison.Ordinal);
@@ -82,6 +83,8 @@ public sealed class BusinessEndpointTests
         Assert.DoesNotContain("max_new_tokens", persisted, StringComparison.Ordinal);
         Assert.DoesNotContain("temperature", persisted, StringComparison.Ordinal);
         Assert.DoesNotContain("top_k", persisted, StringComparison.Ordinal);
+        Assert.DoesNotContain("allow_web_search", persisted, StringComparison.Ordinal);
+        Assert.DoesNotContain("allow_online_search", persisted, StringComparison.Ordinal);
     }
 
     [Fact]

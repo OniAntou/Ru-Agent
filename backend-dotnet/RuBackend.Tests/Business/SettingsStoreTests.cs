@@ -17,9 +17,6 @@ public sealed class SettingsStoreTests
         Assert.Equal("OpenCode Zen", snapshot.Backend);
         Assert.Equal(string.Empty, snapshot.Model);
         Assert.Equal("Default", snapshot.ApiVariant);
-        Assert.Equal(256, snapshot.MaxTokens);
-        Assert.Equal(0.7, snapshot.Temperature);
-        Assert.Equal(50, snapshot.TopK);
         Assert.True(snapshot.AllowWebSearch);
         Assert.True(snapshot.EnableSelfLearning);
         Assert.True(snapshot.ShareMemoryWithCloud);
@@ -32,7 +29,7 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
-    public async Task Read_normalizes_aliases_bounds_booleans_and_retired_voice_styles()
+    public async Task Read_ignores_retired_generation_fields_and_normalizes_other_settings()
     {
         var (store, paths) = CreateStore();
         Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
@@ -55,9 +52,10 @@ public sealed class SettingsStoreTests
 
         Assert.Equal("Kilo Gateway", snapshot.Backend);
         Assert.Equal("fixture-cloud-model", snapshot.KiloModel);
-        Assert.Equal(1024, snapshot.MaxTokens);
-        Assert.Equal(2.0, snapshot.Temperature);
-        Assert.Equal(1, snapshot.TopK);
+        Assert.Null(snapshot.Raw["max_tokens"]);
+        Assert.Null(snapshot.Raw["max_new_tokens"]);
+        Assert.Null(snapshot.Raw["temperature"]);
+        Assert.Null(snapshot.Raw["top_k"]);
         Assert.Equal(2.0, snapshot.VoiceSpeed);
         Assert.False(snapshot.ShowSubtitles);
         Assert.Equal("original", snapshot.VoiceStyleId);
@@ -74,7 +72,6 @@ public sealed class SettingsStoreTests
         var snapshot = await store.ReadAsync(CancellationToken.None);
 
         Assert.Equal("OpenCode Zen", snapshot.Backend);
-        Assert.Equal(256, snapshot.MaxTokens);
         Assert.Empty(snapshot.Raw);
     }
 
@@ -87,6 +84,10 @@ public sealed class SettingsStoreTests
             {
               "backend": "llama.cpp",
               "unknown_future_key": "preserve-me",
+              "max_tokens": 256,
+              "max_new_tokens": 512,
+              "temperature": 0.7,
+              "top_k": 50,
               "api_key": "must-not-survive",
               "opencode_api_key": "must-not-survive",
               "kilo_api_key": "must-not-survive",
@@ -100,14 +101,14 @@ public sealed class SettingsStoreTests
         Assert.Null(current.Raw["kilo_api_key"]);
         Assert.Null(current.Raw["gemini_vision_api_key"]);
 
-        await store.SaveAsync(
-            current with { MaxTokens = 512, Temperature = 1.2 },
-            CancellationToken.None);
+        await store.SaveAsync(current, CancellationToken.None);
 
         var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
         Assert.Equal("preserve-me", persisted["unknown_future_key"]!.GetValue<string>());
-        Assert.Equal(512, persisted["max_tokens"]!.GetValue<int>());
-        Assert.Equal(1.2, persisted["temperature"]!.GetValue<double>());
+        Assert.Null(persisted["max_tokens"]);
+        Assert.Null(persisted["max_new_tokens"]);
+        Assert.Null(persisted["temperature"]);
+        Assert.Null(persisted["top_k"]);
         Assert.Null(persisted["api_key"]);
         Assert.Null(persisted["opencode_api_key"]);
         Assert.Null(persisted["kilo_api_key"]);
@@ -120,12 +121,15 @@ public sealed class SettingsStoreTests
         var (store, paths) = CreateStore();
         var current = await store.ReadAsync(CancellationToken.None);
         var saves = Enumerable.Range(1, 32)
-            .Select(value => store.SaveAsync(current with { MaxTokens = value }, CancellationToken.None));
+            .Select(_ => store.SaveAsync(current, CancellationToken.None));
 
         await Task.WhenAll(saves);
 
         var persisted = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFile))!.AsObject();
-        Assert.InRange(persisted["max_tokens"]!.GetValue<int>(), 1, 32);
+        Assert.Null(persisted["max_tokens"]);
+        Assert.Null(persisted["max_new_tokens"]);
+        Assert.Null(persisted["temperature"]);
+        Assert.Null(persisted["top_k"]);
         Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(paths.SettingsFile)!, "*.tmp"));
     }
 

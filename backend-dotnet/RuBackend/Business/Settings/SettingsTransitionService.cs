@@ -206,11 +206,6 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             openCodeModel,
             kiloModel,
             apiVariant,
-            OptionalInt(payload, "max_tokens", 1, 1024)
-                ?? OptionalInt(payload, "max_new_tokens", 1, 1024)
-                ?? current.MaxTokens,
-            OptionalDouble(payload, "temperature", 0.1, 2.0) ?? current.Temperature,
-            OptionalInt(payload, "top_k", 1, 200) ?? current.TopK,
             OptionalBoolean(payload, "allow_web_search")
                 ?? OptionalBoolean(payload, "allow_online_search")
                 ?? current.AllowWebSearch,

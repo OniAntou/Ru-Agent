@@ -326,10 +326,6 @@ public static class BusinessEndpoints
         result["custom_url"] = value.CustomUrl;
         result["api_variant"] = value.ApiVariant;
         result["kilo_reasoning_enabled"] = value.KiloReasoningEnabled;
-        result["max_tokens"] = value.MaxTokens;
-        result["max_new_tokens"] = value.MaxTokens;
-        result["temperature"] = value.Temperature;
-        result["top_k"] = value.TopK;
         result["allow_web_search"] = value.AllowWebSearch;
         result["allow_online_search"] = value.AllowWebSearch;
         result["enable_self_learning"] = value.EnableSelfLearning;

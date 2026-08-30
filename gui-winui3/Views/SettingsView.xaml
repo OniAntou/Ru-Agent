@@ -24,20 +24,6 @@
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
 
-            <Style x:Key="ParameterInputStyle" TargetType="TextBox">
-                <Setter Property="FontFamily" Value="{StaticResource RuMonoFontFamily}" />
-                <Setter Property="FontSize" Value="13" />
-                <Setter Property="FontWeight" Value="Medium" />
-                <Setter Property="TextAlignment" Value="Center" />
-                <Setter Property="Width" Value="110" />
-                <Setter Property="Height" Value="34" />
-                <Setter Property="Padding" Value="6,4" />
-                <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
-                <Setter Property="Background" Value="{StaticResource RuCanvasBrush}" />
-                <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
-                <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
-            </Style>
-
             <Style TargetType="PivotHeaderItem">
                 <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
                 <Setter Property="FontSize" Value="13.5" />
@@ -281,69 +267,6 @@
                                                      CornerRadius="{StaticResource RuControlCornerRadius}"/>
                                     </Grid>
                                 </StackPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Generation Parameters Card -->
-                        <Border Style="{StaticResource FluentCardStyle}">
-                            <StackPanel Spacing="16">
-                                <!-- Card Header -->
-                                <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,2">
-                                    <Border Width="30" Height="30"
-                                            CornerRadius="{StaticResource RuControlCornerRadius}"
-                                            Background="{StaticResource RuAccentSoftBrush}">
-                                        <FontIcon Glyph="&#xE7BE;" FontSize="14" Foreground="{StaticResource RuAccentBrush}"
-                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    </Border>
-                                    <TextBlock Text="Tham số sinh văn bản (Generation)"
-                                               FontSize="15"
-                                               FontWeight="SemiBold"
-                                               FontFamily="{StaticResource RuUiFontFamily}"
-                                               Foreground="{StaticResource RuInkBrush}"
-                                               VerticalAlignment="Center"/>
-                                </StackPanel>
-
-                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.5"/>
-
-                                <!-- Temperature Row -->
-                                <Grid ColumnDefinitions="*,Auto" MinHeight="42">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                        <TextBlock Text="Temperature (Độ sáng tạo)" Style="{StaticResource SettingLabelStyle}"/>
-                                        <TextBlock Text="Giá trị cao cho phản hồi sinh động hơn, thấp cho câu trả lời chuẩn xác" Style="{StaticResource SettingDescStyle}"/>
-                                    </StackPanel>
-                                    <TextBox x:Name="TemperatureNumberBox"
-                                             Grid.Column="1"
-                                             Text="0.7"
-                                             Style="{StaticResource ParameterInputStyle}"/>
-                                </Grid>
-
-                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.5"/>
-
-                                <!-- Top-K Row -->
-                                <Grid ColumnDefinitions="*,Auto" MinHeight="42">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                        <TextBlock Text="Top-K" Style="{StaticResource SettingLabelStyle}"/>
-                                        <TextBlock Text="Giới hạn số token khả dĩ nhất trong mỗi bước dự đoán" Style="{StaticResource SettingDescStyle}"/>
-                                    </StackPanel>
-                                    <TextBox x:Name="TopKNumberBox"
-                                             Grid.Column="1"
-                                             Text="40"
-                                             Style="{StaticResource ParameterInputStyle}"/>
-                                </Grid>
-
-                                <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.5"/>
-
-                                <!-- Max New Tokens Row -->
-                                <Grid ColumnDefinitions="*,Auto" MinHeight="42">
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                        <TextBlock Text="Max New Tokens (Độ dài tối đa)" Style="{StaticResource SettingLabelStyle}"/>
-                                        <TextBlock Text="Số lượng token tối đa mà Ru sinh ra trong 1 lượt trả lời" Style="{StaticResource SettingDescStyle}"/>
-                                    </StackPanel>
-                                    <TextBox x:Name="MaxTokensNumberBox"
-                                             Grid.Column="1"
-                                             Text="512"
-                                             Style="{StaticResource ParameterInputStyle}"/>
-                                </Grid>
                             </StackPanel>
                         </Border>
 

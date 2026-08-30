@@ -93,9 +93,6 @@ namespace RuApp.Views
             CustomEndpointUrlBox.TextChanged += (_, __) => ScheduleAutoSave();
             CustomApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
             ApiVariantComboBox.SelectionChanged += (_, __) => ScheduleAutoSave();
-            TemperatureNumberBox.TextChanged += (_, __) => ScheduleAutoSave();
-            TopKNumberBox.TextChanged += (_, __) => ScheduleAutoSave();
-            MaxTokensNumberBox.TextChanged += (_, __) => ScheduleAutoSave();
             AllowOnlineSearchToggle.Toggled += (_, __) => ScheduleAutoSave();
             SelfLearningToggle.Toggled += (_, __) => ScheduleAutoSave();
             CloudMemoryConsentToggle.Toggled += (_, __) => ScheduleAutoSave();
@@ -157,10 +154,6 @@ namespace RuApp.Views
                         break;
                     }
                 }
-
-                TemperatureNumberBox.Text = settings.Temperature.ToString("F2");
-                TopKNumberBox.Text = settings.TopK.ToString();
-                MaxTokensNumberBox.Text = settings.MaxNewTokens.ToString();
 
                 AllowOnlineSearchToggle.IsOn = settings.AllowOnlineSearch;
                 SelfLearningToggle.IsOn = settings.SelfLearningEnabled;
@@ -343,9 +336,6 @@ namespace RuApp.Views
                     CustomModel = backend == "custom" ? modelChoice : "default",
                     CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
                     CustomApiKey = CustomApiKeyBox.Password,
-                    Temperature = double.TryParse(TemperatureNumberBox.Text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double temp) ? temp : 0.7,
-                    TopK = int.TryParse(TopKNumberBox.Text, out int topK) ? topK : 40,
-                    MaxNewTokens = int.TryParse(MaxTokensNumberBox.Text, out int maxTokens) ? maxTokens : 512,
                     AllowOnlineSearch = AllowOnlineSearchToggle.IsOn,
                     SelfLearningEnabled = SelfLearningToggle.IsOn,
                     CloudMemoryConsent = CloudMemoryConsentToggle.IsOn,

@@ -60,7 +60,7 @@ public static class WorkerV2Contracts
     private static readonly IReadOnlySet<string> EnvelopeRequired = new HashSet<string>(["v", "id", "type", "payload"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> StartFields = new HashSet<string>(["prompt", "turns", "system_prompt_context", "settings"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> TurnFields = new HashSet<string>(["prompt", "response"], StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> SettingFields = new HashSet<string>(["max_tokens", "temperature", "top_k", "allow_web_search", "model_tools"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> SettingFields = new HashSet<string>(["allow_web_search", "model_tools"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ModelToolFields = new HashSet<string>(["tool_id", "tool_version", "scopes", "availability", "model_enabled", "capability_class", "verification_required"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ModelToolOptional = new HashSet<string>(["hint", "input_schema"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptContextFields = new HashSet<string>(["schema_version", "agent_profile", "preset", "environment", "instruction_blocks", "capabilities", "runtime_context"], StringComparer.Ordinal);
@@ -289,21 +289,6 @@ public static class WorkerV2Contracts
         if (settingsNode is not null && settings.Select(p => p.Key).Any(k => !SettingFields.Contains(k)))
         {
             throw new AgentProtocolException("invalid_request");
-        }
-
-        if (settings.ContainsKey("max_tokens"))
-        {
-            ValidateOptionalInt(settings, "max_tokens", 1, 1024);
-        }
-
-        if (settings.ContainsKey("temperature"))
-        {
-            ValidateOptionalNumber(settings, "temperature", 0.1, 2.0);
-        }
-
-        if (settings.ContainsKey("top_k"))
-        {
-            ValidateOptionalInt(settings, "top_k", 1, 200);
         }
 
         if (settings.ContainsKey("allow_web_search"))

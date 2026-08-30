@@ -364,9 +364,6 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
         return new JsonObject
         {
-            ["max_tokens"] = 256,
-            ["temperature"] = 0.7,
-            ["top_k"] = 50,
             ["allow_web_search"] = context.Capabilities.Any(
                 capability => capability.Id == "web.search" && capability.Availability == "enabled"),
             ["model_tools"] = tools,

@@ -33,6 +33,14 @@ public sealed class SettingsStore : ISettingsStore
         "custom_api_key",
     ];
 
+    private static readonly string[] RetiredGenerationFields =
+    [
+        "max_tokens",
+        "max_new_tokens",
+        "temperature",
+        "top_k",
+    ];
+
     private readonly string _settingsFile;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -70,6 +78,10 @@ public sealed class SettingsStore : ISettingsStore
             {
                 persisted.Remove(field);
             }
+            foreach (var field in RetiredGenerationFields)
+            {
+                persisted.Remove(field);
+            }
 
             persisted["backend"] = candidate.Backend;
             persisted["model"] = candidate.Model;
@@ -80,9 +92,6 @@ public sealed class SettingsStore : ISettingsStore
             persisted["opencode_model"] = candidate.OpenCodeModel;
             persisted["kilo_model"] = candidate.KiloModel;
             persisted["api_variant"] = candidate.ApiVariant;
-            persisted["max_tokens"] = candidate.MaxTokens;
-            persisted["temperature"] = candidate.Temperature;
-            persisted["top_k"] = candidate.TopK;
             persisted["allow_web_search"] = candidate.AllowWebSearch;
             persisted["enable_self_learning"] = candidate.EnableSelfLearning;
             persisted["share_memory_with_cloud"] = candidate.ShareMemoryWithCloud;
@@ -144,6 +153,10 @@ public sealed class SettingsStore : ISettingsStore
         {
             raw.Remove(field);
         }
+        foreach (var field in RetiredGenerationFields)
+        {
+            raw.Remove(field);
+        }
 
         var rawBackend = ReadString(raw, "backend", string.Empty);
         var migratedFromGguf = rawBackend.Trim().ToLowerInvariant() is "gguf" or "llama.cpp";
@@ -167,9 +180,6 @@ public sealed class SettingsStore : ISettingsStore
             openCodeModel,
             kiloModel,
             ReadString(raw, "api_variant", "Default"),
-            (int)ReadBoundedNumber(raw, "max_tokens", 256, 1, 1024),
-            ReadBoundedNumber(raw, "temperature", 0.7, 0.1, 2.0),
-            (int)ReadBoundedNumber(raw, "top_k", 50, 1, 200),
             ReadBoolean(raw, "allow_web_search", true),
             ReadBoolean(raw, "enable_self_learning", true),
             ReadBoolean(raw, "share_memory_with_cloud", true),
@@ -324,21 +334,6 @@ public sealed class SettingsStore : ISettingsStore
         ValidateLength(candidate.CustomUrl, 1024, nameof(candidate.CustomUrl));
         ValidateLength(candidate.ApiVariant, 64, nameof(candidate.ApiVariant));
         ValidateLength(candidate.VoiceLabel, 128, nameof(candidate.VoiceLabel));
-
-        if (candidate.MaxTokens is < 1 or > 1024)
-        {
-            throw new ArgumentOutOfRangeException(nameof(candidate.MaxTokens));
-        }
-
-        if (!double.IsFinite(candidate.Temperature) || candidate.Temperature is < 0.1 or > 2.0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(candidate.Temperature));
-        }
-
-        if (candidate.TopK is < 1 or > 200)
-        {
-            throw new ArgumentOutOfRangeException(nameof(candidate.TopK));
-        }
 
         if (!double.IsFinite(candidate.VoiceSpeed) || candidate.VoiceSpeed is < 0.5 or > 2.0)
         {

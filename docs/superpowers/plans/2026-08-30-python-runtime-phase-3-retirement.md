@@ -4,6 +4,7 @@
 **Status:** Completed 2026-08-30; managed production startup is C#-only,
 legacy Python startup is retired, and native hardware acceptance remains
 separate. GUI publish and launcher hardening completed 2026-08-31.
+Cloud generation tuning controls and backend fields were removed 2026-08-31.
 
 ## Objective
 
@@ -98,6 +99,16 @@ Verification on 2026-08-31 passed: the Python suite completed 506/506, the
 `includedFrameworks` with the native self-contained host files present. A
 direct startup-probe run returned exit code 0 with `RuApp.exe` still alive;
 the missing-executable probe returned exit code 1 as expected.
+
+## Cloud generation tuning retirement (2026-08-31)
+
+The cloud-first product no longer exposes `Temperature`, `Top-K`, or `Max New
+Tokens`. The controls and DTO properties were removed from the WinUI settings
+surface; the C# settings snapshot, persistence/API response, and Worker v2
+settings contract no longer carry those fields. Legacy values are ignored and
+stripped when settings are read or saved. The managed Agent request now omits
+all three provider parameters, allowing each cloud provider/model to apply its
+own defaults.
 
 ## Exit criteria
 

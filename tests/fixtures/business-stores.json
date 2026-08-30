@@ -2,8 +2,6 @@
   "settings": {
     "backend": "gguf",
     "model_path": "models/fixture.gguf",
-    "max_new_tokens": 128,
-    "temperature": 0.6,
     "unknown_future_key": "preserve-me"
   },
   "session": {

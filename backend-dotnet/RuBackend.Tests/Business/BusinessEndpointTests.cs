@@ -33,7 +33,10 @@ public sealed class BusinessEndpointTests
         Assert.Equal("ok", payload.GetProperty("status").GetString());
         Assert.Equal("OpenCode Zen", payload.GetProperty("backend").GetString());
         Assert.Equal("opencode", payload.GetProperty("backend_choice").GetString());
-        Assert.Equal(128, payload.GetProperty("max_new_tokens").GetInt32());
+        Assert.DoesNotContain("max_tokens", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("max_new_tokens", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("temperature", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("top_k", raw, StringComparison.Ordinal);
         Assert.False(payload.GetProperty("allow_online_search").GetBoolean());
         Assert.True(payload.GetProperty("has_opencode_key").GetBoolean());
         Assert.Equal(string.Empty, payload.GetProperty("opencode_api_key").GetString());
@@ -69,13 +72,16 @@ public sealed class BusinessEndpointTests
         var loaded = Assert.Single(runtime.Candidates);
         Assert.Equal("OpenCode Zen", loaded.Backend);
         Assert.Equal("opencode/free", loaded.OpenCodeModel);
-        Assert.Equal(192, loaded.MaxTokens);
         Assert.Equal(
             "new-private-key",
             await credentials.GetAsync("Ru", "api_key", CancellationToken.None));
         var persisted = await File.ReadAllTextAsync(data.Paths.SettingsFile);
         Assert.DoesNotContain("new-private-key", persisted, StringComparison.Ordinal);
         Assert.DoesNotContain("api_key", persisted, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("max_tokens", persisted, StringComparison.Ordinal);
+        Assert.DoesNotContain("max_new_tokens", persisted, StringComparison.Ordinal);
+        Assert.DoesNotContain("temperature", persisted, StringComparison.Ordinal);
+        Assert.DoesNotContain("top_k", persisted, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -158,7 +164,6 @@ public sealed class BusinessEndpointTests
                 backend_choice = "ollama",
                 ollama_model = "qwen3:8b",
                 ollama_url = "http://127.0.0.1:11434/v1",
-                max_new_tokens = 192,
             });
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
 
@@ -248,7 +253,6 @@ public sealed class BusinessEndpointTests
             {
                 backend_choice = "ollama",
                 ollama_model = "qwen3:8b",
-                max_new_tokens = 192,
             });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

@@ -250,15 +250,6 @@ namespace RuApp.Models
         [JsonPropertyName("subtitle_pos_y")]
         public int SubtitlePosY { get; set; } = -1;
 
-        [JsonPropertyName("temperature")]
-        public double Temperature { get; set; } = 0.7;
-
-        [JsonPropertyName("top_k")]
-        public int TopK { get; set; } = 50;
-
-        [JsonPropertyName("max_new_tokens")]
-        public int MaxNewTokens { get; set; } = 256;
-
         [JsonPropertyName("allow_online_search")]
         public bool AllowOnlineSearch { get; set; } = true;
 

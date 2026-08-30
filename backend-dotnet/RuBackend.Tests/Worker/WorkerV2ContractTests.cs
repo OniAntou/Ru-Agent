@@ -126,6 +126,27 @@ public sealed class WorkerV2ContractTests
     }
 
     [Fact]
+    public void Rejects_retired_generation_settings()
+    {
+        var payload = new JsonObject
+        {
+            ["prompt"] = "hello",
+            ["turns"] = new JsonArray(),
+            ["settings"] = new JsonObject { ["temperature"] = 0.4 },
+        };
+        var envelope = new JsonObject
+        {
+            ["v"] = 2,
+            ["id"] = "step-1",
+            ["type"] = "agent.step.start",
+            ["payload"] = payload,
+        };
+
+        var ex = Assert.Throws<AgentProtocolException>(() => WorkerV2Contracts.ValidateEnvelope(envelope));
+        Assert.Equal("invalid_request", ex.Code);
+    }
+
+    [Fact]
     public void Rejects_oversized_arguments()
     {
         var largeArgs = new JsonObject { ["path"] = new string('a', 64 * 1024 + 1) };

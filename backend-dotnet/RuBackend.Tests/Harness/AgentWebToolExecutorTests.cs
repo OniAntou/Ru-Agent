@@ -180,6 +180,57 @@ public sealed class AgentWebToolExecutorTests
         }
     }
 
+    [Fact]
+    public async Task Gateway_returns_cancelled_receipt_when_caller_cancels_active_web_request()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ru-web-gateway-cancelled-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        var requestStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handler = new CancellationHandler(requestStarted);
+        using var http = new HttpClient(handler);
+        try
+        {
+            var gateway = new HarnessToolGateway(
+                tempRoot,
+                ["web.search"],
+                presetProvider: null,
+                idGenerator: null,
+                webExecutor: CreateExecutor(http));
+            using var document = JsonDocument.Parse("{\"query\":\"ru\"}");
+            var proposal = new ToolProposal(
+                new RunId("run_33333333333333333333333333333333"),
+                new ModelStepId("step_33333333333333333333333333333333"),
+                new ToolCallId("call_33333333333333333333333333333333"),
+                1,
+                "web.search",
+                "1.0.0",
+                document.RootElement);
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+            var prepared = await gateway.PrepareAsync(
+                new ApprovedToolExecution(
+                    proposal,
+                    new ExecutionId("exec_33333333333333333333333333333333"),
+                    decision.CanonicalIntentToken!),
+                CancellationToken.None);
+
+            using var cancellation = new CancellationTokenSource();
+            var executionTask = gateway.ExecuteAsync(
+                prepared,
+                _ => ValueTask.CompletedTask,
+                cancellation.Token);
+            await requestStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            cancellation.Cancel();
+            var receipt = await executionTask;
+
+            Assert.Equal(ToolExecutionOutcome.Cancelled, receipt.Outcome);
+            Assert.Equal("process_cancelled", receipt.Code);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     private static AgentWebToolExecutor CreateExecutor(HttpClient http) =>
         new(
             new WebOptions(
@@ -203,6 +254,18 @@ public sealed class AgentWebToolExecutorTests
         {
             RequestCount++;
             return Task.FromResult(responder(request));
+        }
+    }
+
+    private sealed class CancellationHandler(TaskCompletionSource<bool> requestStarted) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            requestStarted.TrySetResult(true);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("Cancellation handler completed unexpectedly.");
         }
     }
 }

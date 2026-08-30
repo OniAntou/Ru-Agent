@@ -1294,7 +1294,9 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 modelContent: outputBytes,
                 contentEncoding: HarnessPayloadEncoding.Json);
         }
-        catch (OperationCanceledException) when (_cancelledExecutions.ContainsKey(execution.ExecutionId.Value))
+        catch (OperationCanceledException) when (
+            _cancelledExecutions.ContainsKey(execution.ExecutionId.Value)
+            || cancellationToken.IsCancellationRequested)
         {
             return new ToolExecutionReceipt(
                 execution.ExecutionId,

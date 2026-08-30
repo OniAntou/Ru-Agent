@@ -141,10 +141,11 @@ Do not start either worker or the voice engine as independent public services.
   the conversation transcript can show a transient safe activity feed for the
   current run. The feed is separate from durable messages and never places raw
   tool payloads in the transcript.
-- The current Worker v2 model surface is exactly ten bindings in both presets:
+- The current Worker v2 model surface has ten core bindings in both presets:
   `files.list`, `files.glob`, `files.search`, `files.read`, `files.write`,
   `files.edit`, `files.delete`, `files.restore`, `terminal.run`, and
-  `terminal.shell`. Standard automatically allows ordinary trusted-workspace
+  `terminal.shell`, plus the managed Agent's read-only `web.search` and
+  `web.fetch` bindings. Standard automatically allows ordinary trusted-workspace
   file reads/creates/edits and applies analyzer/rule/approval decisions to
   terminal calls. Full Access keeps the same advertised list but normally uses
   its broader fallback for well-formed calls; protected paths, hard invariants,
@@ -174,10 +175,14 @@ Do not start either worker or the voice engine as independent public services.
   normal|aggressive`, `/help`, `/skills`, and `/skill <id> <json-object>`;
   malformed or unknown slash commands never enter history. Declarative Skills
   require explicit session grants and re-enter normal Broker policy/approval
-  checks. Optional `web.search` and `web.fetch` are advertised only when
-  WebOptions and matching scopes are configured; responses are bounded,
-  redirect-safe, sanitized, and marked `untrusted`. Connectors and `app.open`
-  remain internal.
+  checks. The managed Agent enables `web.search` and `web.fetch` by default
+  through the fixed DuckDuckGo HTML endpoint
+  `https://html.duckduckgo.com/html/`; they are runtime capabilities, not a
+  settings/API switch. `files.search` searches the trusted workspace, while
+  `web.search` searches the public web. Web responses are bounded,
+  redirect-safe, sanitized, and marked `untrusted`; fetched text retains the
+  `[untrusted_web_reference]` marker. Connectors and `app.open` remain
+  internal.
 - Screen observation remains opt-in from Settings. The managed Worker exposes
   bounded observation status/control and the Gemini analysis adapter, but its
   default control path is explicitly disabled until a managed screen-capture /

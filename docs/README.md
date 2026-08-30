@@ -17,7 +17,7 @@ an operating contract.
 - [Canonical route data](../backend-dotnet/public-route-contract.json)
 - [Local conversational-model retirement](adr/0005-retire-legacy-llama-line.md)
 
-## Implemented checkpoints (Phases 1–3 selected surfaces, 2026-08-30)
+## Implemented checkpoints (Phases 1–3 selected surfaces, 2026-08-31)
 
 - [Phase 1: Harness Foundation and Headless Read-Only Tracer](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-01-harness-foundation.md) — Public Host owns Worker/Broker in one Job Object, Worker v2 one-step `AssistantStep`, 56 HTTP + 1 WebSocket (`/voice/stream`; 15 `/agent/v1/*` additive), encrypted SQLite harness store, SSE reconnect with durable `id:<sequence>`, and thin `RuAgent.Cli` tracer. Text and microphone turns now use the same authenticated Agent API/SSE path.
 - [Phase 2: Policy Authority and File Tools](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-02-policy-file-tools.md) — Standard and Full Access receive the same Worker v2 file/terminal advertisement; Standard applies ordinary-workspace and analyzer/rule decisions while Full Access broadens fallbacks without bypassing trust or invariants. Immutable encrypted-at-rest policy/workspace snapshots, exact-scope approvals, external-directory grants, hash-guarded mutations, recoverable delete/restore, and CLI policy controls are active. `files.apply_patch` is not advertised or model-usable.
@@ -29,10 +29,11 @@ an operating contract.
 - Python runtime Phase 3 retirement — the production Python Agent/Worker modules, compatibility launch branch, and legacy live launch path are retired. Managed C# startup is the only supported production topology; `runtime-live` is a bounded diagnostic and native device acceptance remains user-owned.
 - Phase 2 deterministic evidence — the shared `python-csharp-phase2-device-baseline.json` fixture and Python/C# parity tests cover v1 sequence/type contracts, settings, voice ordering, stable errors, STT normalization, VTS code sets, observation bounds, cancellation, and privacy redaction. Release build publication also requires `RuAgent.Runtime.Core.dll` beside the managed Worker executable.
 - Typed Agent commands and bounded web tools — `/compact`, `/help`, `/skills`,
-  and `/skill` share one Protocol parser and Public Host route. `web.search`
-  and `web.fetch` are disabled by default and appear only with explicit web
-  configuration plus matching Broker scopes; results are bounded and marked
-  untrusted.
+  and `/skill` share one Protocol parser and Public Host route. Managed startup
+  enables read-only `web.search` and `web.fetch` through the fixed
+  `https://html.duckduckgo.com/html/` endpoint; results are bounded, sanitized,
+  and marked untrusted, with fetched text wrapped in
+  `[untrusted_web_reference]`.
 
 ## Completed implementation plans
 

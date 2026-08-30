@@ -42,8 +42,9 @@ runtime surface.
 >   `/compact`, `/help`, `/skills`, and `/skill <id> {json}` use the shared
 >   Protocol parser and do not become model history. Declarative Skills are
 >   session-granted and execute through the Broker's existing scope/approval
->   boundary. Configured `web.search` and `web.fetch` are optional read-only
->   capabilities; their results are bounded, sanitized, and explicitly untrusted.
+>   Managed startup enables `web.search` and `web.fetch` as read-only
+>   capabilities backed by the fixed DuckDuckGo HTML endpoint; results are
+>   bounded, sanitized, and explicitly untrusted.
 > - Public Contract is now **56 HTTP plus 1 WebSocket** (41 + 15 `/agent/v1/*`;
 >   `/voice/stream` is the only public WebSocket).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
@@ -59,12 +60,12 @@ runtime surface.
 
 ## Current capability matrix
 
-The Worker v2 settings currently use one static core executable surface for both
-permission presets. The model therefore receives the same ten core bindings in
-Standard and Full Access; the preset changes Broker policy decisions and
-fallbacks, not the advertised list. Configured deployments may add the
-read-only `web.search` and `web.fetch` bindings only when WebOptions and the
-matching session scopes are present. The `network_intent` argument on a
+The Worker v2 settings currently use one static executable surface for both
+permission presets. The model therefore receives the same ten core bindings
+plus managed read-only `web.search` and `web.fetch` bindings in Standard and
+Full Access; the preset changes Broker policy decisions and fallbacks, not the
+advertised list. Managed startup constructs enabled WebOptions with the fixed
+DuckDuckGo endpoint `https://html.duckduckgo.com/html/`. The `network_intent` argument on a
 terminal request is descriptive input metadata, not a security boundary.
 
 | Worker v2 model capability | Agent (Standard) | Agent (Full Access) |
@@ -76,8 +77,8 @@ terminal request is descriptive input metadata, not a security boundary.
 | `terminal.run@1.0.0`, `terminal.shell@1.0.0` (`terminal.execute`) | advertised; analyzer/rule/approval policy decides each request | advertised; well-formed calls normally use the Full fallback; extended timeouts still ask |
 | `system.volume@1.0.0` (`system.write`) | not a model-selection binding; deterministic parser with verified readback | same deterministic direct-action path |
 | `notes.create@1.0.0`, `system.time@1.0.0`, `system.status@1.0.0`, `app.list@1.0.0` | Broker-internal; not advertised | Broker-internal; not advertised |
-| `web.search@1.0.0` (`web.search`) | only when WebOptions.SearchEndpoint and session scope are present; bounded citations | same gate; optional approval |
-| `web.fetch@1.0.0` (`web.fetch`) | only when WebOptions.Enabled and session scope are present; bounded sanitized text | same gate; optional approval |
+| `web.search@1.0.0` (`network.search`) | advertised read-only; fixed DuckDuckGo endpoint; at most ten bounded citations | same |
+| `web.fetch@1.0.0` (`network.fetch`) | advertised read-only; bounded sanitized text | same |
 | Connectors, `app.open` | Broker-internal; not advertised | Broker-internal; not advertised |
 | Declarative Skills (`skill.execute`) | only explicitly granted manifests; each step rechecks tool scope/approval | same explicit grant and checks |
 
@@ -121,8 +122,8 @@ for patch application does not create a public model capability.
 
 The model invokes its advertised bindings through a structured selection
 loop on every Agent run. Both presets receive the same ten core Worker v2
-bindings; configured web bindings are added only when enabled and granted.
-Full Access only changes policy fallbacks. Each step allows at most 10
+bindings plus managed `web.search`/`web.fetch` bindings. Full Access only
+changes policy fallbacks. Each step allows at most 10
 sequential tool selections; exhausting that budget forces one final wrap-up
 answer without tools. Approvals still gate mutating tools — a card with a
 bounded preview and an explicit user decision precede every side effect, in
@@ -157,12 +158,12 @@ unrelated conversation is never forced through the action parser.
 
 The Public Host derives `model_tools` from the active capability profile,
 when a Broker session has been explicitly opened, and publishes the actual
-resulting grant as `agent.session`. Managed startup keeps skill package roots
-and WebOptions disabled by default; `/skills`, `/skill`, and Broker web
-bindings therefore require an explicit configured Broker plus session grant.
-The default headless model loop continues to use its in-process core gateway.
-WinUI renders a received grant; it does not infer workspace, terminal, Web,
-connector, or skill access.
+resulting grant as `agent.session`. Managed startup enables the Host web
+executor and the default headless model loop advertises both read-only web
+bindings through its in-process core gateway. Skill package roots and
+`/skills`/`/skill` still require explicit session grants. WinUI renders a
+received grant; it does not infer workspace, terminal, Web, connector, or
+skill access.
 
 The Worker emits at most one tool request at a time and at most 10 sequential
 tool requests in one conversational turn. It receives only the bounded enabled
@@ -238,15 +239,17 @@ adapter uses the same parser and renders only bounded result metadata.
 
 ## Web tool gates
 
-`web.search` requires `WebOptions.Enabled`, a configured public HTTP(S)
-`SearchEndpoint`, and the `web.search` session scope. `web.fetch` requires the
-same enabled option and `web.fetch` scope. Automatic redirects are disabled or
-validated hop-by-hop; private, loopback, link-local, multicast, reserved, and
-test-net targets are rejected. Responses enforce a configured byte cap, strict
-UTF-8/content-type checks, sanitizer limits, and at most ten validated search
-citations. Tool results contain only bounded source/content fields plus an
-`untrusted` marker. This is a web-tool policy boundary, not the future
-OS-enforced filesystem/network sandbox.
+For the managed Agent path, `WebOptions` is enabled with the fixed public
+DuckDuckGo HTML endpoint `https://html.duckduckgo.com/html/`. `web.search` is
+advertised with `network.search`; `web.fetch` is advertised with
+`network.fetch`; the normal Harness policy remains authoritative. Automatic
+redirects are disabled or validated hop-by-hop; private, loopback, link-local,
+multicast, reserved, and test-net targets are rejected. Responses enforce a
+configured byte cap, strict UTF-8/content-type checks, sanitizer limits, and
+at most ten validated search citations. Tool results contain only bounded
+source/content fields plus an `untrusted` marker; fetched text retains the
+`[untrusted_web_reference]` marker. This is a web-tool policy boundary, not
+the future OS-enforced filesystem/network sandbox.
 
 ## Agent activity shown in WinUI
 

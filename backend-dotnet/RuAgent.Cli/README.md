@@ -39,8 +39,8 @@ agent policy remove <rule-id>
 
 ## Current model tool surface
 
-The Agent Worker v2 advertisement contains exactly ten core bindings in both
-Standard and Full Access: `files.list`, `files.read`, `files.glob`,
+The Agent Worker v2 advertisement contains ten core bindings plus the managed
+read-only web bindings in both Standard and Full Access: `files.list`, `files.read`, `files.glob`,
 `files.search`, `files.write`, `files.edit`, `files.delete`, `files.restore`,
 `terminal.run`, and `terminal.shell`. Standard applies the stricter
 analyzer/rule/approval policy; Full Access normally uses its broader fallback
@@ -49,12 +49,13 @@ calls run as the current Windows user and can execute host code or open
 sockets. `system.volume` is handled by a deterministic direct-action parser,
 not model selection; `notes.create`, read-only `system.*`, and `app.list` are
 Broker-internal. `files.apply_patch`, connectors, and `app.open` are not
-model-usable. Optional `web.search`/`web.fetch` appear only when WebOptions and
-matching session scopes are present; results are bounded and marked untrusted.
+model-usable. Managed startup enables `web.search` (`network.search`) and
+`web.fetch` (`network.fetch`) with the fixed DuckDuckGo HTML endpoint
+`https://html.duckduckgo.com/html/`; results are bounded and marked untrusted.
 Declarative Skills appear only when explicitly granted and retain normal
 Broker policy/approval checks. Managed startup keeps skill package roots and
-WebOptions disabled by default, so a caller must explicitly configure the
-Broker and open a session grant before these optional commands can run.
+skill bindings opt-in, so a caller still needs an explicit session grant before
+`/skills` or `/skill` can run.
 Subagents, LSP, extensions, plugins, and MCP are not part of this CLI surface.
 
 All commands ensure the Public Host is running via `PublicHostStarter.GetOrStartAsync` before any API call and use `PublicHostSession` bearer auth.

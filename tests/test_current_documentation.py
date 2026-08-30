@@ -213,6 +213,26 @@ def test_action_capability_docs_publish_only_current_truth() -> None:
     assert "reconcile" in agent_tools
 
 
+def test_current_docs_describe_enabled_managed_agent_web_tools() -> None:
+    readme = _text("README.md")
+    architecture = _text("docs/architecture.md")
+    runtime = _text("docs/operations/runtime-behavior.md")
+    agent_tools = _text("docs/operations/agent-tools.md")
+    docs_index = _text("docs/README.md")
+    cli_readme = _text("backend-dotnet/RuAgent.Cli/README.md")
+    current_docs = "\n".join((readme, architecture, runtime, agent_tools, docs_index, cli_readme))
+
+    assert "https://html.duckduckgo.com/html/" in current_docs
+    assert "web.search" in current_docs and "web.fetch" in current_docs
+    assert "[untrusted_web_reference]" in current_docs
+    assert "allow_online_search" not in current_docs
+    assert "allow_web_search" not in current_docs
+    assert "WebOptions disabled by default" not in current_docs
+    assert "web.search`/`web.fetch` bindings are added only when WebOptions" not in current_docs
+    assert "Web search/fetch are not advertised by default" not in current_docs
+    assert "Configured deployments may additionally advertise" not in current_docs
+
+
 def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -> None:
     agent_tools = _text("docs/operations/agent-tools.md")
     root_readme = _text("README.md")

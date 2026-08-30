@@ -69,8 +69,9 @@ the exact context before committing model completion or dispatching tools, then
 stores the receipt as an `InternalOnly` payload. Public Agent SSE suppresses
 `model.prompt_composed` and its payload while advancing the durable cursor.
 Invalid context or receipt metadata fails closed with `prompt_contract_invalid`;
-there is no static-prompt fallback or reduced-context retry. `web.search` is
-advertised only when the Host has an authenticated capability for it.
+there is no static-prompt fallback or reduced-context retry. The managed Host's
+enabled web executor advertises both `web.search` and `web.fetch`; no settings
+field controls their exposure.
 
 Prompt composition is not a security boundary: Broker policy, workspace trust,
 approvals, protected paths, external-directory grants, and cancellation remain
@@ -230,11 +231,12 @@ looped or filled with an earlier response.
 
 ## Action execution kernel v1
 
-The Worker v2 settings currently advertise the same ten bindings in both
-presets: `files.list`, `files.read`, `files.glob`, `files.search`,
-`files.write`, `files.edit`, `files.delete`, `files.restore`, `terminal.run`,
-and `terminal.shell`. Standard and Full Access differ in Broker policy, not in
-the model-visible list. Standard automatically allows ordinary trusted-workspace
+The Worker v2 settings currently advertise the same ten core bindings plus the
+managed read-only web bindings in both presets: `files.list`, `files.read`,
+`files.glob`, `files.search`, `files.write`, `files.edit`, `files.delete`,
+`files.restore`, `terminal.run`, `terminal.shell`, `web.search`, and
+`web.fetch`. Standard and Full Access differ in Broker policy, not in the
+model-visible list. Standard automatically allows ordinary trusted-workspace
 file reads/creates/edits and applies analyzer/rule/approval decisions to
 terminal requests; Full Access uses a broader fallback for well-formed calls,
 while protected paths, hard invariants, and extended timeout thresholds remain
@@ -275,11 +277,14 @@ Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
 memory, reviewed examples, TTS, or VTS metadata.
 
-The ten Worker v2 bindings above are the core model surface. Configured
-`web.search`/`web.fetch` bindings are added only when WebOptions and the
-matching session scopes are present; their bounded responses carry an explicit
-`untrusted` marker and never become instructions. `notes.create`, read-only
-system bindings, unbound connectors, and `app.open` remain Broker-internal.
+The ten Worker v2 bindings above are the core model surface, and the managed
+Host also advertises read-only `web.search`/`web.fetch` bindings. Managed
+startup constructs an enabled WebOptions instance with the fixed
+`https://html.duckduckgo.com/html/` endpoint; their bounded responses carry an
+explicit `untrusted` marker and never become instructions. `files.search`
+searches the workspace, while `web.search` searches the public web. `notes.create`,
+read-only system bindings, unbound connectors, and `app.open` remain
+Broker-internal.
 Declarative Skills are added only from validated manifests explicitly included
 in the session grant; each Skill step re-enters normal tool scope, schema,
 approval, timeout, and output limits. The managed Git commit workflow (Phase 3
@@ -302,14 +307,17 @@ the other commands return bounded static or session-scoped data.
 
 ### Web access
 
-`web.search` requires an enabled WebOptions object, a public HTTP(S) search
-endpoint, and `web.search` in the authenticated grant. `web.fetch` requires
-the enabled option and `web.fetch` scope. Redirects are disabled or validated
-at every hop, private/reserved targets are rejected, and response bytes,
-content types, UTF-8, sanitizer output, and citation count are capped. Web
-payloads are data only and cannot grant tools, permissions, paths, approvals,
-or preset changes; embedded URL credentials are rejected as well. These gates
-are not an OS-enforced network sandbox.
+The managed Agent constructs an enabled WebOptions object with the public
+DuckDuckGo HTML search endpoint `https://html.duckduckgo.com/html/`. It
+advertises `web.search` as `network.search` and `web.fetch` as `network.fetch`;
+the normal Harness policy remains authoritative for each read-only call.
+Redirects are disabled or validated at every hop, private/reserved targets are
+rejected, and response bytes, content types, UTF-8, sanitizer output, and
+citation count are capped. Web payloads are data only and cannot grant tools,
+permissions, paths, approvals, or preset changes; embedded URL credentials
+are rejected as well. Fetched text is wrapped with
+`[untrusted_web_reference]`. These gates are not an OS-enforced network
+sandbox.
 
 Declarative Skills are the only workflow extension surface in this checkpoint;
 subagents, LSP, extensions, plugins, and MCP are not loaded or discoverable.

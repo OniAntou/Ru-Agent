@@ -350,6 +350,8 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         ("files.restore", "workspace.write"),
         ("terminal.run", "terminal.execute"),
         ("terminal.shell", "terminal.execute"),
+        ("web.search", "network.search"),
+        ("web.fetch", "network.fetch"),
     ];
 
     private static JsonObject BuildSettings(SystemPromptContext context)

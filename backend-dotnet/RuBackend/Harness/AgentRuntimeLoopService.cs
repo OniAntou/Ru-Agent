@@ -153,7 +153,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     [
         "files.list", "files.read", "files.glob", "files.search",
         "files.write", "files.edit", "files.delete", "files.restore",
-        "terminal.run", "terminal.shell",
+        "terminal.run", "terminal.shell", "web.search", "web.fetch",
     ];
 
     private readonly IModelStepRunner _model;
@@ -171,6 +171,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly ISettingsStore _settings;
     private readonly ITimeProvider _time;
     private readonly IModelContextLimitProvider _contextLimit;
+    private readonly Broker.AgentWebToolExecutor? _webExecutor;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -187,7 +188,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         RuInstructionLoader? instructionLoader = null,
         ISettingsStore? settings = null,
         ITimeProvider? time = null,
-        IModelContextLimitProvider? contextLimit = null)
+        IModelContextLimitProvider? contextLimit = null,
+        Broker.AgentWebToolExecutor? webExecutor = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -205,6 +207,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _contextLimit = contextLimit
             ?? new StaticModelContextLimitProvider(32_768);
+        _webExecutor = webExecutor;
     }
 
     public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null)
@@ -215,7 +218,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             presetProvider: runId => policySnapshot?.Preset ?? AgentPermissionPreset.Standard,
             idGenerator: new CryptographicIdGenerator(),
             approvalGrants: _approvalGrants,
-            policySnapshot: policySnapshot);
+            policySnapshot: policySnapshot,
+            webExecutor: _webExecutor);
         var frames = new TransientFrameBuffer(
             64 * 1024,
             _liveEvents is null ? null : frame => PublishLiveFrame(_liveEvents, frame));
@@ -229,7 +233,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             _instructionLoader,
             _settings,
             _time,
-            webSearchAuthenticated: false);
+            webToolsEnabled: _webExecutor?.IsEnabled == true);
         return new AgentRunCoordinator(
             _model,
             gateway,

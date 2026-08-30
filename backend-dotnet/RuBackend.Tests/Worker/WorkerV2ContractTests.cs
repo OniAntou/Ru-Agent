@@ -169,6 +169,13 @@ public sealed class WorkerV2ContractTests
     }
 
     [Fact]
+    public void Runtime_capabilities_advertise_both_web_tools()
+    {
+        Assert.Contains("web.search", RuBackend.Harness.AgentRuntimeCoordinatorFactory.RuntimeCapabilities);
+        Assert.Contains("web.fetch", RuBackend.Harness.AgentRuntimeCoordinatorFactory.RuntimeCapabilities);
+    }
+
+    [Fact]
     public void Rejects_oversized_arguments()
     {
         var largeArgs = new JsonObject { ["path"] = new string('a', 64 * 1024 + 1) };

@@ -22,6 +22,7 @@ using RuAgent.Harness.Persistence.Policy;
 using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Hosting;
+using RuAgent.Broker.Configuration;
 using RuAgent.Protocol.Harness;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using System.Diagnostics;
@@ -225,6 +226,27 @@ builder.Services.AddSingleton<IVtsProtocolClient>(services =>
     services.GetRequiredService<LoopbackWorkerClient>());
 builder.Services.AddSingleton<IRuntimeWorkerClient, LoopbackRuntimeWorkerClient>();
 builder.Services.AddSingleton<IAgentVtsClient, WorkerAgentVtsClient>();
+builder.Services.AddSingleton<HttpClient>(_ =>
+{
+    var handler = new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        AutomaticDecompression = DecompressionMethods.All,
+    };
+    var client = new HttpClient(handler, disposeHandler: true)
+    {
+        Timeout = TimeSpan.FromSeconds(20),
+    };
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("RuAgent/1.0");
+    return client;
+});
+builder.Services.AddSingleton<AgentWebToolExecutor>(services =>
+    new AgentWebToolExecutor(
+        new WebOptions(
+            enabled: true,
+            searchEndpoint: new Uri("https://html.duckduckgo.com/html/"),
+            requireApproval: false),
+        services.GetRequiredService<HttpClient>()));
 builder.Services.AddSingleton<AgentReplyPolicy>();
 builder.Services.AddSingleton<IAgentReplyPolicy>(services =>
     services.GetRequiredService<AgentReplyPolicy>());

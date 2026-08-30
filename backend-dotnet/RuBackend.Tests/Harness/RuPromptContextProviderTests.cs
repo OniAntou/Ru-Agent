@@ -22,7 +22,7 @@ public sealed class RuPromptContextProviderTests
             new RuInstructionLoader(),
             settings,
             time,
-            webSearchAuthenticated: false);
+            webToolsEnabled: false);
         var snapshot = new ModelContextSnapshot(
             new ModelContextEntry[]
             {
@@ -57,7 +57,7 @@ public sealed class RuPromptContextProviderTests
     }
 
     [Fact]
-    public async Task Exposes_web_search_only_when_settings_and_adapter_are_both_enabled()
+    public async Task Exposes_web_tools_only_when_runtime_wiring_is_enabled()
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();
         var settings = new StubSettingsStore(Settings());
@@ -70,16 +70,24 @@ public sealed class RuPromptContextProviderTests
             new RuInstructionLoader(),
             settings,
             time,
-            webSearchAuthenticated: false).BuildAsync(run, context, CancellationToken.None);
+            webToolsEnabled: false).BuildAsync(run, context, CancellationToken.None);
         var allowed = await new RuPromptContextProvider(
             fixture.Root,
             new RuInstructionLoader(),
             settings,
             time,
-            webSearchAuthenticated: true).BuildAsync(run, context, CancellationToken.None);
+            webToolsEnabled: true).BuildAsync(run, context, CancellationToken.None);
 
         Assert.DoesNotContain(denied.Capabilities, capability => capability.Id == "web.search");
-        Assert.Contains(allowed.Capabilities, capability => capability.Id == "web.search" && capability.Availability == "enabled");
+        Assert.DoesNotContain(denied.Capabilities, capability => capability.Id == "web.fetch");
+        Assert.Contains(allowed.Capabilities, capability =>
+            capability.Id == "web.search"
+            && capability.Availability == "enabled"
+            && capability.PolicySummary == "network.search");
+        Assert.Contains(allowed.Capabilities, capability =>
+            capability.Id == "web.fetch"
+            && capability.Availability == "enabled"
+            && capability.PolicySummary == "network.fetch");
     }
 
     private static SettingsSnapshot Settings() => new(

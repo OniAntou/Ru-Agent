@@ -30,27 +30,29 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             ["files.restore"] = "workspace.write",
             ["terminal.run"] = "terminal.execute",
             ["terminal.shell"] = "terminal.execute",
+            ["web.search"] = "network.search",
+            ["web.fetch"] = "network.fetch",
         };
 
     private readonly string _canonicalRoot;
     private readonly RuInstructionLoader _instructionLoader;
     private readonly ISettingsStore _settings;
     private readonly ITimeProvider _time;
-    private readonly bool _webSearchAuthenticated;
+    private readonly bool _webToolsEnabled;
 
     public RuPromptContextProvider(
         string workspaceRoot,
         RuInstructionLoader instructionLoader,
         ISettingsStore settings,
         ITimeProvider time,
-        bool webSearchAuthenticated = false)
+        bool webToolsEnabled = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _canonicalRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(workspaceRoot);
         _instructionLoader = instructionLoader ?? throw new ArgumentNullException(nameof(instructionLoader));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _time = time ?? throw new ArgumentNullException(nameof(time));
-        _webSearchAuthenticated = webSearchAuthenticated;
+        _webToolsEnabled = webToolsEnabled;
     }
 
     public async Task<SystemPromptContext> BuildAsync(
@@ -75,7 +77,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
             WorkspaceLabel(_canonicalRoot));
         var runtime = BuildRuntimeContext(modelContext);
-        var capabilities = BuildCapabilities(settings);
+        var capabilities = BuildCapabilities();
 
         return new SystemPromptContext(
             SystemPromptContext.PromptContextSchemaVersion,
@@ -106,12 +108,17 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         return string.IsNullOrWhiteSpace(candidate) ? "configured-model" : candidate.Trim();
     }
 
-    private IReadOnlyList<PromptCapability> BuildCapabilities(SettingsSnapshot settings)
+    private IReadOnlyList<PromptCapability> BuildCapabilities()
     {
         var runtimeToolIds = AgentRuntimeCoordinatorFactory.RuntimeCapabilities;
-        var capabilities = new List<PromptCapability>(runtimeToolIds.Count + 1);
+        var capabilities = new List<PromptCapability>(runtimeToolIds.Count);
         foreach (var toolId in runtimeToolIds)
         {
+            if (AgentModelToolContractCatalog.WebToolIds.Contains(toolId) && !_webToolsEnabled)
+            {
+                continue;
+            }
+
             if (!CapabilityScopes.TryGetValue(toolId, out var scope))
             {
                 continue;
@@ -129,21 +136,6 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
                 $"Host tool capability: {toolId}",
                 ComputeSchemaDigest(contract.InputSchema),
                 scope,
-                "enabled"));
-        }
-
-        if (_webSearchAuthenticated)
-        {
-            capabilities.Add(new PromptCapability(
-                "web.search",
-                "1.0.0",
-                "Authenticated web search",
-                ComputeSchemaDigest(new JsonObject
-                {
-                    ["type"] = "object",
-                    ["additionalProperties"] = false,
-                }),
-                "network.search",
                 "enabled"));
         }
 

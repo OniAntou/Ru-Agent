@@ -119,7 +119,8 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             return Task.FromResult(ToolProposalDecision.Deny(MapAccessKind(proposal.ToolId), "phase_not_available"));
         }
 
-        if (proposal.ToolId is "web.search" or "web.fetch" && _webExecutor is null)
+        if (proposal.ToolId is ("web.search" or "web.fetch")
+            && (_webExecutor is null || !_webExecutor.IsEnabled))
         {
             return Task.FromResult(ToolProposalDecision.Deny(ToolAccessKind.ReadOnly, "web_disabled"));
         }

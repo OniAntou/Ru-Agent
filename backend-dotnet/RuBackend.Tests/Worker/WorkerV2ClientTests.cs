@@ -434,7 +434,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
             {
                 "files.list", "files.read", "files.glob", "files.search",
                 "files.write", "files.edit", "files.delete", "files.restore",
-                "terminal.run", "terminal.shell",
+                "terminal.run", "terminal.shell", "web.search", "web.fetch",
             }.Order(StringComparer.Ordinal),
             tools.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(
@@ -446,6 +446,12 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal(
             ["terminal.execute"],
             tools["terminal.run"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Equal(
+            ["network.search"],
+            tools["web.search"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Equal(
+            ["network.fetch"],
+            tools["web.fetch"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
     }
 
     [Fact]

@@ -44,6 +44,8 @@ public sealed class AgentWebToolExecutor
         }
     }
 
+    public bool IsEnabled => _options.Enabled;
+
     public async Task<JsonObject> ExecuteAsync(
         string toolId,
         JsonObject arguments,

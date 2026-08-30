@@ -22,6 +22,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
     private const int MaxDiscoveryEntries = 512;
     private const int MaxDiscoveryResults = 64;
     private const int MaxReadBytes = 256 * 1024;
+    private const int MaxWebOutputBytes = 512 * 1024;
     private const int MaxMutationBytes = 4 * 1024 * 1024;
     private const int MaxMutationFileBytes = 4 * 1024 * 1024;
     private const int MaxExpectedOccurrences = 1024;
@@ -34,6 +35,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
     private readonly IIdGenerator _ids;
     private readonly IReadOnlyList<string> _sanitizedSearchDirectories;
     private readonly ConcurrentDictionary<string, ActiveTerminalExecution> _activeTerminalExecutions = new();
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeWebExecutions = new();
     private readonly ConcurrentDictionary<string, PreparedTerminalSpec> _pendingTerminalSpecs = new();
     private readonly ConcurrentDictionary<string, string> _pendingArguments = new();
     private readonly ConcurrentDictionary<string, string> _pendingToolIds = new();
@@ -49,6 +51,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
     private static readonly TimeSpan HostRecoveryTtl = TimeSpan.FromMinutes(30);
     private readonly ConcurrentDictionary<string, byte> _cancelledRuns = new();
     private readonly ConcurrentDictionary<string, byte> _cancelledExecutions = new();
+    private readonly AgentWebToolExecutor? _webExecutor;
     private readonly object _mutationGate = new();
     private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
     private const int MaxHostRecoveries = 4096;
@@ -64,7 +67,8 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         Func<RunId, AgentPermissionPreset>? presetProvider,
         IIdGenerator? idGenerator,
         RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null,
-        PolicySnapshot? policySnapshot = null)
+        PolicySnapshot? policySnapshot = null,
+        AgentWebToolExecutor? webExecutor = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(canonicalRoot);
         ArgumentNullException.ThrowIfNull(advertisedCapabilities);
@@ -81,6 +85,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         _policySnapshot = policySnapshot;
         _ids = idGenerator ?? new GatewayIdGenerator();
         _approvalGrants = approvalGrants;
+        _webExecutor = webExecutor;
         _sanitizedSearchDirectories = SanitizeSearchDirectories();
     }
 
@@ -107,11 +112,16 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         {
             "files.list", "files.glob", "files.search", "files.read",
             "files.write", "files.edit", "files.delete", "files.restore",
-            "terminal.run", "terminal.shell"
+            "terminal.run", "terminal.shell", "web.search", "web.fetch"
         };
         if (!allowedIds.Contains(proposal.ToolId) && proposal.ToolId != "notes.create" && proposal.ToolId != "system.time" && proposal.ToolId != "system.status" && proposal.ToolId != "system.volume" && proposal.ToolId != "app.list")
         {
             return Task.FromResult(ToolProposalDecision.Deny(MapAccessKind(proposal.ToolId), "phase_not_available"));
+        }
+
+        if (proposal.ToolId is "web.search" or "web.fetch" && _webExecutor is null)
+        {
+            return Task.FromResult(ToolProposalDecision.Deny(ToolAccessKind.ReadOnly, "web_disabled"));
         }
 
         // For restore, advertised only while active run owns valid recovery â€“ check in-memory host registry
@@ -214,6 +224,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             "files.list" or "files.glob" or "files.search" or "files.read"
                 or "files.write" or "files.edit" =>
                 Allow(proposal, accessKind),
+            "web.search" or "web.fetch" => Allow(proposal, accessKind),
             _ => ToolProposalDecision.Deny(accessKind, "phase_not_available"),
         };
     }
@@ -380,6 +391,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         "files.apply_patch" => "patch",
         "files.delete" => "delete",
         "files.restore" => "restore",
+        "web.search" or "web.fetch" => "read",
         _ => "mutation",
     };
 
@@ -726,6 +738,11 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         if (toolId is "terminal.run" or "terminal.shell")
         {
             return await ExecuteTerminalAsync(execution, args, publishDelta, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (toolId is "web.search" or "web.fetch")
+        {
+            return await ExecuteWebAsync(execution, toolId, args, publishDelta, cancellationToken).ConfigureAwait(false);
         }
 
         if (toolId == "files.delete")
@@ -1220,6 +1237,107 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         }
     }
 
+    private async Task<ToolExecutionReceipt> ExecuteWebAsync(
+        PreparedToolExecution execution,
+        string toolId,
+        JsonObject arguments,
+        Func<ToolOutputChunk, ValueTask> publishDelta,
+        CancellationToken cancellationToken)
+    {
+        if (_webExecutor is null)
+        {
+            return FailedReceipt(execution, "web_disabled");
+        }
+
+        var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (!_activeWebExecutions.TryAdd(execution.ExecutionId.Value, linkedCancellation))
+        {
+            linkedCancellation.Dispose();
+            return FailedReceipt(execution, "execution_in_progress");
+        }
+
+        try
+        {
+            ThrowIfExecutionCancelled(execution.ExecutionId, linkedCancellation.Token);
+            var output = await _webExecutor.ExecuteAsync(
+                toolId,
+                arguments,
+                linkedCancellation.Token).ConfigureAwait(false);
+            var outputBytes = Encoding.UTF8.GetBytes(output.ToJsonString());
+            if (outputBytes.Length > MaxWebOutputBytes)
+            {
+                return FailedReceipt(execution, "output_too_large");
+            }
+
+            const int chunkSize = 16 * 1024;
+            for (var offset = 0; offset < outputBytes.Length; offset += chunkSize)
+            {
+                var chunk = Encoding.UTF8.GetString(
+                    outputBytes,
+                    offset,
+                    Math.Min(chunkSize, outputBytes.Length - offset));
+                await publishDelta(new ToolOutputChunk(
+                    execution.ExecutionId,
+                    (offset / chunkSize) + 1,
+                    ToolOutputStream.Stdout,
+                    chunk)).ConfigureAwait(false);
+            }
+
+            return new ToolExecutionReceipt(
+                execution.ExecutionId,
+                execution.ToolCallId,
+                ToolExecutionOutcome.Succeeded,
+                "ok",
+                null,
+                sideEffectsPossible: false,
+                modelContent: outputBytes,
+                contentEncoding: HarnessPayloadEncoding.Json);
+        }
+        catch (OperationCanceledException) when (_cancelledExecutions.ContainsKey(execution.ExecutionId.Value))
+        {
+            return new ToolExecutionReceipt(
+                execution.ExecutionId,
+                execution.ToolCallId,
+                ToolExecutionOutcome.Cancelled,
+                "process_cancelled",
+                null,
+                sideEffectsPossible: false);
+        }
+        catch (UnauthorizedAccessException error)
+        {
+            return FailedReceipt(execution, StableWebErrorCode(error.Message, "access_denied"));
+        }
+        catch (ArgumentException error)
+        {
+            return FailedReceipt(execution, StableWebErrorCode(error.Message, "invalid_arguments"));
+        }
+        catch (InvalidDataException error)
+        {
+            return FailedReceipt(execution, StableWebErrorCode(error.Message, "web_response_invalid"));
+        }
+        catch (HttpRequestException)
+        {
+            return FailedReceipt(execution, "web_request_failed");
+        }
+        catch (Exception)
+        {
+            return FailedReceipt(execution, "web_adapter_failed");
+        }
+        finally
+        {
+            if (_activeWebExecutions.TryRemove(execution.ExecutionId.Value, out var active))
+            {
+                active.Dispose();
+            }
+        }
+    }
+
+    private static string StableWebErrorCode(string? candidate, string fallback) =>
+        candidate is { Length: >= 1 and <= 64 }
+        && Regex.IsMatch(candidate, "^[a-z][a-z0-9_]{0,63}$")
+            ? candidate
+            : fallback;
+
     public Task CancelAsync(ExecutionId executionId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -1227,6 +1345,10 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         if (_activeTerminalExecutions.TryGetValue(executionId.Value, out var active))
         {
             active.Cancel();
+        }
+        if (_activeWebExecutions.TryGetValue(executionId.Value, out var activeWeb))
+        {
+            activeWeb.Cancel();
         }
 
         // Cancellation also discards a prepared-but-not-started call. This is
@@ -1247,6 +1369,15 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         foreach (var pair in _activeTerminalExecutions)
         {
             if (pair.Value.RunId.Value == runId.Value)
+            {
+                _cancelledExecutions[pair.Key] = 0;
+                pair.Value.Cancel();
+            }
+        }
+        foreach (var pair in _activeWebExecutions)
+        {
+            if (_pendingRunIds.TryGetValue(pair.Key, out var activeRun)
+                && activeRun.Value == runId.Value)
             {
                 _cancelledExecutions[pair.Key] = 0;
                 pair.Value.Cancel();
@@ -2142,6 +2273,8 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         "files.glob" => ToolAccessKind.ReadOnly,
         "files.search" => ToolAccessKind.ReadOnly,
         "files.read" => ToolAccessKind.ReadOnly,
+        "web.search" => ToolAccessKind.ReadOnly,
+        "web.fetch" => ToolAccessKind.ReadOnly,
         _ => ToolAccessKind.Mutation,
     };
 
@@ -2217,6 +2350,30 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             case "files.restore":
                 RequiredString(args, "recovery_id", 256);
                 break;
+            case "web.search":
+                EnsureOnlyArguments(args, "query");
+                RequiredString(args, "query", 512);
+                break;
+            case "web.fetch":
+                EnsureOnlyArguments(args, "url");
+                var rawUrl = RequiredString(args, "url", 2048);
+                if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri)
+                    || uri.Scheme is not ("http" or "https")
+                    || string.IsNullOrWhiteSpace(uri.Host)
+                    || !string.IsNullOrEmpty(uri.UserInfo))
+                {
+                    throw new ArgumentException("invalid_url");
+                }
+                break;
+        }
+    }
+
+    private static void EnsureOnlyArguments(JsonElement args, params string[] allowedNames)
+    {
+        var allowed = allowedNames.ToHashSet(StringComparer.Ordinal);
+        if (args.EnumerateObject().Any(property => !allowed.Contains(property.Name)))
+        {
+            throw new ArgumentException("invalid_arguments");
         }
     }
 

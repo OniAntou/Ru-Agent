@@ -2,7 +2,10 @@ extern alias Broker;
 
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Policy;
 using RuBackend.Harness.Broker;
 using Xunit;
 using WebOptions = Broker::RuAgent.Broker.Configuration.WebOptions;
@@ -69,6 +72,112 @@ public sealed class AgentWebToolExecutorTests
             CancellationToken.None));
 
         Assert.Equal(0, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task Gateway_runs_web_search_through_read_only_lifecycle()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ru-web-gateway-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        var handler = new RecordingHandler(_ => HtmlResponse(
+            "<a href=\"https://8.8.4.4/result\">Result</a>"));
+        using var http = new HttpClient(handler);
+        try
+        {
+            var gateway = new HarnessToolGateway(
+                tempRoot,
+                ["web.search"],
+                presetProvider: null,
+                idGenerator: null,
+                webExecutor: CreateExecutor(http));
+            using var document = JsonDocument.Parse("{\"query\":\"ru\"}");
+            var proposal = new ToolProposal(
+                new RunId("run_11111111111111111111111111111111"),
+                new ModelStepId("step_11111111111111111111111111111111"),
+                new ToolCallId("call_11111111111111111111111111111111"),
+                1,
+                "web.search",
+                "1.0.0",
+                document.RootElement);
+
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+            Assert.Equal(PolicyDecision.Allow, decision.Decision);
+            Assert.Equal(ToolAccessKind.ReadOnly, decision.AccessKind);
+
+            var prepared = await gateway.PrepareAsync(
+                new ApprovedToolExecution(
+                    proposal,
+                    new ExecutionId("exec_11111111111111111111111111111111"),
+                    decision.CanonicalIntentToken!),
+                CancellationToken.None);
+            var chunks = new List<ToolOutputChunk>();
+            var receipt = await gateway.ExecuteAsync(
+                prepared,
+                chunk =>
+                {
+                    chunks.Add(chunk);
+                    return ValueTask.CompletedTask;
+                },
+                CancellationToken.None);
+
+            Assert.Equal(ToolExecutionOutcome.Succeeded, receipt.Outcome);
+            Assert.False(receipt.SideEffectsPossible);
+            Assert.NotEmpty(chunks);
+            using var result = JsonDocument.Parse(receipt.ModelContent.ToArray());
+            Assert.True(result.RootElement.GetProperty("untrusted").GetBoolean());
+            Assert.Equal(1, handler.RequestCount);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Gateway_rejects_private_fetch_before_http()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "ru-web-gateway-private-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        var handler = new RecordingHandler(_ => HtmlResponse("<p>must not be reached</p>"));
+        using var http = new HttpClient(handler);
+        try
+        {
+            var gateway = new HarnessToolGateway(
+                tempRoot,
+                ["web.fetch"],
+                presetProvider: null,
+                idGenerator: null,
+                webExecutor: CreateExecutor(http));
+            using var document = JsonDocument.Parse("{\"url\":\"http://127.0.0.1/private\"}");
+            var proposal = new ToolProposal(
+                new RunId("run_22222222222222222222222222222222"),
+                new ModelStepId("step_22222222222222222222222222222222"),
+                new ToolCallId("call_22222222222222222222222222222222"),
+                1,
+                "web.fetch",
+                "1.0.0",
+                document.RootElement);
+
+            var decision = await gateway.EvaluateAsync(proposal, CancellationToken.None);
+            var prepared = await gateway.PrepareAsync(
+                new ApprovedToolExecution(
+                    proposal,
+                    new ExecutionId("exec_22222222222222222222222222222222"),
+                    decision.CanonicalIntentToken!),
+                CancellationToken.None);
+            var receipt = await gateway.ExecuteAsync(
+                prepared,
+                _ => ValueTask.CompletedTask,
+                CancellationToken.None);
+
+            Assert.Equal(ToolExecutionOutcome.Failed, receipt.Outcome);
+            Assert.Equal("web_private_host", receipt.Code);
+            Assert.Equal(0, handler.RequestCount);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
     }
 
     private static AgentWebToolExecutor CreateExecutor(HttpClient http) =>

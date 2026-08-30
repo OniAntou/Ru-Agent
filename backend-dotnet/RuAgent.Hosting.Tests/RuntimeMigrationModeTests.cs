@@ -13,9 +13,16 @@ public sealed class RuntimeMigrationModeTests
     }
 
     [Fact]
-    public void Python_compatibility_requires_an_explicit_selector()
+    public void Retired_python_selector_fails_closed_with_a_stable_code()
     {
-        Assert.Equal(RuntimeMigrationMode.PythonCompatibility, RuntimeMigrationModeParser.Parse("PythonCompatibility"));
+        var error = Assert.ThrowsAny<ArgumentException>(() => RuntimeMigrationModeParser.Parse("PythonCompatibility"));
+        Assert.Equal("python_compatibility_retired", error.Message);
         Assert.Throws<ArgumentException>(() => RuntimeMigrationModeParser.Parse("automatic"));
+    }
+
+    [Fact]
+    public void Dotnet_is_the_only_runtime_mode()
+    {
+        Assert.Equal(new[] { "Dotnet" }, Enum.GetNames<RuntimeMigrationMode>());
     }
 }

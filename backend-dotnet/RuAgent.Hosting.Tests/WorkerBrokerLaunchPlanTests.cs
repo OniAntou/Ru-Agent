@@ -53,21 +53,9 @@ public sealed class WorkerBrokerLaunchPlanTests
                 project.LogRoot);
             Assert.Equal(Path.GetFullPath(dataRoot), dotnetPlan.Children[0].Environment["RU_DATA_ROOT"]);
 
-            var pythonPlan = WorkerBrokerLaunchPlan.Create(
-                project.Root,
-                new WorkerBrokerStartupOptions(
-                    RuntimeMigrationMode.PythonCompatibility,
-                    "agent-token",
-                    "device-token",
-                    string.Empty,
-                    18103,
-                    18104,
-                    18105,
-                    project.BrokerExecutable),
-                project.LogRoot);
-            Assert.All(
-                pythonPlan.Children.Where(child => child.Role is "python-agent-compat-worker" or "python-device-worker"),
-                child => Assert.Equal(Path.GetFullPath(dataRoot), child.Environment["RU_DATA_ROOT"]));
+            Assert.DoesNotContain(
+                dotnetPlan.Children,
+                child => child.Environment.ContainsKey("RU_WORKER_TOKEN"));
         }
         finally
         {
@@ -76,25 +64,16 @@ public sealed class WorkerBrokerLaunchPlanTests
     }
 
     [Fact]
-    public void Python_compatibility_mode_does_not_start_the_CSharp_worker()
+    public void Managed_launch_plan_contains_no_legacy_python_process()
     {
         using var project = TemporaryProject.Create();
-        var startup = new WorkerBrokerStartupOptions(
-            RuntimeMigrationMode.PythonCompatibility,
-            "agent-token",
-            "device-token",
-            string.Empty,
-            18086,
-            18087,
-            18088,
-            project.BrokerExecutable);
+        var startup = project.DotnetStartup(18086, 18087, 18088);
 
         var plan = WorkerBrokerLaunchPlan.Create(project.Root, startup, project.LogRoot);
 
-        Assert.Equal("python-agent-compat-worker", plan.Children[0].Role);
-        Assert.DoesNotContain(plan.Children, child => child.Role == "dotnet-agent-worker");
-        Assert.Contains("ru_runtime.worker.server", plan.Children[0].Arguments, StringComparison.Ordinal);
-        Assert.Contains("--v1-only", plan.Children[1].Arguments, StringComparison.Ordinal);
+        Assert.Equal("dotnet-agent-worker", plan.Children[0].Role);
+        Assert.DoesNotContain(plan.Children, child => child.Role.StartsWith("python-", StringComparison.Ordinal));
+        Assert.DoesNotContain(plan.Children, child => child.Arguments.Contains("ru_runtime", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -146,9 +125,7 @@ public sealed class WorkerBrokerLaunchPlanTests
         {
             var root = Path.Combine(Path.GetTempPath(), "ru-host-plan-" + Guid.NewGuid().ToString("N"));
             var logRoot = Path.Combine(root, "logs");
-            Directory.CreateDirectory(Path.Combine(root, ".venv", "Scripts"));
             Directory.CreateDirectory(logRoot);
-            File.WriteAllText(Path.Combine(root, ".venv", "Scripts", "python.exe"), "test");
             var broker = Path.Combine(root, "broker.exe");
             var worker = Path.Combine(root, "backend-dotnet", "RuAgent.Runtime.Worker", "bin", "Release", "net10.0", "win-x64", "publish", "RuAgent.Runtime.Worker.exe");
             Directory.CreateDirectory(Path.GetDirectoryName(worker)!);

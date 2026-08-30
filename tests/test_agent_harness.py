@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 from harness.session import HarnessSession
 
+ROOT = Path(__file__).resolve().parents[1]
+
 AGENT_SCENARIOS = (
     "agent-volume-contract",
     "agent-cancel",
@@ -56,10 +58,10 @@ def test_agent_driver_payload_rejects_private_fields() -> None:
 
 
 def test_backend_agent_probe_covers_broker_approval_and_v2_tool_loop() -> None:
-    session_source = Path("scripts/harness/session.py").read_text(encoding="utf-8")
-    worker_source = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
-    broker_probe_source = Path("scripts/harness/broker_probe.py").read_text(encoding="utf-8")
-    ui_driver_source = Path("gui-winui3.Harness/UiAutomationScenario.cs").read_text(
+    session_source = (ROOT / "scripts/harness/session.py").read_text(encoding="utf-8")
+    worker_source = (ROOT / "scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
+    broker_probe_source = (ROOT / "scripts/harness/broker_probe.py").read_text(encoding="utf-8")
+    ui_driver_source = (ROOT / "gui-winui3.Harness/UiAutomationScenario.cs").read_text(
         encoding="utf-8"
     )
     assert '"tool_id": "files.read"' in worker_source
@@ -84,7 +86,7 @@ def test_backend_agent_probe_covers_broker_approval_and_v2_tool_loop() -> None:
 
 
 def test_deterministic_worker_uses_only_the_read_only_agent_contract() -> None:
-    source = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
+    source = (ROOT / "scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
 
     assert '"files.read"' in source
     assert '"path": "harness-agent.txt"' in source
@@ -95,13 +97,29 @@ def test_deterministic_worker_uses_only_the_read_only_agent_contract() -> None:
     assert '"terminal.shell"' not in source
 
 
+def test_deterministic_worker_does_not_reach_retired_production_modules() -> None:
+    sources = [
+        (ROOT / "scripts/harness/deterministic_worker.py").read_text(encoding="utf-8"),
+        (ROOT / "scripts/harness/worker_fixture.py").read_text(encoding="utf-8"),
+        (ROOT / "scripts/harness/generation_stub/prompt_context.py").read_text(encoding="utf-8"),
+        (ROOT / "scripts/harness/generation_stub/system_prompt_composer.py").read_text(
+            encoding="utf-8"
+        ),
+    ]
+
+    for source in sources:
+        assert "ru_runtime.generation" not in source
+        assert "ru_runtime.worker.v1" not in source
+        assert "ru_runtime.worker.v2" not in source
+
+
 def test_retired_gui_agent_scenarios_are_absent_from_all_harness_entrypoints() -> None:
     sources = [
-        Path("scripts/aspnetcore_compatibility_harness.py").read_text(encoding="utf-8"),
-        Path("scripts/harness/session.py").read_text(encoding="utf-8"),
-        Path("gui-winui3.Harness/Program.cs").read_text(encoding="utf-8"),
-        Path("gui-winui3.Harness/UiAutomationScenario.cs").read_text(encoding="utf-8"),
-        Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8"),
+        (ROOT / "scripts/aspnetcore_compatibility_harness.py").read_text(encoding="utf-8"),
+        (ROOT / "scripts/harness/session.py").read_text(encoding="utf-8"),
+        (ROOT / "gui-winui3.Harness/Program.cs").read_text(encoding="utf-8"),
+        (ROOT / "gui-winui3.Harness/UiAutomationScenario.cs").read_text(encoding="utf-8"),
+        (ROOT / "scripts/harness/deterministic_worker.py").read_text(encoding="utf-8"),
     ]
 
     for source in sources:
@@ -111,8 +129,8 @@ def test_retired_gui_agent_scenarios_are_absent_from_all_harness_entrypoints() -
 
 
 def test_gui_agent_scenario_catalog_is_exact() -> None:
-    python_cli = Path("scripts/aspnetcore_compatibility_harness.py").read_text(encoding="utf-8")
-    csharp_cli = Path("gui-winui3.Harness/Program.cs").read_text(encoding="utf-8")
+    python_cli = (ROOT / "scripts/aspnetcore_compatibility_harness.py").read_text(encoding="utf-8")
+    csharp_cli = (ROOT / "gui-winui3.Harness/Program.cs").read_text(encoding="utf-8")
 
     for scenario in AGENT_SCENARIOS:
         assert scenario in python_cli
@@ -120,8 +138,8 @@ def test_gui_agent_scenario_catalog_is_exact() -> None:
 
 
 def test_gui_agent_cancel_and_stale_scenarios_replace_in_flight_session() -> None:
-    worker = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
-    driver = Path("gui-winui3.Harness/UiAutomationScenario.cs").read_text(encoding="utf-8")
+    worker = (ROOT / "scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
+    driver = (ROOT / "gui-winui3.Harness/UiAutomationScenario.cs").read_text(encoding="utf-8")
 
     assert 'scenario in {"agent-cancel", "agent-stale-result"}' in worker
     assert 'scenario is "agent-cancel" or "agent-stale-result"' in driver
@@ -130,14 +148,14 @@ def test_gui_agent_cancel_and_stale_scenarios_replace_in_flight_session() -> Non
 
 
 def test_deterministic_agent_harness_keeps_volume_metadata_only() -> None:
-    catalog = Path("backend-dotnet/RuAgent.Broker/Tools/ToolCatalog.cs").read_text(encoding="utf-8")
-    binding_registry = Path(
-        "backend-dotnet/RuAgent.Broker/Tools/ToolBindingRegistry.cs"
+    catalog = (ROOT / "backend-dotnet/RuAgent.Broker/Tools/ToolCatalog.cs").read_text(encoding="utf-8")
+    binding_registry = (
+        ROOT / "backend-dotnet/RuAgent.Broker/Tools/ToolBindingRegistry.cs"
     ).read_text(encoding="utf-8")
-    volume_tool = Path(
-        "backend-dotnet/RuAgent.Broker/Tools/Desktop/VolumeTools.cs"
+    volume_tool = (
+        ROOT / "backend-dotnet/RuAgent.Broker/Tools/Desktop/VolumeTools.cs"
     ).read_text(encoding="utf-8")
-    deterministic_worker = Path("scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
+    deterministic_worker = (ROOT / "scripts/harness/deterministic_worker.py").read_text(encoding="utf-8")
 
     assert "yield return VolumeTools.Manifest;" in catalog
     assert "ModelCapabilities(" in binding_registry

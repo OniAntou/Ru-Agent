@@ -40,9 +40,10 @@ Managed startup launches one `RuAgent.Runtime.Worker.exe` with
 `ws://127.0.0.1:8005/worker/v2` and `ws://127.0.0.1:8006/worker/v1`, followed
 by the private Broker. A single-use DPAPI bootstrap carries only the selected
 provider endpoint/model/credential to the C# v2 graph and is deleted after it
-is read. `PythonCompatibility` is an explicit rollback mode that restores the
-legacy Python Agent + Device topology; it is never selected by a public Agent
-request or UI state.
+is read. The retired `PythonCompatibility` selector fails closed with
+`python_compatibility_retired`; `runtime-live` is a bounded diagnostic
+without starting a child topology. There is no Python compatibility startup
+path.
 
 ### Agent system-prompt composition
 
@@ -144,7 +145,7 @@ analysis adapter, but its default v1 control handler is fail-closed: status is
 `disabled`, start/react report a stable unavailable result, and no screen frame,
 credential, or reaction is fabricated. A managed Windows capture/reaction loop
 with a trusted Gemini credential channel is still pending; the legacy Python
-observer is reachable only through the explicit `PythonCompatibility` rollback.
+observer is not reachable from managed startup.
 When that loop exists, WinUI will poll the bounded status contract and pass each
 event through `VoicePlaybackService`, so MediaPlayer playback, subtitles, VTS
 speaking state, and acknowledgement share the normal voice path. Missing
@@ -343,8 +344,8 @@ credentials, bearer values, request bodies, user/session identifiers,
 transcripts, raw audio, assistant responses, or private VTS/voice metadata.
 
 Technical diagnostics are structured JSONL under `RU_LOG_ROOT` (defaulting to
-`%LOCALAPPDATA%\Ru\logs`) with bounded ASP.NET, managed-worker,
-compatibility Python-worker, and WinUI writers. The HTTP boundary records fixed route categories and durations; the
+`%LOCALAPPDATA%\Ru\logs`) with bounded ASP.NET, managed-worker, test-fixture,
+and WinUI writers. The HTTP boundary records fixed route categories and durations; the
 diagnostics API rejects invalid/oversized queries and caps exports at 2 MB.
 Activity Timeline writes continue through the private worker outbox and
 ASP.NET ingestion path, with read-time re-sanitization for legacy records.

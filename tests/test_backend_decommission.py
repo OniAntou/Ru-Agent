@@ -20,9 +20,10 @@ def test_removed_python_web_host_and_forwarders_cannot_return_silently() -> None
     assert not (root / "gui-winui3" / "Services" / "BackendProcessManager.cs").exists()
     hosting = (root / "backend-dotnet" / "RuAgent.Hosting" / "WorkerBrokerLaunchPlan.cs").read_text(encoding="utf-8")
     assert "RU_BACKEND_HOST_MODE" not in hosting
-    # shared multiplexer is ru_runtime.worker.server (not legacy ru_runtime.server top-level)
+    # The managed launch plan must not retain a Python multiplexer reference.
     assert "from ru_runtime.server import" not in hosting
-    assert "ru_runtime.worker.server" in hosting
+    assert "ru_runtime.worker.server" not in hosting
+    assert '"dotnet-agent-worker"' in hosting
 
     program = (root / "backend-dotnet" / "RuBackend" / "Program.cs").read_text(
         encoding="utf-8"

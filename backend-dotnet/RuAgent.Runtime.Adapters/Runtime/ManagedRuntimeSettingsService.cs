@@ -202,7 +202,12 @@ public sealed class ManagedRuntimeSettingsService
     private static void ValidateVoice(VoiceSettingsSnapshot voice)
     {
         ArgumentNullException.ThrowIfNull(voice);
-        if (string.IsNullOrWhiteSpace(voice.VoiceLabel)
+        if (voice.VoiceLabel is null
+            || voice.VoiceStyleId is null
+            || voice.SubtitleColor is null
+            || voice.SubtitleSize is null
+            || voice.SubtitlePosMode is null
+            || string.IsNullOrWhiteSpace(voice.VoiceLabel)
             || voice.VoiceLabel.Length > 128
             || voice.VoiceLabel.Any(char.IsControl)
             || !string.Equals(voice.VoiceStyleId, "original", StringComparison.Ordinal)

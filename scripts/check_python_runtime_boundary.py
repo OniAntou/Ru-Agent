@@ -8,21 +8,18 @@ source text, credentials, or external-service responses.
 from __future__ import annotations
 
 import argparse
-import ast
 import hashlib
 import importlib.util
 import json
 import sys
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 _SCAN_ROOTS = ("src/ru_runtime", "scripts", "tools", "tests", "backend-dotnet")
 _IGNORED_PARTS = {"__pycache__", ".pytest_cache", "bin", "obj", ".git"}
 _MAX_HASH_BYTES = 64 * 1024
 _MAX_FILES = 20_000
-_PYTHON_MODULE_ROOT = "src"
-_PYTHON_WORKER_MODULE = "ru_runtime.worker.server"
 _C_SHARP_STARTUP_FILES = (
     "backend-dotnet/RuBackend/Program.cs",
     "backend-dotnet/RuAgent.Hosting/WorkerBrokerLaunchPlan.cs",
@@ -84,90 +81,9 @@ def _relative_files(root: Path) -> tuple[Path, ...]:
     return tuple(sorted(candidates, key=lambda item: item.relative_to(root).as_posix()))[:_MAX_FILES]
 
 
-def _python_module(path: str) -> str | None:
-    if not path.startswith("src/") or not path.endswith(".py"):
-        return None
-    relative = PurePosixPath(path).relative_to(_PYTHON_MODULE_ROOT)
-    parts = list(relative.parts)
-    if parts[-1] == "__init__.py":
-        parts.pop()
-    else:
-        parts[-1] = PurePosixPath(parts[-1]).stem
-    return ".".join(parts)
-
-
-def _module_path(module: str, paths_by_module: dict[str, str]) -> str | None:
-    if module in paths_by_module:
-        return paths_by_module[module]
-    return paths_by_module.get(module + ".__init__")
-
-
-def _imported_modules(path: Path) -> tuple[str, ...]:
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except (OSError, SyntaxError, UnicodeDecodeError):
-        return ()
-    modules: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            modules.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            modules.add(node.module)
-    return tuple(sorted(modules))
-
-
 def _managed_reachability(root: Path, paths: tuple[Path, ...]) -> dict[str, tuple[bool, str]]:
     path_by_relative = {path.relative_to(root).as_posix(): path for path in paths}
-    module_to_path = {
-        module: relative
-        for relative in path_by_relative
-        if (module := _python_module(relative)) is not None
-    }
     reachable: dict[str, tuple[bool, str]] = {}
-
-    # The explicit PythonCompatibility startup rollback starts the Python v1
-    # worker by module name. This is a subprocess edge, not a Python import
-    # edge; normal managed startup never evaluates this branch.
-    # In Dotnet mode (default since Phase 2), the managed launch plan only
-    # starts dotnet-agent-worker + broker. The python string remains in the
-    # file inside the PythonCompatibility fallback, but it is not reachable
-    # from the default managed startup. Only mark it reachable when the
-    # startup file actually references the python worker outside the
-    # compatibility guard.
-    startup_text = "\n".join(
-        path_by_relative[relative].read_text(encoding="utf-8", errors="replace")
-        for relative in _C_SHARP_STARTUP_FILES
-        if relative in path_by_relative
-    )
-    # Heuristic: if the startup file contains both the managed worker role
-    # and the python module, the python path is behind the explicit
-    # PythonCompatibility guard and is not part of the Dotnet default.
-    has_managed_worker = "dotnet-agent-worker" in startup_text
-    has_python_compat_guard = "PythonCompatibility" in startup_text
-    if _PYTHON_WORKER_MODULE in startup_text and not (
-        has_managed_worker and has_python_compat_guard
-    ):
-        worker_path = _module_path(_PYTHON_WORKER_MODULE, module_to_path)
-        if worker_path is not None:
-            reachable[worker_path] = (True, "subprocess-python-worker")
-
-    # Follow only explicit Python import edges from the started module.  The
-    # resulting reason remains python-import and is useful for the migration
-    # review, while managed C# files never receive that reason.
-    pending = [path for path, (is_reachable, _) in reachable.items() if is_reachable]
-    seen = set(pending)
-    while pending:
-        relative = pending.pop()
-        path = path_by_relative.get(relative)
-        if path is None:
-            continue
-        for module in _imported_modules(path):
-            imported = _module_path(module, module_to_path)
-            if imported is None or imported in seen:
-                continue
-            seen.add(imported)
-            reachable[imported] = (True, "python-import")
-            pending.append(imported)
 
     for relative in _C_SHARP_STARTUP_FILES:
         if relative in path_by_relative:
@@ -221,18 +137,23 @@ def _reference_functions(root: Path) -> tuple[
     filesystem-only.
     """
 
+    scripts = root / "scripts"
     src = root / "src"
-    if not src.is_dir():
-        raise ValueError("root must contain a src directory for the reference fixture")
-    if src.is_dir() and str(src) not in sys.path:
-        sys.path.insert(0, str(src))
-    from ru_runtime.generation.prompt_context import (
+    if not src.is_dir() or not scripts.is_dir():
+        raise ValueError("root must contain src and scripts directories for the reference fixture")
+    for path in (scripts, src):
+        if str(path) not in sys.path:
+            sys.path.insert(0, str(path))
+    # Production generation is owned by C# after Phase 3.  Baseline generation
+    # remains available through this test-only copy so the scanner itself never
+    # imports retired product modules.
+    from harness.generation_stub.prompt_context import (
         MAX_PROMPT_INSTRUCTION_BYTES,
         normalize_text,
         parse_system_prompt_context,
         sha256_utf8,
     )
-    from ru_runtime.generation.system_prompt_composer import compose_system_prompt
+    from harness.generation_stub.system_prompt_composer import compose_system_prompt
 
     return (
         compose_system_prompt,

@@ -4,7 +4,6 @@ import json
 import sqlite3
 
 from aspnetcore_compatibility_harness import (
-    build_runtime_environment,
     classify_route_for_safe_probe,
     inspect_agent_state,
     is_valid_wav,
@@ -156,14 +155,3 @@ def test_agent_state_inspection_returns_only_counts_and_privacy_flags(tmp_path) 
     serialized = json.dumps(summary)
     assert "private prompt" not in serialized
     assert "clean reply" not in serialized
-
-
-def test_runtime_environment_contains_only_private_protocol_configuration() -> None:
-    environment = build_runtime_environment(
-        "worker-secret",
-        18001,
-    )
-
-    assert environment["RU_WORKER_TOKEN"] == "worker-secret"
-    assert environment["RuBackend__WorkerUrl"] == "ws://127.0.0.1:18001/worker/v1"
-    assert set(environment) == {"RU_WORKER_TOKEN", "RuBackend__WorkerUrl"}

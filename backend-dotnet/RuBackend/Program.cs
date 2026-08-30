@@ -39,7 +39,7 @@ var managedAgentWorkerPort = PublicHostRuntimeOptions.DefaultWorkerPort;
 var managedDeviceWorkerPort = PublicHostRuntimeOptions.DefaultDeviceWorkerPort;
 
 var builder = WebApplication.CreateBuilder(args);
-var migrationMode = RuntimeMigrationModeParser.Parse(
+var migrationMode = ParseRuntimeMigrationMode(
     builder.Configuration["RuBackend:RuntimeMigrationMode"]);
 builder.Logging.ClearProviders();
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
@@ -124,16 +124,14 @@ if (isManagedRuntime)
     var startupSettings = new SettingsStore(BuildDataPaths(builder.Configuration));
     var startupCredentials = new WindowsCredentialStore();
     var bootstrapRoot = Path.Combine(managedLogRoot, "agent", "session");
-    var providerBootstrapPath = migrationMode == RuntimeMigrationMode.Dotnet
-        ? new ManagedProviderBootstrapFactory()
-            .CreateAsync(
-                bootstrapRoot,
-                startupSettings.ReadAsync(CancellationToken.None).GetAwaiter().GetResult(),
-                startupCredentials,
-                CancellationToken.None)
-            .GetAwaiter()
-            .GetResult()
-        : string.Empty;
+    var providerBootstrapPath = new ManagedProviderBootstrapFactory()
+        .CreateAsync(
+            bootstrapRoot,
+            startupSettings.ReadAsync(CancellationToken.None).GetAwaiter().GetResult(),
+            startupCredentials,
+            CancellationToken.None)
+        .GetAwaiter()
+        .GetResult();
 
     // Start Worker and Broker in one Job
     managedWorkerBrokerManager = new RuAgent.Hosting.WorkerBrokerProcessManager();
@@ -152,8 +150,7 @@ if (isManagedRuntime)
         .GetResult();
     if (!workerStarted)
     {
-        if (migrationMode == RuntimeMigrationMode.Dotnet
-            && !string.IsNullOrWhiteSpace(providerBootstrapPath))
+        if (!string.IsNullOrWhiteSpace(providerBootstrapPath))
         {
             try
             {
@@ -211,7 +208,6 @@ builder.Services.Configure<BackendOptions>(options =>
 builder.Services.AddSingleton(BuildDataPaths(builder.Configuration));
 builder.Services.AddSingleton(BuildAgentWorkerClientOptions(
     builder.Configuration,
-    migrationMode,
     managedAgentWorkerPort,
     managedAgentWorkerToken));
 builder.Services.AddSingleton(BuildDeviceWorkerClientOptions(
@@ -520,7 +516,6 @@ static KnownSecretRedactor BuildKnownSecretRedactor()
 
 static AgentWorkerClientOptions BuildAgentWorkerClientOptions(
     IConfiguration configuration,
-    RuntimeMigrationMode migrationMode,
     int managedPort,
     string managedToken)
 {
@@ -532,13 +527,8 @@ static AgentWorkerClientOptions BuildAgentWorkerClientOptions(
         ? managedToken
         : configuration["RU_AGENT_WORKER_TOKEN"]
             ?? Environment.GetEnvironmentVariable("RU_AGENT_WORKER_TOKEN")
-            ?? configuration["RU_WORKER_TOKEN"]
-            ?? Environment.GetEnvironmentVariable("RU_WORKER_TOKEN")
             ?? string.Empty;
 
-    // The mode is intentionally consumed only by startup selection. The client
-    // contract remains explicit even for the trusted Python compatibility mode.
-    _ = migrationMode;
     return new AgentWorkerClientOptions(
         string.IsNullOrWhiteSpace(workerUrl)
             ? new Uri("ws://127.0.0.1:8005/worker/v2")
@@ -559,8 +549,6 @@ static DeviceWorkerClientOptions BuildDeviceWorkerClientOptions(
         ? managedToken
         : configuration["RU_DEVICE_WORKER_TOKEN"]
             ?? Environment.GetEnvironmentVariable("RU_DEVICE_WORKER_TOKEN")
-            ?? configuration["RU_WORKER_TOKEN"]
-            ?? Environment.GetEnvironmentVariable("RU_WORKER_TOKEN")
             ?? string.Empty;
 
     return new DeviceWorkerClientOptions(
@@ -578,6 +566,20 @@ static int ReadConfiguredPort(string? raw, int fallback)
     }
 
     return int.TryParse(raw, out var parsed) ? parsed : fallback;
+}
+
+static RuntimeMigrationMode ParseRuntimeMigrationMode(string? raw)
+{
+    try
+    {
+        return RuntimeMigrationModeParser.Parse(raw);
+    }
+    catch (RuntimeMigrationModeSelectionException)
+    {
+        Console.Error.WriteLine($"{{\"error_code\":\"{RuntimeMigrationModeSelectionException.ErrorCode}\"}}");
+        Environment.Exit(5);
+        throw;
+    }
 }
 
 internal sealed class EphemeralHarnessKeyStore : RuAgent.Harness.Persistence.Privacy.IHarnessKeyStore

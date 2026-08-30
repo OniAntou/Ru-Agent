@@ -30,7 +30,8 @@ The Ru logging system is split into two cleanly separated subsystems:
 Every user turn or background action generates a correlation ID matching `^c_[a-zA-Z0-9_-]{8,64}$`:
 - **WinUI GUI**: Generates `c_{Guid:N}` and sends it via `X-Correlation-Id` header or WebSocket payload.
 - **ASP.NET Core**: `CorrelationMiddleware` extracts `X-Correlation-Id` and scopes async flow via `CorrelationContext.Current`.
-- **Python Worker**: Received in `WorkerEnvelope`, entered via `correlation_scope(correlation_id)`.
+- **Managed Worker**: Carries the correlation ID through typed Worker envelopes;
+  the deterministic test fixture follows the same bounded shape.
 - **Diagnostics & Outbox**: All emitted records inherit the ambient correlation ID.
 
 ## 4. Diagnostics API Routes
@@ -48,8 +49,10 @@ at most 4 MB per diagnostic file for one request.
 
 The ASP.NET HTTP boundary emits fixed route events such as `http.stt`,
 `http.voice`, `http.vts`, `http.observation`, `http.memory`, and
-`http.business` with status and duration only. The Python worker and WinUI
-processes use separate bounded writers under the same resolved `RU_LOG_ROOT`.
+`http.business` with status and duration only. The managed Worker and WinUI
+processes use separate bounded writers under the same resolved `RU_LOG_ROOT`;
+the deterministic Harness uses temporary test-fixture writers and never
+launches a production Python Worker.
 The `/diagnostics/*` routes are intentionally excluded from HTTP boundary
 events so the diagnostics UI polling does not create a self-referential log
 stream or cause unnecessary UI refreshes.
@@ -61,8 +64,13 @@ Activity Timeline data remains a separate privacy-safe outbox owned and
 ingested by ASP.NET Core.
 
 Automated tests cover schema/privacy, bounds, retries, and writer counters.
-Desktop, microphone, speaker, and live VTube Studio behavior remain explicit
-user-run acceptance checks rather than automated logging evidence.
+The optional `scripts/benchmark_logging.py` probe uses isolated roots, keeps
+the background flusher outside the timed window, averages five repetitions per
+sample, and gates p95/p99 against the logging-disabled baseline. Percentile
+tails are scheduler-sensitive on Windows and are diagnostic evidence, not a
+Phase 2 runtime blocker. Desktop, microphone, speaker, and live VTube Studio
+behavior remain explicit user-run acceptance checks rather than automated
+logging evidence.
 
 ## Action receipt diagnostics
 

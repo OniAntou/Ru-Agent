@@ -63,25 +63,6 @@ public sealed class WorkerBrokerProcessManager : IDisposable
 
     public async Task<bool> StartAsync(
         string projectRoot,
-        string workerSecret,
-        int workerPort,
-        CancellationToken cancellationToken = default)
-    {
-        var devicePort = workerPort == 65_535 ? workerPort - 1 : workerPort + 1;
-        var startup = new WorkerBrokerStartupOptions(
-            RuntimeMigrationMode.PythonCompatibility,
-            workerSecret,
-            workerSecret + "-device",
-            string.Empty,
-            workerPort,
-            devicePort,
-            null,
-            Environment.GetEnvironmentVariable("RU_AGENT_BROKER_EXE"));
-        return await StartAsync(projectRoot, startup, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task<bool> StartAsync(
-        string projectRoot,
         WorkerBrokerStartupOptions startup,
         CancellationToken cancellationToken = default)
     {

@@ -122,6 +122,22 @@ def test_current_docs_do_not_publish_retired_operating_instructions() -> None:
         assert retired not in readme
 
 
+def test_phase3_runtime_retirement_is_published_as_current() -> None:
+    docs_index = _text("docs/README.md")
+    boundary = _text("docs/operations/python-runtime-boundary.md")
+    runtime = _text("docs/operations/runtime-behavior.md")
+    backend_readme = _text("backend-dotnet/README.md")
+    runtime_flat = " ".join(runtime.split())
+
+    assert "Python runtime Phase 3 retirement" in docs_index
+    assert "## Completed implementation plans" in docs_index
+    assert "Phase 3 retirement complete" in boundary
+    assert "There is no Python compatibility startup path" in runtime_flat
+    assert "bounded diagnostic" in backend_readme
+    assert "implementation has not started" not in docs_index
+    assert "pending Phase 3 removal" not in backend_readme
+
+
 def test_superseded_dated_records_are_removed() -> None:
     stale_prefixes = (
         "2026-08-07-",

@@ -59,17 +59,30 @@ _OMNIVOICE_SERVER_SCRIPT = "src/ru_runtime/voice/omnivoice_server.py"
 def voice_service_config(selection: VoiceSelection, project_root: Path) -> VoiceServiceConfig:
     if selection.engine_id != "omnivoice":
         raise ValueError(f"Unsupported voice engine: {selection.engine_id!r}")
-    host = os.environ.get("RU_VOICE_HOST", "127.0.0.1")
+    # Accept both RU_VOICE_* (public) and RU_OMNIVOICE_* (server binding) for compatibility
+    host = os.environ.get("RU_VOICE_HOST") or os.environ.get("RU_OMNIVOICE_HOST", "127.0.0.1")
+    host = host.strip() if isinstance(host, str) else "127.0.0.1"
+    raw_port = os.environ.get("RU_VOICE_PORT") or os.environ.get("RU_OMNIVOICE_PORT", "5052")
     try:
-        port = int(os.environ.get("RU_VOICE_PORT", "5052"))
+        port = int(str(raw_port).strip())
     except ValueError:
         port = 5052
+    # Cross-platform venv layout: Windows uses Scripts/python.exe, POSIX uses bin/python
+    if os.name == "nt":
+        python_rel = Path(_OMNIVOICE_ENV_DIR) / "Scripts" / "python.exe"
+    else:
+        python_rel = Path(_OMNIVOICE_ENV_DIR) / "bin" / "python"
+        # Fallback: some Windows venvs may still be present on WSL checks
+        if not (project_root / python_rel).is_file():
+            alt = Path(_OMNIVOICE_ENV_DIR) / "Scripts" / "python.exe"
+            if (project_root / alt).is_file():
+                python_rel = alt
     return VoiceServiceConfig(
         engine_id=selection.engine_id,
         base_url=f"http://{host}:{port}",
         host=host,
         port=port,
-        python_path=project_root / _OMNIVOICE_ENV_DIR / "Scripts" / "python.exe",
+        python_path=project_root / python_rel,
         server_script=project_root / _OMNIVOICE_SERVER_SCRIPT,
     )
 
@@ -81,8 +94,9 @@ def validate_voice_environment(config: VoiceServiceConfig) -> None:
         if not path.is_file()
     ]
     if missing:
+        hint = "Scripts/python.exe" if os.name == "nt" else "bin/python"
         raise RuntimeError(
             "Môi trường OmniVoice chưa setup đúng cách, thiếu: "
             + ", ".join(str(path) for path in missing)
-            + ". Hãy tạo omnivoice_env (Scripts/python.exe) và voice/omnivoice_server.py."
+            + f". Hãy tạo omnivoice_env ({hint}) và voice/omnivoice_server.py."
         )

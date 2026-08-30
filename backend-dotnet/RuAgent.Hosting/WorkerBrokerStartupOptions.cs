@@ -31,9 +31,9 @@ public sealed record WorkerBrokerStartupOptions(
             ValidatePort(BrokerPort.Value, nameof(BrokerPort));
         }
 
-        if (Mode == RuntimeMigrationMode.Dotnet && string.IsNullOrWhiteSpace(ProviderBootstrapPath))
+        if (string.IsNullOrWhiteSpace(ProviderBootstrapPath))
         {
-            throw new ArgumentException("Dotnet mode requires a provider bootstrap path.", nameof(ProviderBootstrapPath));
+            throw new ArgumentException("Managed mode requires a provider bootstrap path.", nameof(ProviderBootstrapPath));
         }
 
         if (!string.IsNullOrWhiteSpace(BrokerExecutable) && Path.GetFileName(BrokerExecutable).Length == 0)

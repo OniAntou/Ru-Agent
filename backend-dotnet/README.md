@@ -29,10 +29,11 @@ Public Host descriptor lease and long-lived WebSocket/SSE client leases.
 ```
 
 There is no public Python HTTP server, forwarding catch-all, WebSocket relay, or
-automatic fallback. `PythonCompatibility` is a trusted startup rollback that
-routes only Agent v2 to the legacy Python worker; it is not a public request or
-UI mode. Git commit `e023fd3` is the final pre-decommission rollback checkpoint
-if repository-level recovery is required.
+automatic fallback. The retired `PythonCompatibility` selector fails closed
+with `python_compatibility_retired`; the current Harness uses a dependency-free
+test fixture and `runtime-live` is only a bounded diagnostic, never a Worker
+startup path. Git commit
+`e023fd3` remains a historical recovery checkpoint, not a supported runtime.
 
 ## Ownership
 
@@ -59,13 +60,11 @@ persistent text.
 | `RU_DESKTOP_TOKEN` | required per run | Authenticates public REST/WebSocket clients. |
 | `RU_AGENT_WORKER_TOKEN` | generated per managed run | Authenticates ASP.NET to the C# Agent Worker v2. |
 | `RU_DEVICE_WORKER_TOKEN` | generated per managed run | Authenticates ASP.NET to the managed Worker v1 device endpoint. |
-| `RU_WORKER_TOKEN` | compatibility-only | Authenticates ASP.NET to the Python Device Worker v1 in `PythonCompatibility`. |
 | `RU_BACKEND_AGENT_WORKER_PORT` | `8005` | Private Agent Worker loopback port. |
 | `RU_BACKEND_DEVICE_WORKER_PORT` | `8006` | Private Device Worker loopback port. |
 | `RuBackend__BindUrl` | `http://127.0.0.1:8010` standalone | Public ASP.NET bind URL; RuApp sets port `8000`. |
 | `RuBackend__AgentWorkerUrl` | `ws://127.0.0.1:8005/worker/v2` standalone | Private Agent Worker protocol URL. |
 | `RuBackend__DeviceWorkerUrl` | `ws://127.0.0.1:8006/worker/v1` standalone | Private Device Worker protocol URL. |
-| `RuBackend__RuntimeMigrationMode` | `Dotnet` | Trusted startup selector; `PythonCompatibility` is rollback-only. |
 | `RU_DATA_ROOT` | project/user data default | Isolates settings, sessions, activity, and memory for tests. |
 
 Public Host (`RuBackend.exe --managed-runtime`) generates distinct 256-bit
@@ -108,9 +107,9 @@ Broker-internal. `files.apply_patch` is not advertised or model-usable. The
 managed Git commit workflow (Phase 3 Task 6) is not shipped; Git commands
 remain ordinary terminal requests.
 
-The deterministic compatibility Harness intentionally uses the explicit
-`PythonCompatibility` rollback, so its route pass does not validate the raw
-Worker v1 relay surface in default `Dotnet` mode. The managed composition now
+The deterministic Harness intentionally uses a dependency-free test-only
+fixture worker, so its route pass does not validate the raw Worker v1 relay
+surface in the published managed process. The managed composition now
 binds every allowlisted private route to an explicit C# handler: status/models
 report the active typed settings (the worker never receives provider
 credentials), VTS owns runtime-scoped GUI state/config plus
@@ -141,12 +140,14 @@ validates its schema/source ownership, and `PublicRouteContractTests` compares
 it with ASP.NET's live `EndpointDataSource` so a missing route cannot be hidden
 by a forwarder.
 
-For an isolated live gate on temporary ports and data:
+The retired `runtime-live` command is a bounded diagnostic. It returns
+`python_compatibility_retired` without starting any child topology. A
+managed-native live gate is outside this retirement phase. For the current
+deterministic contract gate use:
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe scripts\aspnetcore_compatibility_harness.py `
-  --worker-port 18030 --edge-port 18031 --require-voice-audio `
-  --benchmark-samples 20
+  --mode backend-deterministic --output "$env:TEMP\\ru-backend-harness.json"
 ```
 
 The harness records only statuses, timings, event types, counts, cleanup flags,

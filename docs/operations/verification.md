@@ -47,8 +47,8 @@ cmd /c D:\LLM\build.bat
 
 This is the local equivalent of the CI release gates and must run
 sequentially. The route checker must remain at 56 HTTP routes and 1 WebSocket
-route (`/voice/stream`; 41 legacy plus 15 additive `/agent/v1/*`). The compatibility Harness is
-deterministic contract evidence. A successful build proves only compilation,
+route (`/voice/stream`; 41 legacy plus 15 additive `/agent/v1/*`). The
+deterministic Harness is contract evidence. A successful build proves only compilation,
 publish output, and the incremental native overlay build/test invocation; it
 does not prove that a GUI, microphone, speaker, VTube Studio model, or Windows
 audio endpoint worked.
@@ -57,7 +57,11 @@ The managed runtime topology is deterministic: one C# Worker serves the Agent
 loopback endpoint (`/worker/v2`) and the separate device endpoint
 (`/worker/v1`). Worker tokens are distinct; provider credentials are carried
 only by the single-use DPAPI bootstrap and never by the device graph,
-compatibility Python configuration, descriptors, logs, or public responses.
+legacy Python configuration, descriptors, logs, or public responses. The
+production Python generation/worker modules and compatibility launch branch
+are retired; the test-only fixture under `scripts/harness` is not a production
+fallback. The retired `runtime-live` command is a bounded diagnostic and does
+not start a child topology.
 
 The Phase 1 measurement command times deterministic prompt/tool operations in
 small batches to amortize sub-millisecond scheduler noise, then measures their
@@ -102,6 +106,30 @@ Ruff, Mypy, and `pip check` are required dependency/tooling gates; do not hide
 findings with permanent ignores or `continue-on-error`. Live microphone,
 speaker, volume, and VTube Studio acceptance remain explicit user-run checks.
 
+### Phase 2 entry evidence before Python retirement (2026-08-30)
+
+This is the deterministic evidence retained from the checkout before the Phase 3
+retirement changes:
+
+| Gate | Result |
+| --- | --- |
+| Python reference/tooling suite | `501 passed` |
+| C# Release matrix | `2,085 passed` across 13 test assemblies (14 restored projects including the Harness build) |
+| Route contract | `56 HTTP + 1 WebSocket` |
+| Runtime-boundary scan | `865` files; `2` managed-startup reachable |
+| Backend deterministic Harness | `contract` / `passed`; owned cleanup green |
+| Agent GUI Harness | 4/4 supported Agent scenarios passed |
+| Release build | `build.bat` `13/13`; GUI and managed Worker published |
+
+Managed startup now rejects an explicit legacy `PythonCompatibility` setting
+before acquiring a mutex, writing a descriptor, or starting child processes;
+the stable code is `python_compatibility_retired`.
+
+The logging benchmark remains an optional latency probe. Its percentile tail
+is scheduler-sensitive on this Windows host; a noisy run is recorded as an
+environmental measurement failure and does not change the deterministic
+runtime gate. The per-writer enqueue tests remain the blocking logging guard.
+
 ### Phase 2 manual acceptance record (2026-08-30)
 
 The deterministic release gates are automated and do not stand in for native
@@ -118,21 +146,43 @@ volume endpoint, VTube Studio, or provider process:
 | Opt-in Gemini observation | pending user-run | not collected |
 
 The authorized 2026-08-30 run passed all four deterministic Agent GUI
-scenarios and the backend contract Harness. A separate `runtime-live` probe
-also accepted the corrected VTS request fixtures; its voice checks stayed
-blocked by the local provider not reporting a loaded model, and VTube Studio
-reconnect timed out. These results do not replace the user-owned native smoke
-checks above.
-
-A later `runtime-live` rerun kept startup, authentication, public-route probes,
-and cleanup green but returned bounded external failures for synthetic STT,
-TTS, voice streaming, and VTube Studio connect; observation remained skipped
-by policy. No prompt, transcript, audio, credential, provider body, or device
-value was retained.
+scenarios and the backend contract Harness. The retired `runtime-live` command
+returns `startup.readiness=blocked_by_startup` with reason
+`python_compatibility_retired` and points to `managed_runtime_native`; it does
+not start a child topology. No native microphone, audio, VTube Studio, or
+Gemini quality claim is made here.
 
 When these checks are run, record only pass/fail, duration, and bounded reason
 codes. Never copy prompts, transcripts, audio, credentials, paths, provider
 responses, or device values into this document or its artifacts.
+
+### Current Phase 3 retirement evidence (2026-08-30)
+
+The retirement changes were verified sequentially in the current checkout:
+
+| Gate | Result |
+| --- | --- |
+| Python suite | `504 passed` |
+| Ruff | passed |
+| Mypy | passed (`50` source files) |
+| Dependency check | `pip check` passed |
+| Python compile check | `compileall` passed |
+| C# Release matrix | `2,086 passed` across 13 test assemblies |
+| Route contract | `56 HTTP + 1 WebSocket` |
+| Runtime-boundary scan | `864` files; `2` managed-startup reachable |
+| Backend deterministic Harness | `48/56` HTTP passed, `8` external skipped, `1/1` WebSocket passed; cleanup green |
+| Agent GUI Harness | 4/4 supported Agent scenarios passed |
+| Managed startup smoke | `/status` `200`, wrong bearer `401`; Worker and Broker ports listened and shut down cleanly |
+| Retired selector smoke | exit `5`; `python_compatibility_retired`; no child topology |
+| Release build | `build.bat` `13/13`; GUI, managed Worker/Core, Broker, and backend published |
+| `git diff --check` | passed |
+
+The `runtime-live` command is intentionally retained only as a bounded
+retirement diagnostic; it returns `startup.readiness=blocked_by_startup` with
+`python_compatibility_retired` and does not launch any child. The GUI voice
+runner and native microphone, speaker, OmniVoice, VTube Studio, and Gemini
+checks remain separate acceptance boundaries; the Agent GUI scenarios above
+exercise the deterministic Agent path only.
 
 ## Prompt composer contract checks
 
@@ -153,21 +203,22 @@ dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debu
 dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~HarnessPayloadStore|FullyQualifiedName~HarnessProjectionTransaction"
 ```
 
-The compatibility artifact is status-only contract evidence. It and all public
+The deterministic Harness artifact is status-only contract evidence. It and all public
 events must exclude prompt text, receipts, raw instruction contents, tool
 arguments, filesystem paths, and provider secrets. `model.prompt_composed` is a
 durable internal event only; it must remain absent from the public event
 allowlist and from CLI/WinUI rendering. Deterministic checks do not replace
 live microphone, speaker, VTube Studio, or real Windows endpoint acceptance.
 
-The backend-deterministic Harness is a separate synthetic fixture topology: it
-explicitly selects `PythonCompatibility` and points both v2 and v1 clients at
-one in-process Python fixture worker. This keeps its contract probes isolated
-from the published managed Worker while the normal desktop startup remains
-managed C# by default.
+The backend-deterministic Harness is a separate synthetic fixture topology. It
+starts the dependency-free test-only `harness.deterministic_worker`, which
+serves the v1/v2 contract probes without importing production
+`ru_runtime.generation` or `ru_runtime.worker` modules. This keeps contract
+probes isolated from the published managed Worker; normal desktop startup is
+managed C# only.
 
-This compatibility evidence does not prove raw Worker v1 route parity in the
-default `Dotnet` mode. The managed composition now binds every allowlisted
+This fixture evidence does not prove raw Worker v1 route parity in the
+default managed mode. The managed composition now binds every allowlisted
 private route to an explicit C# handler. Status/models expose only the active
 typed settings (provider credentials remain host-owned), runtime-scoped VTS
 state/config and canonical token persistence, and
@@ -343,8 +394,8 @@ bounded terminal reply. It never opens or changes the Windows volume endpoint.
 HTTP route probes use schema-valid VTS fixtures: the complete `MotionConfig`
 shape for `/vts/config`, a `typing` boolean for `/vts/activity`, and a bounded
 codes string for `/vts/action`. This keeps compatibility probes aligned with
-the Python rollback worker while live VTube Studio reconnect/action behavior
-remains a separate user-run acceptance gate.
+the typed route contract; live VTube Studio reconnect/action behavior remains
+a separate user-run acceptance gate.
 
 The UI driver verifies the static Agent indicator without requiring an idle status row;
 `AgentStatusText` is expected only after an Agent request or another activity
@@ -374,11 +425,12 @@ contract but do not replace visual inspection.
 
 A passing deterministic GUI result does not claim an audible Windows volume
 change and does not accept live microphone capture, audible OmniVoice,
-subtitles, or VTube Studio. The separate runtime-live voice gate can require
-emitted audio, but physical microphone accuracy, speaker quality, natural
-bilingual conversation, and VTube Studio behavior remain explicit user-run
-checks. Real volume mutation remains the opt-in `native_volume_acceptance.py`
-path with `--confirm-native-volume-change` and separate user confirmation.
+subtitles, or VTube Studio. The legacy runtime-live compatibility probe is
+blocked until a managed-native live path is available; physical microphone
+accuracy, speaker quality, natural bilingual conversation, and VTube Studio
+behavior remain explicit user-run checks. Real volume mutation remains the
+opt-in `native_volume_acceptance.py` path with
+`--confirm-native-volume-change` and separate user confirmation.
 
 See [Agent tools and truthful execution](agent-tools.md) for the current
 capability matrix and ownership boundary.

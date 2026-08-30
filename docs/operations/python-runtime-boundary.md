@@ -1,6 +1,13 @@
 # Python runtime boundary
 
-Status: Phase 3 retirement in progress, Dotnet is the only production startup. Scanner 2026-08-30 reports 2 reachable (both C# managed startup) and 0 production-to-port/provider-only reachable in Dotnet mode. Python runtime modules remain on disk only for the explicit trusted `PythonCompatibility` harness rollback and will be deleted per-group after parity gates; they are not part of the default managed installation.
+Status: Phase 3 retirement complete for production startup. Dotnet is the only
+supported production startup. Scanner
+2026-08-30 reports 2 reachable files (both C# managed startup) and 0
+production-to-port/provider-only reachable in Dotnet mode. The production
+Python generation and Worker v1/v2 modules are absent in the current retirement
+diff. The deterministic Harness uses a test-only fixture under
+`scripts/harness`; the retired `PythonCompatibility` selector fails closed with
+`python_compatibility_retired` and is not a supported configuration.
 
 The deterministic inventory is generated with:
 
@@ -12,19 +19,18 @@ D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_python_runtime_boundary.py 
 
 The scanner records relative paths, a bounded content hash, byte count,
 classification, and whether an explicit managed-startup edge reaches the file.
-It parses Python imports without importing or executing product modules. The
-`ru_runtime.worker.server` string lives only inside the `PythonCompatibility`
-fallback in `WorkerBrokerLaunchPlan.cs`; the Dotnet default launches only
-`dotnet-agent-worker` and the scanner no longer counts that string as reachable.
+It does not import or execute product modules. The scanner is inventory evidence,
+not permission to launch a retired module. The
+Dotnet default launches only `dotnet-agent-worker`; test-only fixture imports
+are not production reachability.
 Output is count-only on stdout; the baseline fixture contains only deterministic
 bounded reference values.
 
 Current boundary classes are:
 
-- `production-to-port`: Agent generation, Worker v2, and deterministic
-  generation parsers that are candidates for the managed runtime;
-- `provider-only`: Python Worker v1/device adapters retained for compatibility
-  while their typed C# boundaries are validated;
+- `production-to-port`: remaining Python files that would have been candidates
+  for the managed runtime; none are reachable from managed startup;
+- `provider-only`: isolated provider seams retained outside managed startup;
 - `tooling`: scripts, tests, and build/verification helpers;
 - `legacy`: retired corpus and other files outside managed startup reachability.
 
@@ -34,12 +40,11 @@ single-use DPAPI-protected provider bootstrap. Its v1 graph owns typed runtime
 settings, voice/STT/VTS/observation adapters, one shared lease coordinator,
 and OmniVoice process shutdown. The bootstrap is read only for the v2 model
 provider and its environment path is cleared before the v1 graph is composed;
-v1 never receives the provider credential. The Python Agent + Device topology
-remains available only through the explicit, trusted `PythonCompatibility`
-startup rollback; it is not a public request or UI mode and there is no
-automatic fallback. This inventory is classification evidence, not evidence
-that the OS-enforced
-filesystem/network sandbox is complete.
+v1 never receives the provider credential. The old Python Agent + Device
+topology is retired; `runtime-live` reports `python_compatibility_retired`
+without launching a child topology. This inventory is classification evidence,
+not evidence that the separate
+OS-enforced filesystem/network sandbox project is complete.
 
 ## Managed speech adapter boundary (Phase 2)
 
@@ -55,9 +60,10 @@ anonymous `speech_recognition` implementation converts captured PCM to FLAC
 and relies on a package-managed request shape; it is not silently replaced by
 an unverified C# HTTP approximation. The managed Worker composition binds this
 boundary to a safe default that returns `speech_unavailable` until a concrete
-transport is supplied. The legacy Python STT path remains reachable only in
-`PythonCompatibility`; it is not the managed default and cannot be selected by
-a public request.
+transport is supplied. The legacy Python STT path is not reachable from
+managed startup and is not a supported compatibility mode while its
+production worker is retired. Native STT acceptance remains a separate
+user-owned gate.
 
 ## Managed Gemini observation adapter boundary (Phase 2)
 
@@ -76,6 +82,6 @@ provider with an empty-key default and an explicit control handler, so missing
 credentials produce a stable disabled/skipped result and no network call; the
 managed default does not claim to capture a screen or emit a reaction. A
 trusted credential channel and a managed capture/reaction loop are separate
-rollout work. The legacy Python observation path remains reachable only in
-`PythonCompatibility`. This section records the managed C# boundary, not live
-Gemini or Python-retirement evidence.
+rollout work. The legacy Python observation path is not reachable from managed
+startup. This section records the managed C# boundary, not live Gemini or
+Python-retirement evidence.

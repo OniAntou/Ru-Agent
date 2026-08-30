@@ -51,11 +51,10 @@ def test_desktop_launches_the_new_worker_module() -> None:
     hosting = (ROOT / "backend-dotnet/RuAgent.Hosting/WorkerBrokerLaunchPlan.cs").read_text(
         encoding="utf-8"
     )
-    assert "ru_runtime.worker.server" in hosting
+    assert "dotnet-agent-worker" in hosting
+    assert "ru_runtime.worker.server" not in hosting
     assert "-m mini_gpt." not in hosting
-    # multiplexer serves both v1 and v2; ensure no legacy mini_gpt import remains
-    worker_server = (ROOT / "src/ru_runtime/worker/server.py").read_text(encoding="utf-8")
-    assert "worker.v1" in worker_server or "worker.server" in worker_server
+    assert not (ROOT / "src/ru_runtime/worker/server.py").exists()
 
 
 def test_runtime_modules_are_owned_by_explicit_domain_packages() -> None:

@@ -1,7 +1,9 @@
 # Python-to-C# Runtime Migration Design
 
 **Date:** 2026-08-29
-**Status:** Design and written specification approved in conversation, 2026-08-29
+**Status:** Design approved 2026-08-29; deterministic Phases 1–2 shipped
+2026-08-30. Native acceptance and final Python retirement remain separate
+gates; see the [Phase 3 retirement plan](../plans/2026-08-30-python-runtime-phase-3-retirement.md).
 
 ## Goal
 
@@ -82,7 +84,9 @@ During Phase 1, the C# Worker v2 endpoint and the legacy Python Worker v1
 endpoint may run on separate dynamic loopback ports. The internal launch plan
 and dependency injection carry both URLs; the public runtime descriptor and
 public route contract remain unchanged. After Phase 2, one C# Worker owns both
-protocol surfaces and the Python endpoint is removed.
+protocol surfaces; the current retirement diff removes the production Python
+endpoint and leaves only test/provider seams that Phase 3 will classify or
+delete.
 
 ## Module mapping
 

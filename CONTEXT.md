@@ -13,8 +13,9 @@ owns Worker/Broker children in one Job Object (RuApp/CLI start-or-attach via des
 _Avoid_: Edge, proxy, FastAPI backend
 
 **Runtime Worker**:
-The authenticated loopback Python process that contains model or hardware
-implementations retained in Python.
+The authenticated loopback managed C# process that serves Agent v2 and the
+runtime/device v1 boundary. Python remains only at isolated provider seams and
+test-only Harness fixtures; it is not a production Worker startup.
 _Avoid_: Python backend, upstream server
 
 **Generation Kernel**:
@@ -24,7 +25,7 @@ _Avoid_: ModelRunner globals, backend core
 
 **Voice Engine**:
 The isolated OmniVoice service running inside `omnivoice_env`, spawned by the
-Runtime Worker as a local HTTP loopback process and returning native WAV audio
+managed Runtime Worker as a local HTTP loopback process and returning native WAV audio
 over a private lifecycle/TTS contract.
 _Avoid_: TTS web server, Flask voice server
 
@@ -39,7 +40,7 @@ _Avoid_: Compatibility routes
 
 **Worker Contract**:
 The versioned typed commands, events, ordering, cancellation, limits, errors,
-and capabilities exchanged with the Runtime Worker.
+and capabilities exchanged with the managed C# Runtime Worker.
 _Avoid_: Runtime HTTP relay
 
 **Agent Session**:

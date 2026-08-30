@@ -123,8 +123,8 @@ def _factory_for(method: str, path: str) -> RequestFactory:
         elif path == "/vts/activity":
             body = {"typing": False}
         elif path == "/vts/action":
-            # The Python compatibility endpoint accepts a space/comma-delimited
-            # string; the managed Worker v1 protocol uses a JsonArray internally.
+            # The public route fixture accepts a space/comma-delimited string;
+            # the managed Worker v1 protocol uses a JsonArray internally.
             body = {"codes": "vts_01"}
         elif path == "/vts/speaking":
             body = {"speaking": False}

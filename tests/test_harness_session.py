@@ -258,11 +258,14 @@ def test_dotnet_projects_are_prebuilt_before_any_child_launch(
     monkeypatch.setattr(session_module, "start_owned_child", record_child)
 
     try:
-        session._start_children(deterministic=True)
+        session._start_children()
         assert [role for role, _ in calls] == ["prebuild", "worker", "broker", "edge"]
         assert "--no-build" in calls[2][1]
         assert "--no-build" in calls[3][1]
-        assert environments[0]["RuBackend__RuntimeMigrationMode"] == "PythonCompatibility"
+        assert "RuBackend__RuntimeMigrationMode" not in environments[0]
+        assert environments[0]["RU_HARNESS_WORKER_TOKEN"] == environments[0]["RU_AGENT_WORKER_TOKEN"]
+        assert environments[0]["RU_HARNESS_WORKER_TOKEN"] == environments[0]["RU_DEVICE_WORKER_TOKEN"]
+        assert "RU_WORKER_TOKEN" not in environments[0]
         assert environments[2]["RuBackend__AgentWorkerUrl"].endswith("/worker/v2")
         assert environments[2]["RuBackend__DeviceWorkerUrl"].endswith("/worker/v1")
     finally:
@@ -321,3 +324,36 @@ def test_startup_failure_reports_the_exited_child_without_log_content(
         "exit_code": 1,
         "classification": "unexpected_exit",
     }
+
+
+def test_runtime_live_never_attempts_a_retired_python_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = HarnessSession.for_test(readiness=True)
+    session.project_root = tmp_path
+    legacy_worker = tmp_path / "src" / "ru_runtime" / "worker" / "v1" / "server.py"
+    legacy_worker.parent.mkdir(parents=True)
+    legacy_worker.write_text("legacy", encoding="utf-8")
+    monkeypatch.setattr(
+        session,
+        "_start_children",
+        lambda **_: pytest.fail("runtime-live attempted to launch a child"),
+    )
+
+    try:
+        checks = session._run_backend("runtime-live")
+    finally:
+        session.close()
+
+    assert checks == [
+        session_module.CheckResult(
+            "startup.readiness",
+            "blocked_by_startup",
+            0.0,
+            reason="python_compatibility_retired",
+            details={
+                "next_gate": "managed_runtime_native",
+            },
+        )
+    ]

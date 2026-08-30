@@ -97,10 +97,10 @@ _MODEL_LOCK = threading.RLock()
 def _server_binding() -> tuple[str, int]:
     """Return a validated loopback binding supplied by the managed launcher."""
 
-    host = os.environ.get("RU_OMNIVOICE_HOST", DEFAULT_SERVER_HOST).strip()
+    host = (os.environ.get("RU_OMNIVOICE_HOST") or os.environ.get("RU_VOICE_HOST", DEFAULT_SERVER_HOST)).strip()
     if host != DEFAULT_SERVER_HOST:
         raise ValueError("OmniVoice must bind to loopback.")
-    raw_port = os.environ.get("RU_OMNIVOICE_PORT", str(DEFAULT_SERVER_PORT)).strip()
+    raw_port = (os.environ.get("RU_OMNIVOICE_PORT") or os.environ.get("RU_VOICE_PORT", str(DEFAULT_SERVER_PORT))).strip()
     try:
         port = int(raw_port)
     except ValueError as error:

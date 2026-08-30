@@ -1,5 +1,9 @@
 # Managed Runtime Phase 2 Implementation Plan
 
+**Status:** Completed 2026-08-30. The deterministic and managed startup gates
+are green; native device checks remain user-owned. Final Python selector/module
+retirement is tracked by the [Phase 3 plan](2026-08-30-python-runtime-phase-3-retirement.md).
+
 > **For agentic workers:** Execute this plan inline in the current workspace. Keep each task's red/green test cycle and commit isolated; do not delegate to subagents.
 
 **Goal:** Move Ru-owned Worker v1, runtime/device orchestration, voice/STT/VTS/observation adapters, and lifecycle ownership to C# while keeping OmniVoice as an isolated provider and preserving every public contract.
@@ -16,7 +20,9 @@
 - OmniVoice weights, reference audio, and `omnivoice_env` remain provider assets; do not retrain or rewrite the model.
 - No raw prompts, transcripts, audio, credentials, paths, VTS metadata, or provider bodies may enter visible history, durable activity, or diagnostics.
 - Enforce limits before provider invocation and await cancellation before releasing a resource lock.
-- No automatic Python fallback. `PythonCompatibility` remains an explicit trusted rollback mode until retirement evidence exists.
+- No automatic Python fallback. The historical `PythonCompatibility` mode is
+  no longer a supported current startup; the retirement diff and bounded
+  `runtime-live` result are recorded for Phase 3 cleanup.
 - Run heavyweight Python and .NET suites sequentially.
 - Do not modify unrelated dirty `TODO.md` or historical `docs/superpowers` files.
 - Real microphone, speaker, OmniVoice, VTube Studio, and observation behavior remains a manual Windows acceptance gate.
@@ -138,13 +144,13 @@
 
 ### Task 11: Add parity, privacy, manual acceptance, and current documentation
 
-**Files:** Create `tests/test_phase2_managed_device_parity.py`, `tests/fixtures/python-csharp-phase2-device-baseline.json`, managed Phase2 integration/parity tests; modify `build.bat`, `docs/README.md`, `docs/architecture.md`, `docs/operations/runtime-behavior.md`, `docs/operations/python-runtime-boundary.md`, `docs/operations/verification.md`, and `backend-dotnet/README.md`; add `tests/test_phase2_build_contract.py`; keep the deterministic Harness explicitly pointed at its Python compatibility fixture in `scripts/harness/session.py` with regression coverage in `tests/test_harness_session.py`.
+**Files:** Create `tests/test_phase2_managed_device_parity.py`, `tests/fixtures/python-csharp-phase2-device-baseline.json`, managed Phase2 integration/parity tests; modify `build.bat`, `docs/README.md`, `docs/architecture.md`, `docs/operations/runtime-behavior.md`, `docs/operations/python-runtime-boundary.md`, `docs/operations/verification.md`, and `backend-dotnet/README.md`; add `tests/test_phase2_build_contract.py`; keep the deterministic Harness on its dependency-free test fixture in `scripts/harness` with regression coverage in `tests/test_harness_session.py`.
 
 - [x] Write failing parity tests comparing only type/sequence, settings, voice controls/chunk order, stable errors, STT normalization, VTS code sets, observation bounds, cancellation, and redaction booleans; scan logs/frames for forbidden raw values.
 - [x] Run the new Python/C# filters; expected FAIL until fixtures and harnesses exist.
-- [x] Implement fake-provider deterministic evidence, build publication of `RuAgent.Runtime.Core` and managed Worker, and current docs stating C# owns device orchestration while OmniVoice is an isolated provider and Python compatibility is explicit.
+- [x] Implement fake-provider deterministic evidence, build publication of `RuAgent.Runtime.Core` and managed Worker, and current docs stating C# owns device orchestration while OmniVoice is an isolated provider and the old Python topology is being retired.
 - [x] Run sequentially: `git diff --check`; `call D:\LLM\build.bat`; route checker; all Protocol/Core/Adapters/Worker/Hosting/Backend Release tests; full Python pytest; ruff; mypy. Require exit code `0` and route count `56 HTTP + 1 WebSocket` before any completion claim.
-- [x] Run the documented supplementary gates sequentially: GUI contract tests and Harness build, `pip check`, Phase 1 measurement, and the backend-deterministic compatibility Harness (`contract`/`passed`).
+- [x] Run the documented supplementary gates sequentially: GUI contract tests and Harness build, `pip check`, Phase 1 measurement, and the backend-deterministic test-fixture Harness (`contract`/`passed`).
 - [ ] Run manual Windows checks with the user for microphone, no-speech, OmniVoice stream/cancel, playback/subtitle order, VTS catalog/action/reconnect, and opt-in Gemini. Record only pass/fail, duration, and bounded codes.
 - [x] Commit only current build/docs/evidence files with `git commit -m "docs: record managed device runtime ownership"`.
 
@@ -154,11 +160,11 @@
 - [x] Runtime settings, leases, cancellation, and private routing are C# owned.
 - [x] Voice orchestration is C# managed while OmniVoice remains isolated.
 - [x] STT, VTS, and Gemini adapters have deterministic transport/parity/privacy tests.
-- [x] Dotnet startup owns the managed Worker on both private ports; Python compatibility is explicit only.
+- [x] Dotnet startup owns the managed Worker on both private ports; no Python production worker is started by the current managed or deterministic paths.
 - [x] Public routes remain `56 HTTP + 1 WebSocket`; UI and privacy policy are unchanged.
 - [x] Current docs/build are updated; no stale current ownership claim remains.
 - [x] Manual Windows acceptance status is recorded separately from automated evidence; the live checks remain pending user-run.
-- [x] Python production modules are retained until a separate Phase 3 retirement plan has import/startup evidence.
+- [x] The production Python retirement diff and import/startup evidence are recorded; final selector/module deletion is tracked by the separate [Phase 3 retirement plan](2026-08-30-python-runtime-phase-3-retirement.md).
 
 ## Route-completion correction (2026-08-30)
 
@@ -169,8 +175,9 @@ and active-model reporting, VTS GUI state/config/catalog/action/connect, voice
 fallback, and observation status/control. This removes the generic fallback but
 does not claim functionality that has no managed boundary yet: provider-backed
 model catalogs, VTS overlay process/semantic actions, and the screen-capture /
-reaction loop remain separate integration work. The deterministic compatibility
-Harness still targets `PythonCompatibility`; native device acceptance remains
+reaction loop remain separate integration work. The deterministic Harness uses
+its dependency-free test fixture; the legacy `runtime-live` selector now fails
+closed with `python_compatibility_retired`. Native device acceptance remains
 pending and must be run separately.
 
 The managed private router also validates JSON syntax for every non-empty

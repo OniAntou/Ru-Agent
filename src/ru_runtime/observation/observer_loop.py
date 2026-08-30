@@ -4,7 +4,6 @@ import contextlib
 import logging
 import threading
 import time
-from collections.abc import Mapping
 from typing import Any
 
 from ru_runtime.observation.gemini_vision import analyze_screenshot_with_gemini
@@ -139,7 +138,8 @@ class ScreenObserverLoop:
 
         if not api_key.strip():
             with self._lock:
-                self._last_error = "Gemini Vision API key is not configured."
+                if self._last_error != "Gemini Vision API key is not configured.":
+                    self._last_error = "Gemini Vision API key is not configured."
             return
 
         now = time.time()
@@ -198,33 +198,11 @@ class ScreenObserverLoop:
 
         # 3. Publish a reaction event. Audio playback belongs to the WinUI
         # VoicePlaybackService so subtitles, MediaPlayer, VTS speaking state,
-        # and playback acknowledgements use one pipeline.
+        # and playback acknowledgements use one pipeline. The managed
+        # observation adapter supplies any reaction text; this provider-only
+        # loop must not call the retired Python Worker.
         observation_id = f"obs-{int(time.time() * 1000)}"
         reaction_text = observation.reaction
-        if not reaction_text and observation.comment_worthiness >= 0.35:
-            # Fallback to runner if reaction was not in observation
-            payload = {
-                "observation_id": observation_id,
-                "event_age_ms": 100,
-                "observation": {
-                    "scene": observation.scene,
-                    "event": observation.event,
-                    "confidence": observation.confidence,
-                    "novelty": observation.novelty,
-                    "comment_worthiness": observation.comment_worthiness,
-                    "visible_text": list(observation.visible_text),
-                },
-            }
-            from ru_runtime.worker.v1.observation import observation_react
-            result = observation_react(payload)
-            if result.get("status") == "ok":
-                reaction_obj = result.get("reaction")
-                if not isinstance(reaction_obj, Mapping):
-                    reaction_obj = {}
-                reaction_text = reaction_obj.get("text")
-                reaction_id = reaction_obj.get("observation_id")
-                if isinstance(reaction_id, str) and reaction_id:
-                    observation_id = reaction_id
 
         if reaction_text:
             cleaned = normalize_vietnamese_tts_text(self._shared._strip_voice_markers(reaction_text)).strip()

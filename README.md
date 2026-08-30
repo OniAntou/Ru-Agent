@@ -52,8 +52,9 @@ is active on the headless Agent v2 path and resolves an ambiguous dispatch
 outcome before the run continues.
 The managed C# Worker owns authenticated Agent model steps (Worker v2) and the
 v1 runtime/device boundary for settings, voice orchestration, STT, VTube Studio,
-observation, and lifecycle coordination. The Python Agent + Device topology is
-available only through the trusted startup-only `PythonCompatibility` rollback.
+observation, and lifecycle coordination. The production Python Agent + Device
+topology has been retired; the deterministic Harness uses a dependency-free
+test fixture instead.
 The CLI tracer `RuAgent.Cli` is a thin headless client: it delegates
 start/attach to `RuAgent.Client` and all run behavior to authenticated
 HTTP/SSE.
@@ -61,8 +62,10 @@ HTTP/SSE.
 The canonical route inventory is
 [`backend-dotnet/public-route-contract.json`](backend-dotnet/public-route-contract.json).
 There is no public Python HTTP fallback or public backend mode switch;
-`PythonCompatibility` is a trusted startup-only rollback for the legacy Agent
-and Device workers.
+the retired `PythonCompatibility` selector fails closed with the stable
+`python_compatibility_retired` code. The retired `runtime-live` diagnostic
+reports the same bounded gate and never starts a Python or partial Worker
+topology.
 
 ## Setup
 
@@ -98,7 +101,7 @@ it stops with an error if either artifact is missing. `start_dev.bat` launches
 only that Release GUI after confirming both artifacts exist; it never falls
 back to a Debug build, so a successful build must reach `[13/13] Build complete!`
 before using a shortcut. These commands produce and start `RuApp.exe` plus
-`RuBackend.exe`; the backend owns the C# Agent Worker and Python Device Worker.
+`RuBackend.exe`; the backend owns the managed C# Worker on both private ports.
 Do not start either worker or the voice engine as independent public services.
 
 ## Current behavior
@@ -177,20 +180,23 @@ Do not start either worker or the voice engine as independent public services.
   bounded observation status/control and the Gemini analysis adapter, but its
   default control path is explicitly disabled until a managed screen-capture /
   reaction loop and trusted credential channel are shipped. The legacy observer
-  is available only through the explicit `PythonCompatibility` rollback. When
-  events are available, WinUI consumes them through the normal voice, subtitle,
+  is not reachable from the managed startup. When events are available, WinUI
+  consumes them through the normal voice, subtitle,
   and VTS playback pipeline; the worker never plays observation audio directly.
 
 See [runtime behavior](docs/operations/runtime-behavior.md) for invariants and
 manual acceptance boundaries.
 See [Agent tools and truthful execution](docs/operations/agent-tools.md) for
 the exact current capability matrix.
+See the [Phase 3 Python runtime retirement plan](docs/superpowers/plans/2026-08-30-python-runtime-phase-3-retirement.md)
+for the completed retirement record and its remaining native acceptance boundary.
 
 ## Verification
 
 Run heavyweight gates sequentially. The deterministic backend Harness owns a
-temporary worker/Broker/edge session with dynamic loopback ports and emits a safe
-schema-v2 artifact:
+temporary test-fixture worker/Broker/edge session with dynamic loopback ports
+and emits a safe schema-v2 artifact; it does not launch a production Python
+worker:
 
 ```powershell
 & D:\LLM\.venv\Scripts\python.exe -m pytest -q
@@ -243,11 +249,13 @@ not replace the separate live hardware acceptance gate. Cancel and stale-result
 replace an in-flight Agent session and reject any delayed visible update into
 the replacement session.
 
-The production live voice gate is separate and must be run with the real
-runtime/audio path:
+The retired `runtime-live` command is a bounded diagnostic; it reports
+`python_compatibility_retired` without starting any child topology. A
+managed-native live voice Harness is outside this retirement phase. Native
+audio/VTube acceptance remains user-owned:
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode runtime-live --require-voice-audio --benchmark-samples 20
+& D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode runtime-live
 ```
 
 The logging latency gate can be run independently; it uses temporary activity

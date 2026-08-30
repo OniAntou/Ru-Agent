@@ -47,12 +47,17 @@ class Phase1MeasurementRecord:
 def _import_reference(
     root: Path,
 ) -> tuple[Callable[[object], object], Callable[[object], object], Callable[[str], object]]:
+    # The production Python generation package is retired.  Phase 1 timing is
+    # still a deterministic compatibility fixture, so import the copy kept
+    # under scripts/harness rather than reviving a production module.
+    scripts = root / "scripts"
     src = root / "src"
-    if src.is_dir() and str(src) not in sys.path:
-        sys.path.insert(0, str(src))
-    from ru_runtime.generation.prompt_context import parse_system_prompt_context
-    from ru_runtime.generation.system_prompt_composer import compose_system_prompt
-    from ru_runtime.generation.tool_calls import parse_tool_call
+    for path in (scripts, src):
+        if path.is_dir() and str(path) not in sys.path:
+            sys.path.insert(0, str(path))
+    from harness.generation_stub.prompt_context import parse_system_prompt_context
+    from harness.generation_stub.system_prompt_composer import compose_system_prompt
+    from harness.generation_stub.tool_calls import parse_tool_call
 
     return compose_system_prompt, parse_system_prompt_context, parse_tool_call
 

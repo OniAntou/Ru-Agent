@@ -11,8 +11,6 @@ public sealed class ChildProcessPolicyTests : IDisposable
 
     [Theory]
     [InlineData("dotnet-agent-worker")]
-    [InlineData("python-agent-compat-worker")]
-    [InlineData("python-device-worker")]
     public void Launch_plan_roles_are_accepted_by_child_policy(string role)
     {
         var spec = new WorkerBrokerProcessSpec(
@@ -28,6 +26,24 @@ public sealed class ChildProcessPolicyTests : IDisposable
 
         Assert.Equal(spec.FileName, startInfo.FileName);
         Assert.Equal(spec.WorkingDirectory, startInfo.WorkingDirectory);
+    }
+
+    [Theory]
+    [InlineData("python-runtime-worker")]
+    [InlineData("python-agent-compat-worker")]
+    [InlineData("python-device-worker")]
+    public void Retired_python_roles_are_rejected_by_child_policy(string role)
+    {
+        var spec = new WorkerBrokerProcessSpec(
+            role,
+            "powershell.exe",
+            "-NoProfile -NonInteractive -Command exit 0",
+            _root,
+            new Dictionary<string, string>(),
+            Path.Combine(_root, "out.jsonl"),
+            Path.Combine(_root, "err.jsonl"));
+
+        Assert.Throws<ArgumentException>(() => ChildProcessPolicy.CreateStartInfo(spec));
     }
 
     [Fact]
@@ -47,7 +63,7 @@ public sealed class ChildProcessPolicyTests : IDisposable
         {
             // Use Hosting ChildProcessPolicy via factory helper that uses that policy internally
             var spec = new WorkerBrokerProcessSpec(
-                "python-runtime-worker",
+                "dotnet-agent-worker",
                 "powershell.exe",
                 PowerShellArguments(script),
                 _root,
@@ -74,7 +90,7 @@ public sealed class ChildProcessPolicyTests : IDisposable
         const string secretStdout = "raw-stdout-secret-control";
         const string secretStderr = "raw-stderr-secret-control";
         var spec = new WorkerBrokerProcessSpec(
-            "python-runtime-worker",
+            "dotnet-agent-worker",
             "powershell.exe",
             PowerShellArguments($"[Console]::Out.WriteLine('{secretStdout}'); [Console]::Error.WriteLine('{secretStderr}')"),
             _root,
@@ -96,7 +112,7 @@ public sealed class ChildProcessPolicyTests : IDisposable
     {
         var path = Path.Combine(_root, "saturated.jsonl");
         using var reader = new StringReader("first\nsecond\nthird\n");
-        await ChildProcessPolicy.DrainToSummaryAsync(reader, path, "python-runtime-worker", "stdout", maxLineCount: 2, maxByteCount: 8);
+        await ChildProcessPolicy.DrainToSummaryAsync(reader, path, "dotnet-agent-worker", "stdout", maxLineCount: 2, maxByteCount: 8);
         Assert.Equal(-1, reader.Peek());
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
         var summary = doc.RootElement;

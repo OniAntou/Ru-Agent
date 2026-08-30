@@ -39,5 +39,14 @@ def test_default_topology_and_rollback_are_documented_together() -> None:
     )
 
     assert "--device-port" in launch_plan
-    assert 'startup.Mode == RuntimeMigrationMode.PythonCompatibility' in launch_plan
-    assert '"python-device-worker"' in launch_plan
+    assert 'RuntimeMigrationMode.PythonCompatibility' not in launch_plan
+    assert '"python-device-worker"' not in launch_plan
+    assert 'ru_runtime.worker.server' not in launch_plan
+
+
+def test_managed_startup_fails_closed_when_legacy_python_mode_is_selected() -> None:
+    program = (ROOT / "backend-dotnet/RuBackend/Program.cs").read_text(encoding="utf-8")
+
+    assert "ParseRuntimeMigrationMode" in program
+    assert "RuntimeMigrationModeSelectionException" in program
+    assert "RuntimeMigrationModeSelectionException.ErrorCode" in program

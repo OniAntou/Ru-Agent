@@ -33,12 +33,7 @@ public static class ChildProcessPolicy
 
     private static readonly IReadOnlySet<string> Roles = new HashSet<string>(
         [
-            // Keep the legacy role for callers that still use the compatibility
-            // overload, and include every role emitted by WorkerBrokerLaunchPlan.
-            "python-runtime-worker",
             "dotnet-agent-worker",
-            "python-agent-compat-worker",
-            "python-device-worker",
             "ru-agent-broker",
         ],
         StringComparer.Ordinal);

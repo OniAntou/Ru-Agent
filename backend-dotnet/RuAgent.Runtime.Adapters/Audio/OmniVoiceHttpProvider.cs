@@ -36,21 +36,34 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle, IVo
     public async Task WarmupAsync(string voiceProfile, CancellationToken cancellationToken)
     {
         var profile = MapProfile(voiceProfile);
-        await EnsureProviderStartedAsync(cancellationToken).ConfigureAwait(false);
-        var response = await SendJsonAsync(
-            HttpMethod.Post,
-            "warmup",
-            new JsonObject { ["voice_profile"] = profile },
-            cancellationToken,
-            _options.StartupTimeout).ConfigureAwait(false);
-        if (_processController is not null)
+        Volatile.Write(ref _ready, 0);
+        try
         {
-            if (!TryReadBoolean(response, "ready", out var ready) || !ready)
+            await EnsureProviderStartedAsync(cancellationToken).ConfigureAwait(false);
+            var response = await SendJsonAsync(
+                HttpMethod.Post,
+                "warmup",
+                new JsonObject { ["voice_profile"] = profile },
+                cancellationToken,
+                _options.StartupTimeout).ConfigureAwait(false);
+            if (_processController is not null)
             {
-                throw new OmniVoiceProviderException("voice_unavailable", retryable: true);
-            }
+                if (!TryReadBoolean(response, "ready", out var ready) || !ready)
+                {
+                    throw new OmniVoiceProviderException("voice_unavailable", retryable: true);
+                }
 
-            Volatile.Write(ref _ready, 1);
+                Volatile.Write(ref _ready, 1);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            Volatile.Write(ref _ready, 0);
+            throw;
         }
     }
 
@@ -63,9 +76,15 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle, IVo
             return;
         }
 
-        _ = await SendJsonAsync(HttpMethod.Post, "release", new JsonObject(), cancellationToken)
-            .ConfigureAwait(false);
-        Volatile.Write(ref _ready, 0);
+        try
+        {
+            _ = await SendJsonAsync(HttpMethod.Post, "release", new JsonObject(), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Write(ref _ready, 0);
+        }
     }
 
     public async Task<VoiceAudio> SynthesizeAsync(
@@ -74,23 +93,35 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle, IVo
     {
         ArgumentNullException.ThrowIfNull(request);
         var profile = MapProfile(request.VoiceProfile);
-        await EnsureProviderStartedAsync(cancellationToken).ConfigureAwait(false);
-        await EnsureProviderReadyAsync(profile, cancellationToken).ConfigureAwait(false);
-        var response = await SendAsync(
-            HttpMethod.Post,
-            "tts",
-            new JsonObject
-            {
-                ["text"] = request.Text.Trim(),
-                ["voice_profile"] = profile,
-                ["speed"] = request.Speed,
-                ["voice_style_id"] = request.VoiceStyleId,
-            },
-            expectAudio: true,
-            cancellationToken).ConfigureAwait(false);
-        var wav = response.Body;
-        var format = VoiceWavReader.Validate(wav, _options.MaxResponseBytes);
-        return new VoiceAudio(wav, format.SampleRateHz, format.Channels);
+        try
+        {
+            await EnsureProviderStartedAsync(cancellationToken).ConfigureAwait(false);
+            await EnsureProviderReadyAsync(profile, cancellationToken).ConfigureAwait(false);
+            var response = await SendAsync(
+                HttpMethod.Post,
+                "tts",
+                new JsonObject
+                {
+                    ["text"] = request.Text.Trim(),
+                    ["voice_profile"] = profile,
+                    ["speed"] = request.Speed,
+                    ["voice_style_id"] = request.VoiceStyleId,
+                },
+                expectAudio: true,
+                cancellationToken).ConfigureAwait(false);
+            var wav = response.Body;
+            var format = VoiceWavReader.Validate(wav, _options.MaxResponseBytes);
+            return new VoiceAudio(wav, format.SampleRateHz, format.Channels);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            Volatile.Write(ref _ready, 0);
+            throw;
+        }
     }
 
     public async IAsyncEnumerable<VoiceChunk> StreamAsync(
@@ -99,23 +130,38 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle, IVo
     {
         ArgumentNullException.ThrowIfNull(request);
         var profile = MapProfile(request.VoiceProfile);
-        await EnsureProviderStartedAsync(cancellationToken).ConfigureAwait(false);
-        await EnsureProviderReadyAsync(profile, cancellationToken).ConfigureAwait(false);
-        var response = await SendAsync(
-            HttpMethod.Post,
-            "tts_stream",
-            new JsonObject
-            {
-                ["text"] = request.Text.Trim(),
-                ["voice_profile"] = profile,
-                ["speed"] = request.Speed,
-                ["voice_style_id"] = request.VoiceStyleId,
-            },
-            expectAudio: true,
-            cancellationToken).ConfigureAwait(false);
-        var wav = VoiceWavReader.Validate(response.Body, _options.MaxResponseBytes);
-        _ = wav;
-        yield return new VoiceChunk("audio", 0, response.Body);
+        byte[] audio;
+        try
+        {
+            await EnsureProviderStartedAsync(cancellationToken).ConfigureAwait(false);
+            await EnsureProviderReadyAsync(profile, cancellationToken).ConfigureAwait(false);
+            var response = await SendAsync(
+                HttpMethod.Post,
+                "tts_stream",
+                new JsonObject
+                {
+                    ["text"] = request.Text.Trim(),
+                    ["voice_profile"] = profile,
+                    ["speed"] = request.Speed,
+                    ["voice_style_id"] = request.VoiceStyleId,
+                },
+                expectAudio: true,
+                cancellationToken).ConfigureAwait(false);
+            var wav = VoiceWavReader.Validate(response.Body, _options.MaxResponseBytes);
+            _ = wav;
+            audio = response.Body;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            Volatile.Write(ref _ready, 0);
+            throw;
+        }
+
+        yield return new VoiceChunk("audio", 0, audio);
         yield return new VoiceChunk("ended", 1);
     }
 

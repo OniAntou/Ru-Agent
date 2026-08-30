@@ -2,11 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ru_runtime.policy.style import (
-    ru_agent_execution_contract_block,
-    ru_agent_persona_block,
-)
-
 from .prompt_context import (
     Capability,
     InstructionBlock,
@@ -14,6 +9,10 @@ from .prompt_context import (
     SystemPromptContext,
     normalize_text,
     sha256_utf8,
+)
+from .style import (
+    ru_agent_execution_contract_block,
+    ru_agent_persona_block,
 )
 
 COMPOSER_VERSION = "1.0.0"

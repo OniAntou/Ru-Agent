@@ -54,7 +54,8 @@ def test_benchmark_uses_isolated_activity_writer_and_all_percentile_gates():
     source = benchmark.read_text(encoding="utf-8")
 
     assert "activity_log.append" not in source
-    assert "ActivityOutboxWriter(log_dir=" in source
+    assert "ActivityOutboxWriter(" in source
+    assert "log_dir=str(activity_dir)" in source
     assert "Baseline p50" in source
     assert "Logging p99" in source
     assert "pct_p95" in source

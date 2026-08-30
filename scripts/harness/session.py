@@ -305,7 +305,7 @@ class HarnessSession:
                 )
             ]
 
-        self._start_children(deterministic=True, harness_scenario=scenario)
+        self._start_children(harness_scenario=scenario)
         if not self._wait_for_readiness():
             self._gui_components = {
                 "status": "blocked_by_startup",
@@ -675,9 +675,20 @@ class HarnessSession:
         return checks
 
     def _run_backend(self, mode: HarnessMode) -> list[CheckResult]:
-        deterministic = mode == "backend-deterministic"
         checks: list[CheckResult] = []
-        self._start_children(deterministic=deterministic)
+        if mode == "runtime-live":
+            return [
+                CheckResult(
+                    "startup.readiness",
+                    "blocked_by_startup",
+                    0.0,
+                    reason="python_compatibility_retired",
+                    details={
+                        "next_gate": "managed_runtime_native",
+                    },
+                )
+            ]
+        self._start_children()
         ready = self._wait_for_readiness()
         checks.append(
             CheckResult(
@@ -706,11 +717,8 @@ class HarnessSession:
             )
             checks.extend(probe_http_routes(self.edge_base_url, self._desktop_token, self._registry, client=client))
             checks.extend(self._probe_voice_http(client))
-        if deterministic:
-            checks.extend(asyncio.run(self._probe_broker_approval_lifecycle()))
-        agent_checks: list[CheckResult] = []
-        if deterministic:
-            agent_checks.extend(asyncio.run(self._probe_agent_api()))
+        checks.extend(asyncio.run(self._probe_broker_approval_lifecycle()))
+        agent_checks = asyncio.run(self._probe_agent_api())
         voice_checks = asyncio.run(self._probe_voice_websocket())
         checks.extend(agent_checks)
         checks.extend(voice_checks)
@@ -924,7 +932,6 @@ class HarnessSession:
     def _start_children(
         self,
         *,
-        deterministic: bool,
         harness_scenario: GuiScenario | None = None,
     ) -> None:
         assert (
@@ -951,23 +958,31 @@ class HarnessSession:
         if not python_executable.is_file():
             python_executable = Path(sys.executable)
         environment = os.environ.copy()
+        for key in tuple(environment):
+            if key.casefold() in {
+                "ru_worker_token",
+                "ru_backend__runtimemigrationmode",
+                "ru_backend__workerurl",
+            }:
+                environment.pop(key, None)
         python_paths = [str(self.project_root / "scripts"), str(self.project_root / "src")]
         if environment.get("PYTHONPATH"):
             python_paths.append(environment["PYTHONPATH"])
         environment.update(
             {
                 "RU_DESKTOP_TOKEN": self._desktop_token,
-                "RU_WORKER_TOKEN": self._worker_token,
+                "RU_HARNESS_WORKER_TOKEN": self._worker_token,
+                "RU_AGENT_WORKER_TOKEN": self._worker_token,
+                "RU_DEVICE_WORKER_TOKEN": self._worker_token,
                 "RU_DATA_ROOT": str(self._fixture_root),
                 "RU_LOG_ROOT": str(self._log_root),
                 "RU_AGENT_BROKER_DESCRIPTOR": str(self._broker_descriptor_path),
                 "RU_WORKSPACE_ROOT": str(workspace_root),
                 "RuBackend__BindUrl": self.edge_base_url,
-                # The deterministic Harness owns one synthetic Python worker
-                # process. Select the explicit compatibility topology and point
-                # both protocol clients at its v2/v1 paths instead of relying on
-                # the managed-runtime defaults (8005/8006).
-                "RuBackend__RuntimeMigrationMode": "PythonCompatibility",
+                # The deterministic Harness owns one dependency-free test
+                # fixture process. Keep the edge on its fixture topology and
+                # point both protocol clients at its v2/v1 paths instead of
+                # relying on the managed-runtime defaults (8005/8006).
                 "RuBackend__AgentWorkerUrl": f"ws://127.0.0.1:{self.worker_port}/worker/v2",
                 "RuBackend__DeviceWorkerUrl": f"ws://127.0.0.1:{self.worker_port}/worker/v1",
                 "NO_PROXY": "127.0.0.1,localhost",
@@ -975,7 +990,7 @@ class HarnessSession:
                 "PYTHONPATH": os.pathsep.join(python_paths),
             }
         )
-        if deterministic and harness_scenario is not None:
+        if harness_scenario is not None:
             environment.update(
                 {
                     "RU_HARNESS_SCENARIO": harness_scenario,
@@ -987,24 +1002,13 @@ class HarnessSession:
                     ),
                 }
             )
-        if deterministic:
-            worker_command = [
-                str(python_executable),
-                "-m",
-                "harness.deterministic_worker",
-                "--port",
-                str(self.worker_port),
-            ]
-        else:
-            worker_command = [
-                str(python_executable),
-                "-m",
-                "ru_runtime.worker.v1.server",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(self.worker_port),
-            ]
+        worker_command = [
+            str(python_executable),
+            "-m",
+            "harness.deterministic_worker",
+            "--port",
+            str(self.worker_port),
+        ]
         self._children.append(
             start_owned_child(
                 worker_command,

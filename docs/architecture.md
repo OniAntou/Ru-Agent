@@ -17,9 +17,11 @@ Host creates per-run desktop and separate Agent/device worker secrets, starts
 one managed C# Worker serving Agent v2 on loopback port 8005 and Device v1
 on loopback port 8006, starts the isolated `RuAgentBroker` on a dynamic
 loopback port, binds ASP.NET Core on port 8000, waits for public readiness,
-and assigns the Worker/Broker to one Job Object. The explicit
-`PythonCompatibility` rollback starts the legacy Python Agent and Device
-workers instead. Idle Public Host exits after 10 minutes without an active
+and assigns the Worker/Broker to one Job Object. The retired
+`PythonCompatibility` selector fails closed with
+`python_compatibility_retired`; `runtime-live` is a bounded diagnostic and
+never starts Python or a partial topology.
+Idle Public Host exits after 10 minutes without an active
 Agent run, approval, or long-lived Agent SSE lease. Both owned children enter
 one Job Object, but ownership is Public Host, not WinUI. Startup succeeds only
 after public readiness; shutdown or startup failure terminates the owned
@@ -106,7 +108,7 @@ OS-enforced filesystem/network sandbox are outside this implementation.
 
 ## Harness ownership
 
-The vNext compatibility Harness is a test-only owner. Its CLI creates a
+The vNext Harness is a test-only owner. Its CLI creates a
 temporary data/log root, three dynamically leased loopback ports, memory-only
 bearers, and one Worker, Broker, and ASP.NET Core edge child. While the port
 leases are still held, it prebuilds Broker and edge sequentially; both are then
@@ -144,7 +146,7 @@ as connected.
 | RuApp / RuAgent.Cli (via RuAgent.Client) | Desktop views (RuApp) or headless rendering (CLI), playback, microphone capture, public client calls via `AgentApiClient`/`SessionApiClient`/`AgentSseClient`, and user-visible state; start-or-attach Public Host through validated descriptor + `GET /status` bearer, but do not directly own Worker/Broker. |
 | ASP.NET Core Public Host (`RuBackend.exe --managed-runtime`) | Authentication, limits, all 56 HTTP and 1 WebSocket route (41 + 15 `/agent/v1/*`), settings transactions, credentials, sessions, history, activity, structured memory, Agent run ordering, public error mapping, metadata filtering, durable Harness (Core state machines incl. `tool.execution_requested`, SQLite WAL + AES-GCM payloads, conversation outbox, workspace trust with valid `WorkspaceIdentity`, session permissions with monotonic version, encrypted policy snapshots `PolicySnapshot`/`PolicyRule`/`PolicyMatcher` with `Sha256` and `PolicySnapshotCanonicalizer` ordering, `FileRecoveryStore`/`RunChangeSetStore`, approval ordering `consume → persist reusable rule → execute under N → receipt → N+1`), Agent SSE (`id:<sequence>` cursors, `cursor_mismatch`, transient `t` IDs), and Worker/Broker child ownership in one kill-on-close Job Object with 10-min idle lease (active run/approval/long-lived lease suppresses exit). |
 | Managed C# Worker | Default private Worker v2 Agent generation and Worker v1 runtime/device orchestration on separate loopback ports. It receives the single-use DPAPI provider bootstrap for v2 plus a distinct device token for v1; the bootstrap path is cleared before the v1 graph is composed. |
-| Python Compatibility Workers | Explicit rollback-only Python Agent/Device topology. These workers are not started in `Dotnet` mode and receive no managed provider bootstrap. |
+| Python Compatibility Workers | Retired production topology. No Python Agent/Device worker is started by managed or deterministic startup; the test-only fixture is owned under `scripts/harness`. |
 | RuAgentBroker | Private execution boundary for model-visible tools, capability policy, approvals, bounded adapters, and verified action receipts; private `run.open` lease binds the immutable `PolicySnapshot` (preset, workspace identity, ordered rules, SHA-256) and canonical workspace root, validates hash before capabilities, and advertises model-usable `files.*` (`list`/`glob`/`search`/`read`/`write`/`edit`/`delete`/`restore` one-time). Explicit absolute paths outside the root can receive a host-generated canonical-directory grant for the current run or project; that grant is limited to read/create/edit and never bypasses protected/destructive gates. The Broker also exposes headless terminal bindings, `system.volume`, and `notes.create`. `files.apply_patch` is not advertised. It has no public HTTP contract. |
 | Voice Engine | OmniVoice model lifecycle and native WAV synthesis inside its isolated environment; currently reached through Flask and replaced by framed process I/O in a later plan. |
 
@@ -164,7 +166,7 @@ with durable `id: <sequence>` and reconnect via `Last-Event-ID` or
 
 Worker contracts are versioned typed WebSockets:
 
-- Protocol v1 (`/worker/v1`) is the private managed C# Worker device adapter by default: `runtime.request`/`runtime.response`, voice, VTS, health, and observation operations remain; it has no generation or memory-extract messages. The Python implementation is compatibility-only.
+- Protocol v1 (`/worker/v1`) is the private managed C# Worker device adapter by default: `runtime.request`/`runtime.response`, voice, VTS, health, and observation operations remain; it has no generation or memory-extract messages. The deleted Python implementation is not a supported compatibility path.
 - Protocol v2 (`/worker/v2`) is the private C# Agent Worker contract: `agent.step.start` → `agent.step.delta`* → `agent.step.done`/`error`, with `agent.step.cancel`, bounded schemas, `AssistantStep(text, tool_calls, finish_reason)` (one `generate_reply` per step), and stable `worker.*` error codes; it never accepts `chat.tool.result`.
 
 Protocol v2 removes HTTP-shaped fields in favor of typed domain commands,
@@ -181,8 +183,8 @@ Text turns are authenticated Agent runs consumed through the durable Agent SSE
 stream. The only public WebSocket is `/voice/stream`; it carries binary WAV
 frames and does not open a second text-generation transport. In the managed
 default, observation control is an explicit disabled/unavailable surface until
-the C# screen-capture/reaction loop is delivered; Python observation remains an
-explicit compatibility rollback only.
+the C# screen-capture/reaction loop is delivered; the retired Python observer is
+not reachable from managed startup.
 
 ## Data ownership
 

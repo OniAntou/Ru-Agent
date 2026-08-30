@@ -57,12 +57,6 @@ public sealed class WorkerBrokerLaunchPlan
         var selectedBrokerPort = startup.BrokerPort ?? FindFreeLoopbackPort();
         ValidatePortSet(publicPort, startup.AgentWorkerPort, startup.DeviceWorkerPort, selectedBrokerPort);
 
-        var pythonExecutable = Path.Combine(root, ".venv", "Scripts", "python.exe");
-        if (!File.Exists(pythonExecutable))
-        {
-            pythonExecutable = "python.exe";
-        }
-
         var publishedBroker = startup.BrokerExecutable;
         if (string.IsNullOrWhiteSpace(publishedBroker))
         {
@@ -79,22 +73,17 @@ public sealed class WorkerBrokerLaunchPlan
             throw new FileNotFoundException($"Published RuAgent.Broker.exe was not found at '{publishedBroker}'. Run build.bat before selecting Agent mode.", publishedBroker);
         }
 
-        string? workerExecutable = null;
-        string? providerBootstrapPath = null;
-        if (startup.Mode == RuntimeMigrationMode.Dotnet)
+        var workerExecutable = Path.Combine(root, "backend-dotnet", "RuAgent.Runtime.Worker", "bin", "Release", "net10.0", "win-x64", "publish", "RuAgent.Runtime.Worker.exe");
+        if (!File.Exists(workerExecutable))
         {
-            workerExecutable = Path.Combine(root, "backend-dotnet", "RuAgent.Runtime.Worker", "bin", "Release", "net10.0", "win-x64", "publish", "RuAgent.Runtime.Worker.exe");
-            if (!File.Exists(workerExecutable))
-            {
-                throw new FileNotFoundException($"Published RuAgent.Runtime.Worker.exe was not found at '{workerExecutable}'. Run build.bat before selecting Agent mode.", workerExecutable);
-            }
+            throw new FileNotFoundException($"Published RuAgent.Runtime.Worker.exe was not found at '{workerExecutable}'. Run build.bat before selecting Agent mode.", workerExecutable);
+        }
 
-            providerBootstrapPath = Path.GetFullPath(startup.ProviderBootstrapPath);
-            if (!File.Exists(providerBootstrapPath)
-                || !IsOwnedPath(brokerSessionRoot, providerBootstrapPath))
-            {
-                throw new ArgumentException("Provider bootstrap path must be an existing file below the owned session root.", nameof(startup));
-            }
+        var providerBootstrapPath = Path.GetFullPath(startup.ProviderBootstrapPath);
+        if (!File.Exists(providerBootstrapPath)
+            || !IsOwnedPath(brokerSessionRoot, providerBootstrapPath))
+        {
+            throw new ArgumentException("Provider bootstrap path must be an existing file below the owned session root.", nameof(startup));
         }
 
         Directory.CreateDirectory(brokerSessionRoot);
@@ -102,49 +91,19 @@ public sealed class WorkerBrokerLaunchPlan
         var bootstrapRoot = Path.Combine(resolvedLogRoot, "bootstrap");
         Directory.CreateDirectory(bootstrapRoot);
         var children = new List<WorkerBrokerProcessSpec>();
-        if (startup.Mode == RuntimeMigrationMode.Dotnet)
-        {
-            children.Add(new WorkerBrokerProcessSpec(
-                "dotnet-agent-worker",
-                workerExecutable!,
-                $"--host 127.0.0.1 --port {startup.AgentWorkerPort} --device-port {startup.DeviceWorkerPort}",
-                root,
-                CreateWorkerEnvironment(
-                    ("RU_AGENT_WORKER_TOKEN", startup.AgentWorkerToken),
-                    ("RU_DEVICE_WORKER_TOKEN", startup.DeviceWorkerToken),
-                    ("RU_AGENT_PROVIDER_BOOTSTRAP", providerBootstrapPath!),
-                    ("RU_PROJECT_ROOT", root),
-                    ("RU_LOG_ROOT", resolvedLogRoot)),
-                Path.Combine(bootstrapRoot, "agent_worker_out.jsonl"),
-                Path.Combine(bootstrapRoot, "agent_worker_err.jsonl")));
-        }
-        else
-        {
-            children.Add(new WorkerBrokerProcessSpec(
-                "python-agent-compat-worker",
-                pythonExecutable,
-                $"-m ru_runtime.worker.server --host 127.0.0.1 --port {startup.AgentWorkerPort}",
-                root,
-                CreateWorkerEnvironment(
-                    ("RU_WORKER_TOKEN", startup.AgentWorkerToken),
-                    ("RU_LOG_ROOT", resolvedLogRoot)),
-                Path.Combine(bootstrapRoot, "agent_worker_out.jsonl"),
-                Path.Combine(bootstrapRoot, "agent_worker_err.jsonl")));
-        }
-
-        if (startup.Mode == RuntimeMigrationMode.PythonCompatibility)
-        {
-            children.Add(new WorkerBrokerProcessSpec(
-                "python-device-worker",
-                pythonExecutable,
-                $"-m ru_runtime.worker.server --host 127.0.0.1 --port {startup.DeviceWorkerPort} --v1-only",
-                root,
-                CreateWorkerEnvironment(
-                    ("RU_WORKER_TOKEN", startup.DeviceWorkerToken),
-                    ("RU_LOG_ROOT", resolvedLogRoot)),
-                Path.Combine(bootstrapRoot, "device_worker_out.jsonl"),
-                Path.Combine(bootstrapRoot, "device_worker_err.jsonl")));
-        }
+        children.Add(new WorkerBrokerProcessSpec(
+            "dotnet-agent-worker",
+            workerExecutable,
+            $"--host 127.0.0.1 --port {startup.AgentWorkerPort} --device-port {startup.DeviceWorkerPort}",
+            root,
+            CreateWorkerEnvironment(
+                ("RU_AGENT_WORKER_TOKEN", startup.AgentWorkerToken),
+                ("RU_DEVICE_WORKER_TOKEN", startup.DeviceWorkerToken),
+                ("RU_AGENT_PROVIDER_BOOTSTRAP", providerBootstrapPath),
+                ("RU_PROJECT_ROOT", root),
+                ("RU_LOG_ROOT", resolvedLogRoot)),
+            Path.Combine(bootstrapRoot, "agent_worker_out.jsonl"),
+            Path.Combine(bootstrapRoot, "agent_worker_err.jsonl")));
 
         children.Add(new WorkerBrokerProcessSpec(
             "ru-agent-broker",
@@ -168,29 +127,6 @@ public sealed class WorkerBrokerLaunchPlan
         File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
 
         return new WorkerBrokerLaunchPlan(startup.AgentWorkerPort, startup.DeviceWorkerPort, selectedBrokerPort, descriptorPath, brokerSessionRoot, children);
-    }
-
-    public static WorkerBrokerLaunchPlan Create(
-        string projectRoot,
-        string workerSecret,
-        int workerPort,
-        string? edgeExecutable = null,
-        string? configuredLogRoot = null,
-        int? brokerPort = null,
-        string? brokerExecutable = null)
-    {
-        // Compatibility overload for callers that have not yet migrated to the
-        // typed startup options. New managed startup uses the overload above.
-        var startup = new WorkerBrokerStartupOptions(
-            RuntimeMigrationMode.PythonCompatibility,
-            workerSecret,
-            workerSecret + "-device",
-            string.Empty,
-            workerPort,
-            workerPort == 65_535 ? workerPort - 1 : workerPort + 1,
-            brokerPort,
-            brokerExecutable);
-        return Create(projectRoot, startup, configuredLogRoot);
     }
 
     private static void ValidatePortSet(int publicPort, int agentPort, int devicePort, int brokerPort)

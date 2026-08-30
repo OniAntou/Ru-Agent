@@ -15,10 +15,11 @@ from collections.abc import AsyncIterator, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from ru_runtime.generation.prompt_context import PromptContextError, parse_system_prompt_context
-from ru_runtime.generation.system_prompt_composer import compose_system_prompt
-from ru_runtime.worker.server import serve_worker
-from ru_runtime.worker.v1.protocol import (
+from .generation_stub.prompt_context import PromptContextError, parse_system_prompt_context
+from .generation_stub.system_prompt_composer import compose_system_prompt
+from .voice_fixtures import build_synthetic_wav, is_valid_transcription_fixture
+from .worker_fixture import (
+    AGENT_STEP_DONE,
     ERROR,
     RUNTIME_RESPONSE,
     RUNTIME_STATE,
@@ -26,13 +27,12 @@ from ru_runtime.worker.v1.protocol import (
     VOICE_DONE,
     VTS_ACTION,
     VTS_CATALOG,
+    StepGenerationError,
+    StepReply,
+    WorkerHandlers,
+    WorkerReply,
+    serve_worker,
 )
-from ru_runtime.worker.v1.server import WorkerHandlers, WorkerReply
-from ru_runtime.worker.v2.handlers import StepReply
-from ru_runtime.worker.v2.model_step import StepGenerationError
-from ru_runtime.worker.v2.protocol import AGENT_STEP_DONE
-
-from .voice_fixtures import build_synthetic_wav, is_valid_transcription_fixture
 
 
 @dataclass(frozen=True, slots=True)
@@ -334,9 +334,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     import os
 
-    token = os.environ.get("RU_WORKER_TOKEN", "").strip()
+    token = os.environ.get("RU_HARNESS_WORKER_TOKEN", "").strip()
     if not token:
-        parser.error("RU_WORKER_TOKEN is required")
+        parser.error("RU_HARNESS_WORKER_TOKEN is required")
     return serve_deterministic_worker(args.port, token)
 
 

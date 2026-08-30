@@ -104,6 +104,22 @@ public sealed class ManagedRuntimeSettingsServiceTests
         Assert.Equal(1.2, service.Current.Voice.VoiceSpeed);
     }
 
+    [Fact]
+    public void Constructor_rejects_null_voice_text_fields_in_untrusted_snapshots()
+    {
+        var snapshot = new RuntimeSettingsSnapshot(
+            "OpenCode Zen",
+            "opencode/free",
+            null,
+            "Default",
+            false)
+        {
+            Voice = new VoiceSettingsSnapshot(VoiceLabel: null!),
+        };
+
+        Assert.Throws<ArgumentException>(() => new ManagedRuntimeSettingsService(snapshot));
+    }
+
     private sealed class FailingApplier : IManagedRuntimeApplier
     {
         public int Calls { get; private set; }

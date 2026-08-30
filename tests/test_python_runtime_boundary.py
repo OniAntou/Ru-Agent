@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.check_python_runtime_boundary import scan_runtime_boundary
+from scripts.check_python_runtime_boundary import _reference_cases, scan_runtime_boundary
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -56,4 +56,16 @@ def test_baseline_fixture_has_all_phase_one_reference_groups() -> None:
         "protocol",
         "cancellation",
         "privacy",
+    }
+
+
+def test_phase_one_reference_cases_still_build_after_generation_retirement() -> None:
+    cases = _reference_cases(ROOT)
+    assert {case["id"] for case in cases} == {
+        "prompt.basic",
+        "compaction.basic",
+        "tool_selection.valid",
+        "protocol.unknown_type",
+        "cancellation.before_dispatch",
+        "privacy.redaction",
     }

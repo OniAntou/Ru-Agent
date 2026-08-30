@@ -60,7 +60,8 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("RU_DESKTOP_TOKEN", "test-secret");
-        builder.UseSetting("RU_WORKER_TOKEN", "test-worker-secret");
+        builder.UseSetting("RU_AGENT_WORKER_TOKEN", "test-agent-worker-secret");
+        builder.UseSetting("RU_DEVICE_WORKER_TOKEN", "test-device-worker-secret");
         if (_ownedDataRoot is not null)
         {
             builder.UseSetting("RU_DATA_ROOT", _ownedDataRoot);

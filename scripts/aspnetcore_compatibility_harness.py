@@ -1,4 +1,4 @@
-"""Stable CLI compatibility wrapper for the Ru Harness vNext."""
+"""Stable CLI wrapper for deterministic Ru Harness and retired live gate probes."""
 
 from __future__ import annotations
 
@@ -75,13 +75,6 @@ def redact_secrets(text: str, secrets_to_redact: list[str]) -> str:
         if secret:
             redacted = redacted.replace(secret, "[REDACTED]")
     return redacted
-
-
-def build_runtime_environment(worker_token: str, worker_port: int) -> dict[str, str]:
-    return {
-        "RU_WORKER_TOKEN": worker_token,
-        "RuBackend__WorkerUrl": f"ws://127.0.0.1:{worker_port}/worker/v1",
-    }
 
 
 _PRIVATE_METADATA_FRAGMENTS = ("[[vts:", "[[voice_pace:", "[[emo:", "[[search:")
@@ -183,7 +176,9 @@ def _default_output(project_root: Path, mode: str) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run an isolated Ru Harness session")
+    parser = argparse.ArgumentParser(
+        description="Run an isolated Ru Harness session; runtime-live is retired and bounded"
+    )
     parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--worker-port", type=int)
     parser.add_argument("--edge-port", type=int)

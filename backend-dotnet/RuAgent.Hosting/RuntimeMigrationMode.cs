@@ -3,7 +3,16 @@ namespace RuAgent.Hosting;
 public enum RuntimeMigrationMode
 {
     Dotnet,
-    PythonCompatibility,
+}
+
+public sealed class RuntimeMigrationModeSelectionException : ArgumentException
+{
+    public const string ErrorCode = "python_compatibility_retired";
+
+    public RuntimeMigrationModeSelectionException()
+        : base(ErrorCode)
+    {
+    }
 }
 
 public static class RuntimeMigrationModeParser
@@ -15,10 +24,15 @@ public static class RuntimeMigrationModeParser
             return RuntimeMigrationMode.Dotnet;
         }
 
-        return raw.Trim().ToLowerInvariant() switch
+        var normalized = raw.Trim().ToLowerInvariant();
+        if (normalized is "pythoncompatibility" or "python-compatibility" or "python_compatibility")
+        {
+            throw new RuntimeMigrationModeSelectionException();
+        }
+
+        return normalized switch
         {
             "dotnet" => RuntimeMigrationMode.Dotnet,
-            "pythoncompatibility" or "python-compatibility" or "python_compatibility" => RuntimeMigrationMode.PythonCompatibility,
             _ => throw new ArgumentException("Unsupported runtime migration mode.", nameof(raw)),
         };
     }

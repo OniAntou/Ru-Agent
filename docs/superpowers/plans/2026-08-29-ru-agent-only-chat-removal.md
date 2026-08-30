@@ -1,4 +1,8 @@
 # Agent-only runtime: remove Chat transport and mode Implementation Plan
+
+> **Status:** Historical implementation record. The Agent-only transport cut
+> shipped on `main`; current behavior is documented in `docs/architecture.md`
+> and `docs/operations/runtime-behavior.md`.
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 ## Goal

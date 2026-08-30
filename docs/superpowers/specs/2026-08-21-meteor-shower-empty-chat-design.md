@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-21
 **Status:** Implemented 2026-08-21
-**Supersedes:** 2026-08-21-ascii-meteor-empty-chat-design.md
+**Supersedes:** an earlier ASCII-only meteor proposal (retired from the repository)
 **Scope:** A choreographed, vector-native meteor shower for the empty Chat view
 
 ## Decision summary

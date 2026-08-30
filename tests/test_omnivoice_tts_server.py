@@ -31,6 +31,33 @@ def test_run_server_refuses_a_second_heavy_instance(monkeypatch) -> None:
     assert server.run_server() == 2
 
 
+def test_run_server_uses_the_managed_loopback_binding(monkeypatch) -> None:
+    monkeypatch.setenv("RU_OMNIVOICE_HOST", "127.0.0.1")
+    monkeypatch.setenv("RU_OMNIVOICE_PORT", "5057")
+    monkeypatch.setattr(server, "_acquire_single_instance", lambda: True)
+    calls: dict[str, object] = {}
+
+    class FakeApp:
+        def run(self, **kwargs: object) -> None:
+            calls.update(kwargs)
+
+    monkeypatch.setattr(server, "create_app", lambda: FakeApp())
+
+    assert server.run_server() == 0
+    assert calls == {"host": "127.0.0.1", "port": 5057, "threaded": True}
+
+
+def test_run_server_rejects_a_non_loopback_binding(monkeypatch) -> None:
+    monkeypatch.setenv("RU_OMNIVOICE_HOST", "0.0.0.0")
+    monkeypatch.setattr(
+        server,
+        "_acquire_single_instance",
+        lambda: (_ for _ in ()).throw(AssertionError("invalid binding must fail before locking")),
+    )
+
+    assert server.run_server() == 2
+
+
 class FakeModel:
     def __init__(self) -> None:
         self.prompts: list[dict[str, str]] = []

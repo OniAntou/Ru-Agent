@@ -1,7 +1,9 @@
 # Ru Subtle Shell and Composer Rounding
 
 **Date:** 2026-08-21
-**Status:** Draft for user review
+**Status:** Historical implementation record. The 6 px shell/composer rounding
+was shipped in the corresponding UI commits; this draft is not an active
+implementation request.
 **Scope:** Add a barely perceptible corner radius to the sidebar and Chat
 composer
 

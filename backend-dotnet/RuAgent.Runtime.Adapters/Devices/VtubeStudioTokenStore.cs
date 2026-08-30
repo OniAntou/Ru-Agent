@@ -21,6 +21,34 @@ public sealed class FileVtubeStudioTokenStore : IVtubeStudioTokenStore
     private const int MaxTokenChars = 4_096;
     private readonly string _path;
 
+    /// <summary>
+    /// Resolves the same canonical token location used by the Python
+    /// compatibility runtime. <c>RU_DATA_ROOT</c> is a complete isolation
+    /// override; normal desktop runs keep the token under the user's
+    /// <c>%LOCALAPPDATA%\Ru</c> directory.
+    /// </summary>
+    public static string ResolveDefaultPath()
+    {
+        var configuredRoot = Environment.GetEnvironmentVariable("RU_DATA_ROOT");
+        if (!string.IsNullOrWhiteSpace(configuredRoot))
+        {
+            return Path.Combine(Path.GetFullPath(configuredRoot.Trim()), "pyvts_token.txt");
+        }
+
+        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            root = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
+
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            root = AppContext.BaseDirectory;
+        }
+
+        return Path.Combine(Path.GetFullPath(root), "Ru", "pyvts_token.txt");
+    }
+
     public FileVtubeStudioTokenStore(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Length > MaxTokenChars)

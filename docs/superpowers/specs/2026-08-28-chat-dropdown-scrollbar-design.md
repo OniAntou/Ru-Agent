@@ -1,7 +1,8 @@
 # Chat Dropdown and Full-Width Scrollbar Design
 
 **Date:** 2026-08-28  
-**Status:** Approved for implementation  
+**Status:** Implemented on `main` (2026-08-29); manual visual acceptance remains
+user-owned.
 **Scope:** `gui-winui3/Views/ChatView.xaml`, its focused source-contract tests, and current UI documentation
 
 ## Problem

@@ -1,5 +1,8 @@
 # Chat Welcome Stability When Switching to Agent
 
+**Status:** Implemented on `main` (2026-08-29); retained as a historical UI
+decision. Agent selection is now static and the welcome layout remains fixed.
+
 ## Goal
 
 Giữ nguyên vị trí của phần chào trong trạng thái Chat rỗng khi người dùng

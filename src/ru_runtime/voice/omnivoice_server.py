@@ -39,6 +39,7 @@ class _FileLockModule(Protocol):
 
 def _acquire_single_instance() -> bool:
     """Hold one OS-level guard for the heavyweight OmniVoice process."""
+    _, port = _server_binding()
     global _SINGLETON_GUARD
     if _SINGLETON_GUARD is not None:
         return True
@@ -46,7 +47,7 @@ def _acquire_single_instance() -> bool:
         import ctypes
 
         kernel32 = ctypes.windll.kernel32
-        handle = kernel32.CreateMutexW(None, False, "Local\\RuOmniVoice5052")
+        handle = kernel32.CreateMutexW(None, False, f"Local\\RuOmniVoice{port}")
         if not handle:
             raise OSError("CreateMutexW failed for OmniVoice singleton")
         if kernel32.GetLastError() == 183:
@@ -56,7 +57,7 @@ def _acquire_single_instance() -> bool:
         return True
 
     fcntl = cast(_FileLockModule, importlib.import_module("fcntl"))
-    guard = (Path(tempfile.gettempdir()) / "ru-omnivoice-5052.lock").open("a+b")
+    guard = (Path(tempfile.gettempdir()) / f"ru-omnivoice-{port}.lock").open("a+b")
     try:
         fcntl.flock(guard.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
@@ -81,6 +82,8 @@ AI_VY_TEXT = (
 # so a missing reference_text.txt never breaks the server import.
 MODEL_SAMPLE_RATE = 24_000
 MAX_TTS_TEXT_CHARS = 10_000
+DEFAULT_SERVER_HOST = "127.0.0.1"
+DEFAULT_SERVER_PORT = 5_052
 VOICE_PROFILES = {
     "ru": (REFERENCE_AUDIO, None),
     "ai_vy": (AI_VY_AUDIO, AI_VY_TEXT),
@@ -89,6 +92,22 @@ VOICE_PROFILES = {
 _model = None
 _voice_clone_prompts: dict[str, object] = {}
 _MODEL_LOCK = threading.RLock()
+
+
+def _server_binding() -> tuple[str, int]:
+    """Return a validated loopback binding supplied by the managed launcher."""
+
+    host = os.environ.get("RU_OMNIVOICE_HOST", DEFAULT_SERVER_HOST).strip()
+    if host != DEFAULT_SERVER_HOST:
+        raise ValueError("OmniVoice must bind to loopback.")
+    raw_port = os.environ.get("RU_OMNIVOICE_PORT", str(DEFAULT_SERVER_PORT)).strip()
+    try:
+        port = int(raw_port)
+    except ValueError as error:
+        raise ValueError("OmniVoice port is invalid.") from error
+    if not 1_024 <= port <= 65_535:
+        raise ValueError("OmniVoice port is invalid.")
+    return host, port
 
 
 def get_model():
@@ -408,12 +427,17 @@ def create_app(
 
 
 def run_server() -> int:
+    try:
+        host, port = _server_binding()
+    except ValueError:
+        logger.error("Invalid OmniVoice server binding")
+        return 2
     if not _acquire_single_instance():
         logger.error("Another OmniVoice instance already owns the Ru voice service")
         return 2
     # threaded=True: a single stuck synthesis (GPU hang) must not brick
     # /status, /warmup or /release for every other local caller.
-    create_app().run(host="127.0.0.1", port=5052, threaded=True)
+    create_app().run(host=host, port=port, threaded=True)
     return 0
 
 

@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Status (2026-08-29): historical implementation program.** The selected Phase 1/2 foundation, Phase 3 terminal/reconciliation slice, Agent-only desktop cutover, and prompt-composer work are shipped on `main`. Managed Git, real-model acceptance, session/extension parity, and the OS-enforced sandbox remain future projects; this dated program is retained as an audit trail, not as the current operating contract.
+
 **Goal:** Deliver the approved milestone-1 coding harness through four sequential, testable vertical slices without running two writable Agent loops for one run.
 
 **Architecture:** A dependency-free `RuAgent.Harness.Core` owns run orchestration; a separate SQLite adapter is the only Harness persistence writer; ASP.NET Core exposes the authenticated API and owns Worker/Broker children; Broker remains the final policy and execution authority; Desktop and CLI are clients of the same API.
@@ -13,8 +15,8 @@
 ## Source of truth and status
 
 - Approved design: `docs/superpowers/specs/2026-08-24-ru-opencode-pi-coding-loop-parity-design.md`.
-- This document is the implementation program index. It does not claim that the feature is implemented.
-- The current production contract remains 41 HTTP plus 2 WebSocket routes until phase 1 adds the complete 13-route Agent API atomically.
+- This document is the historical implementation program index. Current production behavior is documented in `docs/README.md`, `docs/architecture.md`, and `docs/operations/`.
+- The current production contract is 54 HTTP plus 1 WebSocket route; the 13-route Agent API is shipped.
 - Milestone 1 may not be called coding-loop parity until phase 4 and the real-model acceptance checklist are complete.
 - Overall OpenCode/Pi parity is not claimed by this program. Session trees/compaction and extension ecosystems remain later milestones.
 - The OS-enforced filesystem/network sandbox remains a separate project. Policy rules, path checks, analyzers, and `network_intent` are not sandboxing.
@@ -49,7 +51,7 @@ Phase 4: Desktop API client + legacy removal + docs + acceptance
 |---|---:|---|
 | Core identities, run/tool states, scheduling, budgets, cancellation | 1 | Core state/coordinator/scheduler tests |
 | SQLite WAL, transactional projections/events, encrypted payloads, history outbox | 1 | Persistence and session dedupe/crash tests |
-| Worker one-step `AssistantStep` and v1 Chat coexistence | 1 | Python/C# golden protocol and one-call tests |
+| Worker one-step `AssistantStep` and Agent runtime | 1 | Python/C# golden protocol and one-call tests |
 | Public Host process ownership, descriptor, mutex, idle shutdown | 1 | Hosting/Client Job Object and stale-descriptor tests |
 | API v1, SSE cursor/reconnect, 54+2 route contract, CLI tracer | 1 | Endpoint/SSE/route/CLI contract tests |
 | Workspace identity/trust and immutable preset snapshot | 1–2 | Trust binding plus complete snapshot tests |
@@ -59,7 +61,7 @@ Phase 4: Desktop API client + legacy removal + docs + acceptance
 | Local Git, dirty preservation, managed commit | 3 | Disposable-repository matrix |
 | Dispatch crash ambiguity and reconciliation | 3 | Startup/cancel/reconcile state matrix |
 | Desktop Agent cards/actions/attach/history/TTS boundary | 4 | WinUI unit/source/Harness tests |
-| Legacy Full/profile/Worker-loop removal | 4 | Reference scans and v1 Chat/volume regressions |
+| Agent-only/profile/legacy Worker-loop removal | 4 | Reference scans and Agent/volume regressions |
 | ADR/current docs and truthful local-user/non-sandbox claims | 4 | Documentation contract tests |
 | CLI and Desktop real-model seeded-bug acceptance | 4 | Separately approved recorded acceptance |
 | Session trees/compaction; extensions/skills/subagents/MCP/LSP/web | Future milestones | Explicitly excluded from milestone 1 |

@@ -77,6 +77,80 @@ public sealed class VoiceRuntimeRequestHandlerTests
         Assert.Equal(0, provider.Syntheses);
     }
 
+    [Fact]
+    public async Task Status_does_not_advertise_an_unready_provider()
+    {
+        var handler = new VoiceRuntimeRequestHandler(new FakeVoiceProvider
+        {
+            Audio = new VoiceAudio(ValidWav(), 24_000, 1),
+            IsReady = false,
+        });
+
+        var response = await handler.InvokeAsync(
+            new PrivateRuntimeRequest("GET", "/voice/status", null, ReadOnlyMemory<byte>.Empty),
+            CancellationToken.None);
+
+        Assert.Equal(200, response.StatusCode);
+        var body = JsonNode.Parse(response.Body.Span)!.AsObject();
+        Assert.False(body["available"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Status_uses_the_managed_voice_settings_snapshot()
+    {
+        var settings = new ManagedRuntimeSettingsService(
+            new RuntimeSettingsSnapshot("OpenCode Zen", "opencode/free", null, "Default", false)
+            {
+                Voice = new VoiceSettingsSnapshot(
+                    "Ái Vy (OmniVoice)",
+                    "original",
+                    1.25,
+                    true,
+                    false,
+                    true,
+                    "#ABCDEF",
+                    "large",
+                    3.5,
+                    "manual",
+                    12,
+                    34),
+            });
+        var handler = new VoiceRuntimeRequestHandler(
+            new FakeVoiceProvider { Audio = new VoiceAudio(ValidWav(), 24_000, 1) },
+            settings);
+
+        var response = await handler.InvokeAsync(
+            new PrivateRuntimeRequest("GET", "/voice/status", null, ReadOnlyMemory<byte>.Empty),
+            CancellationToken.None);
+
+        var body = JsonNode.Parse(response.Body.Span)!.AsObject();
+        Assert.Equal("Ái Vy (OmniVoice)", body["voice_label"]!.GetValue<string>());
+        Assert.Equal(1.25, body["voice_speed"]!.GetValue<double>());
+        Assert.True(body["show_subtitles"]!.GetValue<bool>());
+        Assert.Equal("#ABCDEF", body["subtitle_color"]!.GetValue<string>());
+        Assert.Equal(12, body["subtitle_pos_x"]!.GetValue<int>());
+        Assert.Equal(34, body["subtitle_pos_y"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task Latency_rejects_unknown_fields_instead_of_treating_them_as_timings()
+    {
+        var handler = new VoiceRuntimeRequestHandler(new FakeVoiceProvider
+        {
+            Audio = new VoiceAudio(ValidWav(), 24_000, 1),
+        });
+
+        var response = await handler.InvokeAsync(
+            new PrivateRuntimeRequest(
+                "POST",
+                "/voice/latency",
+                "application/json",
+                Encoding.UTF8.GetBytes("{\"outcome\":\"completed\",\"unknown\":1}")),
+            CancellationToken.None);
+
+        Assert.Equal(422, response.StatusCode);
+    }
+
     private static byte[] ValidWav()
     {
         var data = new byte[46];
@@ -95,9 +169,10 @@ public sealed class VoiceRuntimeRequestHandlerTests
         return data;
     }
 
-    private sealed class FakeVoiceProvider : IVoiceProvider, IVoiceLifecycle
+    private sealed class FakeVoiceProvider : IVoiceProvider, IVoiceLifecycle, IVoiceReadiness
     {
         public VoiceAudio? Audio { get; init; }
+        public bool IsReady { get; init; } = true;
         public int Syntheses { get; private set; }
         public int Warmups { get; private set; }
         public int Releases { get; private set; }

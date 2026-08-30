@@ -15,6 +15,7 @@ public sealed class UiAutomationScenario : IDisposable
     private const string ChatMessagesAutomationId = "ChatMessages";
     private const string NewSessionAutomationId = "NewSessionButton";
     private const string AgentModeAutomationId = "AgentModeButton";
+    private const string AgentTrustApproveAutomationId = "AgentTrustApproveButton";
     private const string AgentActivityAutomationId = "AgentStatusText";
     private const string ChatInputAutomationId = "ChatInput";
     private const string SendButtonAutomationId = "SendButton";
@@ -237,6 +238,9 @@ public sealed class UiAutomationScenario : IDisposable
             stage = "invoke_send";
             Invoke(send);
 
+            stage = "approve_workspace_trust";
+            await ApproveWorkspaceTrustAsync(timeout);
+
             stage = "wait_agent_activity";
             bool activity = await WaitUntilAsync(
                 () => HasAtLeast("agent.activity", 1),
@@ -264,15 +268,22 @@ public sealed class UiAutomationScenario : IDisposable
                         : "In-flight Agent session produced a late visible update");
             }
             bool messages = activity
-                && await WaitUntilAsync(HasUserAndAssistantMessages, timeout);
-            bool truthfulVolumeFailure = scenario != "agent-volume-contract"
-                || VisibleMessagesContain(
-                    "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows.");
+                && await WaitUntilAsync(
+                    () => HasUserAndAssistantMessages()
+                        && (scenario != "agent-volume-contract"
+                            || VisibleMessagesContain("Harness agent tool loop completed.")),
+                    timeout);
+            // Keep the legacy scenario id for catalog compatibility. The Agent-only
+            // deterministic fixture now exercises the read-only files.read tool, so
+            // validate its bounded terminal reply instead of the deleted Chat/volume
+            // fixture that used to be rendered here.
+            bool truthfulAgentReply = scenario != "agent-volume-contract"
+                || VisibleMessagesContain("Harness agent tool loop completed.");
             bool privateAbsent = !VisibleMessageContainsPrivateMarker()
                 && !AgentSurfaceContainsPrivateMarker();
             bool passed = activity
                 && messages
-                && truthfulVolumeFailure
+                && truthfulAgentReply
                 && privateAbsent;
 
             return Check(
@@ -283,7 +294,7 @@ public sealed class UiAutomationScenario : IDisposable
                     ? null
                     : $"agent_assertions_failed:activity={activity};"
                         + $"message_items={CountVisibleMessageItems()};"
-                        + $"truthful_failure={truthfulVolumeFailure};"
+                        + $"reply_contract={truthfulAgentReply};"
                         + $"private_absent={privateAbsent}");
         }
         catch (Exception ex)
@@ -437,6 +448,22 @@ public sealed class UiAutomationScenario : IDisposable
 
     private bool HasUserAndAssistantMessages()
         => CountVisibleMessageItems() >= 2;
+
+    private async Task ApproveWorkspaceTrustAsync(TimeSpan timeout)
+    {
+        AutomationElement approve = await WaitForElementAsync(
+            AgentTrustApproveAutomationId,
+            timeout);
+        Invoke(approve);
+
+        bool dismissed = await WaitUntilAsync(
+            () => FindByAutomationId(AgentTrustApproveAutomationId) is null,
+            timeout);
+        if (!dismissed)
+        {
+            throw new TimeoutException("Workspace trust prompt did not close.");
+        }
+    }
 
     private int CountVisibleMessageItems()
     {

@@ -1,5 +1,9 @@
 # Runtime Safety and Observation Fixes Implementation Plan
 
+> **Status:** Historical implementation record. The remediation shipped;
+> current ownership and privacy boundaries live in
+> `docs/operations/runtime-behavior.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix the six review findings while preserving Ru's PC-control behavior and current ASP.NET Core architecture.

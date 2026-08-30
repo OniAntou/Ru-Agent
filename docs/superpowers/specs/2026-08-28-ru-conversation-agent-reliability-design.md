@@ -2,8 +2,8 @@
 
 ## Status
 
-Phương án B đã được anh duyệt. Đây là design spec trước triển khai; chưa thay
-đổi code runtime.
+Phương án B đã được triển khai trên `main` (2026-08-29). Đây là design spec
+lịch sử; tài liệu vận hành hiện tại nằm ở `docs/operations/`.
 
 ## Goal
 

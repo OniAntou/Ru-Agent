@@ -1,5 +1,8 @@
 # Ru Mineral Paper Palette Refinement Implementation Plan
 
+> **Status:** Historical implementation record. The palette baseline shipped;
+> current presentation boundaries live in `docs/operations/runtime-behavior.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task with verification checkpoints.
 
 **Goal:** Reduce the perceived glare of Ru's shared light palette while preserving the approved editorial layout, contrast, controls, and runtime behavior.

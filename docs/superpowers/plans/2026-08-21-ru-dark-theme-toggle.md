@@ -1,5 +1,8 @@
 # Ru Dark Theme Toggle Implementation Plan
 
+> **Status:** Historical implementation record. The theme toggle shipped;
+> current shell behavior lives in `docs/operations/runtime-behavior.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a persistent Light/Dark appearance toggle to the Ru WinUI 3 shell without changing Chat, backend, voice, VTS, memory, or process behavior.

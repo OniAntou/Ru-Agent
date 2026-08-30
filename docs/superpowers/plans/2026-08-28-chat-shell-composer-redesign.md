@@ -1,5 +1,9 @@
 # Chat Shell and Agent Composer Redesign Implementation Plan
 
+> **Status:** Historical implementation record. The original Chat/Agent split
+> was superseded by the Agent-only composer; current UI behavior lives in
+> `docs/operations/runtime-behavior.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the WinUI shell quieter while exposing the existing Agent API/SSE workflow directly inside the Chat composer.

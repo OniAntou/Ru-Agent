@@ -265,22 +265,63 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
                 var vtsEndpoint = options.VtubeStudioEndpoint
                     ?? new Uri("ws://127.0.0.1:8001", UriKind.Absolute);
                 vtsClient = Own(owned, new VtubeStudioClient(
-                    new VtubeStudioClientOptions(vtsEndpoint),
-                    new NullVtubeStudioTokenStore(),
+                    new VtubeStudioClientOptions(vtsEndpoint)
+                    {
+                        TokenPath = FileVtubeStudioTokenStore.ResolveDefaultPath(),
+                    },
                     leases: leases));
             }
 
             var privateRouter = new PrivateRuntimeRequestRouter(
                 new UnavailablePrivateRuntimeRequestHandler());
+            var runtimeStatusHandler = new ManagedRuntimeStatusRequestHandler(settings);
+            privateRouter = privateRouter
+                .WithRouteHandler("GET", "/status", runtimeStatusHandler)
+                .WithRouteHandler("GET", "/models", runtimeStatusHandler);
+            var vtsRuntimeHandler = new VtubeStudioRuntimeRequestHandler(vtsClient);
+            privateRouter = privateRouter
+                .WithRouteHandler("GET", "/vts/mouse-look", vtsRuntimeHandler)
+                .WithRouteHandler("POST", "/vts/mouse-look", vtsRuntimeHandler)
+                .WithRouteHandler("GET", "/vts/overlay", vtsRuntimeHandler)
+                .WithRouteHandler("POST", "/vts/overlay", vtsRuntimeHandler)
+                .WithRouteHandler("GET", "/vts/status", vtsRuntimeHandler)
+                .WithRouteHandler("POST", "/vts/connect", vtsRuntimeHandler)
+                .WithRouteHandler("GET", "/vts/config", vtsRuntimeHandler)
+                .WithRouteHandler("POST", "/vts/config", vtsRuntimeHandler)
+                .WithRouteHandler("POST", "/vts/activity", vtsRuntimeHandler)
+                .WithRouteHandler("POST", "/vts/action", vtsRuntimeHandler)
+                .WithRouteHandler("POST", "/vts/speaking", vtsRuntimeHandler);
+            var observationControlHandler = new ObservationControlRequestHandler(
+                settings,
+                voiceProvider is not null);
+            privateRouter = privateRouter
+                .WithRouteHandler("POST", "/observation/preflight", observationControlHandler)
+                .WithRouteHandler("GET", "/observation/vision-config", observationControlHandler)
+                .WithRouteHandler("POST", "/observation/react", observationControlHandler)
+                .WithRouteHandler("POST", "/observation/cancel", observationControlHandler)
+                .WithRouteHandler("POST", "/observation/ack", observationControlHandler)
+                .WithRouteHandler("POST", "/observation/start", observationControlHandler)
+                .WithRouteHandler("POST", "/observation/stop", observationControlHandler)
+                .WithRouteHandler("GET", "/observation/status", observationControlHandler);
             if (voiceProvider is not null)
             {
-                var voiceHandler = new VoiceRuntimeRequestHandler(voiceProvider);
+                var voiceHandler = new VoiceRuntimeRequestHandler(voiceProvider, settings);
                 privateRouter = privateRouter
                     .WithRouteHandler("GET", "/voice/status", voiceHandler)
                     .WithRouteHandler("POST", "/voice/latency", voiceHandler)
                     .WithRouteHandler("POST", "/voice/tts", voiceHandler)
                     .WithRouteHandler("POST", "/voice/warmup", voiceHandler)
                     .WithRouteHandler("POST", "/voice/release", voiceHandler);
+            }
+            else
+            {
+                var unavailableVoiceHandler = new UnavailableVoiceRuntimeRequestHandler();
+                privateRouter = privateRouter
+                    .WithRouteHandler("GET", "/voice/status", unavailableVoiceHandler)
+                    .WithRouteHandler("POST", "/voice/latency", unavailableVoiceHandler)
+                    .WithRouteHandler("POST", "/voice/tts", unavailableVoiceHandler)
+                    .WithRouteHandler("POST", "/voice/warmup", unavailableVoiceHandler)
+                    .WithRouteHandler("POST", "/voice/release", unavailableVoiceHandler);
             }
 
             var deviceRouter = new ManagedWorkerV1RequestRouter(

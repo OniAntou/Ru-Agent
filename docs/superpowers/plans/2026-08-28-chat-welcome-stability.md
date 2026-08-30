@@ -1,5 +1,9 @@
 # Chat Welcome Stability Implementation Plan
 
+> **Status:** Historical implementation record. Welcome-position stability
+> shipped; current Agent-only shell behavior lives in
+> `docs/operations/runtime-behavior.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Keep the empty-chat welcome content at the same screen position when the user switches from Chat to Coding Agent without sending a request.

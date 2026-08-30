@@ -9,7 +9,7 @@ from ru_runtime.voice.runtime import VoiceSelection
 def service(events: list[object], name: str, *, available: bool = True) -> VoiceServiceController:
     return VoiceServiceController(
         available=lambda: available,
-        ensure=lambda: events.append(f"start {name}"),
+        ensure=lambda _selection: events.append(f"start {name}"),
         request=lambda path, payload=None: events.append((name, path, payload)),
     )
 
@@ -42,7 +42,7 @@ def test_voice_warmup_failure_does_not_release_other_services() -> None:
         voice_services={
             "omnivoice": VoiceServiceController(
                 available=lambda: False,
-                ensure=lambda: events.append("start omnivoice"),
+                ensure=lambda _selection: events.append("start omnivoice"),
                 request=lambda path, payload=None: {"ready": False},
             )
         },
@@ -58,3 +58,23 @@ def test_voice_warmup_failure_does_not_release_other_services() -> None:
         pass
     else:
         raise AssertionError("expected warmup failure to raise RuntimeError")
+
+
+def test_ready_voice_service_is_not_warmed_up_twice() -> None:
+    events: list[object] = []
+    lifecycle = GpuLifecycle(
+        threading.Lock(),
+        voice_services={
+            "omnivoice": VoiceServiceController(
+                available=lambda: True,
+                ensure=lambda _selection: events.append("start omnivoice") or True,
+                request=lambda path, payload=None: events.append((path, payload)),
+            )
+        },
+    )
+
+    lifecycle.prepare_speech(
+        VoiceSelection("Ru (OmniVoice)", "omnivoice", "ru")
+    )
+
+    assert events == ["start omnivoice"]

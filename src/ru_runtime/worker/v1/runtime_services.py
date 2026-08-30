@@ -451,18 +451,75 @@ def voice_available() -> bool:
         return False
 
 
-def ensure_voice_service() -> None:
-    if voice_available():
-        return
+def _voice_status() -> dict[str, object] | None:
+    """Read the provider's bounded readiness status without exposing its body."""
+
+    config = _voice_config()
+    request = UrlRequest(
+        f"{config.base_url}/status",
+        headers={"Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=_VOICE_PROBE_TIMEOUT_SECONDS) as response:
+            body = response.read(_MAX_ERROR_BODY_BYTES)
+    except (HTTPError, URLError, OSError):
+        return None
+
+    try:
+        decoded = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return decoded if isinstance(decoded, dict) else None
+
+
+def _voice_ready(profile: str) -> bool:
+    """Return true only after the endpoint reports a loaded model or warm-up succeeds."""
+
+    if not voice_available():
+        return False
+    status = _voice_status()
+    if status is None:
+        return False
+    if status.get("model_loaded") is True:
+        return True
+    if status.get("model_loaded") is not False:
+        return False
+
+    try:
+        response_status, body = _post_voice(
+            "/warmup",
+            {"voice_profile": profile},
+            timeout=_VOICE_LIFECYCLE_TIMEOUT_SECONDS,
+        )
+    except (RuntimeError, OSError):
+        return False
+    if response_status != 200:
+        return False
+    try:
+        result = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return isinstance(result, dict) and result.get("ready") is True
+
+
+def ensure_voice_service(profile: str | None = None) -> bool:
+    profile = profile or _voice_selection().profile_id
+    if voice_available() and _voice_ready(profile):
+        return True
     with _VOICE_LOCK:
-        if voice_available():
-            return
+        if voice_available() and _voice_ready(profile):
+            return True
         global _VOICE_PROCESS
+        if voice_available() and _VOICE_PROCESS is None:
+            raise RuntimeError("OmniVoice service is reachable but its model is not ready.")
         if _VOICE_PROCESS is not None and _VOICE_PROCESS.poll() is None:
             deadline = time.monotonic() + VOICE_START_TIMEOUT_SECONDS
             while time.monotonic() < deadline:
                 if voice_available():
-                    return
+                    if _voice_ready(profile):
+                        return True
+                    raise RuntimeError("OmniVoice service is reachable but its model is not ready.")
                 time.sleep(0.2)
             raise RuntimeError(
                 "OmniVoice service did not open port 5052 in time from the existing process."
@@ -510,7 +567,9 @@ def ensure_voice_service() -> None:
         deadline = time.monotonic() + VOICE_START_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if voice_available():
-                return
+                if _voice_ready(profile):
+                    return True
+                raise RuntimeError("OmniVoice service is reachable but its model is not ready.")
             if _VOICE_PROCESS.poll() is not None:
                 raise RuntimeError("OmniVoice process exited before opening port 5052")
             time.sleep(0.2)
@@ -610,7 +669,7 @@ def _gpu_lifecycle() -> GpuLifecycle:
             voice_services={
                 "omnivoice": VoiceServiceController(
                     available=voice_available,
-                    ensure=ensure_voice_service,
+                    ensure=lambda selection: ensure_voice_service(selection.profile_id),
                     request=_voice_lifecycle_request,
                 )
             },

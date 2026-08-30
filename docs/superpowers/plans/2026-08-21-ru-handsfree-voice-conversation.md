@@ -1,5 +1,8 @@
 # Hands-free Voice Conversation Implementation Plan
 
+> **Status:** Historical implementation record. The deterministic voice loop
+> shipped; physical microphone/speaker/VTube acceptance remains user-run.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
 
 **Goal:** Restore a user-controlled, half-duplex voice conversation loop in the WinUI 3 Chat: listen, detect the end of one spoken turn, transcribe, send automatically, wait for Ru's existing streamed reply to finish, and listen again until the user stops the mode.

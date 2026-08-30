@@ -1,6 +1,8 @@
 # Ru Logging Closure Fixes Design
 
-**Status:** Approved for implementation on 2026-08-20.
+**Status:** Historical implementation record. The closure fixes shipped on
+2026-08-20; use [`docs/operations/logging.md`](../../operations/logging.md)
+for the current logging contract.
 
 ## Goal
 

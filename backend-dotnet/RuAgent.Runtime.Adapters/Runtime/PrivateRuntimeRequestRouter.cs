@@ -212,6 +212,13 @@ public sealed class PrivateRuntimeRequestRouter
             throw new PrivateRuntimeRequestException("invalid_request");
         }
 
+        // The compatibility dispatcher parses every POST body before selecting
+        // a handler, including routes whose handler does not consume payload
+        // fields (connect/release/stop). Keep that boundary here so malformed
+        // non-JSON text cannot slip through merely because the selected handler
+        // is body-agnostic.
+        ValidatePostJson(request, normalizedMethod);
+
         if (!AllowlistedRoutes.Contains((normalizedMethod, uri.AbsolutePath)))
         {
             throw new PrivateRuntimeRequestException("unsupported_route");
@@ -340,6 +347,36 @@ public sealed class PrivateRuntimeRequestRouter
         if (ContainsSensitiveKey(root))
         {
             throw new PrivateRuntimeRequestException("invalid_request");
+        }
+    }
+
+    private static void ValidatePostJson(PrivateRuntimeRequest request, string normalizedMethod)
+    {
+        if (!string.Equals(normalizedMethod, "POST", StringComparison.Ordinal)
+            || request.Body.IsEmpty)
+        {
+            return;
+        }
+
+        try
+        {
+            var text = StrictUtf8.GetString(request.Body.Span);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return;
+            }
+
+            // Parsing is deliberately shape-neutral. Individual handlers still
+            // validate whether they require an object, array, or scalar fields.
+            _ = JsonNode.Parse(text);
+        }
+        catch (JsonException error)
+        {
+            throw new PrivateRuntimeRequestException("invalid_request", false, error);
+        }
+        catch (DecoderFallbackException error)
+        {
+            throw new PrivateRuntimeRequestException("invalid_request", false, error);
         }
     }
 

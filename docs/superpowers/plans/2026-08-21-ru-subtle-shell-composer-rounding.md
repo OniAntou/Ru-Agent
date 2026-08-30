@@ -1,5 +1,8 @@
 # Ru Subtle Shell and Composer Rounding Implementation Plan
 
+> **Status:** Historical implementation record. The 6 px rounding shipped;
+> current composer behavior lives in `docs/operations/runtime-behavior.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task with verification checkpoints.
 
 **Goal:** Add a barely perceptible 6 px radius to the sidebar's right edge and the Chat input frame without changing layout or behavior.

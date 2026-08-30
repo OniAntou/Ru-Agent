@@ -1,6 +1,9 @@
 # Ru Codebase Security and Reliability Remediation Design
 
-**Status:** Approved
+**Status:** Historical implementation record. The remediation pass shipped on
+`main`; current ownership and verification boundaries are in
+[`docs/architecture.md`](../../architecture.md) and
+[`docs/operations/verification.md`](../../operations/verification.md).
 **Date:** 2026-08-24  
 **Scope:** Repair every actionable P0-P2 finding from the 2026-08-24 full-codebase review without changing live audio, volume, desktop, or VTube Studio state.
 

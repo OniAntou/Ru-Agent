@@ -1,6 +1,9 @@
 # Ru logging system upgrade
 
-**Status:** Ready for written-spec review; implementation has not started.
+**Status:** Historical implementation record. The logging design was implemented
+and closed by the 2026-08-20 logging plans; use
+[`docs/operations/logging.md`](../../operations/logging.md) for the current
+contract.
 
 **Date:** 2026-08-20
 

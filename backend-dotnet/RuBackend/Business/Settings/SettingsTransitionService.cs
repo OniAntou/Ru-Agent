@@ -307,6 +307,18 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             "custom_api_key",
             "api_variant",
             "kilo_reasoning_enabled",
+            "voice_label",
+            "voice_style_id",
+            "voice_speed",
+            "auto_pace_enabled",
+            "auto_read_replies",
+            "show_subtitles",
+            "subtitle_color",
+            "subtitle_size",
+            "subtitle_duration",
+            "subtitle_pos_mode",
+            "subtitle_pos_x",
+            "subtitle_pos_y",
         };
         return runtimeFields.Any(payload.ContainsKey)
             || updates.Any(update =>

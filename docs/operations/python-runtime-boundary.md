@@ -72,8 +72,10 @@ failure text never cross the Worker response boundary.
 
 Screen capture, reaction scheduling, and the public observation lifecycle are
 not silently moved by this adapter. The managed Worker composition binds the
-provider with an empty-key default, so missing credentials produce a stable
-skipped result and no network call; a trusted credential channel is still a
-separate rollout concern. The legacy Python observation path remains reachable
-only in `PythonCompatibility`. This section records the managed C# boundary,
-not live Gemini or Python-retirement evidence.
+provider with an empty-key default and an explicit control handler, so missing
+credentials produce a stable disabled/skipped result and no network call; the
+managed default does not claim to capture a screen or emit a reaction. A
+trusted credential channel and a managed capture/reaction loop are separate
+rollout work. The legacy Python observation path remains reachable only in
+`PythonCompatibility`. This section records the managed C# boundary, not live
+Gemini or Python-retirement evidence.

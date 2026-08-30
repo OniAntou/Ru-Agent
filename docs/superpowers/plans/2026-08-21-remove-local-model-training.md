@@ -1,5 +1,8 @@
 # Remove local model/training and harden the harness
 
+> **Status:** Historical implementation record. The cloud-first retirement is
+> shipped; current runtime ownership lives in `docs/architecture.md`.
+
 ## Scope
 
 - Remove LFM2.5 HF/GGUF generation, llama.cpp sources/binaries, QLoRA tooling,

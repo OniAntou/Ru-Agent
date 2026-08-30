@@ -82,4 +82,7 @@ public sealed record RuntimeSettingsSnapshot(
     string ModelName,
     Uri? BaseUrl,
     string ApiVariant,
-    bool KiloReasoningEnabled);
+    bool KiloReasoningEnabled)
+{
+    public VoiceSettingsSnapshot Voice { get; init; } = new();
+}

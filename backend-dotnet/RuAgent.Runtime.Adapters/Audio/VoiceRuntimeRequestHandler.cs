@@ -15,13 +15,29 @@ public sealed class VoiceRuntimeRequestHandler : IPrivateRuntimeRequestHandler
 {
     private const int MaxRequestBodyBytes = 256 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+    private static readonly IReadOnlySet<string> AllowedLatencyFields =
+        new HashSet<string>(
+            [
+                "submit_to_first_delta_ms",
+                "submit_to_first_phrase_ms",
+                "phrase_to_first_audio_ms",
+                "submit_to_playback_requested_ms",
+                "outcome",
+            ],
+            StringComparer.Ordinal);
     private readonly IVoiceProvider _provider;
     private readonly IVoiceLifecycle? _lifecycle;
+    private readonly IVoiceReadiness? _readiness;
+    private readonly ManagedRuntimeSettingsService? _settings;
 
-    public VoiceRuntimeRequestHandler(IVoiceProvider provider)
+    public VoiceRuntimeRequestHandler(
+        IVoiceProvider provider,
+        ManagedRuntimeSettingsService? settings = null)
     {
         _provider = provider ?? throw new ArgumentNullException(nameof(provider));
         _lifecycle = provider as IVoiceLifecycle;
+        _readiness = provider as IVoiceReadiness;
+        _settings = settings;
     }
 
     public async Task<PrivateRuntimeResponse> InvokeAsync(
@@ -42,29 +58,41 @@ public sealed class VoiceRuntimeRequestHandler : IPrivateRuntimeRequestHandler
         };
     }
 
-    private static PrivateRuntimeResponse StatusResponse() => JsonResponse(
-        200,
-        new JsonObject
-        {
-            ["status"] = "ok",
-            ["available"] = true,
-            ["voice_label"] = "Ru (OmniVoice)",
-            ["voice_style_id"] = "original",
-            ["voice_speed"] = 1.0,
-            ["auto_pace_enabled"] = false,
-            ["auto_read_replies"] = true,
-            ["show_subtitles"] = false,
-            ["subtitle_color"] = "#FFFFFF",
-            ["subtitle_size"] = "medium",
-            ["subtitle_duration"] = 2.0,
-            ["subtitle_pos_mode"] = "auto",
-            ["subtitle_pos_x"] = -1,
-            ["subtitle_pos_y"] = -1,
-        });
+    private PrivateRuntimeResponse StatusResponse()
+    {
+        var voice = _settings?.Current.Voice ?? new VoiceSettingsSnapshot();
+        return JsonResponse(
+            200,
+            new JsonObject
+            {
+                ["status"] = "ok",
+                // In-memory providers do not expose a readiness contract and
+                // are already owned by their host. Process-backed providers
+                // opt in to the conservative, fail-closed value above.
+                ["available"] = _readiness?.IsReady ?? true,
+                ["voice_label"] = voice.VoiceLabel,
+                ["voice_style_id"] = voice.VoiceStyleId,
+                ["voice_speed"] = voice.VoiceSpeed,
+                ["auto_pace_enabled"] = voice.AutoPaceEnabled,
+                ["auto_read_replies"] = voice.AutoReadReplies,
+                ["show_subtitles"] = voice.ShowSubtitles,
+                ["subtitle_color"] = voice.SubtitleColor,
+                ["subtitle_size"] = voice.SubtitleSize,
+                ["subtitle_duration"] = voice.SubtitleDuration,
+                ["subtitle_pos_mode"] = voice.SubtitlePosMode,
+                ["subtitle_pos_x"] = voice.SubtitlePosX,
+                ["subtitle_pos_y"] = voice.SubtitlePosY,
+            });
+    }
 
     private static PrivateRuntimeResponse LatencyResponse(PrivateRuntimeRequest request)
     {
         var payload = ParseObject(request, allowEmpty: false);
+        if (payload.Any(property => !AllowedLatencyFields.Contains(property.Key)))
+        {
+            return InvalidRequest();
+        }
+
         var outcome = ReadText(payload, "outcome", 32);
         if (outcome is not ("completed" or "cancelled" or "failed"))
         {
@@ -105,8 +133,10 @@ public sealed class VoiceRuntimeRequestHandler : IPrivateRuntimeRequestHandler
             });
         }
 
-        var voiceLabel = ReadText(payload, "voice_label", 128) ?? "Ru (OmniVoice)";
-        var speed = ReadNumber(payload, "speed") ?? 1.0;
+        var voice = _settings?.Current.Voice ?? new VoiceSettingsSnapshot();
+        var voiceLabel = ReadText(payload, "voice_label", 128) ?? voice.VoiceLabel;
+        var speed = ReadNumber(payload, "speed") ?? voice.VoiceSpeed;
+        var voiceStyleId = ReadText(payload, "voice_style_id", 32) ?? voice.VoiceStyleId;
         if (!double.IsFinite(speed) || speed is < 0.5 or > 2.0)
         {
             return InvalidRequest();
@@ -115,7 +145,7 @@ public sealed class VoiceRuntimeRequestHandler : IPrivateRuntimeRequestHandler
         VoiceRequest voiceRequest;
         try
         {
-            voiceRequest = new VoiceRequest(text, voiceLabel, speed, "original");
+            voiceRequest = new VoiceRequest(text, voiceLabel, speed, voiceStyleId);
         }
         catch (ArgumentException)
         {
@@ -155,7 +185,10 @@ public sealed class VoiceRuntimeRequestHandler : IPrivateRuntimeRequestHandler
         }
 
         var payload = ParseObject(request, allowEmpty: true);
-        var voiceLabel = ReadText(payload, "voice_label", 128) ?? "Ru (OmniVoice)";
+        var voiceLabel = ReadText(
+            payload,
+            "voice_label",
+            128) ?? (_settings?.Current.Voice.VoiceLabel ?? "Ru (OmniVoice)");
         try
         {
             await _lifecycle.WarmupAsync(voiceLabel, cancellationToken).ConfigureAwait(false);

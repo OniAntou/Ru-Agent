@@ -171,7 +171,9 @@ namespace RuApp
             StatusText.Text = $"Đang khởi động {_backendProvider.DisplayName} Backend...";
             StatusDot.Fill = (SolidColorBrush)Application.Current.Resources["AppWarningBrush"];
 
-            string? projectRoot = _composition.IsHarness ? string.Empty : ResolveProjectRoot();
+            string? projectRoot = _composition.IsHarness
+                ? _composition.HarnessWorkspacePath ?? string.Empty
+                : ResolveProjectRoot();
             if (projectRoot == null)
             {
                 StatusText.Text = "Không tìm thấy project root. Hãy đặt RuApp.exe trong hoặc dưới thư mục D:\\LLM.";

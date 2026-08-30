@@ -9,6 +9,27 @@ public sealed class ChildProcessPolicyTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "ru-host-child-" + Guid.NewGuid().ToString("N"));
     public ChildProcessPolicyTests() => Directory.CreateDirectory(_root);
 
+    [Theory]
+    [InlineData("dotnet-agent-worker")]
+    [InlineData("python-agent-compat-worker")]
+    [InlineData("python-device-worker")]
+    public void Launch_plan_roles_are_accepted_by_child_policy(string role)
+    {
+        var spec = new WorkerBrokerProcessSpec(
+            role,
+            "powershell.exe",
+            "-NoProfile -NonInteractive -Command exit 0",
+            _root,
+            new Dictionary<string, string>(),
+            Path.Combine(_root, "out.jsonl"),
+            Path.Combine(_root, "err.jsonl"));
+
+        var startInfo = ChildProcessPolicy.CreateStartInfo(spec);
+
+        Assert.Equal(spec.FileName, startInfo.FileName);
+        Assert.Equal(spec.WorkingDirectory, startInfo.WorkingDirectory);
+    }
+
     [Fact]
     public void ChildReceivesAllowlistedEnvWithoutInheritingProviderSecrets()
     {

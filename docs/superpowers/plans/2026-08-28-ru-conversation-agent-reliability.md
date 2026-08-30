@@ -1,4 +1,7 @@
 # Ru Conversation and Agent Reliability Implementation Plan
+
+> **Status:** Historical implementation record. The reliability fixes shipped;
+> current runtime behavior lives in `docs/operations/runtime-behavior.md`.
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task with test-first checkpoints.
 
 **Goal:** Làm cho Chat và Coding Agent giữ đúng thứ tự lượt, bỏ stale result, định tuyến câu ngắn tự nhiên, truy cập thư mục ngoài qua approval một lần và hiển thị kết quả Agent an toàn.

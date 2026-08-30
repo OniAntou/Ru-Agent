@@ -1,5 +1,9 @@
 # Chat Shell and Agent Composer Redesign
 
+**Status:** Historical UI record. Its original Chat/Agent mode split and
+separate Agent settings flyout were superseded by the Agent-only cut and the
+compact preset selector; see the current runtime and tools documents.
+
 > **Superseded UI detail:** The later
 > `2026-08-28-chat-dropdown-scrollbar-design.md` decision keeps this shell
 > structure but limits the mode flyout to `Chat`/`Agent`; workspace and preset

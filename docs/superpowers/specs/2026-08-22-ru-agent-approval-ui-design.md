@@ -2,7 +2,11 @@
 
 ## Status
 
-Approved direction: connect the existing Agent activity status to a real,
+Historical implementation record. The approval flow described here was
+implemented; current approval and preset behavior lives in
+[`docs/operations/agent-tools.md`](../../operations/agent-tools.md).
+
+The original direction was to connect the existing Agent activity status to a real,
 session-scoped approval flow for actions that are external or destructive.
 This slice is deliberately narrower than the whole Agent platform: safe
 read-only tools and the allowlisted `terminal.run` path keep working without

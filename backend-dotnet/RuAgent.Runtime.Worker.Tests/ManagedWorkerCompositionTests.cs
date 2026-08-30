@@ -17,6 +17,172 @@ namespace RuAgent.Runtime.Worker.Tests;
 public sealed class ManagedWorkerCompositionTests
 {
     [Fact]
+    public async Task Managed_composition_serves_runtime_status_through_v1_relay()
+    {
+        await using var composition = ManagedWorkerComposition.Create(
+            new ManagedWorkerCompositionOptions(
+                8005,
+                8006,
+                "agent-token",
+                "device-token",
+                new ProviderBootstrapData(
+                    "Ollama",
+                    new Uri("http://127.0.0.1:11434/v1/chat/completions"),
+                    "managed-agent",
+                    string.Empty),
+                Directory.GetCurrentDirectory()),
+            new ManagedWorkerCompositionDependencies
+            {
+                ModelProvider = new SequenceProvider(new ModelDelta("ok", [], true, "stop")),
+            });
+
+        var replies = await CollectAsync(composition.DeviceRouter.RouteAsync(
+            WorkerV1Contracts.RuntimeRequest,
+            new JsonObject
+            {
+                ["method"] = "GET",
+                ["path_and_query"] = "/status",
+            },
+            CancellationToken.None));
+
+        var reply = Assert.Single(replies);
+        Assert.Equal(WorkerV1Contracts.RuntimeResponse, reply.Type);
+        Assert.Equal(200, reply.Payload["status_code"]!.GetValue<int>());
+        var body = JsonNode.Parse(reply.Payload["body"]!.GetValue<string>())!.AsObject();
+        Assert.Equal("ok", body["status"]!.GetValue<string>());
+        Assert.Equal("Ollama", body["backend"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Managed_composition_serves_vts_and_observation_control_routes()
+    {
+        await using var composition = ManagedWorkerComposition.Create(
+            new ManagedWorkerCompositionOptions(
+                8005,
+                8006,
+                "agent-token",
+                "device-token",
+                new ProviderBootstrapData(
+                    "Ollama",
+                    new Uri("http://127.0.0.1:11434/v1/chat/completions"),
+                    "managed-agent",
+                    string.Empty),
+                Directory.GetCurrentDirectory()),
+            new ManagedWorkerCompositionDependencies
+            {
+                ModelProvider = new SequenceProvider(new ModelDelta("ok", [], true, "stop")),
+                VtubeStudioClient = new TestVtubeStudioClient(),
+            });
+
+        var vts = await CollectAsync(composition.DeviceRouter.RouteAsync(
+            WorkerV1Contracts.RuntimeRequest,
+            new JsonObject
+            {
+                ["method"] = "GET",
+                ["path_and_query"] = "/vts/config",
+            },
+            CancellationToken.None));
+        var vtsReply = Assert.Single(vts);
+        Assert.Equal(200, vtsReply.Payload["status_code"]!.GetValue<int>());
+        var vtsBody = JsonNode.Parse(vtsReply.Payload["body"]!.GetValue<string>())!.AsObject();
+        Assert.Equal("ok", vtsBody["status"]!.GetValue<string>());
+        Assert.Equal(10.0, vtsBody["config"]!["sway_amplitude_idle"]!.GetValue<double>());
+
+        var observation = await CollectAsync(composition.DeviceRouter.RouteAsync(
+            WorkerV1Contracts.RuntimeRequest,
+            new JsonObject
+            {
+                ["method"] = "GET",
+                ["path_and_query"] = "/observation/status",
+            },
+            CancellationToken.None));
+        var observationReply = Assert.Single(observation);
+        Assert.Equal(200, observationReply.Payload["status_code"]!.GetValue<int>());
+        var observationBody = JsonNode.Parse(observationReply.Payload["body"]!.GetValue<string>())!.AsObject();
+        Assert.Equal("disabled", observationBody["status"]!.GetValue<string>());
+        Assert.False(observationBody["active"]!.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task Managed_composition_has_no_generic_private_route_fallback()
+    {
+        await using var composition = ManagedWorkerComposition.Create(
+            new ManagedWorkerCompositionOptions(
+                8005,
+                8006,
+                "agent-token",
+                "device-token",
+                new ProviderBootstrapData(
+                    "Ollama",
+                    new Uri("http://127.0.0.1:11434/v1/chat/completions"),
+                    "managed-agent",
+                    string.Empty),
+                Directory.GetCurrentDirectory()),
+            new ManagedWorkerCompositionDependencies
+            {
+                ModelProvider = new SequenceProvider(new ModelDelta("ok", [], true, "stop")),
+                VtubeStudioClient = new TestVtubeStudioClient(),
+            });
+
+        var routes = new[]
+        {
+            ("GET", "/status"),
+            ("GET", "/models"),
+            ("GET", "/voice/status"),
+            ("POST", "/voice/latency"),
+            ("POST", "/voice/tts"),
+            ("POST", "/voice/warmup"),
+            ("POST", "/voice/release"),
+            ("POST", "/voice/transcribe"),
+            ("POST", "/observation/analyze"),
+            ("GET", "/vts/mouse-look"),
+            ("POST", "/vts/mouse-look"),
+            ("GET", "/vts/overlay"),
+            ("POST", "/vts/overlay"),
+            ("GET", "/vts/status"),
+            ("POST", "/vts/connect"),
+            ("GET", "/vts/config"),
+            ("POST", "/vts/config"),
+            ("POST", "/vts/activity"),
+            ("POST", "/vts/action"),
+            ("POST", "/vts/speaking"),
+            ("POST", "/observation/preflight"),
+            ("GET", "/observation/vision-config"),
+            ("POST", "/observation/react"),
+            ("POST", "/observation/cancel"),
+            ("POST", "/observation/ack"),
+            ("POST", "/observation/start"),
+            ("POST", "/observation/stop"),
+            ("GET", "/observation/status"),
+        };
+
+        foreach (var (method, path) in routes)
+        {
+            var replies = await CollectAsync(composition.DeviceRouter.RouteAsync(
+                WorkerV1Contracts.RuntimeRequest,
+                new JsonObject
+                {
+                    ["method"] = method,
+                    ["path_and_query"] = path,
+                    ["body"] = "{}",
+                },
+                CancellationToken.None));
+            var reply = Assert.Single(replies);
+            if (reply.Type == WorkerV1Contracts.RuntimeResponse)
+            {
+                Assert.DoesNotContain(
+                    "Runtime route is unavailable.",
+                    reply.Payload["body"]?.GetValue<string>() ?? string.Empty,
+                    StringComparison.Ordinal);
+            }
+            else
+            {
+                Assert.Equal(WorkerV1Contracts.Error, reply.Type);
+            }
+        }
+    }
+
+    [Fact]
     public async Task Composition_keeps_agent_and_device_tokens_separate_and_does_not_echo_agent_bootstrap_to_v1()
     {
         const string agentToken = "agent-token";
@@ -81,6 +247,26 @@ public sealed class ManagedWorkerCompositionTests
         var state = WorkerV1EnvelopeCodec.Parse(await ReceiveAsync(deviceSocket));
         Assert.Equal(WorkerV1Contracts.RuntimeState, state.Type);
         Assert.DoesNotContain(providerCredential, WorkerV1EnvelopeCodec.Serialize(state), StringComparison.Ordinal);
+
+        await SendAsync(
+            deviceSocket,
+            WorkerV1EnvelopeCodec.Serialize(new WorkerV1Envelope(
+                1,
+                "runtime-status",
+                WorkerV1Contracts.RuntimeRequest,
+                null,
+                new JsonObject
+                {
+                    ["method"] = "GET",
+                    ["path_and_query"] = "/status",
+                    ["body"] = "",
+                })));
+        var runtimeStatus = WorkerV1EnvelopeCodec.Parse(await ReceiveAsync(deviceSocket));
+        Assert.Equal(WorkerV1Contracts.RuntimeResponse, runtimeStatus.Type);
+        Assert.Equal(200, runtimeStatus.Payload["status_code"]!.GetValue<int>());
+        Assert.Equal(
+            "ok",
+            JsonNode.Parse(runtimeStatus.Payload["body"]!.GetValue<string>())!["status"]!.GetValue<string>());
 
         using var wrongDeviceSocket = await app.GetTestServer().CreateWebSocketClient()
             .ConnectAsync(new Uri("ws://localhost/worker/v1"), CancellationToken.None);
@@ -183,6 +369,18 @@ public sealed class ManagedWorkerCompositionTests
         await socket.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
     }
 
+    private static async Task<List<WorkerV1Reply>> CollectAsync(
+        IAsyncEnumerable<WorkerV1Reply> replies)
+    {
+        var result = new List<WorkerV1Reply>();
+        await foreach (var reply in replies)
+        {
+            result.Add(reply);
+        }
+
+        return result;
+    }
+
     private static async Task<string> ReceiveAsync(WebSocket socket)
     {
         var buffer = new byte[128 * 1024];
@@ -226,12 +424,30 @@ public sealed class ManagedWorkerCompositionTests
         }
     }
 
+    private sealed class TestVtubeStudioClient : IVtubeStudioClient
+    {
+        public Task<VtsCatalog> ReadCatalogAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new VtsCatalog("model-1", "Ru", ["vts_01"], ["expr_01"]));
+
+        public Task TriggerAsync(
+            IReadOnlyList<string> catalogCodes,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
     private sealed class ImmediateVoiceHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            if (request.RequestUri?.AbsolutePath == "/status")
+            {
+                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"model_loaded\":true}", Encoding.UTF8, "application/json"),
+                });
+            }
+
             var bytes = new byte[46];
             Encoding.ASCII.GetBytes("RIFF").CopyTo(bytes, 0);
             BitConverter.GetBytes(bytes.Length - 8).CopyTo(bytes, 4);

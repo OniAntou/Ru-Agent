@@ -1,7 +1,9 @@
 # Responsive WinUI Layout Design
 
 **Date:** 2026-08-20  
-**Status:** Proposed for implementation  
+**Status:** Historical implementation record. The responsive shell is shipped;
+use [`docs/operations/runtime-behavior.md`](../../operations/runtime-behavior.md)
+for the current breakpoints and acceptance boundary.
 **Scope:** `gui-winui3` shell and views only
 
 ## Decision summary
@@ -231,4 +233,3 @@ After implementation, update `docs/operations/runtime-behavior.md` with the
 supported shell tiers and the distinction between automated layout tests and
 manual visual acceptance. No existing document was found that describes a
 responsive layout and can be retired at this stage.
-

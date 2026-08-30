@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Status (2026-08-29): historical desktop-cutover checkpoint.** The Agent-only desktop entry point, compact preset selector, prompt composer, and activity feed are implemented on `main`. The original Chat/Agent coexistence and full parity acceptance wording is pre-cutover; managed Git, real-model acceptance, and later session/extension work remain future scope.
+
 **Goal:** Move Ru Desktop Agent onto the shared Harness API/SSE, retire the old Python-owned general Agent loop and three-profile model, reconcile all current documentation, and collect the evidence required for the milestone-1 coding-loop parity claim.
 
-**Architecture:** Ordinary Chat stays on its existing WebSocket; Agent prompt creation, events, approvals, payloads, cancellation, Continue, and reconciliation use authenticated HTTP/SSE through `RuAgent.Client`; a focused `AgentRunPane` and view model keep Harness UI logic out of the already-large `ChatView`; the whole-run v2 cutover occurs only after deterministic and real-model acceptance.
+**Architecture:** The Agent-only desktop entry point uses authenticated HTTP/SSE through `RuAgent.Client`; prompt creation, events, approvals, payloads, cancellation, Continue, and reconciliation stay in the shared Harness path. A focused activity surface keeps Harness UI logic out of the already-large `ChatView`; full real-model acceptance remains future scope.
 
 **Tech Stack:** WinUI 3, .NET 10, xUnit, ASP.NET Core HTTP/SSE, RuAgent.Client, deterministic GUI Harness, Python pytest, route/documentation contracts, disposable Git repositories.
 

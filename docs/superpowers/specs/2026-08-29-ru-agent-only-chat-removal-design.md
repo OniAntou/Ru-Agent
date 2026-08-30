@@ -2,9 +2,11 @@
 
 ## Status
 
-Draft for specification review. The product direction was approved in the
-preceding conversation; this document narrows the implementation to one
-focused backend cut.
+Implemented on `main` (2026-08-29). The product direction and focused backend
+cut described here passed the deterministic release gates. Keep this document
+as the historical decision record; current behavior is maintained in
+`docs/architecture.md`, `docs/operations/runtime-behavior.md`, and
+`docs/operations/agent-tools.md`.
 
 ## Date
 
@@ -24,11 +26,11 @@ existing `/voice/stream`, Voice Engine, VTube Studio, observation, and other
 non-conversation runtime contracts remain available. They do not recreate Chat
 semantics.
 
-This cut intentionally does not implement the OpenCode-style system-prompt
-composer. That work is a separate follow-up project after the single Agent
-path is green. Keeping it separate reduces backend depth risk, keeps the
-deletion reviewable, and avoids changing prompt semantics while transport
-ownership is being consolidated.
+At design time this cut intentionally left the OpenCode-style system-prompt
+composer for a follow-up. That follow-up is now shipped separately in
+[`2026-08-29-ru-opencode-system-prompt-composer-design.md`](2026-08-29-ru-opencode-system-prompt-composer-design.md)
+and its implementation plan; this record retains the transport-cut decision
+only.
 
 ## Why this is the clean cut
 

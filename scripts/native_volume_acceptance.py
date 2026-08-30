@@ -350,7 +350,9 @@ class BrokerProtocolClient:
             open_timeout=self._timeout,
             close_timeout=2,
         )
-        hello = await self._exchange("hello", {})
+        # system.volume is an Agent capability; the Broker defaults a missing
+        # profile to Chat, where native mutation tools are intentionally hidden.
+        hello = await self._exchange("hello", {"profile": "agent"})
         tools = hello["payload"].get("tools")
         if hello.get("message_type") != "hello_ok" or not isinstance(tools, list):
             raise NativeAcceptanceError("broker_hello_failed")

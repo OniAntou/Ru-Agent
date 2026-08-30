@@ -128,21 +128,28 @@ manual acceptance gates.
 VTube Studio hotkeys and expressions are resolved from the connected model's
 current catalog. The runtime revalidates catalog codes before dispatch and
 removes private action suffixes before TTS, history, memory, and approved
-examples. `VoiceVolume` is the lip-sync input. `LLM_MouthOpen` must not be
-mapped or recreated. Live model connection, action, lip-sync, and subtitle
-appearance remain user-run acceptance checks.
+examples. The managed Worker also exposes runtime-scoped GUI state/config/connect
+surface, persists its authentication token at canonical `pyvts_token.txt`,
+and honors `RU_DATA_ROOT` for isolated runs; enabling the optional overlay is
+fail-closed, while overlay process
+ownership and semantic facial/body actions remain explicitly
+unavailable until their typed adapters are added. `VoiceVolume` is the lip-sync
+input. `LLM_MouthOpen` must not be mapped or recreated. Live model connection,
+action, lip-sync, and subtitle appearance remain user-run acceptance checks.
 
 ## Observation and desktop overlay
 
-Screen observation is opt-in. With a Gemini Vision key and a supported hosted
-generation backend, the private worker captures bounded JPEG frames, sends
-them to the configured Gemini model, and publishes a reaction event containing
-real counters, a reaction ID, and an acknowledgement boundary. WinUI polls the
-bounded status contract and passes each event through `VoicePlaybackService`,
-so MediaPlayer playback, subtitles, VTS speaking state, and acknowledgement
-share the normal voice path. Missing credentials, stale events, or a busy Agent run
-must report a skip/error and must not pretend that capture, reaction, or audio
-playback occurred.
+Screen observation is opt-in. The managed Worker owns the bounded observation
+analysis adapter, but its default v1 control handler is fail-closed: status is
+`disabled`, start/react report a stable unavailable result, and no screen frame,
+credential, or reaction is fabricated. A managed Windows capture/reaction loop
+with a trusted Gemini credential channel is still pending; the legacy Python
+observer is reachable only through the explicit `PythonCompatibility` rollback.
+When that loop exists, WinUI will poll the bounded status contract and pass each
+event through `VoicePlaybackService`, so MediaPlayer playback, subtitles, VTS
+speaking state, and acknowledgement share the normal voice path. Missing
+credentials, stale events, or a busy Agent run must report a skip/error and must
+not pretend that capture, reaction, or audio playback occurred.
 
 `RuDesktopOverlay` is an optional separate Spout2 receiver. It does not own
 RuApp, VTube Studio, the model, VTS actions, or voice. Building the receiver may

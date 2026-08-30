@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 
 namespace RuAgent.Runtime.Adapters.Audio;
 
@@ -184,6 +185,8 @@ public sealed class WindowsOmniVoiceProcessLauncher : IOmniVoiceProcessLauncher
             RedirectStandardError = true,
         };
         startInfo.ArgumentList.Add(options.ServerScript);
+        startInfo.Environment["RU_OMNIVOICE_HOST"] = options.Host;
+        startInfo.Environment["RU_OMNIVOICE_PORT"] = options.Port.ToString(CultureInfo.InvariantCulture);
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         if (!process.Start())
         {

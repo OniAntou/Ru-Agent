@@ -1,5 +1,9 @@
 # Ru Codebase Security and Reliability Remediation Implementation Plan
 
+> **Status:** Historical implementation record. The remediation pass shipped on
+> `main`; current ownership and verification boundaries are in
+> `docs/architecture.md` and `docs/operations/verification.md`.
+
 > **Approved for execution:** 2026-08-24. Work is performed directly on
 > `main`, preserving unrelated user changes. The primary agent owns P0/P1;
 > Luna agents may edit only the explicitly delegated P2 file sets.

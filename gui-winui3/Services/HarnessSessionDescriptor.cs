@@ -10,6 +10,8 @@ public sealed record HarnessSessionDescriptor(
     string EventsPath,
     string VoiceMode)
 {
+    public string? WorkspacePath { get; init; }
+
     private static readonly HashSet<string> AllowedScenarios = new(StringComparer.OrdinalIgnoreCase)
     {
         "turn",
@@ -27,7 +29,8 @@ public sealed record HarnessSessionDescriptor(
         string authToken,
         string scenario,
         string eventsPath,
-        string voiceMode = "deterministic")
+        string voiceMode = "deterministic",
+        string? workspacePath = null)
     {
         var session = BackendSession.FromHttpUri(baseUrl, authToken);
         ValidateScenario(scenario);
@@ -46,7 +49,12 @@ public sealed record HarnessSessionDescriptor(
             session.AuthSecret,
             scenario,
             Path.GetFullPath(eventsPath),
-            "deterministic");
+            "deterministic")
+        {
+            WorkspacePath = string.IsNullOrWhiteSpace(workspacePath)
+                ? null
+                : Path.GetFullPath(workspacePath),
+        };
     }
 
     public static HarnessSessionDescriptor LoadFromArgument(string arguments)
@@ -63,8 +71,13 @@ public sealed record HarnessSessionDescriptor(
                 payload.AuthToken,
                 payload.Scenario,
                 payload.EventsPath,
-                payload.VoiceMode);
+                payload.VoiceMode,
+                payload.WorkspacePath);
             EnsureUnderDescriptorRoot(descriptorPath, descriptor.EventsPath);
+            if (descriptor.WorkspacePath is not null)
+            {
+                EnsureUnderDescriptorRoot(descriptorPath, descriptor.WorkspacePath);
+            }
             return descriptor;
         }
         finally
@@ -84,6 +97,7 @@ public sealed record HarnessSessionDescriptor(
             Scenario = Scenario,
             EventsPath = EventsPath,
             VoiceMode = VoiceMode,
+            WorkspacePath = WorkspacePath,
         };
         File.WriteAllText(
             fullPath,
@@ -179,5 +193,8 @@ public sealed record HarnessSessionDescriptor(
 
         [JsonPropertyName("voice_mode")]
         public string VoiceMode { get; set; } = string.Empty;
+
+        [JsonPropertyName("workspace_path")]
+        public string? WorkspacePath { get; set; }
     }
 }

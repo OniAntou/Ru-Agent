@@ -56,7 +56,7 @@ new files focused; do not grow `LoopbackModelStepRunner.cs`,
 | `backend-dotnet/RuAgent.Harness.Core.Tests/Prompting/*` | Core record/provider/coordinator contract tests and fakes. |
 | `backend-dotnet/RuAgent.Harness.Core.Tests/Fakes/FakeModelStepRunner.cs` | Queue typed model results and capture prompt contexts in lifecycle tests. |
 | `backend-dotnet/RuBackend.Tests/Worker/*`, `backend-dotnet/RuBackend.Tests/Harness/*` | Wire, instruction loader, SSE privacy, and persistence integration tests. |
-| `docs/architecture.md`, `docs/operations/runtime-behavior.md`, `docs/operations/verification.md`, `docs/README.md`, `docs/superpowers/specs/2026-08-29-ru-agent-only-opencode-prompt-composer-design.md` | Current documentation and superseded-spec links after code gates pass. |
+| `docs/architecture.md`, `docs/operations/runtime-behavior.md`, `docs/operations/verification.md`, `docs/README.md`, `docs/superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md` | Current documentation and implementation-record links after code gates pass. |
 
 The old Agent-only transport design and current Agent-only implementation are
 inputs, not additional work in this plan. Do not reopen Chat removal, UI
@@ -917,7 +917,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
 - Modify: `docs/operations/runtime-behavior.md`
 - Modify: `docs/operations/verification.md`
 - Modify: `docs/README.md`
-- Modify: `docs/superpowers/specs/2026-08-29-ru-agent-only-opencode-prompt-composer-design.md`
+- Modify: `docs/superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md`
 - Test: documentation link and stale-contract checks from the commands below
 
 - [x] **Step 1: Capture the pre-change documentation failures.**
@@ -949,10 +949,9 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
   OS-enforced filesystem/network sandbox remain out of scope.
 
   In `docs/README.md`, change the focused design link from proposed to
-  implemented and link the runtime behavior and verification sections. In the
-  old umbrella spec, mark it historical and link the focused design plus the
-  implementation plan; do not leave two documents claiming different active
-  schemas.
+  implemented and link the runtime behavior and verification sections. Keep
+  this focused design as the single prompt-composer implementation record; do
+  not leave two documents claiming different active schemas.
 
 - [x] **Step 3: Make verification and privacy checks executable.**
 
@@ -1040,7 +1039,7 @@ redesign, skills/MCP discovery, or OS sandbox work while executing these tasks.
 - [x] **Step 6: Commit the documentation and release-gate slice.**
 
   ```powershell
-  git add docs/architecture.md docs/operations/runtime-behavior.md docs/operations/verification.md docs/README.md docs/superpowers/specs/2026-08-29-ru-agent-only-opencode-prompt-composer-design.md
+  git add docs/architecture.md docs/operations/runtime-behavior.md docs/operations/verification.md docs/README.md docs/superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md
   git commit -m "docs: finalize system prompt composer contract"
   ```
 

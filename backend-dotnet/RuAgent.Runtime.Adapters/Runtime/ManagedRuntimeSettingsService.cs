@@ -9,13 +9,15 @@ public sealed record RuntimeSettingsInput
         string modelName,
         string? baseUrl,
         string apiVariant,
-        bool kiloReasoningEnabled)
+        bool kiloReasoningEnabled,
+        VoiceSettingsSnapshot? voice = null)
     {
         Backend = RequireText(backend, 64, nameof(backend));
         ModelName = RequireText(modelName, RuntimeLimits.MaxModelNameChars, nameof(modelName));
         BaseUrl = baseUrl;
         ApiVariant = RequireText(apiVariant, 64, nameof(apiVariant), allowEmpty: true);
         KiloReasoningEnabled = kiloReasoningEnabled;
+        Voice = voice ?? new VoiceSettingsSnapshot();
     }
 
     public string Backend { get; }
@@ -27,6 +29,8 @@ public sealed record RuntimeSettingsInput
     public string ApiVariant { get; }
 
     public bool KiloReasoningEnabled { get; }
+
+    public VoiceSettingsSnapshot Voice { get; }
 
     private static string RequireText(
         string? value,
@@ -117,7 +121,7 @@ public sealed class ManagedRuntimeSettingsService
             var previous = _current;
             try
             {
-                if (_applier is not null)
+                if (_applier is not null && ProviderSettingsChanged(previous, candidate))
                 {
                     await _applier.ApplyAsync(candidate, cancellationToken).ConfigureAwait(false);
                 }
@@ -158,7 +162,10 @@ public sealed class ManagedRuntimeSettingsService
             input.ModelName,
             baseUrl,
             input.ApiVariant,
-            input.KiloReasoningEnabled));
+            input.KiloReasoningEnabled)
+        {
+            Voice = input.Voice,
+        });
     }
 
     private static RuntimeSettingsSnapshot ValidateSnapshot(RuntimeSettingsSnapshot snapshot)
@@ -177,6 +184,8 @@ public sealed class ManagedRuntimeSettingsService
             throw new ArgumentException("Runtime settings are invalid.", nameof(snapshot));
         }
 
+        ValidateVoice(snapshot.Voice);
+
         if (snapshot.BaseUrl is not null)
         {
             ValidateBaseUrl(snapshot.BaseUrl);
@@ -189,6 +198,39 @@ public sealed class ManagedRuntimeSettingsService
             ApiVariant = snapshot.ApiVariant.Trim(),
         };
     }
+
+    private static void ValidateVoice(VoiceSettingsSnapshot voice)
+    {
+        ArgumentNullException.ThrowIfNull(voice);
+        if (string.IsNullOrWhiteSpace(voice.VoiceLabel)
+            || voice.VoiceLabel.Length > 128
+            || voice.VoiceLabel.Any(char.IsControl)
+            || !string.Equals(voice.VoiceStyleId, "original", StringComparison.Ordinal)
+            || !double.IsFinite(voice.VoiceSpeed)
+            || voice.VoiceSpeed is < 0.5 or > 2.0
+            || voice.SubtitleColor.Length > 32
+            || voice.SubtitleColor.Any(char.IsControl)
+            || voice.SubtitleSize.Length > 32
+            || voice.SubtitleSize.Any(char.IsControl)
+            || !double.IsFinite(voice.SubtitleDuration)
+            || voice.SubtitleDuration is < 1.0 or > 10.0
+            || voice.SubtitlePosMode.Length > 32
+            || voice.SubtitlePosMode.Any(char.IsControl)
+            || voice.SubtitlePosX is < -1 or > 10_000
+            || voice.SubtitlePosY is < -1 or > 10_000)
+        {
+            throw new ArgumentException("Runtime voice settings are invalid.", nameof(voice));
+        }
+    }
+
+    private static bool ProviderSettingsChanged(
+        RuntimeSettingsSnapshot previous,
+        RuntimeSettingsSnapshot candidate) =>
+        !string.Equals(previous.Backend, candidate.Backend, StringComparison.Ordinal)
+        || !string.Equals(previous.ModelName, candidate.ModelName, StringComparison.Ordinal)
+        || !Equals(previous.BaseUrl, candidate.BaseUrl)
+        || !string.Equals(previous.ApiVariant, candidate.ApiVariant, StringComparison.Ordinal)
+        || previous.KiloReasoningEnabled != candidate.KiloReasoningEnabled;
 
     private static Uri? ParseBaseUrl(string? value)
     {

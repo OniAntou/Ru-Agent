@@ -10,6 +10,24 @@ namespace RuAgent.Runtime.Adapters.Tests;
 public sealed class VtubeStudioClientTests
 {
     [Fact]
+    public void Default_token_path_honors_the_complete_data_root_isolation_override()
+    {
+        var previous = Environment.GetEnvironmentVariable("RU_DATA_ROOT");
+        var root = Path.Combine(Path.GetTempPath(), "ru-vts-token-root-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("RU_DATA_ROOT", root);
+        try
+        {
+            Assert.Equal(
+                Path.Combine(Path.GetFullPath(root), "pyvts_token.txt"),
+                FileVtubeStudioTokenStore.ResolveDefaultPath());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RU_DATA_ROOT", previous);
+        }
+    }
+
+    [Fact]
     public async Task Client_authenticates_with_existing_token_and_builds_sorted_catalog()
     {
         var socket = new FakeSocket(

@@ -80,6 +80,30 @@ public sealed class ManagedRuntimeSettingsServiceTests
         Assert.Equal(0, applier.Calls);
     }
 
+    [Fact]
+    public async Task Load_updates_voice_settings_without_reapplying_the_model_provider()
+    {
+        var applier = new FailingApplier();
+        var service = new ManagedRuntimeSettingsService(
+            new RuntimeSettingsSnapshot("OpenCode Zen", "opencode/free", null, "Default", false),
+            applier);
+
+        var message = await service.LoadAsync(
+            new RuntimeSettingsInput(
+                "OpenCode Zen",
+                "opencode/free",
+                null,
+                "Default",
+                false,
+                new VoiceSettingsSnapshot("Ái Vy (OmniVoice)", VoiceSpeed: 1.2)),
+            CancellationToken.None);
+
+        Assert.Equal("Runtime loaded.", message);
+        Assert.Equal(0, applier.Calls);
+        Assert.Equal("Ái Vy (OmniVoice)", service.Current.Voice.VoiceLabel);
+        Assert.Equal(1.2, service.Current.Voice.VoiceSpeed);
+    }
+
     private sealed class FailingApplier : IManagedRuntimeApplier
     {
         public int Calls { get; private set; }

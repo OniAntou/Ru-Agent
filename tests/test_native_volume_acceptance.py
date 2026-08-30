@@ -191,6 +191,7 @@ def test_bearer_ownership_proves_correct_and_random_wrong_before_ws() -> None:
 
 def test_protocol_client_uses_authenticated_private_volume_contract() -> None:
     sent_types: list[str] = []
+    hello_profiles: list[object] = []
     headers: list[dict[str, str]] = []
 
     class Socket:
@@ -203,6 +204,7 @@ def test_protocol_client_uses_authenticated_private_volume_contract() -> None:
             payload: dict[str, Any]
             response_type = "tool_result"
             if request["message_type"] == "hello":
+                hello_profiles.append(request["payload"].get("profile"))
                 response_type = "hello_ok"
                 payload = {
                     "status": "ready",
@@ -275,6 +277,7 @@ def test_protocol_client_uses_authenticated_private_volume_contract() -> None:
     assert result.status == "succeeded"
     assert headers == [{"Authorization": "Bearer private-token"}]
     assert sent_types == ["hello", "session_open", "tool_request", "session_close"]
+    assert hello_profiles == ["agent"]
 
 
 def test_protocol_client_rejects_mismatched_context() -> None:

@@ -105,11 +105,27 @@ def _factory_for(method: str, path: str) -> RequestFactory:
         elif path == "/vts/overlay" or path == "/vts/connect":
             body = {"enabled": False}
         elif path == "/vts/config":
-            body = {"enabled": False, "sensitivity": 1.0}
+            # Keep this fixture aligned with the runtime MotionConfig schema.
+            # The old enabled/sensitivity pair belongs to mouse-look/overlay,
+            # and is rejected by the VTS motion-config endpoint.
+            body = {
+                "sway_amplitude_idle": 10.0,
+                "sway_amplitude_speaking": 16.0,
+                "head_scale": 100.0,
+                "eye_scale": 100.0,
+                "micro_action_min_delay": 8.0,
+                "micro_action_max_delay": 22.0,
+                "pose_min_interval": 90.0,
+                "pose_max_interval": 130.0,
+                "breath_amplitude": 1.5,
+                "breath_rate": 0.15,
+            }
         elif path == "/vts/activity":
-            body = {"speaking": False, "codes": ["vts_01"]}
+            body = {"typing": False}
         elif path == "/vts/action":
-            body = {"codes": ["vts_01"]}
+            # The Python compatibility endpoint accepts a space/comma-delimited
+            # string; the managed Worker v1 protocol uses a JsonArray internally.
+            body = {"codes": "vts_01"}
         elif path == "/vts/speaking":
             body = {"speaking": False}
         elif path == "/agent/v1/runs" and method == "POST":

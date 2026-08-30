@@ -108,6 +108,23 @@ Broker-internal. `files.apply_patch` is not advertised or model-usable. The
 managed Git commit workflow (Phase 3 Task 6) is not shipped; Git commands
 remain ordinary terminal requests.
 
+The deterministic compatibility Harness intentionally uses the explicit
+`PythonCompatibility` rollback, so its route pass does not validate the raw
+Worker v1 relay surface in default `Dotnet` mode. The managed composition now
+binds every allowlisted private route to an explicit C# handler: status/models
+report the active typed settings (the worker never receives provider
+credentials), VTS owns runtime-scoped GUI state/config plus
+catalog/action/connect handling, and persists its authentication token through
+the canonical `pyvts_token.txt` path, voice
+and STT use their typed adapters, and observation status/control returns a
+bounded disabled/unavailable result until a managed screen-capture/reaction
+loop is shipped. The raw route fallback is no longer reachable from the
+managed composition; enabling the optional overlay is fail-closed. The
+provider-backed model catalog, VTS overlay process/semantic actions, and
+observation capture/reaction still need a
+dedicated managed-runtime integration gate before claiming full production
+parity.
+
 ## Build and verification
 
 ```powershell

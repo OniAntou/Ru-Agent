@@ -1,5 +1,9 @@
 # Chat Dropdown and Full-Width Scrollbar Implementation Plan
 
+> **Status:** Historical implementation record. The compact selector and
+> full-width scrollbar shipped; current shell behavior lives in
+> `docs/operations/runtime-behavior.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the Chat mode flyout visually belong to Ru's current surface language and move the transcript scrollbar to the far right edge of the whole Chat viewport while keeping the reading column centered.

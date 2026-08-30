@@ -50,6 +50,9 @@ public sealed class RuntimeSettingsLoaderTests
         Assert.Equal(WorkerMessageTypes.RuntimeLoad, observed!.Type);
         Assert.Equal("OpenCode Zen", observed.Payload["backend"]!.GetValue<string>());
         Assert.Equal("opencode/free", observed.Payload["opencode_model"]!.GetValue<string>());
+        Assert.Equal("Ru (OmniVoice)", observed.Payload["voice_label"]!.GetValue<string>());
+        Assert.Equal(1.0, observed.Payload["voice_speed"]!.GetValue<double>());
+        Assert.True(observed.Payload["auto_read_replies"]!.GetValue<bool>());
         var serialized = WorkerEnvelopeCodec.Serialize(observed);
         Assert.DoesNotContain("api_key", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("must-not", serialized, StringComparison.Ordinal);

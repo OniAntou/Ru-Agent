@@ -1,5 +1,9 @@
 # Agent Activity Feed Implementation Plan
 
+> **Status:** Historical implementation record. The safe transient activity
+> feed shipped; current rendering/privacy rules live in
+> `docs/operations/runtime-behavior.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Đưa tiến trình Coding Agent an toàn vào transcript Chat theo thời gian thực, chỉ hiển thị summary được validate (thinking, explore, search, analyze, edit, terminal, status), tự ẩn khi run kết thúc và không làm thay đổi Chat mode, approval, workspace trust hay audit semantics.

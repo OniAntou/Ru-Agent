@@ -1,5 +1,9 @@
 # Responsive WinUI Layout Implementation Plan
 
+> **Status:** Historical implementation record. The responsive shell shipped;
+> current breakpoints and acceptance boundaries live in
+> `docs/operations/runtime-behavior.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the Ru WinUI 3 shell and its content pages resize cleanly from a wide desktop layout to compact and narrow layouts without clipping controls or adding runtime latency.
@@ -750,5 +754,4 @@ The staged-name check must contain only the documentation and final contract-tes
 - [x] Every verification command uses the repository's Windows paths and runs heavyweight suites sequentially.
 - [x] The plan keeps unrelated dirty worktree files unstaged.
 - [x] The only manual gate is visual desktop acceptance; no automated desktop control is introduced.
-
 

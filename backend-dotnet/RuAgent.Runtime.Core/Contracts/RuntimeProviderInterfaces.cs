@@ -24,6 +24,16 @@ public interface IVoiceLifecycle
     Task ReleaseAsync(CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Optional readiness state for providers that expose a process-backed
+/// inference engine. A provider must not advertise itself as available until
+/// its bounded health/readiness check has completed successfully.
+/// </summary>
+public interface IVoiceReadiness
+{
+    bool IsReady { get; }
+}
+
 public interface ISpeechRecognizer
 {
     Task<string> RecognizeAsync(

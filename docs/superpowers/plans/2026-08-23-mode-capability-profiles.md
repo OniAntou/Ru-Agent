@@ -1,5 +1,9 @@
 # Mode Capability Profiles Implementation Plan
 
+> **Status:** Historical and superseded. The three-mode proposal was replaced
+> by the Agent-only runtime; current presets and capabilities are in
+> `docs/operations/agent-tools.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Split Ru's model-facing capability surface into three Broker-enforced profiles — Chat (workspace read), Agent (read/write/edit/two-tier terminal), Full Access (Agent tool ids, execution friction removed except filesystem mutations) — per `docs/superpowers/specs/2026-08-23-mode-capability-profiles-design.md`.

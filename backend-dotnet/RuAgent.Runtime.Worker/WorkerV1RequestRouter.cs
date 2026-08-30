@@ -460,7 +460,20 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
         var baseUrl = urlKey is null ? null : OptionalText(payload, urlKey, 2_048);
         var apiVariant = OptionalText(payload, "api_variant", 64) ?? string.Empty;
         var reasoning = OptionalBoolean(payload, "kilo_reasoning_enabled");
-        return new RuntimeSettingsInput(backend, model, baseUrl, apiVariant, reasoning);
+        var voice = new VoiceSettingsSnapshot(
+            OptionalText(payload, "voice_label", 128) ?? "Ru (OmniVoice)",
+            OptionalText(payload, "voice_style_id", 32) ?? "original",
+            OptionalDouble(payload, "voice_speed") ?? 1.0,
+            OptionalBoolean(payload, "auto_pace_enabled"),
+            OptionalBoolean(payload, "auto_read_replies", defaultValue: true),
+            OptionalBoolean(payload, "show_subtitles"),
+            OptionalText(payload, "subtitle_color", 32) ?? "#FFFFFF",
+            OptionalText(payload, "subtitle_size", 32) ?? "medium",
+            OptionalDouble(payload, "subtitle_duration") ?? 2.0,
+            OptionalText(payload, "subtitle_pos_mode", 32) ?? "auto",
+            OptionalInt(payload, "subtitle_pos_x") ?? -1,
+            OptionalInt(payload, "subtitle_pos_y") ?? -1);
+        return new RuntimeSettingsInput(backend, model, baseUrl, apiVariant, reasoning, voice);
     }
 
     private static PrivateRuntimeRequest ReadPrivateRequest(JsonObject payload)
@@ -507,11 +520,11 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
         return text;
     }
 
-    private static bool OptionalBoolean(JsonObject payload, string key)
+    private static bool OptionalBoolean(JsonObject payload, string key, bool defaultValue = false)
     {
         if (!payload.TryGetPropertyValue(key, out var node) || node is null)
         {
-            return false;
+            return defaultValue;
         }
 
         if (node is JsonValue value && value.TryGetValue<bool>(out var parsed))
@@ -544,6 +557,22 @@ public sealed class ManagedWorkerV1RequestRouter : IWorkerV1RequestRouter
         }
 
         throw new ArgumentException("Runtime number field is invalid.", nameof(payload));
+    }
+
+    private static int? OptionalInt(JsonObject payload, string key)
+    {
+        if (!payload.TryGetPropertyValue(key, out var node) || node is null)
+        {
+            return null;
+        }
+
+        if (node is JsonValue value
+            && value.TryGetValue<int>(out var parsed))
+        {
+            return parsed;
+        }
+
+        throw new ArgumentException("Runtime integer field is invalid.", nameof(payload));
     }
 
     private static void RejectSensitiveKeys(JsonNode node)

@@ -1,5 +1,8 @@
 # Ru Deterministic Volume Recovery Implementation Plan
 
+> **Status:** Historical implementation record. Deterministic volume recovery
+> shipped; current capability truth is in `docs/operations/agent-tools.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make explicit Vietnamese and English volume commands execute through Ru's verified Broker path without model selection, preserve one bounded failure reason for an immediate causal follow-up, and show only truthful Agent activity states.

@@ -1,8 +1,8 @@
 # Ru
 
 Ru is a Vietnamese-English conversational companion built around a WinUI 3
-desktop app, an ASP.NET Core public backend, a managed C# Agent Worker, and a
-private Python Device Worker. Conversational generation is cloud-first; the
+desktop app, an ASP.NET Core public backend, and one managed C# Worker serving
+Agent and runtime/device boundaries. Conversational generation is cloud-first;
 repository no longer ships an in-process conversational model or training
 pipeline.
 
@@ -23,8 +23,8 @@ the shared `RuAgent.Client` (`PublicHostStarter`/`PublicHostLocator`), which
 validates an ACL-restricted loopback descriptor (`protocol_version`, `base_url`,
 bearer, PID/start-time/nonce) and `GET /status` bearer. On first start the
 Public Host creates separate per-run Agent and Device Worker secrets, starts the
-C# Agent Worker v2 on loopback port 8005 and the Python Device Worker v1
-(`--v1-only`) on loopback port 8006, starts the isolated `RuAgentBroker` on a
+ managed C# Worker on loopback ports 8005 (`/worker/v2`) and 8006
+ (`/worker/v1`), starts the isolated `RuAgentBroker` on a
 dynamic loopback port, binds the ASP.NET Core Public Host on port 8000, waits
 for public readiness, and assigns all children to one Job Object. Idle Public
 Host exits after 10 minutes without an active Agent run,
@@ -50,16 +50,19 @@ encrypted-at-rest snapshots and global interactive header
 `X-Interactive-Confirmed: true`; `POST /agent/v1/runs/{runId}/reconcile`
 is active on the headless Agent v2 path and resolves an ambiguous dispatch
 outcome before the run continues.
-The C# Agent Worker owns authenticated Agent model steps (Worker v2) and the
-provider adapter; the Python Device Worker is the v1-only boundary for runtime,
-STT, VTube Studio, observation, and current voice-engine coordination. The CLI
-tracer `RuAgent.Cli` is a thin headless client: it delegates start/attach to
-`RuAgent.Client` and all run behavior to authenticated HTTP/SSE.
+The managed C# Worker owns authenticated Agent model steps (Worker v2) and the
+v1 runtime/device boundary for settings, voice orchestration, STT, VTube Studio,
+observation, and lifecycle coordination. The Python Agent + Device topology is
+available only through the trusted startup-only `PythonCompatibility` rollback.
+The CLI tracer `RuAgent.Cli` is a thin headless client: it delegates
+start/attach to `RuAgent.Client` and all run behavior to authenticated
+HTTP/SSE.
 
 The canonical route inventory is
 [`backend-dotnet/public-route-contract.json`](backend-dotnet/public-route-contract.json).
 There is no public Python HTTP fallback or public backend mode switch;
-`PythonCompatibility` is a trusted startup-only rollback for Agent v2.
+`PythonCompatibility` is a trusted startup-only rollback for the legacy Agent
+and Device workers.
 
 ## Setup
 
@@ -170,11 +173,13 @@ Do not start either worker or the voice engine as independent public services.
   WebOptions and matching scopes are configured; responses are bounded,
   redirect-safe, sanitized, and marked `untrusted`. Connectors and `app.open`
   remain internal.
-- Screen observation is opt-in from Settings. When a Gemini Vision key and a
-  supported hosted generation backend are configured, the private worker
-  captures bounded JPEG frames and publishes reaction events. WinUI consumes
-  those events through the normal voice, subtitle, and VTS playback pipeline;
-  the worker never plays observation audio directly.
+- Screen observation remains opt-in from Settings. The managed Worker exposes
+  bounded observation status/control and the Gemini analysis adapter, but its
+  default control path is explicitly disabled until a managed screen-capture /
+  reaction loop and trusted credential channel are shipped. The legacy observer
+  is available only through the explicit `PythonCompatibility` rollback. When
+  events are available, WinUI consumes them through the normal voice, subtitle,
+  and VTS playback pipeline; the worker never plays observation audio directly.
 
 See [runtime behavior](docs/operations/runtime-behavior.md) for invariants and
 manual acceptance boundaries.

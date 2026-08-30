@@ -109,14 +109,12 @@ public sealed class WorkerBrokerLaunchPlan
                 workerExecutable!,
                 $"--host 127.0.0.1 --port {startup.AgentWorkerPort} --device-port {startup.DeviceWorkerPort}",
                 root,
-                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["RU_AGENT_WORKER_TOKEN"] = startup.AgentWorkerToken,
-                    ["RU_DEVICE_WORKER_TOKEN"] = startup.DeviceWorkerToken,
-                    ["RU_AGENT_PROVIDER_BOOTSTRAP"] = providerBootstrapPath!,
-                    ["RU_PROJECT_ROOT"] = root,
-                    ["RU_LOG_ROOT"] = resolvedLogRoot,
-                },
+                CreateWorkerEnvironment(
+                    ("RU_AGENT_WORKER_TOKEN", startup.AgentWorkerToken),
+                    ("RU_DEVICE_WORKER_TOKEN", startup.DeviceWorkerToken),
+                    ("RU_AGENT_PROVIDER_BOOTSTRAP", providerBootstrapPath!),
+                    ("RU_PROJECT_ROOT", root),
+                    ("RU_LOG_ROOT", resolvedLogRoot)),
                 Path.Combine(bootstrapRoot, "agent_worker_out.jsonl"),
                 Path.Combine(bootstrapRoot, "agent_worker_err.jsonl")));
         }
@@ -127,11 +125,9 @@ public sealed class WorkerBrokerLaunchPlan
                 pythonExecutable,
                 $"-m ru_runtime.worker.server --host 127.0.0.1 --port {startup.AgentWorkerPort}",
                 root,
-                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["RU_WORKER_TOKEN"] = startup.AgentWorkerToken,
-                    ["RU_LOG_ROOT"] = resolvedLogRoot,
-                },
+                CreateWorkerEnvironment(
+                    ("RU_WORKER_TOKEN", startup.AgentWorkerToken),
+                    ("RU_LOG_ROOT", resolvedLogRoot)),
                 Path.Combine(bootstrapRoot, "agent_worker_out.jsonl"),
                 Path.Combine(bootstrapRoot, "agent_worker_err.jsonl")));
         }
@@ -143,11 +139,9 @@ public sealed class WorkerBrokerLaunchPlan
                 pythonExecutable,
                 $"-m ru_runtime.worker.server --host 127.0.0.1 --port {startup.DeviceWorkerPort} --v1-only",
                 root,
-                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["RU_WORKER_TOKEN"] = startup.DeviceWorkerToken,
-                    ["RU_LOG_ROOT"] = resolvedLogRoot,
-                },
+                CreateWorkerEnvironment(
+                    ("RU_WORKER_TOKEN", startup.DeviceWorkerToken),
+                    ("RU_LOG_ROOT", resolvedLogRoot)),
                 Path.Combine(bootstrapRoot, "device_worker_out.jsonl"),
                 Path.Combine(bootstrapRoot, "device_worker_err.jsonl")));
         }
@@ -232,6 +226,24 @@ public sealed class WorkerBrokerLaunchPlan
         var logRoot = Path.Combine(localAppData, "Ru", "logs");
         Directory.CreateDirectory(logRoot);
         return logRoot;
+    }
+
+    private static Dictionary<string, string> CreateWorkerEnvironment(
+        params (string Key, string Value)[] entries)
+    {
+        var environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in entries)
+        {
+            environment[key] = value;
+        }
+
+        var configuredDataRoot = Environment.GetEnvironmentVariable("RU_DATA_ROOT");
+        if (!string.IsNullOrWhiteSpace(configuredDataRoot))
+        {
+            environment["RU_DATA_ROOT"] = Path.GetFullPath(configuredDataRoot.Trim());
+        }
+
+        return environment;
     }
 
     private static int FindFreeLoopbackPort()

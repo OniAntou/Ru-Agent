@@ -77,7 +77,10 @@ def test_backend_agent_probe_covers_broker_approval_and_v2_tool_loop() -> None:
     assert "approval_stale" in broker_probe_source
     assert "private_agent_metadata_visible" in session_source
     assert "Harness agent tool loop completed." in worker_source
-    assert "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows." in ui_driver_source
+    assert "Harness agent tool loop completed." in ui_driver_source
+    assert "Lệnh âm lượng không hợp lệ nên em chưa gửi thay đổi tới Windows." not in ui_driver_source
+    assert '"workspace_path": str(workspace_path.resolve())' in session_source
+    assert '"harness-agent.txt"' in session_source
 
 
 def test_deterministic_worker_uses_only_the_read_only_agent_contract() -> None:

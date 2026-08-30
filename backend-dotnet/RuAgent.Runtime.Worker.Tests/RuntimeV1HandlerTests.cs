@@ -26,6 +26,17 @@ public sealed class RuntimeV1HandlerTests
                 ["ollama_url"] = "http://127.0.0.1:11434/v1",
                 ["api_variant"] = "Default",
                 ["kilo_reasoning_enabled"] = false,
+                ["voice_label"] = "Ái Vy (OmniVoice)",
+                ["voice_speed"] = 1.25,
+                ["auto_pace_enabled"] = true,
+                ["auto_read_replies"] = false,
+                ["show_subtitles"] = true,
+                ["subtitle_color"] = "#ABCDEF",
+                ["subtitle_size"] = "large",
+                ["subtitle_duration"] = 3.5,
+                ["subtitle_pos_mode"] = "manual",
+                ["subtitle_pos_x"] = 12,
+                ["subtitle_pos_y"] = 34,
             },
             CancellationToken.None));
 
@@ -33,6 +44,13 @@ public sealed class RuntimeV1HandlerTests
         Assert.Equal(WorkerV1Contracts.RuntimeState, replies[0].Type);
         Assert.Equal("success", replies[0].Payload["status"]!.GetValue<string>());
         Assert.Equal("Ollama", settings.Current.Backend);
+        Assert.Equal("Ái Vy (OmniVoice)", settings.Current.Voice.VoiceLabel);
+        Assert.Equal(1.25, settings.Current.Voice.VoiceSpeed);
+        Assert.True(settings.Current.Voice.AutoPaceEnabled);
+        Assert.False(settings.Current.Voice.AutoReadReplies);
+        Assert.True(settings.Current.Voice.ShowSubtitles);
+        Assert.Equal(12, settings.Current.Voice.SubtitlePosX);
+        Assert.Equal(34, settings.Current.Voice.SubtitlePosY);
     }
 
     [Fact]

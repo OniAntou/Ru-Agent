@@ -324,11 +324,20 @@ class HarnessSession:
         gui_root = self._temporary_root / "gui"
         gui_root.mkdir(parents=True, exist_ok=True)
         events_path = gui_root / "events.jsonl"
-        self._descriptor_path = gui_root / "session.json"
+        # Keep the descriptor at the temporary-session root so both the event
+        # stream and the isolated Agent workspace remain inside its validation
+        # boundary. The app uses this workspace for the trust challenge and the
+        # read-only deterministic fixture.
+        self._descriptor_path = self._temporary_root / "session.json"
+        (self._workspace_root / "harness-agent.txt").write_text(
+            "deterministic agent fixture\n",
+            encoding="utf-8",
+        )
         self._write_gui_descriptor(
             self._descriptor_path,
             events_path=events_path,
             scenario=scenario,
+            workspace_path=self._workspace_root,
         )
 
         command = [
@@ -456,6 +465,7 @@ class HarnessSession:
         *,
         events_path: Path,
         scenario: GuiScenario,
+        workspace_path: Path,
     ) -> None:
         descriptor_path.write_text(
             json.dumps(
@@ -465,6 +475,7 @@ class HarnessSession:
                     "scenario": scenario,
                     "events_path": str(events_path.resolve()),
                     "voice_mode": "deterministic",
+                    "workspace_path": str(workspace_path.resolve()),
                 },
                 ensure_ascii=False,
             ),

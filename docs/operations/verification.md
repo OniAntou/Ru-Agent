@@ -106,8 +106,9 @@ speaker, volume, and VTube Studio acceptance remain explicit user-run checks.
 
 The deterministic release gates are automated and do not stand in for native
 device behavior. The following checks are intentionally pending a user-owned
-Windows run; no GUI, microphone, speaker, VTube Studio, or provider process was
-started by the automated verification:
+Windows run. Automated verification may launch isolated RuApp, Worker, and
+Broker processes, but it does not touch the physical microphone, speaker,
+volume endpoint, VTube Studio, or provider process:
 
 | Check | Status | Recorded evidence |
 | --- | --- | --- |
@@ -115,6 +116,19 @@ started by the automated verification:
 | OmniVoice stream, cancellation, playback, and subtitle order | pending user-run | not collected |
 | VTube Studio catalog, action, and reconnect | pending user-run | not collected |
 | Opt-in Gemini observation | pending user-run | not collected |
+
+The authorized 2026-08-30 run passed all four deterministic Agent GUI
+scenarios and the backend contract Harness. A separate `runtime-live` probe
+also accepted the corrected VTS request fixtures; its voice checks stayed
+blocked by the local provider not reporting a loaded model, and VTube Studio
+reconnect timed out. These results do not replace the user-owned native smoke
+checks above.
+
+A later `runtime-live` rerun kept startup, authentication, public-route probes,
+and cleanup green but returned bounded external failures for synthetic STT,
+TTS, voice streaming, and VTube Studio connect; observation remained skipped
+by policy. No prompt, transcript, audio, credential, provider body, or device
+value was retained.
 
 When these checks are run, record only pass/fail, duration, and bounded reason
 codes. Never copy prompts, transcripts, audio, credentials, paths, provider
@@ -151,6 +165,28 @@ explicitly selects `PythonCompatibility` and points both v2 and v1 clients at
 one in-process Python fixture worker. This keeps its contract probes isolated
 from the published managed Worker while the normal desktop startup remains
 managed C# by default.
+
+This compatibility evidence does not prove raw Worker v1 route parity in the
+default `Dotnet` mode. The managed composition now binds every allowlisted
+private route to an explicit C# handler. Status/models expose only the active
+typed settings (provider credentials remain host-owned), runtime-scoped VTS
+state/config and canonical token persistence, and
+catalog/action/connect use the managed adapter, voice/STT use typed providers,
+and observation control is explicitly disabled until its managed capture and
+reaction loop exists. Overlay enable is fail-closed while its process owner is
+missing. The generic private-route fallback is no longer reachable
+from the managed composition; provider-backed model catalogs, VTS overlay
+process/semantic actions, and observation capture/reaction still require a
+dedicated managed-runtime integration gate before claiming full production
+parity.
+
+On 2026-08-30, a bounded smoke of the freshly published managed runtime used
+isolated temporary roots and loopback ports: the authenticated Public Host
+`/settings` and Broker `/health` checks returned `200`, while the Agent
+`/worker/v2` and Device `/worker/v1` listeners returned the expected `400` for
+non-WebSocket probes. The owned process tree was stopped and the probe roots
+were removed. This confirms managed startup/listener wiring only; it does not
+replace native microphone, OmniVoice, VTube Studio, or Gemini acceptance.
 
 ## Documentation contract check
 
@@ -271,6 +307,12 @@ allowlist; unrelated Ru and provider credentials are not inherited.
 The artifact excludes levels, mute values, credentials, paths, arguments,
 outputs, device names, and native exception text.
 
+The authorized native volume acceptance on 2026-08-30 passed both the one-point
+change/readback and the restoration check, with all owned Broker artifacts and
+processes cleaned up. The runner opens the Broker with the `agent` capability
+profile so `system.volume` is visible after the Agent-only cutover; it does not
+record the endpoint level, mute state, device identity, or request values.
+
 Even a passing native artifact does not prove audible quality or that the user
 observed the GUI behave correctly. The user must separately inspect the
 Windows playback level and confirm the restored state.
@@ -290,6 +332,19 @@ The cancel and stale-result scenarios replace the Agent session while its
 synthetic tool request is still in flight, wait beyond the delayed result, and
 fail if a user/assistant message, private marker, or enabled Agent mode leaks
 back into the replacement session.
+
+Each Agent GUI run receives a fresh temporary workspace through the Harness
+descriptor, creates the bounded `harness-agent.txt` fixture, and approves the
+workspace-trust card through UI Automation before the model step starts. The
+`agent-volume-contract` identifier is retained for catalog compatibility; its
+Agent-only fixture now exercises the read-only `files.read` loop and checks the
+bounded terminal reply. It never opens or changes the Windows volume endpoint.
+
+HTTP route probes use schema-valid VTS fixtures: the complete `MotionConfig`
+shape for `/vts/config`, a `typing` boolean for `/vts/activity`, and a bounded
+codes string for `/vts/action`. This keeps compatibility probes aligned with
+the Python rollback worker while live VTube Studio reconnect/action behavior
+remains a separate user-run acceptance gate.
 
 The UI driver verifies the static Agent indicator without requiring an idle status row;
 `AgentStatusText` is expected only after an Agent request or another activity

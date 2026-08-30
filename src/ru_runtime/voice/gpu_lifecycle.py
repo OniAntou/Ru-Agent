@@ -20,7 +20,7 @@ _ENGINE_DISPLAY_NAMES = {
 @dataclass(frozen=True, slots=True)
 class VoiceServiceController:
     available: Callable[[], bool]
-    ensure: Callable[[], None]
+    ensure: Callable[[VoiceSelection], bool | None]
     request: Callable[[str, dict[str, str] | None], object]
 
 
@@ -42,17 +42,19 @@ class GpuLifecycle:
         with self._lock:
             controller = self._selected_controller(selection)
             set_status(f"Warming {self._engine_name(selection.engine_id)} voice...")
-            controller.ensure()
+            ready = controller.ensure(selection)
             started = self._clock()
-            self._request_warmup(controller, selection)
+            if ready is not True:
+                self._request_warmup(controller, selection)
             self._release_other_voice_services(selection.engine_id)
             return max(0.0, self._clock() - started)
 
     def prepare_speech(self, selection: VoiceSelection) -> None:
         with self._lock:
             controller = self._selected_controller(selection)
-            controller.ensure()
-            self._request_warmup(controller, selection)
+            ready = controller.ensure(selection)
+            if ready is not True:
+                self._request_warmup(controller, selection)
             self._release_other_voice_services(selection.engine_id)
 
     def _selected_controller(self, selection: VoiceSelection) -> VoiceServiceController:

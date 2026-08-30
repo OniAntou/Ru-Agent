@@ -1,5 +1,9 @@
 # Runtime Safety and Observation Integration Design
 
+**Status:** Historical implementation record. The marker and observation
+details below describe the 2026-08-20 remediation pass; current ownership and
+privacy rules live in [`docs/operations/runtime-behavior.md`](../../operations/runtime-behavior.md).
+
 ## Goal
 
 Close the review findings without removing Ru's explicitly allowed desktop

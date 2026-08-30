@@ -1,7 +1,9 @@
 # Ru Agent Session Rotation and Vietnamese Volume Semantics
 
 Date: 2026-08-23
-Status: Approved
+Status: Historical implementation record. Session lease rotation and the
+Vietnamese volume distinction shipped; current behavior is in
+[`docs/operations/agent-tools.md`](../../operations/agent-tools.md).
 
 ## Context
 

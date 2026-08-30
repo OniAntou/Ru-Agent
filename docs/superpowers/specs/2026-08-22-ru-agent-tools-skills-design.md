@@ -1,7 +1,9 @@
 # Ru Agent Tools and Skills
 
 **Date:** 2026-08-22
-**Status:** Approved
+**Status:** Historical roadmap. The broad tool/skill platform was not shipped;
+current model-visible capabilities and disabled-skill boundaries are in
+[`docs/operations/agent-tools.md`](../../operations/agent-tools.md).
 **Scope:** A process-isolated agent capability platform for Desktop & files, workspace Terminal, Web & research, and Personal workflow
 
 ## 1. Decision summary

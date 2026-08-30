@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Complete the headless coding loop with bounded streaming terminal execution, recognized test/build/lint commands, local Git mutation and managed commits, full process-tree cancellation, and explicit crash reconciliation.
+> **Status (2026-08-29): partially shipped historical checkpoint.** Terminal streaming, command analysis, cancellation, and reconciliation are implemented on `main` and are model-visible through the Worker v2 surface. Managed Git commits (Task 6) and real-model acceptance remain future work; use `docs/operations/agent-tools.md` and `docs/README.md` for the current boundary.
+
+**Goal:** Complete the headless coding loop with bounded streaming terminal execution, recognized test/build/lint commands, local Git mutation and managed commits, full process-tree cancellation, and explicit crash reconciliation. The shipped portion is terminal execution, cancellation, and reconciliation; managed Git remains open.
 
 **Architecture:** Broker resolves/analyzes commands and remains final execution authority; a dedicated streaming process runner owns one Job Object per call; Core persists dispatch/receipt boundaries and ambiguous outcomes; Host stores run-attributed Git/workspace snapshots; CLI renders the same durable/transient events and supplies explicit reconcile input.
 
@@ -12,7 +14,7 @@
 
 ## Checkpoint outcome
 
-At the end of this phase, the headless API/CLI path has the complete milestone-1 coding loop: multiple model/tool steps, all file tools, terminal run/shell, recognized tests/builds/linters, local Git reads/mutations/managed commit, streaming output, cancellation, dirty-worktree preservation, and reconciliation. Desktop Agent remains on v1 until phase 4, so parity is not yet claimed.
+The shipped checkpoint covers the headless terminal/file path, streaming output, cancellation, and reconciliation. Local Git reads/mutations/managed commit and real-model acceptance are not yet shipped; the Desktop Agent cutover is recorded separately. Overall OpenCode/Pi parity is not claimed.
 
 ## Task 1: Finalize terminal schemas and canonical command intent
 

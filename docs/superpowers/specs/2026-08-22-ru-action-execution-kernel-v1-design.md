@@ -21,10 +21,10 @@ as a compatibility intent, but the resulting request must use the same private
 Worker → Public Host → RuAgentBroker path as Agent mode. The Broker becomes the
 only owner of native action adapters.
 
-This design supersedes the dual-native-adapter decision in
-`2026-08-22-ru-volume-tool-vertical-slice-design.md`. That document remains
-useful as implementation history, but its Python-direct normal-chat execution
-path is no longer an accepted production architecture.
+This design supersedes an earlier dual-native-adapter volume-slice proposal.
+That proposal is retired from the repository; its Python-direct normal-chat
+execution path is no longer an accepted production architecture. Current
+volume behavior is recorded in `docs/operations/agent-tools.md`.
 
 ## 2. Why this slice exists
 

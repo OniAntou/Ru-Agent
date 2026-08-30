@@ -1,5 +1,9 @@
 # Tool-Selection Channel Implementation Plan
 
+> **Status:** Historical implementation record. The selection loop shipped and
+> was folded into the Agent-only prompt contract; current behavior is in
+> `docs/operations/agent-tools.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let the model actually invoke its advertised tools via a bounded prompt-protocol selection loop (budget 10) wired through the existing `CHAT_TOOL_REQUEST`/receipt pipeline.

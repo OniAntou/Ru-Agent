@@ -159,3 +159,30 @@
 - [x] Current docs/build are updated; no stale current ownership claim remains.
 - [x] Manual Windows acceptance status is recorded separately from automated evidence; the live checks remain pending user-run.
 - [x] Python production modules are retained until a separate Phase 3 retirement plan has import/startup evidence.
+
+## Route-completion correction (2026-08-30)
+
+The first Task 9/11 pass left the private Worker v1 router's generic unavailable
+handler reachable from the default managed composition. That gap is now covered
+by focused tests and explicit handlers for every allowlisted route: typed status
+and active-model reporting, VTS GUI state/config/catalog/action/connect, voice
+fallback, and observation status/control. This removes the generic fallback but
+does not claim functionality that has no managed boundary yet: provider-backed
+model catalogs, VTS overlay process/semantic actions, and the screen-capture /
+reaction loop remain separate integration work. The deterministic compatibility
+Harness still targets `PythonCompatibility`; native device acceptance remains
+pending and must be run separately.
+
+The managed private router also validates JSON syntax for every non-empty
+`POST` before handler dispatch, matching the compatibility dispatcher even for
+body-agnostic connect/release/stop routes. Managed VTube Studio authentication
+uses the canonical `pyvts_token.txt` file location (or the complete
+`RU_DATA_ROOT` override), and the launch plan passes that isolation override to
+worker children.
+
+The same review also found a startup-only drift: `WorkerBrokerLaunchPlan` had
+already renamed its process roles for managed and compatibility children, while
+`ChildProcessPolicy` still accepted only the pre-migration names. The policy
+allowlist now includes all emitted roles (and retains the legacy compatibility
+name), with Hosting regression coverage so Dotnet Agent startup reaches process
+creation instead of failing closed on an internal role mismatch.

@@ -19,6 +19,12 @@
   local vision model until a new product decision explicitly reopens that scope.
 - [ ] Keep the structured `/observation/*` cloud-reaction boundary available so
   a future model can be connected without changing the reaction coordinator.
+- [ ] Implement bundled internal documentation & docs lookup tool (`help.docs` / `app.docs`) in `RuAgentBroker` and System Prompt Composer so Agent can automatically inspect Ru's own features/documentation and guide the user across any workspace.
+- [ ] Harden Agent Broker file and terminal tools against edge-case failures:
+  - Fix `files.edit` line-ending normalization (`\r\n` vs `\n`) to prevent `edit_no_match` mismatches on CRLF files.
+  - Add regex search support and multithreaded directory traversal to `files.search`.
+  - Add interactive CLI detection / early abort for commands waiting on stdin in `terminal.run`/`terminal.shell`.
+  - Increase and parameterize the 1 MiB recovery cap in `files.delete`/`FileRecoveryStore`.
 
 ## Deferred capabilities
 

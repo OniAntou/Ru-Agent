@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -7,7 +8,7 @@ using RuAgent.Runtime.Core.Contracts;
 
 namespace RuAgent.Runtime.Adapters.Audio;
 
-public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle
+public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle, IVoiceReadiness
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -16,6 +17,7 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle
     private readonly HttpClient _httpClient;
     private readonly OmniVoiceProviderOptions _options;
     private readonly OmniVoiceProcessController? _processController;
+    private int _ready;
 
     public OmniVoiceHttpProvider(
         HttpClient httpClient,
@@ -28,15 +30,28 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle
         _processController = processController;
     }
 
+    public bool IsReady => _processController is null
+        || (_processController.IsRunning && Volatile.Read(ref _ready) != 0);
+
     public async Task WarmupAsync(string voiceProfile, CancellationToken cancellationToken)
     {
         var profile = MapProfile(voiceProfile);
         await EnsureProviderStartedAsync(cancellationToken).ConfigureAwait(false);
-        _ = await SendJsonAsync(
+        var response = await SendJsonAsync(
             HttpMethod.Post,
             "warmup",
             new JsonObject { ["voice_profile"] = profile },
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            _options.StartupTimeout).ConfigureAwait(false);
+        if (_processController is not null)
+        {
+            if (!TryReadBoolean(response, "ready", out var ready) || !ready)
+            {
+                throw new OmniVoiceProviderException("voice_unavailable", retryable: true);
+            }
+
+            Volatile.Write(ref _ready, 1);
+        }
     }
 
     public async Task ReleaseAsync(CancellationToken cancellationToken)
@@ -50,6 +65,7 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle
 
         _ = await SendJsonAsync(HttpMethod.Post, "release", new JsonObject(), cancellationToken)
             .ConfigureAwait(false);
+        Volatile.Write(ref _ready, 0);
     }
 
     public async Task<VoiceAudio> SynthesizeAsync(
@@ -59,6 +75,7 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle
         ArgumentNullException.ThrowIfNull(request);
         var profile = MapProfile(request.VoiceProfile);
         await EnsureProviderStartedAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureProviderReadyAsync(profile, cancellationToken).ConfigureAwait(false);
         var response = await SendAsync(
             HttpMethod.Post,
             "tts",
@@ -83,6 +100,7 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle
         ArgumentNullException.ThrowIfNull(request);
         var profile = MapProfile(request.VoiceProfile);
         await EnsureProviderStartedAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureProviderReadyAsync(profile, cancellationToken).ConfigureAwait(false);
         var response = await SendAsync(
             HttpMethod.Post,
             "tts_stream",
@@ -104,10 +122,17 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle
     private async Task<JsonObject> SendJsonAsync(
         HttpMethod method,
         string path,
-        JsonObject payload,
-        CancellationToken cancellationToken)
+        JsonObject? payload,
+        CancellationToken cancellationToken,
+        TimeSpan? requestTimeout = null)
     {
-        var response = await SendAsync(method, path, payload, expectAudio: false, cancellationToken)
+        var response = await SendAsync(
+                method,
+                path,
+                payload,
+                expectAudio: false,
+                cancellationToken,
+                requestTimeout)
             .ConfigureAwait(false);
         try
         {
@@ -120,27 +145,143 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle
         }
     }
 
-    private Task EnsureProviderStartedAsync(CancellationToken cancellationToken) =>
-        _processController is null
-            ? Task.CompletedTask
-            : _processController.StartAsync(cancellationToken);
+    private async Task EnsureProviderStartedAsync(CancellationToken cancellationToken)
+    {
+        if (_processController is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _processController.StartAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception error)
+        {
+            throw new OmniVoiceProviderException("voice_unavailable", retryable: true, error);
+        }
+    }
+
+    private async Task EnsureProviderReadyAsync(
+        string profile,
+        CancellationToken cancellationToken)
+    {
+        // A provider supplied by a host or test owns its own readiness contract.
+        // Only the process-backed composition needs the loopback health probe.
+        if (_processController is null)
+        {
+            return;
+        }
+
+        // A previously successful request must not keep advertising readiness
+        // while a replacement process is starting or a later health check has
+        // observed a failure.
+        Volatile.Write(ref _ready, 0);
+        var stopwatch = Stopwatch.StartNew();
+        while (true)
+        {
+            var remaining = _options.StartupTimeout - stopwatch.Elapsed;
+            if (remaining <= TimeSpan.Zero)
+            {
+                throw new OmniVoiceProviderException("voice_unavailable", retryable: true);
+            }
+
+            JsonObject status;
+            try
+            {
+                status = await SendJsonAsync(
+                    HttpMethod.Get,
+                    "status",
+                    payload: null,
+                    cancellationToken,
+                    remaining < _options.ReadinessTimeout ? remaining : _options.ReadinessTimeout)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (OmniVoiceProviderException error) when (
+                error.Code is "voice_unavailable" or "timeout" or "voice_failed")
+            {
+                if (stopwatch.Elapsed >= _options.StartupTimeout)
+                {
+                    throw new OmniVoiceProviderException("voice_unavailable", retryable: true, error);
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken)
+                    .ConfigureAwait(false);
+                continue;
+            }
+
+            if (!TryReadBoolean(status, "model_loaded", out var loaded))
+            {
+                throw new OmniVoiceProviderException("invalid_response", retryable: false);
+            }
+
+            if (loaded)
+            {
+                Volatile.Write(ref _ready, 1);
+                return;
+            }
+
+            try
+            {
+                remaining = _options.StartupTimeout - stopwatch.Elapsed;
+                if (remaining <= TimeSpan.Zero)
+                {
+                    throw new OmniVoiceProviderException("voice_unavailable", retryable: true);
+                }
+
+                var warmup = await SendJsonAsync(
+                    HttpMethod.Post,
+                    "warmup",
+                    new JsonObject { ["voice_profile"] = profile },
+                    cancellationToken,
+                    remaining).ConfigureAwait(false);
+                if (TryReadBoolean(warmup, "ready", out var ready) && ready)
+                {
+                    Volatile.Write(ref _ready, 1);
+                    return;
+                }
+
+                throw new OmniVoiceProviderException("voice_unavailable", retryable: true);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (OmniVoiceProviderException error)
+            {
+                throw error.Code == "voice_unavailable"
+                    ? error
+                    : new OmniVoiceProviderException("voice_unavailable", retryable: true, error);
+            }
+        }
+    }
 
     private async Task<ProviderResponse> SendAsync(
         HttpMethod method,
         string path,
-        JsonObject payload,
+        JsonObject? payload,
         bool expectAudio,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? requestTimeout = null)
     {
-        using var request = new HttpRequestMessage(method, new Uri(_options.BaseUri, path))
+        using var request = new HttpRequestMessage(method, new Uri(_options.BaseUri, path));
+        if (payload is not null)
         {
-            Content = new StringContent(
+            request.Content = new StringContent(
                 payload.ToJsonString(JsonOptions),
                 Encoding.UTF8,
-                "application/json"),
-        };
+                "application/json");
+        }
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(_options.RequestTimeout);
+        timeout.CancelAfter(requestTimeout ?? _options.RequestTimeout);
 
         HttpResponseMessage response;
         try
@@ -231,4 +372,15 @@ public sealed class OmniVoiceHttpProvider : IVoiceProvider, IVoiceLifecycle
     };
 
     private sealed record ProviderResponse(string ContentType, byte[] Body);
+
+    private static bool TryReadBoolean(JsonObject payload, string key, out bool value)
+    {
+        if (payload[key] is JsonValue node && node.TryGetValue<bool>(out value))
+        {
+            return true;
+        }
+
+        value = false;
+        return false;
+    }
 }

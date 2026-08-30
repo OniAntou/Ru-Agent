@@ -25,6 +25,44 @@ def test_voice_start_waits_for_an_existing_owned_process(monkeypatch) -> None:
         shared.ensure_voice_service()
 
 
+def test_voice_readiness_warms_a_reachable_unloaded_service(monkeypatch) -> None:
+    monkeypatch.setattr(shared, "voice_available", lambda: True)
+    monkeypatch.setattr(
+        shared,
+        "_voice_status",
+        lambda: {"model_loaded": False},
+    )
+    calls: list[tuple[str, dict]] = []
+
+    def fake_post(path: str, payload: dict, *, timeout: float) -> tuple[int, bytes]:
+        calls.append((path, payload))
+        return 200, b'{"ready":true}'
+
+    monkeypatch.setattr(shared, "_post_voice", fake_post)
+
+    assert shared._voice_ready("ai_vy") is True
+    assert calls == [("/warmup", {"voice_profile": "ai_vy"})]
+
+
+def test_ensure_voice_service_rejects_reachable_unready_service(monkeypatch) -> None:
+    monkeypatch.setattr(shared, "voice_available", lambda: True)
+    monkeypatch.setattr(shared, "_voice_ready", lambda _profile: False)
+    monkeypatch.setattr(shared, "_VOICE_PROCESS", None)
+
+    with pytest.raises(RuntimeError, match="model is not ready"):
+        shared.ensure_voice_service()
+
+
+def test_ensure_voice_service_checks_the_requested_profile(monkeypatch) -> None:
+    checked: list[str] = []
+    monkeypatch.setattr(shared, "voice_available", lambda: True)
+    monkeypatch.setattr(shared, "_voice_ready", lambda profile: checked.append(profile) or True)
+    monkeypatch.setattr(shared, "_VOICE_PROCESS", None)
+
+    assert shared.ensure_voice_service("ai_vy") is True
+    assert checked == ["ai_vy"]
+
+
 def test_runtime_service_modules_have_no_web_framework_imports() -> None:
     for name in (
         "http.py",

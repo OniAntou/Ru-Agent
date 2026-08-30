@@ -1,6 +1,9 @@
 
 # Ru Chat Editorial Reading Room Implementation Plan
 
+> **Status:** Historical implementation record. The visual shell work shipped;
+> current UI/runtime boundaries live in `docs/operations/runtime-behavior.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax `- [ ]` for tracking.
 
 **Goal:** Redesign the Ru WinUI 3 shell/sidebar and Chat view into a light editorial reading room while preserving all existing navigation, session, streaming, STT, voice, VTS, backend, and process behavior.

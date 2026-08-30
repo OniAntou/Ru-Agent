@@ -1,5 +1,8 @@
 # Ru Signature Polish Implementation Plan
 
+> **Status:** Historical implementation record. The signature polish shipped;
+> current shell behavior lives in `docs/operations/runtime-behavior.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make Ru distinctive through a restrained wordmark, editorial welcome state, signature message rhythm, and purposeful micro-interactions while preserving runtime behavior.

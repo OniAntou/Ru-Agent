@@ -1,5 +1,8 @@
 # Remove local model and training surfaces
 
+**Status:** Historical implementation record. The cloud-first retirement is
+shipped; current runtime ownership is documented in [`docs/architecture.md`](../../architecture.md).
+
 ## Decision
 
 Ru is cloud-first for conversational generation. Remove the in-process

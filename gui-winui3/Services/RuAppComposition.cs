@@ -12,6 +12,7 @@ public sealed class RuAppComposition : IDisposable
         IRuBackendSessionProvider backendProvider,
         bool enableSubtitleOverlay,
         string? harnessEventsPath,
+        string? harnessWorkspacePath,
         Func<IVoiceFrameSource>? voiceSourceFactory,
         Func<IVoicePlaybackDevice>? playbackDeviceFactory,
         HarnessEventSink? harnessEvents,
@@ -20,6 +21,7 @@ public sealed class RuAppComposition : IDisposable
         BackendProvider = backendProvider;
         EnableSubtitleOverlay = enableSubtitleOverlay;
         HarnessEventsPath = harnessEventsPath;
+        HarnessWorkspacePath = harnessWorkspacePath;
         VoiceSourceFactory = voiceSourceFactory;
         PlaybackDeviceFactory = playbackDeviceFactory;
         HarnessEvents = harnessEvents;
@@ -29,6 +31,7 @@ public sealed class RuAppComposition : IDisposable
     public IRuBackendSessionProvider BackendProvider { get; }
     public bool EnableSubtitleOverlay { get; }
     public string? HarnessEventsPath { get; }
+    public string? HarnessWorkspacePath { get; }
     public Func<IVoiceFrameSource>? VoiceSourceFactory { get; }
     public Func<IVoicePlaybackDevice>? PlaybackDeviceFactory { get; }
     public HarnessEventSink? HarnessEvents { get; }
@@ -40,6 +43,7 @@ public sealed class RuAppComposition : IDisposable
         new ManagedRuBackendSessionProvider(),
         enableSubtitleOverlay: true,
         harnessEventsPath: null,
+        harnessWorkspacePath: null,
         voiceSourceFactory: null,
         playbackDeviceFactory: null,
         harnessEvents: null,
@@ -64,7 +68,8 @@ public sealed class RuAppComposition : IDisposable
             () => new DeterministicVoiceFrameSource(sourceOptions),
             () => new RecordingVoicePlaybackDevice(events),
             events,
-            descriptor.Scenario);
+            descriptor.Scenario,
+            descriptor.WorkspacePath);
     }
 
     public static RuAppComposition ForHarness(
@@ -73,7 +78,8 @@ public sealed class RuAppComposition : IDisposable
         Func<IVoiceFrameSource>? voiceSourceFactory = null,
         Func<IVoicePlaybackDevice>? playbackDeviceFactory = null,
         HarnessEventSink? harnessEvents = null,
-        string? harnessScenario = null)
+        string? harnessScenario = null,
+        string? harnessWorkspacePath = null)
     {
         ArgumentNullException.ThrowIfNull(backendProvider);
         if (string.IsNullOrWhiteSpace(eventsPath))
@@ -86,6 +92,7 @@ public sealed class RuAppComposition : IDisposable
             backendProvider,
             enableSubtitleOverlay: false,
             Path.GetFullPath(eventsPath),
+            harnessWorkspacePath,
             voiceSourceFactory ?? (() => new DeterministicVoiceFrameSource()),
             playbackDeviceFactory ?? (() => new RecordingVoicePlaybackDevice(events)),
             events,

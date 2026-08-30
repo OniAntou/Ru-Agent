@@ -1,5 +1,8 @@
 # Ru Approval UI and One-Time Action Implementation Plan
 
+> **Status:** Historical implementation record. The approval UI and Broker
+> flow shipped; current behavior is documented in `docs/operations/agent-tools.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Connect the existing Agent approval-required status to a real, safe,

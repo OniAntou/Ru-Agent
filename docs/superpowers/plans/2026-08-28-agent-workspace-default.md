@@ -1,5 +1,9 @@
 # Agent Workspace Default Implementation Plan
 
+> **Status:** Historical implementation record. The default project-root
+> resolution shipped; current workspace boundaries live in
+> `docs/operations/agent-tools.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let the WinUI Agent use the known project root when the workspace field is empty while retaining the API/Broker workspace boundary.

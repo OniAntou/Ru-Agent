@@ -58,6 +58,24 @@ public sealed class PrivateRuntimeRequestRouterTests
     }
 
     [Fact]
+    public async Task Post_routes_reject_malformed_json_before_a_body_agnostic_handler_runs()
+    {
+        var handler = new RecordingHandler();
+        var router = new PrivateRuntimeRequestRouter(handler);
+
+        var error = await Assert.ThrowsAsync<PrivateRuntimeRequestException>(() => router.InvokeAsync(
+            new PrivateRuntimeRequest(
+                "POST",
+                "/observation/stop",
+                null,
+                Encoding.UTF8.GetBytes("not-json")),
+            CancellationToken.None));
+
+        Assert.Equal("invalid_request", error.Code);
+        Assert.Equal(0, handler.Calls);
+    }
+
+    [Fact]
     public async Task Binary_response_requires_explicit_binary_announcement()
     {
         var handler = new RecordingHandler

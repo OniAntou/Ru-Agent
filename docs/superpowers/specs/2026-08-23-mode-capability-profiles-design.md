@@ -1,7 +1,10 @@
 # Design: Mode capability profiles — Chat / Agent / Full Access
 
 Date: 2026-08-23
-Status: proposed (pending implementation plan)
+Status: Historical and superseded by the Agent-only runtime and ADR 0007 as
+implemented on 2026-08-29. The earlier Chat/Agent/Full three-mode proposal is
+retained only for decision history; current capability truth is in
+[`operations/agent-tools.md`](../../operations/agent-tools.md).
 
 ## Background
 

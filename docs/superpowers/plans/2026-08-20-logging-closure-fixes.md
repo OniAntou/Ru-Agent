@@ -1,5 +1,8 @@
 # Ru Logging Closure Fixes Implementation Plan
 
+> **Status:** Historical implementation record. The closure fixes shipped on
+> 2026-08-20; use `docs/operations/logging.md` for the current contract.
+
 > **For agentic workers:** Execute inline in this session. Sub-agents are disabled. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Close the verified logging/privacy/API/benchmark gaps while preserving the current Ru runtime behavior and latency contract.

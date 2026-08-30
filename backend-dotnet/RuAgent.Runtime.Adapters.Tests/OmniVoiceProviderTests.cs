@@ -73,6 +73,121 @@ public sealed class OmniVoiceProviderTests
     }
 
     [Fact]
+    public async Task Managed_provider_checks_readiness_and_warms_unloaded_model_before_tts()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-omnivoice-ready-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var python = Path.Combine(root, "python.exe");
+        var script = Path.Combine(root, "omnivoice_server.py");
+        await File.WriteAllTextAsync(python, string.Empty);
+        await File.WriteAllTextAsync(script, string.Empty);
+        try
+        {
+            var launcher = new FakeProcessLauncher();
+            await using var controller = new OmniVoiceProcessController(
+                new OmniVoiceProcessOptions(root, python, script),
+                launcher);
+            var handler = new SequenceHandler(
+                JsonResponse("{\"model_loaded\":false}"),
+                JsonResponse("{\"ready\":true}"),
+                AudioResponse(ValidWav()));
+            var provider = new OmniVoiceHttpProvider(
+                new HttpClient(handler),
+                new OmniVoiceProviderOptions(new Uri("http://127.0.0.1:5052")),
+                controller);
+
+            _ = await provider.SynthesizeAsync(
+                new VoiceRequest("Chào anh.", "Ái Vy (OmniVoice)", 1.0, "original"),
+                CancellationToken.None);
+
+            Assert.Equal(["GET /status", "POST /warmup", "POST /tts"], handler.Requests);
+            Assert.Equal(1, launcher.Starts);
+            Assert.Equal("{\"voice_profile\":\"ai_vy\"}", handler.RequestBodies[1]);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Managed_provider_maps_failed_readiness_to_unavailable_without_tts()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-omnivoice-not-ready-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var python = Path.Combine(root, "python.exe");
+        var script = Path.Combine(root, "omnivoice_server.py");
+        await File.WriteAllTextAsync(python, string.Empty);
+        await File.WriteAllTextAsync(script, string.Empty);
+        try
+        {
+            var launcher = new FakeProcessLauncher();
+            await using var controller = new OmniVoiceProcessController(
+                new OmniVoiceProcessOptions(root, python, script),
+                launcher);
+            var handler = new SequenceHandler(
+                JsonResponse("{\"model_loaded\":false}"),
+                new HttpResponseMessage(HttpStatusCode.InternalServerError)
+                {
+                    Content = new StringContent("{\"error\":\"warmup failed\"}", Encoding.UTF8, "application/json"),
+                });
+            var provider = new OmniVoiceHttpProvider(
+                new HttpClient(handler),
+                new OmniVoiceProviderOptions(new Uri("http://127.0.0.1:5052"))
+                {
+                    StartupTimeout = TimeSpan.FromMilliseconds(100),
+                    ReadinessTimeout = TimeSpan.FromMilliseconds(50),
+                },
+                controller);
+
+            var error = await Assert.ThrowsAsync<OmniVoiceProviderException>(() => provider.SynthesizeAsync(
+                new VoiceRequest("Chào anh.", "Ru (OmniVoice)", 1.0, "original"),
+                CancellationToken.None));
+
+            Assert.Equal("voice_unavailable", error.Code);
+            Assert.Equal(["GET /status", "POST /warmup"], handler.Requests);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Managed_warmup_requires_a_ready_acknowledgement()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-omnivoice-warmup-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var python = Path.Combine(root, "python.exe");
+        var script = Path.Combine(root, "omnivoice_server.py");
+        await File.WriteAllTextAsync(python, string.Empty);
+        await File.WriteAllTextAsync(script, string.Empty);
+        try
+        {
+            var launcher = new FakeProcessLauncher();
+            await using var controller = new OmniVoiceProcessController(
+                new OmniVoiceProcessOptions(root, python, script),
+                launcher);
+            var handler = new SequenceHandler(JsonResponse("{\"ready\":false}"));
+            var provider = new OmniVoiceHttpProvider(
+                new HttpClient(handler),
+                new OmniVoiceProviderOptions(new Uri("http://127.0.0.1:5052")),
+                controller);
+
+            var error = await Assert.ThrowsAsync<OmniVoiceProviderException>(() => provider.WarmupAsync(
+                "Ru (OmniVoice)",
+                CancellationToken.None));
+
+            Assert.Equal("voice_unavailable", error.Code);
+            Assert.False(provider.IsReady);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Synthesize_rejects_invalid_wav_without_returning_bytes()
     {
         var handler = new RecordingHandler(_ => AudioResponse(Encoding.UTF8.GetBytes("not-wav")));
@@ -155,6 +270,40 @@ public sealed class OmniVoiceProviderTests
             _response = _factory(request);
             return Task.FromResult(_response);
         }
+    }
+
+    private sealed class SequenceHandler : HttpMessageHandler
+    {
+        private readonly Queue<HttpResponseMessage> _responses;
+
+        public SequenceHandler(params HttpResponseMessage[] responses) => _responses = new(responses);
+
+        public List<string> Requests { get; } = [];
+
+        public List<string> RequestBodies { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add($"{request.Method.Method} {request.RequestUri!.AbsolutePath}");
+            RequestBodies.Add(request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty);
+            if (_responses.Count == 0)
+            {
+                throw new InvalidOperationException("No fake OmniVoice response remains.");
+            }
+
+            return Task.FromResult(_responses.Dequeue());
+        }
+    }
+
+    private static HttpResponseMessage JsonResponse(string json)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+        return response;
     }
 
     private sealed class FakeProcessLauncher : IOmniVoiceProcessLauncher

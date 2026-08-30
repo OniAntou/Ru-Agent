@@ -37,7 +37,7 @@ operating truth lives in `docs/operations/agent-tools.md` and
 
 ## Baseline and worktree boundary
 
-The approved design is `D:\LLM\docs\superpowers\specs\2026-08-22-ru-action-execution-kernel-v1-design.md` at or after commit `dca2605`. The primary checkout is `D:\LLM` on `main` and contains unrelated uncommitted voice, meteor, theme, cleanup, and operations-document changes. The execution worktree must branch from the commit containing this plan and use a `codex/` branch name.
+The approved design is [`2026-08-22-ru-action-execution-kernel-v1-design.md`](../specs/2026-08-22-ru-action-execution-kernel-v1-design.md) at or after commit `dca2605`. The primary checkout is `D:\LLM` on `main` and contains unrelated uncommitted voice, meteor, theme, cleanup, and operations-document changes. The execution worktree must branch from the commit containing this plan and use a `codex/` branch name.
 
 The two primary-checkout files below are intentionally excluded from worktree commits because they are already dirty:
 
@@ -1756,8 +1756,7 @@ git commit -m "test: separate action acceptance evidence classes"
 - Modify: `docs\operations\agent-tools.md`
 - Modify: `docs\operations\verification.md`
 - Modify: `docs\README.md`
-- Modify: `docs\superpowers\specs\2026-08-22-ru-volume-tool-vertical-slice-design.md`
-- Modify: `docs\superpowers\plans\2026-08-22-ru-volume-tool-vertical-slice.md`
+- Retired volume-slice design/plan are not part of the current documentation set; publish the resulting contract in `docs\operations\agent-tools.md` and `docs\operations\verification.md`.
 - Modify: `docs\superpowers\plans\2026-08-22-ru-agent-tools-skills.md`
 - Modify after all gates pass: `docs\superpowers\specs\2026-08-22-ru-action-execution-kernel-v1-design.md`
 - Modify after all gates pass: `docs\superpowers\plans\2026-08-22-ru-action-execution-kernel-v1.md`
@@ -1832,7 +1831,7 @@ Add `Agent tools and truthful execution` to `docs/README.md` linking `operations
 At the top of the old volume design, replace its status with:
 
 ```markdown
-Status: Superseded 2026-08-22 by [Ru Action Execution Kernel v1](2026-08-22-ru-action-execution-kernel-v1-design.md). Do not implement this dual Python/C# action path.
+Status: Superseded 2026-08-22 by [Ru Action Execution Kernel v1](../specs/2026-08-22-ru-action-execution-kernel-v1-design.md). Do not implement this dual Python/C# action path.
 ```
 
 Add the equivalent `Superseded; do not execute` notice to the old volume implementation plan, linking both the approved design and this implementation plan.
@@ -1917,7 +1916,7 @@ git diff --name-only HEAD
 Expected: only task-owned implementation/docs files and generated ignored build outputs appear; no user-owned primary-checkout change exists in the isolated worktree.
 
 ```powershell
-git add -- README.md docs/operations/agent-tools.md docs/operations/verification.md docs/README.md docs/superpowers/specs/2026-08-22-ru-volume-tool-vertical-slice-design.md docs/superpowers/plans/2026-08-22-ru-volume-tool-vertical-slice.md docs/superpowers/plans/2026-08-22-ru-agent-tools-skills.md docs/superpowers/specs/2026-08-22-ru-action-execution-kernel-v1-design.md docs/superpowers/plans/2026-08-22-ru-action-execution-kernel-v1.md tests/test_current_documentation.py
+git add -- README.md docs/operations/agent-tools.md docs/operations/verification.md docs/README.md docs/superpowers/plans/2026-08-22-ru-agent-tools-skills.md docs/superpowers/specs/2026-08-22-ru-action-execution-kernel-v1-design.md docs/superpowers/plans/2026-08-22-ru-action-execution-kernel-v1.md tests/test_current_documentation.py
 git commit -m "docs: publish truthful action capability boundaries"
 ```
 

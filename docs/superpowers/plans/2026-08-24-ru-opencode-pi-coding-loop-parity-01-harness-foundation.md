@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Status (2026-08-29): historical checkpoint.** The Harness foundation, Worker v2, API/SSE, host/client, and CLI tracer described here are implemented on `main`. The original coexistence/feature-flag wording predates the Agent-only product cutover; use `docs/operations/runtime-behavior.md` and `docs/operations/verification.md` for the current contract.
+
 **Goal:** Establish the durable .NET-owned Agent loop, additive one-step Worker v2, authenticated API/SSE, Public Host process ownership, and a CLI read-only tracer while keeping production Agent v1 as the default.
 
-**Architecture:** Add BCL-only Core plus a separate SQLite adapter; route a complete Agent run through Core; retain Worker v1 for ordinary Chat; make Public Host own Worker/Broker and expose one authenticated runtime that Desktop and CLI can attach to; advertise only existing Broker-backed read-only file capabilities at this checkpoint.
+**Architecture:** Add BCL-only Core plus a separate SQLite adapter; route a complete Agent run through Core; make Public Host own Worker/Broker and expose one authenticated runtime that Desktop and CLI can attach to; advertise only the capabilities available at the checkpoint.
 
 **Tech Stack:** .NET 10, ASP.NET Core, Microsoft.Data.Sqlite 10.0.11, xUnit, Python 3.11/3.13, pytest, SQLite WAL, AES-GCM, Windows DPAPI, SSE, Windows Job Objects, WinUI 3.
 

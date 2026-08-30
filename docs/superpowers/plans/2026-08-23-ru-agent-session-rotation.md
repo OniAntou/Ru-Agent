@@ -1,5 +1,8 @@
 # Ru Agent Session Rotation Implementation Plan
 
+> **Status:** Historical implementation record. Lease rotation and volume
+> intent semantics shipped; current behavior is in `docs/operations/agent-tools.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make consecutive verified volume commands survive chat-session replacement and interpret Vietnamese target wording without weakening Broker ownership.

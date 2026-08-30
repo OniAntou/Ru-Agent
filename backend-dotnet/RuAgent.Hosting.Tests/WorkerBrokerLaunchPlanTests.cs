@@ -39,6 +39,43 @@ public sealed class WorkerBrokerLaunchPlanTests
     }
 
     [Fact]
+    public void Configured_data_root_is_passed_to_worker_children_for_isolated_runtime_state()
+    {
+        using var project = TemporaryProject.Create();
+        var previous = Environment.GetEnvironmentVariable("RU_DATA_ROOT");
+        var dataRoot = Path.Combine(project.Root, "isolated-data");
+        Environment.SetEnvironmentVariable("RU_DATA_ROOT", dataRoot);
+        try
+        {
+            var dotnetPlan = WorkerBrokerLaunchPlan.Create(
+                project.Root,
+                project.DotnetStartup(18100, 18101, 18102),
+                project.LogRoot);
+            Assert.Equal(Path.GetFullPath(dataRoot), dotnetPlan.Children[0].Environment["RU_DATA_ROOT"]);
+
+            var pythonPlan = WorkerBrokerLaunchPlan.Create(
+                project.Root,
+                new WorkerBrokerStartupOptions(
+                    RuntimeMigrationMode.PythonCompatibility,
+                    "agent-token",
+                    "device-token",
+                    string.Empty,
+                    18103,
+                    18104,
+                    18105,
+                    project.BrokerExecutable),
+                project.LogRoot);
+            Assert.All(
+                pythonPlan.Children.Where(child => child.Role is "python-agent-compat-worker" or "python-device-worker"),
+                child => Assert.Equal(Path.GetFullPath(dataRoot), child.Environment["RU_DATA_ROOT"]));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RU_DATA_ROOT", previous);
+        }
+    }
+
+    [Fact]
     public void Python_compatibility_mode_does_not_start_the_CSharp_worker()
     {
         using var project = TemporaryProject.Create();

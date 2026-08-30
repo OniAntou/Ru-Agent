@@ -44,6 +44,18 @@ public sealed class LoopbackRuntimeSettingsLoader : IRuntimeSettingsLoader
                 ["custom_url"] = candidate.CustomUrl,
                 ["api_variant"] = candidate.ApiVariant,
                 ["kilo_reasoning_enabled"] = candidate.KiloReasoningEnabled,
+                ["voice_label"] = candidate.VoiceLabel,
+                ["voice_style_id"] = candidate.VoiceStyleId,
+                ["voice_speed"] = candidate.VoiceSpeed,
+                ["auto_pace_enabled"] = candidate.AutoPaceEnabled,
+                ["auto_read_replies"] = candidate.AutoReadReplies,
+                ["show_subtitles"] = candidate.ShowSubtitles,
+                ["subtitle_color"] = candidate.SubtitleColor,
+                ["subtitle_size"] = candidate.SubtitleSize,
+                ["subtitle_duration"] = candidate.SubtitleDuration,
+                ["subtitle_pos_mode"] = candidate.SubtitlePosMode,
+                ["subtitle_pos_x"] = candidate.SubtitlePosX,
+                ["subtitle_pos_y"] = candidate.SubtitlePosY,
             });
 
         await foreach (var response in connection.SendRequestAsync(request, cancellationToken)

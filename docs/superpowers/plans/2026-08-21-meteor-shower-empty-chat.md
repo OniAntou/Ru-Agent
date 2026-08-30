@@ -2,6 +2,10 @@
 
 > For agentic workers: REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax.
 
+> **Status:** Historical implementation record. The vector shower shipped on
+> 2026-08-21; the old ASCII proposal was retired. Current shell behavior lives
+> in `docs/operations/runtime-behavior.md`.
+
 **Goal:** Replace the rejected ASCII meteor control with a deterministic, vector-native five-meteor shower that feels cinematic in the empty Chat state and disappears immediately when a conversation starts.
 
 **Status:** Implemented 2026-08-21
@@ -662,21 +666,24 @@ VTS/voice metadata, fake status indicators, or calls to the backend, WebSocket,
 STT, voice, subtitle, VTS, or memory paths.
 ~~~
 
-- [ ] Step 2: Mark the new spec implemented
+- [ ] Step 2: Mark the new spec implemented (historical checklist item)
 
-Change:
+The implementation already updated the spec. This checklist text is retained
+only as history; do not reopen the retired ASCII proposal.
+
+Historical change:
 
 ~~~markdown
 **Status:** Draft — awaiting user spec review
 ~~~
 
-to:
+was changed to:
 
 ~~~markdown
 **Status:** Implemented 2026-08-21
 ~~~
 
-Keep the old ASCII spec marked Superseded.
+The old ASCII spec has since been removed from the working tree.
 
 - [ ] Step 3: Run the full WinUI tests
 

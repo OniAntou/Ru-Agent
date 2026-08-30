@@ -52,6 +52,36 @@ def test_registry_exposes_only_the_voice_websocket_and_no_chat_route() -> None:
     assert "deterministic-chat" not in session
 
 
+def test_vts_fixture_requests_match_runtime_contract() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    registry = build_route_registry(load_contract(repo_root))
+
+    requests = {
+        (entry.method, entry.path): entry.request_factory("harness-session")
+        for entry in registry
+        if entry.path in {"/vts/config", "/vts/activity", "/vts/action"}
+        and entry.method == "POST"
+        and entry.request_factory is not None
+    }
+
+    config = requests[("POST", "/vts/config")]
+    assert config.json_body is not None
+    assert set(config.json_body) == {
+        "sway_amplitude_idle",
+        "sway_amplitude_speaking",
+        "head_scale",
+        "eye_scale",
+        "micro_action_min_delay",
+        "micro_action_max_delay",
+        "pose_min_interval",
+        "pose_max_interval",
+        "breath_amplitude",
+        "breath_rate",
+    }
+    assert requests[("POST", "/vts/activity")].json_body == {"typing": False}
+    assert requests[("POST", "/vts/action")].json_body == {"codes": "vts_01"}
+
+
 class FakeHttpClient:
     def __init__(self, responses: dict[tuple[str, str], int]) -> None:
         self.responses = responses

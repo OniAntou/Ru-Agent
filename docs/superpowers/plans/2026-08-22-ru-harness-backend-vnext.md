@@ -1,5 +1,8 @@
 # Ru Harness vNext Backend Implementation Plan
 
+> **Status:** Historical implementation record. The deterministic Harness
+> shipped; current release gates live in `docs/operations/verification.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the current fixed-port, GET-only compatibility probe with a deterministic backend Harness that proves process/auth ownership, covers safe routes with isolated fixtures, exercises synthetic STT/TTS, and emits a validated privacy-safe artifact.

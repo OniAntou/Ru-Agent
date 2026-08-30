@@ -1,7 +1,9 @@
 # Design: Activate the model tool-selection channel
 
 Date: 2026-08-23
-Status: accepted (follow-up to mode-capability-profiles; amendment noted in ADR-0007)
+Status: Historical implementation record, superseded by the Agent-only runtime
+and the focused prompt-composer contract; current model selection behavior is
+in [`docs/operations/agent-tools.md`](../../operations/agent-tools.md).
 
 ## Background
 

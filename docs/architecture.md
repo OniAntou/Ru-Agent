@@ -179,7 +179,10 @@ binary frames, keeps native-speed audio, and exposes no network listener.
 
 Text turns are authenticated Agent runs consumed through the durable Agent SSE
 stream. The only public WebSocket is `/voice/stream`; it carries binary WAV
-frames and does not open a second text-generation transport.
+frames and does not open a second text-generation transport. In the managed
+default, observation control is an explicit disabled/unavailable surface until
+the C# screen-capture/reaction loop is delivered; Python observation remains an
+explicit compatibility rollback only.
 
 ## Data ownership
 

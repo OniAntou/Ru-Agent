@@ -1,6 +1,11 @@
 # Ru OpenCode/Pi Coding-Loop Parity Design
 
-**Status:** Approved design; not implemented
+**Status:** Partially shipped on `main` (2026-08-29). Phases 1–2 and selected
+Phase 3 terminal/reconciliation surfaces are implemented, as are the
+Agent-only transport and prompt-composer cuts. Managed Git commits, real-model
+acceptance, session trees/compaction, extensions, and sandboxing remain future
+work. This dated document is a milestone record, not the current operating
+contract.
 **Date:** 2026-08-24
 **Scope:** Give Ru Agent an OpenCode/Pi-class coding loop through one headless
 runtime shared by Ru Desktop and a thin CLI. This milestone covers workspace

@@ -2,7 +2,9 @@
 
 **Date:** 2026-08-23
 
-**Status:** Accepted 2026-08-23
+**Status:** Historical implementation record. Deterministic volume parsing,
+recovery, and truthful activity behavior shipped; current capability truth is
+in [`docs/operations/agent-tools.md`](../../operations/agent-tools.md).
 
 **Scope:** Deterministic volume intent, truthful failure continuity, and honest
 Agent activity copy

@@ -147,6 +147,28 @@ public sealed class WorkerV2ContractTests
     }
 
     [Fact]
+    public void Rejects_retired_web_search_setting()
+    {
+        var payload = new JsonObject
+        {
+            ["prompt"] = "hello",
+            ["turns"] = new JsonArray(),
+            ["system_prompt_context"] = WorkerV2PromptCodec.WriteContext(PromptContextFixture.Create()),
+            ["settings"] = new JsonObject { ["allow_web_search"] = false },
+        };
+        var envelope = new JsonObject
+        {
+            ["v"] = 2,
+            ["id"] = "step-1",
+            ["type"] = "agent.step.start",
+            ["payload"] = payload,
+        };
+
+        var ex = Assert.Throws<AgentProtocolException>(() => WorkerV2Contracts.ValidateEnvelope(envelope));
+        Assert.Equal("invalid_request", ex.Code);
+    }
+
+    [Fact]
     public void Rejects_oversized_arguments()
     {
         var largeArgs = new JsonObject { ["path"] = new string('a', 64 * 1024 + 1) };

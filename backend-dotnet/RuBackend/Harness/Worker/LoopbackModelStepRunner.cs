@@ -364,8 +364,6 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
 
         return new JsonObject
         {
-            ["allow_web_search"] = context.Capabilities.Any(
-                capability => capability.Id == "web.search" && capability.Availability == "enabled"),
             ["model_tools"] = tools,
         };
     }

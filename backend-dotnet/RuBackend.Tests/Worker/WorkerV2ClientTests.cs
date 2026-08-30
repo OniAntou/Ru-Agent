@@ -268,7 +268,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
             ["prompt", "turns", "system_prompt_context", "settings"],
             payload.Select(property => property.Key));
         Assert.False(payload.ContainsKey("memory_context"));
-        Assert.True(payload["settings"]!.AsObject()["allow_web_search"]!.GetValue<bool>());
+        Assert.False(payload["settings"]!.AsObject().ContainsKey("allow_web_search"));
         Assert.Equal(
             "untrusted tool result",
             payload["system_prompt_context"]!.AsObject()["runtime_context"]!.AsObject()["references"]!.AsArray()[0]!["content"]!.GetValue<string>());
@@ -424,6 +424,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         var settingsNode = observed["payload"]!.AsObject()["settings"];
         Assert.True(settingsNode is not null, observed.ToJsonString());
         var settings = settingsNode!.AsObject();
+        Assert.False(settings.ContainsKey("allow_web_search"));
         var tools = settings["model_tools"]!.AsArray()
             .Select(item => item!.AsObject())
             .ToDictionary(item => item["tool_id"]!.GetValue<string>(), StringComparer.Ordinal);

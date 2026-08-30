@@ -60,7 +60,7 @@ public static class WorkerV2Contracts
     private static readonly IReadOnlySet<string> EnvelopeRequired = new HashSet<string>(["v", "id", "type", "payload"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> StartFields = new HashSet<string>(["prompt", "turns", "system_prompt_context", "settings"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> TurnFields = new HashSet<string>(["prompt", "response"], StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> SettingFields = new HashSet<string>(["allow_web_search", "model_tools"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> SettingFields = new HashSet<string>(["model_tools"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ModelToolFields = new HashSet<string>(["tool_id", "tool_version", "scopes", "availability", "model_enabled", "capability_class", "verification_required"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ModelToolOptional = new HashSet<string>(["hint", "input_schema"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptContextFields = new HashSet<string>(["schema_version", "agent_profile", "preset", "environment", "instruction_blocks", "capabilities", "runtime_context"], StringComparer.Ordinal);
@@ -277,7 +277,7 @@ public static class WorkerV2Contracts
             throw new AgentProtocolException("invalid_request");
         }
 
-        var webSearchCapabilityEnabled = ValidatePromptContext(promptContext);
+        ValidatePromptContext(promptContext);
 
         var settingsNode = payload["settings"];
         JsonObject settings = settingsNode as JsonObject ?? new JsonObject();
@@ -289,20 +289,6 @@ public static class WorkerV2Contracts
         if (settingsNode is not null && settings.Select(p => p.Key).Any(k => !SettingFields.Contains(k)))
         {
             throw new AgentProtocolException("invalid_request");
-        }
-
-        if (settings.ContainsKey("allow_web_search"))
-        {
-            var node = settings["allow_web_search"];
-            if (node is not JsonValue bv || !bv.TryGetValue<bool>(out var b))
-            {
-                throw new AgentProtocolException("invalid_request");
-            }
-
-            if (b && !webSearchCapabilityEnabled)
-            {
-                throw new AgentProtocolException("invalid_request");
-            }
         }
 
         var toolsNode = settings["model_tools"];
@@ -330,7 +316,7 @@ public static class WorkerV2Contracts
         }
     }
 
-    private static bool ValidatePromptContext(JsonObject context)
+    private static void ValidatePromptContext(JsonObject context)
     {
         if (!HasExactFields(context, PromptContextFields))
         {
@@ -414,7 +400,6 @@ public static class WorkerV2Contracts
         }
 
         var capabilityIds = new HashSet<string>(StringComparer.Ordinal);
-        var webSearchEnabled = false;
         foreach (var capabilityNodeItem in capabilities)
         {
             if (capabilityNodeItem is not JsonObject capability
@@ -428,11 +413,6 @@ public static class WorkerV2Contracts
                 || !capabilityIds.Add(capabilityId))
             {
                 throw new AgentProtocolException("invalid_request");
-            }
-
-            if (capabilityId == "web.search" && availability == "enabled")
-            {
-                webSearchEnabled = true;
             }
         }
 
@@ -475,7 +455,6 @@ public static class WorkerV2Contracts
             throw new AgentProtocolException("invalid_request");
         }
 
-        return webSearchEnabled;
     }
 
     private static void ValidatePromptReceipt(JsonObject receipt)

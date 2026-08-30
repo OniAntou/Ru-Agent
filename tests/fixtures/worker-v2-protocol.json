@@ -70,7 +70,6 @@
             }
           },
           "settings": {
-            "allow_web_search": false,
             "model_tools": [
               {
                 "tool_id": "files.read",

@@ -1,7 +1,7 @@
 # Phase 2 gate closure plan
 
 **Date:** 2026-08-30  
-**Status:** In progress
+**Status:** Gate closed 2026-08-30 except native hardware (harness/managed gates green, scanner Dotnet-aware)
 
 ## Objective
 
@@ -13,22 +13,22 @@ an external dependency.
 
 ## Work items
 
-- [ ] Make the OmniVoice boundary readiness-aware. A reachable provider whose
+- [x] Make the OmniVoice boundary readiness-aware. A reachable provider whose
   model is not loaded must be warmed up or return a bounded unavailable error;
-  it must never be treated as healthy solely because TCP port 5052 is open.
-- [ ] Add managed-runtime integration coverage for the default C# Worker
+  it must never be treated as healthy solely because TCP port 5052 is open. (`OmniVoiceHttpProvider.IsReady` + `EnsureProviderReadyAsync` `backend-dotnet/RuAgent.Runtime.Adapters/Audio/OmniVoiceHttpProvider.cs:33`)
+- [x] Add managed-runtime integration coverage for the default C# Worker
   topology, while keeping the Python compatibility Harness as a separate
-  rollback fixture.
-- [ ] Re-audit managed speech, observation, and VTube Studio composition for
+  rollback fixture. (`WorkerBrokerLaunchPlanTests.Dotnet_mode_owns_both_worker_ports` + `ManagedWorkerCompositionTests` + `scan_runtime_boundary` reachable 2)
+- [x] Re-audit managed speech, observation, and VTube Studio composition for
   explicit provider configuration, stable errors, and no accidental Python
   imports. Do not add an unverified replacement for the anonymous Google STT
-  request contract.
-- [ ] Run the route matrix, focused C# tests, Python reference tests, static
+  request contract. (`ManagedRuntimeStatusRequestHandler`, `VtubeStudioRuntimeRequestHandler`, `ObservationControlRequestHandler`, `UnavailableVoiceRuntimeRequestHandler` + scanner `provider-only 0 reachable`)
+- [x] Run the route matrix, focused C# tests, Python reference tests, static
   checks, build, and deterministic Harness sequentially. Record only bounded
-  status/codes in the current verification documents.
+  status/codes in the current verification documents. (`865 passed`, `624 Backend`, `56 HTTP+1 WS`, `harness passed`)
 - [ ] Re-run the native acceptance probes when the user-owned microphone,
   speaker, VTube Studio, and optional Gemini credentials are available. Keep
-  those results separate from deterministic evidence.
+  those results separate from deterministic evidence. (pending user-run `docs/operations/verification.md:105`)
 
 ## Exit criteria
 

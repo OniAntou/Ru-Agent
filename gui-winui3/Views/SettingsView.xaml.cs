@@ -262,7 +262,6 @@ namespace RuApp.Views
 
             CloudMemoryRow.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
             ModelRow.Visibility = hasModels ? Visibility.Visible : Visibility.Collapsed;
-            OnlineSearchRow.Visibility = Visibility.Visible;
             SelfLearningRow.Visibility = Visibility.Visible;
             ExtendedFeaturesCard.Visibility = Visibility.Visible;
         }

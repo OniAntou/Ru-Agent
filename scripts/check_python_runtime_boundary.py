@@ -125,8 +125,9 @@ def _managed_reachability(root: Path, paths: tuple[Path, ...]) -> dict[str, tupl
     }
     reachable: dict[str, tuple[bool, str]] = {}
 
-    # The managed startup explicitly starts the Python v1 worker by module
-    # name.  This is a subprocess edge, not a Python import edge.
+    # The explicit PythonCompatibility startup rollback starts the Python v1
+    # worker by module name. This is a subprocess edge, not a Python import
+    # edge; normal managed startup never evaluates this branch.
     startup_text = "\n".join(
         path_by_relative[relative].read_text(encoding="utf-8", errors="replace")
         for relative in _C_SHARP_STARTUP_FILES

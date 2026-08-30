@@ -1,11 +1,26 @@
 # Ru Roadmap
 
+Last reviewed: 2026-08-31.
+
 ## Active Architecture: Cloud-First & External OpenAI-Compatible Providers
 
 - [x] Switched runtime defaults to Cloud (OpenCode Zen / Kilo Gateway).
 - [x] Kept OpenAI-compatible adapters for explicitly configured external services and Custom OpenAI endpoints.
 - [x] Removed the in-process conversational model, GGUF/HF assets, training tooling, evaluator and V5 suite; preserved active OmniVoice and structured memory.
-- [x] Synced settings, dynamic model listing (`GET /models`), and WinUI 3 SettingsView across Python Worker, .NET Backend, and Desktop Client.
+- [x] Synced settings, dynamic model listing (`GET /models`), and WinUI 3 SettingsView across the managed C# Worker, ASP.NET Core backend, and Desktop Client; no production Python Worker remains.
+
+## Completed maintenance (2026-08-31)
+
+- [x] Removed cloud generation tuning controls (`Temperature`, `Top-K`, and
+  `Max New Tokens`) from the WinUI surface, persistence/API snapshots, and
+  Worker v2 settings contract; legacy values are ignored and stripped.
+- [x] Enabled the managed read-only `web.search` and `web.fetch` tools with the
+  fixed DuckDuckGo endpoint and removed the obsolete online-search setting.
+- [x] Fixed session deletion handling: the GUI now requires the backend
+  application envelope `status: "ok"` before refreshing the sidebar or creating
+  a replacement session; added regression coverage for HTTP 200 error envelopes.
+- [x] Refreshed current documentation, labeled completed/future historical
+  records, and removed the superseded three-mode capability plan/spec.
 
 ## Pending product work
 

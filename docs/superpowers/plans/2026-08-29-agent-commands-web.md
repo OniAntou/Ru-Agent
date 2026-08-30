@@ -1,5 +1,10 @@
 # Typed Agent Commands and Web Search/Fetch Implementation Plan
 
+> **Status:** Historical implementation record. Typed command dispatch and the
+> bounded web adapters shipped; the later default-web wiring is recorded in
+> `2026-08-31-enable-agent-web-tools.md`. Current behavior is in
+> `docs/operations/runtime-behavior.md` and `docs/operations/agent-tools.md`.
+
 > For agentic workers: REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** Add a shared typed slash-command parser and safely expose configured web.search/web.fetch tools without adding subagents or LSP.

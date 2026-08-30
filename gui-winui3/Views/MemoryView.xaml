@@ -7,19 +7,31 @@
     xmlns:models="using:RuApp.Models"
     mc:Ignorable="d">
 
-    <Grid RowDefinitions="Auto,*" Padding="36,16,36,36" Background="Transparent" MaxWidth="960" HorizontalAlignment="Stretch">
+    <Grid RowDefinitions="Auto,*" Padding="0,16,0,40" Background="Transparent" HorizontalAlignment="Stretch">
         <!-- Header -->
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,20">
-            <StackPanel Grid.Column="0" Spacing="3">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,4,0,20">
+            <StackPanel Grid.Column="0" Spacing="4">
+                <Border HorizontalAlignment="Left"
+                        Padding="8,3"
+                        Background="{StaticResource RuAccentSoftBrush}"
+                        BorderBrush="{StaticResource RuAccentBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource RuControlCornerRadius}">
+                    <TextBlock Text="KÝ ỨC &amp; SỞ THÍCH"
+                               FontSize="10.5"
+                               FontWeight="Bold"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               Foreground="{StaticResource RuAccentBrush}"/>
+                </Border>
                 <TextBlock Text="Bộ nhớ dài hạn đã lưu"
-                           FontSize="22"
+                           FontSize="23"
                            FontFamily="{StaticResource RuDisplayFontFamily}"
                            FontWeight="Bold"
                            Foreground="{StaticResource RuInkBrush}"/>
-                <TextBlock Text="Ru tự động trích xuất các thông tin cá nhân và sở thích từ cuộc trò chuyện để cá nhân hóa phản hồi."
+                <TextBlock Text="Ru tự động trích xuất các thông tin cá nhân và sở thích từ cuộc trò chuyện để cá nhân hóa phản hồi"
                            Foreground="{StaticResource RuMutedBrush}"
                            FontFamily="{StaticResource RuUiFontFamily}"
-                           FontSize="13"/>
+                           FontSize="12.5"/>
             </StackPanel>
 
             <Button x:Name="ClearMemoryButton" Grid.Column="1" Click="OnClearMemoryClick" 

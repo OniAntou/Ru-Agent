@@ -1,0 +1,91 @@
+{
+  "schema_version": 2,
+  "harness_version": "vnext-1",
+  "commit": "5140681",
+  "mode": "gui-deterministic",
+  "evidence_class": "contract",
+  "started_at": "2026-08-30T14:55:26.523839Z",
+  "duration_ms": 10610.609,
+  "components": {
+    "edge": {
+      "status": "passed"
+    },
+    "worker": {
+      "status": "passed"
+    },
+    "broker": {
+      "status": "passed"
+    },
+    "workspace_fixture": "temporary",
+    "gui": {
+      "status": "passed",
+      "launched": true,
+      "closed": true
+    }
+  },
+  "checks": [
+    {
+      "id": "gui.backend_ready",
+      "status": "passed",
+      "duration_ms": 416.983,
+      "reason": null,
+      "details": {
+        "event_counts": {
+          "agent.activity": 2,
+          "voice.session.replaced": 1
+        }
+      }
+    },
+    {
+      "id": "gui.agent-cancel",
+      "status": "passed",
+      "duration_ms": 3166.563,
+      "reason": null,
+      "details": {
+        "event_counts": {
+          "agent.activity": 2,
+          "voice.session.replaced": 1
+        }
+      }
+    },
+    {
+      "id": "gui.private_metadata",
+      "status": "passed",
+      "duration_ms": 84.311,
+      "reason": null,
+      "details": {
+        "event_counts": {
+          "agent.activity": 2,
+          "voice.session.replaced": 1
+        }
+      }
+    }
+  ],
+  "coverage": {
+    "http": {
+      "total": 56,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    },
+    "websocket": {
+      "total": 1,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "cleanup": {
+    "children_terminated": true,
+    "ports_closed": true,
+    "session_descriptor_removed": true,
+    "fixture_root_removed": true,
+    "workspace_root_removed": true,
+    "temporary_root_removed": true
+  },
+  "errors": [],
+  "summary": {
+    "status": "passed",
+    "failed_checks": 0
+  }
+}

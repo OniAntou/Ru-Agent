@@ -697,7 +697,25 @@ namespace RuApp
                     }
                 }
 
-                await _apiService.DeleteSessionAsync(sessionId);
+                bool deleted = await _apiService.DeleteSessionAsync(sessionId);
+                if (!deleted)
+                {
+                    if (ShellRoot.XamlRoot != null)
+                    {
+                        var errorDialog = new ContentDialog
+                        {
+                            Title = "Không thể xoá đoạn chat",
+                            Content = "Backend chưa xoá được đoạn chat này. Hãy thử lại sau.",
+                            CloseButtonText = "Đóng",
+                            DefaultButton = ContentDialogButton.Close,
+                            XamlRoot = ShellRoot.XamlRoot
+                        };
+                        await errorDialog.ShowAsync();
+                    }
+
+                    return;
+                }
+
                 await LoadSessionsAsync();
 
                 // Nếu xóa hết session thì tạo mới

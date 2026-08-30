@@ -1,5 +1,9 @@
 # Enable Agent Web Tools Implementation Plan
 
+> **Status:** Historical implementation record. The obsolete online-search
+> setting was retired and default managed `web.search`/`web.fetch` shipped on
+> 2026-08-31; current behavior is maintained in the operations docs.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Remove the obsolete online-search setting and make the active managed Agent GUI path execute bounded DuckDuckGo-backed `web.search` and `web.fetch` calls.

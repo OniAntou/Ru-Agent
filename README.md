@@ -112,6 +112,11 @@ Do not start either worker or the voice engine as independent public services.
   `anh`/`em`, streamed visible text, private control-metadata filtering, and
   correlation-aware FIFO turns that drop stale socket frames instead of
   attaching them to a newer bubble.
+- ASP.NET Core owns persisted sessions and history. A session deletion is
+  successful only when the API envelope returns application status `"ok"`; the
+  WinUI client checks that status before refreshing the sidebar and shows a
+  bounded error when deletion fails. Deleting the last session successfully
+  creates one fresh session.
 - Hosted OpenCode Zen and Kilo Gateway adapters are optional. OpenAI-compatible
   external adapters remain available for explicitly configured services.
   Credentials are stored through Windows Credential Manager.

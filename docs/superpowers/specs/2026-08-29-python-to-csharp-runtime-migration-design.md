@@ -1,9 +1,9 @@
 # Python-to-C# Runtime Migration Design
 
 **Date:** 2026-08-29
-**Status:** Design approved 2026-08-29; deterministic Phases 1–2 shipped
-2026-08-30. Native acceptance and final Python retirement remain separate
-gates; see the [Phase 3 retirement plan](../plans/2026-08-30-python-runtime-phase-3-retirement.md).
+**Status:** Historical design record. Deterministic Phases 1–2 and the managed
+Phase 3 production cleanup shipped on `main` by 2026-08-30; native acceptance
+remains a separate user-owned gate. See the [Phase 3 retirement plan](../plans/2026-08-30-python-runtime-phase-3-retirement.md).
 
 ## Goal
 

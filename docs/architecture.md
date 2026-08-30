@@ -1,6 +1,6 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, 2026-08-30.
+Status: current ownership plus accepted architecture-v2 targets, 2026-08-31.
 
 Operational invariants for generation, voice, STT, VTS, observation, and live
 acceptance are maintained in
@@ -193,6 +193,14 @@ and the VTS token default to the canonical `%LOCALAPPDATA%\Ru` location;
 structured memory defaults to `data/conversations`, with `RU_DATA_ROOT`
 available for isolated runs. Secrets are stored through Windows Credential
 Manager rather than JSON files.
+
+Session deletion is coordinated by the Public Host through
+`DELETE /sessions/{sessionId}`. The route keeps its stable HTTP 200 response
+envelope: only `status: "ok"` confirms that the session and its owned Harness
+artifacts were removed; a missing or failed delete returns `status: "error"`
+even with HTTP 200. WinUI refreshes the sidebar only after application-level
+success and creates a replacement session only after successfully deleting the
+last one.
 
 The transactional migration from `~\.minigpt` completed on 2026-08-17 with
 copy, validation, hashing, atomic activation, readability checks, and

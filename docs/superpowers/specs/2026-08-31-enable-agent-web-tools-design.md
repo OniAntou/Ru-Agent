@@ -1,7 +1,10 @@
 # Enable Agent Web Tools and Retire Online-Search Setting
 
 **Date:** 2026-08-31
-**Status:** Approved in conversation; ready for implementation planning
+**Status:** Historical implementation record. The setting retirement and
+default managed web tools shipped on `main` on 2026-08-31; current behavior is
+maintained in `docs/operations/runtime-behavior.md` and
+`docs/operations/agent-tools.md`.
 
 ## Outcome
 

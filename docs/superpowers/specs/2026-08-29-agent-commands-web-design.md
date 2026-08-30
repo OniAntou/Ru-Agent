@@ -1,6 +1,9 @@
 # Typed Agent Commands and Web Search/Fetch
 
-**Status:** Draft for implementation review
+**Status:** Historical implementation record. Typed commands and bounded web
+adapters shipped; the later default-web wiring is recorded in
+`2026-08-31-enable-agent-web-tools-design.md`. Current behavior is in
+`docs/operations/runtime-behavior.md` and `docs/operations/agent-tools.md`.
 **Date:** 2026-08-29
 **Scope:** A small typed command router plus bounded web search/fetch tools.
 Subagents and LSP are explicitly removed from this iteration.

@@ -1,5 +1,9 @@
 # Ru Codebase Cleanup and Organization Implementation Plan
 
+> **Status:** Historical implementation record. The approved source/output
+> cleanup shipped on `main` on 2026-08-29; the completed checklist below is
+> retained as an audit trail.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove the approved dead source and rebuildable output while keeping Ru's active Agent-only runtime topology stable and maintainable.

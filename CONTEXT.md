@@ -48,6 +48,13 @@ An explicit, in-memory user session in which Ru may request bounded tools and
 skills. It expires with the session and never becomes a global permission.
 _Avoid_: permanent Agent mode permission
 
+**Conversation Session**:
+The persisted conversation and history record owned by the Public Host. The
+`DELETE /sessions/{sessionId}` route removes the session and its owned Harness
+artifacts only when the application envelope returns `status: "ok"`; an HTTP
+success status alone is not deletion proof.
+_Avoid_: treating an HTTP 200 response as a successful delete
+
 **RuAgentBroker**:
 The private, process-isolated .NET service that validates tool manifests,
 session scopes, approval state, and adapter execution before a local action.

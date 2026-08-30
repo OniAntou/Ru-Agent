@@ -155,6 +155,15 @@ def test_superseded_dated_records_are_removed() -> None:
     assert stale == []
 
 
+def test_explicitly_superseded_mode_profile_records_are_removed() -> None:
+    superseded = (
+        "docs/superpowers/plans/2026-08-23-mode-capability-profiles.md",
+        "docs/superpowers/specs/2026-08-23-mode-capability-profiles-design.md",
+    )
+    remaining = [relative for relative in superseded if (ROOT / relative).exists()]
+    assert remaining == []
+
+
 def test_action_capability_docs_publish_only_current_truth() -> None:
     agent_tools = _text("docs/operations/agent-tools.md")
     verification = _text("docs/operations/verification.md")
@@ -231,6 +240,28 @@ def test_current_docs_describe_enabled_managed_agent_web_tools() -> None:
     assert "web.search`/`web.fetch` bindings are added only when WebOptions" not in current_docs
     assert "Web search/fetch are not advertised by default" not in current_docs
     assert "Configured deployments may additionally advertise" not in current_docs
+    assert "configuration- and session-scope-gated" not in current_docs
+    assert "explicit Broker configuration and session grant are required before" not in current_docs
+
+
+def test_current_docs_describe_session_deletion_application_status() -> None:
+    current_docs = "\n".join(
+        _text(relative)
+        for relative in (
+            "README.md",
+            "CONTEXT.md",
+            "backend-dotnet/README.md",
+            "docs/architecture.md",
+            "docs/operations/runtime-behavior.md",
+            "docs/operations/verification.md",
+        )
+    )
+    current_docs_flat = " ".join(current_docs.split())
+
+    assert "DELETE /sessions/{sessionId}" in current_docs
+    assert 'status: "ok"' in current_docs
+    assert "treating HTTP success as proof of deletion" in current_docs_flat
+    assert "refreshes the sidebar only" in current_docs_flat
 
 
 def test_current_docs_do_not_claim_internal_or_absent_tools_are_model_usable() -> None:

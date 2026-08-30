@@ -1,5 +1,9 @@
 # Agent Context Lifecycle and Compaction Implementation Plan
 
+> **Status:** Future implementation plan; work has not started. Keep this
+> proposal separate from the current runtime contract until its gates are
+> implemented and verified.
+
 > For agentic workers: REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** Replace provider-limit hard stops with deterministic, durable context compaction while preserving audit history and fail-closed execution.

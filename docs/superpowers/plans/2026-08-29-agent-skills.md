@@ -1,5 +1,9 @@
 # Declarative Agent Skills Implementation Plan
 
+> **Status:** Future implementation plan; work has not started. The current
+> runtime has no auto-loaded skill package roots; keep this proposal separate
+> from the current capability contract until its gates are shipped.
+
 > For agentic workers: REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** Enable bounded declarative Skills through the production Broker session, registry, orchestrator, and typed SkillStart protocol without loading arbitrary code.

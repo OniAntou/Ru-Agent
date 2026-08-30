@@ -4,8 +4,9 @@
 
 **Goal:** Make Ru's current documentation match the Agent-only runtime and remove documents that are explicitly superseded or duplicate.
 
-**Status:** Working-tree refresh and verification completed on 2026-08-29;
-commit intentionally remains pending an explicit integration request.
+**Status:** Historical implementation record. The initial documentation
+refresh and retirement completed on 2026-08-29; later current-contract updates
+are recorded in the dated follow-up plans and the operations documentation.
 
 **Architecture:** Keep a small current-documentation spine (README, domain vocabulary, architecture, runtime, tools, verification, route contract, and ADRs). Treat dated plans/specs as historical records unless they describe remaining work; mark those records clearly, and delete only files whose own status says superseded or whose content is fully replaced by a focused current contract.
 
@@ -107,8 +108,19 @@ Run `D:\LLM\.venv\Scripts\python.exe -m pytest tests/test_current_documentation.
 - [x] **Step 3: Run the documentation-safe verification set.**
 Run `D:\LLM\.venv\Scripts\python.exe -m pytest -q` and `D:\LLM\.venv\Scripts\python.exe scripts/check_aspnetcore_route_matrix.py` sequentially. Inspect `git diff --stat` and the staged diff before committing.
 
-- [ ] **Step 4: Commit the refresh.**
-This remains pending because the current request asked for the documentation
-refresh, not a repository commit or push. When explicitly requested, use
-`git add` with the documentation/test paths and commit with
-`docs: refresh current contracts and retire stale records`.
+- [x] **Step 4: Commit the refresh.**
+The refresh was included in the subsequent runtime/documentation commits; this
+plan remains as the historical record of its scope and verification.
+
+## Follow-up cleanup (2026-08-31)
+
+The superseded three-mode capability proposal was no longer needed after the
+Agent-only runtime and ADR 0007 became authoritative. These two historical
+records were removed after explicit approval:
+
+- `docs/superpowers/plans/2026-08-23-mode-capability-profiles.md`
+- `docs/superpowers/specs/2026-08-23-mode-capability-profiles-design.md`
+
+The remaining dated plans/specs are retained as historical decision records or
+explicit future work; protected data, active runtime assets, and unrelated
+dirty paths were not part of this cleanup.

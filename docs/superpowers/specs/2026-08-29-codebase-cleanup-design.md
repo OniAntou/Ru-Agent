@@ -1,7 +1,9 @@
 # Ru Codebase Cleanup and Organization
 
 **Date:** 2026-08-29  
-**Status:** Approved for implementation  
+**Status:** Historical implementation record. The approved cleanup shipped on
+`main` on 2026-08-29; current repository hygiene is maintained by the cleanup
+tests and `docs/operations/verification.md`.
 **Scope:** Remove dead source and rebuildable outputs, then make the repository
 layout and ignore rules reflect the active Agent-only runtime.
 

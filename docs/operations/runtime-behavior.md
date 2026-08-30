@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the current main branch, 2026-08-30.
+Status: operating contract for the current main branch, 2026-08-31.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -14,6 +14,9 @@ longer ships or starts an in-process conversational model. Switching providers
 must preserve bounded context, cancellation, streamed visible-text
 normalization, and public error mapping by ASP.NET Core. Stale `llama.cpp` or
 GGUF settings migrate to the cloud default and cannot select a removed runtime.
+Cloud generation requests omit provider-specific `Temperature`, `Top-K`, and
+`Max New Tokens` controls; legacy stored values are ignored and stripped rather
+than forwarded to a provider.
 
 Ru mirrors Vietnamese, English, and mixed-language turns. In Vietnamese Ru
 calls the user `anh` and itself `em`. Agent replies contain no Unicode emoji or ASCII
@@ -229,6 +232,20 @@ desktop creates one replacement session and retries once only before a run is
 created. A second recovery failure is shown as a bounded error and is never
 looped or filled with an earlier response.
 
+## Session and history lifecycle
+
+ASP.NET Core is authoritative for persisted conversation sessions, history, and
+the Harness records owned by a session. `DELETE /sessions/{sessionId}` keeps a
+stable HTTP 200 response envelope: `status: "ok"` is returned only after the
+deletion coordinator removes the session and its owned Harness artifacts;
+missing or failed deletes return `status: "error"` with bounded copy.
+
+Clients must inspect the application status instead of treating HTTP success as
+proof of deletion. WinUI asks for confirmation, refreshes the sidebar only
+after `status: "ok"`, and shows a bounded error without silently replacing the
+conversation when deletion fails. If the last session was deleted
+successfully, the UI creates one fresh session.
+
 ## Action execution kernel v1
 
 The Worker v2 settings currently advertise the same ten core bindings plus the
@@ -287,13 +304,14 @@ read-only system bindings, unbound connectors, and `app.open` remain
 Broker-internal.
 Declarative Skills are added only from validated manifests explicitly included
 in the session grant; each Skill step re-enters normal tool scope, schema,
-approval, timeout, and output limits. The managed Git commit workflow (Phase 3
-Task 6) is not shipped; Git commands are ordinary terminal requests governed
-by the active preset and policy. The GUI renders the actual `agent.session`
-grant received from the Host. Managed startup does not auto-load skill package
-roots or WebOptions, and the default model loop does not advertise those
-optional Broker bindings; an explicit Broker configuration and session grant
-are required before `/skills`, `/skill`, or web execution can be used.
+approval, timeout, and output limits. Skill package roots are not auto-loaded.
+The managed Git commit workflow (Phase 3 Task 6) is not shipped; Git commands
+are ordinary terminal requests governed by the active preset and policy. The
+GUI renders the actual `agent.session` grant received from the Host. Managed
+startup enables the bounded WebOptions instance with the fixed DuckDuckGo
+endpoint, so `web.search` and `web.fetch` are advertised as read-only managed
+capabilities without a settings flag or separate deployment switch; normal
+Harness policy remains authoritative for each call.
 
 ### Typed commands
 

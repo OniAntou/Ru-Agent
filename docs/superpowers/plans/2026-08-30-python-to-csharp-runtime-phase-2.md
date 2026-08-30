@@ -1,8 +1,9 @@
 # Managed Runtime Phase 2 Implementation Plan
 
-**Status:** Completed 2026-08-30. The deterministic and managed startup gates
-are green; native device checks remain user-owned. Final Python selector/module
-retirement is tracked by the [Phase 3 plan](2026-08-30-python-runtime-phase-3-retirement.md).
+**Status:** Historical implementation record. Phase 2 completed on 2026-08-30;
+the deterministic and managed startup gates are green, native device checks
+remain user-owned, and the later Python selector/module retirement is recorded
+in the [Phase 3 plan](2026-08-30-python-runtime-phase-3-retirement.md).
 
 > **For agentic workers:** Execute this plan inline in the current workspace. Keep each task's red/green test cycle and commit isolated; do not delegate to subagents.
 

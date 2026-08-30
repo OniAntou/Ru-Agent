@@ -1,7 +1,9 @@
 # Phase 2 gate closure plan
 
 **Date:** 2026-08-30  
-**Status:** Gate closed 2026-08-30; ready for Phase 3 (native hardware remains user-owned)
+**Status:** Historical checkpoint. The Phase 2 gate closed on 2026-08-30 and
+Phase 3 production retirement completed on 2026-08-30; native hardware remains
+user-owned.
 
 ## Objective
 

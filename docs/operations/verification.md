@@ -80,9 +80,27 @@ not a model-selection binding. `notes.create`, read-only `system.*`, and
 `app.list` remain Broker-internal. `files.apply_patch` remains unadvertised.
 Typed commands (`/compact`, `/help`, `/skills`, `/skill`) use the shared
 Protocol parser and are covered by CLI/Host tests. Web search/fetch are
-configuration- and session-scope-gated, bounded, redirect-safe, and marked
-untrusted; declarative Skills are explicit session grants with per-step policy
+enabled read-only managed capabilities backed by the fixed DuckDuckGo HTML
+endpoint; each call remains bounded, redirect-safe, policy-checked, and marked
+untrusted. Declarative Skills are explicit session grants with per-step policy
 checks. Connectors and `app.open` remain unadvertised.
+
+### Session deletion regression evidence (2026-08-31)
+
+The GUI client regression test uses an isolated loopback HTTP listener that
+returns HTTP 200 with `status: "error"`. `ApiService.DeleteSessionAsync` must
+reject that response, and the WinUI delete handler must not refresh or create a
+replacement session after application-level failure:
+
+```powershell
+dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore --filter "FullyQualifiedName~SessionDeletionApiTests"
+dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore
+dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --no-restore --filter "FullyQualifiedName~Session"
+```
+
+The latest verification passed the focused regression (`1/1`), the full GUI
+suite (`339/339`), and the backend session slice (`39/39`). No production
+session or user data is used by the regression listener.
 
 The desktop launcher and release build share one GUI artifact, and the release
 build publishes the managed Worker before the backend:

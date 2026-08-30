@@ -1,0 +1,702 @@
+{
+  "schema_version": 2,
+  "harness_version": "vnext-1",
+  "commit": "93ee94c",
+  "mode": "runtime-live",
+  "evidence_class": "contract",
+  "started_at": "2026-08-30T09:04:12.301330Z",
+  "duration_ms": 32832.011,
+  "components": {
+    "edge": {
+      "status": "passed"
+    },
+    "worker": {
+      "status": "passed"
+    },
+    "broker": {
+      "status": "passed"
+    },
+    "workspace_fixture": "temporary"
+  },
+  "checks": [
+    {
+      "id": "startup.readiness",
+      "status": "passed",
+      "duration_ms": 0.0,
+      "reason": null,
+      "details": {}
+    },
+    {
+      "id": "auth.ownership",
+      "status": "passed",
+      "duration_ms": 7.735,
+      "reason": null,
+      "details": {
+        "correct": 200,
+        "wrong": 401,
+        "missing": 401
+      }
+    },
+    {
+      "id": "route.http.get./status",
+      "status": "passed",
+      "duration_ms": 67.551,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.get./diagnostics/logs",
+      "status": "passed",
+      "duration_ms": 22.423,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.get./diagnostics/export",
+      "status": "passed",
+      "duration_ms": 7.045,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.get./diagnostics/status",
+      "status": "passed",
+      "duration_ms": 4.246,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.get./activity-log",
+      "status": "passed",
+      "duration_ms": 3.301,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.delete./activity-log",
+      "status": "passed",
+      "duration_ms": 2.029,
+      "reason": null,
+      "details": {
+        "method": "DELETE",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.get./models",
+      "status": "passed",
+      "duration_ms": 3.029,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.get./history",
+      "status": "passed",
+      "duration_ms": 3.659,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.get./memory",
+      "status": "passed",
+      "duration_ms": 4.838,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.delete./memory",
+      "status": "passed",
+      "duration_ms": 5.179,
+      "reason": null,
+      "details": {
+        "method": "DELETE",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.get./settings",
+      "status": "passed",
+      "duration_ms": 2.87,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.post./settings",
+      "status": "passed",
+      "duration_ms": 13.728,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.get./sessions",
+      "status": "passed",
+      "duration_ms": 3.805,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.post./sessions/new",
+      "status": "passed",
+      "duration_ms": 19.151,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./sessions/{sessionId}/activate",
+      "status": "passed",
+      "duration_ms": 3.22,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.delete./sessions/{sessionId}",
+      "status": "passed",
+      "duration_ms": 28.776,
+      "reason": null,
+      "details": {
+        "method": "DELETE",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./observation/preflight",
+      "status": "skipped",
+      "duration_ms": 0.0,
+      "reason": "hardware_or_external_observation_required",
+      "details": {
+        "safety": "external_skip"
+      }
+    },
+    {
+      "id": "route.http.get./observation/vision-config",
+      "status": "skipped",
+      "duration_ms": 0.0,
+      "reason": "hardware_or_external_observation_required",
+      "details": {
+        "safety": "external_skip"
+      }
+    },
+    {
+      "id": "route.http.post./observation/react",
+      "status": "skipped",
+      "duration_ms": 0.0,
+      "reason": "hardware_or_external_observation_required",
+      "details": {
+        "safety": "external_skip"
+      }
+    },
+    {
+      "id": "route.http.post./observation/cancel",
+      "status": "skipped",
+      "duration_ms": 0.0,
+      "reason": "hardware_or_external_observation_required",
+      "details": {
+        "safety": "external_skip"
+      }
+    },
+    {
+      "id": "route.http.post./observation/ack",
+      "status": "skipped",
+      "duration_ms": 0.0,
+      "reason": "hardware_or_external_observation_required",
+      "details": {
+        "safety": "external_skip"
+      }
+    },
+    {
+      "id": "route.http.post./observation/start",
+      "status": "skipped",
+      "duration_ms": 0.0,
+      "reason": "hardware_or_external_observation_required",
+      "details": {
+        "safety": "external_skip"
+      }
+    },
+    {
+      "id": "route.http.post./observation/stop",
+      "status": "skipped",
+      "duration_ms": 0.0,
+      "reason": "hardware_or_external_observation_required",
+      "details": {
+        "safety": "external_skip"
+      }
+    },
+    {
+      "id": "route.http.get./observation/status",
+      "status": "skipped",
+      "duration_ms": 0.0,
+      "reason": "hardware_or_external_observation_required",
+      "details": {
+        "safety": "external_skip"
+      }
+    },
+    {
+      "id": "route.http.get./voice/status",
+      "status": "passed",
+      "duration_ms": 4.21,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.post./voice/latency",
+      "status": "passed",
+      "duration_ms": 3.546,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./voice/tts",
+      "status": "passed",
+      "duration_ms": 9841.148,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./voice/warmup",
+      "status": "passed",
+      "duration_ms": 443.095,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./voice/release",
+      "status": "passed",
+      "duration_ms": 162.54,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./voice/transcribe",
+      "status": "passed",
+      "duration_ms": 245.829,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.get./vts/mouse-look",
+      "status": "passed",
+      "duration_ms": 6.058,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.post./vts/mouse-look",
+      "status": "passed",
+      "duration_ms": 11.969,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.get./vts/overlay",
+      "status": "passed",
+      "duration_ms": 96.4,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.post./vts/overlay",
+      "status": "passed",
+      "duration_ms": 151.517,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.get./vts/status",
+      "status": "passed",
+      "duration_ms": 75.179,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.post./vts/connect",
+      "status": "failed",
+      "duration_ms": 15015.476,
+      "reason": "request_error",
+      "details": {
+        "error_type": "ReadTimeout"
+      }
+    },
+    {
+      "id": "route.http.get./vts/config",
+      "status": "passed",
+      "duration_ms": 6.957,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.post./vts/config",
+      "status": "failed",
+      "duration_ms": 3.708,
+      "reason": "unexpected_status",
+      "details": {
+        "method": "POST",
+        "status": 422,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./vts/activity",
+      "status": "failed",
+      "duration_ms": 3.839,
+      "reason": "unexpected_status",
+      "details": {
+        "method": "POST",
+        "status": 422,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./vts/action",
+      "status": "failed",
+      "duration_ms": 3.701,
+      "reason": "unexpected_status",
+      "details": {
+        "method": "POST",
+        "status": 422,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./vts/speaking",
+      "status": "passed",
+      "duration_ms": 3.442,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 200,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./agent/v1/runs",
+      "status": "passed",
+      "duration_ms": 47.383,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 404,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.get./agent/v1/runs/{runId}",
+      "status": "passed",
+      "duration_ms": 9.354,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 404,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.get./agent/v1/runs/{runId}/events",
+      "status": "passed",
+      "duration_ms": 6.973,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 404,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.get./agent/v1/runs/{runId}/payloads/{payloadId}",
+      "status": "passed",
+      "duration_ms": 5.98,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 404,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.post./agent/v1/runs/{runId}/approvals/{approvalId}",
+      "status": "passed",
+      "duration_ms": 13.555,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 404,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./agent/v1/runs/{runId}/trust",
+      "status": "passed",
+      "duration_ms": 7.91,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 400,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./agent/v1/runs/{runId}/cancel",
+      "status": "passed",
+      "duration_ms": 3.256,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 404,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./agent/v1/runs/{runId}/continue",
+      "status": "passed",
+      "duration_ms": 2.886,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 404,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./agent/v1/runs/{runId}/compact",
+      "status": "passed",
+      "duration_ms": 4.184,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 409,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./agent/v1/runs/{runId}/commands",
+      "status": "passed",
+      "duration_ms": 2.362,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 400,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.post./agent/v1/runs/{runId}/reconcile",
+      "status": "passed",
+      "duration_ms": 4.606,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 400,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.get./agent/v1/sessions/{sessionId}/runs",
+      "status": "passed",
+      "duration_ms": 4.066,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 404,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.get./agent/v1/policies",
+      "status": "passed",
+      "duration_ms": 9.788,
+      "reason": null,
+      "details": {
+        "method": "GET",
+        "status": 200,
+        "safety": "read_only"
+      }
+    },
+    {
+      "id": "route.http.post./agent/v1/policies",
+      "status": "passed",
+      "duration_ms": 49.781,
+      "reason": null,
+      "details": {
+        "method": "POST",
+        "status": 201,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "route.http.delete./agent/v1/policies/{ruleId}",
+      "status": "passed",
+      "duration_ms": 15.272,
+      "reason": null,
+      "details": {
+        "method": "DELETE",
+        "status": 404,
+        "safety": "fixture_mutation"
+      }
+    },
+    {
+      "id": "voice.synthetic_stt",
+      "status": "failed",
+      "duration_ms": 156.391,
+      "reason": "unexpected_transcription",
+      "details": {
+        "status": 200
+      }
+    },
+    {
+      "id": "voice.synthetic_tts",
+      "status": "failed",
+      "duration_ms": 573.551,
+      "reason": "invalid_tts_audio",
+      "details": {
+        "status": 200,
+        "valid_wav": false
+      }
+    },
+    {
+      "id": "voice.websocket_stream",
+      "status": "failed",
+      "duration_ms": 0.0,
+      "reason": "voice_stream_not_confirmed",
+      "details": {
+        "valid_wav": false,
+        "terminal": "failed"
+      }
+    },
+    {
+      "id": "route.websocket.ws./voice/stream",
+      "status": "passed",
+      "duration_ms": 0.0,
+      "reason": null,
+      "details": {}
+    }
+  ],
+  "coverage": {
+    "http": {
+      "total": 56,
+      "passed": 44,
+      "failed": 4,
+      "skipped": 8
+    },
+    "websocket": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "cleanup": {
+    "children_terminated": true,
+    "ports_closed": true,
+    "session_descriptor_removed": true,
+    "fixture_root_removed": true,
+    "workspace_root_removed": true,
+    "temporary_root_removed": true
+  },
+  "errors": [],
+  "summary": {
+    "status": "failed",
+    "failed_checks": 7
+  }
+}

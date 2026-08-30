@@ -1,5 +1,9 @@
 # Agent Activity Feed Design
 
+> **Status:** Historical implementation record. The safe transient activity
+> feed shipped on `main` on 2026-08-29; current behavior is documented in
+> `docs/operations/runtime-behavior.md`.
+
 ## Goal
 
 Hiển thị tiến trình Coding Agent theo thời gian thực ngay trong luồng Chat,

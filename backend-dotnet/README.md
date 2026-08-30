@@ -43,6 +43,11 @@ metadata filtering, and every public endpoint contract. Agent generation uses
 the authenticated managed C# `ws://127.0.0.1:8005/worker/v2` protocol; runtime/device
 work uses the same managed process at `ws://127.0.0.1:8006/worker/v1`:
 
+Session deletion uses the stable `DELETE /sessions/{sessionId}` route and an
+application envelope. Only `status: "ok"` means that the deletion coordinator
+removed the session and its owned Harness artifacts; missing or failed deletes
+return a bounded `status: "error"` envelope even when the HTTP status is 200.
+
 - runtime transitions (Agent model steps use the typed C# `/worker/v2` adapter);
 - TTS, streaming voice, STT, and GPU lifecycle calls;
 - VTube Studio connection, motion, catalog, action, and overlay state;

@@ -180,8 +180,17 @@ namespace RuApp.Services
         {
             try
             {
-                var response = await _httpClient.DeleteAsync($"{_baseUrl}/sessions/{sessionId}");
-                return response.IsSuccessStatusCode;
+                using var response = await _httpClient.DeleteAsync($"{_baseUrl}/sessions/{sessionId}");
+                if (!response.IsSuccessStatusCode)
+                {
+                    return false;
+                }
+
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+                return payload.ValueKind == JsonValueKind.Object
+                    && payload.TryGetProperty("status", out var status)
+                    && status.ValueKind == JsonValueKind.String
+                    && string.Equals(status.GetString(), "ok", StringComparison.Ordinal);
             }
             catch (Exception ex)
             {

@@ -1,5 +1,9 @@
 # Agent Workspace Defaulting Design
 
+> **Status:** Historical implementation record. The project-root defaulting
+> behavior shipped on `main`; current workspace and trust behavior is
+> documented in `docs/operations/runtime-behavior.md`.
+
 ## Goal
 
 Cho phép Coding Agent bắt đầu mà không cần người dùng gõ lại workspace trong

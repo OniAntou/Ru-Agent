@@ -1,71 +1,54 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
-from scripts.check_python_runtime_boundary import _reference_cases, scan_runtime_boundary
+from scripts.check_python_runtime_boundary import _reference_cases, _summary, scan_runtime_boundary
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_current_worker_modules_are_classified_by_runtime_boundary() -> None:
-    records = {item.path: item for item in scan_runtime_boundary(ROOT)}
+def test_inventory_identifies_known_entrypoints_without_claiming_reachability(tmp_path: Path) -> None:
+    files = {
+        "backend-dotnet/RuBackend/Program.cs": 'Launch("ru_runtime.worker.server");',
+        "src/ru_runtime/voice/omnivoice_server.py": 'raise RuntimeError("must not execute")',
+        "scripts/probe.py": "pass",
+    }
+    for relative, text in files.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    records = scan_runtime_boundary(tmp_path)
+    payloads = {item.path: item.to_payload() for item in records}
+    assert set(payloads) == set(files)
+    assert payloads["backend-dotnet/RuBackend/Program.cs"].get("is_known_managed_startup") is True
+    assert payloads["src/ru_runtime/voice/omnivoice_server.py"].get("is_known_managed_startup") is False
+    assert payloads["src/ru_runtime/voice/omnivoice_server.py"]["classification"] == "provider-only"
+    assert payloads["scripts/probe.py"]["classification"] == "tooling"
+    assert all("reachable_from_managed_startup" not in item for item in payloads.values())
+    summary = _summary(records)
+    assert summary["schema_version"] == 2
+    assert summary["known_managed_startup_count"] == 1
+    assert "reachable_count" not in summary
 
-    # Phase 3: generation and worker/v2 are retired (C# owns them); they are
-    # no longer present and must not be reported as production-to-port reachable.
-    # The inventory should either not contain them or mark them as not reachable.
-    for retired in (
-        "src/ru_runtime/worker/v2/model_step.py",
-        "src/ru_runtime/worker/v1/voice.py",
+
+def test_inventory_skips_generated_files_and_bounds_hash_input(tmp_path: Path) -> None:
+    for relative in (
+        "scripts/large.py", "scripts/__pycache__/ignored.py",
+        "backend-dotnet/Project/bin/ignored.cs", "backend-dotnet/Project/obj/ignored.cs",
+        "src/ru_runtime/voice/audio.wav",
     ):
-        if retired in records:
-            assert records[retired].classification in ("production-to-port", "provider-only", "legacy")
-            assert records[retired].reachable_from_managed_startup is False
-        else:
-            # Retired module correctly absent from inventory
-            assert retired not in records
-    assert records["scripts/benchmark_tts.py"].classification == "tooling"
-    legacy_path = "src/ru_runtime/ru_v6_3_corpus.py"
-    if legacy_path in records:
-        assert records[legacy_path].classification == "legacy"
-    else:
-        # The corpus module was already retired from this checkout; the
-        # inventory must not resurrect a deleted artifact just to classify it.
-        assert records["src/ru_runtime/reference_text.txt"].classification == "legacy"
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x" * 70_000)
+    records = scan_runtime_boundary(tmp_path)
+    assert len(records) == 1
+    assert records[0].path == "scripts/large.py"
+    assert records[0].size_bytes == 70_000
+    assert records[0].sha256 == hashlib.sha256(b"x" * 65_536).hexdigest()
 
 
-def test_managed_startup_has_no_python_import_edge() -> None:
-    records = scan_runtime_boundary(ROOT)
-    assert not any(
-        item.path.startswith("backend-dotnet/")
-        and item.reachable_from_managed_startup
-        and item.reason == "python-import"
-        for item in records
-    )
-
-
-def test_baseline_fixture_has_all_phase_one_reference_groups() -> None:
-    fixture = json.loads(
-        (ROOT / "tests/fixtures/python-csharp-phase1-baseline.json").read_text(encoding="utf-8")
-    )
-    assert fixture["schema_version"] == 1
-    assert {case["group"] for case in fixture["cases"]} == {
-        "prompt",
-        "compaction",
-        "tool_selection",
-        "protocol",
-        "cancellation",
-        "privacy",
-    }
-
-
-def test_phase_one_reference_cases_still_build_after_generation_retirement() -> None:
-    cases = _reference_cases(ROOT)
-    assert {case["id"] for case in cases} == {
-        "prompt.basic",
-        "compaction.basic",
-        "tool_selection.valid",
-        "protocol.unknown_type",
-        "cancellation.before_dispatch",
-        "privacy.redaction",
-    }
+def test_reference_cases_match_the_checked_in_cross_language_fixture() -> None:
+    fixture = json.loads((ROOT / "tests/fixtures/python-csharp-phase1-baseline.json").read_text(encoding="utf-8"))
+    assert _reference_cases(ROOT) == fixture["cases"]

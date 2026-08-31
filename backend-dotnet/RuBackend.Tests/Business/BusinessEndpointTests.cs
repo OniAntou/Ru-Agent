@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 using RuBackend.Business;
 using RuBackend.Business.Settings;
 using RuBackend.Conversation;
+using RuBackend.Tests.Fakes;
 using RuBackend.Worker;
 using Xunit;
 
@@ -341,7 +342,8 @@ public sealed class BusinessEndpointTests
         new(
             dataPaths: paths,
             credentialStore: credentials ?? new FakeCredentialStore(),
-            runtimeSettingsLoader: runtimeLoader ?? new FakeRuntimeSettingsLoader());
+            runtimeSettingsLoader: runtimeLoader ?? new FakeRuntimeSettingsLoader(),
+            diagnosticEmitter: new DiscardingDiagnosticEmitter());
 
     private sealed class FakeRuntimeSettingsLoader : IRuntimeSettingsLoader
     {

@@ -7,19 +7,6 @@ exhaust the page file on this workspace.
 ## Deterministic release matrix
 
 ```powershell
-dotnet restore D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --nologo
-dotnet restore D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj --nologo
-dotnet restore D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj --nologo
-dotnet restore D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj --nologo
-dotnet restore D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj --nologo
-dotnet restore D:\LLM\backend-dotnet\RuAgent.Hosting.Tests\RuAgent.Hosting.Tests.csproj --nologo
-dotnet restore D:\LLM\backend-dotnet\RuAgent.Protocol.Tests\RuAgent.Protocol.Tests.csproj --nologo
-dotnet restore D:\LLM\backend-dotnet\RuAgent.Runtime.Core.Tests\RuAgent.Runtime.Core.Tests.csproj --nologo
-dotnet restore D:\LLM\backend-dotnet\RuAgent.Runtime.Adapters.Tests\RuAgent.Runtime.Adapters.Tests.csproj --nologo
-dotnet restore D:\LLM\backend-dotnet\RuAgent.Runtime.Worker.Tests\RuAgent.Runtime.Worker.Tests.csproj --nologo
-dotnet restore D:\LLM\backend-dotnet\RuAgent.Client.Tests\RuAgent.Client.Tests.csproj --nologo
-dotnet restore D:\LLM\backend-dotnet\RuAgent.Cli.Tests\RuAgent.Cli.Tests.csproj --nologo
-dotnet restore D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 dotnet restore D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe -m ruff check D:\LLM\src D:\LLM\tests D:\LLM\scripts D:\LLM\tools
 & D:\LLM\.venv\Scripts\python.exe -m mypy D:\LLM\src
@@ -28,25 +15,43 @@ dotnet restore D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj --nologo
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
 & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output "$env:TEMP\ru-prompt-composer-harness.json"
 & D:\LLM\.venv\Scripts\python.exe -m pip check
-dotnet test D:\LLM\backend-dotnet\RuAgent.Broker.Tests\RuAgent.Broker.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Connectors.Tests\RuAgent.Connectors.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Hosting.Tests\RuAgent.Hosting.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Protocol.Tests\RuAgent.Protocol.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Runtime.Core.Tests\RuAgent.Runtime.Core.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Runtime.Adapters.Tests\RuAgent.Runtime.Adapters.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Runtime.Worker.Tests\RuAgent.Runtime.Worker.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Client.Tests\RuAgent.Client.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuAgent.Cli.Tests\RuAgent.Cli.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Release --no-restore --nologo
-dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj -c Release --no-restore --nologo
+& D:\LLM\scripts\test_dotnet.ps1 -Configuration Release
 dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --no-restore --nologo
 cmd /c D:\LLM\build.bat
 ```
 
-This is the local equivalent of the CI release gates and must run
-sequentially. The route checker must remain at 56 HTTP routes and 1 WebSocket
+CI and local verification share `scripts/test_dotnet.ps1`, which recursively
+discovers `*Tests.csproj` under `backend-dotnet` and `gui-winui3.Tests`, excluding
+generated `bin`, `obj`, and `out` paths. It runs them sequentially and stops on
+missing roots, discovery errors, an unavailable SDK, or the first test failure.
+It restores by default; use `-NoRestore` only after restoring the projects.
+Protocol and all three Runtime test projects are included.
+
+The test cleanup removed the unused Python VTS/overlay package and its tests,
+including the test that could open a real VTube Studio connection. Managed C#
+VTS tests and opt-in native acceptance remain separate. Build and launcher
+unit tests replace only their external process boundary and never open RuApp.
+
+### Test-suite cleanup evidence (2026-08-31)
+
+- Python: `402 passed` (audit baseline: `510`); unused VTS/overlay tests,
+  synthetic file-tool simulations, and redundant guards were removed or
+  consolidated, with new build/launcher/runner behavior checks added.
+- .NET Release: `2,009 passed` across all 13 projects, including backend
+  `633` and GUI `252`. The GUI reduction from `339` removes cosmetic snapshots,
+  retaining three focused resource/accessibility contracts and behavior tests.
+- Ruff, Mypy (`39` source files), `pip check`, and the
+  `56 HTTP + 1 WebSocket` public route contract all passed.
+- The first .NET run encountered a business-fixture JSONL cleanup lock. Only
+  those business tests now inject a discarding diagnostic emitter; the `89`
+  focused business/diagnostics tests and subsequent full matrix passed.
+  The real writer's bounded shutdown wait still needs investigation, tracked
+  in [TODO](../../TODO.md). This cleanup does not claim that lifecycle bug fixed.
+- Cleanup verification did not publish a fresh GUI, automate the interactive
+  GUI, perform real voice/VTS/cloud acceptance, or uninstall packages.
+  Commit/push is a separately authorized Git handoff, not runtime acceptance.
+
+The route checker must remain at 56 HTTP routes and 1 WebSocket
 route (`/voice/stream`; 41 legacy plus 15 additive `/agent/v1/*`). The
 deterministic Harness is contract evidence. A successful build proves only compilation,
 publish output, and the incremental native overlay build/test invocation; it
@@ -98,9 +103,10 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --no-restore
 dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj --no-restore --filter "FullyQualifiedName~Session"
 ```
 
-The latest verification passed the focused regression (`1/1`), the full GUI
-suite (`339/339`), and the backend session slice (`39/39`). No production
-session or user data is used by the regression listener.
+The pre-cleanup verification passed the focused regression (`1/1`), the then
+full GUI suite (`339/339`), and the backend session slice (`39/39`). These
+behavior tests remain; the cleanup only removed cosmetic GUI checks. No
+production session or user data is used by the regression listener.
 
 The desktop launcher and release build share one GUI artifact, and the release
 build publishes the managed Worker before the backend:
@@ -118,8 +124,7 @@ target `start_dev.bat` so it uses the same release-path and startup checks.
 
 Phase 2 parity is deterministic and status-only. The shared fixture
 `tests/fixtures/python-csharp-phase2-device-baseline.json` is exercised by
-`tests/test_phase2_managed_device_parity.py` and
-`RuAgent.Runtime.Worker.Tests/Phase2ManagedDeviceParityTests.cs`; those tests
+`RuAgent.Runtime.Worker.Tests/Phase2ManagedDeviceParityTests.cs`; these tests
 cover v1 types/sequences, settings shape, voice control ordering, stable
 errors, STT normalization, VTS code sets, observation bounds, cancellation,
 and forbidden-value redaction without starting a provider or device.
@@ -138,7 +143,7 @@ retirement changes:
 | Python reference/tooling suite | `501 passed` |
 | C# Release matrix | `2,085 passed` across 13 test assemblies (14 restored projects including the Harness build) |
 | Route contract | `56 HTTP + 1 WebSocket` |
-| Runtime-boundary scan | `865` files; `2` managed-startup reachable |
+| Runtime-boundary scan | `865` files; schema 1 reported `reachable_count=2` (a startup-path label, not graph analysis) |
 | Backend deterministic Harness | `contract` / `passed`; owned cleanup green |
 | Agent GUI Harness | 4/4 supported Agent scenarios passed |
 | Release build | `build.bat` `13/13`; GUI and managed Worker published |
@@ -178,9 +183,9 @@ When these checks are run, record only pass/fail, duration, and bounded reason
 codes. Never copy prompts, transcripts, audio, credentials, paths, provider
 responses, or device values into this document or its artifacts.
 
-### Current Phase 3 retirement evidence (2026-08-30)
+### Historical Phase 3 retirement evidence (2026-08-30)
 
-The retirement changes were verified sequentially in the current checkout:
+The retirement changes were verified sequentially before the test-suite cleanup:
 
 | Gate | Result |
 | --- | --- |
@@ -191,7 +196,7 @@ The retirement changes were verified sequentially in the current checkout:
 | Python compile check | `compileall` passed |
 | C# Release matrix | `2,086 passed` across 13 test assemblies |
 | Route contract | `56 HTTP + 1 WebSocket` |
-| Runtime-boundary scan | `864` files; `2` managed-startup reachable |
+| Runtime-boundary scan | `864` files; schema 1 reported `reachable_count=2` (a startup-path label, not graph analysis) |
 | Backend deterministic Harness | `48/56` HTTP passed, `8` external skipped, `1/1` WebSocket passed; cleanup green |
 | Agent GUI Harness | 4/4 supported Agent scenarios passed |
 | Managed startup smoke | `/status` `200`, wrong bearer `401`; Worker and Broker ports listened and shut down cleanly |
@@ -215,11 +220,7 @@ final-path escape handling, the C# wire codec, internal persistence, and public
 SSE cursor suppression.
 
 ```powershell
-& D:\LLM\.venv\Scripts\python.exe -m pytest -q `
-  D:\LLM\tests\test_system_prompt_composer.py `
-  D:\LLM\tests\test_worker_v2_protocol.py `
-  D:\LLM\tests\test_worker_v2_step.py `
-  D:\LLM\tests\test_worker_v2_server.py
+& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_python_runtime_boundary.py
 dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Core.Tests\RuAgent.Harness.Core.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~AgentPromptReceipt|FullyQualifiedName~SystemPromptContract"
 dotnet test D:\LLM\backend-dotnet\RuBackend.Tests\RuBackend.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~RuInstructionLoader|FullyQualifiedName~RuPromptContextProvider|FullyQualifiedName~WorkerV2Prompt|FullyQualifiedName~WorkerV2Contract|FullyQualifiedName~WorkerV2Client|FullyQualifiedName~AgentSseReconnect"
 dotnet test D:\LLM\backend-dotnet\RuAgent.Harness.Persistence.Tests\RuAgent.Harness.Persistence.Tests.csproj -c Debug --nologo --filter "FullyQualifiedName~HarnessPayloadStore|FullyQualifiedName~HarnessProjectionTransaction"
@@ -261,40 +262,19 @@ non-WebSocket probes. The owned process tree was stopped and the probe roots
 were removed. This confirms managed startup/listener wiring only; it does not
 replace native microphone, OmniVoice, VTube Studio, or Gemini acceptance.
 
-## Documentation contract check
+## Test ownership and documentation integrity
 
-The check below prevents active documents from claiming that the shipped
-composer is pending, and verifies that Worker v2 has no top-level
-`memory_context` field while the internal receipt event stays out of the public
-allowlist:
+Python tests cover the retained OmniVoice provider, reference fixtures and
+maintenance/harness tooling. Managed C# suites cover the Public Host, Broker,
+Worker, settings migration, session deletion, privacy and cancellation.
+Do not keep a copied implementation in a test as evidence about production.
+
+Documentation checks validate local links and ADR metadata, not exact wording,
+ADR counts, colors or historical deletion lists. GUI structural checks are
+not visual acceptance; keep real responsive-policy and interaction tests.
 
 ```powershell
-$activeDocs = @(
-    'D:\LLM\README.md',
-    'D:\LLM\CONTEXT.md',
-    'D:\LLM\docs\README.md',
-    'D:\LLM\docs\architecture.md',
-    'D:\LLM\docs\operations\agent-tools.md',
-    'D:\LLM\docs\operations\runtime-behavior.md',
-    'D:\LLM\docs\operations\verification.md',
-    'D:\LLM\docs\adr\0007-mode-capability-profiles.md'
-)
-$stalePattern = @(
-    ('implementation not ' + 'started'),
-    ('not ' + 'implemented')
-)
-$stale = Select-String -Path $activeDocs -Pattern $stalePattern
-if ($stale) { throw 'stale composer status remains in active docs' }
-$workerPaths = @(
-    'D:\LLM\src\ru_runtime\worker\v2',
-    'D:\LLM\backend-dotnet\RuBackend\Harness\Worker',
-    'D:\LLM\backend-dotnet\RuAgent.Protocol\Harness'
-)
-$legacyMemory = & rg -n ('"memory' + '_context"') $workerPaths
-if ($LASTEXITCODE -eq 0) { throw 'top-level Worker v2 memory field remains' }
-if (Select-String -Path 'D:\LLM\backend-dotnet\RuAgent.Protocol\Harness\HarnessEventContracts.cs' -Pattern ('model' + '\.prompt_composed')) {
-    throw 'internal prompt event is documented as public'
-}
+& D:\LLM\.venv\Scripts\python.exe -m pytest -q tests/test_current_documentation.py
 ```
 
 ## evidence_class: contract

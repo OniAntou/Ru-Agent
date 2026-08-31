@@ -1,94 +1,161 @@
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Xunit;
 
 namespace RuApp.Tests;
 
 public sealed class ResponsiveLayoutContractTests
 {
-    [Theory]
-    [InlineData("MainWindow.xaml", "x:Name=\"RootLayoutGrid\"")]
-    [InlineData("MainWindow.xaml", "SizeChanged=\"RootLayoutGrid_SizeChanged\"")]
-    [InlineData("MainWindow.xaml", "VisualState x:Name=\"Wide\"")]
-    [InlineData("MainWindow.xaml", "VisualState x:Name=\"Compact\"")]
-    [InlineData("MainWindow.xaml", "VisualState x:Name=\"Narrow\"")]
-    [InlineData("MainWindow.xaml", "AdaptiveTrigger MinWindowWidth=\"900\"")]
-    [InlineData("MainWindow.xaml", "AdaptiveTrigger MinWindowWidth=\"1280\"")]
-    [InlineData("MainWindow.xaml.cs", "ResponsiveLayoutPolicy.GetForWidth")]
-    [InlineData("MainWindow.xaml.cs", "_lastExpandedSidebarWidth")]
-    public void Main_shell_contains_the_responsive_boundary(string fileName, string expectedText)
+    private static readonly XNamespace XamlNamespace = "http://schemas.microsoft.com/winfx/2006/xaml";
+    private static readonly Regex ResourceReferencePattern = new(
+        @"\{(?:StaticResource|ThemeResource)\s+(?<key>(?:Ru|App)\w+)\s*\}",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private const string AutomationIdAttribute = "AutomationProperties.AutomationId";
+    private const string AutomationNameAttribute = "AutomationProperties.Name";
+    // Stable commands with explicit names; not a snapshot of translated labels.
+    private static readonly string[] NamedCommandIds =
+    [
+        "NewSessionButton", "MicButton", "AgentModeButton", "AgentStopButton",
+        "AgentTrustDenyButton", "AgentTrustApproveButton", "AgentDenyButton",
+        "AgentApproveButton", "AgentContinueButton",
+    ];
+
+    [Fact]
+    public void Existing_xaml_has_no_unresolved_Ru_or_App_resource_references()
     {
-        Assert.Contains(expectedText, File.ReadAllText(FindSource(fileName)), StringComparison.Ordinal);
+        var documents = LoadXamlDocuments();
+        var appDocument = documents.Single(document => Path.GetFileName(document.Path) == "App.xaml");
+        var appKeys = GetResourceKeys(appDocument.Document);
+        var unresolved = new List<string>();
+
+        foreach (var (path, document) in documents)
+        {
+            var visibleKeys = new HashSet<string>(appKeys, StringComparer.Ordinal);
+            if (!string.Equals(path, appDocument.Path, StringComparison.Ordinal))
+            {
+                visibleKeys.UnionWith(GetResourceKeys(document));
+            }
+
+            foreach (var attribute in document.Descendants().Attributes())
+            {
+                foreach (Match match in ResourceReferencePattern.Matches(attribute.Value))
+                {
+                    var key = match.Groups["key"].Value;
+                    if (!visibleKeys.Contains(key))
+                    {
+                        unresolved.Add($"{Path.GetFileName(path)}: {key}");
+                    }
+                }
+            }
+        }
+
+        Assert.True(
+            unresolved.Count == 0,
+            $"Unresolved Ru/App resource references:{Environment.NewLine}{string.Join(Environment.NewLine, unresolved)}");
     }
 
     [Fact]
-    public void Responsive_shell_does_not_add_a_horizontal_scroll_viewer()
+    public void Primary_command_controls_keep_explicit_automation_names()
     {
-        var source = File.ReadAllText(FindSource("MainWindow.xaml"));
-        Assert.DoesNotContain("HorizontalScrollBarVisibility=\"Auto\"", source, StringComparison.Ordinal);
+        var documents = LoadXamlDocuments();
+        var commandControls = documents
+            .SelectMany(document => document.Document.Descendants())
+            .Where(element => IsCommandControl(element) && FindAttachedAttribute(element, AutomationIdAttribute) is not null)
+            .ToArray();
+
+        Assert.NotEmpty(commandControls);
+
+        foreach (var id in NamedCommandIds)
+        {
+            var control = Assert.Single(commandControls,
+                element => FindAttachedAttribute(element, AutomationIdAttribute)!.Value == id);
+            Assert.False(HasMissingAttachedName(control), $"Missing accessible name: {id}");
+        }
     }
 
-    [Theory]
-    [InlineData("ChatView.xaml", "x:Name=\"SuggestionPanel\"")]
-    [InlineData("ChatView.xaml", "HorizontalScrollBarVisibility=\"Disabled\"")]
-    [InlineData("ChatView.xaml", "VisualState x:Name=\"Narrow\"")]
-    [InlineData("ChatView.xaml.cs", "ApplyInputWidth")]
-    [InlineData("ChatView.xaml.cs", "RootGrid.ActualWidth")]
-    public void Chat_preserves_vertical_flow_and_has_responsive_markers(string fileName, string marker)
+    [Fact]
+    public void Accessibility_check_rejects_a_realistic_missing_attached_name_mutation()
     {
-        Assert.Contains(marker, File.ReadAllText(FindSource(fileName)), StringComparison.Ordinal);
+        var document = LoadXamlDocuments()
+            .Single(document => Path.GetFileName(document.Path) == "MainWindow.xaml")
+            .Document;
+        var button = document.Descendants()
+            .Single(element =>
+                IsCommandControl(element)
+                && FindAttachedAttribute(element, AutomationIdAttribute)?.Value == "NewSessionButton");
+
+        Assert.NotNull(button.Attribute(XamlNamespace + "Name"));
+        Assert.False(HasMissingAttachedName(button));
+        FindAttachedAttribute(button, AutomationNameAttribute)!.Remove();
+
+        Assert.True(HasMissingAttachedName(button));
     }
 
-    [Theory]
-    [InlineData("LogView.xaml", "VisualState x:Name=\"Narrow\"")]
-    [InlineData("LogView.xaml", "HorizontalScrollBarVisibility=\"Disabled\"")]
-    [InlineData("DiagnosticsView.xaml", "VisualState x:Name=\"Narrow\"")]
-    [InlineData("DiagnosticsView.xaml", "x:Name=\"StatusMetricsGrid\"")]
-    [InlineData("DiagnosticsView.xaml.cs", "ReflowStatusMetrics")]
-    [InlineData("DiagnosticsView.xaml.cs", "Rows.ReplaceAll")]
-    public void Log_and_diagnostics_keep_stable_vertical_data_surfaces(string fileName, string marker)
+    private static bool IsCommandControl(XElement element)
     {
-        Assert.Contains(marker, File.ReadAllText(FindSource(fileName)), StringComparison.Ordinal);
+        return element.Name.LocalName is "Button" or "ToggleButton";
     }
 
-    [Theory]
-    [InlineData("LogView.xaml")]
-    [InlineData("DiagnosticsView.xaml")]
-    public void Log_and_diagnostics_never_enable_horizontal_scrolling(string fileName)
+    private static bool HasMissingAttachedName(XElement element)
     {
-        Assert.DoesNotContain(
-            "HorizontalScrollBarVisibility=\"Auto\"",
-            File.ReadAllText(FindSource(fileName)),
-            StringComparison.Ordinal);
+        var automationId = FindAttachedAttribute(element, AutomationIdAttribute);
+        var automationName = FindAttachedAttribute(element, AutomationNameAttribute);
+        return IsCommandControl(element)
+            && automationId is not null
+            && (automationName is null || string.IsNullOrWhiteSpace(automationName.Value));
     }
 
-    [Theory]
-    [InlineData("VoiceView.xaml", "AdaptiveTrigger MinWindowWidth=\"900\"")]
-    [InlineData("VoiceView.xaml", "AdaptiveTrigger MinWindowWidth=\"1280\"")]
-    [InlineData("SettingsView.xaml", "AdaptiveTrigger MinWindowWidth=\"900\"")]
-    [InlineData("SettingsView.xaml", "AdaptiveTrigger MinWindowWidth=\"1280\"")]
-    [InlineData("VoiceView.xaml", "x:Name=\"VoiceProfileComboBox\"")]
-    [InlineData("SettingsView.xaml", "x:Name=\"BackendComboBox\"")]
-    [InlineData("SettingsView.xaml", "x:Name=\"GeminiVisionKeyBox\"")]
-    public void Form_views_define_all_responsive_tiers(string fileName, string marker)
+    private static XAttribute? FindAttachedAttribute(XElement element, string localName)
     {
-        Assert.Contains(marker, File.ReadAllText(FindSource(fileName)), StringComparison.Ordinal);
+        return element.Attributes().FirstOrDefault(attribute => attribute.Name.LocalName == localName);
     }
 
-    private static string FindSource(string fileName)
+    private static IReadOnlySet<string> GetResourceKeys(XDocument document)
+    {
+        return document
+            .Descendants()
+            .Select(element => element.Attribute(XamlNamespace + "Key"))
+            .Where(attribute => attribute is not null)
+            .Select(attribute => attribute!.Value)
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static IReadOnlyList<(string Path, XDocument Document)> LoadXamlDocuments()
+    {
+        var sourceRoot = FindSourceRoot();
+        var paths = Directory
+            .EnumerateFiles(sourceRoot, "*.xaml", SearchOption.AllDirectories)
+            .Where(path => path
+                .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .All(segment =>
+                    !string.Equals(segment, "bin", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(segment, "obj", StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.NotEmpty(paths);
+
+        var documents = paths
+            .Select(path => (path, XDocument.Load(path)))
+            .ToArray();
+
+        Assert.NotEmpty(documents);
+        return documents;
+    }
+
+    private static string FindSourceRoot()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
              directory is not null;
              directory = directory.Parent)
         {
-            foreach (var path in new[]
+            var sourceRoot = Path.Combine(directory.FullName, "gui-winui3");
+            if (Directory.Exists(sourceRoot))
             {
-                Path.Combine(directory.FullName, "gui-winui3", fileName),
-                Path.Combine(directory.FullName, "gui-winui3", "Views", fileName)
-            })
-            {
-                if (File.Exists(path)) return path;
+                return sourceRoot;
             }
         }
 
-        throw new FileNotFoundException(fileName);
+        throw new DirectoryNotFoundException("gui-winui3 source root was not found.");
     }
 }

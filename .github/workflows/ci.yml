@@ -38,15 +38,9 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
-      - run: dotnet test backend-dotnet/RuAgent.Broker.Tests/RuAgent.Broker.Tests.csproj --nologo
-      - run: dotnet test backend-dotnet/RuAgent.Connectors.Tests/RuAgent.Connectors.Tests.csproj --nologo
-      - run: dotnet test backend-dotnet/RuAgent.Harness.Core.Tests/RuAgent.Harness.Core.Tests.csproj --nologo
-      - run: dotnet test backend-dotnet/RuAgent.Harness.Persistence.Tests/RuAgent.Harness.Persistence.Tests.csproj --nologo
-      - run: dotnet test backend-dotnet/RuAgent.Hosting.Tests/RuAgent.Hosting.Tests.csproj --nologo
-      - run: dotnet test backend-dotnet/RuAgent.Client.Tests/RuAgent.Client.Tests.csproj --nologo
-      - run: dotnet test backend-dotnet/RuAgent.Cli.Tests/RuAgent.Cli.Tests.csproj --nologo
-      - run: dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj --nologo
-      - run: dotnet test gui-winui3.Tests/gui-winui3.Tests.csproj --nologo
+      - name: Run all .NET tests
+        shell: pwsh
+        run: .\scripts\test_dotnet.ps1 -Configuration Debug
       - run: dotnet build gui-winui3.Harness/RuApp.Harness.csproj -c Release --nologo
       - run: dotnet build gui-winui3/RuApp.csproj -c Release -r win-x64
 

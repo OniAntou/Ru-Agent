@@ -22,8 +22,35 @@ Last reviewed: 2026-08-31.
 - [x] Refreshed current documentation, labeled completed/future historical
   records, and removed the superseded three-mode capability plan/spec.
 
+## Completed test-suite maintenance (2026-08-31)
+
+- [x] Removed self-contained file-tool simulations, no-op orchestration checks,
+  duplicate retirement/build guards, exact documentation wording checks, and
+  cosmetic XAML snapshots; retained actual managed behavior regressions.
+- [x] Unified CI/local .NET testing through recursive project discovery with
+  fail-closed discovery and execution. All 13 current test projects are covered,
+  including Protocol and Runtime.Core/Adapters/Worker.
+- [x] Retired unused Python VTS/overlay source together with nine test files
+  (70 cases) and its obsolete dependencies. The default Python suite no longer
+  contains the test that connected to VTube Studio.
+- [x] Kept OmniVoice assets/provider, active memory/speech tooling, managed
+  VTS/token storage, privacy, session deletion, and playback/subtitle tests.
+- [x] Replaced misleading inventory reachability claims with bounded path
+  classification; added behavioral build/launcher/CI runner checks and scoped
+  XAML resource/accessibility integrity checks.
+
+See [verification](docs/operations/verification.md) for measured results and
+[the completed plan](docs/superpowers/plans/2026-08-31-test-suite-cleanup.md).
+
 ## Pending product work
 
+- [ ] Investigate diagnostic-writer shutdown under concurrent host teardown:
+  `StructuredDiagnosticLogWriter.Dispose` waits at most two seconds, then
+  disposes synchronization primitives without proving the writer has stopped.
+  A backend test teardown hit a locked JSONL file during the cleanup matrix.
+  Business endpoint fixtures now discard diagnostic events; dedicated
+  diagnostics tests still use the real writer. This isolates the tests but
+  does not establish a production logging-lifecycle fix.
 - [ ] Collect user-listened hosted audio evidence and numeric live-cloud p50/p95
   before calling the first-audio rollout accepted. Keep the provider/model A/B
   comparison pending until that evidence exists; do not change providers or

@@ -2,7 +2,8 @@
 
 The inventory is intentionally filesystem-only.  It records enough provenance
 to review the migration boundary while keeping output deterministic and free of
-source text, credentials, or external-service responses.
+source text, credentials, or external-service responses. Known entrypoints are
+labels, not a dependency graph or proof of production reachability.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ _C_SHARP_STARTUP_FILES = (
 class RuntimeBoundaryRecord:
     path: str
     classification: str
-    reachable_from_managed_startup: bool
+    is_known_managed_startup: bool
     reason: str
     sha256: str
     size_bytes: int
@@ -42,19 +43,20 @@ class RuntimeBoundaryRecord:
 def classify(path: str) -> tuple[str, str]:
     """Return the migration class and stable explanation for *path*."""
 
+    if path in _C_SHARP_STARTUP_FILES:
+        return "managed-startup", "known-entrypoint"
     if path.startswith(("src/ru_runtime/worker/v2/", "src/ru_runtime/generation/")):
         return "production-to-port", "managed-agent-reference"
     if path.startswith((
         "src/ru_runtime/worker/v1/",
         "src/ru_runtime/voice/",
         "src/ru_runtime/speech/",
-        "src/ru_runtime/vts/",
         "src/ru_runtime/observation/",
     )):
         return "provider-only", "phase-two-device-boundary"
     if path.startswith(("scripts/", "tools/", "tests/")):
         return "tooling", "non-product-build"
-    return "legacy", "not-reachable-from-managed-startup"
+    return "legacy", "outside-classified-source-groups"
 
 
 def _relative_files(root: Path) -> tuple[Path, ...]:
@@ -81,16 +83,6 @@ def _relative_files(root: Path) -> tuple[Path, ...]:
     return tuple(sorted(candidates, key=lambda item: item.relative_to(root).as_posix()))[:_MAX_FILES]
 
 
-def _managed_reachability(root: Path, paths: tuple[Path, ...]) -> dict[str, tuple[bool, str]]:
-    path_by_relative = {path.relative_to(root).as_posix(): path for path in paths}
-    reachable: dict[str, tuple[bool, str]] = {}
-
-    for relative in _C_SHARP_STARTUP_FILES:
-        if relative in path_by_relative:
-            reachable[relative] = (True, "managed-startup")
-    return reachable
-
-
 def _bounded_sha256(path: Path) -> tuple[str, int]:
     with path.open("rb") as handle:
         data = handle.read(_MAX_HASH_BYTES)
@@ -102,20 +94,16 @@ def scan_runtime_boundary(root: Path) -> tuple[RuntimeBoundaryRecord, ...]:
 
     root = root.resolve()
     paths = _relative_files(root)
-    reachable = _managed_reachability(root, paths)
     records: list[RuntimeBoundaryRecord] = []
     for path in paths:
         relative = path.relative_to(root).as_posix()
         classification, reason = classify(relative)
-        is_reachable, reach_reason = reachable.get(relative, (False, reason))
-        if is_reachable:
-            reason = reach_reason
         sha256, size_bytes = _bounded_sha256(path)
         records.append(
             RuntimeBoundaryRecord(
                 path=relative,
                 classification=classification,
-                reachable_from_managed_startup=is_reachable,
+                is_known_managed_startup=relative in _C_SHARP_STARTUP_FILES,
                 reason=reason,
                 sha256=sha256,
                 size_bytes=size_bytes,
@@ -383,9 +371,9 @@ def _summary(records: Iterable[RuntimeBoundaryRecord]) -> dict[str, object]:
     for item in records:
         counts[item.classification] = counts.get(item.classification, 0) + 1
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "file_count": len(records),
-        "reachable_count": sum(item.reachable_from_managed_startup for item in records),
+        "known_managed_startup_count": sum(item.is_known_managed_startup for item in records),
         "classification_counts": dict(sorted(counts.items())),
     }
 

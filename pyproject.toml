@@ -11,8 +11,6 @@ dependencies = [
     "numpy>=1.26",
     "SpeechRecognition>=3.10",
     "pyaudio>=0.2",
-    "pyvts>=0.3",
-    "pygame>=2.6",
     "psutil>=5.9",
     "websockets>=16,<17",
 ]

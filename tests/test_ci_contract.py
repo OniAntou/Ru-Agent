@@ -7,14 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_ci_uses_current_python_extras_and_route_contract() -> None:
+def test_ci_python_job_uses_supported_runtime_and_quality_gates() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert ".[dev,runtime]" in workflow
     assert "dev,server" not in workflow
-    assert "scripts/check_aspnetcore_route_matrix.py" in workflow
-    assert "--mode backend-deterministic" in workflow
-    assert "actions/upload-artifact@v4" in workflow
-    assert "ru-harness-vnext-py${{ matrix.python-version }}" in workflow
     assert "python -m pytest -q" in workflow
     assert 'python-version: ["3.11", "3.13"]' in workflow
     assert "python-version: ${{ matrix.python-version }}" in workflow
@@ -23,12 +19,14 @@ def test_ci_uses_current_python_extras_and_route_contract() -> None:
     assert "pip check" in workflow
 
 
-def test_ci_runs_both_dotnet_test_projects() -> None:
+def test_ci_uses_reusable_dotnet_runner_and_keeps_build_steps() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    assert "backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj" in workflow
-    assert "backend-dotnet/RuAgent.Broker.Tests/RuAgent.Broker.Tests.csproj" in workflow
-    assert "backend-dotnet/RuAgent.Connectors.Tests/RuAgent.Connectors.Tests.csproj" in workflow
-    assert "gui-winui3.Tests/gui-winui3.Tests.csproj" in workflow
+    dotnet_job = workflow.split("  dotnet:\n", maxsplit=1)[1].split("  native-overlay:\n", maxsplit=1)[0]
+
+    assert "shell: pwsh" in dotnet_job
+    assert r"run: .\scripts\test_dotnet.ps1 -Configuration Debug" in dotnet_job
+    assert "dotnet test backend-dotnet/" not in dotnet_job
+    assert "dotnet test gui-winui3.Tests/" not in dotnet_job
     assert "dotnet build gui-winui3.Harness/RuApp.Harness.csproj -c Release" in workflow
     assert "dotnet build gui-winui3/RuApp.csproj -c Release -r win-x64" in workflow
 

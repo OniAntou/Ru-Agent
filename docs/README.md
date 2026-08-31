@@ -27,7 +27,7 @@ an operating contract.
 - OpenCode-style prompt composition — the [focused contract](superpowers/specs/2026-08-29-ru-opencode-system-prompt-composer-design.md) and [implementation plan](superpowers/plans/2026-08-29-ru-opencode-system-prompt-composer.md) are shipped. Each Agent step receives one freshly composed system message, root-bound instruction context, and a digest-only internal receipt.
 - Managed runtime Phase 2 — one published C# Worker now owns both private Worker v2 (Agent) and Worker v1 (runtime/device) ports with separate tokens and a single-use DPAPI provider bootstrap. Runtime settings, voice orchestration, STT/VTS/observation boundaries, leases, and OmniVoice process lifetime are managed in C#. The deterministic Harness uses a test-only fixture, while managed STT/Gemini credentials remain opt-in.
 - Python runtime Phase 3 retirement — the production Python Agent/Worker modules, compatibility launch branch, and legacy live launch path are retired. Managed C# startup is the only supported production topology; `runtime-live` is a bounded diagnostic and native device acceptance remains user-owned.
-- Phase 2 deterministic evidence — the shared `python-csharp-phase2-device-baseline.json` fixture and Python/C# parity tests cover v1 sequence/type contracts, settings, voice ordering, stable errors, STT normalization, VTS code sets, observation bounds, cancellation, and privacy redaction. Release build publication also requires `RuAgent.Runtime.Core.dll` beside the managed Worker executable.
+- Phase 2 deterministic evidence — the shared `python-csharp-phase2-device-baseline.json` fixture and managed C# parity tests cover v1 sequence/type contracts, settings, voice ordering, stable errors, STT normalization, VTS code sets, observation bounds, cancellation, and privacy redaction. Release build publication also requires `RuAgent.Runtime.Core.dll` beside the managed Worker executable.
 - Typed Agent commands and bounded web tools — `/compact`, `/help`, `/skills`,
   and `/skill` share one Protocol parser and Public Host route. Managed startup
   enables read-only `web.search` and `web.fetch` through the fixed
@@ -37,6 +37,7 @@ an operating contract.
 
 ## Completed implementation plans
 
+- [Test-suite cleanup](superpowers/plans/2026-08-31-test-suite-cleanup.md) — obsolete Python VTS/overlay source and synthetic tests retired; documentation/UI checks reduced to integrity contracts; CI and local testing share automatic .NET project discovery.
 - [Python-to-C# Runtime Phase 2 implementation plan](superpowers/plans/2026-08-30-python-to-csharp-runtime-phase-2.md) — managed Worker v1/device ownership, parity/privacy gates, and release/manual acceptance evidence.
 - [Python runtime Phase 3 retirement plan](superpowers/plans/2026-08-30-python-runtime-phase-3-retirement.md) — production Python Agent/Worker retirement and the bounded native-acceptance boundary.
 

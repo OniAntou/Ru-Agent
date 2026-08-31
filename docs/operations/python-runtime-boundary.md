@@ -1,11 +1,11 @@
 # Python runtime boundary
 
 Status: Phase 3 retirement complete for production startup. Dotnet is the only
-supported production startup. Scanner
-2026-08-30 reports 2 reachable files (both C# managed startup) and 0
-production-to-port/provider-only reachable in Dotnet mode. The production
-Python generation and Worker v1/v2 modules are absent in the current retirement
-diff. The deterministic Harness uses a test-only fixture under
+supported production startup. The production Python generation and Worker
+v1/v2 modules are retired. The 2026-08-31 test cleanup also removed the unused
+Python VTS/overlay package and its nine test files; managed VTS, its canonical
+token file, and native overlay assets are unchanged.
+The deterministic Harness uses a test-only fixture under
 `scripts/harness`; the retired `PythonCompatibility` selector fails closed with
 `python_compatibility_retired` and is not a supported configuration.
 
@@ -13,26 +13,37 @@ The deterministic inventory is generated with:
 
 ```powershell
 D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_python_runtime_boundary.py `
-  --root D:\LLM `
-  --write-baseline D:\LLM\tests\fixtures\python-csharp-phase1-baseline.json
+  --root D:\LLM
 ```
 
 The scanner records relative paths, a bounded content hash, byte count,
-classification, and whether an explicit managed-startup edge reaches the file.
-It does not import or execute product modules. The scanner is inventory evidence,
-not permission to launch a retired module. The
+classification, and an `is_known_managed_startup` label for the two configured
+C# entrypoint files. Schema 2 reports `known_managed_startup_count`, not a
+reachability count. It does not analyze C# launch edges, Python imports, or
+transitive dependencies; the earlier schema 1 labels were not reachability
+proof either. It does not import or execute product modules. The scanner is
+inventory evidence, not permission to launch a retired module. The
 Dotnet default launches only `dotnet-agent-worker`; test-only fixture imports
 are not production reachability.
 Output is count-only on stdout; the baseline fixture contains only deterministic
-bounded reference values.
+bounded reference values. Regenerate that fixture only intentionally with
+`--write-baseline tests/fixtures/python-csharp-phase1-baseline.json`, then
+review the changes and run the C# golden-parity consumers.
 
 Current boundary classes are:
 
-- `production-to-port`: remaining Python files that would have been candidates
-  for the managed runtime; none are reachable from managed startup;
-- `provider-only`: isolated provider seams retained outside managed startup;
+- `managed-startup`: the configured C# entrypoint files;
+- `production-to-port`: historical generation/Worker candidates, when scanning
+  older trees;
+- `provider-only`: retained Python voice, speech and observation sources; this
+  directory classification does not establish production use;
 - `tooling`: scripts, tests, and build/verification helpers;
-- `legacy`: retired corpus and other files outside managed startup reachability.
+- `legacy`: other files outside the classified source groups.
+
+The active Python provider is `voice/omnivoice_server.py` plus its chunks,
+pacing, style, tuning and Vietnamese-normalization helpers. Their 48 cases
+remain. Memory and speech Python code also retain tooling consumers; Python
+tests for those modules are not evidence for managed C# runtime behavior.
 
 The managed default starts one C# Worker process that serves `/worker/v2` and
 `/worker/v1` on distinct loopback endpoints, with separate tokens and a

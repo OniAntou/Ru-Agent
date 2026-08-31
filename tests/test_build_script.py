@@ -7,8 +7,12 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
 
-def _write_stub_commands(root: Path, *, gui_publish_exists: bool = True) -> None:
+
+def _write_stub_commands(
+    root: Path, *, gui_publish_exists: bool = True, missing_artifact: str = "",
+) -> None:
     bin_dir = root / "bin"
     bin_dir.mkdir()
     gui_publish = (
@@ -17,8 +21,18 @@ def _write_stub_commands(root: Path, *, gui_publish_exists: bool = True) -> None
         if gui_publish_exists
         else ""
     )
+    omitted_path = {
+        "worker": r"backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Worker.exe",
+        "core": r"backend-dotnet\RuAgent.Runtime.Worker\bin\Release\net10.0\win-x64\publish\RuAgent.Runtime.Core.dll",
+        "runtimeconfig": r"gui-winui3\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\RuApp.runtimeconfig.json",
+    }.get(missing_artifact)
+    omit_artifact = (
+        f'  del /q "%RU_BUILD_TEST_ROOT%\\{omitted_path}" >nul 2>&1\n'
+        if omitted_path else ""
+    )
     (bin_dir / "dotnet.cmd").write_text(
         "@echo off\n"
+        ">>\"%RU_BUILD_TEST_ROOT%\\dotnet.invocations\" echo %*\n"
         "if /I \"%~1\"==\"publish\" (\n"
         "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Broker\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
         "  mkdir \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuBackend\\bin\\Release\\net10.0\\win-x64\\publish\" >nul 2>&1\n"
@@ -31,6 +45,7 @@ def _write_stub_commands(root: Path, *, gui_publish_exists: bool = True) -> None
         "  echo runtime-core > \"%RU_BUILD_TEST_ROOT%\\backend-dotnet\\RuAgent.Runtime.Worker\\bin\\Release\\net10.0\\win-x64\\publish\\RuAgent.Runtime.Core.dll\"\n"
         f"{gui_publish}"
         "  echo {\"runtimeOptions\":{\"includedFrameworks\":[{\"name\":\"Microsoft.NETCore.App\",\"version\":\"10.0.0\"}]}} > \"%RU_BUILD_TEST_ROOT%\\gui-winui3\\bin\\Release\\net10.0-windows10.0.26100.0\\win-x64\\publish\\RuApp.runtimeconfig.json\"\n"
+        f"{omit_artifact}"
         ")\n"
         "exit /b 0\n",
         encoding="utf-8",
@@ -53,6 +68,7 @@ def _run_build_script(
     overlay_exists: bool,
     native_failure: bool = False,
     gui_publish_exists: bool = True,
+    missing_artifact: str = "",
 ) -> subprocess.CompletedProcess[str]:
     repo_root = Path(__file__).resolve().parents[1]
     build_root = tmp_path / "checkout"
@@ -83,7 +99,7 @@ def _run_build_script(
     if native_failure:
         (build_root / "powershell.fail").write_text("fail\n", encoding="utf-8")
 
-    _write_stub_commands(tmp_path, gui_publish_exists=gui_publish_exists)
+    _write_stub_commands(tmp_path, gui_publish_exists=gui_publish_exists, missing_artifact=missing_artifact)
     env = os.environ.copy()
     env["PATH"] = f"{tmp_path / 'bin'}{os.pathsep}{env['PATH']}"
     env["RU_BUILD_TEST_ROOT"] = str(build_root)
@@ -94,6 +110,7 @@ def _run_build_script(
         text=True,
         capture_output=True,
         check=False,
+        timeout=30,
     )
 
 
@@ -108,10 +125,30 @@ def test_existing_overlay_still_runs_incremental_native_build(tmp_path: Path) ->
     assert "cmake --build" in (
         tmp_path / "checkout" / "cmake.invocations"
     ).read_text(encoding="utf-8")
-    assert "[1/13]" in result.stdout
-    assert "[13/13]" in result.stdout
-    assert "RuAgent.Cli" in result.stdout
-    assert "RuAgent.Harness.Core" in result.stdout
+    commands = (tmp_path / "checkout/dotnet.invocations").read_text(encoding="utf-8").splitlines()
+    publishes = [command for command in commands if command.startswith("publish ")]
+    worker = next(i for i, command in enumerate(publishes) if "RuAgent.Runtime.Worker.csproj" in command)
+    backend = next(i for i, command in enumerate(publishes) if "RuBackend.csproj" in command)
+    assert worker < backend
+    gui = next(command for command in publishes if "RuApp.csproj" in command)
+    assert all(flag in gui.split() for flag in (
+        "-p:Platform=x64", "-p:RuntimeIdentifier=win-x64", "-p:SelfContained=true",
+    ))
+
+
+@pytest.mark.parametrize("missing_artifact", ["worker", "core", "runtimeconfig"])
+def test_missing_runtime_publish_artifact_stops_release_before_native_build(
+    tmp_path: Path, missing_artifact: str,
+) -> None:
+    result = _run_build_script(tmp_path, overlay_exists=True, missing_artifact=missing_artifact)
+    assert result.returncode != 0
+    expected_diagnostic = {
+        "worker": "RuAgent.Runtime.Worker.exe was not created.",
+        "core": "RuAgent.Runtime.Core.dll was not published.",
+        "runtimeconfig": "RuApp.runtimeconfig.json was not created.",
+    }[missing_artifact]
+    assert expected_diagnostic in result.stdout
+    assert not (tmp_path / "checkout/powershell.invocations").exists()
 
 
 def test_native_build_failure_stops_release_build(tmp_path: Path) -> None:

@@ -271,9 +271,19 @@
                 </Grid>
             </Border>
 
-            <!-- Sidebar Divider / Resizer -->
-            <Border x:Name="SidebarResizer" Grid.Column="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"
-                    PointerPressed="Resizer_PointerPressed" PointerMoved="Resizer_PointerMoved" PointerReleased="Resizer_PointerReleased" />
+            <!-- Sidebar Divider / Resizer (9px hit-target with 1px active indicator line) -->
+            <Grid x:Name="SidebarResizer" Grid.Column="1" Width="9" Margin="-4,0,-4,0" Canvas.ZIndex="10"
+                  Background="Transparent"
+                  PointerEntered="Resizer_PointerEntered"
+                  PointerExited="Resizer_PointerExited"
+                  PointerPressed="Resizer_PointerPressed"
+                  PointerMoved="Resizer_PointerMoved"
+                  PointerReleased="Resizer_PointerReleased"
+                  DoubleTapped="Resizer_DoubleTapped"
+                  ToolTipService.ToolTip="Kéo để chỉnh độ rộng / Nhấp đúp để thu gọn hoặc mở rộng">
+                <Border x:Name="SidebarResizerLine" Width="1" HorizontalAlignment="Center"
+                        Background="{StaticResource RuLineBrush}" Opacity="0.4"/>
+            </Grid>
 
             <!-- Content Frame with Smooth Native Transition -->
             <ContentControl x:Name="ContentFrame" Grid.Column="2" Margin="0" 

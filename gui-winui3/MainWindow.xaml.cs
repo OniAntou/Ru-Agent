@@ -823,12 +823,41 @@ namespace RuApp
         private double _startWidth = 0;
         private double _startX = 0;
 
+        private void Resizer_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            if (SidebarResizerLine != null)
+            {
+                SidebarResizerLine.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"];
+                SidebarResizerLine.Opacity = 0.85;
+                SidebarResizerLine.Width = 2;
+            }
+        }
+
+        private void Resizer_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+        {
+            if (!_isResizing && SidebarResizerLine != null)
+            {
+                SidebarResizerLine.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuLineBrush"];
+                SidebarResizerLine.Opacity = 0.4;
+                SidebarResizerLine.Width = 1;
+            }
+        }
+
         private void Resizer_PointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
             _isResizing = true;
             _startX = e.GetCurrentPoint(null).Position.X;
             _startWidth = SidebarColumn.ActualWidth;
-            ((UIElement)sender).CapturePointer(e.Pointer);
+            if (sender is UIElement element)
+            {
+                element.CapturePointer(e.Pointer);
+            }
+            if (SidebarResizerLine != null)
+            {
+                SidebarResizerLine.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"];
+                SidebarResizerLine.Opacity = 1.0;
+                SidebarResizerLine.Width = 2;
+            }
         }
 
         private void Resizer_PointerMoved(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
@@ -839,9 +868,13 @@ namespace RuApp
                 double diff = currentX - _startX;
                 double newWidth = _startWidth + diff;
 
-                if (newWidth >= SidebarColumn.MinWidth && newWidth <= SidebarColumn.MaxWidth)
+                var min = SidebarColumn.MinWidth > 0 ? SidebarColumn.MinWidth : 180;
+                var max = SidebarColumn.MaxWidth > 0 ? SidebarColumn.MaxWidth : 400;
+
+                if (newWidth >= min && newWidth <= max)
                 {
                     SidebarColumn.Width = new GridLength(newWidth);
+                    _lastExpandedSidebarWidth = newWidth;
                 }
             }
         }
@@ -849,7 +882,46 @@ namespace RuApp
         private void Resizer_PointerReleased(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
         {
             _isResizing = false;
-            ((UIElement)sender).ReleasePointerCapture(e.Pointer);
+            if (sender is UIElement element)
+            {
+                element.ReleasePointerCapture(e.Pointer);
+            }
+            if (SidebarResizerLine != null)
+            {
+                SidebarResizerLine.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuLineBrush"];
+                SidebarResizerLine.Opacity = 0.4;
+                SidebarResizerLine.Width = 1;
+            }
+        }
+
+        private void Resizer_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+        {
+            if (_responsiveTier == ResponsiveLayoutTier.Narrow) return;
+
+            if (SidebarColumn.ActualWidth > 120)
+            {
+                _lastExpandedSidebarWidth = SidebarColumn.ActualWidth;
+                SidebarColumn.Width = new GridLength(72);
+                SetNarrowSidebarLabels(true);
+            }
+            else
+            {
+                var targetWidth = _lastExpandedSidebarWidth >= 180 ? _lastExpandedSidebarWidth : 250;
+                SidebarColumn.Width = new GridLength(targetWidth);
+                SetNarrowSidebarLabels(false);
+            }
+        }
+
+        private void SetNarrowSidebarLabels(bool narrow)
+        {
+            var vis = narrow ? Visibility.Collapsed : Visibility.Visible;
+            if (LabelNewChat != null) LabelNewChat.Visibility = vis;
+            if (LabelChat != null) LabelChat.Visibility = vis;
+            if (LabelVoice != null) LabelVoice.Visibility = vis;
+            if (LabelThemeToggle != null) LabelThemeToggle.Visibility = vis;
+            if (LabelSettings != null) LabelSettings.Visibility = vis;
+            if (LabelRecents != null) LabelRecents.Visibility = vis;
+            if (StatusText != null) StatusText.Visibility = vis;
         }
     }
 }

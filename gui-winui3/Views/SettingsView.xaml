@@ -152,7 +152,7 @@
                                 <FontIcon x:Name="NavSystemIcon" Glyph="&#xE713;" FontSize="13.5" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="NavSystemText" Text="Hệ thống &amp; Mô hình" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
-                            <Border x:Name="NavSystemLine" Grid.Row="1" Height="2.5" Background="{StaticResource RuAccentBrush}" CornerRadius="1.25" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
+                            <Border x:Name="NavSystemLine" Grid.Row="1" Height="1.5" Background="{StaticResource RuAccentBrush}" CornerRadius="0.75" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
                         </Grid>
                     </Button>
 
@@ -168,7 +168,7 @@
                                 <FontIcon x:Name="NavObserverIcon" Glyph="&#xE7B3;" FontSize="13.5" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="NavObserverText" Text="Nhận thức Màn hình" FontSize="13" FontWeight="Medium" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
-                            <Border x:Name="NavObserverLine" Grid.Row="1" Height="2.5" Background="Transparent" CornerRadius="1.25" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
+                            <Border x:Name="NavObserverLine" Grid.Row="1" Height="1.5" Background="Transparent" CornerRadius="0.75" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
                         </Grid>
                     </Button>
 
@@ -184,7 +184,7 @@
                                 <FontIcon x:Name="NavVtsIcon" Glyph="&#xE703;" FontSize="13.5" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="NavVtsText" Text="VTube Studio" FontSize="13" FontWeight="Medium" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
-                            <Border x:Name="NavVtsLine" Grid.Row="1" Height="2.5" Background="Transparent" CornerRadius="1.25" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
+                            <Border x:Name="NavVtsLine" Grid.Row="1" Height="1.5" Background="Transparent" CornerRadius="0.75" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
                         </Grid>
                     </Button>
 
@@ -200,7 +200,7 @@
                                 <FontIcon x:Name="NavMemoryIcon" Glyph="&#xE968;" FontSize="13.5" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="NavMemoryText" Text="Bộ nhớ ghi nhớ" FontSize="13" FontWeight="Medium" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
-                            <Border x:Name="NavMemoryLine" Grid.Row="1" Height="2.5" Background="Transparent" CornerRadius="1.25" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
+                            <Border x:Name="NavMemoryLine" Grid.Row="1" Height="1.5" Background="Transparent" CornerRadius="0.75" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
                         </Grid>
                     </Button>
                 </StackPanel>

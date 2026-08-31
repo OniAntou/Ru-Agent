@@ -118,7 +118,7 @@
                         </Grid.RowDefinitions>
 
                         <!-- Primary Navigation Items -->
-                        <StackPanel Grid.Row="0" Padding="14,16,14,0" Spacing="2">
+                        <StackPanel x:Name="SidebarTopPanel" Grid.Row="0" Padding="14,16,14,0" Spacing="2">
                             <!-- New Chat Button -->
                             <Button x:Name="NavNewChat" Click="OnNewChatClick" HorizontalAlignment="Stretch" Margin="0,0,0,8"
                                     Background="{StaticResource RuAccentSoftBrush}" BorderBrush="{StaticResource RuLineBrush}"
@@ -127,7 +127,7 @@
                                     AutomationProperties.AutomationId="NewSessionButton"
                                     ToolTipService.ToolTip="Đoạn chat mới" AutomationProperties.Name="Đoạn chat mới">
                                 <Grid ColumnDefinitions="Auto,*">
-                                    <FontIcon Grid.Column="0" Glyph="&#xE710;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" Margin="0,0,10,0"/>
+                                    <FontIcon x:Name="IconNewChat" Grid.Column="0" Glyph="&#xE710;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" Margin="0,0,10,0"/>
                                     <TextBlock Grid.Column="1" x:Name="LabelNewChat" Text="Đoạn chat mới" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
@@ -138,7 +138,7 @@
                                     Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
                                     ToolTipService.ToolTip="Trò chuyện" AutomationProperties.Name="Trò chuyện">
                                 <Grid ColumnDefinitions="Auto,*">
-                                    <FontIcon Grid.Column="0" Glyph="&#xE8F2;" FontSize="15" Margin="0,0,12,0"/>
+                                    <FontIcon x:Name="IconChat" Grid.Column="0" Glyph="&#xE8F2;" FontSize="15" Margin="0,0,12,0"/>
                                     <TextBlock Grid.Column="1" x:Name="LabelChat" Text="Trò chuyện" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
@@ -148,7 +148,7 @@
                                     Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
                                     ToolTipService.ToolTip="Giọng nói &amp; VTS" AutomationProperties.Name="Giọng nói và VTS">
                                 <Grid ColumnDefinitions="Auto,*">
-                                    <FontIcon Grid.Column="0" Glyph="&#xE720;" FontSize="15" Margin="0,0,12,0"/>
+                                    <FontIcon x:Name="IconVoice" Grid.Column="0" Glyph="&#xE720;" FontSize="15" Margin="0,0,12,0"/>
                                     <TextBlock Grid.Column="1" x:Name="LabelVoice" Text="Giọng nói &amp; VTS" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
@@ -198,7 +198,7 @@
                     </Grid>
 
                     <!-- Status and settings -->
-                    <StackPanel Grid.Row="1" Padding="14,8,14,14" Spacing="4">
+                    <StackPanel x:Name="SidebarBottomPanel" Grid.Row="1" Padding="14,8,14,14" Spacing="4">
                         <StackPanel x:Name="ShellStatusRow"
                                     Orientation="Horizontal"
                                     Spacing="8"
@@ -228,7 +228,7 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <Border Height="1" Background="{StaticResource RuLineBrush}" Margin="0,0,0,8"/>
+                        <Border x:Name="SidebarBottomDivider" Height="1" Background="{StaticResource RuLineBrush}" Margin="0,0,0,8"/>
 
                         <Button x:Name="ThemeToggleButton"
                                 Click="OnThemeToggleClick"
@@ -263,7 +263,7 @@
                                 Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
                                 ToolTipService.ToolTip="Cài đặt hệ thống" AutomationProperties.Name="Cài đặt hệ thống">
                             <Grid ColumnDefinitions="Auto,*">
-                                <FontIcon Grid.Column="0" Glyph="&#xE713;" FontSize="15" Margin="0,0,12,0"/>
+                                <FontIcon x:Name="IconSettings" Grid.Column="0" Glyph="&#xE713;" FontSize="15" Margin="0,0,12,0"/>
                                 <TextBlock Grid.Column="1" x:Name="LabelSettings" Text="Cài đặt hệ thống" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
                             </Grid>
                         </Button>

@@ -804,6 +804,7 @@ namespace RuApp
                 SidebarColumn.MinWidth = metrics.MinSidebarWidth;
                 SidebarColumn.MaxWidth = metrics.MaxSidebarWidth;
                 SidebarColumn.Width = new GridLength(metrics.NarrowRailWidth);
+                ApplySidebarVisualMode(true);
             }
             else
             {
@@ -814,6 +815,7 @@ namespace RuApp
                     : SidebarColumn.ActualWidth > 0 ? SidebarColumn.ActualWidth : metrics.DefaultSidebarWidth;
                 SidebarColumn.Width = new GridLength(
                     ResponsiveLayoutPolicy.ClampSidebarWidth(restoredWidth, metrics));
+                ApplySidebarVisualMode(false);
             }
 
             _responsiveTier = metrics.Tier;
@@ -868,13 +870,17 @@ namespace RuApp
                 double diff = currentX - _startX;
                 double newWidth = _startWidth + diff;
 
-                var min = SidebarColumn.MinWidth > 0 ? SidebarColumn.MinWidth : 180;
-                var max = SidebarColumn.MaxWidth > 0 ? SidebarColumn.MaxWidth : 400;
-
-                if (newWidth >= min && newWidth <= max)
+                if (newWidth <= 120)
                 {
-                    SidebarColumn.Width = new GridLength(newWidth);
-                    _lastExpandedSidebarWidth = newWidth;
+                    SidebarColumn.Width = new GridLength(72);
+                    ApplySidebarVisualMode(true);
+                }
+                else
+                {
+                    var clamped = Math.Clamp(newWidth, 180, 400);
+                    SidebarColumn.Width = new GridLength(clamped);
+                    _lastExpandedSidebarWidth = clamped;
+                    ApplySidebarVisualMode(false);
                 }
             }
         }
@@ -902,26 +908,128 @@ namespace RuApp
             {
                 _lastExpandedSidebarWidth = SidebarColumn.ActualWidth;
                 SidebarColumn.Width = new GridLength(72);
-                SetNarrowSidebarLabels(true);
+                ApplySidebarVisualMode(true);
             }
             else
             {
                 var targetWidth = _lastExpandedSidebarWidth >= 180 ? _lastExpandedSidebarWidth : 250;
                 SidebarColumn.Width = new GridLength(targetWidth);
-                SetNarrowSidebarLabels(false);
+                ApplySidebarVisualMode(false);
             }
         }
 
-        private void SetNarrowSidebarLabels(bool narrow)
+        private void ApplySidebarVisualMode(bool isNarrow)
         {
-            var vis = narrow ? Visibility.Collapsed : Visibility.Visible;
-            if (LabelNewChat != null) LabelNewChat.Visibility = vis;
-            if (LabelChat != null) LabelChat.Visibility = vis;
-            if (LabelVoice != null) LabelVoice.Visibility = vis;
-            if (LabelThemeToggle != null) LabelThemeToggle.Visibility = vis;
-            if (LabelSettings != null) LabelSettings.Visibility = vis;
-            if (LabelRecents != null) LabelRecents.Visibility = vis;
-            if (StatusText != null) StatusText.Visibility = vis;
+            var labelVis = isNarrow ? Visibility.Collapsed : Visibility.Visible;
+            if (LabelNewChat != null) LabelNewChat.Visibility = labelVis;
+            if (LabelChat != null) LabelChat.Visibility = labelVis;
+            if (LabelVoice != null) LabelVoice.Visibility = labelVis;
+            if (LabelThemeToggle != null) LabelThemeToggle.Visibility = labelVis;
+            if (LabelSettings != null) LabelSettings.Visibility = labelVis;
+            if (LabelRecents != null) LabelRecents.Visibility = labelVis;
+            if (StatusText != null) StatusText.Visibility = labelVis;
+            if (SidebarSessionList != null) SidebarSessionList.Visibility = labelVis;
+
+            if (isNarrow)
+            {
+                // Compact Mini Rail Mode (72px centered icon buttons)
+                if (SidebarTopPanel != null)
+                {
+                    SidebarTopPanel.Padding = new Thickness(0, 16, 0, 0);
+                    SidebarTopPanel.HorizontalAlignment = HorizontalAlignment.Center;
+                }
+                if (SidebarBottomPanel != null)
+                {
+                    SidebarBottomPanel.Padding = new Thickness(0, 8, 0, 14);
+                    SidebarBottomPanel.HorizontalAlignment = HorizontalAlignment.Center;
+                }
+                if (SidebarBottomDivider != null)
+                {
+                    SidebarBottomDivider.Width = 36;
+                    SidebarBottomDivider.HorizontalAlignment = HorizontalAlignment.Center;
+                    SidebarBottomDivider.Margin = new Thickness(0, 4, 0, 8);
+                }
+
+                ConfigureMiniButton(NavNewChat, IconNewChat);
+                ConfigureMiniButton(NavChat, IconChat);
+                ConfigureMiniButton(NavVoice, IconVoice);
+                ConfigureMiniButton(ThemeToggleButton, ThemeToggleIcon);
+                ConfigureMiniButton(NavSettings, IconSettings);
+
+                if (ShellStatusRow != null)
+                {
+                    ShellStatusRow.Padding = new Thickness(0, 8, 0, 8);
+                    ShellStatusRow.HorizontalAlignment = HorizontalAlignment.Center;
+                    ShellStatusRow.Spacing = 0;
+                }
+            }
+            else
+            {
+                // Full Expanded Mode
+                if (SidebarTopPanel != null)
+                {
+                    SidebarTopPanel.Padding = new Thickness(14, 16, 14, 0);
+                    SidebarTopPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
+                }
+                if (SidebarBottomPanel != null)
+                {
+                    SidebarBottomPanel.Padding = new Thickness(14, 8, 14, 14);
+                    SidebarBottomPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
+                }
+                if (SidebarBottomDivider != null)
+                {
+                    SidebarBottomDivider.Width = double.NaN;
+                    SidebarBottomDivider.HorizontalAlignment = HorizontalAlignment.Stretch;
+                    SidebarBottomDivider.Margin = new Thickness(0, 0, 0, 8);
+                }
+
+                ConfigureFullButton(NavNewChat, IconNewChat, new Thickness(0, 0, 10, 0));
+                ConfigureFullButton(NavChat, IconChat, new Thickness(0, 0, 12, 0));
+                ConfigureFullButton(NavVoice, IconVoice, new Thickness(0, 0, 12, 0));
+                ConfigureFullButton(ThemeToggleButton, ThemeToggleIcon, new Thickness(0, 0, 12, 0));
+                ConfigureFullButton(NavSettings, IconSettings, new Thickness(0, 0, 12, 0));
+
+                if (ShellStatusRow != null)
+                {
+                    ShellStatusRow.Padding = new Thickness(10, 8, 10, 12);
+                    ShellStatusRow.HorizontalAlignment = HorizontalAlignment.Left;
+                    ShellStatusRow.Spacing = 8;
+                }
+            }
+        }
+
+        private static void ConfigureMiniButton(Button? btn, FontIcon? icon)
+        {
+            if (btn == null) return;
+            btn.Width = 40;
+            btn.Height = 40;
+            btn.Padding = new Thickness(0);
+            btn.HorizontalAlignment = HorizontalAlignment.Center;
+            btn.HorizontalContentAlignment = HorizontalAlignment.Center;
+            btn.VerticalContentAlignment = VerticalAlignment.Center;
+            if (icon != null)
+            {
+                icon.Margin = new Thickness(0);
+                icon.HorizontalAlignment = HorizontalAlignment.Center;
+                icon.VerticalAlignment = VerticalAlignment.Center;
+            }
+        }
+
+        private static void ConfigureFullButton(Button? btn, FontIcon? icon, Thickness iconMargin)
+        {
+            if (btn == null) return;
+            btn.Width = double.NaN;
+            btn.Height = double.NaN;
+            btn.Padding = new Thickness(10, 8, 10, 8);
+            btn.HorizontalAlignment = HorizontalAlignment.Stretch;
+            btn.HorizontalContentAlignment = HorizontalAlignment.Left;
+            btn.VerticalContentAlignment = VerticalAlignment.Center;
+            if (icon != null)
+            {
+                icon.Margin = iconMargin;
+                icon.HorizontalAlignment = HorizontalAlignment.Left;
+                icon.VerticalAlignment = VerticalAlignment.Center;
+            }
         }
     }
 }

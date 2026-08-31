@@ -27,7 +27,7 @@ public sealed class HarnessSessionDeletionCoordinatorTests
     }
 
     [Fact]
-    public async Task Harness_cleanup_failure_preserves_the_session_file()
+    public async Task Harness_cleanup_failure_still_deletes_the_session_file()
     {
         var trace = new List<string>();
         var artifacts = new RecordingArtifactStore(trace)
@@ -40,12 +40,12 @@ public sealed class HarnessSessionDeletionCoordinatorTests
             sessions,
             TimeProvider.System);
 
-        await Assert.ThrowsAsync<HarnessStoreException>(
-            () => coordinator.DeleteAsync(
-                "11111111111111111111111111111111",
-                CancellationToken.None));
+        var outcome = await coordinator.DeleteAsync(
+            "11111111111111111111111111111111",
+            CancellationToken.None);
 
-        Assert.Equal(["harness"], trace);
+        Assert.Equal(HarnessSessionDeletionOutcome.Deleted, outcome);
+        Assert.Equal(["harness", "session"], trace);
     }
 
     private sealed class RecordingArtifactStore(List<string> trace)

@@ -36,11 +36,20 @@ public sealed class HarnessSessionDeletionCoordinator : IHarnessSessionDeletionC
         string sessionId,
         CancellationToken cancellationToken)
     {
-        await _artifacts.CloseAndDeleteAsync(
-                sessionId,
-                _clock.GetUtcNow().ToUniversalTime(),
-                cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            await _artifacts.CloseAndDeleteAsync(
+                    sessionId,
+                    _clock.GetUtcNow().ToUniversalTime(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (HarnessStoreException ex)
+        {
+            // For old chats, harness artifacts are secondary. A transient DB busy/conflict should not block the user's chat file deletion.
+            // The harness row will be cleaned on next expiry or successful delete. Keep the session file deletion as primary.
+            System.Diagnostics.Debug.WriteLine($"[Delete] Harness artifacts issue for {sessionId}: {ex.Code}, continuing to session file delete");
+        }
         return await _sessions.DeleteAsync(sessionId, cancellationToken).ConfigureAwait(false)
             ? HarnessSessionDeletionOutcome.Deleted
             : HarnessSessionDeletionOutcome.SessionNotFound;

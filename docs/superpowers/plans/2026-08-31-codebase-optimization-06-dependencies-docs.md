@@ -1,79 +1,147 @@
-# Dependencies and Documentation Finalization Implementation Plan
+# Dependency Alignment and Documentation Closure Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Align dependency declarations with actual consumers and bring current docs/TODO/verification in sync with delivered code. Verify sequentially with final gates.
+**Goal:** Remove only proven unused declarations, make OmniVoice install metadata consistent, and publish truthful optimization/verification status.
 
-**Tech Stack:** Python, .NET, docs, PowerShell
+**Architecture:** Keep the managed production runtime and isolated Python provider. Use consumer evidence rather than name-based deletion; install declarations must describe a verified environment, not force an unreviewed upgrade.
+
+**Tech Stack:** Python package metadata, PowerShell, current .NET/Python runners, Markdown.
 
 ## Global Constraints
 
-Inherit [master constraints](2026-08-31-codebase-optimization.md). Phase 4, final. No active environment mutation without explicit authorization, no live device, no destructive cleanup without manifest.
+> Before executing, read the master plan's **Resume gate after concurrent implementation**.
+> Several planned modules already exist in `e6fa40c`; inspect current code and
+> verify missing acceptance evidence rather than recreating or replacing them.
+
+Inherit [master constraints](2026-08-31-codebase-optimization.md). Rollout phase 4. No package install/uninstall, model downloads, active environment upgrades or deletion without an exact approved manifest.
 
 ---
 
-## D — Consumer-driven dependency alignment
+## D1 — Consumer inventory and dependency decision
 
 **Files:**
-- Read: `pyproject.toml`, `src/ru_runtime/voice/omnivoice_server.py`, `src/ru_runtime/voice/*`, `src/ru_runtime/*`, `scripts/*`, `tests/*`
-- Modify: `pyproject.toml` only
-- Verify: `pip check`, `pip install -e .[runtime,dev]` (dry-run check only, no active env mutation without auth), `dotnet build`, `docs/operations/verification.md` if needed
 
-**Current state (2026-08-31):**
-- `runtime` extra declares `ddgs>=9.0` with no found consumer in `src/ru_runtime`, `scripts`, `tests` (grep found only `.venv` hits). The managed web path uses C# `HttpClient` + DuckDuckGo directly, not Python `ddgs`.
-- `voice` extra declares `torch>=2.9,<3` while setup notes still reference `2.8.0+cu128` pin. `omnivoice_server.py` uses `torch` and is active.
+- Modify after evidence: `pyproject.toml`, `scripts/setup_omnivoice_env.ps1`.
+- Read: `src/ru_runtime/voice/omnivoice_server.py` and its imports; retained source/scripts/tools/tests and CI/build declarations.
+- Create: `docs/operations/python-dependency-ownership.md` (compact current consumer/version table).
+- Add if needed: `tests/test_omnivoice_setup.py` for actual setup-script behavior.
+- Existing tests: `tests/test_omnivoice_tts_server.py`, `tests/test_omnivoice_tuning.py`, `tests/test_python_runtime_boundary.py`.
 
-- [ ] **Step 1 — Inventory.**
-  ```powershell
-  Select-String -Pattern "ddgs|torch" -Path "D:\LLM\pyproject.toml" | Format-Table
-  Get-ChildItem -Recurse -Path "D:\LLM\src","D:\LLM\scripts","D:\LLM\tests" -Filter "*.py" | Select-String -Pattern "ddgs|torch" | Format-Table
-  ```
-  Record every consumer file and line. Confirm `ddgs` has zero consumers outside `.venv` and `torch` has consumers in `voice/omnivoice_server.py`.
+**Interfaces:** No new runtime/generation interface. Keep setup `-WhatIf` and explicit install/download confirmation behavior. Inventory metadata only; do not load Torch/CUDA/models just to read versions.
 
-- [ ] **Step 2 — Decision and RED.**
-  For `ddgs`: remove from `runtime` extra or move to optional `dev` if a test needs it; do not keep an unused runtime dependency. For `torch`: align `pyproject.toml` to one version (keep `>=2.9,<3` as active, remove obsolete `2.8.0+cu128` pin from docs/comments). Add a failing test or `pip check` assertion that proves the old declaration was inconsistent? Use `pip check` as gate, not a new unit test. Keep `httpx`, `keyring`, `ddgs` removal explicit.
+- [ ] **Step 1 — Inventory exact consumers.**
 
-- [ ] **Step 3 — GREEN and verification.**
-  Edit `pyproject.toml` to:
-  - Remove `ddgs` from `runtime` (or document why kept, with consumer)
-  - Keep `torch>=2.9,<3` in `voice`, ensure no `2.8` pin remains
-  ```powershell
-  & D:\LLM\.venv\Scripts\python.exe -m pip check
-  dotnet build D:\LLM\backend-dotnet\RuBackend\RuBackend.csproj -c Release --nologo
-  dotnet build D:\LLM\gui-winui3\RuApp.csproj -c Release -p:Platform=x64 --nologo
-  ```
-  Record `pip check` output, no active env upgrade.
+```powershell
+rg -n "ddgs|DDGS|duckduckgo_search|httpx|keyring|torch|torchaudio|omnivoice" src scripts tools tests pyproject.toml .github
+git ls-files src scripts tools tests
+& .venv\Scripts\python.exe -m pip check
+if (Test-Path -LiteralPath omnivoice_env\Scripts\python.exe) {
+    & omnivoice_env\Scripts\python.exe -m pip show torch torchaudio omnivoice flask
+}
+```
 
-## Docs and final verification
+Record declaration, production/tooling/test consumers, dynamic entry points, active environment, proposed action and proof. Inspect dynamic imports/package-data/documented external entry points before saying unused.
+
+Audit leads, not deletion permission:
+
+- ddgs is declared without a found Python import; managed web tools have separate ownership.
+- httpx has benchmark/Harness/acceptance consumers; do not delete because production HTTP is C#.
+- voice extra requires Torch >=2.9; setup pins 2.8.0+cu128 and matching torchaudio.
+- Some Python coordinators appear test-only; no blanket Python removal. OmniVoice, speech/memory tooling and package assets stay protected.
+
+- [ ] **Step 2 — Resolve version authority without live mutation.**
+
+Read installed OmniVoice requirements and supported Python/CUDA setup. Choose one compatible source for installation versions backed by evidence. If local metadata cannot establish compatibility, record the exact question and ask before downloads/upgrade; do not guess either Torch version is correct.
+
+A conservative valid outcome is aligning metadata to the already verified provider environment, with reasons recorded, rather than upgrading it. Do not incorrectly constrain installations that do not request voice extras.
+
+If introducing constraints/lock data, setup must consume it instead of retaining an independent version list. Validate resolved requirements against installed metadata offline with packaging specifier semantics, including CUDA local tags; string equality alone is not compatibility proof.
+
+- [ ] **Step 3 — Behavioral RED/GREEN for setup.**
+
+Run the actual PowerShell script with `-WhatIf` in an isolated repository-shaped fixture. Capture exit/output and sentinel paths using a fake Python process boundary, never real pip. Assert no environment/cache/model directory created and no installer invoked. Missing confirmation must fail before mutation.
+
+For confirmed-path test coverage, use only a fixture executable recording package arguments; assert resolved manifest and matched torch/torchaudio build are consumed. A wrong package argument must break the test. Do not execute a confirmed install in the real checkout.
+
+Read-only real preflight:
+
+```powershell
+& scripts/setup_omnivoice_env.ps1 -WhatIf
+if ($LASTEXITCODE -ne 0) { throw 'OmniVoice preflight failed.' }
+```
+
+- [ ] **Step 4 — Scoped cleanup and validation.**
+
+Present exact file-deletion targets with consumer proof and Git recovery, then wait for approval. Proven unused dependency declarations may be removed without uninstalling installed packages. Leave unresolved candidates in the inventory.
+
+```powershell
+& .venv\Scripts\python.exe -m pytest -q tests/test_omnivoice_tts_server.py tests/test_omnivoice_tuning.py tests/test_python_runtime_boundary.py
+& .venv\Scripts\python.exe -m ruff check src tests scripts tools
+& .venv\Scripts\python.exe -m mypy src
+& .venv\Scripts\python.exe -m pip check
+```
+
+Run new setup tests too, checking every exit code. Fresh-environment resolver/install proof needs separately authorized dependency access. Old-environment pip check is not clean-install proof.
+
+## D2 — Current truth, historical records, final gates
 
 **Files:**
-- Read: `TODO.md`, `docs/operations/verification.md`, `docs/architecture.md`, `docs/README.md`, `CONTEXT.md`
-- Modify: `TODO.md`, `docs/operations/verification.md` (and `docs/architecture.md` if behavior changed)
-- Verify: Sequential final gates from `docs/operations/verification.md`
 
-- [ ] **Step 1 — Docs sync.**
-  After L/N/P/C/O/F/B/W/D are done or rejected, update `TODO.md` to mark completed slices, update `docs/operations/verification.md` with measured before/after counts (not invented percentages), update `docs/architecture.md` only for the helpers actually added. Keep old evidence in historical sections with dates, do not delete.
+- Review/update: `CONTEXT.md`, `TODO.md`, `docs/README.md`, `docs/architecture.md`, `docs/operations/verification.md`, `docs/operations/agent-tools.md`.
+- Correct observed current ownership: `docs/adr/0001-aspnet-core-public-host.md`, `docs/adr/0006-structured-logging-and-activity-boundaries.md`.
+- Reconcile against: `docs/adr/0003-omnivoice-process-isolation.md`.
+- Update evidence/checklists in this plan set.
+- Existing integrity tests: `tests/test_current_documentation.py`.
 
-- [ ] **Step 2 — Sequential final gates.**
-  ```powershell
-  & D:\LLM\.venv\Scripts\python.exe -m ruff check D:\LLM\src D:\LLM\tests D:\LLM\scripts D:\LLM\tools
-  & D:\LLM\.venv\Scripts\python.exe -m mypy D:\LLM\src
-  & D:\LLM\.venv\Scripts\python.exe -m pytest -q
-  & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\check_aspnetcore_route_matrix.py
-  & D:\LLM\.venv\Scripts\python.exe D:\LLM\scripts\aspnetcore_compatibility_harness.py --mode backend-deterministic --output "$env:TEMP\ru-prompt-composer-harness.json"
-  & D:\LLM\.venv\Scripts\python.exe -m pip check
-  & D:\LLM\scripts\test_dotnet.ps1 -Configuration Release
-  dotnet build D:\LLM\gui-winui3.Harness\RuApp.Harness.csproj -c Release --no-restore --nologo
-  cmd /c D:\LLM\build.bat
-  ```
-  Run sequentially, no parallel heavy suites. Record exit codes, test counts (Python 402, .NET 2,009 baseline + new), and any skips. Do not claim live voice/VTS/cloud.
+- [ ] **Step 1 — Reconcile observed contradictions.**
 
-## Exit
+ADR-0001 still says RuApp starts Worker/Broker alongside Host; current managed Public Host owns those children. Correct actual ownership while retaining decision history/date context.
 
-- `pip check` passes, `pyproject.toml` has consumer-aligned extras, no `2.8` pin.
-- Docs/TODO reflect delivered code, old evidence dated.
-- Sequential final gates recorded at delivered checkout, no generated artifacts committed.
+ADR-0006 describes Python Worker activity/diagnostic paths. Trace current managed ingestion/writer consumers before updating; do not blindly substitute C# into a different outbox architecture.
 
-- [ ] D completed with `pip check` evidence
-- [ ] Docs/TODO synced
-- [ ] Sequential final gates recorded
+Architecture explicitly labels framed Voice Engine a future target, while ADR-0003 supersedes an earlier framed-stdio description. Clarify current HTTP behavior and the source/status of any future decision. This does not authorize changing transport or silently revoking an approved future design.
+
+- [ ] **Step 2 — Retire docs responsibly.**
+
+Classify current contract, implemented checkpoint, future design and historical evidence. Preserve dated old test/route counts; link superseded records to replacements. Delete only an approved obsolete/duplicate manifest after fixing inbound links, not merely old documents or unchecked historical boxes.
+
+Close TODO items only for implemented/measured behavior. Keep live first-audio, native device acceptance, new features and OS sandbox separate.
+
+- [ ] **Step 3 — Sequential final verification.**
+
+Run from the intended delivered checkout; stop each gate on nonzero exit. Empty filtered suites are not passes.
+
+```powershell
+& .venv\Scripts\python.exe -m pytest -q
+if ($LASTEXITCODE -ne 0) { throw 'Python tests failed.' }
+& .venv\Scripts\python.exe -m ruff check src tests scripts tools
+if ($LASTEXITCODE -ne 0) { throw 'Ruff failed.' }
+& .venv\Scripts\python.exe -m mypy src
+if ($LASTEXITCODE -ne 0) { throw 'Mypy failed.' }
+& .venv\Scripts\python.exe -m pip check
+if ($LASTEXITCODE -ne 0) { throw 'Dependency check failed.' }
+& .venv\Scripts\python.exe scripts/check_aspnetcore_route_matrix.py
+if ($LASTEXITCODE -ne 0) { throw 'Public contract failed.' }
+& scripts/test_dotnet.ps1 -Configuration Release
+if ($LASTEXITCODE -ne 0) { throw '.NET matrix failed.' }
+dotnet build gui-winui3.Harness/RuApp.Harness.csproj -c Release --nologo
+if ($LASTEXITCODE -ne 0) { throw 'GUI Harness build failed.' }
+& .venv\Scripts\python.exe -m pytest -q tests/test_current_documentation.py
+if ($LASTEXITCODE -ne 0) { throw 'Documentation integrity failed.' }
+git diff --check
+if ($LASTEXITCODE -ne 0) { throw 'Diff whitespace check failed.' }
+git status --short --branch
+```
+
+Also run pure Release native tests from subplan 02 with probes disabled. If product publish is required, inspect build.bat and build without starting start_dev.bat. Do not label an old GUI publish as fresh.
+
+Backend-deterministic Harness is optional synthetic process evidence after checking isolated roots/no real device/provider. GUI Harness opens WinUI and remains user-run. No live cloud/voice/VTS acceptance is included.
+
+- [ ] **Step 4 — Evidence and handoff.**
+
+Append actual dated commands/results, work-count comparisons, rejected candidates, skipped gates and reasons to verification docs. Separate contract/adapter/pure native tests from real-device evidence.
+
+Report source/test/doc changes, approved deletions and recovery, and outstanding manual work. Preserve uncommitted scoped changes for review; no commit/push without a separate request.
+
+**Exit:** Declarations/docs match delivered code; every speed claim has measurements; unverified compatibility/native outcomes remain open.

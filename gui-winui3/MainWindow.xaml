@@ -99,7 +99,7 @@
                                     BorderThickness="1" Foreground="{StaticResource RuAccentBrush}" Padding="10,8"
                                     CornerRadius="{StaticResource RuControlCornerRadius}" HorizontalContentAlignment="Stretch"
                                     AutomationProperties.AutomationId="NewSessionButton"
-                                    ToolTipService.ToolTip="Đoạn chat mới" AutomationProperties.Name="Đoạn chat mới">
+                                    AutomationProperties.Name="Đoạn chat mới">
                                 <StackPanel x:Name="ContentNewChat" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <FontIcon x:Name="IconNewChat" Glyph="&#xE710;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" Margin="0,0,10,0" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="LabelNewChat" Text="Đoạn chat mới" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
@@ -110,7 +110,7 @@
                             <Button x:Name="NavChat" Tag="chat" Click="OnNavClick" HorizontalAlignment="Stretch"
                                     Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
                                     Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
-                                    ToolTipService.ToolTip="Trò chuyện" AutomationProperties.Name="Trò chuyện">
+                                    AutomationProperties.Name="Trò chuyện">
                                 <StackPanel x:Name="ContentChat" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <FontIcon x:Name="IconChat" Glyph="&#xE8F2;" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="LabelChat" Text="Trò chuyện" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
@@ -120,7 +120,7 @@
                             <Button x:Name="NavVoice" Tag="voice" Click="OnNavClick" HorizontalAlignment="Stretch"
                                     Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
                                     Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
-                                    ToolTipService.ToolTip="Giọng nói &amp; VTS" AutomationProperties.Name="Giọng nói và VTS">
+                                    AutomationProperties.Name="Giọng nói và VTS">
                                 <StackPanel x:Name="ContentVoice" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                     <FontIcon x:Name="IconVoice" Glyph="&#xE720;" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center"/>
                                     <TextBlock x:Name="LabelVoice" Text="Giọng nói &amp; VTS" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
@@ -158,11 +158,11 @@
                                         </Grid.ColumnDefinitions>
                                         <FontIcon Grid.Column="0" Glyph="&#xE8BD;" FontSize="12" Foreground="{StaticResource RuMutedBrush}" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="1" Text="{x:Bind Title}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
-                                                   TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Title}" 
+                                                   TextTrimming="CharacterEllipsis" 
                                                    VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <Button Grid.Column="2" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Padding="2" 
                                                 Width="24" Height="24" CornerRadius="{StaticResource RuControlCornerRadius}" Click="OnDeleteSessionClick"
-                                                Tag="{x:Bind Id}" ToolTipService.ToolTip="Xóa đoạn chat" Opacity="0">
+                                                Tag="{x:Bind Id}" Opacity="0">
                                             <FontIcon Glyph="&#xE74D;" FontSize="11" Foreground="{StaticResource AppDangerBrush}"/>
                                         </Button>
                                     </Grid>
@@ -177,8 +177,7 @@
                                     Orientation="Horizontal"
                                     Spacing="8"
                                     Padding="10,8,10,12"
-                                    VerticalAlignment="Center"
-                                    ToolTipService.ToolTip="Đang kiểm tra trạng thái dịch vụ">
+                                    VerticalAlignment="Center">
                             <Ellipse x:Name="StatusDot"
                                      Width="7"
                                      Height="7"
@@ -214,7 +213,6 @@
                                 BorderBrush="Transparent"
                                 BorderThickness="0"
                                 HorizontalContentAlignment="Stretch"
-                                ToolTipService.ToolTip="Chuyển sang tối"
                                 AutomationProperties.Name="Chuyển sang tối">
                             <StackPanel x:Name="ContentThemeToggle" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                 <FontIcon x:Name="ThemeToggleIcon"
@@ -234,7 +232,7 @@
                         <Button x:Name="NavSettings" Tag="settings" Click="OnNavClick" HorizontalAlignment="Stretch"
                                 Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
                                 Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
-                                ToolTipService.ToolTip="Cài đặt hệ thống" AutomationProperties.Name="Cài đặt hệ thống">
+                                AutomationProperties.Name="Cài đặt hệ thống">
                             <StackPanel x:Name="ContentSettings" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
                                 <FontIcon x:Name="IconSettings" Glyph="&#xE713;" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="LabelSettings" Text="Cài đặt hệ thống" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5" FontWeight="Medium" VerticalAlignment="Center"/>
@@ -252,8 +250,7 @@
                   PointerPressed="Resizer_PointerPressed"
                   PointerMoved="Resizer_PointerMoved"
                   PointerReleased="Resizer_PointerReleased"
-                  DoubleTapped="Resizer_DoubleTapped"
-                  ToolTipService.ToolTip="Kéo để chỉnh độ rộng / Nhấp đúp để thu gọn hoặc mở rộng">
+                  DoubleTapped="Resizer_DoubleTapped">
                 <Border x:Name="SidebarResizerLine" Width="1" HorizontalAlignment="Center"
                         Background="{StaticResource RuLineBrush}" Opacity="0.4"/>
             </controls:SidebarResizerControl>

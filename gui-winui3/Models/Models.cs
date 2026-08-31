@@ -99,6 +99,22 @@ namespace RuApp.Models
             set => SetProperty(ref _sessionId, value);
         }
 
+        private System.Collections.ObjectModel.ObservableCollection<ImageAttachmentItem> _attachments = new();
+
+        public System.Collections.ObjectModel.ObservableCollection<ImageAttachmentItem> Attachments
+        {
+            get => _attachments;
+            set
+            {
+                if (SetProperty(ref _attachments, value))
+                {
+                    OnPropertyChanged(nameof(HasAttachments));
+                }
+            }
+        }
+
+        public bool HasAttachments => Attachments != null && Attachments.Count > 0;
+
         public bool ShowTypingDots => Role == "assistant" && IsStreaming && string.IsNullOrEmpty(Content);
 
         public bool ShowContent => !ShowTypingDots;
@@ -117,6 +133,125 @@ namespace RuApp.Models
             }
             field = value;
             OnPropertyChanged(propertyName);
+            return true;
+        }
+
+        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    public class ImageAttachmentItem : INotifyPropertyChanged
+    {
+        private string _id = Guid.NewGuid().ToString("N");
+        private string _fileName = string.Empty;
+        private string? _filePath;
+        private string? _base64Data;
+        private string? _textContent;
+        private bool _isImage = true;
+        private string _mimeType = "image/png";
+        private long _byteSize;
+        private Microsoft.UI.Xaml.Media.Imaging.BitmapImage? _previewImage;
+
+        public string Id
+        {
+            get => _id;
+            set => SetProperty(ref _id, value);
+        }
+
+        public string FileName
+        {
+            get => _fileName;
+            set => SetProperty(ref _fileName, value);
+        }
+
+        public string? FilePath
+        {
+            get => _filePath;
+            set => SetProperty(ref _filePath, value);
+        }
+
+        public string? Base64Data
+        {
+            get => _base64Data;
+            set => SetProperty(ref _base64Data, value);
+        }
+
+        public string? TextContent
+        {
+            get => _textContent;
+            set => SetProperty(ref _textContent, value);
+        }
+
+        public bool IsImage
+        {
+            get => _isImage;
+            set
+            {
+                if (SetProperty(ref _isImage, value))
+                {
+                    OnPropertyChanged(nameof(IsDocument));
+                    OnPropertyChanged(nameof(FileIconGlyph));
+                }
+            }
+        }
+
+        public bool IsDocument => !IsImage;
+
+        public string FileExtension => System.IO.Path.GetExtension(FileName).ToLowerInvariant();
+
+        public bool IsCodeFile => FileExtension switch
+        {
+            ".cs" or ".py" or ".js" or ".ts" or ".jsx" or ".tsx" or ".json" or ".xml" or ".yaml" or ".yml"
+            or ".html" or ".css" or ".scss" or ".sql" or ".sh" or ".bat" or ".ps1" or ".rs" or ".go"
+            or ".cpp" or ".c" or ".h" or ".hpp" or ".java" or ".kt" or ".swift" or ".dart" => true,
+            _ => false
+        };
+
+        public string FileIconGlyph => IsImage ? "\uEB9F" : (IsCodeFile ? "\uE943" : "\uE8A5");
+
+        public string MimeType
+        {
+            get => _mimeType;
+            set => SetProperty(ref _mimeType, value);
+        }
+
+        public long ByteSize
+        {
+            get => _byteSize;
+            set
+            {
+                if (SetProperty(ref _byteSize, value))
+                {
+                    OnPropertyChanged(nameof(FormattedSize));
+                }
+            }
+        }
+
+        public Microsoft.UI.Xaml.Media.Imaging.BitmapImage? PreviewImage
+        {
+            get => _previewImage;
+            set => SetProperty(ref _previewImage, value);
+        }
+
+        public string FormattedSize
+        {
+            get
+            {
+                if (ByteSize < 1024) return $"{ByteSize} B";
+                if (ByteSize < 1024 * 1024) return $"{ByteSize / 1024.0:F1} KB";
+                return $"{ByteSize / (1024.0 * 1024.0):F1} MB";
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+        {
+            if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+            field = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
             return true;
         }
 
@@ -522,4 +657,63 @@ namespace RuApp.Models
         [property: JsonPropertyName("total_log_files")] int TotalLogFiles,
         [property: JsonPropertyName("total_size_bytes")] long TotalSizeBytes,
         [property: JsonPropertyName("writer")] DiagnosticWriterStatusDto? Writer = null);
+
+    public static class ModelContextSpecs
+    {
+        public static (int MaxTokens, string DisplayText) GetContextSpec(string? modelName)
+        {
+            if (string.IsNullOrWhiteSpace(modelName))
+                return (131_072, "128K");
+
+            string lower = modelName.ToLowerInvariant();
+
+            if (lower.Contains("gemini-1.5-pro") || lower.Contains("gemini-2.5-pro") || lower.Contains("gemini-2.0-pro"))
+                return (2_000_000, "2M");
+
+            if (lower.Contains("gemini") || lower.Contains("flash"))
+                return (1_000_000, "1M");
+
+            if (lower.Contains("claude-3-7") || lower.Contains("claude-3-5") || lower.Contains("claude-3") ||
+                lower.Contains("o1") || lower.Contains("o3") || lower.Contains("o4"))
+                return (200_000, "200K");
+
+            if (lower.Contains("128k") || lower.Contains("llama-3.3") || lower.Contains("llama-3.1") ||
+                lower.Contains("qwen2.5") || lower.Contains("qwen-2.5") || lower.Contains("dots") ||
+                lower.Contains("gpt-4o") || lower.Contains("gpt-4-turbo") || lower.Contains("codestral"))
+                return (131_072, "128K");
+
+            if (lower.Contains("64k") || lower.Contains("deepseek"))
+                return (65_536, "64K");
+
+            if (lower.Contains("32k") || lower.Contains("mistral") || lower.Contains("mixtral") ||
+                lower.Contains("phi-3") || lower.Contains("phi-4") || lower.Contains("gemma-2"))
+                return (32_768, "32K");
+
+            if (lower.Contains("16k") || lower.Contains("gpt-3.5-turbo-16k"))
+                return (16_384, "16K");
+
+            if (lower.Contains("8k") || lower.Contains("llama-2") || lower.Contains("llama-3-8b"))
+                return (8_192, "8K");
+
+            if (lower.Contains("4k") || lower.Contains("gpt-3.5-turbo"))
+                return (4_096, "4K");
+
+            return (131_072, "128K");
+        }
+
+        public static int EstimateTokens(string? text)
+        {
+            if (string.IsNullOrEmpty(text)) return 0;
+            return Math.Max(1, (int)Math.Ceiling(text.Length / 3.5));
+        }
+
+        public static string FormatTokens(int tokens)
+        {
+            if (tokens >= 1_000_000)
+                return $"{tokens / 1_000_000.0:0.#}M";
+            if (tokens >= 1_000)
+                return $"{tokens / 1_000.0:0.#}K";
+            return tokens.ToString("N0");
+        }
+    }
 }

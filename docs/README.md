@@ -17,6 +17,15 @@ an operating contract.
 - [Canonical route data](../backend-dotnet/public-route-contract.json)
 - [Local conversational-model retirement](adr/0005-retire-legacy-llama-line.md)
 
+## Active optimization handoff
+
+- [Codebase optimization](superpowers/plans/2026-08-31-codebase-optimization.md)
+  — approved 2026-08-31; six scoped handoff plans across four rollout phases.
+  Concurrent implementation exists in `e6fa40c`; start at the plan's resume
+  gate to verify existing diagnostic/native/GUI/I/O work and remaining evidence.
+  Preserve the recorded Broker/Worker rejection; dependency/docs closure and
+  unverified performance acceptance require reconciliation, not a blind rerun.
+
 ## Implemented checkpoints (Phases 1–3 selected surfaces, 2026-08-31)
 
 - [Phase 1: Harness Foundation and Headless Read-Only Tracer](superpowers/plans/2026-08-24-ru-opencode-pi-coding-loop-parity-01-harness-foundation.md) — Public Host owns Worker/Broker in one Job Object, Worker v2 one-step `AssistantStep`, 56 HTTP + 1 WebSocket (`/voice/stream`; 15 `/agent/v1/*` additive), encrypted SQLite harness store, SSE reconnect with durable `id:<sequence>`, and thin `RuAgent.Cli` tracer. Text and microphone turns now use the same authenticated Agent API/SSE path.

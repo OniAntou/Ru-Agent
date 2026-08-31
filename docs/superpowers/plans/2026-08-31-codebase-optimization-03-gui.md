@@ -10,6 +10,10 @@
 
 ## Global Constraints
 
+> Before executing, read the master plan's **Resume gate after concurrent implementation**.
+> Several planned modules already exist in `e6fa40c`; inspect current code and
+> verify missing acceptance evidence rather than recreating or replacing them.
+
 Inherit [master constraints](2026-08-31-codebase-optimization.md). Phase 2, after phase 1. No GUI launch/UI Automation as part of this plan's default tests.
 
 ---

@@ -8,7 +8,8 @@ public sealed record CreateAgentRunRequest(
     [property: JsonPropertyName("prompt")] string Prompt,
     [property: JsonPropertyName("preset")] string Preset,
     [property: JsonPropertyName("preset_selection_version")] long? PresetSelectionVersion,
-    [property: JsonPropertyName("idempotency_key")] string IdempotencyKey);
+    [property: JsonPropertyName("idempotency_key")] string IdempotencyKey,
+    [property: JsonPropertyName("image_attachments")] System.Collections.Generic.IReadOnlyList<string>? ImageAttachments = null);
 
 public sealed record CreateAgentRunResponse(
     [property: JsonPropertyName("run_id")] string RunId,

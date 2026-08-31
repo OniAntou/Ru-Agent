@@ -51,6 +51,27 @@ See [verification](docs/operations/verification.md) for measured results and
 - [x] Added GUI single-flight `RefreshController<T>` and `AgentReplyAccumulator` coalesced render (ApiService CancellationToken, `DiagnosticsView`/`MainWindow`/`ChatView` wiring).
 - [x] Removed unused `ddgs` from `runtime` extra, kept `torch>=2.9,<3` for `voice` (pip check clean).
 
+## Optimization handoff and acceptance follow-up (2026-08-31)
+
+The handoff entry point is
+[the optimization plan](docs/superpowers/plans/2026-08-31-codebase-optimization.md),
+which links six scoped plans and their verification gates. Concurrent work in
+`e6fa40c` already implements multiple slices, as recorded above; begin with the
+plan's resume gate and verify gaps instead of duplicating those changes.
+
+- [ ] Reconcile implemented diagnostic/native/GUI/I/O slices with their full
+  acceptance criteria and before/after evidence at the delivered revision.
+- [ ] Preserve the recorded Broker/Worker extraction rejection; only revisit
+  with new evidence and approval, not as automatic unfinished work.
+- [ ] Resolve the remaining Torch declaration/setup compatibility discrepancy
+  without upgrading the active environment or assuming pip check proves it.
+- [ ] Reconcile current documentation and record final sequential gates;
+  leave unmeasured/live acceptance explicitly open.
+
+Keep live devices/cloud acceptance, destructive cleanup approval, and Git
+commit/push separate. The completed records above/below are retained; these
+follow-up boxes track acceptance reconciliation, not a reversal of that work.
+
 ## Pending product work
 
 - [x] Investigate diagnostic-writer shutdown under concurrent host teardown:

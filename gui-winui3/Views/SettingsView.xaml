@@ -308,33 +308,6 @@
                                         </ComboBox>
                                     </Grid>
 
-                                    <!-- Model Selection Row -->
-                                    <StackPanel x:Name="ModelRow" Spacing="16" Visibility="Collapsed">
-                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
-                                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0" Spacing="2">
-                                                <TextBlock Text="Model Name" Style="{StaticResource SettingLabelStyle}"/>
-                                                <TextBlock x:Name="ModelLoadingText"
-                                                           Text="Đang tải danh sách model từ API..."
-                                                           Foreground="{StaticResource RuAccentBrush}"
-                                                           FontSize="11.5"
-                                                           Visibility="Collapsed"/>
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1" Spacing="6" Width="260">
-                                                <TextBox x:Name="ModelSearchBox"
-                                                         PlaceholderText="Tìm kiếm model..."
-                                                         Height="36"
-                                                         TextChanged="OnModelSearchBoxTextChanged"
-                                                         CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                                <ComboBox x:Name="ModelComboBox"
-                                                          Width="260"
-                                                          Height="36"
-                                                          IsEditable="False"
-                                                          CornerRadius="{StaticResource RuControlCornerRadius}"/>
-                                            </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
-
                                     <!-- OpenCode API Key Row -->
                                     <StackPanel x:Name="OpenCodeApiRow" Spacing="16" Visibility="Collapsed">
                                         <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>

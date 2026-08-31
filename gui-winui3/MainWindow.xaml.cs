@@ -103,7 +103,6 @@ namespace RuApp
             var label = isDark ? "Chuyển sang sáng" : "Chuyển sang tối";
             LabelThemeToggle.Text = label;
             ThemeToggleIcon.Glyph = isDark ? "\uE793" : "\uE706";
-            ToolTipService.SetToolTip(ThemeToggleButton, label);
             AutomationProperties.SetName(ThemeToggleButton, label);
             ApplyTitleBarTheme(isDark);
         }
@@ -331,10 +330,6 @@ namespace RuApp
                 Environment.NewLine,
                 new[] { TextBackend.Text, TextWorker.Text, TextVts.Text }
                     .Where(value => !string.IsNullOrWhiteSpace(value)));
-
-            ToolTipService.SetToolTip(
-                ShellStatusRow,
-                string.IsNullOrWhiteSpace(details) ? StatusText.Text : details);
         }
 
         private void OnNavClick(object sender, RoutedEventArgs e)
@@ -354,6 +349,10 @@ namespace RuApp
                     "audit" => _auditPanel,
                     _ => _chatView
                 };
+                if (tag == "chat")
+                {
+                    _ = _chatView?.LoadChatModelsAsync();
+                }
                 _diagnosticsView?.SetActive(tag == "diagnostics");
             }
         }

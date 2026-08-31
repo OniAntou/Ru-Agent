@@ -10,6 +10,10 @@
 
 ## Global Constraints
 
+> Before executing, read the master plan's **Resume gate after concurrent implementation**.
+> Several planned modules already exist in `e6fa40c`; inspect current code and
+> verify missing acceptance evidence rather than recreating or replacing them.
+
 Inherit [master constraints](2026-08-31-codebase-optimization.md). Rollout phase 2. No database schema migration, multi-threaded traversal, regex feature, broader paths, or changed resource caps.
 
 ---

@@ -277,8 +277,7 @@
                                             CornerRadius="{StaticResource RuControlCornerRadius}"
                                             Background="{StaticResource RuSurfaceBrush}"
                                             BorderBrush="{StaticResource RuLineBrush}"
-                                            BorderThickness="1"
-                                            ToolTipService.ToolTip="Đặt lại vị trí tự động bám theo Live2D">
+                                            BorderThickness="1">
                                         <StackPanel Orientation="Horizontal" Spacing="6">
                                             <FontIcon Glyph="&#xE72C;" FontSize="12" Foreground="{StaticResource RuInkBrush}"/>
                                             <TextBlock Text="Mặc định" FontSize="12" Foreground="{StaticResource RuInkBrush}"/>

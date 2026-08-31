@@ -74,6 +74,7 @@ namespace RuApp.Views
         private bool _agentActionPending;
         private AgentRunSummaryItem? _agentRunSummary;
         public ObservableCollection<ChatMessageItem> Messages { get; } = new();
+        public ObservableCollection<ImageAttachmentItem> PendingAttachments { get; } = new();
         public ObservableCollection<AgentActivityItem> AgentActivities { get; } = new();
         private readonly Dictionary<string, AgentActivityItem> _agentActivityById = new(StringComparer.Ordinal);
         private DispatcherTimer? _typingDebounce;
@@ -98,6 +99,7 @@ namespace RuApp.Views
         {
             this.InitializeComponent();
             ChatListView.ItemsSource = Messages;
+            AttachmentPreviewList.ItemsSource = PendingAttachments;
             AgentActivityFeed.ItemsSource = AgentActivities;
             Messages.CollectionChanged += (s, e) => UpdateViewMode();
             RootGrid.SizeChanged += OnRootGridSizeChanged;
@@ -128,6 +130,18 @@ namespace RuApp.Views
         }
 
         public event EventHandler<SessionOpenedEventArgs>? SessionOpened;
+
+        private static readonly Dictionary<string, string[]> FallbackModels = new()
+        {
+            ["opencode"] = Array.Empty<string>(),
+            ["kilo"] = Array.Empty<string>(),
+            ["ollama"] = new[] { "qwen2.5:latest", "llama3.2:latest", "mistral:latest" },
+            ["lmstudio"] = new[] { "default" },
+            ["custom"] = new[] { "default" },
+            ["gguf"] = Array.Empty<string>()
+        };
+
+        private AppSettingsDto? _cachedSettings;
 
         public void Initialize(
             ApiService apiService,
@@ -173,6 +187,205 @@ namespace RuApp.Views
                     _ = _apiService?.PushVtsActivityAsync(true);
                 }
             };
+
+            Messages.CollectionChanged += (_, __) => UpdateContextUsage();
+            PendingAttachments.CollectionChanged += (_, __) => UpdateContextUsage();
+
+            _ = LoadChatModelsAsync();
+        }
+
+        public async Task LoadChatModelsAsync()
+        {
+            if (_apiService == null) return;
+            try
+            {
+                var settings = await _apiService.GetSettingsAsync();
+                if (settings == null) return;
+                _cachedSettings = settings;
+
+                string backend = settings.BackendChoice ?? "opencode";
+                string currentModel = backend switch
+                {
+                    "opencode" => settings.OpenCodeModel ?? "opencode/free",
+                    "kilo" => settings.KiloModel ?? "kilo-auto/free",
+                    "ollama" => settings.OllamaModel ?? "qwen2.5:latest",
+                    "lmstudio" => settings.LmStudioModel ?? "default",
+                    "custom" => settings.CustomModel ?? "default",
+                    _ => ""
+                };
+
+                var models = await _apiService.GetModelsAsync(backend);
+                if (models.Count == 0 && FallbackModels.TryGetValue(backend, out var fallback))
+                {
+                    models = new List<string>(fallback);
+                }
+
+                if (!string.IsNullOrEmpty(currentModel) && !models.Contains(currentModel))
+                {
+                    models.Insert(0, currentModel);
+                }
+
+                string effectiveModel = !string.IsNullOrEmpty(currentModel) ? currentModel : (models.Count > 0 ? models[0] : "Model...");
+                ChatModelLabel.Text = effectiveModel;
+
+                PopulateModelMenu(models, effectiveModel);
+                UpdateContextUsage();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatView] Error loading models: {ex.Message}");
+            }
+        }
+
+        private void PopulateModelMenu(List<string> models, string currentModel)
+        {
+            ChatModelMenuFlyout.Items.Clear();
+
+            if (models.Count == 0)
+            {
+                var emptyItem = new MenuFlyoutItem
+                {
+                    Text = "Không có model khả dụng",
+                    IsEnabled = false,
+                    FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
+                    FontSize = 11.5
+                };
+                ChatModelMenuFlyout.Items.Add(emptyItem);
+                return;
+            }
+
+            foreach (var model in models)
+            {
+                bool isSelected = string.Equals(model, currentModel, StringComparison.Ordinal);
+                var (_, specDisplay) = ModelContextSpecs.GetContextSpec(model);
+                var item = new MenuFlyoutItem
+                {
+                    Text = $"{model}  ({specDisplay})",
+                    Tag = model,
+                    FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
+                    FontSize = 11.5,
+                    Foreground = isSelected
+                        ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"]
+                        : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"]
+                };
+
+                if (isSelected)
+                {
+                    item.Icon = new FontIcon
+                    {
+                        Glyph = "\uE73E",
+                        FontSize = 10,
+                        Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"]
+                    };
+                }
+
+                string modelCapture = model;
+                item.Click += async (s, e) =>
+                {
+                    await SelectChatModelAsync(modelCapture);
+                };
+
+                ChatModelMenuFlyout.Items.Add(item);
+            }
+        }
+
+        private async Task SelectChatModelAsync(string model)
+        {
+            ChatModelLabel.Text = model;
+
+            foreach (var menuItem in ChatModelMenuFlyout.Items)
+            {
+                if (menuItem is MenuFlyoutItem mfi)
+                {
+                    bool isSelected = mfi.Tag is string tag && string.Equals(tag, model, StringComparison.Ordinal);
+                    mfi.Foreground = isSelected
+                        ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"]
+                        : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
+                    mfi.Icon = isSelected
+                        ? new FontIcon
+                        {
+                            Glyph = "\uE73E",
+                            FontSize = 10,
+                            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"]
+                        }
+                        : null;
+                }
+            }
+
+            UpdateContextUsage();
+
+            try
+            {
+                var settings = _cachedSettings ?? (_apiService != null ? await _apiService.GetSettingsAsync() : null);
+                if (settings == null || _apiService == null) return;
+
+                string backend = settings.BackendChoice ?? "opencode";
+                switch (backend)
+                {
+                    case "opencode": settings.OpenCodeModel = model; break;
+                    case "kilo": settings.KiloModel = model; break;
+                    case "ollama": settings.OllamaModel = model; break;
+                    case "lmstudio": settings.LmStudioModel = model; break;
+                    case "custom": settings.CustomModel = model; break;
+                }
+
+                _cachedSettings = settings;
+                await _apiService.SaveSettingsAsync(settings);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatView] Error saving model: {ex.Message}");
+            }
+        }
+
+        public void UpdateContextUsage()
+        {
+            string currentModel = ChatModelLabel.Text ?? string.Empty;
+            var (maxTokens, displayLimit) = ModelContextSpecs.GetContextSpec(currentModel);
+
+            int totalChars = 0;
+            int totalImages = 0;
+
+            foreach (var msg in Messages)
+            {
+                if (!string.IsNullOrEmpty(msg.Content))
+                {
+                    totalChars += msg.Content.Length;
+                }
+                if (msg.Attachments != null)
+                {
+                    totalImages += msg.Attachments.Count;
+                }
+            }
+
+            foreach (var att in PendingAttachments)
+            {
+                totalImages++;
+            }
+
+            int estimatedTokens = totalChars > 0 || totalImages > 0
+                ? ModelContextSpecs.EstimateTokens(new string('a', totalChars)) + (totalImages * 1000) + 300
+                : 0;
+
+            double percentage = maxTokens > 0 ? Math.Min(100.0, (estimatedTokens * 100.0) / maxTokens) : 0;
+            int remainingTokens = Math.Max(0, maxTokens - estimatedTokens);
+
+            ContextProgressRing.Value = percentage;
+            ContextProgressBar.Value = percentage;
+
+            var brush = percentage > 90
+                ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuDangerBrush"]
+                : percentage > 70
+                    ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuWarningBrush"]
+                    : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"];
+
+            ContextProgressRing.Foreground = brush;
+            ContextProgressBar.Foreground = brush;
+
+            ContextUsedLabel.Text = $"{ModelContextSpecs.FormatTokens(estimatedTokens)} / {displayLimit}";
+            ContextPercentLabel.Text = $"{percentage:0.#}%";
+            ContextPercentLabel.Foreground = percentage > 70 ? brush : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
+            ContextModelDetailLabel.Text = currentModel;
         }
 
         private void OnChatInputTyping(object sender, TextChangedEventArgs e)
@@ -405,9 +618,6 @@ namespace RuApp.Views
             AutomationProperties.SetName(
                 AgentModeButton,
                 "Coding Agent");
-            ToolTipService.SetToolTip(
-                AgentModeButton,
-                "Agent · chế độ duy nhất");
             MicButton.IsEnabled = true;
             AutomationProperties.SetName(
                 MicButton,
@@ -642,6 +852,23 @@ namespace RuApp.Views
         {
             try
             {
+                if (e.Key == Windows.System.VirtualKey.V)
+                {
+                    var ctrlDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
+                        .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+                    if (ctrlDown)
+                    {
+                        var package = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+                        if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Bitmap)
+                            || package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+                        {
+                            e.Handled = true;
+                            await TryPasteImageFromClipboardAsync();
+                            return;
+                        }
+                    }
+                }
+
                 if (e.Key == Windows.System.VirtualKey.Enter)
                 {
                     var shiftDown = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift)
@@ -659,12 +886,245 @@ namespace RuApp.Views
             }
         }
 
+        private async void OnAttachImageClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var picker = new Windows.Storage.Pickers.FileOpenPicker();
+                picker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
+                picker.FileTypeFilter.Add("*");
+
+                if (MainWindow.Instance != null)
+                {
+                    var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(MainWindow.Instance);
+                    WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+                }
+
+                var files = await picker.PickMultipleFilesAsync();
+                if (files != null && files.Count > 0)
+                {
+                    foreach (var file in files)
+                    {
+                        await AddFileAttachmentAsync(file);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatView] Error picking files: {ex.Message}");
+            }
+        }
+
+        private void OnRemoveAttachmentClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string id)
+            {
+                var item = PendingAttachments.FirstOrDefault(a => a.Id == id);
+                if (item != null)
+                {
+                    PendingAttachments.Remove(item);
+                }
+                if (PendingAttachments.Count == 0)
+                {
+                    AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
+                }
+            }
+        }
+
+        private void OnInputDragOver(object sender, DragEventArgs e)
+        {
+            if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+            {
+                e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+                e.DragUIOverride.Caption = "Thả để đính kèm tệp tin / hình ảnh";
+                e.DragUIOverride.IsContentVisible = true;
+            }
+        }
+
+        private async void OnInputDrop(object sender, DragEventArgs e)
+        {
+            if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+            {
+                var items = await e.DataView.GetStorageItemsAsync();
+                foreach (var storageItem in items)
+                {
+                    if (storageItem is Windows.Storage.StorageFile file)
+                    {
+                        await AddFileAttachmentAsync(file);
+                    }
+                }
+            }
+        }
+
+        private async Task TryPasteImageFromClipboardAsync()
+        {
+            try
+            {
+                var package = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+                if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Bitmap))
+                {
+                    var streamRef = await package.GetBitmapAsync();
+                    using var stream = await streamRef.OpenReadAsync();
+                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+                    await bitmap.SetSourceAsync(stream);
+
+                    using var readStream = stream.AsStreamForRead();
+                    using var memoryStream = new System.IO.MemoryStream();
+                    await readStream.CopyToAsync(memoryStream);
+                    byte[] bytes = memoryStream.ToArray();
+                    string base64 = Convert.ToBase64String(bytes);
+
+                    var item = new ImageAttachmentItem
+                    {
+                        FileName = $"screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.png",
+                        ByteSize = bytes.Length,
+                        Base64Data = base64,
+                        MimeType = "image/png",
+                        IsImage = true,
+                        PreviewImage = bitmap
+                    };
+
+                    PendingAttachments.Add(item);
+                    AttachmentPreviewContainer.Visibility = Visibility.Visible;
+                }
+                else if (package.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
+                {
+                    var items = await package.GetStorageItemsAsync();
+                    foreach (var storageItem in items)
+                    {
+                        if (storageItem is Windows.Storage.StorageFile file)
+                        {
+                            await AddFileAttachmentAsync(file);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatView] Clipboard image paste error: {ex.Message}");
+            }
+        }
+
+        private async Task AddFileAttachmentAsync(Windows.Storage.StorageFile file)
+        {
+            try
+            {
+                var props = await file.GetBasicPropertiesAsync();
+                bool isImage = IsImageFile(file.Name);
+
+                if (isImage)
+                {
+                    if (props.Size > 10 * 1024 * 1024)
+                    {
+                        ShowAgentInlineStatus($"Ảnh '{file.Name}' vượt quá kích thước 10MB cho phép.");
+                        return;
+                    }
+
+                    using var stream = await file.OpenReadAsync();
+                    var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+                    await bitmap.SetSourceAsync(stream);
+
+                    using var readStream = (await file.OpenReadAsync()).AsStreamForRead();
+                    using var memoryStream = new System.IO.MemoryStream();
+                    await readStream.CopyToAsync(memoryStream);
+                    byte[] bytes = memoryStream.ToArray();
+                    string base64 = Convert.ToBase64String(bytes);
+
+                    string ext = System.IO.Path.GetExtension(file.Name).ToLowerInvariant();
+                    string mimeType = ext switch
+                    {
+                        ".jpg" or ".jpeg" => "image/jpeg",
+                        ".png" => "image/png",
+                        ".webp" => "image/webp",
+                        ".bmp" => "image/bmp",
+                        _ => "image/png"
+                    };
+
+                    var item = new ImageAttachmentItem
+                    {
+                        FileName = file.Name,
+                        FilePath = file.Path,
+                        ByteSize = (long)props.Size,
+                        Base64Data = base64,
+                        MimeType = mimeType,
+                        IsImage = true,
+                        PreviewImage = bitmap
+                    };
+
+                    PendingAttachments.Add(item);
+                }
+                else
+                {
+                    if (props.Size > 5 * 1024 * 1024)
+                    {
+                        ShowAgentInlineStatus($"Tệp '{file.Name}' vượt quá kích thước 5MB cho phép.");
+                        return;
+                    }
+
+                    string? textContent = null;
+                    if (IsTextOrCodeFile(file.Name))
+                    {
+                        try
+                        {
+                            using var readStream = (await file.OpenReadAsync()).AsStreamForRead();
+                            using var reader = new System.IO.StreamReader(readStream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+                            textContent = await reader.ReadToEndAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[ChatView] Could not read file as UTF-8: {ex.Message}");
+                        }
+                    }
+
+                    var item = new ImageAttachmentItem
+                    {
+                        FileName = file.Name,
+                        FilePath = file.Path,
+                        ByteSize = (long)props.Size,
+                        TextContent = textContent,
+                        IsImage = false,
+                        MimeType = "application/octet-stream"
+                    };
+
+                    PendingAttachments.Add(item);
+                }
+
+                AttachmentPreviewContainer.Visibility = Visibility.Visible;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatView] Error adding attachment: {ex.Message}");
+            }
+        }
+
+        private static bool IsImageFile(string name)
+        {
+            string ext = System.IO.Path.GetExtension(name).ToLowerInvariant();
+            return ext is ".png" or ".jpg" or ".jpeg" or ".webp" or ".bmp";
+        }
+
+        private static bool IsTextOrCodeFile(string name)
+        {
+            string ext = System.IO.Path.GetExtension(name).ToLowerInvariant();
+            return ext switch
+            {
+                ".txt" or ".md" or ".markdown" or ".json" or ".xml" or ".yaml" or ".yml" or ".csv" or ".tsv"
+                or ".cs" or ".py" or ".js" or ".ts" or ".jsx" or ".tsx" or ".html" or ".htm" or ".css" or ".scss"
+                or ".sql" or ".sh" or ".bat" or ".cmd" or ".ps1" or ".rs" or ".go" or ".cpp" or ".c" or ".h" or ".hpp"
+                or ".java" or ".kt" or ".swift" or ".dart" or ".php" or ".rb" or ".lua" or ".ini" or ".cfg" or ".conf"
+                or ".log" or ".env" or ".toml" or ".proto" or ".graphql" => true,
+                _ => false
+            };
+        }
+
         private async Task SendCurrentMessageAsync()
         {
             try
             {
                 string text = ChatInputTextBox.Text.Trim();
-                if (string.IsNullOrEmpty(text)) return;
+                var attachments = PendingAttachments.ToList();
+
+                if (string.IsNullOrEmpty(text) && attachments.Count == 0) return;
 
                 if (string.Equals(text, "/full", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(text, "/fullaccess", StringComparison.OrdinalIgnoreCase))
@@ -683,13 +1143,37 @@ namespace RuApp.Views
                 }
 
                 ChatInputTextBox.Text = string.Empty;
+                PendingAttachments.Clear();
+                AttachmentPreviewContainer.Visibility = Visibility.Collapsed;
+
                 if (_typingPushed)
                 {
                     _typingPushed = false;
                     _ = _apiService?.PushVtsActivityAsync(false);
                 }
 
-                await SendAgentTurnAsync(text, AgentTurnSource.Typed, CancellationToken.None);
+                var textAttachments = attachments.Where(a => !a.IsImage && !string.IsNullOrWhiteSpace(a.TextContent)).ToList();
+                string effectivePrompt = text;
+                if (textAttachments.Count > 0)
+                {
+                    var sb = new System.Text.StringBuilder();
+                    foreach (var doc in textAttachments)
+                    {
+                        string lang = doc.FileExtension.TrimStart('.');
+                        sb.AppendLine($"[Đính kèm tệp: {doc.FileName} ({doc.FormattedSize})]");
+                        sb.AppendLine($"```{lang}");
+                        sb.AppendLine(doc.TextContent);
+                        sb.AppendLine("```");
+                        sb.AppendLine();
+                    }
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        sb.AppendLine(text);
+                    }
+                    effectivePrompt = sb.ToString().TrimEnd();
+                }
+
+                await SendAgentTurnAsync(effectivePrompt, AgentTurnSource.Typed, CancellationToken.None, attachments: attachments, displayUserText: text);
             }
             catch (Exception ex)
             {
@@ -702,7 +1186,9 @@ namespace RuApp.Views
             string text,
             AgentTurnSource source,
             CancellationToken cancellationToken,
-            bool allowSessionRecovery = true)
+            bool allowSessionRecovery = true,
+            List<ImageAttachmentItem>? attachments = null,
+            string? displayUserText = null)
         {
             if (allowSessionRecovery)
             {
@@ -756,17 +1242,24 @@ namespace RuApp.Views
             {
                 long presetVersion = await EnsureAgentPresetAsync(preset, cancellationToken);
                 string wirePreset = preset == AgentPermissionPreset.FullAccess ? "full_access" : "standard";
+
+                var imagePayloads = attachments?
+                    .Where(a => a.IsImage && (!string.IsNullOrEmpty(a.Base64Data) || !string.IsNullOrEmpty(a.FilePath)))
+                    .Select(a => !string.IsNullOrEmpty(a.Base64Data) ? $"data:{a.MimeType};base64,{a.Base64Data}" : a.FilePath!)
+                    .ToList();
+
                 var request = new CreateAgentRunRequest(
                     _activeSessionId,
                     workspace,
                     text,
                     wirePreset,
                     presetVersion,
-                    Guid.NewGuid().ToString("N"));
+                    Guid.NewGuid().ToString("N"),
+                    imagePayloads);
 
                 ClearAgentActivities();
                 ClearAgentRunSummary();
-                BeginAgentReply(source, text);
+                BeginAgentReply(source, text, attachments, displayUserText);
                 ScrollChatToBottom();
                 ShowAgentInlineStatus("Đang chuẩn bị thao tác…");
                 AgentStopButton.Visibility = Visibility.Collapsed;
@@ -786,7 +1279,9 @@ namespace RuApp.Views
                     text,
                     source,
                     cancellationToken,
-                    allowSessionRecovery: false);
+                    allowSessionRecovery: false,
+                    attachments: attachments,
+                    displayUserText: displayUserText);
                 return;
             }
 
@@ -802,7 +1297,7 @@ namespace RuApp.Views
             UpdateAgentInlineState();
         }
 
-        private void BeginAgentReply(AgentTurnSource source, string text)
+        private void BeginAgentReply(AgentTurnSource source, string text, List<ImageAttachmentItem>? attachments = null, string? displayUserText = null)
         {
             _activeAgentTurnSource = source;
             _activeAgentRunId = null;
@@ -814,9 +1309,13 @@ namespace RuApp.Views
             Messages.Add(new ChatMessageItem
             {
                 Role = "user",
-                Content = text,
+                Content = !string.IsNullOrEmpty(displayUserText) ? displayUserText : text,
                 SessionId = _activeSessionId,
+                Attachments = attachments != null && attachments.Count > 0
+                    ? new ObservableCollection<ImageAttachmentItem>(attachments)
+                    : new ObservableCollection<ImageAttachmentItem>()
             });
+
             _activeAgentAssistantMessage = new ChatMessageItem
             {
                 Role = "assistant",
@@ -1558,9 +2057,6 @@ namespace RuApp.Views
             MicButton.Background = active
                 ? (SolidColorBrush)Application.Current.Resources["AppDangerBrush"]
                 : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-            ToolTipService.SetToolTip(
-                MicButton,
-                active ? "Dừng trò chuyện bằng giọng nói" : "Nói chuyện với Ru bằng giọng nói");
             AutomationProperties.SetName(
                 MicButton,
                 active ? "Dừng trò chuyện bằng giọng nói" : "Bắt đầu trò chuyện bằng giọng nói");

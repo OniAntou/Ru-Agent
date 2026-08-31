@@ -1,6 +1,6 @@
 # Codebase Optimization Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (\`- [ ]\`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Reduce verified runtime/UI/I/O overhead and lifecycle risk while preserving Ru's product behavior, data, and execution authority.
 
@@ -8,23 +8,23 @@
 
 **Tech Stack:** Windows/PowerShell, .NET 10/C#, ASP.NET Core, WinUI 3, Microsoft.Data.Sqlite, C++20/CMake, Python 3.11–3.14 tooling.
 
-**Status:** Roadmap approved by the user on 2026-08-31. Planning-only handoff; implementation has NOT started. The user will give this plan to another agent.
+**Status:** Roadmap approved by the user on 2026-08-31. This task is a documentation-only handoff. Concurrent work has already added implementations in `e6fa40c`; the next agent must reconcile existing code/evidence before filling gaps, not restart the roadmap blindly.
 
 ## Global Constraints
 
-- Work in the actual \`D:\LLM\` checkout, or an explicitly chosen isolated worktree based on its current changes.
+- Work in the actual `D:\LLM` checkout, or an explicitly chosen isolated worktree based on its current changes.
 - Preserve unrelated dirty work. Do not reset, bulk-stage, commit, push, merge, or create a PR without explicit user authorization.
 - Keep the current GUI design, features, cloud model/provider choices, and conversation behavior.
-- Keep 56 HTTP method/path pairs plus the single public \`/voice/stream\` WebSocket; Agent text remains HTTP/SSE.
+- Keep 56 HTTP method/path pairs plus the single public `/voice/stream` WebSocket; Agent text remains HTTP/SSE.
 - Keep managed C# Runtime Worker v1/v2, their authentication, error/sequence/cancellation contracts, and Public Host ownership of Worker/Broker children.
 - Keep Broker policy, session/run binding, workspace trust, approval consumption, privacy, and protected-path checks.
 - Keep audio playback independent of rendering/subtitle work; preserve playback-before-subtitle ordering.
 - Do not launch or control RuApp, overlay, VTube Studio, microphone, speaker, or real desktop/device endpoints automatically.
 - Do not call paid/live cloud providers, download models, upgrade/uninstall an active environment, or change active credentials.
-- Protect models, OmniVoice assets/environment, app data, \`data/conversations\`, credentials, and active temporary paths.
+- Protect models, OmniVoice assets/environment, app data, `data/conversations`, credentials, and active temporary paths.
 - No blanket source/test/doc deletion. Inventory consumers and present exact deletion targets before destructive cleanup.
 - Run heavyweight Windows suites sequentially. Simple mechanical/doc changes need only proportionate verification.
-- If subagents are used, use Luna (\`gpt-5.6-luna\`); do not dispatch overlapping writers.
+- If subagents are used, use Luna (`gpt-5.6-luna`); do not dispatch overlapping writers.
 - Check project documents after every implementation slice; update current truth, keep historical evidence explicitly dated.
 - OS-enforced sandboxing, new tools/features, provider migration, regex search, parallel traversal, and transport rewrites are outside this optimization.
 
@@ -32,11 +32,36 @@
 
 ## Entry point and baseline
 
-Read this file first, then the indicated subplan; subplans inherit the Global Constraints above. Paths in subplans are repository-relative to \`D:\LLM\`. Types explicitly labeled **new** are planned interfaces, not claims that they already exist.
+Read this file first, then the indicated subplan; subplans inherit the Global Constraints above. Paths in subplans are repository-relative to `D:\LLM`. Types labeled **new** describe the original design: some now exist after concurrent implementation. Inspect their actual signatures before editing; do not add duplicate modules.
 
-Audit baseline: branch \`codex/test-suite-cleanup\`, commit \`d32b0a09a94810b4348efd9b53420b135d73e7f9\`, clean before these planning documents. Revalidate rather than assuming it is still current:
+### Resume gate after concurrent implementation
 
-\`\`\`powershell
+During handoff preparation the checkout moved to `main` (observed HEAD
+`c425d0d`), containing `e6fa40c` (`refactor(optimization): phase 1-2 diagnostics,
+native, io, gui`). Additional GUI/protocol edits are dirty and belong to another
+task. Do not switch branches, undo those changes, or treat the original clean
+baseline below as the current state.
+
+- [ ] Compare `git show --stat e6fa40c`, current source, tests and TODO against
+  L/N/P/C/O/F acceptance criteria. Preserve implemented modules; add only missing
+  behavior/evidence after verification.
+- [ ] Recheck all reported test results at the intended delivered revision when
+  implementation work resumes; this planning task ran documentation checks only.
+- [ ] Preserve the recorded B/W rejection in subplan 05. Do not automatically
+  reopen those extractions merely because detailed candidate steps remain here.
+- [ ] `ddgs` is now absent from pyproject, but the Torch extra/setup conflict
+  remains visible (`>=2.9` versus `2.8.0+cu128`). Complete D1's compatibility
+  investigation without claiming that old-environment pip check resolves it.
+- [ ] Reconcile current docs and remaining measurement/acceptance gaps before
+  marking the overall optimization complete.
+
+Unchecked boxes below are acceptance requirements to reconcile, not proof that
+the corresponding code is absent. This note overrides the original starting
+order where a task has already been implemented or explicitly rejected.
+
+Audit baseline: branch `codex/test-suite-cleanup`, commit `d32b0a09a94810b4348efd9b53420b135d73e7f9`, clean before these planning documents. Revalidate rather than assuming it is still current:
+
+```powershell
 Set-Location -LiteralPath D:\LLM
 git status --short --branch
 git rev-parse HEAD
@@ -44,7 +69,7 @@ git diff --stat
 Get-Content CONTEXT.md
 Get-Content TODO.md
 Get-Content docs/operations/verification.md
-\`\`\`
+```
 
 The preceding cleanup recorded 402 Python and 2,009 .NET tests passing. Those are historical baseline numbers, NOT proof of this optimization. No before/after performance measurements were collected during the audit.
 
@@ -55,7 +80,7 @@ The audit HTML was a temporary review aid; it is not required to execute this du
 | ID | Observation at baseline | Change direction | Evidence strength |
 | --- | --- | --- | --- |
 | L | Diagnostic writer cancels, waits 2 seconds, then disposes gates even if task is still active; final drain uses no cancellation. | One owned shutdown path with truthful timeout/quiescence outcome. | Code-confirmed risk; isolated reproducer required. |
-| N | Native tests use \`assert\`; generated Release project defines \`NDEBUG\`. RGBA frames traverse three transforms. | Always-on pure tests first, then byte-equivalent fused transform. | Disabled checks confirmed; speed gain unmeasured. |
+| N | Native tests use `assert`; generated Release project defines `NDEBUG`. RGBA frames traverse three transforms. | Always-on pure tests first, then byte-equivalent fused transform. | Disabled checks confirmed; speed gain unmeasured. |
 | P | Diagnostics starts polling at initialization while hidden; sessions timer can overlap requests. | Visibility/lifetime ownership and single-flight refresh. | Code-confirmed repeated/overlapping work. |
 | C | Controller dispatches each delta to UI and deduplicates; ChatView deduplicates again, concatenates text and forces layout per delta. | Own reply state once; coalesce rendering without delaying voice. | Code-confirmed hot path; measured gain required. |
 | O | Idle outbox dispatch probes transitions then opens another logical SQLite connection and write transaction for claim. | One work-selection boundary, read-only idle path. | Code-confirmed work; pooling is already enabled. |
@@ -77,7 +102,7 @@ The six subplans are responsibility-based handoffs; the four approved rollout ph
 | 3 — Module ownership | [05 lifetime/authority](2026-08-31-codebase-optimization-05-lifetimes.md) | Policy/cancel/recovery regressions pass; no check removed for speed. |
 | 4 — Dependencies, documents, final verification | [06 dependencies/docs](2026-08-31-codebase-optimization-06-dependencies-docs.md) | Consumer manifest, consistent install declarations, current docs, sequential final gates. |
 
-Default next-agent starting point: phase 1 only, then report its evidence and next ready tasks. The roadmap authorizes subsequent phases but does not turn unknown compatibility decisions, device tests, or destructive cleanup into permission.
+Default next-agent starting point: the resume gate above, then verify phase 1's existing implementation and report missing evidence/next ready tasks. The roadmap authorizes subsequent phases but does not turn rejected candidates, unknown compatibility decisions, device tests, or destructive cleanup into permission.
 
 ## Per-task workflow
 
@@ -95,7 +120,7 @@ For a required new test seam, first extract the real I/O boundary without changi
 
 ## Evidence and performance policy
 
-Use deterministic fixtures and real implementations with fakes only at external I/O, clocks, dispatch, and device boundaries. Keep temporary roots isolated using \`RU_DATA_ROOT\` where appropriate. No tests against user sessions.
+Use deterministic fixtures and real implementations with fakes only at external I/O, clocks, dispatch, and device boundaries. Keep temporary roots isolated using `RU_DATA_ROOT` where appropriate. No tests against user sessions.
 
 Measure work counts as primary evidence: accepted/dropped events, outstanding tasks/handles, logical SQLite opens/transactions, bytes read, stream opens, render/layout calls, text allocations, and pixel passes. Distinguish physical I/O from pooled logical connections.
 
@@ -113,7 +138,7 @@ A risky candidate rejected after measurement is a documented outcome, not an exc
 
 - [ ] L and N1 completed with actual RED/GREEN evidence.
 - [ ] P/C/O/F/N2 completed or individually rejected with measured reason.
-- [ ] B/W refactors preserve every listed invariant; no speculative Broker cancel fix bundled in.
+- [ ] B/W decisions reconciled: preserve the recorded rejection, or verify every invariant if explicitly reopened; no speculative Broker cancel fix bundled in.
 - [ ] D completed or compatibility decision explicitly blocked; no active environment mutation.
 - [ ] Current docs/TODO agree with implementation; old evidence remains historical.
 - [ ] Sequential final gates from subplan 06 recorded at the delivered checkout.

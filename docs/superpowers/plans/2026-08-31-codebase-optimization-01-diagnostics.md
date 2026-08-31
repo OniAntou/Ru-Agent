@@ -1,6 +1,6 @@
 # Diagnostic Writer Lifecycle Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (\`- [ ]\`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stop the real Host diagnostic writer without disposing synchronization objects still in use, while keeping bounded, nonblocking diagnostics.
 
@@ -10,6 +10,10 @@
 
 ## Global Constraints
 
+> Before executing, read the master plan's **Resume gate after concurrent implementation**.
+> Several planned modules already exist in `e6fa40c`; inspect current code and
+> verify missing acceptance evidence rather than recreating or replacing them.
+
 Inherit all constraints from [the master plan](2026-08-31-codebase-optimization.md). This is rollout phase 1. Do not alter GUI logging or Python logging merely because they have similar names.
 
 ---
@@ -18,20 +22,20 @@ Inherit all constraints from [the master plan](2026-08-31-codebase-optimization.
 
 **Existing files:**
 
-- Modify: \`backend-dotnet/RuBackend/Diagnostics/StructuredDiagnosticLogWriter.cs\`.
-- Read/retain: \`BoundedDiagnosticQueue.cs\`, \`DiagnosticEmitter.cs\`, \`DiagnosticEventPolicy.cs\` in the same directory.
-- Modify if needed for owned shutdown: \`backend-dotnet/RuBackend/Program.cs\`.
-- Test: \`backend-dotnet/RuBackend.Tests/Diagnostics/DiagnosticLogWriterTests.cs\`.
-- Neighbor tests: \`DiagnosticEmitterTests.cs\`, \`DiagnosticEndpointsTests.cs\`, \`StructuredDiagnosticLoggerProviderTests.cs\` in that test directory.
-- Add focused production files: \`Diagnostics/IDiagnosticLogSink.cs\`, \`Diagnostics/JsonlDiagnosticLogSink.cs\`.
-- Add focused test files: \`Diagnostics/DiagnosticWriterShutdownTests.cs\`, \`Fakes/ControlledDiagnosticLogSink.cs\`.
-- Docs: \`TODO.md\`, \`docs/operations/verification.md\`, \`docs/adr/0006-structured-logging-and-activity-boundaries.md\`.
+- Modify: `backend-dotnet/RuBackend/Diagnostics/StructuredDiagnosticLogWriter.cs`.
+- Read/retain: `BoundedDiagnosticQueue.cs`, `DiagnosticEmitter.cs`, `DiagnosticEventPolicy.cs` in the same directory.
+- Modify if needed for owned shutdown: `backend-dotnet/RuBackend/Program.cs`.
+- Test: `backend-dotnet/RuBackend.Tests/Diagnostics/DiagnosticLogWriterTests.cs`.
+- Neighbor tests: `DiagnosticEmitterTests.cs`, `DiagnosticEndpointsTests.cs`, `StructuredDiagnosticLoggerProviderTests.cs` in that test directory.
+- Add focused production files: `Diagnostics/IDiagnosticLogSink.cs`, `Diagnostics/JsonlDiagnosticLogSink.cs`.
+- Add focused test files: `Diagnostics/DiagnosticWriterShutdownTests.cs`, `Fakes/ControlledDiagnosticLogSink.cs`.
+- Docs: `TODO.md`, `docs/operations/verification.md`, `docs/adr/0006-structured-logging-and-activity-boundaries.md`.
 
 **Interfaces:**
 
-Existing constructors and \`TryEnqueue(DiagnosticEvent)\`, \`FlushAsync(TimeSpan)\`, \`Queue.GetSnapshot()\`, \`Dispose()\` must remain source-compatible. New sink and shutdown boundary:
+Existing constructors and `TryEnqueue(DiagnosticEvent)`, `FlushAsync(TimeSpan)`, `Queue.GetSnapshot()`, `Dispose()` must remain source-compatible. New sink and shutdown boundary:
 
-\`\`\`csharp
+```csharp
 public interface IDiagnosticLogSink
 {
     ValueTask AppendAsync(
@@ -43,9 +47,9 @@ public enum DiagnosticShutdownOutcome { Drained, Cancelled, Incomplete }
 public Task<DiagnosticShutdownOutcome> StopAsync(
     TimeSpan budget, CancellationToken cancellationToken = default);
 public Task Completion { get; }
-\`\`\`
+```
 
-Append an optional \`IDiagnosticLogSink? sink = null\` constructor argument; default to the file adapter. Keep serializer, grouping, retry ordering, and queue policy in their existing owner; the adapter owns opening/writing/flushing/disposing a single FileStream. \`Completion\` means all writer-owned writes/flush users have ended AND gates/CTS are safely released, not simply that a wait expired.
+Append an optional `IDiagnosticLogSink? sink = null` constructor argument; default to the file adapter. Keep serializer, grouping, retry ordering, and queue policy in their existing owner; the adapter owns opening/writing/flushing/disposing a single FileStream. `Completion` means all writer-owned writes/flush users have ended AND gates/CTS are safely released, not simply that a wait expired.
 
 **Required shutdown behavior:**
 
@@ -54,8 +58,8 @@ Append an optional \`IDiagnosticLogSink? sink = null\` constructor argument; def
 - Deadline expiry requests cancellation of all admitted work, including explicit FlushAsync.
 - Return Drained only when accepted work is persisted and ownership is quiescent. Return Cancelled if quiescent but deadline/cancellation prevented a full drain; preserve existing loss/retry counters truthfully.
 - Return Incomplete when an uncooperative sink/task has not stopped by the caller's budget. Keep gates/CTS owned until it exits; a single observed completion path disposes them later. Do not report no handles/tasks in this outcome.
-- \`Dispose()\` is idempotent and bounded; it must not unconditionally free gates after the wait. The Host must observe/log a bounded shutdown outcome without recursive diagnostic emission.
-- \`FlushAsync\` after stop is a safe no-op; a flush admitted before stop is included in ownership tracking.
+- `Dispose()` is idempotent and bounded; it must not unconditionally free gates after the wait. The Host must observe/log a bounded shutdown outcome without recursive diagnostic emission.
+- `FlushAsync` after stop is a safe no-op; a flush admitted before stop is included in ownership tracking.
 - Host DI disposal, explicit StopAsync, concurrent Dispose, and the background writer must not create competing final-drain loops.
 - If this contract cannot be implemented without an unbounded sync wait or silent event-loss change, stop and explain; do not just increase 2 seconds.
 
@@ -63,15 +67,15 @@ Append an optional \`IDiagnosticLogSink? sink = null\` constructor argument; def
 
 Run:
 
-\`\`\`powershell
+```powershell
 dotnet test backend-dotnet/RuBackend.Tests/RuBackend.Tests.csproj -c Release --nologo --filter "FullyQualifiedName~Diagnostics"
-\`\`\`
+```
 
 Extract AppendAsync without changing behavior. Test the default adapter using real temporary JSONL files; preserve FileShare and serialization. Keep the existing endpoint fixture's discarding emitter until a separate real-Host test proves lifecycle.
 
 - [ ] **Step 2 — Controlled reproducer and RED.**
 
-Implement a sink fake in the test assembly with \`TaskCompletionSource\` signals \`Entered\`, \`Release\`, and \`Exited\`, using \`RunContinuationsAsynchronously\`. It must optionally honor cancellation or deliberately ignore it; always release it in test \`finally\`.
+Implement a sink fake in the test assembly with `TaskCompletionSource` signals `Entered`, `Release`, and `Exited`, using `RunContinuationsAsynchronously`. It must optionally honor cancellation or deliberately ignore it; always release it in test `finally`.
 
 With one accepted event held inside AppendAsync, invoke the current Dispose and keep the sink held beyond its 2-second wait. Then release it and observe the actual writer task/gate failure, not a mocked Dispose. If observing an existing private task is necessary for this temporary reproduction, keep reflection in test utilities and replace it with the owned Completion boundary in final tests.
 
@@ -89,7 +93,7 @@ Record the failing assertion/exception before changing shutdown. After the seam 
 
 Final regression using the new lifecycle contract and the existing event type:
 
-\`\`\`csharp
+```csharp
 [Fact]
 public async Task Stop_drains_and_releases_the_daily_file()
 {
@@ -111,7 +115,7 @@ public async Task Stop_drains_and_releases_the_daily_file()
     }
     finally { Directory.Delete(root, recursive: true); }
 }
-\`\`\`
+```
 
 This example is one normal-path test, not a substitute for the held-sink reproducer.
 
@@ -119,7 +123,7 @@ This example is one normal-path test, not a substitute for the held-sink reprodu
 
 Implement the admission/shutdown state once, using a shared task under a short lock, not a lock around I/O. Use monotonic deadline accounting, cancellation-aware waits, and one completion cleanup path. Include admitted FlushAsync tasks in quiescence; background completion alone is insufficient.
 
-Have the Host's owned shutdown await/observe StopAsync before DI resource disposal, using an existing appropriate lifetime hook or one small \`DiagnosticWriterLifetime\` IHostedService. Add a real writer Host teardown test using an isolated data root, no provider/device; do not replace the writer with a discard sink in that regression.
+Have the Host's owned shutdown await/observe StopAsync before DI resource disposal, using an existing appropriate lifetime hook or one small `DiagnosticWriterLifetime` IHostedService. Add a real writer Host teardown test using an isolated data root, no provider/device; do not replace the writer with a discard sink in that regression.
 
 Run the Diagnostics filter plus the affected Host business/teardown tests. Remove neither production logging nor its dedicated tests to achieve GREEN.
 

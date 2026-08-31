@@ -13,27 +13,15 @@ namespace RuApp.Views
     {
         private ApiService? _apiService;
         private bool _loading = false;
-        private List<string> _allModels = new();
         private DispatcherTimer? _autoSaveTimer;
         private bool _saveInProgress;
         private bool _saveRequestedDuringSave;
-        private bool _filteringModels;
         private DispatcherTimer? _vtsConfigDebounce;
         private bool _loadingVtsConfig;
         private DispatcherTimer? _vtsControlDebounce;
         private bool _syncingVtsControls;
         private enum PendingVtsControl { None, Overlay, MouseLook, Sensitivity }
         private PendingVtsControl _pendingVtsControl;
-
-        private static readonly Dictionary<string, string[]> FallbackModels = new()
-        {
-            ["opencode"] = Array.Empty<string>(),
-            ["kilo"] = Array.Empty<string>(),
-            ["ollama"] = new[] { "qwen2.5:latest", "llama3.2:latest", "mistral:latest" },
-            ["lmstudio"] = new[] { "default" },
-            ["custom"] = new[] { "default" },
-            ["gguf"] = Array.Empty<string>()
-        };
 
         public SettingsView()
         {
@@ -70,6 +58,8 @@ namespace RuApp.Views
             _ = PollVtsStatusAsync();
         }
 
+        private AppSettingsDto? _loadedSettings;
+
         private void SetupAutoSave()
         {
             _autoSaveTimer = new DispatcherTimer
@@ -83,10 +73,6 @@ namespace RuApp.Views
             };
 
             BackendComboBox.SelectionChanged += (_, __) => ScheduleAutoSave();
-            ModelComboBox.SelectionChanged += (_, __) =>
-            {
-                if (!_filteringModels) ScheduleAutoSave();
-            };
             OpenCodeApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
             KiloApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
             GeminiVisionKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
@@ -113,6 +99,7 @@ namespace RuApp.Views
             {
                 var settings = await _apiService.GetSettingsAsync();
                 settings ??= new AppSettingsDto();
+                _loadedSettings = settings;
 
                 foreach (ComboBoxItem item in BackendComboBox.Items)
                 {
@@ -167,90 +154,13 @@ namespace RuApp.Views
                         : "Trạng thái: Đang tắt";
                 }
 
-                await LoadModelsForBackendAsync(settings.BackendChoice, settings, settings.OpenCodeModel, settings.KiloModel);
                 UpdateVisibilityForBackend(settings.BackendChoice);
             }
             _loading = false;
         }
 
-        private async Task LoadModelsForBackendAsync(string backend, AppSettingsDto? settings, string fallbackOpenCode, string fallbackKilo)
-        {
-            bool hasModels = backend is "opencode" or "kilo" or "ollama" or "lmstudio" or "custom";
-            if (_apiService == null || !hasModels) return;
-
-            ModelLoadingText.Visibility = Visibility.Visible;
-
-            string chosen = backend switch
-            {
-                "opencode" => settings?.OpenCodeModel ?? fallbackOpenCode,
-                "kilo" => settings?.KiloModel ?? fallbackKilo,
-                "ollama" => settings?.OllamaModel ?? "qwen2.5:latest",
-                "lmstudio" => settings?.LmStudioModel ?? "default",
-                "custom" => settings?.CustomModel ?? "default",
-                _ => ""
-            };
-
-            var models = await _apiService.GetModelsAsync(backend);
-            ModelLoadingText.Visibility = Visibility.Collapsed;
-
-            if (models.Count == 0 && FallbackModels.TryGetValue(backend, out var fallback))
-            {
-                models = new List<string>(fallback);
-            }
-
-            _allModels = models;
-            FilterModels(chosen);
-        }
-
-        private void FilterModels(string? selectedModel = null)
-        {
-            _filteringModels = true;
-            try
-            {
-                string searchText = ModelSearchBox.Text?.Trim().ToLower() ?? "";
-                ModelComboBox.Items.Clear();
-
-                var filteredModels = string.IsNullOrEmpty(searchText)
-                    ? _allModels
-                    : _allModels.Where(m => MatchesSearch(m.ToLower(), searchText)).ToList();
-
-                foreach (string model in filteredModels)
-                {
-                    ModelComboBox.Items.Add(model);
-                }
-
-                if (selectedModel != null && filteredModels.Contains(selectedModel))
-                {
-                    ModelComboBox.SelectedItem = selectedModel;
-                }
-                else if (ModelComboBox.Items.Count > 0)
-                {
-                    ModelComboBox.SelectedIndex = 0;
-                }
-            }
-            finally
-            {
-                _filteringModels = false;
-            }
-        }
-
-        private bool MatchesSearch(string modelName, string searchText)
-        {
-            var keywords = searchText.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-            if (keywords.Length == 0) return true;
-            return keywords.All(keyword => modelName.Contains(keyword));
-        }
-
-        private void OnModelSearchBoxTextChanged(object sender, TextChangedEventArgs e)
-        {
-            if (_loading) return;
-            string? currentSelection = ModelComboBox.SelectedItem as string;
-            FilterModels(currentSelection);
-        }
-
         private void UpdateVisibilityForBackend(string choice)
         {
-            bool hasModels = choice is "opencode" or "kilo" or "ollama" or "lmstudio" or "custom";
             bool cloud = choice is "opencode" or "kilo";
 
             OpenCodeApiRow.Visibility = (choice == "opencode") ? Visibility.Visible : Visibility.Collapsed;
@@ -261,47 +171,16 @@ namespace RuApp.Views
             CustomApiKeyRow.Visibility = (choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
 
             CloudMemoryRow.Visibility = cloud ? Visibility.Visible : Visibility.Collapsed;
-            ModelRow.Visibility = hasModels ? Visibility.Visible : Visibility.Collapsed;
             SelfLearningRow.Visibility = Visibility.Visible;
             ExtendedFeaturesCard.Visibility = Visibility.Visible;
         }
 
-        private async void OnBackendSelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void OnBackendSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (_loading || BackendComboBox.SelectedItem == null) return;
             string choice = (BackendComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "opencode";
 
             UpdateVisibilityForBackend(choice);
-
-            bool hasModels = choice is "opencode" or "kilo" or "ollama" or "lmstudio" or "custom";
-            if (hasModels)
-            {
-                ModelLoadingText.Visibility = Visibility.Visible;
-                ModelComboBox.Items.Clear();
-                ModelComboBox.SelectedItem = null;
-                ModelSearchBox.Text = string.Empty;
-
-                if (_apiService != null)
-                {
-                    var models = await _apiService.GetModelsAsync(choice);
-                    if (models.Count == 0 && FallbackModels.TryGetValue(choice, out var fallback))
-                    {
-                        models = new List<string>(fallback);
-                    }
-                    _allModels = models;
-                    FilterModels();
-                }
-                ModelLoadingText.Visibility = Visibility.Collapsed;
-            }
-        }
-
-        private string? SelectedModelText()
-        {
-            if (ModelComboBox.SelectedItem is string selected)
-            {
-                return selected;
-            }
-            return null;
         }
 
         private async Task SaveSettingsAsync()
@@ -317,7 +196,6 @@ namespace RuApp.Views
             try
             {
                 string backend = (BackendComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "opencode";
-                string modelChoice = SelectedModelText() ?? "";
 
                 var dto = new AppSettingsDto
                 {
@@ -326,11 +204,11 @@ namespace RuApp.Views
                     KiloApiKey = KiloApiKeyBox.Password,
                     GeminiVisionApiKey = GeminiVisionKeyBox.Password,
                     ApiVariant = (ApiVariantComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Default",
-                    OpenCodeModel = backend == "opencode" ? modelChoice : "",
-                    KiloModel = backend == "kilo" ? modelChoice : "",
-                    OllamaModel = backend == "ollama" ? modelChoice : "qwen2.5:latest",
-                    LmStudioModel = backend == "lmstudio" ? modelChoice : "default",
-                    CustomModel = backend == "custom" ? modelChoice : "default",
+                    OpenCodeModel = _loadedSettings?.OpenCodeModel ?? "",
+                    KiloModel = _loadedSettings?.KiloModel ?? "",
+                    OllamaModel = _loadedSettings?.OllamaModel ?? "qwen2.5:latest",
+                    LmStudioModel = _loadedSettings?.LmStudioModel ?? "default",
+                    CustomModel = _loadedSettings?.CustomModel ?? "default",
                     CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
                     CustomApiKey = CustomApiKeyBox.Password,
                     SelfLearningEnabled = SelfLearningToggle.IsOn,
@@ -339,6 +217,7 @@ namespace RuApp.Views
                 };
 
                 bool ok = await _apiService.SaveSettingsAsync(dto);
+                _loadedSettings = dto;
                 AutoSaveStatusText.Text = ok ? "Đã lưu" : "Lưu thất bại";
                 if (!ok)
                 {

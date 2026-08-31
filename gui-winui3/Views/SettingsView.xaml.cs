@@ -580,5 +580,43 @@ namespace RuApp.Views
                 ScreenObserverStatusText.Text = "Trạng thái: Đang tắt";
             }
         }
+
+        private void OnNavSystemClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("system");
+        private void OnNavObserverClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("observer");
+        private void OnNavVtsClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("vts");
+        private void OnNavMemoryClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("memory");
+
+        private void SetActiveSettingsTab(string tab)
+        {
+            var isSystem = tab == "system";
+            var isObserver = tab == "observer";
+            var isVts = tab == "vts";
+            var isMemory = tab == "memory";
+
+            SystemSettingsScrollViewer.Visibility = isSystem ? Visibility.Visible : Visibility.Collapsed;
+            ObservationScrollViewer.Visibility = isObserver ? Visibility.Visible : Visibility.Collapsed;
+            VtsSettingsScrollViewer.Visibility = isVts ? Visibility.Visible : Visibility.Collapsed;
+            MemoryPanel.Visibility = isMemory ? Visibility.Visible : Visibility.Collapsed;
+
+            UpdateNavButton(NavSystemBtn, NavSystemRail, NavSystemIcon, NavSystemText, isSystem);
+            UpdateNavButton(NavObserverBtn, NavObserverRail, NavObserverIcon, NavObserverText, isObserver);
+            UpdateNavButton(NavVtsBtn, NavVtsRail, NavVtsIcon, NavVtsText, isVts);
+            UpdateNavButton(NavMemoryBtn, NavMemoryRail, NavMemoryIcon, NavMemoryText, isMemory);
+        }
+
+        private static void UpdateNavButton(Button btn, Border rail, FontIcon icon, TextBlock text, bool active)
+        {
+            if (btn == null) return;
+            btn.Background = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuAccentSoftBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent));
+            if (rail != null)
+                rail.Background = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuAccentBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent));
+            if (icon != null)
+                icon.Foreground = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuInkBrush"] : Application.Current.Resources["RuMutedBrush"]);
+            if (text != null)
+            {
+                text.Foreground = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuInkBrush"] : Application.Current.Resources["RuMutedBrush"]);
+                text.FontWeight = active ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Medium;
+            }
+        }
     }
 }

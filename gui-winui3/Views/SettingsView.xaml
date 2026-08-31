@@ -24,56 +24,6 @@
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
 
-            <Style TargetType="PivotHeaderItem">
-                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
-                <Setter Property="FontSize" Value="13" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Padding" Value="14,8" />
-                <Setter Property="Margin" Value="0,0,6,0" />
-                <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="PivotHeaderItem">
-                            <Grid x:Name="Grid" Background="Transparent"
-                                  BorderThickness="1"
-                                  BorderBrush="Transparent"
-                                  CornerRadius="{TemplateBinding CornerRadius}"
-                                  Padding="{TemplateBinding Padding}">
-                                <VisualStateManager.VisualStateGroups>
-                                    <VisualStateGroup x:Name="SelectionStates">
-                                        <VisualState x:Name="Unselected">
-                                            <Storyboard>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="Grid" Storyboard.TargetProperty="Background">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="Transparent" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="Grid" Storyboard.TargetProperty="BorderBrush">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="Transparent" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                            </Storyboard>
-                                        </VisualState>
-                                        <VisualState x:Name="Selected">
-                                            <Storyboard>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="Grid" Storyboard.TargetProperty="Background">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuAccentSoftBrush}" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="Grid" Storyboard.TargetProperty="BorderBrush">
-                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuLineBrush}" />
-                                                </ObjectAnimationUsingKeyFrames>
-                                            </Storyboard>
-                                        </VisualState>
-                                        <VisualState x:Name="UnselectedLocked" />
-                                        <VisualState x:Name="SelectedLocked" />
-                                    </VisualStateGroup>
-                                </VisualStateManager.VisualStateGroups>
-                                <ContentPresenter Content="{TemplateBinding Content}"
-                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
-                                                  HorizontalAlignment="Center"
-                                                  VerticalAlignment="Center" />
-                            </Grid>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -85,12 +35,11 @@
                         <AdaptiveTrigger MinWindowWidth="1280"/>
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
-                        <Setter Target="SettingsPivot.MaxWidth" Value="1360"/>
-                        <Setter Target="SettingsPivot.HorizontalAlignment" Value="Stretch"/>
-                        <Setter Target="SettingsPivot.Margin" Value="44,16,44,0"/>
-                        <Setter Target="SystemSettingsScrollViewer.Padding" Value="0,16,0,40"/>
-                        <Setter Target="ObservationScrollViewer.Padding" Value="0,16,0,40"/>
-                        <Setter Target="VtsSettingsScrollViewer.Padding" Value="0,16,0,40"/>
+                        <Setter Target="SettingsContentGrid.MaxWidth" Value="1440"/>
+                        <Setter Target="SystemSettingsScrollViewer.Padding" Value="28,20,36,40"/>
+                        <Setter Target="ObservationScrollViewer.Padding" Value="28,20,36,40"/>
+                        <Setter Target="VtsSettingsScrollViewer.Padding" Value="28,20,36,40"/>
+                        <Setter Target="MemoryPanel.Padding" Value="28,20,36,40"/>
                         <!-- Tab 1 Bento 2-Column -->
                         <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*,*"/>
                         <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
@@ -115,12 +64,11 @@
                         <AdaptiveTrigger MinWindowWidth="900"/>
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
-                        <Setter Target="SettingsPivot.MaxWidth" Value="1000"/>
-                        <Setter Target="SettingsPivot.HorizontalAlignment" Value="Stretch"/>
-                        <Setter Target="SettingsPivot.Margin" Value="28,12,28,0"/>
-                        <Setter Target="SystemSettingsScrollViewer.Padding" Value="0,12,0,32"/>
-                        <Setter Target="ObservationScrollViewer.Padding" Value="0,12,0,32"/>
-                        <Setter Target="VtsSettingsScrollViewer.Padding" Value="0,12,0,32"/>
+                        <Setter Target="SettingsContentGrid.MaxWidth" Value="1000"/>
+                        <Setter Target="SystemSettingsScrollViewer.Padding" Value="16,16,24,32"/>
+                        <Setter Target="ObservationScrollViewer.Padding" Value="16,16,24,32"/>
+                        <Setter Target="VtsSettingsScrollViewer.Padding" Value="16,16,24,32"/>
+                        <Setter Target="MemoryPanel.Padding" Value="16,16,24,32"/>
                         <!-- Tab 1 Single Column -->
                         <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*"/>
                         <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
@@ -145,11 +93,18 @@
                         <AdaptiveTrigger MinWindowWidth="0"/>
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
-                        <Setter Target="SettingsPivot.HorizontalAlignment" Value="Stretch"/>
-                        <Setter Target="SettingsPivot.Margin" Value="14,8,14,0"/>
-                        <Setter Target="SystemSettingsScrollViewer.Padding" Value="0,8,0,24"/>
-                        <Setter Target="ObservationScrollViewer.Padding" Value="0,8,0,24"/>
-                        <Setter Target="VtsSettingsScrollViewer.Padding" Value="0,8,0,24"/>
+                        <Setter Target="SettingsMainGrid.ColumnDefinitions" Value="*"/>
+                        <Setter Target="SettingsNavSidebar.(Grid.Row)" Value="0"/>
+                        <Setter Target="SettingsNavSidebar.(Grid.Column)" Value="0"/>
+                        <Setter Target="SettingsNavSidebar.BorderThickness" Value="0,0,0,1"/>
+                        <Setter Target="SettingsNavSidebar.Padding" Value="12,8,12,8"/>
+                        <Setter Target="NavStack.Orientation" Value="Horizontal"/>
+                        <Setter Target="SettingsPanelsGrid.(Grid.Row)" Value="1"/>
+                        <Setter Target="SettingsPanelsGrid.(Grid.Column)" Value="0"/>
+                        <Setter Target="SystemSettingsScrollViewer.Padding" Value="12,12,12,24"/>
+                        <Setter Target="ObservationScrollViewer.Padding" Value="12,12,12,24"/>
+                        <Setter Target="VtsSettingsScrollViewer.Padding" Value="12,12,12,24"/>
+                        <Setter Target="MemoryPanel.Padding" Value="12,12,12,24"/>
                         <!-- Tab 1 Single Column -->
                         <Setter Target="Tab1BentoGrid.ColumnDefinitions" Value="*"/>
                         <Setter Target="BackendCard.(Grid.Row)" Value="0"/>
@@ -175,18 +130,100 @@
             </VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
 
-        <Pivot x:Name="SettingsPivot" HorizontalAlignment="Stretch" MaxWidth="1360" Margin="44,16,44,0">
-            <!-- Tab 1: System Settings -->
-            <PivotItem Margin="0,12,0,0">
-                <PivotItem.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="7">
-                        <FontIcon Glyph="&#xE713;" FontSize="12.5" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Text="Hệ thống &amp; Mô hình" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
+        <Grid x:Name="SettingsContentGrid" HorizontalAlignment="Stretch" MaxWidth="1440">
+            <Grid x:Name="SettingsMainGrid" ColumnDefinitions="240,*" RowDefinitions="Auto,*">
+                
+                <!-- Left Sub-Navigation Sidebar -->
+                <Border x:Name="SettingsNavSidebar" Grid.Row="0" Grid.RowSpan="2" Grid.Column="0"
+                        BorderBrush="{StaticResource RuLineBrush}" BorderThickness="0,0,1,0"
+                        Padding="16,24,14,24" Background="Transparent">
+                    <StackPanel Spacing="16">
+                        <!-- Sidebar Header -->
+                        <StackPanel Spacing="3" Margin="6,0,0,4">
+                            <TextBlock Text="CÀI ĐẶT" FontSize="11" FontWeight="Bold"
+                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                       Foreground="{StaticResource RuMutedBrush}"/>
+                            <TextBlock Text="Tùy chỉnh hệ thống" FontSize="14" FontWeight="SemiBold"
+                                       FontFamily="{StaticResource RuDisplayFontFamily}"
+                                       Foreground="{StaticResource RuInkBrush}"/>
+                        </StackPanel>
+
+                        <!-- Nav List -->
+                        <StackPanel x:Name="NavStack" Spacing="4">
+                            <!-- Nav: System & Models -->
+                            <Button x:Name="NavSystemBtn" Click="OnNavSystemClick"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                    Height="40" Padding="0" BorderThickness="0"
+                                    Background="{StaticResource RuAccentSoftBrush}"
+                                    CornerRadius="{StaticResource RuControlCornerRadius}">
+                                <Grid ColumnDefinitions="3,Auto,*" ColumnSpacing="9">
+                                    <Border x:Name="NavSystemRail" Grid.Column="0" Width="3" Height="18"
+                                            Background="{StaticResource RuAccentBrush}" CornerRadius="1.5"/>
+                                    <FontIcon x:Name="NavSystemIcon" Grid.Column="1" Glyph="&#xE713;" FontSize="13.5"
+                                              Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                    <TextBlock x:Name="NavSystemText" Grid.Column="2" Text="Hệ thống &amp; Mô hình" FontSize="13"
+                                               FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Button>
+
+                            <!-- Nav: Screen Observation -->
+                            <Button x:Name="NavObserverBtn" Click="OnNavObserverClick"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                    Height="40" Padding="0" BorderThickness="0"
+                                    Background="Transparent"
+                                    CornerRadius="{StaticResource RuControlCornerRadius}">
+                                <Grid ColumnDefinitions="3,Auto,*" ColumnSpacing="9">
+                                    <Border x:Name="NavObserverRail" Grid.Column="0" Width="3" Height="18"
+                                            Background="Transparent" CornerRadius="1.5"/>
+                                    <FontIcon x:Name="NavObserverIcon" Grid.Column="1" Glyph="&#xE7B3;" FontSize="13.5"
+                                              Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                    <TextBlock x:Name="NavObserverText" Grid.Column="2" Text="Nhận thức Màn hình" FontSize="13"
+                                               FontWeight="Medium" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Button>
+
+                            <!-- Nav: VTube Studio -->
+                            <Button x:Name="NavVtsBtn" Click="OnNavVtsClick"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                    Height="40" Padding="0" BorderThickness="0"
+                                    Background="Transparent"
+                                    CornerRadius="{StaticResource RuControlCornerRadius}">
+                                <Grid ColumnDefinitions="3,Auto,*" ColumnSpacing="9">
+                                    <Border x:Name="NavVtsRail" Grid.Column="0" Width="3" Height="18"
+                                            Background="Transparent" CornerRadius="1.5"/>
+                                    <FontIcon x:Name="NavVtsIcon" Grid.Column="1" Glyph="&#xE703;" FontSize="13.5"
+                                              Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                    <TextBlock x:Name="NavVtsText" Grid.Column="2" Text="VTube Studio" FontSize="13"
+                                               FontWeight="Medium" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Button>
+
+                            <!-- Nav: Memory -->
+                            <Button x:Name="NavMemoryBtn" Click="OnNavMemoryClick"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                    Height="40" Padding="0" BorderThickness="0"
+                                    Background="Transparent"
+                                    CornerRadius="{StaticResource RuControlCornerRadius}">
+                                <Grid ColumnDefinitions="3,Auto,*" ColumnSpacing="9">
+                                    <Border x:Name="NavMemoryRail" Grid.Column="0" Width="3" Height="18"
+                                            Background="Transparent" CornerRadius="1.5"/>
+                                    <FontIcon x:Name="NavMemoryIcon" Grid.Column="1" Glyph="&#xE968;" FontSize="13.5"
+                                              Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                    <TextBlock x:Name="NavMemoryText" Grid.Column="2" Text="Bộ nhớ ghi nhớ" FontSize="13"
+                                               FontWeight="Medium" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Button>
+                        </StackPanel>
                     </StackPanel>
-                </PivotItem.Header>
-                <ScrollViewer x:Name="SystemSettingsScrollViewer" Padding="0,16,0,40" Background="Transparent"
-                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Spacing="20" HorizontalAlignment="Stretch">
+                </Border>
+
+                <!-- Right Settings Panels Grid -->
+                <Grid x:Name="SettingsPanelsGrid" Grid.Row="0" Grid.RowSpan="2" Grid.Column="1">
+                    
+                    <!-- Panel 1: System Settings -->
+                    <ScrollViewer x:Name="SystemSettingsScrollViewer" Padding="28,20,36,40" Background="Transparent"
+                                  HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="20" HorizontalAlignment="Stretch">
                         
                         <!-- Header Banner -->
                         <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,4">
@@ -493,17 +530,10 @@
                         </Grid>
                     </StackPanel>
                 </ScrollViewer>
-            </PivotItem>
 
-            <!-- Tab 2: Screen Observation -->
-            <PivotItem Margin="0,12,0,0">
-                <PivotItem.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="7">
-                        <FontIcon Glyph="&#xE7B3;" FontSize="12.5" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Text="Nhận thức Màn hình" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </PivotItem.Header>
-                <ScrollViewer x:Name="ObservationScrollViewer" Padding="0,16,0,40" Background="Transparent"
+                <!-- Panel 2: Screen Observation -->
+                <ScrollViewer x:Name="ObservationScrollViewer" Padding="28,20,36,40" Background="Transparent"
+                              Visibility="Collapsed"
                               HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="20" HorizontalAlignment="Stretch">
                         
@@ -592,17 +622,10 @@
                         </Border>
                     </StackPanel>
                 </ScrollViewer>
-            </PivotItem>
 
-            <!-- Tab 3: VTube Studio -->
-            <PivotItem Margin="0,12,0,0">
-                <PivotItem.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="7">
-                        <FontIcon Glyph="&#xE703;" FontSize="12.5" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Text="VTube Studio" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </PivotItem.Header>
-                <ScrollViewer x:Name="VtsSettingsScrollViewer" Padding="0,16,0,40" Background="Transparent"
+                <!-- Panel 3: VTube Studio -->
+                <ScrollViewer x:Name="VtsSettingsScrollViewer" Padding="28,20,36,40" Background="Transparent"
+                              Visibility="Collapsed"
                               HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="20" HorizontalAlignment="Stretch">
                         
@@ -767,18 +790,13 @@
                         </Grid>
                     </StackPanel>
                 </ScrollViewer>
-            </PivotItem>
 
-            <!-- Tab 4: Memory -->
-            <PivotItem Margin="0,12,0,0">
-                <PivotItem.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="7">
-                        <FontIcon Glyph="&#xE968;" FontSize="12.5" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Text="Bộ nhớ ghi nhớ" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </PivotItem.Header>
-                <views:MemoryView x:Name="MemoryControl" />
-            </PivotItem>
-        </Pivot>
+                <!-- Panel 4: Memory -->
+                <Grid x:Name="MemoryPanel" Padding="28,20,36,40" Visibility="Collapsed">
+                    <views:MemoryView x:Name="MemoryControl" />
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
     </Grid>
 </UserControl>

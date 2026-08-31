@@ -304,8 +304,8 @@ namespace RuApp
             var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             var muted = (SolidColorBrush)Application.Current.Resources["RuMutedBrush"];
             var ink = (SolidColorBrush)Application.Current.Resources["RuInkBrush"];
-            var accent = (SolidColorBrush)Application.Current.Resources["RuAccentBrush"];
             var surface = (SolidColorBrush)Application.Current.Resources["RuSurfaceBrush"];
+            var line = (SolidColorBrush)Application.Current.Resources["RuLineBrush"];
 
             foreach (var button in new[] { NavChat, NavVoice, NavSettings })
             {
@@ -318,9 +318,9 @@ namespace RuApp
 
             activeBtn.Background = surface;
             activeBtn.Foreground = ink;
-            activeBtn.BorderBrush = accent;
-            activeBtn.BorderThickness = new Thickness(3, 0, 0, 0);
-            activeBtn.CornerRadius = new CornerRadius(0, 6, 6, 0);
+            activeBtn.BorderBrush = line;
+            activeBtn.BorderThickness = new Thickness(1);
+            activeBtn.CornerRadius = new CornerRadius(6);
         }
 
         private void UpdateShellStatusTooltip()
@@ -950,11 +950,11 @@ namespace RuApp
                     SidebarBottomDivider.Margin = new Thickness(0, 4, 0, 8);
                 }
 
-                ConfigureMiniButton(NavNewChat, IconNewChat);
-                ConfigureMiniButton(NavChat, IconChat);
-                ConfigureMiniButton(NavVoice, IconVoice);
-                ConfigureMiniButton(ThemeToggleButton, ThemeToggleIcon);
-                ConfigureMiniButton(NavSettings, IconSettings);
+                ConfigureMiniButton(NavNewChat, ContentNewChat, IconNewChat);
+                ConfigureMiniButton(NavChat, ContentChat, IconChat);
+                ConfigureMiniButton(NavVoice, ContentVoice, IconVoice);
+                ConfigureMiniButton(ThemeToggleButton, ContentThemeToggle, ThemeToggleIcon);
+                ConfigureMiniButton(NavSettings, ContentSettings, IconSettings);
 
                 if (ShellStatusRow != null)
                 {
@@ -983,11 +983,11 @@ namespace RuApp
                     SidebarBottomDivider.Margin = new Thickness(0, 0, 0, 8);
                 }
 
-                ConfigureFullButton(NavNewChat, IconNewChat, new Thickness(0, 0, 10, 0));
-                ConfigureFullButton(NavChat, IconChat, new Thickness(0, 0, 12, 0));
-                ConfigureFullButton(NavVoice, IconVoice, new Thickness(0, 0, 12, 0));
-                ConfigureFullButton(ThemeToggleButton, ThemeToggleIcon, new Thickness(0, 0, 12, 0));
-                ConfigureFullButton(NavSettings, IconSettings, new Thickness(0, 0, 12, 0));
+                ConfigureFullButton(NavNewChat, ContentNewChat, IconNewChat, new Thickness(0, 0, 10, 0));
+                ConfigureFullButton(NavChat, ContentChat, IconChat, new Thickness(0, 0, 12, 0));
+                ConfigureFullButton(NavVoice, ContentVoice, IconVoice, new Thickness(0, 0, 12, 0));
+                ConfigureFullButton(ThemeToggleButton, ContentThemeToggle, ThemeToggleIcon, new Thickness(0, 0, 12, 0));
+                ConfigureFullButton(NavSettings, ContentSettings, IconSettings, new Thickness(0, 0, 12, 0));
 
                 if (ShellStatusRow != null)
                 {
@@ -998,15 +998,21 @@ namespace RuApp
             }
         }
 
-        private static void ConfigureMiniButton(Button? btn, FontIcon? icon)
+        private static void ConfigureMiniButton(Button? btn, StackPanel? content, FontIcon? icon)
         {
             if (btn == null) return;
-            btn.Width = 40;
-            btn.Height = 40;
+            btn.Width = 42;
+            btn.Height = 42;
             btn.Padding = new Thickness(0);
             btn.HorizontalAlignment = HorizontalAlignment.Center;
             btn.HorizontalContentAlignment = HorizontalAlignment.Center;
             btn.VerticalContentAlignment = VerticalAlignment.Center;
+            btn.CornerRadius = new CornerRadius(8);
+            if (content != null)
+            {
+                content.HorizontalAlignment = HorizontalAlignment.Center;
+                content.VerticalAlignment = VerticalAlignment.Center;
+            }
             if (icon != null)
             {
                 icon.Margin = new Thickness(0);
@@ -1015,15 +1021,21 @@ namespace RuApp
             }
         }
 
-        private static void ConfigureFullButton(Button? btn, FontIcon? icon, Thickness iconMargin)
+        private static void ConfigureFullButton(Button? btn, StackPanel? content, FontIcon? icon, Thickness iconMargin)
         {
             if (btn == null) return;
             btn.Width = double.NaN;
             btn.Height = double.NaN;
             btn.Padding = new Thickness(10, 8, 10, 8);
             btn.HorizontalAlignment = HorizontalAlignment.Stretch;
-            btn.HorizontalContentAlignment = HorizontalAlignment.Left;
+            btn.HorizontalContentAlignment = HorizontalAlignment.Stretch;
             btn.VerticalContentAlignment = VerticalAlignment.Center;
+            btn.CornerRadius = new CornerRadius(6);
+            if (content != null)
+            {
+                content.HorizontalAlignment = HorizontalAlignment.Left;
+                content.VerticalAlignment = VerticalAlignment.Center;
+            }
             if (icon != null)
             {
                 icon.Margin = iconMargin;

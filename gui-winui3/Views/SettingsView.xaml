@@ -28,9 +28,51 @@
                 <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
                 <Setter Property="FontSize" Value="13" />
                 <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Padding" Value="0" />
-                <Setter Property="Margin" Value="0,0,8,0" />
+                <Setter Property="Padding" Value="14,8" />
+                <Setter Property="Margin" Value="0,0,6,0" />
                 <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="PivotHeaderItem">
+                            <Grid x:Name="Grid" Background="Transparent"
+                                  BorderThickness="1"
+                                  BorderBrush="Transparent"
+                                  CornerRadius="{TemplateBinding CornerRadius}"
+                                  Padding="{TemplateBinding Padding}">
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="SelectionStates">
+                                        <VisualState x:Name="Unselected">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="Grid" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="Transparent" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="Grid" Storyboard.TargetProperty="BorderBrush">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="Transparent" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="Selected">
+                                            <Storyboard>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="Grid" Storyboard.TargetProperty="Background">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuAccentSoftBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                                <ObjectAnimationUsingKeyFrames Storyboard.TargetName="Grid" Storyboard.TargetProperty="BorderBrush">
+                                                    <DiscreteObjectKeyFrame KeyTime="0" Value="{StaticResource RuLineBrush}" />
+                                                </ObjectAnimationUsingKeyFrames>
+                                            </Storyboard>
+                                        </VisualState>
+                                        <VisualState x:Name="UnselectedLocked" />
+                                        <VisualState x:Name="SelectedLocked" />
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
         </ResourceDictionary>
     </UserControl.Resources>
@@ -137,16 +179,10 @@
             <!-- Tab 1: System Settings -->
             <PivotItem Margin="0,12,0,0">
                 <PivotItem.Header>
-                    <Border Padding="16,9"
-                            Background="{StaticResource RuSurfaceBrush}"
-                            BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{StaticResource RuControlCornerRadius}">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE713;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
-                            <TextBlock Text="Hệ thống &amp; Mô hình" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <FontIcon Glyph="&#xE713;" FontSize="12.5" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Text="Hệ thống &amp; Mô hình" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
                 </PivotItem.Header>
                 <ScrollViewer x:Name="SystemSettingsScrollViewer" Padding="0,16,0,40" Background="Transparent"
                               HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
@@ -462,16 +498,10 @@
             <!-- Tab 2: Screen Observation -->
             <PivotItem Margin="0,12,0,0">
                 <PivotItem.Header>
-                    <Border Padding="16,9"
-                            Background="{StaticResource RuSurfaceBrush}"
-                            BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{StaticResource RuControlCornerRadius}">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE7B3;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
-                            <TextBlock Text="Nhận thức Màn hình" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <FontIcon Glyph="&#xE7B3;" FontSize="12.5" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Text="Nhận thức Màn hình" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
                 </PivotItem.Header>
                 <ScrollViewer x:Name="ObservationScrollViewer" Padding="0,16,0,40" Background="Transparent"
                               HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
@@ -567,16 +597,10 @@
             <!-- Tab 3: VTube Studio -->
             <PivotItem Margin="0,12,0,0">
                 <PivotItem.Header>
-                    <Border Padding="16,9"
-                            Background="{StaticResource RuSurfaceBrush}"
-                            BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{StaticResource RuControlCornerRadius}">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE703;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
-                            <TextBlock Text="VTube Studio" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <FontIcon Glyph="&#xE703;" FontSize="12.5" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Text="VTube Studio" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
                 </PivotItem.Header>
                 <ScrollViewer x:Name="VtsSettingsScrollViewer" Padding="0,16,0,40" Background="Transparent"
                               HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
@@ -748,16 +772,10 @@
             <!-- Tab 4: Memory -->
             <PivotItem Margin="0,12,0,0">
                 <PivotItem.Header>
-                    <Border Padding="16,9"
-                            Background="{StaticResource RuSurfaceBrush}"
-                            BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{StaticResource RuControlCornerRadius}">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE968;" FontSize="13" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
-                            <TextBlock Text="Bộ nhớ ghi nhớ" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <FontIcon Glyph="&#xE968;" FontSize="12.5" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
+                        <TextBlock Text="Bộ nhớ ghi nhớ" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
+                    </StackPanel>
                 </PivotItem.Header>
                 <views:MemoryView x:Name="MemoryControl" />
             </PivotItem>

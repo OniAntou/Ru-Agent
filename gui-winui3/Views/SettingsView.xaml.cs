@@ -598,18 +598,18 @@ namespace RuApp.Views
             VtsSettingsScrollViewer.Visibility = isVts ? Visibility.Visible : Visibility.Collapsed;
             MemoryPanel.Visibility = isMemory ? Visibility.Visible : Visibility.Collapsed;
 
-            UpdateNavButton(NavSystemBtn, NavSystemRail, NavSystemIcon, NavSystemText, isSystem);
-            UpdateNavButton(NavObserverBtn, NavObserverRail, NavObserverIcon, NavObserverText, isObserver);
-            UpdateNavButton(NavVtsBtn, NavVtsRail, NavVtsIcon, NavVtsText, isVts);
-            UpdateNavButton(NavMemoryBtn, NavMemoryRail, NavMemoryIcon, NavMemoryText, isMemory);
+            UpdateNavButton(NavSystemBtn, NavSystemIcon, NavSystemText, isSystem);
+            UpdateNavButton(NavObserverBtn, NavObserverIcon, NavObserverText, isObserver);
+            UpdateNavButton(NavVtsBtn, NavVtsIcon, NavVtsText, isVts);
+            UpdateNavButton(NavMemoryBtn, NavMemoryIcon, NavMemoryText, isMemory);
         }
 
-        private static void UpdateNavButton(Button btn, Border rail, FontIcon icon, TextBlock text, bool active)
+        private static void UpdateNavButton(Button btn, FontIcon icon, TextBlock text, bool active)
         {
             if (btn == null) return;
-            btn.Background = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuAccentSoftBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent));
-            if (rail != null)
-                rail.Background = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuAccentBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent));
+            btn.Background = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuSurfaceBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent));
+            btn.BorderBrush = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuLineBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent));
+            btn.BorderThickness = new Thickness(1);
             if (icon != null)
                 icon.Foreground = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuInkBrush"] : Application.Current.Resources["RuMutedBrush"]);
             if (text != null)

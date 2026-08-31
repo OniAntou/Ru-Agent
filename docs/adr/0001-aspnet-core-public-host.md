@@ -13,8 +13,9 @@ implementation adapters and
 may not expose a public HTTP fallback, because dual public ownership
 previously added latency, route drift, and ambiguous lifecycle ownership.
 
-The ASP.NET Core process is the only public host. RuApp owns its lifecycle and
-starts the private Runtime Worker and RuAgentBroker alongside it; the Broker
-is the execution boundary for local action adapters, not a second public
-host. Unknown public paths fail in ASP.NET Core rather than being forwarded to
-Python.
+The ASP.NET Core process is the only public host. The managed Public Host owns
+the private Runtime Worker and RuAgentBroker children and their lifecycle;
+RuApp starts or attaches to that host through its validated descriptor rather
+than starting those children directly. The Broker is the execution boundary
+for local action adapters, not a second public host. Unknown public paths fail
+in ASP.NET Core rather than being forwarded to Python.

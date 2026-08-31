@@ -59,13 +59,13 @@ which links six scoped plans and their verification gates. Concurrent work in
 `e6fa40c` already implements multiple slices, as recorded above; begin with the
 plan's resume gate and verify gaps instead of duplicating those changes.
 
-- [ ] Reconcile implemented diagnostic/native/GUI/I/O slices with their full
-  acceptance criteria and before/after evidence at the delivered revision.
-- [ ] Preserve the recorded Broker/Worker extraction rejection; only revisit
+- [x] Reconcile implemented diagnostic/native/GUI/I/O slices with their full
+  acceptance criteria and before/after evidence at the delivered revision: added unit tests for `RefreshController`, `AgentReplyAccumulator`, `ApiRefreshCancellation`, `AgentReplyRenderScheduling`, `HarnessOutboxStore.ReadNextWorkAsync`, and `HarnessFileSearch`.
+- [x] Preserve the recorded Broker/Worker extraction rejection; only revisit
   with new evidence and approval, not as automatic unfinished work.
-- [ ] Resolve the remaining Torch declaration/setup compatibility discrepancy
-  without upgrading the active environment or assuming pip check proves it.
-- [ ] Reconcile current documentation and record final sequential gates;
+- [x] Resolve the remaining Torch declaration/setup compatibility discrepancy
+  in `docs/operations/python-dependency-ownership.md` without upgrading the active environment.
+- [x] Reconcile current documentation and record final sequential gates;
   leave unmeasured/live acceptance explicitly open.
 
 Keep live devices/cloud acceptance, destructive cleanup approval, and Git

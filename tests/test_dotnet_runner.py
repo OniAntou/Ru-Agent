@@ -27,8 +27,8 @@ def _project(root: Path, relative: str) -> Path:
 
 def _run(root: Path, *options: str, missing_dotnet: bool = False,
          discovery_error: bool = False) -> subprocess.CompletedProcess[str]:
-    pwsh = shutil.which("pwsh")
-    assert pwsh, "pwsh is required to test the runner"
+    pwsh = shutil.which("pwsh") or shutil.which("powershell")
+    assert pwsh, "powershell or pwsh is required to test the runner"
     fake_bin = root / "fake-bin"
     fake_bin.mkdir()
     if not missing_dotnet:

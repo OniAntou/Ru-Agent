@@ -6,10 +6,11 @@ date: 2026-08-20
 # Structured diagnostics and Activity Timeline boundaries
 
 Ru keeps ASP.NET Core as the only public backend and the owner of canonical
-Activity Timeline persistence. The Python worker publishes sanitized activity
-events to a bounded outbox; ASP.NET claims and ingests that outbox
-asynchronously with event-ID de-duplication. Activity reads are sanitized
-again so legacy files cannot return raw chat content.
+Activity Timeline persistence. The managed Host/Core path publishes sanitized
+activity transitions through the durable conversation outbox; its hosted
+ingestion claims and persists them with event-ID de-duplication. The retired
+Python Worker is not a production activity publisher. Activity reads are
+sanitized again so legacy files cannot return raw chat content.
 
 Technical diagnostics are independent bounded JSONL writers for ASP.NET Core,
 the private Python worker, and WinUI. The operation path performs only safe

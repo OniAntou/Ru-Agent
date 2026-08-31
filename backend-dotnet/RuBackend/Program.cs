@@ -391,6 +391,9 @@ builder.Services.AddSingleton<ActivityLogMigrationService>();
 builder.Services.AddHostedService<ActivityOutboxIngestionService>();
 builder.Services.AddSingleton(services =>
     new StructuredDiagnosticLogWriter(services.GetRequiredService<DataPaths>().LogRoot, "aspnetcore-"));
+builder.Services.AddSingleton<StructuredDiagnosticLogWriterHostedService>();
+builder.Services.AddSingleton<IHostedService>(services =>
+    services.GetRequiredService<StructuredDiagnosticLogWriterHostedService>());
 builder.Services.AddSingleton<IDiagnosticEmitter, DiagnosticEmitter>();
 builder.Services.AddSingleton<ILoggerProvider, StructuredDiagnosticLoggerProvider>();
 builder.Services.AddSingleton(services =>

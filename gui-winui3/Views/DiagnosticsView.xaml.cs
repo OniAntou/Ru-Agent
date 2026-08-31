@@ -112,7 +112,13 @@ namespace RuApp.Views
                     return (status, logs);
                 },
                 result => ApplyRefreshResult(result.Status, result.Logs),
-                action => DispatcherQueue.TryEnqueue(() => action()));
+                action =>
+                {
+                    if (!DispatcherQueue.TryEnqueue(() => action()))
+                    {
+                        throw new OperationCanceledException("The diagnostics dispatcher rejected a refresh callback.");
+                    }
+                });
             _refreshController.SetActive(_isActive);
             _ = _refreshController.RefreshAsync();
             _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };

@@ -1,0 +1,33 @@
+# Python Dependency Ownership
+
+Last reviewed: 2026-08-31.
+
+This document records the consumer inventory, ownership boundaries, and version declarations for Python dependencies across Ru's workspace.
+
+## Dependency Consumer Inventory
+
+| Package | Declared In | Primary Consumer(s) | Status & Rationale |
+| --- | --- | --- | --- |
+| `torch` | `pyproject.toml` (`[voice]`), `scripts/setup_omnivoice_env.ps1` | `src/ru_runtime/voice/omnivoice_server.py`, OmniVoice runtime | **Active (Voice Provider)**. The voice extra accepts only the evidence-backed 2.8 line; the isolated setup pins `2.8.0+cu128` (CUDA 12.8). This does not constrain installations that do not request `voice`. |
+| `torchaudio` | `pyproject.toml` (`[voice]`), `scripts/setup_omnivoice_env.ps1` | `src/ru_runtime/voice/omnivoice_server.py`, audio processing | **Active (Voice Provider)**. The voice extra accepts the matching 2.8 line; setup pins `2.8.0+cu128` alongside Torch. |
+| `omnivoice` | `pyproject.toml` (`[voice]`), `scripts/setup_omnivoice_env.ps1` | `src/ru_runtime/voice/omnivoice_server.py` | **Active (Isolated Provider)**. The extra records the installed `0.2.1` floor; it runs in dedicated `omnivoice_env`. |
+| `flask` | `pyproject.toml` (`[dev]` and `[voice]`), `scripts/setup_omnivoice_env.ps1` | `src/ru_runtime/voice/omnivoice_server.py` | **Active**. HTTP server for the isolated OmniVoice process; retained in `dev` for Python server tests. |
+| `httpx` | `pyproject.toml` (`dependencies`) | Test fixtures, benchmarks, maintenance harnesses | **Active (Tooling/Harness)**. Retained for Python test clients; production HTTP client is C#. |
+| `keyring` | `pyproject.toml` (`dependencies`) | `scripts/` credential tooling | **Active (Tooling)**. Windows DPAPI credential helper. |
+| `ddgs` / `duckduckgo_search` | *Removed from pyproject.toml* | None in Python | **Removed**. Managed web tools (`web.search`, `web.fetch`) are implemented in C# (`backend-dotnet/RuAgent.Broker/Tools/Web/`). |
+| `pytest`, `pytest-asyncio`, `ruff`, `mypy` | `pyproject.toml` (`[dev]`) | CI, test runner, lint, typecheck | **Active (Dev/CI)**. Standard verification toolchain. |
+
+## Torch Version Alignment and Compatibility Decision
+
+1. **Version authority (`scripts/setup_omnivoice_env.ps1`)**:
+   - Pins `torch==2.8.0+cu128` and `torchaudio==2.8.0+cu128` from PyTorch's official CUDA 12.8 wheel index.
+   - Confined strictly to `omnivoice_env` to isolate GPU runtime and CUDA DLL dependencies from the core tooling environment.
+
+2. **Project Metadata (`pyproject.toml`)**:
+   - Declares `torch>=2.8,<2.9`, `torchaudio>=2.8,<2.9`, `omnivoice>=0.2.1`, and `flask>=3.1,<4` under the optional `voice` table.
+   - The Torch constraints describe the verified provider line, while setup remains the authority for the CUDA-local build (`+cu128`). They do not force an upgrade of the existing `omnivoice_env` installation.
+
+3. **Verification Policy**:
+   - Focused metadata tests use `packaging` specifier semantics, including CUDA local tags; they do not import Torch or load models.
+   - `pip check` runs on `.venv` and confirms no broken dependencies; it is not fresh-install proof.
+   - `-WhatIf` mode on `setup_omnivoice_env.ps1` validates directory and argument constraints without downloading packages or mutating local environments; confirmed install behavior remains unexecuted here.

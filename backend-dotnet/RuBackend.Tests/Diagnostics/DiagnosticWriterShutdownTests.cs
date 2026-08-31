@@ -39,21 +39,20 @@ public sealed class DiagnosticWriterShutdownTests
         try
         {
             Assert.True(writer.TryEnqueue(new DiagnosticEvent("e1", 1720000000, "2024-07-03T09:46:40Z", "info", "host", "host_startup")));
-            await Task.Delay(100);
-            var stopTask = writer.StopAsync(TimeSpan.FromSeconds(2));
-            // Honoring sink should be entered either before or during shutdown
             await sink.Entered.WaitAsync(TimeSpan.FromSeconds(2));
-
+            var stopTask = writer.StopAsync(TimeSpan.FromMilliseconds(100));
+            // The sink honors cancellation, but it can unwind just after the
+            // caller's deadline. The bounded result must report that observation
+            // honestly; Completion is the eventual quiescence signal.
             var outcome = await stopTask;
-            // Honoring sink should be cancelled and return Cancelled (or Drained if already flushed before cancel)
-            Assert.True(outcome == DiagnosticShutdownOutcome.Cancelled || outcome == DiagnosticShutdownOutcome.Drained);
-            // Release to allow exit if still pending (honoring sink would have been cancelled already, but ensure)
-            sink.Release();
+            await sink.Exited.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.True(outcome == DiagnosticShutdownOutcome.Cancelled
+                || outcome == DiagnosticShutdownOutcome.Incomplete);
+            Assert.True(sink.CancellationObserved);
             await writer.Completion.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.True(writer.Completion.IsCompleted);
             // No ObjectDisposedException when accessing gates after
             Assert.False(writer.TryEnqueue(new DiagnosticEvent("e2", 1720000001, "2024-07-03T09:46:41Z", "info", "host", "host_startup")));
-            await sink.Exited.WaitAsync(TimeSpan.FromSeconds(2));
         }
         finally
         {
@@ -74,6 +73,7 @@ public sealed class DiagnosticWriterShutdownTests
         {
             Assert.True(writer.TryEnqueue(new DiagnosticEvent("e1", 1720000000, "2024-07-03T09:46:40Z", "info", "host", "host_startup")));
             await Task.Delay(100);
+            await sink.Entered.WaitAsync(TimeSpan.FromSeconds(2));
             var outcome = await writer.StopAsync(TimeSpan.FromMilliseconds(500));
             Assert.Equal(DiagnosticShutdownOutcome.Incomplete, outcome);
             Assert.False(writer.Completion.IsCompleted);
@@ -125,6 +125,83 @@ public sealed class DiagnosticWriterShutdownTests
     }
 
     [Fact]
+    public async Task Stop_does_not_complete_while_an_admitted_flush_is_still_in_sink()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-shutdown-flush-ownership-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var sink = new ControlledDiagnosticLogSink(honorCancellation: false);
+        var writer = new StructuredDiagnosticLogWriter(
+            root,
+            flushInterval: TimeSpan.FromHours(1),
+            sink: sink);
+        try
+        {
+            await Task.Delay(100);
+            Assert.True(writer.TryEnqueue(new DiagnosticEvent(
+                "e1", 1720000000, "2024-07-03T09:46:40Z", "info", "host", "host_startup")));
+
+            var flushTask = sink.RunExplicitFlushAsync(
+                () => writer.FlushAsync(TimeSpan.FromSeconds(5)));
+            await sink.Entered.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.True(sink.WasExplicitFlush);
+
+            var outcome = await writer.StopAsync(TimeSpan.FromMilliseconds(100));
+
+            Assert.Equal(DiagnosticShutdownOutcome.Incomplete, outcome);
+            Assert.False(flushTask.IsCompleted);
+            Assert.False(writer.Completion.IsCompleted);
+
+            sink.Release();
+            await flushTask.WaitAsync(TimeSpan.FromSeconds(2));
+            await writer.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            sink.Release();
+            writer.Dispose();
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task Shutdown_budget_cancels_an_admitted_explicit_flush()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-shutdown-flush-budget-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var sink = new ControlledDiagnosticLogSink(honorCancellation: true);
+        var writer = new StructuredDiagnosticLogWriter(
+            root,
+            flushInterval: TimeSpan.FromHours(1),
+            sink: sink);
+        try
+        {
+            await Task.Delay(100);
+            Assert.True(writer.TryEnqueue(new DiagnosticEvent(
+                "e1", 1720000000, "2024-07-03T09:46:40Z", "info", "host", "host_startup")));
+
+            var flushTask = sink.RunExplicitFlushAsync(
+                () => writer.FlushAsync(TimeSpan.FromSeconds(5)));
+            await sink.Entered.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.True(sink.WasExplicitFlush);
+
+            var outcome = await writer.StopAsync(TimeSpan.FromMilliseconds(100));
+
+            await sink.Exited.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.True(outcome == DiagnosticShutdownOutcome.Cancelled
+                || outcome == DiagnosticShutdownOutcome.Incomplete);
+            Assert.True(sink.CancellationObserved);
+            await flushTask.WaitAsync(TimeSpan.FromSeconds(2));
+            await writer.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            sink.Release();
+            writer.Dispose();
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    [Fact]
     public async Task Multiple_stop_callers_share_same_terminal_cleanup()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-shutdown-multi-" + Guid.NewGuid().ToString("N"));
@@ -155,6 +232,39 @@ public sealed class DiagnosticWriterShutdownTests
         {
             try { sink.Release(); } catch { }
             try { writer.Dispose(); } catch { }
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task Repeated_stop_with_cancelled_token_does_not_cancel_first_owner()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-shutdown-cancelled-duplicate-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var sink = new ControlledDiagnosticLogSink(honorCancellation: false);
+        var writer = new StructuredDiagnosticLogWriter(root, sink: sink);
+        using var duplicateCancellation = new CancellationTokenSource();
+        duplicateCancellation.Cancel();
+        try
+        {
+            Assert.True(writer.TryEnqueue(new DiagnosticEvent(
+                "e1", 1720000000, "2024-07-03T09:46:40Z", "info", "host", "host_startup")));
+            await sink.Entered.WaitAsync(TimeSpan.FromSeconds(2));
+
+            var first = writer.StopAsync(TimeSpan.FromSeconds(2));
+            var duplicate = writer.StopAsync(TimeSpan.FromSeconds(2), duplicateCancellation.Token);
+            Assert.Same(first, duplicate);
+            await Task.Delay(100);
+            Assert.False(first.IsCompleted);
+
+            sink.Release();
+            await first.WaitAsync(TimeSpan.FromSeconds(2));
+            await writer.Completion.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            sink.Release();
+            writer.Dispose();
             try { Directory.Delete(root, true); } catch { }
         }
     }

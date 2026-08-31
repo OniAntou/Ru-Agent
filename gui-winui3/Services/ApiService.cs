@@ -24,10 +24,15 @@ namespace RuApp.Services
         }
 
         public ApiService(BackendSession session)
+            : this(session, handler: null)
+        {
+        }
+
+        internal ApiService(BackendSession session, HttpMessageHandler? handler)
         {
             _session = session ?? throw new ArgumentNullException(nameof(session));
             _baseUrl = session.HttpBaseUri.ToString().TrimEnd('/');
-            _httpClient = new HttpClient();
+            _httpClient = handler == null ? new HttpClient() : new HttpClient(handler);
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AuthSecret);
         }
 
@@ -545,16 +550,16 @@ namespace RuApp.Services
             return null;
         }
 
-public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
+        public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/status");
+                var response = await _httpClient.GetAsync($"{_baseUrl}/status", cancellationToken);
                 if (!response.IsSuccessStatusCode)
                 {
                     return (false, null);
                 }
-                var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+                var payload = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
                 if (payload.TryGetProperty("status", out var status) &&
                     status.GetString() == "error")
                 {
@@ -565,6 +570,10 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
                 }
                 return (true, null);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 LogApiError("CheckWorkerHealthAsync", ex);
@@ -572,11 +581,15 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
         }
 
-        public async Task<VtsStatusDto?> GetVtsStatusAsync()
+        public async Task<VtsStatusDto?> GetVtsStatusAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                return await _httpClient.GetFromJsonAsync<VtsStatusDto>($"{_baseUrl}/vts/status");
+                return await _httpClient.GetFromJsonAsync<VtsStatusDto>($"{_baseUrl}/vts/status", cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

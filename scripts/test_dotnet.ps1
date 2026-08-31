@@ -17,7 +17,11 @@ $projects = @(
         }
         Get-ChildItem -LiteralPath $testRoot -Filter "*Tests.csproj" -File -Recurse -ErrorAction Stop |
             Where-Object {
-                $relativePath = [IO.Path]::GetRelativePath($testRoot, $_.FullName)
+                $relativePath = if ($_.FullName.StartsWith($testRoot, [StringComparison]::OrdinalIgnoreCase)) {
+                    $_.FullName.Substring($testRoot.Length).TrimStart('\', '/')
+                } else {
+                    $_.FullName
+                }
                 $relativePath -notmatch '(^|[\\/])(bin|obj|out)([\\/]|$)'
             }
     }

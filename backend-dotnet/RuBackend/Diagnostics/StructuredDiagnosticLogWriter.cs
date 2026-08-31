@@ -14,6 +14,7 @@ public sealed class StructuredDiagnosticLogWriter : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly SemaphoreSlim _batchGate = new(1, 1);
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private readonly CancellationTokenSource _shutdownSignalCts = new();
     private readonly IDiagnosticLogSink _sink;
     private readonly Task _backgroundTask;
     private readonly object _shutdownGate = new();
@@ -21,9 +22,12 @@ public sealed class StructuredDiagnosticLogWriter : IDisposable
     private volatile CancellationTokenSource? _shutdownBudgetCts;
     private volatile bool _admissionClosed;
     private bool _disposed;
+    private bool _cleanupStarted;
+    private CancellationTokenRegistration _shutdownRegistration;
     private readonly TaskCompletionSource<bool> _completionTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _activeFlushCount;
-    private readonly object _flushGate = new();
+    private readonly TaskCompletionSource<bool> _flushQuiescedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private bool _cleanupMonitorStarted;
 
     public StructuredDiagnosticLogWriter(
         string logDirectory,
@@ -42,8 +46,6 @@ public sealed class StructuredDiagnosticLogWriter : IDisposable
         _sink = sink ?? new JsonlDiagnosticLogSink();
 
         _backgroundTask = Task.Run(ProcessQueueAsync);
-        // Ensure Completion completes even if background exits normally without shutdown
-        _backgroundTask.ContinueWith(_ => TrySetCompletion(), TaskScheduler.Default);
     }
 
     public BoundedDiagnosticQueue Queue => _queue;
@@ -52,27 +54,33 @@ public sealed class StructuredDiagnosticLogWriter : IDisposable
 
     public bool TryEnqueue(DiagnosticEvent evt)
     {
-        if (_admissionClosed || _disposed)
+        lock (_shutdownGate)
         {
-            return false;
-        }
+            if (_admissionClosed || _disposed)
+            {
+                return false;
+            }
 
-        return _queue.TryEnqueue(evt);
+            return _queue.TryEnqueue(evt);
+        }
     }
 
     public async Task FlushAsync(TimeSpan timeout)
     {
-        if (_admissionClosed || _disposed)
-        {
-            return;
-        }
-
         if (timeout < TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(timeout));
         }
 
-        lock (_flushGate) { _activeFlushCount++; }
+        lock (_shutdownGate)
+        {
+            if (_admissionClosed || _disposed)
+            {
+                return;
+            }
+
+            _activeFlushCount++;
+        }
         try
         {
             var deadline = DateTime.UtcNow + timeout;
@@ -87,9 +95,9 @@ public sealed class StructuredDiagnosticLogWriter : IDisposable
                     break;
                 }
 
-                // Respect shutdown budget cancellation if active
-                var shutdownToken = _shutdownBudgetCts?.Token ?? CancellationToken.None;
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
+                // Every admitted flush observes the writer-lifetime shutdown signal,
+                // including a flush admitted before StopAsync creates its budget.
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownSignalCts.Token);
                 linkedCts.CancelAfter(remaining);
                 bool gateTaken = false;
                 try
@@ -110,9 +118,7 @@ public sealed class StructuredDiagnosticLogWriter : IDisposable
                     count = _queue.DrainBatch(batch, _batchSize);
                     if (count > 0)
                     {
-                        // Use shutdown token if present, otherwise linked remaining token
-                        var writeToken = _shutdownBudgetCts?.Token ?? linkedCts.Token;
-                        writeSucceeded = await WriteBatchAsync(batch, writeToken)
+                        writeSucceeded = await WriteBatchAsync(batch, linkedCts.Token)
                             .ConfigureAwait(false);
                     }
                 }
@@ -136,12 +142,12 @@ public sealed class StructuredDiagnosticLogWriter : IDisposable
         }
         finally
         {
-            lock (_flushGate)
+            lock (_shutdownGate)
             {
                 _activeFlushCount--;
                 if (_activeFlushCount == 0 && _admissionClosed)
                 {
-                    // If shutdown is waiting for flush quiescence, it will poll via _backgroundTask + flush count
+                    _flushQuiescedTcs.TrySetResult(true);
                 }
             }
         }
@@ -149,149 +155,169 @@ public sealed class StructuredDiagnosticLogWriter : IDisposable
 
     public Task<DiagnosticShutdownOutcome> StopAsync(TimeSpan budget, CancellationToken cancellationToken = default)
     {
+        if (budget < TimeSpan.Zero || budget == Timeout.InfiniteTimeSpan)
+        {
+            throw new ArgumentOutOfRangeException(nameof(budget));
+        }
+
         lock (_shutdownGate)
         {
-            if (_shutdownTask != null)
+            if (_shutdownTask is not null)
             {
                 return _shutdownTask;
             }
+        }
 
-            _admissionClosed = true;
-            var budgetCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task<DiagnosticShutdownOutcome> shutdownTask;
+        TaskCompletionSource<DiagnosticShutdownOutcome>? shutdownSource = null;
+        CancellationTokenSource? consumerCts = null;
+        lock (_shutdownGate)
+        {
+            if (_shutdownTask is not null)
+            {
+                shutdownTask = _shutdownTask;
+            }
+            else
+            {
+                _admissionClosed = true;
+                shutdownSource = new TaskCompletionSource<DiagnosticShutdownOutcome>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                shutdownTask = shutdownSource.Task;
+                _shutdownTask = shutdownTask;
+                if (_activeFlushCount == 0)
+                {
+                    _flushQuiescedTcs.TrySetResult(true);
+                }
+
+                consumerCts = _cts;
+            }
+        }
+
+        if (shutdownSource is null) return shutdownTask;
+
+        _ = StartShutdownAsync(budget, cancellationToken, shutdownSource);
+
+        // Cancellation callbacks may execute arbitrary continuations. Keep them
+        // outside the admission/ownership lock.
+        try { consumerCts?.Cancel(); } catch (ObjectDisposedException) { }
+        return shutdownTask;
+    }
+
+    private async Task StartShutdownAsync(
+        TimeSpan budget,
+        CancellationToken userToken,
+        TaskCompletionSource<DiagnosticShutdownOutcome> shutdownSource)
+    {
+        CancellationTokenSource? budgetCts = null;
+        CancellationTokenRegistration shutdownRegistration = default;
+        try
+        {
+            budgetCts = CancellationTokenSource.CreateLinkedTokenSource(userToken);
             budgetCts.CancelAfter(budget);
-            _shutdownBudgetCts = budgetCts;
-            try { _cts.Cancel(); } catch { }
+            shutdownRegistration = budgetCts.Token.Register(
+                static state =>
+                {
+                    try { ((CancellationTokenSource)state!).Cancel(); }
+                    catch (ObjectDisposedException) { }
+                },
+                _shutdownSignalCts);
 
-            _shutdownTask = ShutdownAsync(budget, budgetCts, cancellationToken);
-            // Ensure budgetCts disposed after shutdown task completes
-            _shutdownTask.ContinueWith(_ => { try { budgetCts.Dispose(); } catch { } }, TaskScheduler.Default);
-            return _shutdownTask;
+            lock (_shutdownGate)
+            {
+                _shutdownBudgetCts = budgetCts;
+                _shutdownRegistration = shutdownRegistration;
+                EnsureCleanupMonitorStarted();
+            }
+
+            var outcome = await ShutdownAsync(budget, budgetCts, userToken).ConfigureAwait(false);
+            shutdownSource.TrySetResult(outcome);
+        }
+        catch
+        {
+            shutdownSource.TrySetResult(DiagnosticShutdownOutcome.Incomplete);
         }
     }
 
     private async Task<DiagnosticShutdownOutcome> ShutdownAsync(TimeSpan budget, CancellationTokenSource budgetCts, CancellationToken userToken)
     {
-        var outcome = DiagnosticShutdownOutcome.Cancelled;
-        var budgetToken = budgetCts.Token;
-
-        // Wait for background task with budget timeout, also wait for active flushes to quiesce
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Task quiescence = Task.WhenAll(_backgroundTask, _flushQuiescedTcs.Task);
         try
         {
-            // Wait for background task to complete within budget (plus small grace for cancellation handling)
-            var waitBudget = budget + TimeSpan.FromMilliseconds(500);
-            try
-            {
-                await _backgroundTask.WaitAsync(waitBudget, userToken).ConfigureAwait(false);
-            }
-            catch (TimeoutException)
-            {
-                if (!_backgroundTask.IsCompleted)
-                {
-                    // Do not dispose gates yet; attach continuation to dispose when finally completes
-                    _ = _backgroundTask.ContinueWith(_ => DisposeGatesAndComplete(), TaskScheduler.Default);
-                    return DiagnosticShutdownOutcome.Incomplete;
-                }
-            }
+            await quiescence.WaitAsync(budget, userToken).ConfigureAwait(false);
 
-            // Background completed within budget, now wait for flush quiescence (activeFlushCount == 0) within remaining budget
-            var remaining = budget - sw.Elapsed;
-            if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
-            var flushWaitStart = System.Diagnostics.Stopwatch.StartNew();
-            while (true)
-            {
-                int active;
-                lock (_flushGate) { active = _activeFlushCount; }
-                if (active == 0) break;
-                if (flushWaitStart.Elapsed >= remaining) break;
-                try { await Task.Delay(10, budgetToken).ConfigureAwait(false); } catch { break; }
-            }
-
-            lock (_flushGate)
-            {
-                if (_activeFlushCount != 0)
-                {
-                    _backgroundTask.ContinueWith(_ => DisposeGatesAndComplete(), TaskScheduler.Default);
-                    return DiagnosticShutdownOutcome.Incomplete;
-                }
-            }
-
-            // Determine Drained vs Cancelled: if queue is empty and no write failures due to cancellation, consider Drained
             var snapshot = _queue.GetSnapshot();
-            // If we were cancelled (budget token triggered) and queue still has items that were requeued, it's Cancelled
-            // For cooperative sink, queue should be empty
-            if (snapshot.QueueDepth == 0)
-            {
-                outcome = DiagnosticShutdownOutcome.Drained;
-            }
-            else
-            {
-                outcome = DiagnosticShutdownOutcome.Cancelled;
-            }
-
-            // Check if cancellation was requested
-            if (budgetToken.IsCancellationRequested || userToken.IsCancellationRequested)
-            {
-                // If we completed draining despite cancellation, still consider Cancelled if not fully drained
-                if (outcome == DiagnosticShutdownOutcome.Drained && (budgetToken.IsCancellationRequested))
-                {
-                    // If we drained fully before cancellation fired, keep Drained; otherwise Cancelled
-                    // We already set Drained when empty, but if cancellation fired we were still empty, keep Drained
-                }
-            }
-
             DisposeGatesAndComplete();
-            return outcome;
+            return snapshot.QueueDepth == 0
+                ? DiagnosticShutdownOutcome.Drained
+                : DiagnosticShutdownOutcome.Cancelled;
         }
-        catch (OperationCanceledException) when (userToken.IsCancellationRequested)
+        catch (TimeoutException)
         {
-            // User cancellation -> treat as Cancelled if quiescent else Incomplete
-            if (_backgroundTask.IsCompleted)
-            {
-                int active;
-                lock (_flushGate) { active = _activeFlushCount; }
-                if (active == 0)
-                {
-                    DisposeGatesAndComplete();
-                    return DiagnosticShutdownOutcome.Cancelled;
-                }
-            }
-            _ = _backgroundTask.ContinueWith(_ => DisposeGatesAndComplete(), TaskScheduler.Default);
             return DiagnosticShutdownOutcome.Incomplete;
+        }
+        catch (OperationCanceledException)
+        {
+            return _backgroundTask.IsCompleted && _flushQuiescedTcs.Task.IsCompleted
+                ? DiagnosticShutdownOutcome.Cancelled
+                : DiagnosticShutdownOutcome.Incomplete;
         }
         catch
         {
-            DisposeGatesAndComplete();
-            return DiagnosticShutdownOutcome.Cancelled;
+            return DiagnosticShutdownOutcome.Incomplete;
         }
+    }
+
+    private void EnsureCleanupMonitorStarted()
+    {
+        if (_cleanupMonitorStarted)
+        {
+            return;
+        }
+
+        _cleanupMonitorStarted = true;
+        _ = CompleteWhenQuiescentAsync();
+    }
+
+    private async Task CompleteWhenQuiescentAsync()
+    {
+        try
+        {
+            await Task.WhenAll(_backgroundTask, _flushQuiescedTcs.Task).ConfigureAwait(false);
+        }
+        catch
+        {
+            // The ownership boundary still requires both tasks to have ended before
+            // synchronization primitives can be released.
+            try { await _backgroundTask.ConfigureAwait(false); } catch { }
+            try { await _flushQuiescedTcs.Task.ConfigureAwait(false); } catch { }
+        }
+
+        DisposeGatesAndComplete();
     }
 
     private void DisposeGatesAndComplete()
     {
+        CancellationTokenRegistration shutdownRegistration;
+        CancellationTokenSource? budgetCts;
         lock (_shutdownGate)
         {
-            if (_completionTcs.Task.IsCompleted) return;
-            try { _cts.Dispose(); } catch { }
-            try { _batchGate.Dispose(); } catch { }
-            try { _writeLock.Dispose(); } catch { }
-            _completionTcs.TrySetResult(true);
+            if (_cleanupStarted) return;
+            _cleanupStarted = true;
+            shutdownRegistration = _shutdownRegistration;
+            _shutdownRegistration = default;
+            budgetCts = _shutdownBudgetCts;
+            _shutdownBudgetCts = null;
         }
-    }
 
-    private void TrySetCompletion()
-    {
-        // Called when background task exits without explicit shutdown (e.g., process exit)
-        // Only complete if admission already closed; otherwise background exiting unexpectedly should still complete?
-        // For normal Dispose path, ShutdownAsync will handle.
-        // If background exits spontaneously, we still want to signal completion but not dispose gates prematurely if shutdown not started?
-        // No-op if shutdown already handling.
-        lock (_shutdownGate)
-        {
-            if (_completionTcs.Task.IsCompleted) return;
-            if (_shutdownTask != null) return; // shutdown will dispose
-            // If no shutdown, background exiting means we should complete but not dispose gates twice
-            _completionTcs.TrySetResult(true);
-        }
+        // Resource disposal, including registration disposal, is outside the
+        // ownership lock. No admitted operation remains at this point.
+        try { shutdownRegistration.Dispose(); } catch { }
+        try { budgetCts?.Dispose(); } catch { }
+        try { _shutdownSignalCts.Dispose(); } catch { }
+        try { _cts.Dispose(); } catch { }
+        try { _batchGate.Dispose(); } catch { }
+        try { _writeLock.Dispose(); } catch { }
+        _completionTcs.TrySetResult(true);
     }
 
     private async Task ProcessQueueAsync()
@@ -448,12 +474,16 @@ public sealed class StructuredDiagnosticLogWriter : IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
+        lock (_shutdownGate)
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
         }
 
-        _disposed = true;
         var task = StopAsync(TimeSpan.FromSeconds(2));
         try
         {
@@ -482,10 +512,6 @@ public sealed class StructuredDiagnosticLogWriter : IDisposable
                 // But we already attached continuation in ShutdownAsync
             }
         }
-        else
-        {
-            // Task faulted/cancelled - ensure eventual cleanup
-            _backgroundTask.ContinueWith(_ => DisposeGatesAndComplete(), TaskScheduler.Default);
-        }
+        // Incomplete shutdown owns cleanup through CompleteWhenQuiescentAsync.
     }
 }

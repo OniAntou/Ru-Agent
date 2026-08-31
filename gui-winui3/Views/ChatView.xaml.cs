@@ -92,12 +92,21 @@ namespace RuApp.Views
         private bool _activeAgentReplyCompleted;
         private readonly HashSet<string> _agentDeltaKeys = new(StringComparer.Ordinal);
         private readonly AgentReplyAccumulator _replyAccumulator = new();
-        private bool _renderPending;
-        private readonly object _renderGate = new();
+        private readonly AgentReplyRenderScheduler _replyRenderScheduler;
 
         public ChatView()
         {
             this.InitializeComponent();
+            _replyRenderScheduler = new AgentReplyRenderScheduler(
+                _replyAccumulator,
+                callback =>
+                {
+                    if (!DispatcherQueue.TryEnqueue(() => callback()))
+                    {
+                        throw new OperationCanceledException("The chat dispatcher rejected a render callback.");
+                    }
+                },
+                ApplyReplySnapshot);
             ChatListView.ItemsSource = Messages;
             AttachmentPreviewList.ItemsSource = PendingAttachments;
             AgentActivityFeed.ItemsSource = AgentActivities;
@@ -225,10 +234,11 @@ namespace RuApp.Views
                     models.Insert(0, currentModel);
                 }
 
+                _loadedModels = models;
                 string effectiveModel = !string.IsNullOrEmpty(currentModel) ? currentModel : (models.Count > 0 ? models[0] : "Model...");
                 ChatModelLabel.Text = effectiveModel;
 
-                PopulateModelMenu(models, effectiveModel);
+                FilterAndRenderModels(string.Empty);
                 UpdateContextUsage();
             }
             catch (Exception ex)
@@ -237,81 +247,141 @@ namespace RuApp.Views
             }
         }
 
-        private void PopulateModelMenu(List<string> models, string currentModel)
-        {
-            ChatModelMenuFlyout.Items.Clear();
+        private List<string> _loadedModels = new();
 
-            if (models.Count == 0)
+        private void OnChatModelFlyoutOpened(object sender, object e)
+        {
+            ModelSearchBox.Text = string.Empty;
+            ModelSearchBox.Focus(FocusState.Programmatic);
+            FilterAndRenderModels(string.Empty);
+        }
+
+        private void OnModelSearchTextChanged(object sender, TextChangedEventArgs e)
+        {
+            FilterAndRenderModels(ModelSearchBox.Text);
+        }
+
+        private void FilterAndRenderModels(string query)
+        {
+            ModelListContainer.Children.Clear();
+
+            var filtered = string.IsNullOrWhiteSpace(query)
+                ? _loadedModels
+                : _loadedModels.Where(m => m.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+
+            if (filtered.Count == 0)
             {
-                var emptyItem = new MenuFlyoutItem
+                var emptyBlock = new TextBlock
                 {
-                    Text = "Không có model khả dụng",
-                    IsEnabled = false,
+                    Text = _loadedModels.Count == 0 ? "Không có model khả dụng" : "Không tìm thấy model phù hợp",
                     FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
-                    FontSize = 11.5
+                    FontSize = 11.5,
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"],
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Margin = new Thickness(0, 14, 0, 14)
                 };
-                ChatModelMenuFlyout.Items.Add(emptyItem);
+                ModelListContainer.Children.Add(emptyBlock);
                 return;
             }
 
-            foreach (var model in models)
+            string activeModel = ChatModelLabel.Text ?? string.Empty;
+
+            foreach (var model in filtered)
             {
-                bool isSelected = string.Equals(model, currentModel, StringComparison.Ordinal);
+                bool isSelected = string.Equals(model, activeModel, StringComparison.Ordinal);
                 var (_, specDisplay) = ModelContextSpecs.GetContextSpec(model);
-                var item = new MenuFlyoutItem
+
+                var itemButton = new Button
                 {
-                    Text = $"{model}  ({specDisplay})",
-                    Tag = model,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                    Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(7, 5, 7, 5),
+                    CornerRadius = (CornerRadius)Application.Current.Resources["RuControlCornerRadius"],
+                    MinHeight = 28
+                };
+
+                itemButton.Resources["ButtonBackgroundPointerOver"] = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentSoftBrush"];
+                itemButton.Resources["ButtonBackgroundPressed"] = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentSoftBrush"];
+                itemButton.Resources["ButtonBorderBrushPointerOver"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                itemButton.Resources["ButtonBorderBrushPressed"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+
+                var itemGrid = new Grid();
+                itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                if (isSelected)
+                {
+                    itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                }
+
+                var textBlock = new TextBlock
+                {
+                    Text = model,
                     FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
-                    FontSize = 11.5,
+                    FontSize = 12,
                     Foreground = isSelected
                         ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"]
-                        : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"]
+                        : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"],
+                    FontWeight = isSelected ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.Normal,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = VerticalAlignment.Center
                 };
+                Grid.SetColumn(textBlock, 0);
+                itemGrid.Children.Add(textBlock);
+
+                var specBadge = new Border
+                {
+                    Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentSoftBrush"],
+                    CornerRadius = new CornerRadius(3),
+                    Padding = new Thickness(4, 1, 4, 1),
+                    Margin = new Thickness(6, 0, isSelected ? 4 : 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                var specBlock = new TextBlock
+                {
+                    Text = specDisplay,
+                    FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
+                    FontSize = 9.5,
+                    FontWeight = Microsoft.UI.Text.FontWeights.Normal,
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"],
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                specBadge.Child = specBlock;
+                Grid.SetColumn(specBadge, 1);
+                itemGrid.Children.Add(specBadge);
 
                 if (isSelected)
                 {
-                    item.Icon = new FontIcon
+                    var checkIcon = new FontIcon
                     {
                         Glyph = "\uE73E",
                         FontSize = 10,
-                        Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"]
+                        Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"],
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(3, 0, 0, 0)
                     };
+                    Grid.SetColumn(checkIcon, 2);
+                    itemGrid.Children.Add(checkIcon);
                 }
 
+                itemButton.Content = itemGrid;
+
                 string modelCapture = model;
-                item.Click += async (s, e) =>
+                itemButton.Click += async (s, e) =>
                 {
+                    ChatModelFlyout.Hide();
                     await SelectChatModelAsync(modelCapture);
                 };
 
-                ChatModelMenuFlyout.Items.Add(item);
+                ModelListContainer.Children.Add(itemButton);
             }
         }
 
         private async Task SelectChatModelAsync(string model)
         {
             ChatModelLabel.Text = model;
-
-            foreach (var menuItem in ChatModelMenuFlyout.Items)
-            {
-                if (menuItem is MenuFlyoutItem mfi)
-                {
-                    bool isSelected = mfi.Tag is string tag && string.Equals(tag, model, StringComparison.Ordinal);
-                    mfi.Foreground = isSelected
-                        ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"]
-                        : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
-                    mfi.Icon = isSelected
-                        ? new FontIcon
-                        {
-                            Glyph = "\uE73E",
-                            FontSize = 10,
-                            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"]
-                        }
-                        : null;
-                }
-            }
-
+            FilterAndRenderModels(ModelSearchBox?.Text ?? string.Empty);
             UpdateContextUsage();
 
             try
@@ -542,32 +612,21 @@ namespace RuApp.Views
             }
 
             _activeAgentReplyReceived = true;
-            ScheduleRender();
+            _replyRenderScheduler.Schedule();
         }
 
-        private void ScheduleRender()
+        private void ApplyReplySnapshot(AgentReplySnapshot snapshot)
         {
-            lock (_renderGate)
+            if (_activeAgentAssistantMessage == null
+                || !string.Equals(snapshot.SessionId, _activeSessionId, StringComparison.Ordinal)
+                || !string.Equals(snapshot.RunId, _activeAgentRunId, StringComparison.Ordinal))
             {
-                if (_renderPending) return;
-                _renderPending = true;
+                return;
             }
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                AgentReplySnapshot? snapshot = null;
-                lock (_renderGate)
-                {
-                    _renderPending = false;
-                    snapshot = _replyAccumulator.TakeSnapshot();
-                }
-                if (snapshot != null && _activeAgentAssistantMessage != null)
-                {
-                    // Use snapshot text as the single source for Content, coalescing many deltas into one UI update
-                    _activeAgentAssistantMessage.Content = snapshot.Text;
-                    _activeAgentAssistantMessage.IsStreaming = true;
-                    ScrollChatToBottom();
-                }
-            });
+
+            _activeAgentAssistantMessage.Content = snapshot.Text;
+            _activeAgentAssistantMessage.IsStreaming = true;
+            ScrollChatToBottom();
         }
 
         private void ClearAgentActivities()
@@ -1304,7 +1363,7 @@ namespace RuApp.Views
             _activeAgentReplyReceived = false;
             _activeAgentReplyCompleted = false;
             _agentDeltaKeys.Clear();
-            _replyAccumulator.Invalidate();
+            _replyRenderScheduler.Invalidate();
 
             Messages.Add(new ChatMessageItem
             {
@@ -1345,8 +1404,7 @@ namespace RuApp.Views
 
             _activeAgentReplyCompleted = true;
             // Flush any pending coalesced render before completing
-            AgentReplySnapshot? pending = null;
-            lock (_renderGate) { pending = _replyAccumulator.TakeSnapshot(); }
+            AgentReplySnapshot? pending = _replyRenderScheduler.Flush();
             if (pending != null && _activeAgentAssistantMessage != null)
             {
                 _activeAgentAssistantMessage.Content = pending.Text;
@@ -1357,8 +1415,6 @@ namespace RuApp.Views
             {
                 _activeAgentAssistantMessage.IsStreaming = false;
             }
-            _replyAccumulator.Invalidate();
-            lock (_renderGate) { _renderPending = false; }
             ChatMessageItem? placeholder = _activeAgentAssistantMessage;
 
             string? latestAssistant = await ReloadSessionHistoryAsync(cancellationToken);
@@ -1388,8 +1444,7 @@ namespace RuApp.Views
 
         private void FailActiveAgentReply(Exception exception)
         {
-            _replyAccumulator.Invalidate();
-            lock (_renderGate) { _renderPending = false; }
+            _replyRenderScheduler.Invalidate();
             if (_activeAgentAssistantMessage is not null)
             {
                 _activeAgentAssistantMessage.Content = string.IsNullOrWhiteSpace(
@@ -1414,8 +1469,7 @@ namespace RuApp.Views
 
         private void AbandonActiveAgentReply(bool notifyVoice)
         {
-            _replyAccumulator.Invalidate();
-            lock (_renderGate) { _renderPending = false; }
+            _replyRenderScheduler.Invalidate();
             _voicePlayback?.StopVoice();
             if (notifyVoice && _activeAgentTurnSource == AgentTurnSource.Voice)
             {

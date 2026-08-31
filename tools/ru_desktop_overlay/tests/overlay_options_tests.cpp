@@ -1,5 +1,6 @@
 #include "overlay_options.h"
 #include "frame_pixels.h"
+#include "status_presentation.h"
 #include "window_styles.h"
 
 #include "test_check.h"
@@ -62,6 +63,39 @@ int main(int argc, const char* argv[]) {
     unsigned char opaque[] = {10, 20, 30, 255};
     PrepareRgbaForOverlay(opaque, 1);
     CHECK(opaque[0] == 30 && opaque[1] == 20 && opaque[2] == 10 && opaque[3] == 255);
+
+    StatusPresentationState presentation{};
+    CHECK(ShouldPresentStatus(presentation, "Waiting for Ru", false, 0, 0));
+    RecordStatusPresented(presentation, "Waiting for Ru", false, 0, 0);
+    CHECK(!ShouldPresentStatus(presentation, "Waiting for Ru", false, 0, 0));
+    CHECK(ShouldPresentStatus(presentation, "Error", false, 0, 0));
+    RecordStatusPresented(presentation, "Error", false, 0, 0);
+
+    InvalidateStatusGeometry(presentation);
+    CHECK(ShouldPresentStatus(presentation, "Error", false, 1, 0));
+    RecordStatusPresented(presentation, "Error", false, 1, 0);
+    InvalidateStatusVisibility(presentation);
+    CHECK(ShouldPresentStatus(presentation, "Error", false, 1, 1));
+    RecordStatusPresented(presentation, "Error", false, 1, 1);
+
+    CHECK(ShouldPresentStatus(presentation, "Error", true, 1, 1));
+    RecordStatusPresented(presentation, "Error", true, 1, 1);
+    RecordFramePresented(presentation);
+    CHECK(ShouldPresentStatus(presentation, "Error", true, 1, 1));
+    // A failed PresentStatus call must not commit suppression state.
+    CHECK(ShouldPresentStatus(presentation, "Error", true, 1, 1));
+    RecordStatusPresented(presentation, "Error", true, 1, 1);
+    CHECK(!ShouldPresentStatus(presentation, "Error", true, 1, 1));
+
+    RecordFramePresented(presentation);
+    CHECK(ShouldPresentStatus(presentation, "Error", true, 1, 1));
+    InvalidateStatusGeometry(presentation);
+    RecordStatusPresented(presentation, "Error", true,
+                          presentation.geometry_generation,
+                          presentation.visibility_generation);
+    CHECK(!ShouldPresentStatus(presentation, "Error", true,
+                               presentation.geometry_generation,
+                               presentation.visibility_generation));
 
     return 0;
 }

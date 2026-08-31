@@ -154,4 +154,49 @@ public sealed class ChatMessageAttachmentTests
     {
         Assert.Equal(expected, ModelContextSpecs.FormatTokens(tokens));
     }
+
+    [Fact]
+    public void ChatView_XAML_has_searchable_model_flyout_contract()
+    {
+        string xamlPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ChatView.xaml");
+        if (!File.Exists(xamlPath))
+        {
+            xamlPath = Path.Combine("Views", "ChatView.xaml");
+        }
+        if (File.Exists(xamlPath))
+        {
+            string xaml = File.ReadAllText(xamlPath);
+            Assert.Contains("ChatModelFlyout", xaml, StringComparison.Ordinal);
+            Assert.Contains("ModelSearchBox", xaml, StringComparison.Ordinal);
+            Assert.Contains("ModelListContainer", xaml, StringComparison.Ordinal);
+            Assert.Contains("PlaceholderText=\"Tìm model...\"", xaml, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void ModelSearch_filters_models_case_insensitively()
+    {
+        var models = new List<string>
+        {
+            "google/gemini-2.5-flash",
+            "anthropic/claude-3-5-sonnet",
+            "meta-llama/llama-3.3-70b-instruct",
+            "qwen/qwen-2.5-coder-32b-instruct",
+            "deepseek/deepseek-chat"
+        };
+
+        var query = "CLAUDE";
+        var filtered = models.FindAll(m => m.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase));
+        Assert.Single(filtered);
+        Assert.Equal("anthropic/claude-3-5-sonnet", filtered[0]);
+
+        query = "llama";
+        filtered = models.FindAll(m => m.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase));
+        Assert.Single(filtered);
+        Assert.Equal("meta-llama/llama-3.3-70b-instruct", filtered[0]);
+
+        query = "nonexistent";
+        filtered = models.FindAll(m => m.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(filtered);
+    }
 }

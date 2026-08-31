@@ -1,5 +1,6 @@
 #include "overlay_options.h"
 #include "spout_overlay.h"
+#include "status_presentation.h"
 #include "window_styles.h"
 
 #include <shellapi.h>
@@ -118,6 +119,7 @@ struct AppState {
     OverlayOptions options;
     SpoutOverlay receiver;
     LayeredFrame frame;
+    StatusPresentationState status_presentation;
     bool click_through{false};
 };
 
@@ -145,11 +147,34 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lpa
         return HTCAPTION;
     case WM_TIMER:
         if (state && state->receiver.Tick()) {
-            state->frame.Present(window, state->receiver.Pixels(), state->receiver.Width(), state->receiver.Height());
+            if (state->frame.Present(window, state->receiver.Pixels(), state->receiver.Width(), state->receiver.Height())) {
+                RecordFramePresented(state->status_presentation);
+            }
         } else if (state) {
-            state->frame.PresentStatus(window, state->receiver.Status());
+            const auto geometry_generation = state->status_presentation.geometry_generation;
+            const auto visibility_generation = state->status_presentation.visibility_generation;
+            const auto& status = state->receiver.Status();
+            const bool connected = state->receiver.IsConnected();
+            if (ShouldPresentStatus(state->status_presentation, status, connected,
+                                    geometry_generation, visibility_generation) &&
+                state->frame.PresentStatus(window, status)) {
+                RecordStatusPresented(state->status_presentation, status, connected,
+                                      state->status_presentation.geometry_generation,
+                                      state->status_presentation.visibility_generation);
+            }
         }
         return 0;
+    case WM_WINDOWPOSCHANGED:
+        if (state && lparam) {
+            const auto* window_pos = reinterpret_cast<const WINDOWPOS*>(lparam);
+            if ((window_pos->flags & (SWP_NOMOVE | SWP_NOSIZE)) != (SWP_NOMOVE | SWP_NOSIZE)) {
+                InvalidateStatusGeometry(state->status_presentation);
+            }
+        }
+        return DefWindowProc(window, message, wparam, lparam);
+    case WM_SHOWWINDOW:
+        if (state && wparam) InvalidateStatusVisibility(state->status_presentation);
+        return DefWindowProc(window, message, wparam, lparam);
     case WM_KEYUP:
         if (!state) return DefWindowProc(window, message, wparam, lparam);
         if (wparam == 'C') SetClickThrough(window, *state, !state->click_through);

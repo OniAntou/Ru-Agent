@@ -10,12 +10,50 @@ public sealed class RefreshController<T> : IAsyncDisposable
     private readonly Action<T> _apply;
     private readonly Action<Action> _dispatch;
     private readonly object _gate = new();
-    private readonly SemaphoreSlim _admission = new(1, 1);
     private CancellationTokenSource? _cts;
-    private Task<T>? _inFlight;
+    private Task<bool>? _operation;
+    private PendingApply? _pendingApply;
     private long _generation;
     private bool _active;
     private bool _disposed;
+
+    private sealed class PendingApply
+    {
+        private readonly object _stateGate = new();
+        private bool _started;
+        private bool _cancelled;
+
+        public TaskCompletionSource<bool> Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool TryStart()
+        {
+            lock (_stateGate)
+            {
+                if (_started || _cancelled)
+                {
+                    return false;
+                }
+
+                _started = true;
+                return true;
+            }
+        }
+
+        public bool TryCancelIfQueued()
+        {
+            lock (_stateGate)
+            {
+                if (_started)
+                {
+                    return false;
+                }
+
+                _cancelled = true;
+                return true;
+            }
+        }
+    }
 
     public RefreshController(
         Func<CancellationToken, Task<T>> fetch,
@@ -30,119 +68,221 @@ public sealed class RefreshController<T> : IAsyncDisposable
     public void SetActive(bool active)
     {
         CancellationTokenSource? toCancel = null;
+        PendingApply? pendingApply = null;
         lock (_gate)
         {
-            if (_disposed) return;
-            if (_active == active) return;
+            if (_disposed || _active == active)
+            {
+                return;
+            }
+
             _active = active;
             if (!active)
             {
                 _generation++;
                 toCancel = _cts;
-                _cts = null;
+                pendingApply = _pendingApply;
             }
         }
-        toCancel?.Cancel();
-        toCancel?.Dispose();
+
+        try { toCancel?.Cancel(); } catch (ObjectDisposedException) { }
+        if (pendingApply?.TryCancelIfQueued() == true)
+        {
+            pendingApply.Completion.TrySetResult(false);
+        }
     }
 
-    public async Task<bool> RefreshAsync()
+    public Task<bool> RefreshAsync()
     {
-        CancellationToken token;
+        CancellationTokenSource requestCts;
+        TaskCompletionSource<bool> operationSource;
         long capturedGeneration;
-        Task<T> fetchTask;
 
         lock (_gate)
         {
-            if (_disposed || !_active) return false;
-            if (_inFlight is not null) return false;
-            // Try to acquire admission without blocking; if busy, return false
-            if (!_admission.Wait(0)) return false;
+            if (_disposed || !_active || _operation is not null)
+            {
+                return Task.FromResult(false);
+            }
+
             capturedGeneration = _generation;
-            _cts?.Dispose();
-            _cts = new CancellationTokenSource();
-            token = _cts.Token;
-            _inFlight = _fetch(token);
-            fetchTask = _inFlight;
+            requestCts = new CancellationTokenSource();
+            _cts = requestCts;
+            operationSource = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            _operation = operationSource.Task;
         }
 
-        T result;
+        _ = RunRefreshAsync(requestCts, capturedGeneration, operationSource);
+        return operationSource.Task;
+    }
+
+    private async Task RunRefreshAsync(
+        CancellationTokenSource requestCts,
+        long capturedGeneration,
+        TaskCompletionSource<bool> operationSource)
+    {
+        var requestToken = requestCts.Token;
+        bool? result = null;
+        Exception? failure = null;
         try
         {
-            result = await fetchTask.ConfigureAwait(false);
+            T fetched;
+            try
+            {
+                fetched = await _fetch(requestToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            var pendingApply = new PendingApply();
+            lock (_gate)
+            {
+                if (!IsCurrentUnderLock(capturedGeneration, requestToken))
+                {
+                    return;
+                }
+
+                _pendingApply = pendingApply;
+            }
+
+            try
+            {
+                _dispatch(() => ApplyDispatchedResult(
+                    fetched,
+                    capturedGeneration,
+                    requestToken,
+                    pendingApply));
+            }
+            catch (Exception exception)
+            {
+                pendingApply.Completion.TrySetException(exception);
+            }
+
+            // Completion represents the actual UI application, not merely dispatch.
+            result = await pendingApply.Completion.Task.ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
-            lock (_gate) { _inFlight = null; }
-            _admission.Release();
-            return false;
+            result = false;
         }
-        catch (Exception)
+        catch (Exception exception)
         {
-            lock (_gate) { _inFlight = null; }
-            _admission.Release();
-            throw;
+            failure = exception;
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _pendingApply = null;
+                if (ReferenceEquals(_operation, operationSource.Task))
+                {
+                    _operation = null;
+                }
+
+                if (ReferenceEquals(_cts, requestCts))
+                {
+                    _cts = null;
+                }
+            }
+
+            // The token was captured before this source is disposed. A deferred
+            // callback can therefore still perform its generation/cancellation check.
+            try { requestCts.Dispose(); } catch (ObjectDisposedException) { }
+            if (failure is not null)
+            {
+                operationSource.TrySetException(failure);
+            }
+            else
+            {
+                operationSource.TrySetResult(result ?? false);
+            }
+        }
+    }
+
+    private void ApplyDispatchedResult(
+        T fetched,
+        long capturedGeneration,
+        CancellationToken requestToken,
+        PendingApply pendingApply)
+    {
+        if (!pendingApply.TryStart())
+        {
+            pendingApply.Completion.TrySetResult(false);
+            return;
         }
 
-        // If we got here, fetch succeeded. Need to apply if still active and generation matches.
-        var shouldApply = false;
+        try
+        {
+            if (!IsCurrent(capturedGeneration, requestToken))
+            {
+                pendingApply.Completion.TrySetResult(false);
+                return;
+            }
+
+            _apply(fetched);
+            pendingApply.Completion.TrySetResult(true);
+        }
+        catch (Exception exception)
+        {
+            pendingApply.Completion.TrySetException(exception);
+        }
+    }
+
+    private bool IsCurrent(long capturedGeneration, CancellationToken token)
+    {
         lock (_gate)
         {
-            if (!_disposed && _active && _generation == capturedGeneration && !token.IsCancellationRequested)
-            {
-                shouldApply = true;
-            }
-            _inFlight = null;
+            return IsCurrentUnderLock(capturedGeneration, token);
         }
+    }
 
-        if (shouldApply)
-        {
-            // Apply inside dispatched callback, checking again inside dispatch
-            _dispatch(() =>
-            {
-                lock (_gate)
-                {
-                    if (_disposed || !_active || _generation != capturedGeneration || token.IsCancellationRequested)
-                    {
-                        return;
-                    }
-                    _apply(result);
-                }
-            });
-            _admission.Release();
-            return true;
-        }
-        else
-        {
-            _admission.Release();
-            return false;
-        }
+    private bool IsCurrentUnderLock(long capturedGeneration, CancellationToken token)
+    {
+        return !_disposed
+            && _active
+            && _generation == capturedGeneration
+            && !token.IsCancellationRequested;
     }
 
     public async ValueTask DisposeAsync()
     {
         CancellationTokenSource? toCancel;
-        Task<T>? inFlight;
+        Task<bool>? operation;
+        PendingApply? pendingApply;
         lock (_gate)
         {
-            if (_disposed) return;
+            if (_disposed)
+            {
+                return;
+            }
+
             _disposed = true;
             _active = false;
             _generation++;
             toCancel = _cts;
-            _cts = null;
-            inFlight = _inFlight;
+            operation = _operation;
+            pendingApply = _pendingApply;
         }
-        toCancel?.Cancel();
-        if (inFlight is not null)
+
+        try { toCancel?.Cancel(); } catch (ObjectDisposedException) { }
+        if (pendingApply?.TryCancelIfQueued() == true)
         {
-            try { await inFlight.ConfigureAwait(false); } catch { }
+            pendingApply.Completion.TrySetResult(false);
         }
-        toCancel?.Dispose();
-        // Wait for admission to be free (if someone is in RefreshAsync's critical section)
-        // Not strictly needed, but ensure no outstanding apply
-        await _admission.WaitAsync().ConfigureAwait(false);
-        _admission.Release();
-        _admission.Dispose();
+
+        if (operation is not null)
+        {
+            try { await operation.ConfigureAwait(false); } catch { }
+        }
+
+        // RunRefreshAsync owns disposal after its final operation completion. This
+        // await keeps DisposeAsync from racing that cleanup or any dispatched work.
+        if (operation is null)
+        {
+            try { toCancel?.Dispose(); } catch (ObjectDisposedException) { }
+        }
     }
 }

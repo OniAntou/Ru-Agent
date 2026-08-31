@@ -136,6 +136,59 @@ public sealed class HarnessOutboxTests
         Assert.Equal("session_not_found", transition.ErrorCode);
     }
 
+    [Fact]
+    public async Task Empty_outbox_returns_idle()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var store = new HarnessOutboxStore(fixture.Options);
+        var work = await store.ReadNextWorkAsync(
+            HarnessStoreTestFixture.Timestamp, CancellationToken.None);
+        Assert.IsType<OutboxWork.Idle>(work);
+    }
+
+    [Fact]
+    public async Task ReadNextWorkAsync_prioritizes_transition_over_delivery()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var intentId = await SeedUserOutboxAsync(fixture, waitingHistory: true);
+        var store = new HarnessOutboxStore(fixture.Options);
+        var now = HarnessStoreTestFixture.Timestamp.AddMinutes(1);
+
+        var claim = await store.ClaimNextAsync(now, CancellationToken.None);
+        await store.AcknowledgeAsync(intentId, claim!.ClaimToken, now.AddSeconds(1), CancellationToken.None);
+
+        var bytes = Encoding.UTF8.GetBytes("second message");
+        var payload = new HarnessPayloadIntent(
+            HarnessStoreTestFixture.Payload(2),
+            HarnessPayloadKind.UserPrompt,
+            HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            1024,
+            bytes);
+        var intent2 = HarnessStoreTestFixture.Event(101);
+        var req2 = fixture.NewRun(2, 1, 1, payloads: [payload], outbox: [
+            new ConversationOutboxIntent(intent2, HarnessStoreTestFixture.Session(1), payload.PayloadId, ConversationOutboxRole.User, HistoryWaitKind.UserBeforeFirstStep)
+        ], status: new HarnessRunStatus(HarnessRunState.WaitingHistory, HistoryWaitKind.UserBeforeFirstStep));
+        await fixture.CreateEventStore().TryCreateRunAsync(req2, CancellationToken.None);
+
+        var work = await store.ReadNextWorkAsync(now.AddSeconds(2), CancellationToken.None);
+        var transitionWork = Assert.IsType<OutboxWork.Transition>(work);
+        Assert.Equal(OutboxRunTransitionKind.AcknowledgeHistory, transitionWork.Value.Kind);
+    }
+
+    [Fact]
+    public async Task ReadNextWorkAsync_claims_delivery_when_no_transition()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var intentId = await SeedUserOutboxAsync(fixture, waitingHistory: true);
+        var store = new HarnessOutboxStore(fixture.Options);
+        var now = HarnessStoreTestFixture.Timestamp.AddMinutes(1);
+
+        var work = await store.ReadNextWorkAsync(now, CancellationToken.None);
+        var deliveryWork = Assert.IsType<OutboxWork.Delivery>(work);
+        Assert.Equal(intentId, deliveryWork.Value.IntentId);
+    }
+
     private static async Task<EventId> SeedUserOutboxAsync(
         HarnessStoreTestFixture fixture,
         bool waitingHistory = true)

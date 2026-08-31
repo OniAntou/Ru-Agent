@@ -20,6 +20,7 @@ namespace RuApp
         private readonly RuAppComposition _composition;
         private readonly IRuBackendSessionProvider _backendProvider;
         private ApiService? _apiService;
+        private HealthStatusService? _healthStatusService;
         private VoicePlaybackService? _voicePlayback;
         private SubtitleOverlayService? _subtitleOverlay;
         private SubtitlePresenter? _subtitlePresenter;
@@ -38,6 +39,7 @@ namespace RuApp
         private AuditLogPanel? _auditPanel;
         private DispatcherTimer? _sessionsTimer;
         private RefreshController<SessionListResponse?>? _sessionsRefreshController;
+        private RefreshController<HealthStatusSnapshot?>? _healthRefreshController;
         private ResponsiveLayoutTier? _responsiveTier;
         private double _lastExpandedSidebarWidth = 250;
         private readonly UiThemePreferenceStore _themePreferenceStore = new();
@@ -191,6 +193,10 @@ namespace RuApp
                 _backendProvider.BackendExited += OnBackendExited;
 
                 _apiService = new ApiService(backendSession);
+                _healthStatusService = new HealthStatusService(
+                    _apiService,
+                    () => _backendProvider.Session != null,
+                    _composition.IsHarness);
                 _voicePlayback = new VoicePlaybackService(
                     _apiService,
                     _composition.PlaybackDeviceFactory?.Invoke());
@@ -265,10 +271,28 @@ namespace RuApp
                 _sessionsRefreshController = new RefreshController<SessionListResponse?>(
                     token => _apiService!.GetSessionsAsync(token),
                     result => { if (result != null) ApplySessions(result); },
-                    action => DispatcherQueue.TryEnqueue(() => action()));
+                    action =>
+                    {
+                        if (!DispatcherQueue.TryEnqueue(() => action()))
+                        {
+                            throw new OperationCanceledException("The window dispatcher rejected a refresh callback.");
+                        }
+                    });
                 _sessionsRefreshController.SetActive(true);
                 await _sessionsRefreshController.RefreshAsync();
-                await UpdateHealthStatusAsync();
+
+                _healthRefreshController = new RefreshController<HealthStatusSnapshot?>(
+                    async token => await _healthStatusService!.GatherAsync(token),
+                    snapshot => { if (snapshot != null) ApplyHealthStatus(snapshot); },
+                    action =>
+                    {
+                        if (!DispatcherQueue.TryEnqueue(() => action()))
+                        {
+                            throw new OperationCanceledException("The window dispatcher rejected a health callback.");
+                        }
+                    });
+                _healthRefreshController.SetActive(true);
+                await _healthRefreshController.RefreshAsync();
 
                 _sessionsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
                 _sessionsTimer.Tick += async (_, __) =>
@@ -412,8 +436,11 @@ namespace RuApp
         {
             _sessionsTimer?.Stop();
             _sessionsRefreshController?.SetActive(false);
+            _healthRefreshController?.SetActive(false);
             if (_sessionsRefreshController != null) await _sessionsRefreshController.DisposeAsync();
             _sessionsRefreshController = null;
+            if (_healthRefreshController != null) await _healthRefreshController.DisposeAsync();
+            _healthRefreshController = null;
             _observationTimer?.Stop();
             _chatView?.Dispose();
             _settingsView?.Dispose();
@@ -434,6 +461,7 @@ namespace RuApp
                 }
             }
             _apiService?.Dispose();
+            _healthStatusService = null;
             _backendProvider.BackendExited -= OnBackendExited;
             _agentController?.Dispose();
             _agentController = null;
@@ -582,7 +610,14 @@ namespace RuApp
 
         private async Task UpdateHealthStatusAsync()
         {
-            if (_apiService == null) return;
+            if (_healthRefreshController != null)
+            {
+                await _healthRefreshController.RefreshAsync();
+            }
+        }
+
+        private void ApplyHealthStatus(HealthStatusSnapshot snapshot)
+        {
 
             var successBrush = (SolidColorBrush)Application.Current.Resources["AppSuccessBrush"];
             var warningBrush = (SolidColorBrush)Application.Current.Resources["AppWarningBrush"];
@@ -590,17 +625,13 @@ namespace RuApp
             var mutedBrush = (SolidColorBrush)Application.Current.Resources["AppTextTertiaryBrush"];
 
             // 1. .NET Backend status
-            bool backendRunning = _backendProvider.Session != null;
+            bool backendRunning = snapshot.BackendRunning;
             DotBackend.Fill = backendRunning ? successBrush : dangerBrush;
             TextBackend.Text = backendRunning ? ".NET Backend: OK" : ".NET Backend: Lỗi";
 
             // 2. Python Worker status
-            bool workerOk = false;
-            string? workerError = null;
-            if (backendRunning)
-            {
-                (workerOk, workerError) = await _apiService.CheckWorkerHealthAsync();
-            }
+            bool workerOk = snapshot.WorkerOk;
+            string? workerError = snapshot.WorkerError;
             DotWorker.Fill = workerOk ? successBrush : (backendRunning ? warningBrush : dangerBrush);
             TextWorker.Text = workerOk
                 ? "AI Worker: Sẵn sàng"
@@ -611,12 +642,7 @@ namespace RuApp
                         : "AI Worker: Tắt";
 
             // 3. VTube Studio status
-            bool vtsConnected = false;
-            if (!_composition.IsHarness && workerOk)
-            {
-                var vtsStatus = await _apiService.GetVtsStatusAsync();
-                vtsConnected = vtsStatus?.Connected == true;
-            }
+            bool vtsConnected = snapshot.VtsConnected;
             DotVts.Fill = vtsConnected ? successBrush : mutedBrush;
             TextVts.Text = _composition.IsHarness
                 ? "VTS: Bỏ qua trong Harness"

@@ -31,7 +31,7 @@ def test_startup_probe_rejects_only_an_early_nonzero_exit(
         f"& {quote(helper)} -ExecutablePath {quote(executable)} "
         f"-WorkingDirectory {quote(tmp_path)} -StartupGracePeriodMilliseconds 0"
     )
-    shell = shutil.which("pwsh")
+    shell = shutil.which("pwsh") or shutil.which("powershell")
     assert shell is not None
     result = subprocess.run(
         [shell, "-NoProfile", "-NonInteractive", "-Command", command],

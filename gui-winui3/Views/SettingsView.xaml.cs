@@ -593,10 +593,10 @@ namespace RuApp.Views
             var isVts = tab == "vts";
             var isMemory = tab == "memory";
 
-            SystemSettingsScrollViewer.Visibility = isSystem ? Visibility.Visible : Visibility.Collapsed;
-            ObservationScrollViewer.Visibility = isObserver ? Visibility.Visible : Visibility.Collapsed;
-            VtsSettingsScrollViewer.Visibility = isVts ? Visibility.Visible : Visibility.Collapsed;
-            MemoryPanel.Visibility = isMemory ? Visibility.Visible : Visibility.Collapsed;
+            SwitchPanel(SystemSettingsScrollViewer, isSystem);
+            SwitchPanel(ObservationScrollViewer, isObserver);
+            SwitchPanel(VtsSettingsScrollViewer, isVts);
+            SwitchPanel(MemoryPanel, isMemory);
 
             UpdateNavButton(NavSystemIcon, NavSystemText, NavSystemLine, isSystem);
             UpdateNavButton(NavObserverIcon, NavObserverText, NavObserverLine, isObserver);
@@ -604,10 +604,53 @@ namespace RuApp.Views
             UpdateNavButton(NavMemoryIcon, NavMemoryText, NavMemoryLine, isMemory);
         }
 
+        private static void SwitchPanel(FrameworkElement panel, bool active)
+        {
+            if (panel == null) return;
+            if (active)
+            {
+                panel.Visibility = Visibility.Visible;
+                AnimatePanelEntrance(panel);
+            }
+            else
+            {
+                panel.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private static void AnimatePanelEntrance(FrameworkElement element)
+        {
+            var sb = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+            var fadeAnim = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+            {
+                From = 0.3,
+                To = 1.0,
+                Duration = new Duration(TimeSpan.FromMilliseconds(200)),
+                EasingFunction = new Microsoft.UI.Xaml.Media.Animation.CubicEase { EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut }
+            };
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(fadeAnim, element);
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(fadeAnim, "Opacity");
+            sb.Children.Add(fadeAnim);
+            sb.Begin();
+        }
+
         private static void UpdateNavButton(FontIcon icon, TextBlock text, Border line, bool active)
         {
             if (line != null)
-                line.Background = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuAccentBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent));
+            {
+                var sb = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+                var anim = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+                {
+                    To = active ? 1.0 : 0.0,
+                    Duration = new Duration(TimeSpan.FromMilliseconds(active ? 180 : 100)),
+                    EasingFunction = new Microsoft.UI.Xaml.Media.Animation.CubicEase { EasingMode = Microsoft.UI.Xaml.Media.Animation.EasingMode.EaseOut }
+                };
+                Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(anim, line);
+                Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(anim, "Opacity");
+                sb.Children.Add(anim);
+                sb.Begin();
+            }
+
             if (icon != null)
                 icon.Foreground = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuAccentBrush"] : Application.Current.Resources["RuMutedBrush"]);
             if (text != null)

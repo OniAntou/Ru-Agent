@@ -333,9 +333,21 @@ public sealed class AgentV1Service
 
         var sessionHarnessId = new SessionId(sessionIdRaw);
         var snapshotSha = policySnapshot.Sha256;
+
+        var promptBytes = Encoding.UTF8.GetBytes(prompt);
+        var promptPayloadId = _ids.NewPayloadId();
+        var promptPayload = new HarnessPayloadIntent(
+            promptPayloadId,
+            HarnessPayloadKind.UserPrompt,
+            HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+            HarnessPayloadEncoding.Utf8Text,
+            Math.Max(promptBytes.Length, 1),
+            promptBytes);
+
+        var promptEventId = _ids.NewEventId();
         var events = new List<HarnessEventIntent>
         {
-            new(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: isTrusted ? "waiting_history" : "waiting_workspace_trust"),
+            new(promptEventId, HarnessEventKind.RunStateChanged, payloadId: promptPayloadId, safeCode: isTrusted ? "waiting_history" : "waiting_workspace_trust"),
         };
         var run = new AgentRun(
             runId,
@@ -353,19 +365,8 @@ public sealed class AgentV1Service
             createdAt: now,
             updatedAt: now);
 
-        var payloads = new List<HarnessPayloadIntent>();
+        var payloads = new List<HarnessPayloadIntent> { promptPayload };
         IReadOnlyList<ConversationOutboxIntent> outbox = Array.Empty<ConversationOutboxIntent>();
-
-        var promptBytes = Encoding.UTF8.GetBytes(prompt);
-        var promptPayloadId = _ids.NewPayloadId();
-        var promptPayload = new HarnessPayloadIntent(
-            promptPayloadId,
-            HarnessPayloadKind.UserPrompt,
-            HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
-            HarnessPayloadEncoding.Utf8Text,
-            Math.Max(promptBytes.Length, 1),
-            promptBytes);
-        payloads.Add(promptPayload);
 
         if (isTrusted)
         {
@@ -1132,7 +1133,7 @@ public sealed class AgentV1Service
         }
         catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException)
         {
-            return BoundedError(400, "invalid_matcher", ex.Message);
+            return BoundedError(400, "invalid_matcher", "Policy matcher is invalid.");
         }
 
         var ruleId = _ids.NewPolicyRuleId();
@@ -1146,7 +1147,7 @@ public sealed class AgentV1Service
         }
         catch (HarnessStoreException ex)
         {
-            return BoundedError(400, ex.Code ?? "policy_create_failed", ex.Message);
+            return BoundedError(400, ex.Code, "Unable to create policy.");
         }
 
         var respMatcher = new
@@ -1165,78 +1166,93 @@ public sealed class AgentV1Service
 
     private async Task<AgentServiceResult> HandleSessionPresetAsync(JsonElement body, bool isInteractive, CancellationToken cancellationToken)
     {
-        var allowedFields = new HashSet<string>(StringComparer.Ordinal)
+        try
         {
-            "kind", "session_id", "preset", "expected_version"
-        };
-        foreach (var property in body.EnumerateObject())
-        {
-            if (!allowedFields.Contains(property.Name))
+            var allowedFields = new HashSet<string>(StringComparer.Ordinal)
             {
-                return BoundedError(400, "unknown_field", "Unknown session preset field.");
+                "kind", "session_id", "preset", "expected_version"
+            };
+            foreach (var property in body.EnumerateObject())
+            {
+                if (!allowedFields.Contains(property.Name))
+                {
+                    return BoundedError(400, "unknown_field", "Unknown session preset field.");
+                }
             }
-        }
 
-        if (!body.TryGetProperty("session_id", out var sessProp) || sessProp.ValueKind != JsonValueKind.String)
+            if (!body.TryGetProperty("session_id", out var sessProp) || sessProp.ValueKind != JsonValueKind.String)
+            {
+                return BoundedError(400, "invalid_session_id", "session_id required.");
+            }
+
+            var sessionIdRaw = sessProp.GetString()!.Trim();
+            if (!IsSessionId(sessionIdRaw))
+            {
+                return BoundedError(400, "invalid_session_id", "session_id invalid.");
+            }
+
+            if (!body.TryGetProperty("preset", out var presetProp) || presetProp.ValueKind != JsonValueKind.String)
+            {
+                return BoundedError(400, "invalid_preset", "preset required.");
+            }
+
+            var presetRaw = presetProp.GetString()!.Trim().ToLowerInvariant();
+            AgentPermissionPreset preset;
+            if (presetRaw == "standard") preset = AgentPermissionPreset.Standard;
+            else if (presetRaw == "full_access" || presetRaw == "full") preset = AgentPermissionPreset.FullAccess;
+            else return BoundedError(400, "invalid_preset", "preset must be standard or full_access.");
+
+            long expectedVersion = 0;
+            if (body.TryGetProperty("expected_version", out var verProp))
+            {
+                if (verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt64(out var v)) expectedVersion = v;
+                else if (verProp.ValueKind == JsonValueKind.String && long.TryParse(verProp.GetString(), out var sv)) expectedVersion = sv;
+                else if (verProp.ValueKind != JsonValueKind.Null) return BoundedError(400, "invalid_preset_version", "expected_version invalid.");
+            }
+
+            if (expectedVersion < 0)
+            {
+                return BoundedError(400, "invalid_preset_version", "expected_version must be non-negative.");
+            }
+
+            if (preset == AgentPermissionPreset.FullAccess && !isInteractive)
+            {
+                return BoundedError(403, "interactive_required", "Full Access requires interactive confirmation.");
+            }
+
+            var sessionDoc = await _sessions.GetAsync(sessionIdRaw, cancellationToken).ConfigureAwait(false);
+            if (sessionDoc is null)
+            {
+                return BoundedError(404, "session_not_found", "Session not found.");
+            }
+
+            var now = _time.UtcNow;
+            var result = await _permissionStore.SetInteractivelyAsync(new SessionId(sessionIdRaw), preset, expectedVersion, now, cancellationToken).ConfigureAwait(false);
+            if (result.Outcome == SessionPermissionOutcome.VersionConflict)
+            {
+                return BoundedError(409, "preset_version_conflict", "preset_version_conflict");
+            }
+
+            if (result.Selection is null)
+            {
+                return BoundedError(500, "preset_update_failed", "Failed to update preset.");
+            }
+
+            var sel = result.Selection;
+            return new AgentServiceResult(200, new { session_id = sel.SessionId.Value, preset = sel.Preset == AgentPermissionPreset.Standard ? "standard" : "full_access", version = sel.Version, updated_at = sel.UpdatedAt.ToString("O") });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return BoundedError(400, "invalid_session_id", "session_id required.");
+            throw;
         }
-
-        var sessionIdRaw = sessProp.GetString()!.Trim();
-        if (!IsSessionId(sessionIdRaw))
+        catch (HarnessStoreException ex)
         {
-            return BoundedError(400, "invalid_session_id", "session_id invalid.");
+            return BoundedError(400, ex.Code, "Unable to update session permissions.");
         }
-
-        if (!body.TryGetProperty("preset", out var presetProp) || presetProp.ValueKind != JsonValueKind.String)
+        catch (Exception)
         {
-            return BoundedError(400, "invalid_preset", "preset required.");
+            return BoundedError(500, "preset_internal_error", "Unable to update session permissions.");
         }
-
-        var presetRaw = presetProp.GetString()!.Trim().ToLowerInvariant();
-        AgentPermissionPreset preset;
-        if (presetRaw == "standard") preset = AgentPermissionPreset.Standard;
-        else if (presetRaw == "full_access" || presetRaw == "full") preset = AgentPermissionPreset.FullAccess;
-        else return BoundedError(400, "invalid_preset", "preset must be standard or full_access.");
-
-        long expectedVersion = 0;
-        if (body.TryGetProperty("expected_version", out var verProp))
-        {
-            if (verProp.ValueKind == JsonValueKind.Number && verProp.TryGetInt64(out var v)) expectedVersion = v;
-            else if (verProp.ValueKind == JsonValueKind.String && long.TryParse(verProp.GetString(), out var sv)) expectedVersion = sv;
-            else if (verProp.ValueKind != JsonValueKind.Null) return BoundedError(400, "invalid_preset_version", "expected_version invalid.");
-        }
-
-        if (expectedVersion < 0)
-        {
-            return BoundedError(400, "invalid_preset_version", "expected_version must be non-negative.");
-        }
-
-        if (preset == AgentPermissionPreset.FullAccess && !isInteractive)
-        {
-            return BoundedError(403, "interactive_required", "Full Access requires interactive confirmation.");
-        }
-
-        var sessionDoc = await _sessions.GetAsync(sessionIdRaw, cancellationToken).ConfigureAwait(false);
-        if (sessionDoc is null)
-        {
-            return BoundedError(404, "session_not_found", "Session not found.");
-        }
-
-        var now = _time.UtcNow;
-        var result = await _permissionStore.SetInteractivelyAsync(new SessionId(sessionIdRaw), preset, expectedVersion, now, cancellationToken).ConfigureAwait(false);
-        if (result.Outcome == SessionPermissionOutcome.VersionConflict)
-        {
-            return BoundedError(409, "preset_version_conflict", "preset_version_conflict");
-        }
-
-        if (result.Selection is null)
-        {
-            return BoundedError(500, "preset_update_failed", "Failed to update preset.");
-        }
-
-        var sel = result.Selection;
-        return new AgentServiceResult(200, new { session_id = sel.SessionId.Value, preset = sel.Preset == AgentPermissionPreset.Standard ? "standard" : "full_access", version = sel.Version, updated_at = sel.UpdatedAt.ToString("O") });
     }
 
     public async Task<AgentServiceResult> DeletePolicyAsync(string ruleIdRaw, bool isInteractive, CancellationToken cancellationToken)

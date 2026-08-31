@@ -1,6 +1,6 @@
 # Ru current architecture
 
-Status: current ownership plus accepted architecture-v2 targets, 2026-08-31.
+Status: current ownership plus accepted architecture-v2 targets, 2026-09-01.
 
 Operational invariants for generation, voice, STT, VTS, observation, and live
 acceptance are maintained in
@@ -26,6 +26,17 @@ Agent run, approval, or long-lived Agent SSE lease. Both owned children enter
 one Job Object, but ownership is Public Host, not WinUI. Startup succeeds only
 after public readiness; shutdown or startup failure terminates the owned
 Worker/Broker tree.
+
+Closing GUI/CLI detaches the client; it does not force-kill the shared Host.
+Startup is cancellation-scoped, with checks after asynchronous stages before
+creating subsequent UI services or timers. Host shutdown remains Host-owned.
+
+Managed provider bootstrap reads exactly one canonical credential account:
+OpenCode Zen uses `api_key`, Kilo uses `kilo_gateway_api_key`, and Custom OpenAI
+uses `custom_api_key`. Missing keys stay missing; aliases and other providers'
+keys are never tried. Ollama/LM Studio do not read cloud credentials. No key
+migration or provider switching is performed. An endpoint that requires a key
+will reject an unauthenticated request; this does not trigger a fallback.
 
 The current managed process flow (Phase 2 cutover) is:
 

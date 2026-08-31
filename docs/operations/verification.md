@@ -68,15 +68,66 @@ unit tests replace only their external process boundary and never open RuApp.
 - **Phase 4 (D1 Dependencies & D2 Documentation)**:
   - Removed unused `ddgs` from `pyproject.toml`.
   - Aligned the `voice` extra with the evidence-backed isolated provider line (`torch>=2.8,<2.9`, `torchaudio>=2.8,<2.9`, `omnivoice>=0.2.1`, `flask>=3.1,<4`; accepts the installed `2.8.0+cu128` CUDA build including local tags) and recorded consumer inventory, version authority, and verification policy in `docs/operations/python-dependency-ownership.md`.
-  - Setup script preflight verified via `setup_omnivoice_env.ps1 -WhatIf`; `.venv` `pip check` passes but is not fresh-install proof, and metadata tests (`tests/test_python_metadata.py`, 5 cases) validate specifiers without importing Torch.
+  - Setup script preflight verified via `setup_omnivoice_env.ps1 -WhatIf`; `.venv` `pip check` passes but is not fresh-install proof. Three metadata cases (`tests/test_python_metadata.py`) plus two documentation cases formed the five-case focused run; metadata checks do not import Torch.
 - **Review remediation wave (six findings, 2026-08-31)**:
   - Logger/refresh lifetimes: `DiagnosticWriterShutdownTests` 10 cases + `DiagnosticWriterHostShutdownTests` 1 + `RefreshControllerTests` 15 all green; shutdown/disposal quiescence verified by coordinator race harness (7 cases) and independent review.
   - Sidebar health single-flight via the production `RefreshController` seam + `HealthStatusService`; production `AgentReplyRenderScheduler` used by ChatView and tested directly (`AgentReplyRenderSchedulingTests`).
   - Native unchanged-status suppression via `status_presentation.h` with failure-safe commit; pure tests pass and a forced-decision mutation fails at `overlay_options_tests.cpp:70`, proving the tests bind to production.
-- **Final aggregate gates at this revision** (sanitized shell: no `ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED`, Windows-first `PATH`; see the SDD ledger note about host-env redaction and `timeout` resolution):
+- **Historical aggregate gates, 2026-08-31 remediation checkpoint** (sanitized shell: no `ZCODE_DESKTOP_CONTEXT_PROMPT_ENABLED`, Windows-first `PATH`; see the SDD ledger note about host-env redaction and `timeout` resolution):
   - Python: `405 passed`; `ruff check .` clean; `mypy src` clean; `pip check` clean.
   - .NET Release across all 13 test projects: `2,080 passed, 0 failed` (Broker 488, RuBackend 650, Harness.Core 210, GUI 303, Cli 119, Adapters 84, Persistence 79, Worker 49, Client 42, Hosting 36, Protocol 11, Core 6, Connectors 3).
   - `build.bat` full release pipeline `13/13` including native overlay tests `2/2`.
+
+These deterministic checks do not establish the optimization plan's missing
+before/after work counters, allocation measurements or median/p95 benchmarks.
+Performance acceptance remains open in TODO, independently of bug-fix tests.
+
+### Provider/lifecycle review remediation (2026-09-01)
+
+- Eight protected-bootstrap cases prove canonical credential isolation for
+  OpenCode/Kilo/Custom and no cloud-key lookup for local providers. The missing
+  OpenCode/Kilo cases failed before removal of both key fallbacks, then passed.
+- The client process regression failed when Dispose killed its synthetic Host,
+  then passed after client-owned job/kill behavior was removed. The helper is
+  an isolated hidden test process, not RuBackend or any running user process.
+- Startup cancellation checks before/after awaits suppress continuation even
+  when a delayed operation ignores cancellation. Voice-status HTTP requests
+  receive the startup token. No interactive WinUI acceptance was performed.
+- Fault-injected policy/preset HTTP requests formerly exposed a synthetic
+  secret/path; they now return safe bounded messages. Request cancellation is
+  preserved. Focused backend checks passed 19 cases; startup/API checks 9.
+- The initial repair did not publish/launch the GUI, call live providers, mutate
+  credentials, install packages or claim performance/live acceptance.
+- Final sequential gates on this working tree: Python `405 passed`; .NET
+  Release `2,100 passed` across 13 projects (Broker 488, CLI 119, Client 45,
+  Connectors 3, Harness.Core 210, Persistence 79, Hosting 36, Protocol 11,
+  Runtime.Adapters 84, Runtime.Core 6, Worker 49, RuBackend 661, GUI 309).
+  `ruff check src tests scripts tools`, `mypy src` (39 files), `pip check`,
+  `56 HTTP + 1 WebSocket` route validation and `git diff --check` passed.
+  Actual WinUI Release/x64 compile passed with zero warnings/errors using
+  `dotnet build gui-winui3/RuApp.csproj -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 --no-restore`.
+  That compile did not update the shortcut's published GUI artifact; see the
+  separately authorized release follow-up below.
+
+### Authorized release follow-up (2026-09-01)
+
+- The user requested commit/push and a refreshed GUI publish. Fresh sequential
+  gates passed: Python `409` (including four new build-script regressions),
+  .NET `2,100` across all 13 projects, and native CTest `2/2`.
+- Artifact inspection caught an existing build-script defect: XAML copy used
+  `obj/Release` while x64 publish emitted `obj/x64/Release`, and copy failures
+  were ignored. Four behavioral regressions failed before the fix, then passed;
+  all 12 build/launcher script cases passed. Clean and copy now use x64, and
+  missing/copy-failed XAML fails the release before the native build.
+- The corrected `build.bat` completed `13/13`, publishing GUI, CLI, managed
+  Worker/Core, Broker and backend. The GUI is at the `start_dev.bat` Release
+  path shown below. Its self-contained runtime config, PRI and all 11 loose
+  compiled XAML files were verified; GUI/Client/CLI/Worker/Broker/backend DLLs
+  and PRI matched their build outputs by SHA-256.
+- Ruff, mypy (39 files), dependency and `56 HTTP + 1 WebSocket` route checks
+  passed. No GUI was launched, no user Ru process was stopped, and no live
+  provider/audio/VTS acceptance was claimed. The old rebuildable GUI publish
+  output was replaced; user settings, credentials and session data were untouched.
 
 The route checker must remain at 56 HTTP routes and 1 WebSocket
 route (`/voice/stream`; 41 legacy plus 15 additive `/agent/v1/*`). The

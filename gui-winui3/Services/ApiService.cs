@@ -208,11 +208,15 @@ namespace RuApp.Services
             }
         }
 
-        public async Task<VoiceStatusDto?> GetVoiceStatusAsync()
+        public async Task<VoiceStatusDto?> GetVoiceStatusAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                return await _httpClient.GetFromJsonAsync<VoiceStatusDto>($"{_baseUrl}/voice/status");
+                return await _httpClient.GetFromJsonAsync<VoiceStatusDto>($"{_baseUrl}/voice/status", cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

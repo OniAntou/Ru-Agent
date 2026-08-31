@@ -57,7 +57,6 @@ public sealed class ManagedRuBackendSessionProvider : IRuBackendSessionProvider
     {
         if (_disposed) return;
         _disposed = true;
-        // Do not kill Public Host – it owns Worker/Broker and outlives WinUI. Just release local state.
-        // BackendExited is not raised for managed host; if host exits, next StartAsync will re-attach via descriptor validation.
+        _starter.Dispose();
     }
 }

@@ -100,6 +100,70 @@ public sealed class PublicHostStarterTests : IDisposable
         // No worker start via Client; only Public Host start was invoked – verified by single startHost call
     }
 
+    [Fact]
+    public async Task Disposed_client_cannot_start_or_attach_again()
+    {
+        var starts = 0;
+        var starter = new PublicHostStarter(new PublicHostLocator(_root),
+            startHost: (_, _, _) => { starts++; return Task.FromResult(false); }, publicPort: FindFreePort());
+        starter.Dispose();
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => starter.GetOrStartAsync(_root));
+        Assert.Equal(0, starts);
+    }
+
+    [Fact]
+    public async Task Disposing_starting_client_leaves_shared_host_process_alive()
+    {
+        var executable = Path.Combine(_root, "backend-dotnet", "RuBackend", "bin", "Release", "net10.0", "RuBackend.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllBytes(executable, []);
+        var locator = new PublicHostLocator(_root);
+        var port = FindFreePort();
+        System.Diagnostics.Process? observer = null;
+        try
+        {
+            using var starter = new PublicHostStarter(locator, healthProbe: (_, _) => Task.FromResult(true),
+                publicPort: port, startProcess: info =>
+                {
+                    var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe"),
+                        Arguments = "-NoProfile -NonInteractive -Command Start-Sleep -Seconds 30",
+                        UseShellExecute = false, CreateNoWindow = true, WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+                    })!;
+                    observer = System.Diagnostics.Process.GetProcessById(process.Id);
+                    var descriptor = new RuAgent.Protocol.Harness.RuntimeDescriptor(1, $"http://127.0.0.1:{port}/",
+                        info.Environment["RU_DESKTOP_TOKEN"]!, process.Id, process.StartTime.ToUniversalTime().ToString("O"),
+                        new string('z', 32), DateTimeOffset.UtcNow.ToString("O"));
+                    File.WriteAllText(locator.DescriptorPath, System.Text.Json.JsonSerializer.Serialize(descriptor, RuAgent.Protocol.Harness.RuntimeDescriptor.JsonOptions));
+                    return process;
+                });
+            await starter.GetOrStartAsync(_root);
+            starter.Dispose();
+            Assert.NotNull(observer);
+            Assert.False(observer.HasExited);
+        }
+        finally
+        {
+            // Only the hidden helper created by this test is terminated.
+            if (observer is not null)
+            {
+                if (!observer.HasExited) observer.Kill(entireProcessTree: true);
+                observer.WaitForExit(5000);
+                observer.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public void Starter_dispose_can_be_called_multiple_times_safely()
+    {
+        var locator = new PublicHostLocator(Path.Combine(_root, "disp-" + Guid.NewGuid().ToString("N")));
+        using var starter = new PublicHostStarter(locator);
+        starter.Dispose();
+        starter.Dispose(); // idempotent
+    }
+
     private static int FindFreePort()
     {
         using var l = new TcpListener(IPAddress.Loopback, 0);

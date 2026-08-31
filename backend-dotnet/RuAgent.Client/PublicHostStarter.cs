@@ -5,27 +5,35 @@ using System.Net.Sockets;
 
 namespace RuAgent.Client;
 
-public sealed class PublicHostStarter
+public sealed class PublicHostStarter : IDisposable
 {
     private readonly PublicHostLocator _locator;
     private readonly Func<string, CancellationToken, Task<bool>> _healthProbe;
     private readonly Func<string, string, CancellationToken, Task<bool>> _startHostAsync;
     private readonly int _publicPort;
+    private readonly Func<ProcessStartInfo, Process?> _startProcess;
+    private readonly object _lifecycleGate = new();
+    private Process? _startedProcess;
+    private bool _disposed;
 
     public PublicHostStarter(
         PublicHostLocator? locator = null,
         Func<string, CancellationToken, Task<bool>>? healthProbe = null,
         Func<string, string, CancellationToken, Task<bool>>? startHost = null,
-        int publicPort = 8000)
+        int publicPort = 8000,
+        Func<ProcessStartInfo, Process?>? startProcess = null)
     {
         _locator = locator ?? new PublicHostLocator();
         _healthProbe = healthProbe ?? DefaultHealthProbeAsync;
-        _startHostAsync = startHost ?? DefaultStartHostAsync;
+        _startHostAsync = startHost ?? StartHostInternalAsync;
         _publicPort = publicPort;
+        _startProcess = startProcess ?? Process.Start;
     }
 
     public async Task<PublicHostSession> GetOrStartAsync(string projectRoot, CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
         projectRoot = Path.GetFullPath(projectRoot);
 
@@ -129,7 +137,7 @@ public sealed class PublicHostStarter
         }
     }
 
-    private static Task<bool> DefaultStartHostAsync(string projectRoot, string bearer, CancellationToken ct)
+    private Task<bool> StartHostInternalAsync(string projectRoot, string bearer, CancellationToken ct)
     {
         try
         {
@@ -156,15 +164,35 @@ public sealed class PublicHostStarter
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden,
             };
-            // Pass bearer via environment for Host to pick up? Actually Host will generate its own bearer and write descriptor; but starter passes via arg? For now set env
+            // Pass bearer via environment for Host to pick up
             psi.Environment["RU_DESKTOP_TOKEN"] = bearer;
-            // Ensure child does not inherit other tokens
-            Process.Start(psi);
+            lock (_lifecycleGate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                ct.ThrowIfCancellationRequested();
+                var proc = _startProcess(psi);
+                if (proc is null) return Task.FromResult(false);
+                _startedProcess?.Dispose();
+                _startedProcess = proc;
+            }
             return Task.FromResult(true);
         }
         catch
         {
             return Task.FromResult(false);
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (_lifecycleGate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            // Host lifetime is shared by GUI/CLI. Release our handle, not the process.
+            // The Host owns its graceful shutdown and Worker/Broker cleanup.
+            _startedProcess?.Dispose();
+            _startedProcess = null;
         }
     }
 

@@ -83,27 +83,25 @@ public sealed class HarnessRunService
             createdAt: now,
             updatedAt: now);
 
-        // Prepare events/payloads for creation
-        var events = new List<HarnessEventIntent>
-        {
-            new(_ids.NewEventId(), HarnessEventKind.RunStateChanged, safeCode: isTrusted ? "waiting_history" : "waiting_workspace_trust"),
-        };
-
-        var payloads = new List<HarnessPayloadIntent>();
-        IReadOnlyList<ConversationOutboxIntent> outbox = Array.Empty<ConversationOutboxIntent>();
-
-        // If trusted, need to create user prompt payload and outbox for history wait
-        // For untrusted, store prompt as encrypted payload but remain in WaitingWorkspaceTrust until approved (no outbox yet).
+        // Prepare prompt payload first so we can link it to the initial event.
         var promptBytes = Encoding.UTF8.GetBytes(prompt);
         var promptPayloadId = _ids.NewPayloadId();
         var promptPayload = new HarnessPayloadIntent(
             promptPayloadId,
             HarnessPayloadKind.UserPrompt,
-            HarnessPayloadAudience.InternalOnly,
+            HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
             HarnessPayloadEncoding.Utf8Text,
             promptBytes.Length == 0 ? 1 : promptBytes.Length,
             promptBytes);
-        payloads.Add(promptPayload);
+
+        // Prepare events/payloads for creation
+        var events = new List<HarnessEventIntent>
+        {
+            new(_ids.NewEventId(), HarnessEventKind.RunStateChanged, payloadId: promptPayloadId, safeCode: isTrusted ? "waiting_history" : "waiting_workspace_trust"),
+        };
+
+        var payloads = new List<HarnessPayloadIntent> { promptPayload };
+        IReadOnlyList<ConversationOutboxIntent> outbox = Array.Empty<ConversationOutboxIntent>();
 
         if (isTrusted)
         {

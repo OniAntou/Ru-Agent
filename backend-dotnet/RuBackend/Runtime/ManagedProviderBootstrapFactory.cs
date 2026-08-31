@@ -25,6 +25,7 @@ public sealed class ManagedProviderBootstrapFactory
         ArgumentNullException.ThrowIfNull(credentials);
 
         var selection = SelectProvider(settings);
+        // A missing key stays missing. Never borrow an alias or another provider's key.
         var credential = selection.CredentialAccount is null
             ? string.Empty
             : await credentials.GetAsync(

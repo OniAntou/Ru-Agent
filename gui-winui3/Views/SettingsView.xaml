@@ -274,7 +274,7 @@
                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel VerticalAlignment="Center" Spacing="1">
-                                            <TextBlock Text="Mô hình &amp; Runtime Backend"
+                                            <TextBlock Text="Provider &amp; Mô hình AI"
                                                        FontSize="15"
                                                        FontWeight="SemiBold"
                                                        FontFamily="{StaticResource RuUiFontFamily}"
@@ -288,11 +288,11 @@
 
                                     <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
 
-                                    <!-- Backend Type Row -->
+                                    <!-- Provider Row -->
                                     <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                         <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
-                                            <TextBlock Text="Loại Backend" Style="{StaticResource SettingLabelStyle}"/>
-                                            <TextBlock Text="Chọn dịch vụ đám mây hoặc provider ngoài" Style="{StaticResource SettingDescStyle}"/>
+                                            <TextBlock Text="Provider" Style="{StaticResource SettingLabelStyle}"/>
+                                            <TextBlock Text="Chọn nhà cung cấp AI đám mây hoặc máy chủ cục bộ" Style="{StaticResource SettingDescStyle}"/>
                                         </StackPanel>
                                         <ComboBox x:Name="BackendComboBox"
                                                   Grid.Column="1"

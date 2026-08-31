@@ -1,6 +1,6 @@
 # Ru Roadmap
 
-Last reviewed: 2026-08-31.
+Last reviewed: 2026-09-01.
 
 ## Active Architecture: Cloud-First & External OpenAI-Compatible Providers
 
@@ -49,7 +49,7 @@ See [verification](docs/operations/verification.md) for measured results and
 - [x] Optimized outbox: `HarnessOutboxStore.ReadNextWorkAsync` with `OutboxWork` Idle/Transition/Delivery, read-only idle path (no `BEGIN IMMEDIATE` when idle), prioritized re-read under transaction.
 - [x] Optimized file search: single `ReadSearchText` stream per file (probe 8000 + bounded 1 MiB) for `FileSearchAdapter` and `HarnessToolGateway`, preserving binary/invalid_utf8/file_too_large semantics.
 - [x] Added GUI single-flight `RefreshController<T>` and `AgentReplyAccumulator` coalesced render (ApiService CancellationToken, `DiagnosticsView`/`MainWindow`/`ChatView` wiring).
-- [x] Removed unused `ddgs` from `runtime` extra, kept `torch>=2.9,<3` for `voice` (pip check clean).
+- [x] Removed unused `ddgs` from `runtime`; aligned voice Torch/torchaudio to `>=2.8,<2.9`, accepting setup's `2.8.0+cu128`. Tooling `pip check` is not fresh voice-install proof.
 
 ## Optimization handoff and acceptance follow-up (2026-08-31)
 
@@ -59,8 +59,10 @@ which links six scoped plans and their verification gates. Concurrent work in
 `e6fa40c` already implements multiple slices, as recorded above; begin with the
 plan's resume gate and verify gaps instead of duplicating those changes.
 
-- [x] Reconcile implemented diagnostic/native/GUI/I/O slices with their full
-  acceptance criteria and before/after evidence at the delivered revision: added unit tests for `RefreshController`, `AgentReplyAccumulator`, `ApiRefreshCancellation`, `AgentReplyRenderScheduling`, `HarnessOutboxStore.ReadNextWorkAsync`, and `HarnessFileSearch`.
+- [x] Add deterministic behavior coverage for logger/refresh lifetime, production reply scheduling, native status suppression, outbox and bounded file search.
+- [ ] Collect the optimization plan's missing before/after work counters,
+  allocation measurements and median/p95 benchmarks. Unit tests do not close
+  performance acceptance; native/live acceptance remains separate.
 - [x] Preserve the recorded Broker/Worker extraction rejection; only revisit
   with new evidence and approval, not as automatic unfinished work.
 - [x] Resolve the remaining Torch declaration/setup compatibility discrepancy
@@ -75,7 +77,16 @@ follow-up boxes track acceptance reconciliation, not a reversal of that work.
 ## Pending product work
 
 - [x] Investigate diagnostic-writer shutdown under concurrent host teardown:
-  `StructuredDiagnosticLogWriter.Dispose` now waits via `StopAsync(2s)` and only disposes gates after `Completion` proves writer quiescence. `DiagnosticWriterShutdownTests` (7 cases) covers Drained/Cancelled/Incomplete, flush-in-flight, multi-caller, noop after close, and failure bound. Business endpoint fixtures still use discarding emitter for isolation.
+  `StructuredDiagnosticLogWriter.Dispose` waits via `StopAsync(2s)` and only disposes gates after `Completion` proves writer quiescence. Ten writer shutdown cases and one actual Host shutdown case cover the lifecycle. Business endpoint fixtures still use a discarding emitter for isolation.
+- [x] Remove all credential alias/cross-provider fallback from managed bootstrap;
+  read only the selected provider's canonical account, without migrating keys.
+- [x] Detach GUI/CLI clients without killing the shared Public Host; cancel
+  startup before teardown so late responses cannot create controllers/timers.
+- [x] Keep policy/preset failures bounded and privacy-safe; propagate request
+  cancellation rather than converting it into an internal-error response.
+- [x] Align Release clean/XAML-copy paths with the x64 GUI publish and stop
+  the build on missing/copy-failed compiled XAML; cover the release-script
+  regression with controlled artifacts.
 - [ ] Collect user-listened hosted audio evidence and numeric live-cloud p50/p95
   before calling the first-audio rollout accepted. Keep the provider/model A/B
   comparison pending until that evidence exists; do not change providers or

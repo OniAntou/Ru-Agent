@@ -31,6 +31,12 @@ public static class HarnessSqliteSchema
             Directory.CreateDirectory(directory);
             await using var connection = await options.OpenConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
+            await using (var walCmd = connection.CreateCommand())
+            {
+                walCmd.CommandText = "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;";
+                await walCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             var existingVersion = await ReadUserVersionAsync(connection, cancellationToken)
                 .ConfigureAwait(false);
             if (existingVersion is not 0 and not 2 and not CurrentVersion)
@@ -43,12 +49,20 @@ public static class HarnessSqliteSchema
                 await using var migration = connection.CreateCommand();
                 migration.CommandText = SchemaVersionTwoToThree;
                 await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                await using var verCmd = connection.CreateCommand();
+                verCmd.CommandText = $"PRAGMA user_version = {CurrentVersion};";
+                await verCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
             else if (existingVersion == 0)
             {
                 await using var command = connection.CreateCommand();
                 command.CommandText = SchemaVersionThree;
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                await using var verCmd = connection.CreateCommand();
+                verCmd.CommandText = $"PRAGMA user_version = {CurrentVersion};";
+                await verCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
             if (!await HarnessSqliteSchemaValidator.ValidateAsync(connection, cancellationToken)
@@ -86,9 +100,6 @@ public static class HarnessSqliteSchema
             or NotSupportedException;
 
     private const string SchemaVersionThree = """
-        PRAGMA journal_mode = WAL;
-        PRAGMA foreign_keys = ON;
-
         CREATE TABLE IF NOT EXISTS agent_workspaces (
             workspace_id TEXT PRIMARY KEY,
             canonical_root_nonce BLOB NOT NULL CHECK(length(canonical_root_nonce) = 12),
@@ -256,14 +267,9 @@ public static class HarnessSqliteSchema
 
         CREATE INDEX IF NOT EXISTS ix_agent_context_compactions_run_created
             ON agent_context_compactions(run_id, created_at_utc, compaction_id);
-
-        PRAGMA user_version = 3;
         """;
 
     private const string SchemaVersionTwoToThree = """
-        PRAGMA journal_mode = WAL;
-        PRAGMA foreign_keys = ON;
-
         CREATE TABLE IF NOT EXISTS agent_context_compactions (
             compaction_id TEXT PRIMARY KEY,
             run_id TEXT NOT NULL REFERENCES agent_runs(run_id) ON DELETE CASCADE,
@@ -280,7 +286,5 @@ public static class HarnessSqliteSchema
 
         CREATE INDEX IF NOT EXISTS ix_agent_context_compactions_run_created
             ON agent_context_compactions(run_id, created_at_utc, compaction_id);
-
-        PRAGMA user_version = 3;
         """;
 }

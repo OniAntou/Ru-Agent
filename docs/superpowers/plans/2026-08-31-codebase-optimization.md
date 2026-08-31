@@ -10,6 +10,13 @@
 
 **Status:** Roadmap approved by the user on 2026-08-31. This task is a documentation-only handoff. Concurrent work has already added implementations in `e6fa40c`; the next agent must reconcile existing code/evidence before filling gaps, not restart the roadmap blindly.
 
+**Checkpoint (2026-09-01):** Deterministic implementation and review fixes are
+recorded in [verification](../../operations/verification.md) and the
+[review-remediation plan](2026-09-01-review-remediation.md). The original
+roadmap is not fully accepted: missing work counters, allocation and
+before/after median/p95 measurements remain open, as do native/live checks.
+Broker/Worker extraction rejection remains preserved; it is not pending work.
+
 ## Global Constraints
 
 - Work in the actual `D:\LLM` checkout, or an explicitly chosen isolated worktree based on its current changes.

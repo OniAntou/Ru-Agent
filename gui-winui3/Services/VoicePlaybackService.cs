@@ -62,9 +62,10 @@ namespace RuApp.Services
             _subtitleEvents = new VoiceSubtitleEventPump(presenter);
         }
 
-        public async Task RefreshSettingsAsync()
+        public async Task RefreshSettingsAsync(CancellationToken cancellationToken = default)
         {
-            var voice = await _apiService.GetVoiceStatusAsync();
+            var voice = await _apiService.GetVoiceStatusAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (voice == null) return;
             VoiceLabel = voice.VoiceLabel;
             VoiceSpeed = voice.VoiceSpeed;

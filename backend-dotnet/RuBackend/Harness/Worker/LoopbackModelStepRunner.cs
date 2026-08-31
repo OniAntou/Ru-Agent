@@ -294,10 +294,11 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             return anyText;
         }
 
-        // If context is empty (initial run), use a placeholder that will be replaced by actual run prompt.
-        // For tracer, the run prompt is encrypted payload, not yet in context entries at step start?
-        // We'll use a generic prompt if none found; tests will provide a context with at least one entry.
-        return "tracer prompt";
+        // Context must contain at least one text entry for the model step.
+        // If none is found the context assembly pipeline failed to include the
+        // user prompt — surface a clear error rather than sending a meaningless
+        // placeholder that confuses the model.
+        throw new WorkerProtocolException("missing_user_prompt");
     }
 
     private static JsonArray ExtractTurns(ModelContextSnapshot context)

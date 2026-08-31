@@ -321,11 +321,11 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         value.Trim().ToLowerInvariant() switch
         {
             "gguf" or "llama.cpp" => BackendOpenCode,
-            "opencode" or "opencode zen" => BackendOpenCode,
-            "kilo" or "kilo gateway" => BackendKilo,
-            "ollama" => "Ollama",
-            "lmstudio" or "lm studio" => "LM Studio",
-            "custom" or "custom openai" => "Custom OpenAI",
+            "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => BackendOpenCode,
+            "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => BackendKilo,
+            "ollama" or "ollama api" => "Ollama",
+            "lmstudio" or "lm studio" or "lm studio api" => "LM Studio",
+            "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
             _ => throw new SettingsPayloadException(),
         };
 

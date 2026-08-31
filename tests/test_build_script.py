@@ -69,6 +69,7 @@ def _run_build_script(
     native_failure: bool = False,
     gui_publish_exists: bool = True,
     missing_artifact: str = "",
+    missing_xaml: str = "",
 ) -> subprocess.CompletedProcess[str]:
     repo_root = Path(__file__).resolve().parents[1]
     build_root = tmp_path / "checkout"
@@ -76,6 +77,13 @@ def _run_build_script(
     shutil.copy2(repo_root / "build.bat", build_root / "build.bat")
     (build_root / "gui-winui3").mkdir()
     (build_root / "gui-winui3" / "RuApp.csproj").write_text("stub\n", encoding="utf-8")
+    compiled_xaml = build_root / "gui-winui3/obj/x64/Release/net10.0-windows10.0.26100.0/win-x64"
+    for relative in ("App.xbf", "MainWindow.xbf", "Views/ChatView.xbf"):
+        if relative == missing_xaml:
+            continue
+        artifact = compiled_xaml / relative
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text(f"compiled {relative}\n", encoding="utf-8")
     (build_root / "backend-dotnet" / "RuAgent.Broker").mkdir(parents=True)
     (build_root / "backend-dotnet" / "RuBackend").mkdir(parents=True)
     (build_root / "backend-dotnet" / "RuAgent.Runtime.Worker").mkdir(parents=True)
@@ -156,6 +164,24 @@ def test_native_build_failure_stops_release_build(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "Build complete" not in result.stdout
+
+
+def test_release_copies_x64_compiled_xaml(tmp_path: Path) -> None:
+    result = _run_build_script(tmp_path, overlay_exists=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    publish = tmp_path / "checkout/gui-winui3/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish"
+    for relative in ("App.xbf", "MainWindow.xbf", "Views/ChatView.xbf"):
+        artifact = publish / relative
+        assert artifact.is_file(), f"Missing published XAML: {relative}"
+        assert artifact.read_text(encoding="utf-8") == f"compiled {relative}\n"
+
+
+@pytest.mark.parametrize("missing_xaml", ["App.xbf", "MainWindow.xbf", "Views/ChatView.xbf"])
+def test_missing_compiled_xaml_stops_release(tmp_path: Path, missing_xaml: str) -> None:
+    result = _run_build_script(tmp_path, overlay_exists=True, missing_xaml=missing_xaml)
+    assert result.returncode != 0
+    assert "Build complete" not in result.stdout
+    assert not (tmp_path / "checkout/powershell.invocations").exists()
 
 
 def test_missing_gui_publish_fails_before_overlay_build(tmp_path: Path) -> None:

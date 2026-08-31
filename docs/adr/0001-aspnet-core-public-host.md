@@ -19,3 +19,8 @@ RuApp starts or attaches to that host through its validated descriptor rather
 than starting those children directly. The Broker is the execution boundary
 for local action adapters, not a second public host. Unknown public paths fail
 in ASP.NET Core rather than being forwarded to Python.
+
+Clarification (2026-09-01): disposing a GUI/CLI starter releases its local
+process handle only. It does not terminate the shared Public Host or place
+that Host in a client-owned kill-on-close job. Graceful Host shutdown and the
+Worker/Broker job remain owned by the Host.

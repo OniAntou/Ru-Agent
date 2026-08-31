@@ -12,8 +12,11 @@ ingestion claims and persists them with event-ID de-duplication. The retired
 Python Worker is not a production activity publisher. Activity reads are
 sanitized again so legacy files cannot return raw chat content.
 
-Technical diagnostics are independent bounded JSONL writers for ASP.NET Core,
-the private Python worker, and WinUI. The operation path performs only safe
+Current bounded JSONL diagnostics are owned by ASP.NET Core
+(`StructuredDiagnosticLogWriter`) and WinUI (`GuiDiagnosticWriter`). The
+retired Python Worker is not a current diagnostic producer; the managed
+Worker's private protocol errors are not a replacement Python JSONL stream.
+The operation path performs only safe
 field construction and queue enqueue; file I/O, batching, retention, and
 retry run in background workers. A diagnostic emitter and HTTP boundary use
 fixed event codes, durations, statuses, opaque correlation IDs, and safe error

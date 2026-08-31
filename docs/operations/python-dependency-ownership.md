@@ -1,6 +1,6 @@
 # Python Dependency Ownership
 
-Last reviewed: 2026-08-31.
+Last reviewed: 2026-09-01.
 
 This document records the consumer inventory, ownership boundaries, and version declarations for Python dependencies across Ru's workspace.
 
@@ -12,10 +12,10 @@ This document records the consumer inventory, ownership boundaries, and version 
 | `torchaudio` | `pyproject.toml` (`[voice]`), `scripts/setup_omnivoice_env.ps1` | `src/ru_runtime/voice/omnivoice_server.py`, audio processing | **Active (Voice Provider)**. The voice extra accepts the matching 2.8 line; setup pins `2.8.0+cu128` alongside Torch. |
 | `omnivoice` | `pyproject.toml` (`[voice]`), `scripts/setup_omnivoice_env.ps1` | `src/ru_runtime/voice/omnivoice_server.py` | **Active (Isolated Provider)**. The extra records the installed `0.2.1` floor; it runs in dedicated `omnivoice_env`. |
 | `flask` | `pyproject.toml` (`[dev]` and `[voice]`), `scripts/setup_omnivoice_env.ps1` | `src/ru_runtime/voice/omnivoice_server.py` | **Active**. HTTP server for the isolated OmniVoice process; retained in `dev` for Python server tests. |
-| `httpx` | `pyproject.toml` (`dependencies`) | Test fixtures, benchmarks, maintenance harnesses | **Active (Tooling/Harness)**. Retained for Python test clients; production HTTP client is C#. |
-| `keyring` | `pyproject.toml` (`dependencies`) | `scripts/` credential tooling | **Active (Tooling)**. Windows DPAPI credential helper. |
+| `httpx` | `pyproject.toml` (`[runtime]` extra) | `scripts/harness`, compatibility benchmark and acceptance tooling | **Active (Tooling/Harness)**. Production model HTTP client is C#. |
+| `keyring` | `pyproject.toml` (`[runtime]` extra) | `src/ru_runtime/persistence/credential_store.py` (lazy import) | **Active (Retained Python tooling)**. OS credential-store adapter, separate from managed provider bootstrap. |
 | `ddgs` / `duckduckgo_search` | *Removed from pyproject.toml* | None in Python | **Removed**. Managed web tools (`web.search`, `web.fetch`) are implemented in C# (`backend-dotnet/RuAgent.Broker/Tools/Web/`). |
-| `pytest`, `pytest-asyncio`, `ruff`, `mypy` | `pyproject.toml` (`[dev]`) | CI, test runner, lint, typecheck | **Active (Dev/CI)**. Standard verification toolchain. |
+| `pytest`, `ruff`, `mypy` | `pyproject.toml` (`[dev]`) | CI, test runner, lint, typecheck | **Active (Dev/CI)**. `pytest-asyncio` is not declared by this project. |
 
 ## Torch Version Alignment and Compatibility Decision
 

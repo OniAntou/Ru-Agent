@@ -643,8 +643,19 @@ public static class AgentV1Endpoints
             return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
         }
 
-        var result = await service.CreatePolicyAsync(body, isInteractive, ct);
-        return Results.Json(result.Body, statusCode: result.StatusCode);
+        try
+        {
+            var result = await service.CreatePolicyAsync(body, isInteractive, ct);
+            return Results.Json(result.Body, statusCode: result.StatusCode);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return Results.Json(new { error_code = "policy_create_failed", message = "Unable to create policy." }, statusCode: 500);
+        }
     }
 
     private static async Task<IResult> DeletePolicyAsync(string ruleId, HttpContext context, AgentV1Service service, CancellationToken ct)

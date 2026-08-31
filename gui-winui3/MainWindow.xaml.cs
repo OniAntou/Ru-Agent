@@ -21,6 +21,9 @@ namespace RuApp
         private readonly IRuBackendSessionProvider _backendProvider;
         private ApiService? _apiService;
         private HealthStatusService? _healthStatusService;
+        private readonly StartupCancellationScope _startup = new();
+        private Task _startupTask = Task.CompletedTask;
+        private bool _closed;
         private VoicePlaybackService? _voicePlayback;
         private SubtitleOverlayService? _subtitleOverlay;
         private SubtitlePresenter? _subtitlePresenter;
@@ -80,7 +83,7 @@ namespace RuApp
 
                 this.Closed += OnWindowClosed;
 
-                _ = InitializeAppAsync();
+                _startupTask = InitializeAppSafelyAsync();
             }
             catch (Exception ex)
             {
@@ -147,6 +150,12 @@ namespace RuApp
                 return Path.GetFullPath(envRoot);
             }
 
+            var cwd = Directory.GetCurrentDirectory();
+            if (File.Exists(Path.Combine(cwd, "pyproject.toml")))
+            {
+                return Path.GetFullPath(cwd);
+            }
+
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string candidate = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", ".."));
             if (File.Exists(Path.Combine(candidate, "pyproject.toml")))
@@ -167,6 +176,17 @@ namespace RuApp
             return null;
         }
 
+        private async Task InitializeAppSafelyAsync()
+        {
+            try { await InitializeAppAsync(); }
+            catch (OperationCanceledException) when (_startup.Token.IsCancellationRequested) { }
+            catch (Exception ex)
+            {
+                GuiDiagnosticWriter.WriteCrashEvent(ex);
+                if (!_closed) StatusText.Text = "Không thể khởi động Ru. Hãy kiểm tra nhật ký.";
+            }
+        }
+
         private async Task InitializeAppAsync()
         {
             SidebarSessionList.ItemsSource = Sessions;
@@ -183,9 +203,7 @@ namespace RuApp
                 return;
             }
 
-            BackendSession? backendSession = await _backendProvider.StartAsync(
-                projectRoot,
-                CancellationToken.None);
+            BackendSession? backendSession = await _startup.RunAsync(token => _backendProvider.StartAsync(projectRoot, token));
             if (backendSession != null)
             {
                 StatusText.Text = $"{_backendProvider.DisplayName} Backend đã sẵn sàng (127.0.0.1:{backendSession.HttpBaseUri.Port})";
@@ -213,8 +231,8 @@ namespace RuApp
                     _voicePlayback.ConfigureSubtitles(_subtitlePresenter);
                 }
 
-                await _voicePlayback.RefreshSettingsAsync();
-                var voiceStatus = await _apiService.GetVoiceStatusAsync();
+                await _startup.RunAsync(token => _voicePlayback.RefreshSettingsAsync(token));
+                var voiceStatus = await _startup.RunAsync(token => _apiService.GetVoiceStatusAsync(token));
                 if (voiceStatus != null && _subtitleOverlay != null)
                 {
                     _subtitleOverlay.ApplyCustomization(
@@ -279,7 +297,7 @@ namespace RuApp
                         }
                     });
                 _sessionsRefreshController.SetActive(true);
-                await _sessionsRefreshController.RefreshAsync();
+                await _startup.RunAsync(_ => _sessionsRefreshController.RefreshAsync());
 
                 _healthRefreshController = new RefreshController<HealthStatusSnapshot?>(
                     async token => await _healthStatusService!.GatherAsync(token),
@@ -292,7 +310,7 @@ namespace RuApp
                         }
                     });
                 _healthRefreshController.SetActive(true);
-                await _healthRefreshController.RefreshAsync();
+                await _startup.RunAsync(_ => _healthRefreshController.RefreshAsync());
 
                 _sessionsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
                 _sessionsTimer.Tick += async (_, __) =>
@@ -434,9 +452,14 @@ namespace RuApp
 
         private async void OnWindowClosed(object sender, WindowEventArgs args)
         {
+            if (_closed) return;
+            _closed = true;
+            _startup.Cancel();
             _sessionsTimer?.Stop();
             _sessionsRefreshController?.SetActive(false);
             _healthRefreshController?.SetActive(false);
+            await _startupTask;
+            _startup.Dispose();
             if (_sessionsRefreshController != null) await _sessionsRefreshController.DisposeAsync();
             _sessionsRefreshController = null;
             if (_healthRefreshController != null) await _healthRefreshController.DisposeAsync();

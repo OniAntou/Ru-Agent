@@ -23,10 +23,10 @@ set "BROKER_PUBLISH_DIR=%~dp0backend-dotnet\RuAgent.Broker\bin\Release\net10.0\w
 set "BACKEND_PROJECT=%~dp0backend-dotnet\RuBackend\RuBackend.csproj"
 set "BACKEND_PUBLISH_DIR=%~dp0backend-dotnet\RuBackend\bin\Release\net10.0\win-x64\publish"
 set "PUBLISH_DIR=%PROJECT_DIR%\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish"
-set "OBJ_DIR=%PROJECT_DIR%\obj\Release\net10.0-windows10.0.26100.0\win-x64"
+set "OBJ_DIR=%PROJECT_DIR%\obj\x64\Release\net10.0-windows10.0.26100.0\win-x64"
 
 echo [1/13] Cleaning previous build...
-call dotnet clean "%CSPROJ%" -r win-x64 -c Release >nul 2>&1
+call dotnet clean "%CSPROJ%" -r win-x64 -c Release -p:Platform=x64 >nul 2>&1
 if errorlevel 1 (
     echo CLEAN FAILED!
     exit /b 1
@@ -158,10 +158,23 @@ if errorlevel 1 (
 
 echo [11/13] Copying compiled XAML (.xbf) files...
 if not exist "%PUBLISH_DIR%\Views" mkdir "%PUBLISH_DIR%\Views"
-copy /Y "%OBJ_DIR%\App.xbf" "%PUBLISH_DIR%\" >nul 2>&1
-copy /Y "%OBJ_DIR%\MainWindow.xbf" "%PUBLISH_DIR%\" >nul 2>&1
+for %%f in (App.xbf MainWindow.xbf) do (
+    copy /Y "%OBJ_DIR%\%%f" "%PUBLISH_DIR%\" >nul 2>&1
+    if errorlevel 1 (
+        echo BUILD FAILED: Could not publish compiled XAML %%f.
+        exit /b 1
+    )
+)
+if not exist "%OBJ_DIR%\Views\*.xbf" (
+    echo BUILD FAILED: Compiled view XAML was not created.
+    exit /b 1
+)
 for %%f in ("%OBJ_DIR%\Views\*.xbf") do (
     copy /Y "%%f" "%PUBLISH_DIR%\Views\" >nul 2>&1
+    if errorlevel 1 (
+        echo BUILD FAILED: Could not publish compiled XAML %%~nxf.
+        exit /b 1
+    )
 )
 
 echo [12/13] Building and testing native desktop overlay...
@@ -177,6 +190,7 @@ if not exist "%~dp0tools\ru_desktop_overlay\out\build\Release\RuDesktopOverlay.e
     exit /b 1
 )
 
+call dotnet build-server shutdown >nul 2>&1
 echo [13/13] Build complete!
 echo.
 echo ============================================

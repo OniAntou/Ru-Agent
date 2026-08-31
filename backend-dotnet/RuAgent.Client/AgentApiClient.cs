@@ -333,7 +333,11 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
         var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode)
-            throw new AgentApiException(ExtractErrorCode(body) ?? "policy_create_failed", body, (int)resp.StatusCode);
+        {
+            var code = ExtractErrorCode(body) ?? "policy_create_failed";
+            var msg = ExtractErrorMessage(body) ?? (string.IsNullOrWhiteSpace(body) ? $"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}" : body);
+            throw new AgentApiException(code, msg, (int)resp.StatusCode);
+        }
         return JsonDocument.Parse(body).RootElement.Clone();
     }
 
@@ -542,6 +546,22 @@ public sealed class AgentApiClient : IAgentPolicyClient, IDisposable
                 return code.GetString();
             if (doc.RootElement.TryGetProperty("code", out var commandCode) && commandCode.ValueKind == JsonValueKind.String)
                 return commandCode.GetString();
+            if (doc.RootElement.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
+                return title.GetString();
+        }
+        catch { }
+        return null;
+    }
+
+    private static string? ExtractErrorMessage(string json)
+    {
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("message", out var msg) && msg.ValueKind == JsonValueKind.String)
+                return msg.GetString();
+            if (doc.RootElement.TryGetProperty("detail", out var detail) && detail.ValueKind == JsonValueKind.String)
+                return detail.GetString();
         }
         catch { }
         return null;

@@ -163,6 +163,10 @@ public sealed class SettingsStore : ISettingsStore
         var migratedFromGguf = rawBackend.Trim().ToLowerInvariant() is "gguf" or "llama.cpp";
         var backend = NormalizeBackend(rawBackend);
         var model = ReadString(raw, "model", string.Empty);
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            model = ReadString(raw, "api_model", string.Empty);
+        }
         var openCodeModel = ReadString(raw, "opencode_model", string.Empty);
         var kiloModel = ReadString(raw, "kilo_model", string.Empty);
         if (backend == BackendOpenCode && string.IsNullOrWhiteSpace(openCodeModel) && !migratedFromGguf)
@@ -243,11 +247,11 @@ public sealed class SettingsStore : ISettingsStore
         return value.Trim().ToLowerInvariant() switch
         {
             "gguf" or "llama.cpp" => BackendOpenCode,
-            "opencode" or "opencode zen" => BackendOpenCode,
-            "kilo" or "kilo gateway" => BackendKilo,
-            "ollama" => BackendOllama,
-            "lmstudio" or "lm studio" => BackendLmStudio,
-            "custom" or "custom openai" => BackendCustom,
+            "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => BackendOpenCode,
+            "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => BackendKilo,
+            "ollama" or "ollama api" => BackendOllama,
+            "lmstudio" or "lm studio" or "lm studio api" => BackendLmStudio,
+            "custom" or "custom openai" or "custom openai api" => BackendCustom,
             _ => BackendOpenCode,
         };
     }

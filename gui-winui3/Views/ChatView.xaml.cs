@@ -1631,9 +1631,12 @@ namespace RuApp.Views
                     "session_create_failed" => "Không tạo được phiên trò chuyện cho Coding Agent. Kiểm tra backend rồi thử lại.",
                     "session_not_found" or "invalid_session_id" => "Phiên trò chuyện không còn hợp lệ. Hãy gửi lại để Ru tạo phiên mới.",
                     "unauthorized" => "Phiên đăng nhập Agent không còn hợp lệ. Hãy khởi động lại backend.",
-                    _ => "Coding Agent không thể bắt đầu. Mở Công cụ → Nhật ký hoạt động để kiểm tra."
+                    "agent_store_unavailable" or "harness_store_unavailable" => "Cơ sở dữ liệu Agent Harness tạm thời không khả dụng. Kiểm tra quyền ghi hoặc khởi động lại.",
+                    _ => !string.IsNullOrWhiteSpace(api.Message) && !string.Equals(api.Message, api.ErrorCode, StringComparison.OrdinalIgnoreCase)
+                        ? $"Coding Agent không thể bắt đầu ({api.ErrorCode}: {api.Message}). Mở Công cụ → Nhật ký hoạt động để kiểm tra."
+                        : $"Coding Agent không thể bắt đầu ({api.ErrorCode}). Mở Công cụ → Nhật ký hoạt động để kiểm tra."
                 },
-                _ => "Coding Agent không thể bắt đầu. Kiểm tra project root và backend rồi thử lại."
+                _ => $"Coding Agent không thể bắt đầu: {exception.Message}"
             };
             ShowAgentInlineStatus(status);
             AgentStopButton.Visibility = Visibility.Collapsed;

@@ -42,15 +42,19 @@ Last reviewed: 2026-08-31.
 See [verification](docs/operations/verification.md) for measured results and
 [the completed plan](docs/superpowers/plans/2026-08-31-test-suite-cleanup.md).
 
+## Completed optimization (2026-08-31 codex/e6fa40c)
+
+- [x] Fixed diagnostic writer lifecycle: `StructuredDiagnosticLogWriter` now owns `IDiagnosticLogSink`, `StopAsync(Drained/Cancelled/Incomplete)` and `Completion`, proving quiescence before disposing gates (covers `TODO` diagnostic shutdown).
+- [x] Fixed native overlay Release checks: `assert` → `CHECK`, `test_check.h`, `--self-test-failure` with `WILL_FAIL`, `RU_BUILD_NATIVE_PROBES` opt-in, fused `PrepareRgbaForOverlay` (1 loop) for `SpoutOverlay`.
+- [x] Optimized outbox: `HarnessOutboxStore.ReadNextWorkAsync` with `OutboxWork` Idle/Transition/Delivery, read-only idle path (no `BEGIN IMMEDIATE` when idle), prioritized re-read under transaction.
+- [x] Optimized file search: single `ReadSearchText` stream per file (probe 8000 + bounded 1 MiB) for `FileSearchAdapter` and `HarnessToolGateway`, preserving binary/invalid_utf8/file_too_large semantics.
+- [x] Added GUI single-flight `RefreshController<T>` and `AgentReplyAccumulator` coalesced render (ApiService CancellationToken, `DiagnosticsView`/`MainWindow`/`ChatView` wiring).
+- [x] Removed unused `ddgs` from `runtime` extra, kept `torch>=2.9,<3` for `voice` (pip check clean).
+
 ## Pending product work
 
-- [ ] Investigate diagnostic-writer shutdown under concurrent host teardown:
-  `StructuredDiagnosticLogWriter.Dispose` waits at most two seconds, then
-  disposes synchronization primitives without proving the writer has stopped.
-  A backend test teardown hit a locked JSONL file during the cleanup matrix.
-  Business endpoint fixtures now discard diagnostic events; dedicated
-  diagnostics tests still use the real writer. This isolates the tests but
-  does not establish a production logging-lifecycle fix.
+- [x] Investigate diagnostic-writer shutdown under concurrent host teardown:
+  `StructuredDiagnosticLogWriter.Dispose` now waits via `StopAsync(2s)` and only disposes gates after `Completion` proves writer quiescence. `DiagnosticWriterShutdownTests` (7 cases) covers Drained/Cancelled/Incomplete, flush-in-flight, multi-caller, noop after close, and failure bound. Business endpoint fixtures still use discarding emitter for isolation.
 - [ ] Collect user-listened hosted audio evidence and numeric live-cloud p50/p95
   before calling the first-audio rollout accepted. Keep the provider/model A/B
   comparison pending until that evidence exists; do not change providers or

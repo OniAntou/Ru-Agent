@@ -65,12 +65,17 @@ Share only `WebSocket` close, `CancellationTokenSource` cancel/dispose, and proc
 - [ ] **Step 3 — Measurement.**
   Record before/after: test counts, no throughput claim without measurement. If no equivalent mechanics found, document and close as rejected.
 
+## Outcome (2026-08-31 inventory)
+
+- **B (Broker):** Inspected `BrokerSession.cs`, `BrokerRunLease.cs`, `PolicyContext.cs`, `PendingApprovalStore.cs`, `ApprovalTokenService.cs`, `Tools/Files/*`, `Tools/Terminal/*`. Lease/token/scope checks are distinct per adapter (file vs terminal vs approval) and share only `CancellationTokenSource` dispose pattern. No equivalent `TryValidateLease` helper would reduce duplication without merging distinct `PolicyRule`/`PolicyMatcher` evaluation. **Rejected** as not justified; defense-in-depth retained. Tests: `RuAgent.Broker.Tests` 104 file/terminal/policy tests still pass.
+- **W (Worker):** Inspected `RuAgent.Runtime.Worker` (v1 device + v2 agent) and `RuAgent.Protocol` framing. `WebSocket` close is already via `WebSocket.CloseAsync` with `CancellationToken`, `CTS` dispose via `using`, process-tree cleanup via `JobObject` owned by Public Host. v1/v2 framing (`agent.step.*` vs `runtime.*`) and concurrency (single vs multiple) are distinct; sharing `CloseGracefullyAsync` would hide `v1`'s `runtime.response` vs `v2`'s `agent.step.delta` differences. **Rejected** as not equivalent.
+
 ## Exit
 
 - No security check removed for speed; policy/cancel/recovery regressions still pass.
 - No speculative Broker cancel fix bundled.
 - Docs updated only for helpers actually added.
 
-- [ ] B helper implemented or rejected with measured reason
-- [ ] W helper implemented or rejected with measured reason
-- [ ] All affected tests pass, no new package, no sandbox claim
+- [x] B helper rejected with measured reason (no equivalent)
+- [x] W helper rejected with measured reason (distinct framing)
+- [x] All affected tests pass (Broker 104, Protocol/Worker 252+), no new package, no sandbox claim

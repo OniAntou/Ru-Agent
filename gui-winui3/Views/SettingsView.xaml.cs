@@ -598,18 +598,16 @@ namespace RuApp.Views
             VtsSettingsScrollViewer.Visibility = isVts ? Visibility.Visible : Visibility.Collapsed;
             MemoryPanel.Visibility = isMemory ? Visibility.Visible : Visibility.Collapsed;
 
-            UpdateNavButton(NavSystemBtn, NavSystemIcon, NavSystemText, isSystem);
-            UpdateNavButton(NavObserverBtn, NavObserverIcon, NavObserverText, isObserver);
-            UpdateNavButton(NavVtsBtn, NavVtsIcon, NavVtsText, isVts);
-            UpdateNavButton(NavMemoryBtn, NavMemoryIcon, NavMemoryText, isMemory);
+            UpdateNavButton(NavSystemIcon, NavSystemText, NavSystemLine, isSystem);
+            UpdateNavButton(NavObserverIcon, NavObserverText, NavObserverLine, isObserver);
+            UpdateNavButton(NavVtsIcon, NavVtsText, NavVtsLine, isVts);
+            UpdateNavButton(NavMemoryIcon, NavMemoryText, NavMemoryLine, isMemory);
         }
 
-        private static void UpdateNavButton(Button btn, FontIcon icon, TextBlock text, bool active)
+        private static void UpdateNavButton(FontIcon icon, TextBlock text, Border line, bool active)
         {
-            if (btn == null) return;
-            btn.Background = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuSurfaceBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent));
-            btn.BorderBrush = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuLineBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent));
-            btn.BorderThickness = new Thickness(1);
+            if (line != null)
+                line.Background = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuAccentBrush"] : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent));
             if (icon != null)
                 icon.Foreground = (Microsoft.UI.Xaml.Media.Brush)(active ? Application.Current.Resources["RuInkBrush"] : Application.Current.Resources["RuMutedBrush"]);
             if (text != null)

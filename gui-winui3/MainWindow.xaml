@@ -98,7 +98,7 @@
             </VisualStateManager.VisualStateGroups>
 
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="SidebarColumn" Width="250" MinWidth="180" MaxWidth="400"/>
+                <ColumnDefinition x:Name="SidebarColumn" Width="250" MinWidth="72" MaxWidth="400"/>
                 <ColumnDefinition Width="1"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>

@@ -801,21 +801,21 @@ namespace RuApp
                     _lastExpandedSidebarWidth = SidebarColumn.ActualWidth;
                 }
 
-                SidebarColumn.MinWidth = metrics.MinSidebarWidth;
+                SidebarColumn.MinWidth = 72;
                 SidebarColumn.MaxWidth = metrics.MaxSidebarWidth;
                 SidebarColumn.Width = new GridLength(metrics.NarrowRailWidth);
                 ApplySidebarVisualMode(true);
             }
             else
             {
-                SidebarColumn.MinWidth = metrics.MinSidebarWidth;
+                SidebarColumn.MinWidth = 72;
                 SidebarColumn.MaxWidth = metrics.MaxSidebarWidth;
                 var restoredWidth = _responsiveTier == ResponsiveLayoutTier.Narrow
                     ? _lastExpandedSidebarWidth
                     : SidebarColumn.ActualWidth > 0 ? SidebarColumn.ActualWidth : metrics.DefaultSidebarWidth;
-                SidebarColumn.Width = new GridLength(
-                    ResponsiveLayoutPolicy.ClampSidebarWidth(restoredWidth, metrics));
-                ApplySidebarVisualMode(false);
+                var finalWidth = ResponsiveLayoutPolicy.ClampSidebarWidth(restoredWidth, metrics);
+                SidebarColumn.Width = new GridLength(finalWidth);
+                ApplySidebarVisualMode(finalWidth <= 120);
             }
 
             _responsiveTier = metrics.Tier;
@@ -870,13 +870,15 @@ namespace RuApp
                 double diff = currentX - _startX;
                 double newWidth = _startWidth + diff;
 
-                if (newWidth <= 120)
+                if (newWidth <= 150)
                 {
+                    SidebarColumn.MinWidth = 72;
                     SidebarColumn.Width = new GridLength(72);
                     ApplySidebarVisualMode(true);
                 }
                 else
                 {
+                    SidebarColumn.MinWidth = 72;
                     var clamped = Math.Clamp(newWidth, 180, 400);
                     SidebarColumn.Width = new GridLength(clamped);
                     _lastExpandedSidebarWidth = clamped;
@@ -907,12 +909,14 @@ namespace RuApp
             if (SidebarColumn.ActualWidth > 120)
             {
                 _lastExpandedSidebarWidth = SidebarColumn.ActualWidth;
+                SidebarColumn.MinWidth = 72;
                 SidebarColumn.Width = new GridLength(72);
                 ApplySidebarVisualMode(true);
             }
             else
             {
                 var targetWidth = _lastExpandedSidebarWidth >= 180 ? _lastExpandedSidebarWidth : 250;
+                SidebarColumn.MinWidth = 72;
                 SidebarColumn.Width = new GridLength(targetWidth);
                 ApplySidebarVisualMode(false);
             }

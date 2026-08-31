@@ -175,12 +175,12 @@
                                 <TextBlock Text="Tốc độ nói cơ bản (Base Speed)" Style="{StaticResource SettingLabelStyle}"/>
                                 <TextBlock Text="Điều chỉnh nhịp điệu phát âm từ 0.75x đến 1.20x" Style="{StaticResource SettingDescStyle}"/>
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                                 <Slider x:Name="SpeedSlider" Minimum="0.75" Maximum="1.20" StepFrequency="0.05" Value="1.0" Width="140" ValueChanged="OnSpeedSliderChanged"/>
-                                <Border Background="{StaticResource RuAccentSoftBrush}" BorderBrush="{StaticResource RuAccentBrush}" 
-                                        BorderThickness="1" CornerRadius="{StaticResource RuControlCornerRadius}" Padding="6,2" MinWidth="48">
-                                    <TextBlock x:Name="SpeedText" Text="1.00x" FontSize="12" FontWeight="Bold" 
-                                               Foreground="{StaticResource RuAccentBrush}" HorizontalAlignment="Center"/>
+                                <Border Background="{StaticResource RuSurfaceBrush}" BorderBrush="{StaticResource RuLineBrush}" 
+                                        BorderThickness="1" CornerRadius="{StaticResource RuControlCornerRadius}" Padding="8,4" MinWidth="52">
+                                    <TextBlock x:Name="SpeedText" Text="1.00x" FontFamily="{StaticResource RuUiFontFamily}" FontSize="12.5" FontWeight="SemiBold" 
+                                               Foreground="{StaticResource RuInkBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
                             </StackPanel>
                         </Grid>

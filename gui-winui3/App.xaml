@@ -13,52 +13,52 @@
             <!-- Studio Minimalist palette (Clean Light & Comfortable Warm Charcoal Dark) -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
-                    <Color x:Key="RuCanvasColor">#F3F4F6</Color>
-                    <Color x:Key="RuSidebarColor">#E9EBF0</Color>
+                    <Color x:Key="RuCanvasColor">#F4F5F7</Color>
+                    <Color x:Key="RuSidebarColor">#EAECEF</Color>
                     <Color x:Key="RuSurfaceColor">#FFFFFF</Color>
-                    <Color x:Key="RuInkColor">#181A1F</Color>
-                    <Color x:Key="RuMutedColor">#636B78</Color>
-                    <Color x:Key="RuLineColor">#D9DDE5</Color>
-                    <Color x:Key="RuAccentColor">#B94D36</Color>
-                    <Color x:Key="RuAccentSoftColor">#F8ECE8</Color>
-                    <Color x:Key="RuSuccessColor">#2E7D5B</Color>
-                    <Color x:Key="RuWarningColor">#B27B1E</Color>
-                    <Color x:Key="RuDangerColor">#C23D3D</Color>
+                    <Color x:Key="RuInkColor">#0F172A</Color>
+                    <Color x:Key="RuMutedColor">#64748B</Color>
+                    <Color x:Key="RuLineColor">#CBD5E1</Color>
+                    <Color x:Key="RuAccentColor">#1E293B</Color>
+                    <Color x:Key="RuAccentSoftColor">#E2E8F0</Color>
+                    <Color x:Key="RuSuccessColor">#10B981</Color>
+                    <Color x:Key="RuWarningColor">#F59E0B</Color>
+                    <Color x:Key="RuDangerColor">#EF4444</Color>
 
-                    <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#B94D36" />
-                    <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#A13E29" />
-                    <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="#89321E" />
-                    <SolidColorBrush x:Key="ToggleSwitchStrokeOn" Color="#B94D36" />
-                    <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="#A13E29" />
-                    <SolidColorBrush x:Key="ToggleSwitchStrokeOnPressed" Color="#89321E" />
-                    <SolidColorBrush x:Key="SliderTrackValueFill" Color="#B94D36" />
-                    <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#A13E29" />
-                    <SolidColorBrush x:Key="SliderThumbBackground" Color="#B94D36" />
-                    <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#A13E29" />
+                    <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#1E293B" />
+                    <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#334155" />
+                    <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="#475569" />
+                    <SolidColorBrush x:Key="ToggleSwitchStrokeOn" Color="#1E293B" />
+                    <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="#334155" />
+                    <SolidColorBrush x:Key="ToggleSwitchStrokeOnPressed" Color="#475569" />
+                    <SolidColorBrush x:Key="SliderTrackValueFill" Color="#1E293B" />
+                    <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#334155" />
+                    <SolidColorBrush x:Key="SliderThumbBackground" Color="#1E293B" />
+                    <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#334155" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <Color x:Key="RuCanvasColor">#181A1E</Color>
-                    <Color x:Key="RuSidebarColor">#131518</Color>
-                    <Color x:Key="RuSurfaceColor">#22262D</Color>
-                    <Color x:Key="RuInkColor">#EDEFF2</Color>
-                    <Color x:Key="RuMutedColor">#9097A6</Color>
-                    <Color x:Key="RuLineColor">#313742</Color>
-                    <Color x:Key="RuAccentColor">#E07A5F</Color>
-                    <Color x:Key="RuAccentSoftColor">#382620</Color>
-                    <Color x:Key="RuSuccessColor">#4EAD7B</Color>
-                    <Color x:Key="RuWarningColor">#DEAA50</Color>
-                    <Color x:Key="RuDangerColor">#E56B6B</Color>
+                    <Color x:Key="RuCanvasColor">#16181D</Color>
+                    <Color x:Key="RuSidebarColor">#111317</Color>
+                    <Color x:Key="RuSurfaceColor">#20232A</Color>
+                    <Color x:Key="RuInkColor">#F1F5F9</Color>
+                    <Color x:Key="RuMutedColor">#94A3B8</Color>
+                    <Color x:Key="RuLineColor">#334155</Color>
+                    <Color x:Key="RuAccentColor">#E2E8F0</Color>
+                    <Color x:Key="RuAccentSoftColor">#282D37</Color>
+                    <Color x:Key="RuSuccessColor">#34D399</Color>
+                    <Color x:Key="RuWarningColor">#FBBF24</Color>
+                    <Color x:Key="RuDangerColor">#F87171</Color>
 
-                    <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#E07A5F" />
-                    <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#EA8A71" />
-                    <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="#F09A83" />
-                    <SolidColorBrush x:Key="ToggleSwitchStrokeOn" Color="#E07A5F" />
-                    <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="#EA8A71" />
-                    <SolidColorBrush x:Key="ToggleSwitchStrokeOnPressed" Color="#F09A83" />
-                    <SolidColorBrush x:Key="SliderTrackValueFill" Color="#E07A5F" />
-                    <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#EA8A71" />
-                    <SolidColorBrush x:Key="SliderThumbBackground" Color="#E07A5F" />
-                    <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#EA8A71" />
+                    <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#F8FAFC" />
+                    <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ToggleSwitchStrokeOn" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="#F8FAFC" />
+                    <SolidColorBrush x:Key="ToggleSwitchStrokeOnPressed" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="SliderTrackValueFill" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#F8FAFC" />
+                    <SolidColorBrush x:Key="SliderThumbBackground" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#F8FAFC" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 

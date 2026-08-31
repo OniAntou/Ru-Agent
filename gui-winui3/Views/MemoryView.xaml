@@ -87,28 +87,33 @@
                 </ListView.ItemContainerStyle>
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="models:MemoryItemDto">
-                        <Border Style="{StaticResource FluentCardStyle}" Padding="16,14">
+                        <Border Style="{StaticResource FluentCardStyle}" Padding="18,14">
                             <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel Grid.Column="0" Spacing="6">
+                                <StackPanel Grid.Column="0" Spacing="8">
                                     <TextBlock Text="{x:Bind Text}"
-                                               FontSize="14"
+                                               FontSize="13.5"
                                                FontFamily="{StaticResource RuUiFontFamily}"
                                                FontWeight="Medium"
                                                TextWrapping="Wrap"
                                                Foreground="{StaticResource RuInkBrush}"/>
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Border Background="{StaticResource RuAccentSoftBrush}"
+                                                BorderBrush="{StaticResource RuLineBrush}"
+                                                BorderThickness="1"
                                                 CornerRadius="{StaticResource RuControlCornerRadius}"
                                                 Padding="8,3">
-                                            <TextBlock Text="{x:Bind Category}"
-                                                       FontSize="11.5"
-                                                       FontFamily="{StaticResource RuUiFontFamily}"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="{StaticResource RuAccentBrush}"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <FontIcon Glyph="&#xE8D7;" FontSize="10" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{x:Bind Category}"
+                                                           FontSize="11"
+                                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{StaticResource RuAccentBrush}"/>
+                                            </StackPanel>
                                         </Border>
                                     </StackPanel>
                                 </StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top" Margin="12,0,0,0">
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Top" Margin="16,0,0,0">
                                     <FontIcon Glyph="&#xE823;" FontSize="11" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                                     <TextBlock Text="{x:Bind CreatedAt}"
                                                FontSize="11.5"

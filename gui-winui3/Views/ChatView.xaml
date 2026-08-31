@@ -255,46 +255,52 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="models:AgentActivityItem">
-                                <Grid Margin="16,2,16,2"
-                                      ColumnDefinitions="20,*"
-                                      AutomationProperties.LiveSetting="Polite">
-                                    <Grid Grid.Column="0"
-                                          Width="18"
-                                          HorizontalAlignment="Left"
-                                          VerticalAlignment="Top">
-                                        <ProgressRing IsActive="True"
-                                                      Width="13"
-                                                      Height="13"
+                                <Border Margin="16,3"
+                                        Padding="12,8"
+                                        Background="{StaticResource RuSurfaceBrush}"
+                                        BorderBrush="{StaticResource RuLineBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="{StaticResource RuControlCornerRadius}">
+                                    <Grid ColumnDefinitions="22,*"
+                                          AutomationProperties.LiveSetting="Polite">
+                                        <Grid Grid.Column="0"
+                                              Width="18"
+                                              HorizontalAlignment="Left"
+                                              VerticalAlignment="Center">
+                                            <ProgressRing IsActive="True"
+                                                          Width="13"
+                                                          Height="13"
+                                                          Foreground="{StaticResource RuAccentBrush}"
+                                                          Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                            <FontIcon Glyph="&#xE73E;"
+                                                      FontSize="13"
+                                                      Foreground="{StaticResource RuSuccessBrush}"
+                                                      Visibility="{x:Bind IsCompleted, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                            <FontIcon Glyph="&#xE74D;"
+                                                      FontSize="13"
+                                                      Foreground="{StaticResource RuDangerBrush}"
+                                                      Visibility="{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                            <FontIcon Glyph="&#xE823;"
+                                                      FontSize="13"
                                                       Foreground="{StaticResource RuMutedBrush}"
-                                                      Visibility="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                        <FontIcon Glyph="&#xE73E;"
-                                                  FontSize="13"
-                                                  Foreground="{StaticResource RuAccentBrush}"
-                                                  Visibility="{x:Bind IsCompleted, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                        <FontIcon Glyph="&#xE74D;"
-                                                  FontSize="13"
-                                                  Foreground="{StaticResource AppDangerBrush}"
-                                                  Visibility="{x:Bind IsFailed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                        <FontIcon Glyph="&#xE823;"
-                                                  FontSize="13"
-                                                  Foreground="{StaticResource RuMutedBrush}"
-                                                  Visibility="{x:Bind IsWaiting, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                      Visibility="{x:Bind IsWaiting, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        </Grid>
+                                        <StackPanel Grid.Column="1"
+                                                    Spacing="1">
+                                            <TextBlock Text="{x:Bind DisplayText, Mode=OneWay}"
+                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                       FontSize="12.5"
+                                                       FontWeight="Medium"
+                                                       Foreground="{StaticResource RuInkBrush}"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Text="{x:Bind MetadataText, Mode=OneWay}"
+                                                       FontFamily="{StaticResource RuUiFontFamily}"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource RuMutedBrush}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
                                     </Grid>
-                                    <StackPanel Grid.Column="1"
-                                                Spacing="1"
-                                                Margin="0,0,0,2">
-                                        <TextBlock Text="{x:Bind DisplayText, Mode=OneWay}"
-                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                   FontSize="13"
-                                                   Foreground="{StaticResource RuInkBrush}"
-                                                   TextWrapping="Wrap" />
-                                        <TextBlock Text="{x:Bind MetadataText, Mode=OneWay}"
-                                                   FontFamily="{StaticResource RuUiFontFamily}"
-                                                   FontSize="11"
-                                                   Foreground="{StaticResource RuMutedBrush}"
-                                                   TextWrapping="Wrap" />
-                                    </StackPanel>
-                                </Grid>
+                                </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -747,11 +753,12 @@
                                 HorizontalContentAlignment="Center"
                                 VerticalContentAlignment="Center"
                                 CornerRadius="{StaticResource RuControlCornerRadius}"
-                                Background="{StaticResource RuAccentBrush}"
-                                BorderThickness="0"
+                                Background="{StaticResource RuAccentSoftBrush}"
+                                BorderBrush="{StaticResource RuLineBrush}"
+                                BorderThickness="1"
                                 VerticalAlignment="Center"
                                 ToolTipService.ToolTip="Gửi tin nhắn">
-                            <FontIcon Glyph="&#xE725;" FontSize="13" Foreground="White" Margin="-1,1,0,0" />
+                            <FontIcon Glyph="&#xE725;" FontSize="13" Foreground="{StaticResource RuInkBrush}" Margin="-1,1,0,0" />
                         </Button>
                     </Grid>
                 </Grid>

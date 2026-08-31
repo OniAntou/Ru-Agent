@@ -6,7 +6,26 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <ScrollViewer x:Name="ResponsiveRoot" Padding="36,28,36,36" Background="Transparent"
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <Style x:Key="SettingLabelStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{StaticResource RuInkBrush}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+
+            <Style x:Key="SettingDescStyle" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource RuUiFontFamily}" />
+                <Setter Property="FontSize" Value="11.5" />
+                <Setter Property="Foreground" Value="{StaticResource RuMutedBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <ScrollViewer x:Name="ResponsiveRoot" Padding="44,16,44,40" Background="Transparent"
                   HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="ResponsiveStates">
@@ -14,6 +33,18 @@
                     <VisualState.StateTriggers>
                         <AdaptiveTrigger MinWindowWidth="1280"/>
                     </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="VoiceContentStack.MaxWidth" Value="1360"/>
+                        <Setter Target="ResponsiveRoot.Padding" Value="44,16,44,40"/>
+                        <!-- Bento 2-Column -->
+                        <Setter Target="VoiceBentoGrid.ColumnDefinitions" Value="*,*"/>
+                        <Setter Target="VoiceConfigCard.(Grid.Row)" Value="0"/>
+                        <Setter Target="VoiceConfigCard.(Grid.Column)" Value="0"/>
+                        <Setter Target="VoiceConfigCard.Margin" Value="0,0,10,0"/>
+                        <Setter Target="VoiceRightColumn.(Grid.Row)" Value="0"/>
+                        <Setter Target="VoiceRightColumn.(Grid.Column)" Value="1"/>
+                        <Setter Target="VoiceRightColumn.Margin" Value="10,0,0,0"/>
+                    </VisualState.Setters>
                 </VisualState>
 
                 <VisualState x:Name="Compact">
@@ -21,7 +52,16 @@
                         <AdaptiveTrigger MinWindowWidth="900"/>
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
-                        <Setter Target="ResponsiveRoot.Padding" Value="24,20,24,28"/>
+                        <Setter Target="VoiceContentStack.MaxWidth" Value="1000"/>
+                        <Setter Target="ResponsiveRoot.Padding" Value="28,12,28,32"/>
+                        <!-- Single Column -->
+                        <Setter Target="VoiceBentoGrid.ColumnDefinitions" Value="*"/>
+                        <Setter Target="VoiceConfigCard.(Grid.Row)" Value="0"/>
+                        <Setter Target="VoiceConfigCard.(Grid.Column)" Value="0"/>
+                        <Setter Target="VoiceConfigCard.Margin" Value="0,0,0,20"/>
+                        <Setter Target="VoiceRightColumn.(Grid.Row)" Value="1"/>
+                        <Setter Target="VoiceRightColumn.(Grid.Column)" Value="0"/>
+                        <Setter Target="VoiceRightColumn.Margin" Value="0,0,0,0"/>
                     </VisualState.Setters>
                 </VisualState>
 
@@ -30,7 +70,7 @@
                         <AdaptiveTrigger MinWindowWidth="0"/>
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
-                        <Setter Target="ResponsiveRoot.Padding" Value="12,16,12,24"/>
+                        <Setter Target="ResponsiveRoot.Padding" Value="14,8,14,24"/>
                         <Setter Target="ActionButtonsPanel.Orientation" Value="Vertical"/>
                         <Setter Target="VtsActionButtonsPanel.Orientation" Value="Vertical"/>
                         <Setter Target="TestTextBox.(Grid.ColumnSpan)" Value="2"/>
@@ -39,214 +79,317 @@
                         <Setter Target="TestVoiceButton.(Grid.ColumnSpan)" Value="2"/>
                         <Setter Target="TestTextBox.Margin" Value="0,0,0,8"/>
                         <Setter Target="TestVoiceButton.HorizontalAlignment" Value="Stretch"/>
+                        <!-- Single Column -->
+                        <Setter Target="VoiceBentoGrid.ColumnDefinitions" Value="*"/>
+                        <Setter Target="VoiceConfigCard.(Grid.Row)" Value="0"/>
+                        <Setter Target="VoiceConfigCard.(Grid.Column)" Value="0"/>
+                        <Setter Target="VoiceConfigCard.Margin" Value="0,0,0,16"/>
+                        <Setter Target="VoiceRightColumn.(Grid.Row)" Value="1"/>
+                        <Setter Target="VoiceRightColumn.(Grid.Column)" Value="0"/>
+                        <Setter Target="VoiceRightColumn.Margin" Value="0,0,0,0"/>
                     </VisualState.Setters>
                 </VisualState>
             </VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
-        <StackPanel Spacing="24" HorizontalAlignment="Stretch">
-            <!-- Page Title -->
-            <StackPanel Spacing="4" Margin="0,0,0,8">
-                <TextBlock Text="Cài đặt Giọng nói &amp; VTS" FontSize="22" FontFamily="{StaticResource RuDisplayFontFamily}" FontWeight="Bold" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                <TextBlock Text="Tùy chỉnh giọng đọc OmniVoice, phụ đề tự động và tích hợp mô hình ảo VTube Studio" FontSize="13.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-            </StackPanel>
+        <StackPanel x:Name="VoiceContentStack" Spacing="20" HorizontalAlignment="Stretch" MaxWidth="1360">
+            <!-- Header Banner -->
+            <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,4">
+                <StackPanel Grid.Column="0" Spacing="4">
+                    <Border HorizontalAlignment="Left"
+                            Padding="8,3"
+                            Background="{StaticResource RuAccentSoftBrush}"
+                            BorderBrush="{StaticResource RuAccentBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource RuControlCornerRadius}">
+                        <TextBlock Text="ÂM THANH &amp; TRUYỀN CẢM"
+                                   FontSize="10.5"
+                                   FontWeight="Bold"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   Foreground="{StaticResource RuAccentBrush}"/>
+                    </Border>
+                    <TextBlock Text="Cài đặt Giọng nói &amp; VTS"
+                               FontSize="24"
+                               FontFamily="{StaticResource RuDisplayFontFamily}"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource RuInkBrush}"/>
+                    <TextBlock Text="Tùy chỉnh giọng đọc OmniVoice, phụ đề tự động và tích hợp mô hình ảo VTube Studio"
+                               FontSize="12.5"
+                               FontFamily="{StaticResource RuUiFontFamily}"
+                               Foreground="{StaticResource RuMutedBrush}"/>
+                </StackPanel>
+            </Grid>
 
-            <!-- OmniVoice Configuration Card Group -->
-            <Border Style="{StaticResource FluentCardStyle}">
-                <StackPanel Spacing="20">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <FontIcon Glyph="&#xE720;" FontSize="18" Foreground="{StaticResource AppAccentHoverBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Text="Cấu hình OmniVoice TTS" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
-                    </StackPanel>
-
-                    <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
-
-                    <!-- Voice Profile Picker -->
-                    <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                            <TextBlock Text="Hồ sơ giọng đọc (Voice Profile)" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                            <TextBlock Text="Chọn chất giọng chuẩn hóa tiếng Việt của Ru hoặc Ái Vy" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                        </StackPanel>
-                        <ComboBox x:Name="VoiceProfileComboBox" Grid.Column="1" Width="260" SelectionChanged="OnVoiceProfileChanged">
-                            <ComboBoxItem Content="Ru (OmniVoice)" Tag="Ru (OmniVoice)"/>
-                            <ComboBoxItem Content="Ái Vy (OmniVoice)" Tag="Ái Vy (OmniVoice)"/>
-                        </ComboBox>
-                    </Grid>
-
-                    <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
-
-                    <!-- Speed Slider -->
-                    <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                            <TextBlock Text="Tốc độ nói cơ bản (Base Speed)" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                            <TextBlock Text="Điều chỉnh nhịp điệu phát âm từ 0.75x đến 1.20x" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                            <Slider x:Name="SpeedSlider" Minimum="0.75" Maximum="1.20" StepFrequency="0.05" Value="1.0" Width="180" ValueChanged="OnSpeedSliderChanged"/>
-                            <Border Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="{StaticResource AppAccentBrush}" 
-                                    BorderThickness="1" CornerRadius="6" Padding="8,3" MinWidth="52">
-                                <TextBlock x:Name="SpeedText" Text="1.00x" FontSize="12.5" FontWeight="Bold" 
-                                           Foreground="{StaticResource AppAccentHoverBrush}" HorizontalAlignment="Center"/>
+            <!-- Bento 2-Column Grid -->
+            <Grid x:Name="VoiceBentoGrid" ColumnDefinitions="*,*">
+                
+                <!-- Left Column: OmniVoice TTS Configuration -->
+                <Border x:Name="VoiceConfigCard" Grid.Column="0" Margin="0,0,10,0" Style="{StaticResource FluentCardStyle}">
+                    <StackPanel Spacing="16">
+                        <!-- Card Header -->
+                        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,2">
+                            <Border Width="36" Height="36"
+                                    CornerRadius="{StaticResource RuControlCornerRadius}"
+                                    Background="{StaticResource RuAccentSoftBrush}"
+                                    BorderBrush="{StaticResource RuLineBrush}"
+                                    BorderThickness="1">
+                                <FontIcon Glyph="&#xE720;" FontSize="15" Foreground="{StaticResource RuAccentBrush}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                        </StackPanel>
-                    </Grid>
-
-                    <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
-
-                    <!-- Auto Pace Toggle -->
-                    <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                            <TextBlock Text="Tự động điều chỉnh nhịp nói (Auto-pace ±0.08x)" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                            <TextBlock Text="Tăng hoặc giảm nhẹ tốc độ nói theo cảm xúc của ngữ cảnh" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                        </StackPanel>
-                        <ToggleSwitch x:Name="AutoPaceToggle" Grid.Column="1" IsOn="False" Toggled="OnAutoPaceToggled"/>
-                    </Grid>
-
-                    <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
-
-                    <!-- Auto Read Aloud Toggle -->
-                    <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                            <TextBlock Text="Tự động đọc nội dung câu trả lời (Read replies aloud)" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                            <TextBlock Text="Phát âm thanh streaming theo từng câu ngay khi Ru sinh tin nhắn" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                        </StackPanel>
-                        <ToggleSwitch x:Name="AutoReadToggle" Grid.Column="1" IsOn="True" Toggled="OnAutoReadToggled"/>
-                    </Grid>
-
-                    <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
-
-                    <!-- Subtitles Overlay Toggle -->
-                    <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                            <TextBlock Text="Hiện phụ đề Subtitle trên mô hình VTube Studio" FontSize="14" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                            <TextBlock Text="Hiển thị phụ đề chữ nổi trong suốt tự bám theo chuyển động mô hình Live2D" FontSize="12.5" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                        </StackPanel>
-                        <ToggleSwitch x:Name="SubtitleToggle" Grid.Column="1" IsOn="False" Toggled="OnSubtitleToggled"/>
-                    </Grid>
-
-                    <!-- Subtitle Customization Panel -->
-                    <StackPanel x:Name="SubtitleCustomizationPanel" Spacing="14" Margin="0,4,0,0" Visibility="Collapsed">
-                        <Border Height="1" Background="{StaticResource AppCardBorderSubtleBrush}"/>
-
-                        <!-- Font Size Selector -->
-                        <Grid ColumnDefinitions="*,Auto">
-                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock Text="Cỡ chữ phụ đề" FontSize="13.5" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                                <TextBlock Text="Điều chỉnh độ lớn của dòng phụ đề trên màn hình" FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            <StackPanel VerticalAlignment="Center" Spacing="1">
+                                <TextBlock Text="Cấu hình OmniVoice TTS"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                           Foreground="{StaticResource RuInkBrush}"/>
+                                <TextBlock Text="Chất lượng giọng nói và cơ chế phát âm tự động"
+                                           FontSize="11.5"
+                                           FontFamily="{StaticResource RuUiFontFamily}"
+                                           Foreground="{StaticResource RuMutedBrush}"/>
                             </StackPanel>
-                            <ComboBox x:Name="SubtitleSizeCombo" Grid.Column="1" Width="150" SelectionChanged="OnSubtitleSizeChanged">
-                                <ComboBoxItem Content="Nhỏ (Small)" Tag="small"/>
-                                <ComboBoxItem Content="Vừa (Medium)" Tag="medium" IsSelected="True"/>
-                                <ComboBoxItem Content="Lớn (Large)" Tag="large"/>
-                                <ComboBoxItem Content="Rất lớn (XLarge)" Tag="xlarge"/>
+                        </StackPanel>
+
+                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+
+                        <!-- Voice Profile Picker -->
+                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                <TextBlock Text="Hồ sơ giọng đọc (Voice Profile)" Style="{StaticResource SettingLabelStyle}"/>
+                                <TextBlock Text="Chọn chất giọng chuẩn hóa tiếng Việt của Ru hoặc Ái Vy" Style="{StaticResource SettingDescStyle}"/>
+                            </StackPanel>
+                            <ComboBox x:Name="VoiceProfileComboBox"
+                                      Grid.Column="1"
+                                      Width="220"
+                                      Height="36"
+                                      CornerRadius="{StaticResource RuControlCornerRadius}"
+                                      SelectionChanged="OnVoiceProfileChanged">
+                                <ComboBoxItem Content="Ru (OmniVoice)" Tag="Ru (OmniVoice)"/>
+                                <ComboBoxItem Content="Ái Vy (OmniVoice)" Tag="Ái Vy (OmniVoice)"/>
                             </ComboBox>
                         </Grid>
 
-                        <!-- Color Selector -->
-                        <Grid ColumnDefinitions="*,Auto">
-                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock Text="Màu sắc chữ phụ đề" FontSize="13.5" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                                <TextBlock Text="Màu chữ nổi bật kết hợp viền tương phản cao" FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+
+                        <!-- Speed Slider -->
+                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                <TextBlock Text="Tốc độ nói cơ bản (Base Speed)" Style="{StaticResource SettingLabelStyle}"/>
+                                <TextBlock Text="Điều chỉnh nhịp điệu phát âm từ 0.75x đến 1.20x" Style="{StaticResource SettingDescStyle}"/>
                             </StackPanel>
-                            <ComboBox x:Name="SubtitleColorCombo" Grid.Column="1" Width="150" SelectionChanged="OnSubtitleColorChanged">
-                                <ComboBoxItem Content="Trắng tinh khiết" Tag="#FFFFFF" IsSelected="True"/>
-                                <ComboBoxItem Content="Vàng Pastel" Tag="#FFE082"/>
-                                <ComboBoxItem Content="Hồng Sakura" Tag="#FF80AB"/>
-                                <ComboBoxItem Content="Xanh Sky Blue" Tag="#80D8FF"/>
-                                <ComboBoxItem Content="Xanh Bạc Hà" Tag="#B9F6CA"/>
-                            </ComboBox>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Slider x:Name="SpeedSlider" Minimum="0.75" Maximum="1.20" StepFrequency="0.05" Value="1.0" Width="140" ValueChanged="OnSpeedSliderChanged"/>
+                                <Border Background="{StaticResource RuAccentSoftBrush}" BorderBrush="{StaticResource RuAccentBrush}" 
+                                        BorderThickness="1" CornerRadius="{StaticResource RuControlCornerRadius}" Padding="6,2" MinWidth="48">
+                                    <TextBlock x:Name="SpeedText" Text="1.00x" FontSize="12" FontWeight="Bold" 
+                                               Foreground="{StaticResource RuAccentBrush}" HorizontalAlignment="Center"/>
+                                </Border>
+                            </StackPanel>
                         </Grid>
 
-                        <!-- Hold Duration Slider -->
-                        <Grid ColumnDefinitions="*,Auto">
-                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock Text="Thời gian giữ phụ đề" FontSize="13.5" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                                <TextBlock x:Name="SubtitleDurationLabel" Text="Thời gian hiển thị sau khi đọc xong: 2.0s" FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+
+                        <!-- Auto Pace Toggle -->
+                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                <TextBlock Text="Tự động điều chỉnh nhịp nói (Auto-pace ±0.08x)" Style="{StaticResource SettingLabelStyle}"/>
+                                <TextBlock Text="Tăng hoặc giảm nhẹ tốc độ theo cảm xúc ngữ cảnh" Style="{StaticResource SettingDescStyle}"/>
                             </StackPanel>
-                            <Slider x:Name="SubtitleDurationSlider" Grid.Column="1" Width="150" Minimum="1.0" Maximum="5.0" StepFrequency="0.5" Value="2.0" ValueChanged="OnSubtitleDurationChanged"/>
+                            <ToggleSwitch x:Name="AutoPaceToggle" Grid.Column="1" IsOn="False" Toggled="OnAutoPaceToggled"/>
                         </Grid>
 
-                        <!-- Subtitle Position Mode & Drag-Drop Controls -->
-                        <Grid ColumnDefinitions="*,Auto">
-                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
-                                <TextBlock Text="Vị trí hiển thị phụ đề" FontSize="13.5" FontWeight="Medium" Foreground="{StaticResource AppTextPrimaryBrush}"/>
-                                <TextBlock x:Name="SubtitlePositionStatusLabel" Text="Trạng thái: Tự động bám theo Avatar Live2D" FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+
+                        <!-- Auto Read Aloud Toggle -->
+                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                <TextBlock Text="Tự động đọc câu trả lời (Read replies aloud)" Style="{StaticResource SettingLabelStyle}"/>
+                                <TextBlock Text="Phát âm thanh streaming theo từng câu ngay khi trả lời" Style="{StaticResource SettingDescStyle}"/>
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                <Button x:Name="SubtitleDragButton" Click="OnSubtitleDragButtonClicked" Style="{StaticResource AccentButtonStyle}">
+                            <ToggleSwitch x:Name="AutoReadToggle" Grid.Column="1" IsOn="True" Toggled="OnAutoReadToggled"/>
+                        </Grid>
+
+                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+
+                        <!-- Subtitles Overlay Toggle -->
+                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                <TextBlock Text="Hiện phụ đề trên mô hình VTube Studio" Style="{StaticResource SettingLabelStyle}"/>
+                                <TextBlock Text="Phụ đề chữ nổi tự bám theo chuyển động Live2D" Style="{StaticResource SettingDescStyle}"/>
+                            </StackPanel>
+                            <ToggleSwitch x:Name="SubtitleToggle" Grid.Column="1" IsOn="False" Toggled="OnSubtitleToggled"/>
+                        </Grid>
+
+                        <!-- Subtitle Customization Panel -->
+                        <StackPanel x:Name="SubtitleCustomizationPanel" Spacing="14" Margin="0,4,0,0" Visibility="Collapsed">
+                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+
+                            <!-- Font Size Selector -->
+                            <Grid ColumnDefinitions="*,Auto" MinHeight="40">
+                                <TextBlock Grid.Column="0" Text="Cỡ chữ phụ đề" Style="{StaticResource SettingLabelStyle}"/>
+                                <ComboBox x:Name="SubtitleSizeCombo" Grid.Column="1" Width="160" Height="36" CornerRadius="{StaticResource RuControlCornerRadius}" SelectionChanged="OnSubtitleSizeChanged">
+                                    <ComboBoxItem Content="Nhỏ (Small)" Tag="small"/>
+                                    <ComboBoxItem Content="Vừa (Medium)" Tag="medium" IsSelected="True"/>
+                                    <ComboBoxItem Content="Lớn (Large)" Tag="large"/>
+                                    <ComboBoxItem Content="Rất lớn (XLarge)" Tag="xlarge"/>
+                                </ComboBox>
+                            </Grid>
+
+                            <!-- Color Selector -->
+                            <Grid ColumnDefinitions="*,Auto" MinHeight="40">
+                                <TextBlock Grid.Column="0" Text="Màu sắc chữ phụ đề" Style="{StaticResource SettingLabelStyle}"/>
+                                <ComboBox x:Name="SubtitleColorCombo" Grid.Column="1" Width="160" Height="36" CornerRadius="{StaticResource RuControlCornerRadius}" SelectionChanged="OnSubtitleColorChanged">
+                                    <ComboBoxItem Content="Trắng tinh khiết" Tag="#FFFFFF" IsSelected="True"/>
+                                    <ComboBoxItem Content="Vàng Pastel" Tag="#FFE082"/>
+                                    <ComboBoxItem Content="Hồng Sakura" Tag="#FF80AB"/>
+                                    <ComboBoxItem Content="Xanh Sky Blue" Tag="#80D8FF"/>
+                                    <ComboBoxItem Content="Xanh Bạc Hà" Tag="#B9F6CA"/>
+                                </ComboBox>
+                            </Grid>
+
+                            <!-- Hold Duration Slider -->
+                            <Grid ColumnDefinitions="*,Auto" MinHeight="40">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock Text="Thời gian giữ phụ đề" Style="{StaticResource SettingLabelStyle}"/>
+                                    <TextBlock x:Name="SubtitleDurationLabel" Text="Thời gian hiển thị sau khi đọc: 2.0s" Style="{StaticResource SettingDescStyle}"/>
+                                </StackPanel>
+                                <Slider x:Name="SubtitleDurationSlider" Grid.Column="1" Width="140" Minimum="1.0" Maximum="5.0" StepFrequency="0.5" Value="2.0" ValueChanged="OnSubtitleDurationChanged"/>
+                            </Grid>
+
+                            <!-- Subtitle Position Mode & Drag-Drop Controls -->
+                            <Grid ColumnDefinitions="*,Auto" MinHeight="40">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,12,0">
+                                    <TextBlock Text="Vị trí hiển thị phụ đề" Style="{StaticResource SettingLabelStyle}"/>
+                                    <TextBlock x:Name="SubtitlePositionStatusLabel" Text="Trạng thái: Tự động bám theo Avatar" Style="{StaticResource SettingDescStyle}"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <Button x:Name="SubtitleDragButton" Click="OnSubtitleDragButtonClicked"
+                                            Padding="12,7"
+                                            CornerRadius="{StaticResource RuControlCornerRadius}"
+                                            Background="{StaticResource RuAccentSoftBrush}"
+                                            BorderBrush="{StaticResource RuAccentBrush}"
+                                            BorderThickness="1">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon x:Name="SubtitleDragIcon" Glyph="&#xE7C2;" FontSize="12" Foreground="{StaticResource RuAccentBrush}"/>
+                                            <TextBlock x:Name="SubtitleDragButtonText" Text="Kéo thả vị trí" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource RuAccentBrush}"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button x:Name="SubtitleResetPosButton" Click="OnSubtitleResetPosClicked"
+                                            Padding="10,7"
+                                            CornerRadius="{StaticResource RuControlCornerRadius}"
+                                            Background="{StaticResource RuSurfaceBrush}"
+                                            BorderBrush="{StaticResource RuLineBrush}"
+                                            BorderThickness="1"
+                                            ToolTipService.ToolTip="Đặt lại vị trí tự động bám theo Live2D">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <FontIcon Glyph="&#xE72C;" FontSize="12" Foreground="{StaticResource RuInkBrush}"/>
+                                            <TextBlock Text="Mặc định" FontSize="12" Foreground="{StaticResource RuInkBrush}"/>
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Right Column: GPU Lifecycle & Voice Tester Bento Cards -->
+                <StackPanel x:Name="VoiceRightColumn" Grid.Column="1" Margin="10,0,0,0" Spacing="20">
+                    
+                    <!-- Voice Sample Tester Card -->
+                    <Border Style="{StaticResource FluentCardStyle}">
+                        <StackPanel Spacing="16">
+                            <StackPanel x:Name="VtsActionButtonsPanel" Orientation="Horizontal" Spacing="12">
+                                <Border Width="36" Height="36"
+                                        CornerRadius="{StaticResource RuControlCornerRadius}"
+                                        Background="{StaticResource RuAccentSoftBrush}"
+                                        BorderBrush="{StaticResource RuLineBrush}"
+                                        BorderThickness="1">
+                                    <FontIcon Glyph="&#xE767;" FontSize="15" Foreground="{StaticResource RuAccentBrush}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel VerticalAlignment="Center" Spacing="1">
+                                    <TextBlock Text="Phát thử âm thanh mẫu"
+                                               FontSize="15"
+                                               FontWeight="SemiBold"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               Foreground="{StaticResource RuInkBrush}"/>
+                                    <TextBlock Text="Kiểm tra giọng đọc và ngữ điệu thực tế"
+                                               FontSize="11.5"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               Foreground="{StaticResource RuMutedBrush}"/>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+
+                            <Grid x:Name="TestVoiceRow" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+                                <TextBox x:Name="TestTextBox" Grid.Column="0" Text="Xin chào, em là Ru! Hôm nay bạn thế nào rồi?" 
+                                         Margin="0,0,12,0" VerticalAlignment="Center" Height="36" Padding="10,6"
+                                         CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                <Button x:Name="TestVoiceButton" Grid.Column="1" Click="OnTestVoiceClick" Padding="16,8" 
+                                        CornerRadius="{StaticResource RuControlCornerRadius}" 
+                                        Background="{StaticResource RuAccentSoftBrush}" BorderBrush="{StaticResource RuAccentBrush}" 
+                                        BorderThickness="1">
                                     <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <FontIcon x:Name="SubtitleDragIcon" Glyph="&#xE7C2;" FontSize="13"/>
-                                        <TextBlock x:Name="SubtitleDragButtonText" Text="Kéo thả vị trí"/>
+                                        <FontIcon Glyph="&#xE767;" FontSize="13" Foreground="{StaticResource RuAccentBrush}"/>
+                                        <TextBlock Text="Phát thử" FontWeight="SemiBold" FontSize="12.5" Foreground="{StaticResource RuAccentBrush}"/>
                                     </StackPanel>
                                 </Button>
-                                <Button x:Name="SubtitleResetPosButton" Click="OnSubtitleResetPosClicked" ToolTipService.ToolTip="Đặt lại vị trí tự động bám theo Live2D">
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- GPU Lifecycle Controls Card -->
+                    <Border Style="{StaticResource FluentCardStyle}">
+                        <StackPanel Spacing="16">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Border Width="36" Height="36"
+                                        CornerRadius="{StaticResource RuControlCornerRadius}"
+                                        Background="{StaticResource RuAccentSoftBrush}"
+                                        BorderBrush="{StaticResource RuLineBrush}"
+                                        BorderThickness="1">
+                                    <FontIcon Glyph="&#xE950;" FontSize="15" Foreground="{StaticResource RuAccentBrush}"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel VerticalAlignment="Center" Spacing="1">
+                                    <TextBlock Text="Quản lý vòng đời GPU Voice"
+                                               FontSize="15"
+                                               FontWeight="SemiBold"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               Foreground="{StaticResource RuInkBrush}"/>
+                                    <TextBlock Text="Khởi động hoặc giải phóng VRAM mô hình"
+                                               FontSize="11.5"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               Foreground="{StaticResource RuMutedBrush}"/>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+
+                            <TextBlock Text="Khởi động trước trọng số mô hình OmniVoice vào VRAM để giảm độ trễ câu đầu tiên, hoặc giải phóng GPU khi cần dùng ứng dụng khác." 
+                                       Style="{StaticResource SettingDescStyle}"/>
+
+                            <StackPanel x:Name="ActionButtonsPanel" Orientation="Horizontal" Spacing="12" Margin="0,4,0,0">
+                                <Button x:Name="WarmupButton" Click="OnWarmupClick" Padding="16,8" 
+                                        CornerRadius="{StaticResource RuControlCornerRadius}" 
+                                        Background="{StaticResource RuAccentBrush}" Foreground="White" BorderThickness="0">
                                     <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <FontIcon Glyph="&#xE72C;" FontSize="13"/>
-                                        <TextBlock Text="Mặc định"/>
+                                        <FontIcon Glyph="&#xE768;" FontSize="13"/>
+                                        <TextBlock Text="Khởi động GPU" FontWeight="SemiBold" FontSize="12.5"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="ReleaseButton" Click="OnReleaseClick" Padding="16,8" 
+                                        CornerRadius="{StaticResource RuControlCornerRadius}" 
+                                        Background="{StaticResource RuAccentSoftBrush}" BorderBrush="{StaticResource RuDangerBrush}" 
+                                        BorderThickness="1">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE71A;" FontSize="13" Foreground="{StaticResource RuDangerBrush}"/>
+                                        <TextBlock Text="Giải phóng VRAM" FontWeight="Medium" FontSize="12.5" Foreground="{StaticResource RuDangerBrush}"/>
                                     </StackPanel>
                                 </Button>
                             </StackPanel>
-                        </Grid>
-                    </StackPanel>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
-            </Border>
-
-            <!-- GPU Lifecycle Controls Card -->
-            <Border Style="{StaticResource FluentCardStyle}">
-                <StackPanel Spacing="16">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <FontIcon Glyph="&#xE950;" FontSize="18" Foreground="{StaticResource AppAccentHoverBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Text="Quản lý vòng đời GPU Voice" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
-                    </StackPanel>
-
-                    <TextBlock Text="Khởi động trước trọng số mô hình OmniVoice vào VRAM để giảm độ trễ câu đầu tiên, hoặc giải phóng GPU khi cần dùng ứng dụng khác." 
-                               FontSize="13" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-
-                    <StackPanel x:Name="ActionButtonsPanel" Orientation="Horizontal" Spacing="14" Margin="0,6,0,0">
-                        <Button x:Name="WarmupButton" Click="OnWarmupClick" Padding="18,10" 
-                                CornerRadius="{StaticResource AppControlCornerRadius}" 
-                                Background="{StaticResource AppAccentBrush}" Foreground="White" BorderThickness="0">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE768;" FontSize="14"/>
-                                <TextBlock Text="Khởi động Voice GPU" FontWeight="SemiBold"/>
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="ReleaseButton" Click="OnReleaseClick" Padding="18,10" 
-                                CornerRadius="{StaticResource AppControlCornerRadius}" 
-                                Background="{StaticResource AppDangerSubtleBrush}" BorderBrush="{StaticResource AppDangerBrush}" 
-                                BorderThickness="1" Foreground="{StaticResource AppDangerBrush}">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE71A;" FontSize="14"/>
-                                <TextBlock Text="Giải phóng GPU VRAM" FontWeight="Medium"/>
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- Voice Sample Tester Card -->
-            <Border Style="{StaticResource FluentCardStyle}">
-                <StackPanel Spacing="16">
-                            <StackPanel x:Name="VtsActionButtonsPanel" Orientation="Horizontal" Spacing="10">
-                        <FontIcon Glyph="&#xE767;" FontSize="18" Foreground="{StaticResource AppAccentHoverBrush}" VerticalAlignment="Center"/>
-                        <TextBlock Text="Phát thử âm thanh mẫu" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AppTextPrimaryBrush}" VerticalAlignment="Center"/>
-                    </StackPanel>
-
-                    <Grid x:Name="TestVoiceRow" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                        <TextBox x:Name="TestTextBox" Grid.Column="0" Text="Xin chào, em là Ru! Hôm nay bạn thế nào rồi?" 
-                                 Margin="0,0,16,0" VerticalAlignment="Center" Padding="12,10"
-                                 CornerRadius="{StaticResource AppControlCornerRadius}"/>
-                        <Button x:Name="TestVoiceButton" Grid.Column="1" Click="OnTestVoiceClick" Padding="20,10" 
-                                CornerRadius="{StaticResource AppControlCornerRadius}" 
-                                Background="{StaticResource AppAccentSubtleBrush}" BorderBrush="{StaticResource AppAccentBrush}" 
-                                BorderThickness="1" Foreground="{StaticResource AppAccentHoverBrush}">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE767;" FontSize="14"/>
-                                <TextBlock Text="Phát thử" FontWeight="SemiBold"/>
-                            </StackPanel>
-                        </Button>
-                    </Grid>
-                </StackPanel>
-            </Border>
+            </Grid>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

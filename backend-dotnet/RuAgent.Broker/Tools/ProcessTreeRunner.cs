@@ -65,15 +65,45 @@ public sealed class ProcessTreeRunner
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(spec.TimeoutMs);
         var status = "succeeded";
+        // Interactive CLI detection: if the command is known to wait for stdin and produces no output quickly, abort early
+        var interactiveCheck = IsInteractiveCommand(spec.Executable, spec.Arguments);
         try
         {
-            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+            if (interactiveCheck)
+            {
+                var early = Task.WhenAny(process.WaitForExitAsync(timeout.Token), Task.Delay(500, timeout.Token));
+                var completed = await early.ConfigureAwait(false);
+                if (completed is Task delayTask && delayTask == await Task.WhenAny(Task.Delay(500, timeout.Token)).ConfigureAwait(false))
+                {
+                    // After 500ms, if process still running and no output, treat as interactive
+                    if (!process.HasExited && stdoutTask.IsCompleted && stderrTask.IsCompleted)
+                    {
+                        // Check if tasks completed with no output and process still alive -> likely waiting for input
+                        var stdoutResult = stdoutTask.IsCompleted ? await stdoutTask.ConfigureAwait(false) : new BoundedOutput(string.Empty, false);
+                        var stderrResult = stderrTask.IsCompleted ? await stderrTask.ConfigureAwait(false) : new BoundedOutput(string.Empty, false);
+                        if (string.IsNullOrWhiteSpace(stdoutResult.Text) && string.IsNullOrWhiteSpace(stderrResult.Text))
+                        {
+                            status = "interactive_cli_detected";
+                            Kill(process);
+                            // Wait a bit for process to exit after kill
+                            try { await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false); } catch { }
+                            goto afterWait;
+                        }
+                    }
+                }
+                await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested)
         {
-            status = cancellationToken.IsCancellationRequested ? "cancelled" : "timed_out";
+            status = cancellationToken.IsCancellationRequested ? "cancelled" : status == "interactive_cli_detected" ? "interactive_cli_detected" : "timed_out";
             Kill(process);
         }
+        afterWait:;
 
         var stdout = await stdoutTask.ConfigureAwait(false);
         var stderr = await stderrTask.ConfigureAwait(false);
@@ -174,4 +204,25 @@ public sealed class ProcessTreeRunner
     }
 
     private sealed record BoundedOutput(string Text, bool Truncated);
+
+    private static bool IsInteractiveCommand(string executable, IReadOnlyList<string> args)
+    {
+        var exe = Path.GetFileName(executable).ToLowerInvariant();
+        // Known interactive shells and repls without a script/file argument
+        if (exe is "python" or "python3" or "node" or "cmd" or "powershell" or "pwsh" or "bash" or "sh")
+        {
+            // If no arguments or only flags that imply interactive, treat as interactive
+            if (args.Count == 0) return true;
+            // Check for -i flag
+            foreach (var a in args) if (a == "-i" || a == "--interactive") return true;
+            // If the first arg is not a file (no .py, .js, .ps1, etc.), likely interactive
+            if (args.Count > 0 && !args[0].Contains('.') && !args[0].StartsWith("-")) return false; // might be a script, not interactive
+            // If executable is python/node with no script, it's interactive
+            if (exe.StartsWith("python") && args.Count == 0) return true;
+            if (exe == "node" && args.Count == 0) return true;
+        }
+        // Also check for commands that explicitly wait for stdin
+        foreach (var a in args) if (a.Contains("interactive") || a == "-") return true;
+        return false;
+    }
 }

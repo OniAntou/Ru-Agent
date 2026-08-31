@@ -30,7 +30,11 @@ public sealed class FileEditAdapter
         }
 
         var text = ReadBoundedText(resolved.CanonicalPath);
-        var count = CountOccurrences(text, oldString);
+        var useCrLf = ShouldUseCrLf(text);
+        var normalizedText = NormalizeToLf(text);
+        var normalizedOld = NormalizeToLf(oldString);
+        var normalizedNew = newString is null ? string.Empty : NormalizeToLf(newString);
+        var count = CountOccurrences(normalizedText, normalizedOld);
         if (count == 0)
         {
             throw new InvalidOperationException("edit_no_match");
@@ -41,7 +45,8 @@ public sealed class FileEditAdapter
             throw new InvalidOperationException("edit_not_unique");
         }
 
-        var updated = text.Replace(oldString, newString ?? string.Empty, StringComparison.Ordinal);
+        var normalizedUpdated = normalizedText.Replace(normalizedOld, normalizedNew, StringComparison.Ordinal);
+        var updated = DenormalizeFromLf(normalizedUpdated, useCrLf);
         ValidateUtf8(updated);
         var updatedBytes = Encoding.UTF8.GetByteCount(updated);
         if (updatedBytes > MaxInputBytes)
@@ -106,7 +111,11 @@ public sealed class FileEditAdapter
         }
 
         var text = ReadBoundedText(reResolved.CanonicalPath);
-        var count = CountOccurrences(text, oldString);
+        var useCrLf = ShouldUseCrLf(text);
+        var normalizedText = NormalizeToLf(text);
+        var normalizedOld = NormalizeToLf(oldString);
+        var normalizedNew = newString is null ? string.Empty : NormalizeToLf(newString);
+        var count = CountOccurrences(normalizedText, normalizedOld);
         if (count == 0)
         {
             throw new InvalidOperationException("edit_no_match");
@@ -117,7 +126,8 @@ public sealed class FileEditAdapter
             throw new InvalidOperationException("edit_not_unique");
         }
 
-        var updated = text.Replace(oldString, newString ?? string.Empty, StringComparison.Ordinal);
+        var normalizedUpdated = normalizedText.Replace(normalizedOld, normalizedNew, StringComparison.Ordinal);
+        var updated = DenormalizeFromLf(normalizedUpdated, useCrLf);
         ValidateUtf8(updated);
         var newBytes = EncodeUtf8Strict(updated);
         if (newBytes.Length > MaxInputBytes)
@@ -319,6 +329,10 @@ public sealed class FileEditAdapter
             }
         }
     }
+
+    private static string NormalizeToLf(string text) => text.Replace("\r\n", "\n").Replace("\r", "\n");
+    private static bool ShouldUseCrLf(string original) => original.Contains("\r\n");
+    private static string DenormalizeFromLf(string normalized, bool useCrLf) => useCrLf ? normalized.Replace("\n", "\r\n") : normalized;
 
     private static byte[] EncodeUtf8Strict(string content)
     {

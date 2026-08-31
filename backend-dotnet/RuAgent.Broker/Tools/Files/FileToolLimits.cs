@@ -16,4 +16,5 @@ public static class FileToolLimits
     public const int DefaultMaxEntries = 512;
     public const int DefaultMaxResults = 64;
     public const int DefaultReadLimit = 256 * 1024;
+    public const int MaxRecoveryBytes = 4 * 1024 * 1024;
 }

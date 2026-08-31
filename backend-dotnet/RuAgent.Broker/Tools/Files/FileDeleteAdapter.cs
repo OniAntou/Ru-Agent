@@ -6,7 +6,7 @@ namespace RuAgent.Broker.Tools.Files;
 
 public sealed class FileDeleteAdapter
 {
-    public const int MaxRecoveryBytes = 1 * 1024 * 1024;
+    public const int MaxRecoveryBytes = 4 * 1024 * 1024;
 
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;

@@ -562,7 +562,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 throw new ArgumentException("not_a_file");
             }
 
-            if (info.Length > 1 * 1024 * 1024)
+            if (info.Length > RuAgent.Broker.Tools.Files.FileToolLimits.MaxRecoveryBytes)
             {
                 throw new ArgumentException("recovery_too_large");
             }
@@ -577,7 +577,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
 
             // Read byte-exact, bounded. FileInfo.Length is only a snapshot and
             // must not be used to size an allocation after a concurrent growth.
-            var bytes = ReadBoundedBytes(resolved, 1 * 1024 * 1024, "recovery_too_large");
+            var bytes = ReadBoundedBytes(resolved, RuAgent.Broker.Tools.Files.FileToolLimits.MaxRecoveryBytes, "recovery_too_large");
 
             // Prepare recovery payload â€“ byte-exact, opaque, internal only
             var recoveryPayload = new PreparedPayload(
@@ -1830,6 +1830,14 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         var query = args["query"] is JsonValue qv && qv.TryGetValue<string>(out var q) ? q : throw new ArgumentException("missing query");
         var fileGlob = args["file_glob"] is JsonValue fg && fg.TryGetValue<string>(out var fgStr) ? fgStr : null;
         var caseSensitive = args["case_sensitive"] is JsonValue csv && csv.TryGetValue<bool>(out var cs) ? cs : false;
+        var isRegex = args["is_regex"] is JsonValue rv && rv.TryGetValue<bool>(out var rv2) ? rv2 : args["regex"] is JsonValue rv3 && rv3.TryGetValue<bool>(out var rv4) ? rv4 : false;
+        Regex? queryRegex = null;
+        if (isRegex)
+        {
+            try { var opts = caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase; queryRegex = new Regex(query, opts | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200)); }
+            catch (ArgumentException) { throw new ArgumentException("invalid_regex"); }
+            catch (RegexMatchTimeoutException) { throw new ArgumentException("invalid_regex"); }
+        }
         var maxResults = args["max_results"] is JsonValue mv && mv.TryGetValue<int>(out var mr) ? mr : 64;
         var baseDir = ResolveWithinRoot(basePath);
         if (!Directory.Exists(baseDir))
@@ -1917,10 +1925,18 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                     while ((line = reader.ReadLine()) != null)
                     {
                         lineNum++;
-                        // The file read is already bounded; search the complete
-                        // line and truncate only the returned preview below.
-                        int idx = line.IndexOf(query, comparison);
-                        if (idx >= 0 && results.Count < resultLimit)
+                        int idx = -1;
+                        bool isMatch = false;
+                        if (isRegex && queryRegex != null)
+                        {
+                            try { var m = queryRegex.Match(line); if (m.Success) { idx = m.Index; isMatch = true; } } catch (RegexMatchTimeoutException) { isMatch = false; }
+                        }
+                        else
+                        {
+                            idx = line.IndexOf(query, comparison);
+                            isMatch = idx >= 0;
+                        }
+                        if (isMatch && results.Count < resultLimit)
                         {
                             var preview = line.Length > 512 ? line.Substring(0, 512) : line;
                             results.Add(new JsonObject { ["path"] = rel, ["line"] = lineNum, ["column"] = idx + 1, ["preview"] = preview, ["line_text"] = preview });

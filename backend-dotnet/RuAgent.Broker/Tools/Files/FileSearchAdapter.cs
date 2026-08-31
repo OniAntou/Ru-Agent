@@ -55,6 +55,34 @@ public sealed class FileSearchAdapter
             throw new ArgumentException("invalid_case_sensitive");
         }
 
+        var isRegex = false;
+        if (arguments.TryGetPropertyValue("is_regex", out var reNode) && reNode is JsonValue rv && rv.TryGetValue<bool>(out var rvVal))
+        {
+            isRegex = rvVal;
+        }
+        else if (arguments.TryGetPropertyValue("regex", out var reNode2) && reNode2 is JsonValue rv2 && rv2.TryGetValue<bool>(out var rvVal2))
+        {
+            isRegex = rvVal2;
+        }
+
+        Regex? queryRegex = null;
+        if (isRegex)
+        {
+            try
+            {
+                var opts = caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
+                queryRegex = new Regex(query, opts | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200));
+            }
+            catch (ArgumentException)
+            {
+                throw new ArgumentException("invalid_regex");
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                throw new ArgumentException("invalid_regex");
+            }
+        }
+
         var maxResults = FileToolLimits.MaxResults;
         if (arguments.TryGetPropertyValue("max_results", out var maxNode) && maxNode is not null)
         {
@@ -295,8 +323,23 @@ public sealed class FileSearchAdapter
                             break;
                         }
 
-                        int idx = line.IndexOf(query, comparison);
-                        if (idx >= 0)
+                        int idx = -1;
+                        bool isMatch = false;
+                        if (isRegex && queryRegex != null)
+                        {
+                            try
+                            {
+                                var m = queryRegex.Match(line);
+                                if (m.Success) { idx = m.Index; isMatch = true; }
+                            }
+                            catch (RegexMatchTimeoutException) { isMatch = false; }
+                        }
+                        else
+                        {
+                            idx = line.IndexOf(query, comparison);
+                            isMatch = idx >= 0;
+                        }
+                        if (isMatch)
                         {
                             if (results.Count < maxResults)
                             {

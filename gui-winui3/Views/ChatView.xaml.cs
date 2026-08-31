@@ -401,6 +401,7 @@ namespace RuApp.Views
             AgentModeLabel.Text = "Agent";
             AgentModeIcon.Glyph = "\uEC25";
             AgentPresetBox.Visibility = Visibility.Visible;
+            AgentModeButton.Visibility = Visibility.Collapsed;
             AutomationProperties.SetName(
                 AgentModeButton,
                 "Coding Agent");

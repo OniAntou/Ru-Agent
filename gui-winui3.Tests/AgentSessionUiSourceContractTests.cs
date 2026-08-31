@@ -10,6 +10,7 @@ public sealed class AgentSessionUiSourceContractTests
         string xaml = File.ReadAllText(FindSource("Views", "ChatView.xaml"));
 
         Assert.Contains("<Button x:Name=\"AgentModeButton\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Visibility=\"Collapsed\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.AutomationId=\"AgentModeButton\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name=\"Coding Agent\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AgentModeIcon\"", xaml, StringComparison.Ordinal);

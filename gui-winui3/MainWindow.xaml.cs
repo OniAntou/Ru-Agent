@@ -313,14 +313,14 @@ namespace RuApp
                 button.Foreground = muted;
                 button.BorderBrush = transparent;
                 button.BorderThickness = new Thickness(0);
-                button.CornerRadius = new CornerRadius(0, 4, 4, 0);
+                button.CornerRadius = new CornerRadius(6);
             }
 
             activeBtn.Background = surface;
             activeBtn.Foreground = ink;
             activeBtn.BorderBrush = accent;
-            activeBtn.BorderThickness = new Thickness(2, 0, 0, 0);
-            activeBtn.CornerRadius = new CornerRadius(0, 4, 4, 0);
+            activeBtn.BorderThickness = new Thickness(3, 0, 0, 0);
+            activeBtn.CornerRadius = new CornerRadius(0, 6, 6, 0);
         }
 
         private void UpdateShellStatusTooltip()

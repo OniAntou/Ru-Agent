@@ -13,16 +13,16 @@
 
     <UserControl.Resources>
         <DataTemplate x:Key="UserMessageTemplate" x:DataType="models:ChatMessageItem">
-            <Grid Margin="0,16" HorizontalAlignment="Stretch">
-                <Border MaxWidth="580"
+            <Grid Margin="0,12" HorizontalAlignment="Stretch">
+                <Border MaxWidth="620"
                         HorizontalAlignment="Right"
                         Background="{StaticResource RuSurfaceBrush}"
-                        BorderBrush="{StaticResource RuAccentBrush}"
-                        BorderThickness="0,0,2,0"
-                        CornerRadius="{StaticResource RuControlCornerRadius}"
+                        BorderBrush="{StaticResource RuLineBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
                         Padding="16,12">
                     <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
-                                            FontSize="15.5"
+                                            FontSize="14.5"
                                             Foreground="{StaticResource RuInkBrush}"
                                             FontFamily="{StaticResource RuUiFontFamily}" />
                 </Border>
@@ -30,30 +30,37 @@
         </DataTemplate>
 
         <DataTemplate x:Key="AssistantMessageTemplate" x:DataType="models:ChatMessageItem">
-            <Grid Margin="0,18" HorizontalAlignment="Stretch">
-                <Grid MaxWidth="700"
+            <Grid Margin="0,16" HorizontalAlignment="Stretch">
+                <Grid MaxWidth="740"
                       HorizontalAlignment="Left"
-                      ColumnDefinitions="2,*">
-                    <Rectangle x:Name="AssistantAccentRule"
-                               Grid.Column="0"
-                               Width="2"
-                               Fill="{StaticResource RuAccentBrush}"
-                               Opacity="0.72"
-                               VerticalAlignment="Stretch" />
-                    <StackPanel Grid.Column="1"
-                                Spacing="6"
-                                Margin="12,0,0,0">
+                      ColumnDefinitions="Auto,*">
+                    <Border Grid.Column="0"
+                            Width="26"
+                            Height="26"
+                            Margin="0,2,12,0"
+                            VerticalAlignment="Top"
+                            Background="{StaticResource RuAccentSoftBrush}"
+                            BorderBrush="{StaticResource RuLineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="13">
                         <TextBlock Text="Ru"
                                    FontFamily="{StaticResource RuDisplayFontFamily}"
-                                   FontSize="12"
-                                   Foreground="{StaticResource RuAccentBrush}" />
+                                   FontSize="11"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource RuAccentBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1"
+                                Spacing="6">
                         <Rectangle x:Name="TypingCaret"
-                                   Width="1"
-                                   Height="20"
+                                   Width="2"
+                                   Height="18"
+                                   HorizontalAlignment="Left"
                                    Fill="{StaticResource RuAccentBrush}"
                                    Visibility="{x:Bind ShowTypingDots, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                         <controls:MarkdownBlock MarkdownText="{x:Bind Content, Mode=OneWay}"
-                                                FontSize="16"
+                                                FontSize="15"
                                                 Foreground="{x:Bind IsError, Converter={StaticResource ErrorColorConverter}}"
                                                 FontFamily="{StaticResource RuUiFontFamily}"
                                                 Visibility="{x:Bind ShowContent, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
@@ -463,8 +470,8 @@
                     Background="{StaticResource RuSurfaceBrush}"
                     BorderBrush="{StaticResource RuLineBrush}"
                     BorderThickness="1"
-                    CornerRadius="{StaticResource RuControlCornerRadius}"
-                    Padding="10,10,10,8">
+                    CornerRadius="10"
+                    Padding="12,10,12,8">
                 <Grid RowDefinitions="Auto,Auto">
                     <TextBox x:Name="ChatInputTextBox"
                              Grid.Row="0"
@@ -520,6 +527,7 @@
 
                         <Button x:Name="AgentModeButton"
                                 Grid.Column="1"
+                                Visibility="Collapsed"
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Padding="6,4"

@@ -62,7 +62,6 @@
                             <Setter Target="NavNewChat.Padding" Value="10,8"/>
                             <Setter Target="NavChat.Padding" Value="10,7"/>
                             <Setter Target="NavVoice.Padding" Value="10,7"/>
-                            <Setter Target="NavTools.Padding" Value="10,7"/>
                             <Setter Target="NavSettings.Padding" Value="10,7"/>
                             <Setter Target="ThemeToggleButton.Padding" Value="10,7"/>
                         </VisualState.Setters>
@@ -76,20 +75,17 @@
                             <Setter Target="LabelNewChat.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelChat.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelVoice.Visibility" Value="Collapsed"/>
-                            <Setter Target="LabelTools.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelThemeToggle.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelSettings.Visibility" Value="Collapsed"/>
                             <Setter Target="LabelRecents.Visibility" Value="Collapsed"/>
                             <Setter Target="NavNewChat.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavChat.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavVoice.HorizontalContentAlignment" Value="Center"/>
-                            <Setter Target="NavTools.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="ThemeToggleButton.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavSettings.HorizontalContentAlignment" Value="Center"/>
                             <Setter Target="NavNewChat.Padding" Value="8"/>
                             <Setter Target="NavChat.Padding" Value="8"/>
                             <Setter Target="NavVoice.Padding" Value="8"/>
-                            <Setter Target="NavTools.Padding" Value="8"/>
                             <Setter Target="ThemeToggleButton.Padding" Value="8"/>
                             <Setter Target="NavSettings.Padding" Value="8"/>
                             <Setter Target="SidebarResizer.Visibility" Value="Collapsed"/>
@@ -240,7 +236,7 @@
                                 Background="Transparent"
                                 Foreground="{StaticResource RuMutedBrush}"
                                 Padding="10,8"
-                                CornerRadius="0"
+                                CornerRadius="{StaticResource RuControlCornerRadius}"
                                 BorderBrush="Transparent"
                                 BorderThickness="0"
                                 HorizontalContentAlignment="Left"
@@ -264,7 +260,7 @@
 
                         <Button x:Name="NavSettings" Tag="settings" Click="OnNavClick" HorizontalAlignment="Stretch"
                                 Background="Transparent" Foreground="{StaticResource RuMutedBrush}"
-                                Padding="10,8" CornerRadius="0" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
+                                Padding="10,8" CornerRadius="{StaticResource RuControlCornerRadius}" BorderBrush="Transparent" BorderThickness="0" HorizontalContentAlignment="Left"
                                 ToolTipService.ToolTip="Cài đặt hệ thống" AutomationProperties.Name="Cài đặt hệ thống">
                             <Grid ColumnDefinitions="Auto,*">
                                 <FontIcon Grid.Column="0" Glyph="&#xE713;" FontSize="15" Margin="0,0,12,0"/>

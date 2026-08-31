@@ -932,6 +932,10 @@ namespace RuApp
 
             if (isNarrow)
             {
+                if (BrandRule != null) BrandRule.Visibility = Visibility.Collapsed;
+                if (BrandDescriptor != null) BrandDescriptor.Visibility = Visibility.Collapsed;
+                if (AppTitleBar != null) AppTitleBar.Padding = new Thickness(26, 0, 24, 0);
+
                 // Compact Mini Rail Mode (72px centered icon buttons)
                 if (SidebarTopPanel != null)
                 {
@@ -965,6 +969,10 @@ namespace RuApp
             }
             else
             {
+                if (BrandRule != null) BrandRule.Visibility = Visibility.Visible;
+                if (BrandDescriptor != null) BrandDescriptor.Visibility = Visibility.Visible;
+                if (AppTitleBar != null) AppTitleBar.Padding = new Thickness(24, 0, 24, 0);
+
                 // Full Expanded Mode
                 if (SidebarTopPanel != null)
                 {

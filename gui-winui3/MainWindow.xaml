@@ -157,7 +157,7 @@
 
                         <!-- Recent Chats Header -->
                         <Grid Grid.Row="1" Margin="14,20,14,6" ColumnDefinitions="*,Auto">
-                            <TextBlock x:Name="LabelRecents" Grid.Column="0" Text="GẦN ĐÂY" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
+                            <TextBlock x:Name="LabelRecents" Grid.Column="0" Text="HỘI THOẠI" FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" FontWeight="Bold"
                                        Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                         </Grid>
                         

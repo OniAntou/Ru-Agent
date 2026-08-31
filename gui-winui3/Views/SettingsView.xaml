@@ -135,73 +135,73 @@
             </Grid.RowDefinitions>
 
             <!-- Top Minimalist Linear Underline Tab Strip -->
-            <Border Grid.Row="0" Margin="0,0,0,16"
+            <Border Grid.Row="0" Margin="0,0,0,20"
                     BorderBrush="{StaticResource RuLineBrush}"
                     BorderThickness="0,0,0,1"
                     HorizontalAlignment="Stretch">
-                <StackPanel Orientation="Horizontal" Spacing="6">
+                <StackPanel Orientation="Horizontal" Spacing="4">
                     <!-- Nav: System & Models -->
                     <Button x:Name="NavSystemBtn" Click="OnNavSystemClick"
-                            Padding="12,8,12,6" Height="38"
+                            Padding="16,8,16,0" Height="42"
                             Background="Transparent"
                             BorderBrush="Transparent"
                             BorderThickness="0"
-                            CornerRadius="0">
-                        <StackPanel Spacing="6" HorizontalAlignment="Center">
-                            <StackPanel Orientation="Horizontal" Spacing="7" HorizontalAlignment="Center">
-                                <FontIcon x:Name="NavSystemIcon" Glyph="&#xE713;" FontSize="13" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
+                            CornerRadius="6,6,0,0">
+                        <Grid RowDefinitions="*,Auto" VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,8">
+                                <FontIcon x:Name="NavSystemIcon" Glyph="&#xE713;" FontSize="13.5" Foreground="{StaticResource RuAccentBrush}" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="NavSystemText" Text="Hệ thống &amp; Mô hình" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
-                            <Border x:Name="NavSystemLine" Height="2.5" Width="120" Background="{StaticResource RuAccentBrush}" CornerRadius="1.25" HorizontalAlignment="Stretch"/>
-                        </StackPanel>
+                            <Border x:Name="NavSystemLine" Grid.Row="1" Height="2.5" Background="{StaticResource RuAccentBrush}" CornerRadius="1.25" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
+                        </Grid>
                     </Button>
 
                     <!-- Nav: Screen Observation -->
                     <Button x:Name="NavObserverBtn" Click="OnNavObserverClick"
-                            Padding="12,8,12,6" Height="38"
+                            Padding="16,8,16,0" Height="42"
                             Background="Transparent"
                             BorderBrush="Transparent"
                             BorderThickness="0"
-                            CornerRadius="0">
-                        <StackPanel Spacing="6" HorizontalAlignment="Center">
-                            <StackPanel Orientation="Horizontal" Spacing="7" HorizontalAlignment="Center">
-                                <FontIcon x:Name="NavObserverIcon" Glyph="&#xE7B3;" FontSize="13" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                            CornerRadius="6,6,0,0">
+                        <Grid RowDefinitions="*,Auto" VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,8">
+                                <FontIcon x:Name="NavObserverIcon" Glyph="&#xE7B3;" FontSize="13.5" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="NavObserverText" Text="Nhận thức Màn hình" FontSize="13" FontWeight="Medium" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
-                            <Border x:Name="NavObserverLine" Height="2.5" Width="120" Background="Transparent" CornerRadius="1.25" HorizontalAlignment="Stretch"/>
-                        </StackPanel>
+                            <Border x:Name="NavObserverLine" Grid.Row="1" Height="2.5" Background="Transparent" CornerRadius="1.25" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
+                        </Grid>
                     </Button>
 
                     <!-- Nav: VTube Studio -->
                     <Button x:Name="NavVtsBtn" Click="OnNavVtsClick"
-                            Padding="12,8,12,6" Height="38"
+                            Padding="16,8,16,0" Height="42"
                             Background="Transparent"
                             BorderBrush="Transparent"
                             BorderThickness="0"
-                            CornerRadius="0">
-                        <StackPanel Spacing="6" HorizontalAlignment="Center">
-                            <StackPanel Orientation="Horizontal" Spacing="7" HorizontalAlignment="Center">
-                                <FontIcon x:Name="NavVtsIcon" Glyph="&#xE703;" FontSize="13" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                            CornerRadius="6,6,0,0">
+                        <Grid RowDefinitions="*,Auto" VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,8">
+                                <FontIcon x:Name="NavVtsIcon" Glyph="&#xE703;" FontSize="13.5" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="NavVtsText" Text="VTube Studio" FontSize="13" FontWeight="Medium" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
-                            <Border x:Name="NavVtsLine" Height="2.5" Width="90" Background="Transparent" CornerRadius="1.25" HorizontalAlignment="Stretch"/>
-                        </StackPanel>
+                            <Border x:Name="NavVtsLine" Grid.Row="1" Height="2.5" Background="Transparent" CornerRadius="1.25" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
+                        </Grid>
                     </Button>
 
                     <!-- Nav: Memory -->
                     <Button x:Name="NavMemoryBtn" Click="OnNavMemoryClick"
-                            Padding="12,8,12,6" Height="38"
+                            Padding="16,8,16,0" Height="42"
                             Background="Transparent"
                             BorderBrush="Transparent"
                             BorderThickness="0"
-                            CornerRadius="0">
-                        <StackPanel Spacing="6" HorizontalAlignment="Center">
-                            <StackPanel Orientation="Horizontal" Spacing="7" HorizontalAlignment="Center">
-                                <FontIcon x:Name="NavMemoryIcon" Glyph="&#xE968;" FontSize="13" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
+                            CornerRadius="6,6,0,0">
+                        <Grid RowDefinitions="*,Auto" VerticalAlignment="Stretch" HorizontalAlignment="Stretch">
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,8">
+                                <FontIcon x:Name="NavMemoryIcon" Glyph="&#xE968;" FontSize="13.5" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="NavMemoryText" Text="Bộ nhớ ghi nhớ" FontSize="13" FontWeight="Medium" Foreground="{StaticResource RuMutedBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
-                            <Border x:Name="NavMemoryLine" Height="2.5" Width="100" Background="Transparent" CornerRadius="1.25" HorizontalAlignment="Stretch"/>
-                        </StackPanel>
+                            <Border x:Name="NavMemoryLine" Grid.Row="1" Height="2.5" Background="Transparent" CornerRadius="1.25" HorizontalAlignment="Stretch" Margin="-16,0,-16,0"/>
+                        </Grid>
                     </Button>
                 </StackPanel>
             </Border>

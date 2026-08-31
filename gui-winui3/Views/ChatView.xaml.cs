@@ -90,6 +90,9 @@ namespace RuApp.Views
         private bool _activeAgentReplyReceived;
         private bool _activeAgentReplyCompleted;
         private readonly HashSet<string> _agentDeltaKeys = new(StringComparer.Ordinal);
+        private readonly AgentReplyAccumulator _replyAccumulator = new();
+        private bool _renderPending;
+        private readonly object _renderGate = new();
 
         public ChatView()
         {
@@ -266,6 +269,18 @@ namespace RuApp.Views
 
         private void OnAgentAssistantDeltaReceived(object? sender, AgentAssistantDeltaModel delta)
         {
+            // Voice delivery must not be gated by render coalescing
+            if (_activeAgentTurnSource == AgentTurnSource.Voice
+                && _voicePlayback?.AutoReadReplies == true)
+            {
+                // Deliver voice promptly on any thread that received the delta, but ensure the run is still current
+                var runForVoice = _agentController?.CurrentRun;
+                if (runForVoice != null && _activeAgentAssistantMessage != null && string.Equals(_activeAgentRunId ?? runForVoice.RunId, runForVoice.RunId, StringComparison.Ordinal))
+                {
+                    _voicePlayback.AppendReplyDelta(delta.Text);
+                }
+            }
+
             if (!DispatcherQueue.HasThreadAccess)
             {
                 DispatcherQueue.TryEnqueue(() => OnAgentAssistantDeltaReceived(sender, delta));
@@ -278,8 +293,6 @@ namespace RuApp.Views
                 return;
             }
 
-            // The controller correlates the SSE callback with its current run. Bind
-            // the placeholder lazily because the run id is only known after create.
             if (_activeAgentAssistantMessage is null)
             {
                 return;
@@ -297,16 +310,51 @@ namespace RuApp.Views
                 return;
             }
 
-            _activeAgentReplyReceived = true;
-            _activeAgentAssistantMessage.Content += delta.Text;
-            _activeAgentAssistantMessage.IsStreaming = true;
-            if (_activeAgentTurnSource == AgentTurnSource.Voice
-                && _voicePlayback?.AutoReadReplies == true)
+            // Use accumulator as single authority for dedup + text; also keep legacy set for now
+            if (!_replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text))
             {
-                _voicePlayback.AppendReplyDelta(delta.Text);
+                // If no active accumulator (e.g., after Invalidate), begin with real runId and retry once
+                if (_activeAgentRunId != null && run.RunId == _activeAgentRunId)
+                {
+                    _replyAccumulator.Begin(_activeSessionId, run.RunId);
+                    if (!_replyAccumulator.TryAppend(run.RunId, delta.ModelStepId, delta.TransientSequence, delta.Text))
+                    {
+                        return;
+                    }
+                }
+                else
+                {
+                    return;
+                }
             }
 
-            ScrollChatToBottom();
+            _activeAgentReplyReceived = true;
+            ScheduleRender();
+        }
+
+        private void ScheduleRender()
+        {
+            lock (_renderGate)
+            {
+                if (_renderPending) return;
+                _renderPending = true;
+            }
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                AgentReplySnapshot? snapshot = null;
+                lock (_renderGate)
+                {
+                    _renderPending = false;
+                    snapshot = _replyAccumulator.TakeSnapshot();
+                }
+                if (snapshot != null && _activeAgentAssistantMessage != null)
+                {
+                    // Use snapshot text as the single source for Content, coalescing many deltas into one UI update
+                    _activeAgentAssistantMessage.Content = snapshot.Text;
+                    _activeAgentAssistantMessage.IsStreaming = true;
+                    ScrollChatToBottom();
+                }
+            });
         }
 
         private void ClearAgentActivities()
@@ -760,6 +808,7 @@ namespace RuApp.Views
             _activeAgentReplyReceived = false;
             _activeAgentReplyCompleted = false;
             _agentDeltaKeys.Clear();
+            _replyAccumulator.Invalidate();
 
             Messages.Add(new ChatMessageItem
             {
@@ -795,11 +844,22 @@ namespace RuApp.Views
             }
 
             _activeAgentReplyCompleted = true;
-            ChatMessageItem? placeholder = _activeAgentAssistantMessage;
-            if (placeholder is not null)
+            // Flush any pending coalesced render before completing
+            AgentReplySnapshot? pending = null;
+            lock (_renderGate) { pending = _replyAccumulator.TakeSnapshot(); }
+            if (pending != null && _activeAgentAssistantMessage != null)
             {
-                placeholder.IsStreaming = false;
+                _activeAgentAssistantMessage.Content = pending.Text;
+                _activeAgentAssistantMessage.IsStreaming = false;
+                ScrollChatToBottom();
             }
+            else if (_activeAgentAssistantMessage != null)
+            {
+                _activeAgentAssistantMessage.IsStreaming = false;
+            }
+            _replyAccumulator.Invalidate();
+            lock (_renderGate) { _renderPending = false; }
+            ChatMessageItem? placeholder = _activeAgentAssistantMessage;
 
             string? latestAssistant = await ReloadSessionHistoryAsync(cancellationToken);
             string fallbackText = latestAssistant
@@ -828,6 +888,8 @@ namespace RuApp.Views
 
         private void FailActiveAgentReply(Exception exception)
         {
+            _replyAccumulator.Invalidate();
+            lock (_renderGate) { _renderPending = false; }
             if (_activeAgentAssistantMessage is not null)
             {
                 _activeAgentAssistantMessage.Content = string.IsNullOrWhiteSpace(
@@ -852,6 +914,8 @@ namespace RuApp.Views
 
         private void AbandonActiveAgentReply(bool notifyVoice)
         {
+            _replyAccumulator.Invalidate();
+            lock (_renderGate) { _renderPending = false; }
             _voicePlayback?.StopVoice();
             if (notifyVoice && _activeAgentTurnSource == AgentTurnSource.Voice)
             {

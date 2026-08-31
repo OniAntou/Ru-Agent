@@ -64,10 +64,10 @@ bool SpoutOverlay::Tick() {
     const auto pixel_count = static_cast<std::size_t>(width_) * height_;
     if (impl_->receiver.GetSenderFormat() != DXGI_FORMAT_B8G8R8A8_UNORM &&
         impl_->receiver.GetSenderFormat() != DXGI_FORMAT_B8G8R8X8_UNORM) {
-        RemoveGreenMatteRgba(pixels_.data(), pixel_count);
-        ConvertRgbaToBgra(pixels_.data(), pixel_count);
+        PrepareRgbaForOverlay(pixels_.data(), pixel_count);
+    } else {
+        PremultiplyBgra(pixels_.data(), pixel_count);
     }
-    PremultiplyBgra(pixels_.data(), pixel_count);
     status_ = "Connected: " + std::string(impl_->receiver.GetSenderName());
     return true;
 }

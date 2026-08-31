@@ -79,11 +79,15 @@ namespace RuApp.Services
             }
         }
 
-        public async Task<SessionListResponse?> GetSessionsAsync()
+        public async Task<SessionListResponse?> GetSessionsAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                return await _httpClient.GetFromJsonAsync<SessionListResponse>($"{_baseUrl}/sessions");
+                return await _httpClient.GetFromJsonAsync<SessionListResponse>($"{_baseUrl}/sessions", cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -687,7 +691,8 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             string? component = null,
             string? eventCode = null,
             string? correlationId = null,
-            string? cursor = null)
+            string? cursor = null,
+            CancellationToken cancellationToken = default)
         {
             try
             {
@@ -701,7 +706,11 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
                 if (!string.IsNullOrWhiteSpace(cursor)) queryParams.Add($"cursor={Uri.EscapeDataString(cursor)}");
 
                 var url = $"{_baseUrl}/diagnostics/logs" + (queryParams.Count > 0 ? "?" + string.Join("&", queryParams) : "");
-                return await _httpClient.GetFromJsonAsync<DiagnosticLogResultDto>(url);
+                return await _httpClient.GetFromJsonAsync<DiagnosticLogResultDto>(url, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -736,11 +745,15 @@ public async Task<(bool Ok, string? Error)> CheckWorkerHealthAsync()
             }
         }
 
-        public async Task<DiagnosticStatusDto?> GetDiagnosticStatusAsync()
+        public async Task<DiagnosticStatusDto?> GetDiagnosticStatusAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                return await _httpClient.GetFromJsonAsync<DiagnosticStatusDto>($"{_baseUrl}/diagnostics/status");
+                return await _httpClient.GetFromJsonAsync<DiagnosticStatusDto>($"{_baseUrl}/diagnostics/status", cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

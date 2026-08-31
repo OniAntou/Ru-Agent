@@ -1561,6 +1561,45 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         }
     }
 
+    internal static string? ReadSearchText(Stream stream, int maximumBytes, int binaryProbeBytes, CancellationToken cancellationToken)
+    {
+        if (maximumBytes < 1) throw new ArgumentOutOfRangeException(nameof(maximumBytes));
+        if (binaryProbeBytes < 0) throw new ArgumentOutOfRangeException(nameof(binaryProbeBytes));
+        var probeLength = Math.Min(binaryProbeBytes, maximumBytes);
+        var output = new MemoryStream(Math.Min(maximumBytes, 81920));
+        var buffer = new byte[Math.Min(maximumBytes, 81920)];
+        var totalRead = 0;
+        var probeChecked = 0;
+        while (totalRead < maximumBytes)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var toRead = Math.Min(buffer.Length, maximumBytes - totalRead);
+            if (toRead == 0) break;
+            var read = stream.Read(buffer, 0, toRead);
+            if (read == 0) break;
+            var checkUpTo = Math.Min(read, Math.Max(0, probeLength - probeChecked));
+            for (int i = 0; i < checkUpTo; i++) if (buffer[i] == 0) return null;
+            probeChecked += read;
+            if (output.Length > maximumBytes - read) throw new ArgumentException("file_too_large");
+            output.Write(buffer, 0, read);
+            totalRead += read;
+            if (totalRead >= maximumBytes)
+            {
+                var peek = stream.ReadByte();
+                if (peek != -1) throw new ArgumentException("file_too_large");
+                break;
+            }
+        }
+        try
+        {
+            return StrictUtf8.GetString(output.GetBuffer(), 0, checked((int)output.Length));
+        }
+        catch (DecoderFallbackException ex)
+        {
+            throw new ArgumentException("invalid_utf8", ex);
+        }
+    }
+
     private JsonObject ListFiles(string relativePath, int maxEntries)
     {
         var directory = ResolveWithinRoot(relativePath);
@@ -1859,21 +1898,19 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
 
                 FileInfo info;
                 try { info = new FileInfo(safeEntry); if (!info.Exists || info.Length > 1 * 1024 * 1024) continue; } catch { continue; }
-                // binary check
-                bool isBinary = false;
+
+                string? fileText;
                 try
                 {
                     using var s = new FileStream(safeEntry, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan);
-                    var buf = new byte[Math.Min(8000, (int)Math.Min(s.Length, 8000))];
-                    var read = s.Read(buf, 0, buf.Length);
-                    for (int i = 0; i < read; i++) if (buf[i] == 0) { isBinary = true; break; }
+                    fileText = ReadSearchText(s, 1 * 1024 * 1024, 8000, CancellationToken.None);
+                    if (fileText is null) continue;
                 }
+                catch (ArgumentException) { continue; }
                 catch { continue; }
-                if (isBinary) continue;
 
                 try
                 {
-                    var fileText = ReadBoundedText(safeEntry, 1 * 1024 * 1024);
                     using var reader = new StringReader(fileText);
                     string? line;
                     int lineNum = 0;

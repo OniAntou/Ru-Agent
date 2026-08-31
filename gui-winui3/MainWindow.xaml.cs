@@ -37,6 +37,7 @@ namespace RuApp
         private AgentPolicyController? _policyController;
         private AuditLogPanel? _auditPanel;
         private DispatcherTimer? _sessionsTimer;
+        private RefreshController<SessionListResponse?>? _sessionsRefreshController;
         private ResponsiveLayoutTier? _responsiveTier;
         private double _lastExpandedSidebarWidth = 250;
         private readonly UiThemePreferenceStore _themePreferenceStore = new();
@@ -251,6 +252,7 @@ namespace RuApp
 
                 _diagnosticsView = new DiagnosticsView();
                 _diagnosticsView.Initialize(_apiService);
+                _diagnosticsView.SetActive(false);
 
                 _policyController = _composition.CreateAgentPolicyController(this.DispatcherQueue);
                 _policyControlPanel = new PolicyPanel { Controller = _policyController };
@@ -261,11 +263,21 @@ namespace RuApp
                 ContentFrame.Content = _chatView;
                 SetActiveNav(NavChat);
                 
-                await LoadSessionsAsync();
+                _sessionsRefreshController = new RefreshController<SessionListResponse?>(
+                    token => _apiService!.GetSessionsAsync(token),
+                    result => { if (result != null) ApplySessions(result); },
+                    action => DispatcherQueue.TryEnqueue(() => action()));
+                _sessionsRefreshController.SetActive(true);
+                await _sessionsRefreshController.RefreshAsync();
                 await UpdateHealthStatusAsync();
 
                 _sessionsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-                _sessionsTimer.Tick += OnSessionsTimerTick;
+                _sessionsTimer.Tick += async (_, __) =>
+                {
+                    if (_sessionsRefreshController != null) await _sessionsRefreshController.RefreshAsync();
+                    else await LoadSessionsAsync();
+                    try { await UpdateHealthStatusAsync(); } catch { }
+                };
                 _sessionsTimer.Start();
 
                 if (!_composition.IsHarness)
@@ -342,6 +354,7 @@ namespace RuApp
                     "audit" => _auditPanel,
                     _ => _chatView
                 };
+                _diagnosticsView?.SetActive(tag == "diagnostics");
             }
         }
 
@@ -360,6 +373,7 @@ namespace RuApp
                 "audit" => _auditPanel,
                 _ => _chatView
             };
+            _diagnosticsView?.SetActive(tag == "diagnostics");
         }
 
         public void NavigateToDiagnostics(string? correlationId = null)
@@ -398,6 +412,9 @@ namespace RuApp
         private async void OnWindowClosed(object sender, WindowEventArgs args)
         {
             _sessionsTimer?.Stop();
+            _sessionsRefreshController?.SetActive(false);
+            if (_sessionsRefreshController != null) await _sessionsRefreshController.DisposeAsync();
+            _sessionsRefreshController = null;
             _observationTimer?.Stop();
             _chatView?.Dispose();
             _settingsView?.Dispose();
@@ -435,6 +452,11 @@ namespace RuApp
         private async Task LoadSessionsAsync()
         {
             if (_apiService == null) return;
+            if (_sessionsRefreshController != null)
+            {
+                await _sessionsRefreshController.RefreshAsync();
+                return;
+            }
             var result = await _apiService.GetSessionsAsync();
             if (result != null)
             {
@@ -497,15 +519,19 @@ namespace RuApp
         private async void OnSessionsTimerTick(object? sender, object e)
         {
             if (_apiService == null) return;
-            try
+            if (_sessionsRefreshController != null)
             {
-                var result = await _apiService.GetSessionsAsync();
-                if (result != null)
-                {
-                    ApplySessions(result);
-                }
+                try { await _sessionsRefreshController.RefreshAsync(); } catch { }
             }
-            catch { }
+            else
+            {
+                try
+                {
+                    var result = await _apiService.GetSessionsAsync();
+                    if (result != null) ApplySessions(result);
+                }
+                catch { }
+            }
 
             try
             {

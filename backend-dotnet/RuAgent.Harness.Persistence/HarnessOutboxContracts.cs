@@ -40,3 +40,10 @@ public sealed record OutboxRunTransition(
     HistoryWaitKind HistoryWaitKind,
     OutboxRunTransitionKind Kind,
     string? ErrorCode);
+
+public abstract record OutboxWork
+{
+    public sealed record Idle : OutboxWork;
+    public sealed record Transition(OutboxRunTransition Value) : OutboxWork;
+    public sealed record Delivery(OutboxClaim Value) : OutboxWork;
+}

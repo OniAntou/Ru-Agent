@@ -33,6 +33,29 @@ void RemoveGreenMatteRgba(unsigned char* pixels, std::size_t pixel_count) {
     }
 }
 
+void PrepareRgbaForOverlay(unsigned char* pixels, std::size_t pixel_count) {
+    for (std::size_t index = 0; index < pixel_count; ++index) {
+        auto* pixel = pixels + index * 4;
+        const unsigned char r = pixel[0];
+        const unsigned char g = pixel[1];
+        const unsigned char b = pixel[2];
+        const unsigned char a = pixel[3];
+        const int strongest_non_green = (std::max)(static_cast<int>(r), static_cast<int>(b));
+        if (static_cast<int>(g) > strongest_non_green + 24) {
+            pixel[0] = 0;
+            pixel[1] = 0;
+            pixel[2] = 0;
+            pixel[3] = 0;
+        } else {
+            // Convert RGBA to BGRA and premultiply in one write
+            pixel[0] = static_cast<unsigned char>((b * a) / 255);
+            pixel[1] = static_cast<unsigned char>((g * a) / 255);
+            pixel[2] = static_cast<unsigned char>((r * a) / 255);
+            pixel[3] = a;
+        }
+    }
+}
+
 void ApplyGreenScreenAlpha(unsigned char* pixels, std::size_t pixel_count) {
     for (std::size_t index = 0; index < pixel_count; ++index) {
         const auto offset = index * 4;

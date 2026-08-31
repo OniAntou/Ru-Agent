@@ -239,18 +239,36 @@ public sealed class FileSearchAdapter
                     continue;
                 }
 
-                if (IsBinaryFile(entryResolved.CanonicalPath))
+                string? text;
+                try
+                {
+                    using var stream = new FileStream(entryResolved.CanonicalPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan);
+                    text = ReadSearchText(stream, FileToolLimits.MaxSearchFileSize, 8000, CancellationToken.None);
+                    if (text is null)
+                    {
+                        skipped++;
+                        continue;
+                    }
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    skipped++;
+                    continue;
+                }
+                catch (IOException)
+                {
+                    skipped++;
+                    continue;
+                }
+                catch (ArgumentException)
                 {
                     skipped++;
                     continue;
                 }
 
-                // Read at most the advertised per-file cap. FileInfo.Length is only
-                // a hint and a concurrent writer can grow the file after that check;
-                // StreamReader.ReadLine would otherwise allocate an unbounded line.
+                // The complete file is already bounded by ReadSearchText; search the full line
                 try
                 {
-                    var text = ReadBoundedText(entryResolved.CanonicalPath);
                     using var reader = new StringReader(text);
                     string? line;
                     int lineNumber = 0;
@@ -436,6 +454,65 @@ public sealed class FileSearchAdapter
         }
 
         return relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
+    }
+
+    internal static string? ReadSearchText(Stream stream, int maximumBytes, int binaryProbeBytes, CancellationToken cancellationToken)
+    {
+        if (maximumBytes < 1) throw new ArgumentOutOfRangeException(nameof(maximumBytes));
+        if (binaryProbeBytes < 0) throw new ArgumentOutOfRangeException(nameof(binaryProbeBytes));
+        // Probe for binary (zero byte) while retaining prefix
+        var probeLength = Math.Min(binaryProbeBytes, maximumBytes);
+        var output = new MemoryStream(Math.Min(maximumBytes, 81920));
+        var buffer = new byte[Math.Min(maximumBytes, 81920)];
+        var totalRead = 0;
+        var probeChecked = 0;
+
+        while (totalRead < maximumBytes)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var toRead = Math.Min(buffer.Length, maximumBytes - totalRead);
+            if (toRead == 0) break;
+            var read = stream.Read(buffer, 0, toRead);
+            if (read == 0) break;
+
+            // Check binary within probe window
+            var checkUpTo = Math.Min(read, Math.Max(0, probeLength - probeChecked));
+            for (int i = 0; i < checkUpTo; i++)
+            {
+                if (buffer[i] == 0) return null;
+            }
+            probeChecked += read;
+
+            if (output.Length > maximumBytes - read)
+            {
+                throw new ArgumentException("file_too_large");
+            }
+            output.Write(buffer, 0, read);
+            totalRead += read;
+
+            // If we have already read beyond probe and the stream still has more, continue; the loop will detect overflow on next iteration
+            // Also check if stream has more data beyond maximumBytes by attempting one more byte
+            if (totalRead >= maximumBytes)
+            {
+                // Peek one more byte to detect file_too_large due to concurrent growth
+                var peek = stream.ReadByte();
+                if (peek != -1)
+                {
+                    throw new ArgumentException("file_too_large");
+                }
+                break;
+            }
+        }
+
+        // If totalRead == 0, empty file -> return empty string (not binary)
+        try
+        {
+            return StrictUtf8.GetString(output.GetBuffer(), 0, checked((int)output.Length));
+        }
+        catch (DecoderFallbackException ex)
+        {
+            throw new ArgumentException("invalid_utf8", ex);
+        }
     }
 
     private static bool IsBinaryFile(string path)

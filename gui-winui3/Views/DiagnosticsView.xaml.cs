@@ -17,11 +17,13 @@ namespace RuApp.Views
     {
         private ApiService? _apiService;
         private DispatcherTimer? _refreshTimer;
+        private RefreshController<(DiagnosticStatusDto? Status, DiagnosticLogResultDto? Logs)>? _refreshController;
         private readonly List<DiagnosticEventDto> _allEvents = new();
         private readonly HashSet<string> _seenEventIds = new(StringComparer.Ordinal);
         private IReadOnlyList<DiagnosticEventDto>? _lastVisibleEvents;
         private string? _cursor;
         private bool _isPaused;
+        private bool _isActive;
         private ResponsiveLayoutTier? _statusMetricsTier;
 
         public BatchObservableCollection<DiagnosticRow> Rows { get; } = new();
@@ -98,10 +100,108 @@ namespace RuApp.Views
             {
                 new DiagnosticRow("--:--:--", "INFO", "host", "Dang tai du lieu chan doan...", "")
             });
-            _ = RefreshAsync();
+            _refreshController = new RefreshController<(DiagnosticStatusDto? Status, DiagnosticLogResultDto? Logs)>(
+                async token =>
+                {
+                    var status = await _apiService.GetDiagnosticStatusAsync(token);
+                    DiagnosticLogResultDto? logs = null;
+                    if (!_isPaused)
+                    {
+                        logs = await _apiService.GetDiagnosticLogsAsync(limit: 100, cursor: _cursor, cancellationToken: token);
+                    }
+                    return (status, logs);
+                },
+                result => ApplyRefreshResult(result.Status, result.Logs),
+                action => DispatcherQueue.TryEnqueue(() => action()));
+            _refreshController.SetActive(_isActive);
+            _ = _refreshController.RefreshAsync();
             _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-            _refreshTimer.Tick += async (_, __) => await RefreshAsync();
+            _refreshTimer.Tick += async (_, __) =>
+            {
+                if (_refreshController != null) await _refreshController.RefreshAsync();
+                else await RefreshAsync();
+            };
             _refreshTimer.Start();
+        }
+
+        public void SetActive(bool active)
+        {
+            _isActive = active;
+            _refreshController?.SetActive(active);
+            if (active)
+            {
+                _ = _refreshController?.RefreshAsync();
+                _refreshTimer?.Start();
+            }
+            else
+            {
+                _refreshTimer?.Stop();
+            }
+        }
+
+        private void ApplyRefreshResult(DiagnosticStatusDto? status, DiagnosticLogResultDto? result)
+        {
+            if (status != null)
+            {
+                QueueDepthText.Text = $"Độ sâu: {status.Writer?.QueueDepth ?? 0}";
+                DroppedCountText.Text = $"{status.Writer?.DroppedCount ?? 0} bản ghi";
+                WriteFailuresText.Text = $"{status.Writer?.WriteFailureCount ?? 0} lỗi";
+                double kb = (status.TotalSizeBytes) / 1024.0;
+                TotalFilesText.Text = $"{status.TotalLogFiles} files ({kb:F1} KB)";
+                if (status.Writer != null && (status.Writer.DroppedCount > 0 || status.Writer.WriteFailureCount > 0))
+                {
+                    WarningBanner.Visibility = Visibility.Visible;
+                    WarningBannerText.Text = $"Cảnh báo: Phát hiện {status.Writer.WriteFailureCount} lỗi ghi và {status.Writer.DroppedCount} bản ghi log bị bỏ!";
+                }
+                else
+                {
+                    WarningBanner.Visibility = Visibility.Collapsed;
+                }
+            }
+            else
+            {
+                WarningBanner.Visibility = Visibility.Visible;
+                WarningBannerText.Text = "Không thể đọc trạng thái bộ ghi chẩn đoán backend.";
+            }
+
+            if (_isPaused) return;
+            if (result == null)
+            {
+                if (status == null)
+                {
+                    WarningBanner.Visibility = Visibility.Visible;
+                    WarningBannerText.Text = "Không thể đọc nhật ký chẩn đoán backend.";
+                }
+                return;
+            }
+            if (result.Events.Count > 0)
+            {
+                foreach (var evt in result.Events)
+                {
+                    if (string.IsNullOrEmpty(evt.EventId) || _seenEventIds.Add(evt.EventId))
+                    {
+                        _allEvents.Add(evt);
+                    }
+                }
+                if (_allEvents.Count > 1000)
+                {
+                    var removeCount = _allEvents.Count - 1000;
+                    for (int i = 0; i < removeCount; i++)
+                    {
+                        if (!string.IsNullOrEmpty(_allEvents[i].EventId))
+                        {
+                            _seenEventIds.Remove(_allEvents[i].EventId);
+                        }
+                    }
+                    _allEvents.RemoveRange(0, removeCount);
+                }
+                _cursor = result.Cursor ?? _cursor;
+                ApplyFilter();
+            }
+            else if (string.IsNullOrEmpty(_cursor) && _allEvents.Count == 0)
+            {
+                ApplyFilter();
+            }
         }
 
         public void FilterByCorrelation(string correlationId)
@@ -438,6 +538,13 @@ namespace RuApp.Views
         {
             _refreshTimer?.Stop();
             _refreshTimer = null;
+            _isActive = false;
+            _refreshController?.SetActive(false);
+            if (_refreshController != null)
+            {
+                _ = _refreshController.DisposeAsync().AsTask();
+                _refreshController = null;
+            }
         }
     }
 

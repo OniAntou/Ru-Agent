@@ -58,7 +58,8 @@ $cache = Join-Path $build 'CMakeCache.txt'
 $cmakeConfigureArgs = @(
     '-S', $source,
     '-B', $build,
-    '-DVCPKG_MANIFEST_MODE=ON'
+    '-DVCPKG_MANIFEST_MODE=ON',
+    '-DRU_BUILD_NATIVE_PROBES=OFF'
 )
 
 if (-not (Test-Path -LiteralPath $cache)) {

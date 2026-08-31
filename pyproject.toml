@@ -25,7 +25,6 @@ dev = [
     "mypy==2.3.0",
 ]
 runtime = [
-    "ddgs>=9.0",
     "httpx>=0.25",
     "keyring>=25",
 ]

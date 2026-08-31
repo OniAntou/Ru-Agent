@@ -123,25 +123,29 @@ public sealed class AgentConversationOutboxDispatcher
     public async Task<AgentOutboxDispatchResult> DispatchOnceAsync(
         CancellationToken cancellationToken)
     {
-        var pending = await _outbox.ReadPendingRunTransitionsAsync(
-                1,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (pending.Count > 0)
-        {
-            await ApplyTransitionAsync(pending[0], cancellationToken).ConfigureAwait(false);
-            return new AgentOutboxDispatchResult(
-                AgentOutboxDispatchOutcome.TransitionRecovered,
-                pending[0].IntentId);
-        }
-
         var now = _clock.GetUtcNow().ToUniversalTime();
-        var claim = await _outbox.ClaimNextAsync(now, cancellationToken)
-            .ConfigureAwait(false);
-        if (claim is null)
+        var work = await _outbox.ReadNextWorkAsync(now, cancellationToken).ConfigureAwait(false);
+        switch (work)
         {
-            return new AgentOutboxDispatchResult(AgentOutboxDispatchOutcome.Idle);
+            case OutboxWork.Idle:
+                return new AgentOutboxDispatchResult(AgentOutboxDispatchOutcome.Idle);
+            case OutboxWork.Transition(var transition):
+                await ApplyTransitionAsync(transition, cancellationToken).ConfigureAwait(false);
+                return new AgentOutboxDispatchResult(
+                    AgentOutboxDispatchOutcome.TransitionRecovered,
+                    transition.IntentId);
+            case OutboxWork.Delivery(var claim):
+                return await DeliverClaimAsync(claim, now, cancellationToken).ConfigureAwait(false);
+            default:
+                throw new InvalidOperationException("unknown_outbox_work");
         }
+    }
+
+    private async Task<AgentOutboxDispatchResult> DeliverClaimAsync(
+        OutboxClaim claim,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
 
         HarnessPayloadContent payload;
         try

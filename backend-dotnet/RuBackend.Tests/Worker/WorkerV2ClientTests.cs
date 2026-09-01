@@ -9,6 +9,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Worker;
 using RuBackend.Harness.Worker;
 using RuBackend.Worker;
@@ -272,6 +273,93 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal(
             "untrusted tool result",
             payload["system_prompt_context"]!.AsObject()["runtime_context"]!.AsObject()["references"]!.AsArray()[0]!["content"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task RunStepAsync_creates_and_cleans_a_per_step_provider_handoff()
+    {
+        var root = Directory.CreateTempSubdirectory("ru-loopback-bootstrap-");
+        JsonObject? observedStart = null;
+        try
+        {
+            await StartServer(async context =>
+            {
+                using var socket = await context.WebSockets.AcceptWebSocketAsync();
+                var hello = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+                await SendTextAsync(socket, new JsonObject
+                {
+                    ["v"] = 2,
+                    ["id"] = hello["id"]!.GetValue<string>(),
+                    ["type"] = "hello.ok",
+                    ["seq"] = 0,
+                    ["payload"] = new JsonObject
+                    {
+                        ["version"] = 2,
+                        ["capabilities"] = new JsonArray("agent.step"),
+                    },
+                }.ToJsonString());
+
+                observedStart = JsonNode.Parse(await ReceiveTextAsync(socket))!.AsObject();
+                var correlation = observedStart["correlation_id"]!.GetValue<string>();
+                await SendTextAsync(socket, new JsonObject
+                {
+                    ["v"] = 2,
+                    ["id"] = observedStart["id"]!.GetValue<string>(),
+                    ["type"] = "agent.step.done",
+                    ["seq"] = 1,
+                    ["correlation_id"] = correlation,
+                    ["payload"] = new JsonObject
+                    {
+                        ["text"] = "ok",
+                        ["tool_calls"] = new JsonArray(),
+                        ["finish_reason"] = "stop",
+                        ["prompt_receipt"] = PromptReceiptJson(),
+                    },
+                }.ToJsonString());
+            });
+
+            await using var runner = new LoopbackModelStepRunner(
+                new AgentWorkerClientOptions(new Uri(_url), _token))
+            {
+                CreateProviderBootstrapAsync = (stepRequest, _) =>
+                {
+                    Assert.Equal("run_33333333333333333333333333333333", stepRequest.RunId.Value);
+                    return Task.FromResult(ProtectedProviderBootstrap.Write(
+                    root.FullName,
+                    new ProviderBootstrapData(
+                        "Kilo",
+                        "chat_completions",
+                        new Uri("https://step-provider.invalid/v1"),
+                        "model-b",
+                        "step-secret",
+                        new JsonObject
+                        {
+                            ["reasoning_effort"] = "high",
+                        })));
+                },
+            };
+
+            var request = new ModelStepRequest(
+                new RunId("run_33333333333333333333333333333333"),
+                new ModelStepId("step_33333333333333333333333333333333"),
+                new ModelContextSnapshot(
+                    [ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "prompt")],
+                    Array.Empty<byte>()),
+                AgentPermissionPreset.Standard,
+                1,
+                new string('f', 64));
+
+            await runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None);
+
+            var path = observedStart!["payload"]!["provider_bootstrap_path"]!.GetValue<string>();
+            Assert.StartsWith(root.FullName, path, StringComparison.OrdinalIgnoreCase);
+            Assert.False(File.Exists(path));
+            Assert.DoesNotContain("step-secret", observedStart.ToJsonString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
     }
 
     [Fact]

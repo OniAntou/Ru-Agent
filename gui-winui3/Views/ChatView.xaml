@@ -900,8 +900,16 @@
                                                FontSize="12"
                                                Foreground="{StaticResource RuInkBrush}"
                                                MaxWidth="160"
+                                                TextTrimming="CharacterEllipsis"
+                                                VerticalAlignment="Center" />
+                                    <TextBlock x:Name="ChatModelSaveStatusText"
+                                               Foreground="{StaticResource RuDangerBrush}"
+                                               FontFamily="{StaticResource RuUiFontFamily}"
+                                               FontSize="10"
                                                TextTrimming="CharacterEllipsis"
-                                               VerticalAlignment="Center" />
+                                               MaxWidth="120"
+                                               VerticalAlignment="Center"
+                                               Visibility="Collapsed" />
                                     <FontIcon Glyph="&#xE70D;"
                                                FontSize="9"
                                                Foreground="{StaticResource RuMutedBrush}"

@@ -11,7 +11,8 @@ public sealed record ModelRequest
         IReadOnlyList<ModelTurn> turns,
         JsonObject settings,
         Uri endpoint,
-        string credential)
+        string credential,
+        int? maximumOutputTokens = null)
     {
         if (string.IsNullOrWhiteSpace(model) || model.Length > 256 || model.Contains('\0'))
         {
@@ -45,6 +46,7 @@ public sealed record ModelRequest
         {
             throw new ArgumentException("Provider endpoint must be HTTP(S) without user info.", nameof(endpoint));
         }
+        if (maximumOutputTokens is < 1 or > 128000) throw new ArgumentException("Maximum output tokens is invalid.", nameof(maximumOutputTokens));
 
         Model = model;
         SystemPrompt = systemPrompt;
@@ -53,6 +55,7 @@ public sealed record ModelRequest
         Settings = (JsonObject)settings.DeepClone();
         Endpoint = endpoint;
         Credential = credential ?? throw new ArgumentNullException(nameof(credential));
+        MaximumOutputTokens = maximumOutputTokens;
     }
 
     public string Model { get; }
@@ -68,4 +71,6 @@ public sealed record ModelRequest
     public Uri Endpoint { get; }
 
     public string Credential { get; }
+
+    public int? MaximumOutputTokens { get; }
 }

@@ -99,11 +99,10 @@ public sealed class BackendWebApplicationFactory : WebApplicationFactory<Program
                 services.AddSingleton(_dataPaths);
             }
 
-            if (_credentialStore is not null)
-            {
-                services.RemoveAll<ICredentialStore>();
-                services.AddSingleton(_credentialStore);
-            }
+            services.RemoveAll<ICredentialStore>();
+            services.AddSingleton<ICredentialStore>(_credentialStore ?? new EphemeralTestCredentialStore());
+            services.AddHttpClient("ProviderCatalog")
+                .ConfigurePrimaryHttpMessageHandler(() => new SyntheticCatalogHandler());
 
             if (_runtimeSettingsLoader is not null)
             {

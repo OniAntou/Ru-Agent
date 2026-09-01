@@ -117,7 +117,9 @@ public sealed class RuPromptContextProviderTests
         CustomModel: "default",
         OllamaUrl: "http://localhost:11434/v1",
         LmStudioUrl: "http://localhost:1234/v1",
-        CustomUrl: "http://localhost:8000/v1");
+        CustomUrl: "http://localhost:8000/v1",
+        OpenAiModel: string.Empty,
+        AnthropicModel: string.Empty);
 
     private static AgentRun TestRun() => new(
         new RunId("run_11111111111111111111111111111111"),

@@ -31,6 +31,8 @@ public sealed class SettingsStore : ISettingsStore
         "kilo_api_key",
         "gemini_vision_api_key",
         "custom_api_key",
+        "openai_api_key",
+        "anthropic_api_key",
     ];
 
     private static readonly string[] RetiredSettingsFields =
@@ -116,6 +118,8 @@ public sealed class SettingsStore : ISettingsStore
             persisted["ollama_url"] = candidate.OllamaUrl;
             persisted["lmstudio_url"] = candidate.LmStudioUrl;
             persisted["custom_url"] = candidate.CustomUrl;
+            persisted["openai_model"] = candidate.OpenAiModel;
+            persisted["anthropic_model"] = candidate.AnthropicModel;
 
             await WriteAtomicAsync(persisted, cancellationToken).ConfigureAwait(false);
         }
@@ -161,7 +165,9 @@ public sealed class SettingsStore : ISettingsStore
 
         var rawBackend = ReadString(raw, "backend", string.Empty);
         var migratedFromGguf = rawBackend.Trim().ToLowerInvariant() is "gguf" or "llama.cpp";
-        var backend = NormalizeBackend(rawBackend);
+        var backend = raw.ContainsKey("backend")
+            ? NormalizeBackend(rawBackend)
+            : BackendOpenCode;
         var model = ReadString(raw, "model", string.Empty);
         if (string.IsNullOrWhiteSpace(model))
         {
@@ -205,7 +211,9 @@ public sealed class SettingsStore : ISettingsStore
             ReadString(raw, "custom_model", "default"),
             ReadString(raw, "ollama_url", "http://localhost:11434/v1"),
             ReadString(raw, "lmstudio_url", "http://localhost:1234/v1"),
-            ReadString(raw, "custom_url", "http://localhost:8000/v1"));
+            ReadString(raw, "custom_url", "http://localhost:8000/v1"),
+            ReadString(raw, "openai_model", string.Empty),
+            ReadString(raw, "anthropic_model", string.Empty));
     }
 
     private async Task WriteAtomicAsync(
@@ -252,7 +260,9 @@ public sealed class SettingsStore : ISettingsStore
             "ollama" or "ollama api" => BackendOllama,
             "lmstudio" or "lm studio" or "lm studio api" => BackendLmStudio,
             "custom" or "custom openai" or "custom openai api" => BackendCustom,
-            _ => BackendOpenCode,
+            "openai" or "openai api" => "OpenAI",
+            "anthropic" or "anthropic claude" or "claude" => "Anthropic",
+            _ => string.Empty,
         };
     }
 
@@ -336,6 +346,8 @@ public sealed class SettingsStore : ISettingsStore
         ValidateLength(candidate.OllamaUrl, 1024, nameof(candidate.OllamaUrl));
         ValidateLength(candidate.LmStudioUrl, 1024, nameof(candidate.LmStudioUrl));
         ValidateLength(candidate.CustomUrl, 1024, nameof(candidate.CustomUrl));
+        ValidateLength(candidate.OpenAiModel, 256, nameof(candidate.OpenAiModel));
+        ValidateLength(candidate.AnthropicModel, 256, nameof(candidate.AnthropicModel));
         ValidateLength(candidate.ApiVariant, 64, nameof(candidate.ApiVariant));
         ValidateLength(candidate.VoiceLabel, 128, nameof(candidate.VoiceLabel));
 

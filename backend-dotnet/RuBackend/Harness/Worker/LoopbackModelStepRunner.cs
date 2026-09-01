@@ -7,6 +7,7 @@ using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Worker;
 using RuBackend.Worker;
 
@@ -26,6 +27,8 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         // hosts that never drive model steps (tests, diagnostics-only processes).
         _options = options;
     }
+
+    public Func<ModelStepRequest, CancellationToken, Task<string>>? CreateProviderBootstrapAsync { get; init; }
 
     // Test-only injection for fake WebSocket handling.
     internal LoopbackModelStepRunner(AgentWorkerClientOptions options, Func<ClientWebSocket>? socketFactory)
@@ -47,8 +50,32 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(publishDelta);
         _options.Validate();
 
-        using var socket = CreateSocket();
-        socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+        string? providerBootstrapPath = null;
+        try
+        {
+            if (CreateProviderBootstrapAsync is not null)
+            {
+                try
+                {
+                    providerBootstrapPath = await CreateProviderBootstrapAsync(request, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    throw new WorkerProtocolException("provider_bootstrap_failed");
+                }
+
+                if (string.IsNullOrWhiteSpace(providerBootstrapPath))
+                {
+                    throw new WorkerProtocolException("provider_bootstrap_failed");
+                }
+            }
+
+            using var socket = CreateSocket();
+            socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
 
         using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         connectCts.CancelAfter(_connectTimeout);
@@ -100,6 +127,10 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
             ["system_prompt_context"] = WorkerV2PromptCodec.WriteContext(request.PromptContext),
             ["settings"] = settings,
         };
+        if (providerBootstrapPath is not null)
+        {
+            startPayload["provider_bootstrap_path"] = providerBootstrapPath;
+        }
         var startEnvelope = new WorkerV2Envelope(
             WorkerV2Contracts.ProtocolVersion,
             request.ModelStepId.Value,
@@ -277,6 +308,31 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         return new ModelStepResult(
             finalStep,
             finalReceipt ?? throw new WorkerProtocolException("missing_prompt_receipt"));
+        }
+        finally
+        {
+            if (providerBootstrapPath is not null)
+            {
+                DeleteOwnedProviderBootstrap(providerBootstrapPath);
+            }
+        }
+    }
+
+    private static void DeleteOwnedProviderBootstrap(string path)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            var root = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrWhiteSpace(root))
+            {
+                ProtectedProviderBootstrap.Delete(root, fullPath);
+            }
+        }
+        catch
+        {
+            // Cleanup must not replace the step's actual protocol or cancellation error.
+        }
     }
 
     private static string ExtractPrompt(ModelContextSnapshot context)

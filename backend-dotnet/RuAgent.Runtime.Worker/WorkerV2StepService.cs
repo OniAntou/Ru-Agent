@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 using RuAgent.Runtime.Core.Lifecycle;
 
@@ -36,17 +37,37 @@ public sealed class WorkerV2StepService
         new Uri("http://127.0.0.1"),
         "managed-agent",
         string.Empty);
-    private readonly IModelProvider _provider;
+    private readonly IModelProviderResolver _providers;
+    private readonly IModelProvider? _singleProvider;
     private readonly WorkerV2Options _options;
     private readonly RuntimeLeaseCoordinator? _leases;
     private readonly SemaphoreSlim _providerGate = new(1, 1);
 
     public WorkerV2StepService(
+        IModelProviderResolver providers,
+        WorkerV2Options? options = null,
+        RuntimeLeaseCoordinator? leases = null)
+        : this((IModelProvider?)null, providers, options, leases) { }
+
+    public WorkerV2StepService(
         IModelProvider provider,
         WorkerV2Options? options = null,
         RuntimeLeaseCoordinator? leases = null)
+        : this(provider, null, options, leases) { }
+
+    private WorkerV2StepService(
+        IModelProvider? singleProvider,
+        IModelProviderResolver? providers,
+        WorkerV2Options? options,
+        RuntimeLeaseCoordinator? leases)
     {
-        _provider = provider ?? throw new ArgumentNullException(nameof(provider));
+        _singleProvider = singleProvider;
+        _providers = providers ?? (singleProvider is not null ? new ModelProviderResolver(new Dictionary<string, IModelProvider>
+        {
+            ["chat_completions"] = singleProvider,
+            ["openai_responses"] = singleProvider,
+            ["anthropic_messages"] = singleProvider,
+        }) : throw new ArgumentNullException(nameof(providers)));
         _options = options ?? DefaultOptions;
         _leases = leases;
     }
@@ -78,16 +99,25 @@ public sealed class WorkerV2StepService
             throw new WorkerV2StepException("protocol_failure", retryable: false, error);
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        if (cancellationToken.IsCancellationRequested)
+        {
+            DeleteOwnedProviderBootstrap(ReadProviderBootstrapPath(startPayload));
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        var providerBootstrap = ResolveProviderBootstrap(
+            ReadProviderBootstrapPath(startPayload),
+            cancellationToken);
         var snapshot = SystemPromptComposer.Compose(start.Context);
         var request = new ModelRequest(
-            _options.ProviderModel,
+            providerBootstrap.Model,
             snapshot.Text,
             start.Prompt,
             start.Turns,
-            start.Settings,
-            _options.ProviderEndpoint,
-            _options.ProviderCredential);
+            BuildRequestSettings(start.Settings, providerBootstrap.RequestOptions),
+            providerBootstrap.Endpoint,
+            providerBootstrap.Credential,
+            providerBootstrap.MaximumOutputTokens);
         var holdback = new DeltaHoldback(onDelta);
 
         RuntimeLease? generationLease = null;
@@ -106,7 +136,10 @@ public sealed class WorkerV2StepService
             var text = new StringBuilder();
             var toolFragments = new List<ModelToolFragment>();
             string? finishReason = null;
-            await foreach (var delta in _provider.GenerateAsync(request, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
+            IModelProvider provider;
+            try { provider = _providers.Resolve(providerBootstrap.Protocol); }
+            catch (ArgumentException ex) { throw new WorkerV2StepException("provider_bootstrap_invalid", false, ex); }
+            await foreach (var delta in provider.GenerateAsync(request, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (delta.Text is not null)
@@ -354,6 +387,91 @@ public sealed class WorkerV2StepService
         "malformed_payload" or "response_too_large" => new WorkerV2StepException("protocol_failure", retryable: false, error),
         _ => new WorkerV2StepException("generation_failed", error.Retryable, error),
     };
+
+    private ProviderBootstrapData ResolveProviderBootstrap(
+        string? providerBootstrapPath,
+        CancellationToken cancellationToken)
+    {
+        if (_options.ProviderBootstrapRoot is null)
+        {
+            return new ProviderBootstrapData(
+                "startup",
+                ProviderProtocols.ChatCompletions,
+                _options.ProviderEndpoint,
+                _options.ProviderModel,
+                _options.ProviderCredential);
+        }
+
+        if (string.IsNullOrWhiteSpace(providerBootstrapPath))
+        {
+            throw new WorkerV2StepException("provider_bootstrap_required", retryable: false);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            return ProtectedProviderBootstrap.ReadAndDelete(
+                _options.ProviderBootstrapRoot,
+                providerBootstrapPath);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new WorkerV2StepException("provider_bootstrap_invalid", retryable: false);
+        }
+    }
+
+    private static string? ReadProviderBootstrapPath(JsonObject startPayload) =>
+        startPayload["provider_bootstrap_path"] is JsonValue value
+            && value.TryGetValue<string>(out var path)
+            ? path
+            : null;
+
+    private static JsonObject BuildRequestSettings(
+        JsonObject untrustedSettings,
+        JsonObject? protectedRequestOptions)
+    {
+        var settings = (JsonObject)untrustedSettings.DeepClone();
+        foreach (var field in UntrustedProviderOptionFields)
+        {
+            settings.Remove(field);
+        }
+
+        if (protectedRequestOptions is not null)
+        {
+            foreach (var property in protectedRequestOptions)
+            {
+                settings[property.Key] = property.Value?.DeepClone();
+            }
+        }
+
+        return settings;
+    }
+
+    private void DeleteOwnedProviderBootstrap(string? path)
+    {
+        if (_options.ProviderBootstrapRoot is null || string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            ProtectedProviderBootstrap.Delete(_options.ProviderBootstrapRoot, path);
+        }
+        catch
+        {
+            // Never replace cancellation with a cleanup or path-validation error.
+        }
+    }
+
+    private static readonly IReadOnlySet<string> UntrustedProviderOptionFields =
+        new HashSet<string>(
+            ["reasoning", "reasoning_effort", "reasoning_model", "kilo_reasoning_enabled", "api_variant", "max_tokens"],
+            StringComparer.Ordinal);
 
     private sealed class DeltaHoldback
     {

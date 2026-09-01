@@ -43,6 +43,8 @@ namespace RuApp
         private DispatcherTimer? _sessionsTimer;
         private RefreshController<SessionListResponse?>? _sessionsRefreshController;
         private RefreshController<HealthStatusSnapshot?>? _healthRefreshController;
+        private ProviderCatalogController? _providerCatalogController;
+        private DispatcherTimer? _providerCatalogTimer;
         private ResponsiveLayoutTier? _responsiveTier;
         private double _lastExpandedSidebarWidth = 250;
         private readonly UiThemePreferenceStore _themePreferenceStore = new();
@@ -211,6 +213,13 @@ namespace RuApp
                 _backendProvider.BackendExited += OnBackendExited;
 
                 _apiService = new ApiService(backendSession);
+                _providerCatalogController = new ProviderCatalogController(new ProviderCatalogService(_apiService));
+                _apiService.SettingsSaved += OnSettingsSaved;
+                _providerCatalogTimer = new DispatcherTimer { Interval = ProviderCatalogController.PollInterval };
+                _providerCatalogTimer.Tick += async (_, __) =>
+                {
+                    await (_providerCatalogController?.RefreshIfDueAsync() ?? Task.FromResult(false));
+                };
                 _healthStatusService = new HealthStatusService(
                     _apiService,
                     () => _backendProvider.Session != null,
@@ -258,7 +267,8 @@ namespace RuApp
                     _composition.HarnessEvents,
                     _composition.HarnessScenario,
                     _agentController,
-                    projectRoot);
+                    projectRoot,
+                    _providerCatalogController);
                 _chatView.SessionOpened += (_, e) =>
                 {
                     SyncSidebarSelection(e.SessionId);
@@ -268,7 +278,7 @@ namespace RuApp
                 _voiceView.Initialize(_apiService, _voicePlayback, _subtitleOverlay);
 
                 _settingsView = new SettingsView();
-                _settingsView.Initialize(_apiService);
+                _settingsView.Initialize(_apiService, _providerCatalogController);
 
                 _logView = new LogView();
                 _logView.Initialize(_apiService);
@@ -285,6 +295,8 @@ namespace RuApp
                 // The conversation surface is Agent-only.
                 ContentFrame.Content = _chatView;
                 SetActiveNav(NavChat);
+                _providerCatalogController.SetPollingActive(true);
+                _providerCatalogTimer.Start();
                 
                 _sessionsRefreshController = new RefreshController<SessionListResponse?>(
                     token => _apiService!.GetSessionsAsync(token),
@@ -374,6 +386,12 @@ namespace RuApp
                     .Where(value => !string.IsNullOrWhiteSpace(value)));
         }
 
+        private void OnSettingsSaved(object? sender, EventArgs e)
+        {
+            _providerCatalogController?.Invalidate();
+            _ = _providerCatalogController?.RefreshAsync();
+        }
+
         private void OnNavClick(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.Tag is string tag)
@@ -394,6 +412,17 @@ namespace RuApp
                 if (tag == "chat")
                 {
                     _ = _chatView?.LoadChatModelsAsync();
+                    _providerCatalogController?.SetPollingActive(true);
+                    _providerCatalogTimer?.Start();
+                }
+                else
+                {
+                    _providerCatalogController?.SetPollingActive(false);
+                    _providerCatalogTimer?.Stop();
+                }
+                if (tag == "settings")
+                {
+                    _ = _settingsView?.RefreshProviderCatalogAsync();
                 }
                 _diagnosticsView?.SetActive(tag == "diagnostics");
             }
@@ -456,14 +485,24 @@ namespace RuApp
             _closed = true;
             _startup.Cancel();
             _sessionsTimer?.Stop();
+            _providerCatalogTimer?.Stop();
             _sessionsRefreshController?.SetActive(false);
             _healthRefreshController?.SetActive(false);
+            if (_apiService != null)
+            {
+                _apiService.SettingsSaved -= OnSettingsSaved;
+            }
             await _startupTask;
             _startup.Dispose();
             if (_sessionsRefreshController != null) await _sessionsRefreshController.DisposeAsync();
             _sessionsRefreshController = null;
             if (_healthRefreshController != null) await _healthRefreshController.DisposeAsync();
             _healthRefreshController = null;
+            if (_providerCatalogController != null)
+            {
+                await _providerCatalogController.DisposeAsync();
+                _providerCatalogController = null;
+            }
             _observationTimer?.Stop();
             _chatView?.Dispose();
             _settingsView?.Dispose();

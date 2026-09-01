@@ -12,6 +12,7 @@ namespace RuApp.Views
     public sealed partial class SettingsView : UserControl, IDisposable
     {
         private ApiService? _apiService;
+        private bool _ownsProviderCatalogController;
         private bool _loading = false;
         private DispatcherTimer? _autoSaveTimer;
         private bool _saveInProgress;
@@ -28,9 +29,12 @@ namespace RuApp.Views
             this.InitializeComponent();
         }
 
-        public void Initialize(ApiService apiService)
+        public void Initialize(ApiService apiService, ProviderCatalogController? providerCatalogController = null)
         {
             _apiService = apiService;
+            _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
+            _ownsProviderCatalogController = providerCatalogController is null;
+            _providerCatalogController.StateChanged += OnProviderCatalogStateChanged;
             MemoryControl.Initialize(apiService);
             _ = LoadSettingsAsync();
             SetupAutoSave();
@@ -58,8 +62,6 @@ namespace RuApp.Views
             _ = PollVtsStatusAsync();
         }
 
-        private AppSettingsDto? _loadedSettings;
-
         private void SetupAutoSave()
         {
             _autoSaveTimer = new DispatcherTimer
@@ -75,13 +77,13 @@ namespace RuApp.Views
             BackendComboBox.SelectionChanged += (_, __) => ScheduleAutoSave();
             OpenCodeApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
             KiloApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
+            OpenAiApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
+            AnthropicApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
             GeminiVisionKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
             CustomEndpointUrlBox.TextChanged += (_, __) => ScheduleAutoSave();
             CustomApiKeyBox.PasswordChanged += (_, __) => ScheduleAutoSave();
-            ApiVariantComboBox.SelectionChanged += (_, __) => ScheduleAutoSave();
             SelfLearningToggle.Toggled += (_, __) => ScheduleAutoSave();
             CloudMemoryConsentToggle.Toggled += (_, __) => ScheduleAutoSave();
-            KiloReasoningToggle.Toggled += (_, __) => ScheduleAutoSave();
         }
 
         private void ScheduleAutoSave()
@@ -99,8 +101,6 @@ namespace RuApp.Views
             {
                 var settings = await _apiService.GetSettingsAsync();
                 settings ??= new AppSettingsDto();
-                _loadedSettings = settings;
-
                 foreach (ComboBoxItem item in BackendComboBox.Items)
                 {
                     if ((item.Tag as string) == settings.BackendChoice)
@@ -122,6 +122,14 @@ namespace RuApp.Views
                 KiloApiKeyBox.PlaceholderText = settings.HasKiloKey
                     ? "Đã lưu (để trống để giữ nguyên)"
                     : "sk-kilo-...";
+                OpenAiApiKeyBox.Password = string.Empty;
+                OpenAiApiKeyBox.PlaceholderText = settings.HasOpenAiKey
+                    ? "Đã lưu (để trống để giữ nguyên)"
+                    : "sk-...";
+                AnthropicApiKeyBox.Password = string.Empty;
+                AnthropicApiKeyBox.PlaceholderText = settings.HasAnthropicKey
+                    ? "Đã lưu (để trống để giữ nguyên)"
+                    : "sk-ant-...";
                 GeminiVisionKeyBox.Password = string.Empty;
                 GeminiVisionKeyBox.PlaceholderText = settings.HasGeminiVisionKey
                     ? "Đã lưu (để trống để giữ nguyên)"
@@ -132,18 +140,8 @@ namespace RuApp.Views
                     ? "Đã lưu (để trống để giữ nguyên)"
                     : "sk-...";
 
-                foreach (ComboBoxItem item in ApiVariantComboBox.Items)
-                {
-                    if ((item.Tag as string) == settings.ApiVariant)
-                    {
-                        ApiVariantComboBox.SelectedItem = item;
-                        break;
-                    }
-                }
-
                 SelfLearningToggle.IsOn = settings.SelfLearningEnabled;
                 CloudMemoryConsentToggle.IsOn = settings.CloudMemoryConsent;
-                KiloReasoningToggle.IsOn = settings.KiloReasoningEnabled;
 
                 var obsStatus = await _apiService.GetObservationStatusAsync();
                 if (obsStatus != null)
@@ -155,18 +153,19 @@ namespace RuApp.Views
                 }
 
                 UpdateVisibilityForBackend(settings.BackendChoice);
+                _providerCatalogController?.SetBackend(settings.BackendChoice);
             }
             _loading = false;
         }
 
         private void UpdateVisibilityForBackend(string choice)
         {
-            bool cloud = choice is "opencode" or "kilo";
+            bool cloud = choice is "opencode" or "kilo" or "openai" or "anthropic";
 
             OpenCodeApiRow.Visibility = (choice == "opencode") ? Visibility.Visible : Visibility.Collapsed;
-            ApiVariantRow.Visibility = (choice == "opencode") ? Visibility.Visible : Visibility.Collapsed;
             KiloApiRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
-            KiloReasoningRow.Visibility = (choice == "kilo") ? Visibility.Visible : Visibility.Collapsed;
+            OpenAiApiRow.Visibility = (choice == "openai") ? Visibility.Visible : Visibility.Collapsed;
+            AnthropicApiRow.Visibility = (choice == "anthropic") ? Visibility.Visible : Visibility.Collapsed;
             CustomEndpointRow.Visibility = (choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
             CustomApiKeyRow.Visibility = (choice == "custom") ? Visibility.Visible : Visibility.Collapsed;
 
@@ -181,6 +180,8 @@ namespace RuApp.Views
             string choice = (BackendComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "opencode";
 
             UpdateVisibilityForBackend(choice);
+            _providerCatalogController?.SetBackend(choice);
+            _ = _providerCatalogController?.RefreshAsync(force: true);
         }
 
         private async Task SaveSettingsAsync()
@@ -197,27 +198,21 @@ namespace RuApp.Views
             {
                 string backend = (BackendComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "opencode";
 
-                var dto = new AppSettingsDto
+                var dto = new ProviderSettingsUpdateDto
                 {
                     BackendChoice = backend,
                     OpenCodeApiKey = OpenCodeApiKeyBox.Password,
                     KiloApiKey = KiloApiKeyBox.Password,
+                    OpenAiApiKey = OpenAiApiKeyBox.Password,
+                    AnthropicApiKey = AnthropicApiKeyBox.Password,
                     GeminiVisionApiKey = GeminiVisionKeyBox.Password,
-                    ApiVariant = (ApiVariantComboBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "Default",
-                    OpenCodeModel = _loadedSettings?.OpenCodeModel ?? "",
-                    KiloModel = _loadedSettings?.KiloModel ?? "",
-                    OllamaModel = _loadedSettings?.OllamaModel ?? "qwen2.5:latest",
-                    LmStudioModel = _loadedSettings?.LmStudioModel ?? "default",
-                    CustomModel = _loadedSettings?.CustomModel ?? "default",
                     CustomUrl = CustomEndpointUrlBox.Text?.Trim() ?? "http://localhost:8000/v1",
                     CustomApiKey = CustomApiKeyBox.Password,
                     SelfLearningEnabled = SelfLearningToggle.IsOn,
-                    CloudMemoryConsent = CloudMemoryConsentToggle.IsOn,
-                    KiloReasoningEnabled = KiloReasoningToggle.IsOn
+                    CloudMemoryConsent = CloudMemoryConsentToggle.IsOn
                 };
 
-                bool ok = await _apiService.SaveSettingsAsync(dto);
-                _loadedSettings = dto;
+                bool ok = await _apiService.SaveProviderSettingsAsync(dto);
                 AutoSaveStatusText.Text = ok ? "Đã lưu" : "Lưu thất bại";
                 if (!ok)
                 {
@@ -246,6 +241,17 @@ namespace RuApp.Views
             _autoSaveTimer?.Stop();
             _vtsConfigDebounce?.Stop();
             _vtsControlDebounce?.Stop();
+            _reasoningSaveFailureTimer?.Stop();
+            if (_providerCatalogController is not null)
+            {
+                _providerCatalogController.StateChanged -= OnProviderCatalogStateChanged;
+                if (_ownsProviderCatalogController)
+                {
+                    _providerCatalogController.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                }
+                _providerCatalogController = null;
+                _ownsProviderCatalogController = false;
+            }
         }
 
         private async void OnConnectVtsClick(object sender, RoutedEventArgs e)

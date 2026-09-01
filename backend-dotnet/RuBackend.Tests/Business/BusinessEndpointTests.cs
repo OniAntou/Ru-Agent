@@ -46,6 +46,22 @@ public sealed class BusinessEndpointTests
     }
 
     [Fact]
+    public async Task GetSettings_unknown_persisted_backend_never_reports_opencode()
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(data.Paths.SettingsFile, "{\"backend\":\"future-provider\"}");
+        using var factory = CreateAspNetFactory(data.Paths);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.GetAsync("/settings");
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(string.Empty, payload.GetProperty("backend").GetString());
+        Assert.Equal(string.Empty, payload.GetProperty("backend_choice").GetString());
+    }
+
+    [Fact]
     public async Task PostSettings_loads_runtime_then_persists_without_secrets()
     {
         using var data = TemporaryBusinessData.Create();

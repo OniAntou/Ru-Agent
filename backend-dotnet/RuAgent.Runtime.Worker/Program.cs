@@ -65,7 +65,8 @@ internal static class WorkerEntryPoint
                 token,
                 deviceToken,
                 providerData,
-                projectRoot)
+                projectRoot,
+                sessionRoot)
             {
                 LogRoot = logRoot,
             });

@@ -1,0 +1,73 @@
+# Provider catalogs and reasoning
+
+Current implementation: 2026-09-01. Design and deterministic acceptance are
+tracked in [the implementation plan](../superpowers/plans/2026-09-01-provider-catalog-refresh.md).
+
+## Refresh and selection
+
+The GUI refreshes on startup, successful provider/model/key settings changes,
+opening the model selector and every five minutes while Chat is active. It
+stops polling when Chat is inactive or the window closes. Repeated manual
+opens are throttled for 30 seconds; in-flight requests are coalesced and old
+selection generations are discarded.
+
+The Host caches at most 16 provider/endpoint identities, invalidating the
+entry when its canonical credential changes. Each fetch has a 15-second
+timeout, a 4 MiB response limit and at most 5,000 model entries. HTTP redirects
+are disabled. HTTP 429 respects Retry-After within 30 seconds to one hour.
+
+An outage retains only the same identity's last successful catalog and marks
+it stale. A successful empty response is not an outage. Removed models stay
+selected but unavailable; refresh does not select the first model or save a
+replacement. Search text is retained. New runs require a fresh successful
+catalog and an available, supported selected model.
+
+## Reasoning capability contract
+
+- OpenAI (`openai`, `openai_responses`, `https://api.openai.com/v1`): fixed
+  endpoint `https://api.openai.com/v1/models` / `https://api.openai.com/v1/responses`,
+  credential `openai_api_key`, `Authorization: Bearer`, `store:false`, source-dated
+  `2026-09-01` registry `gpt-5.6-sol`/`gpt-5.6-terra`/`gpt-5.6-luna` with efforts
+  `none`/`low`/`medium`/`high`/`xhigh`/`max` as `reasoning: {effort}`.
+- Anthropic (`anthropic`, `anthropic_messages`, `https://api.anthropic.com/v1`):
+  fixed endpoint `https://api.anthropic.com/v1/models` / `https://api.anthropic.com/v1/messages`,
+  credential `anthropic_api_key`, `x-api-key` + `anthropic-version: 2023-06-01`,
+  internal `max_tokens = min(documented, 8192)`, registry `claude-fable-5`/
+  `claude-opus-5`/`claude-opus-4-8`/`claude-sonnet-5` (`low`/`medium`/`high`/`xhigh`/`max`,
+  adaptive, 128000), `claude-sonnet-4-6` (`low`/`medium`/`high`/`max`, 64000),
+  `claude-haiku-4-5-20251001` (Provider default only, 64000) as
+  `thinking: {type:adaptive, display:omitted}` + `output_config: {effort}`.
+- Kilo: recognized `opencode.variants` advertise model-specific reasoning
+  request overlays. Only validated reasoning fields are forwarded.
+- An explicit `reasoning_efforts` enum plus a declared `reasoning_effort`
+  supported parameter enables that Chat Completions mapping.
+- Bare model IDs and generic reasoning flags do not verify adjustable levels.
+  Unknown IDs are retained as unsupported (`Supported=false`) and omitted from
+  selectable `Models`; they are never called to discover capability.
+- Three bounded protocols (`chat_completions`, `openai_responses`,
+  `anthropic_messages`) are dispatched exactly; no URL/prefix inference or
+  cross-provider fallback.
+
+Provider default omits overrides entirely; it does not force reasoning off.
+Explicit choices are stored by provider, normalized endpoint and model. An
+invalid saved choice remains visible and blocks the next model dispatch until
+the user selects a valid choice or Provider default. Legacy explicit choices
+are retained for validation, not silently enabled or discarded.
+
+The Host sends model/endpoint/key/reasoning through a private DPAPI handoff,
+never public catalog responses or tool arguments. A run pins its first model
+step's selection across subsequent tool steps; settings changes take effect
+on the next run. Pin storage is bounded to 64 runs; terminal pins are swept
+when a new run requests its snapshot and all pins clear at Host disposal.
+
+No alternate API, key, model, protocol or effort is tried after failure. No
+temperature/top-k/output-token tuning is reintroduced. Provider metadata is
+time-sensitive; unknown future schemas stay unknown rather than being guessed.
+
+## Verification boundary
+
+Controlled HTTP catalogs, clocks and credentials verify refresh, isolation,
+reasoning serialization and failure paths. See
+[verification](verification.md) for measured gates. These tests do not prove
+live provider acceptance or interactive GUI behavior; publishing and launching
+the GUI remain separate actions.

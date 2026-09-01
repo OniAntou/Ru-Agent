@@ -79,6 +79,23 @@ public sealed class SettingsStoreTests
     }
 
     [Fact]
+    public async Task Read_unknown_backend_stays_unselected_instead_of_falling_back_to_opencode()
+    {
+        var (store, paths) = CreateStore();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.SettingsFile)!);
+        await File.WriteAllTextAsync(paths.SettingsFile, """
+            {
+              "backend": "future-provider",
+              "opencode_model": "must-not-be-selected"
+            }
+            """);
+
+        var snapshot = await store.ReadAsync(CancellationToken.None);
+
+        Assert.Equal(string.Empty, snapshot.Backend);
+    }
+
+    [Fact]
     public async Task Save_preserves_unknown_properties_and_removes_credential_fields()
     {
         var (store, paths) = CreateStore();

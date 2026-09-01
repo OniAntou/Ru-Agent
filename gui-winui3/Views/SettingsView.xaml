@@ -302,6 +302,8 @@
                                                   SelectionChanged="OnBackendSelectionChanged">
                                             <ComboBoxItem Content="OpenCode Zen (Cloud API)" Tag="opencode"/>
                                             <ComboBoxItem Content="Kilo Gateway (Cloud API)" Tag="kilo"/>
+                                            <ComboBoxItem Content="OpenAI (Official API)" Tag="openai"/>
+                                            <ComboBoxItem Content="Anthropic Claude (Official API)" Tag="anthropic"/>
                                             <ComboBoxItem Content="Ollama (Local: localhost:11434)" Tag="ollama"/>
                                             <ComboBoxItem Content="LM Studio (Local: localhost:1234)" Tag="lmstudio"/>
                                             <ComboBoxItem Content="Custom OpenAI Server" Tag="custom"/>
@@ -325,26 +327,26 @@
                                         </Grid>
                                     </StackPanel>
 
-                                    <!-- Reasoning Effort Variant -->
-                                    <StackPanel x:Name="ApiVariantRow" Spacing="16" Visibility="Collapsed">
+                                    <!-- Shared model-aware reasoning selector -->
+                                    <StackPanel x:Name="ReasoningRow" Spacing="16">
                                         <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
                                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
                                                 <TextBlock Text="Reasoning Effort" Style="{StaticResource SettingLabelStyle}"/>
-                                                <TextBlock Text="Mức độ suy luận cho mô hình hỗ trợ reasoning" Style="{StaticResource SettingDescStyle}"/>
+                                                <TextBlock Text="Chỉ hiển thị các mức đã được provider xác nhận cho model đang chọn" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
-                                            <ComboBox x:Name="ApiVariantComboBox"
+                                            <ComboBox x:Name="ReasoningEffortComboBox"
                                                       Grid.Column="1"
                                                       Width="260"
                                                       Height="36"
-                                                      CornerRadius="{StaticResource RuControlCornerRadius}">
-                                                <ComboBoxItem Content="Default" Tag="Default"/>
-                                                <ComboBoxItem Content="Low" Tag="low"/>
-                                                <ComboBoxItem Content="Medium" Tag="medium"/>
-                                                <ComboBoxItem Content="High" Tag="high"/>
-                                                <ComboBoxItem Content="Max" Tag="max"/>
-                                            </ComboBox>
+                                                      CornerRadius="{StaticResource RuControlCornerRadius}"
+                                                      SelectionChanged="OnReasoningEffortChanged"/>
                                         </Grid>
+                                        <TextBlock x:Name="ReasoningSaveStatusText"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{StaticResource RuDangerBrush}"
+                                                   Style="{StaticResource SettingDescStyle}"
+                                                   Visibility="Collapsed" />
                                     </StackPanel>
 
                                     <!-- Kilo API Key Row -->
@@ -364,15 +366,37 @@
                                         </Grid>
                                     </StackPanel>
 
-                                    <!-- Kilo Reasoning Toggle -->
-                                    <StackPanel x:Name="KiloReasoningRow" Spacing="16" Visibility="Collapsed">
+                                    <!-- OpenAI API Key Row -->
+                                    <StackPanel x:Name="OpenAiApiRow" Spacing="16" Visibility="Collapsed">
                                         <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
                                         <Grid ColumnDefinitions="*,Auto" MinHeight="44">
-                                            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center" Margin="0,0,16,0">
-                                                <TextBlock Text="Reasoning cho tác vụ phức tạp" Style="{StaticResource SettingLabelStyle}"/>
-                                                <TextBlock Text="Tắt để giảm thời gian chờ câu phản hồi đầu tiên" Style="{StaticResource SettingDescStyle}"/>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                                <TextBlock Text="OpenAI API Key" Style="{StaticResource SettingLabelStyle}"/>
+                                                <TextBlock Text="Khóa API lưu an toàn trong Credential Manager" Style="{StaticResource SettingDescStyle}"/>
                                             </StackPanel>
-                                            <ToggleSwitch x:Name="KiloReasoningToggle" Grid.Column="1" IsOn="False"/>
+                                            <PasswordBox x:Name="OpenAiApiKeyBox"
+                                                         Grid.Column="1"
+                                                         PlaceholderText="sk-..."
+                                                         Width="260"
+                                                         Height="36"
+                                                         CornerRadius="{StaticResource RuControlCornerRadius}"/>
+                                        </Grid>
+                                    </StackPanel>
+
+                                    <!-- Anthropic API Key Row -->
+                                    <StackPanel x:Name="AnthropicApiRow" Spacing="16" Visibility="Collapsed">
+                                        <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.35"/>
+                                        <Grid ColumnDefinitions="*,Auto" MinHeight="44">
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                                <TextBlock Text="Anthropic API Key" Style="{StaticResource SettingLabelStyle}"/>
+                                                <TextBlock Text="Khóa API lưu an toàn trong Credential Manager" Style="{StaticResource SettingDescStyle}"/>
+                                            </StackPanel>
+                                            <PasswordBox x:Name="AnthropicApiKeyBox"
+                                                         Grid.Column="1"
+                                                         PlaceholderText="sk-ant-..."
+                                                         Width="260"
+                                                         Height="36"
+                                                         CornerRadius="{StaticResource RuControlCornerRadius}"/>
                                         </Grid>
                                     </StackPanel>
 
@@ -484,7 +508,7 @@
                                         </StackPanel>
                                         <TextBlock Text="• Với máy chủ Ollama / LM Studio cục bộ, hãy chọn model q4_k_m hoặc q5_k_m để đạt tốc độ phản hồi nhanh nhất."
                                                    Style="{StaticResource SettingDescStyle}"/>
-                                        <TextBlock Text="• Tùy chọn 'Reasoning' trên Kilo Gateway giúp tăng độ sâu phân tích code nhưng sẽ mất 2-5 giây suy nghĩ trước khi sinh từ đầu tiên."
+                                        <TextBlock Text="• Mức Reasoning chỉ được bật khi catalog xác nhận capability tương ứng của provider và model."
                                                    Style="{StaticResource SettingDescStyle}"/>
                                     </StackPanel>
                                 </Border>

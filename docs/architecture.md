@@ -31,12 +31,37 @@ Closing GUI/CLI detaches the client; it does not force-kill the shared Host.
 Startup is cancellation-scoped, with checks after asynchronous stages before
 creating subsequent UI services or timers. Host shutdown remains Host-owned.
 
-Managed provider bootstrap reads exactly one canonical credential account:
-OpenCode Zen uses `api_key`, Kilo uses `kilo_gateway_api_key`, and Custom OpenAI
-uses `custom_api_key`. Missing keys stay missing; aliases and other providers'
-keys are never tried. Ollama/LM Studio do not read cloud credentials. No key
-migration or provider switching is performed. An endpoint that requires a key
-will reject an unauthenticated request; this does not trigger a fallback.
+Per-run provider snapshot creation reads exactly one canonical credential account:
+OpenCode Zen uses `api_key`, Kilo uses `kilo_gateway_api_key`, Custom OpenAI
+uses `custom_api_key`, OpenAI uses `openai_api_key`, and Anthropic uses
+`anthropic_api_key` with fixed official endpoints `https://api.openai.com/v1`
+and `https://api.anthropic.com/v1`. Missing keys stay missing; aliases and other
+providers' keys are never tried. Ollama/LM Studio do not read cloud credentials.
+The Worker startup handoff is neutral and reads no credential; provider data
+enters only through validated per-step DPAPI handoffs that pin protocol
+(`chat_completions`, `openai_responses`, `anthropic_messages`), reasoning
+options, and for Anthropic the bounded `max_tokens` (min documented max,
+8192). No key migration or provider switching is performed. An endpoint that
+requires a key will reject an unauthenticated request; this does not trigger a
+fallback.
+
+Public `GET /models` is Host-owned provider discovery, not a relay of the
+Worker's selected-model status. Its bounded cache has a five-minute lifetime,
+30-second refresh throttle and provider/endpoint/credential-revision identity.
+OpenAI uses `Authorization: Bearer` plus `store:false`; Anthropic uses
+`x-api-key` and pinned `anthropic-version: 2023-06-01` with internal 8192
+`max_tokens`. Custom uses only its canonical key. The live catalog is
+intersected with a source-dated (`2026-09-01`) exact capability registry; unknown
+IDs are retained as unsupported and never selected. The response adds per-model
+protocol/reasoning metadata, stale/error state and last-success time. See
+[provider catalogs](operations/provider-catalog.md).
+
+The Host validates model/reasoning against that catalog at the first model
+step and pins model, endpoint, credential and allowlisted reasoning options
+for the run. Each step receives a fresh single-use DPAPI handoff under the
+trusted session root. Production Worker v2 rejects missing/invalid handoffs
+and strips untrusted reasoning fields. Settings changes affect the next run;
+there is no retry with another provider, model, key, protocol or effort.
 
 The current managed process flow (Phase 2 cutover) is:
 
@@ -49,7 +74,7 @@ RuApp / RuAgent.Cli  --start-or-attach via RuAgent.Client-->  ASP.NET Core Publi
                                                                          `-- private call to RuAgentBroker execution boundary (profile-scoped file/terminal tools)
                                                                 Worker/Broker owned children:
                                                                   |-- managed C# Worker :8005/:8006
-                                                                  |     |-- bounded OpenAI-compatible provider adapter
+                                                                  |     |-- bounded provider adapters (OpenAI-compatible Chat Completions, OpenAI Responses, Anthropic Messages) via exact protocol dispatch
                                                                   |     |-- typed runtime, voice, STT, VTube Studio, and observation adapters
                                                                   |     |-- protected single-use provider bootstrap (v2 only)
                                                                   |     `-- isolated OmniVoice Flask service :5052 in omnivoice_env

@@ -29,4 +29,6 @@ public sealed record SettingsSnapshot(
     string CustomModel,
     string OllamaUrl,
     string LmStudioUrl,
-    string CustomUrl);
+    string CustomUrl,
+    string OpenAiModel,
+    string AnthropicModel);

@@ -9,6 +9,31 @@ namespace RuAgent.Runtime.Adapters.Tests;
 
 public sealed class OpenAiCompatibleModelProviderTests
 {
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"reasoning_effort\":\"high\"}")]
+    [InlineData("{\"reasoning\":{\"effort\":\"high\",\"enabled\":true}}")]
+    public async Task GenerateAsync_serializes_verified_reasoning_or_omits_default(string optionsJson)
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("data: [DONE]\n\n", Encoding.UTF8, "text/event-stream"),
+        });
+        var options = JsonNode.Parse(optionsJson)!.AsObject();
+        var provider = new OpenAiCompatibleModelProvider(new HttpClient(handler));
+
+        _ = await provider.GenerateAsync(Request(options), CancellationToken.None).ToListAsync();
+
+        var body = JsonNode.Parse(handler.RequestBody!)!.AsObject();
+        Assert.Equal("test-model", body["model"]!.GetValue<string>());
+        Assert.Equal(options.ContainsKey("reasoning"), body.ContainsKey("reasoning"));
+        Assert.Equal(options.ContainsKey("reasoning_effort"), body.ContainsKey("reasoning_effort"));
+        foreach (var pair in options)
+            Assert.True(JsonNode.DeepEquals(pair.Value, body[pair.Key]));
+        Assert.False(body.ContainsKey("temperature"));
+        Assert.False(body.ContainsKey("max_tokens"));
+    }
+
     [Fact]
     public async Task GenerateAsync_streams_text_and_tool_fragments_without_leaking_them_as_text()
     {

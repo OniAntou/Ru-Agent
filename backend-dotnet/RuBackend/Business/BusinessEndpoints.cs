@@ -49,12 +49,22 @@ public static class BusinessEndpoints
                 credentials,
                 "custom_api_key",
                 cancellationToken).ConfigureAwait(false);
+            var hasOpenAi = await HasCredentialAsync(
+                credentials,
+                "openai_api_key",
+                cancellationToken).ConfigureAwait(false);
+            var hasAnthropic = await HasCredentialAsync(
+                credentials,
+                "anthropic_api_key",
+                cancellationToken).ConfigureAwait(false);
             return Results.Json(ToSettingsResponse(
                 snapshot,
                 hasOpenCode,
                 hasKilo,
                 hasGemini,
-                hasCustom));
+                hasCustom,
+                hasOpenAi,
+                hasAnthropic));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -297,9 +307,13 @@ public static class BusinessEndpoints
         bool hasOpenCode,
         bool hasKilo,
         bool hasGemini,
-        bool hasCustom)
+        bool hasCustom,
+        bool hasOpenAi,
+        bool hasAnthropic)
     {
         var result = value.Raw.DeepClone().AsObject();
+        result.Remove("reasoning_preferences");
+        result["reasoning_effort"] = RuBackend.Providers.ProviderReasoningPreferences.Read(value);
         foreach (var key in new[]
                  {
                      "api_key",
@@ -307,6 +321,8 @@ public static class BusinessEndpoints
                      "kilo_api_key",
                      "gemini_vision_api_key",
                      "custom_api_key",
+                     "openai_api_key",
+                     "anthropic_api_key",
                      "allow_web_search",
                      "allow_online_search",
                  })
@@ -326,6 +342,8 @@ public static class BusinessEndpoints
         result["ollama_url"] = value.OllamaUrl;
         result["lmstudio_url"] = value.LmStudioUrl;
         result["custom_url"] = value.CustomUrl;
+        result["openai_model"] = value.OpenAiModel;
+        result["anthropic_model"] = value.AnthropicModel;
         result["api_variant"] = value.ApiVariant;
         result["kilo_reasoning_enabled"] = value.KiloReasoningEnabled;
         result["enable_self_learning"] = value.EnableSelfLearning;
@@ -349,10 +367,14 @@ public static class BusinessEndpoints
         result["kilo_api_key"] = string.Empty;
         result["gemini_vision_api_key"] = string.Empty;
         result["custom_api_key"] = string.Empty;
+        result["openai_api_key"] = string.Empty;
+        result["anthropic_api_key"] = string.Empty;
         result["has_opencode_key"] = hasOpenCode;
         result["has_kilo_key"] = hasKilo;
         result["has_gemini_vision_key"] = hasGemini;
         result["has_custom_api_key"] = hasCustom;
+        result["has_openai_api_key"] = hasOpenAi;
+        result["has_anthropic_api_key"] = hasAnthropic;
         return result;
     }
 
@@ -385,8 +407,10 @@ public static class BusinessEndpoints
         "Ollama" => "ollama",
         "LM Studio" => "lmstudio",
         "Custom OpenAI" => "custom",
+        "OpenAI" => "openai",
+        "Anthropic" => "anthropic",
         "llama.cpp" => "gguf",
-        _ => "opencode",
+        _ => string.Empty,
     };
 
     private static int ReadLimit(HttpContext context) =>

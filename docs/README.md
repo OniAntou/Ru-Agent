@@ -10,6 +10,7 @@ an operating contract.
 - [Architecture](architecture.md)
 - [Domain language](../CONTEXT.md)
 - [Current runtime behavior](operations/runtime-behavior.md)
+- [Provider catalogs and model-specific reasoning](operations/provider-catalog.md)
 - [Operations and verification](operations/verification.md)
 - [Agent tools and truthful execution](operations/agent-tools.md)
 - [ASP.NET Core public route contract](aspnetcore-route-matrix.md)

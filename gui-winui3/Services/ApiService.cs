@@ -36,6 +36,8 @@ namespace RuApp.Services
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", session.AuthSecret);
         }
 
+        public event EventHandler? SettingsSaved;
+
         private static void LogApiError(string method, Exception ex)
         {
             var status = ex is HttpRequestException httpEx && httpEx.StatusCode.HasValue
@@ -74,12 +76,104 @@ namespace RuApp.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", settings);
-                return response.IsSuccessStatusCode;
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", settings);
+                bool ok = await HasOkEnvelopeAsync(response);
+                if (ok) SettingsSaved?.Invoke(this, EventArgs.Empty);
+                return ok;
             }
             catch (Exception ex)
             {
                 LogApiError("SaveSettingsAsync", ex);
+                return false;
+            }
+        }
+
+        public async Task<bool> SaveProviderSettingsAsync(ProviderSettingsUpdateDto settings)
+        {
+            try
+            {
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", settings);
+                bool ok = await HasOkEnvelopeAsync(response);
+                if (ok) SettingsSaved?.Invoke(this, EventArgs.Empty);
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("SaveProviderSettingsAsync", ex);
+                return false;
+            }
+        }
+
+        public async Task<bool> SaveReasoningSettingsAsync(
+            string effort,
+            string model,
+            string identity)
+        {
+            try
+            {
+                var payload = new ReasoningSettingsUpdateDto
+                {
+                    ReasoningEffort = string.IsNullOrWhiteSpace(effort) ? "default" : effort,
+                    ReasoningModel = model,
+                    ReasoningIdentity = identity,
+                };
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
+                bool ok = await HasOkEnvelopeAsync(response);
+                if (ok) SettingsSaved?.Invoke(this, EventArgs.Empty);
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("SaveReasoningSettingsAsync", ex);
+                return false;
+            }
+        }
+
+        public async Task<bool> SaveModelSettingsAsync(string backend, string model)
+        {
+            ModelSettingsUpdateDto payload = backend switch
+            {
+                "opencode" => new ModelSettingsUpdateDto { OpenCodeModel = model },
+                "kilo" => new ModelSettingsUpdateDto { KiloModel = model },
+                "ollama" => new ModelSettingsUpdateDto { OllamaModel = model },
+                "lmstudio" => new ModelSettingsUpdateDto { LmStudioModel = model },
+                "custom" => new ModelSettingsUpdateDto { CustomModel = model },
+                "openai" => new ModelSettingsUpdateDto { OpenAiModel = model },
+                "anthropic" => new ModelSettingsUpdateDto { AnthropicModel = model },
+                _ => throw new ArgumentException($"Unsupported model backend: {backend}", nameof(backend))
+            };
+
+            try
+            {
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
+                bool ok = await HasOkEnvelopeAsync(response);
+                if (ok) SettingsSaved?.Invoke(this, EventArgs.Empty);
+                return ok;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("SaveModelSettingsAsync", ex);
+                return false;
+            }
+        }
+
+        private static async Task<bool> HasOkEnvelopeAsync(HttpResponseMessage response)
+        {
+            if (!response.IsSuccessStatusCode) return false;
+            string body = await response.Content.ReadAsStringAsync();
+            if (string.IsNullOrWhiteSpace(body)) return false;
+
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                return document.RootElement.ValueKind == JsonValueKind.Object &&
+                    document.RootElement.TryGetProperty("status", out var status) &&
+                    status.ValueKind == JsonValueKind.String &&
+                    (string.Equals(status.GetString(), "ok", StringComparison.Ordinal) ||
+                     string.Equals(status.GetString(), "success", StringComparison.Ordinal));
+            }
+            catch (JsonException)
+            {
                 return false;
             }
         }
@@ -492,32 +586,37 @@ namespace RuApp.Services
             }
         }
 
-        public async Task<List<string>> GetModelsAsync(string backend)
+        public async Task<List<string>?> GetModelsAsync(string backend)
+        {
+            var catalog = await GetProviderCatalogAsync(backend, refresh: false, CancellationToken.None);
+            return catalog?.IsSuccess == true ? new List<string>(catalog.Models) : null;
+        }
+
+        public async Task<ProviderCatalogSnapshot?> GetProviderCatalogAsync(
+            string backend,
+            bool refresh = false,
+            CancellationToken cancellationToken = default)
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{_baseUrl}/models?backend={Uri.EscapeDataString(backend)}");
-                if (response.IsSuccessStatusCode)
-                {
-                    var result = await response.Content.ReadFromJsonAsync<JsonElement>();
-                    if (result.TryGetProperty("status", out var statusProp) &&
-                        statusProp.GetString() == "ok" &&
-                        result.TryGetProperty("models", out var modelsProp))
-                    {
-                        var list = new List<string>();
-                        foreach (var item in modelsProp.EnumerateArray())
-                        {
-                            list.Add(item.GetString() ?? "");
-                        }
-                        return list;
-                    }
-                }
+                string query = $"backend={Uri.EscapeDataString(backend)}" + (refresh ? "&refresh=true" : string.Empty);
+                using var response = await _httpClient.GetAsync($"{_baseUrl}/models?{query}", cancellationToken);
+                if (!response.IsSuccessStatusCode) return null;
+
+                string body = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (string.IsNullOrWhiteSpace(body)) return null;
+                var snapshot = JsonSerializer.Deserialize<ProviderCatalogSnapshot>(body);
+                return snapshot;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                LogApiError("GetModelsAsync", ex);
+                LogApiError("GetProviderCatalogAsync", ex);
+                return null;
             }
-            return new List<string>();
         }
 
         public async Task<string?> TranscribeAudioAsync(byte[] wavBytes, CancellationToken cancellationToken = default)

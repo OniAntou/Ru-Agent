@@ -37,7 +37,7 @@ data/gwen/
 data/memory.db
 data/memory.db-wal
 data/memory.db-shm
-models/
+/models/
 !src/ru_runtime/models/
 src/ru_runtime/models/*
 !src/ru_runtime/models/__init__.py

@@ -300,7 +300,7 @@ namespace RuApp.Models
         public bool HasOpenCodeKey { get; set; } = false;
 
         [JsonPropertyName("opencode_model")]
-        public string OpenCodeModel { get; set; } = "opencode/free";
+        public string OpenCodeModel { get; set; } = string.Empty;
 
         [JsonPropertyName("api_variant")]
         public string ApiVariant { get; set; } = "Default";
@@ -312,16 +312,16 @@ namespace RuApp.Models
         public bool HasKiloKey { get; set; } = false;
 
         [JsonPropertyName("kilo_model")]
-        public string KiloModel { get; set; } = "kilo-auto/free";
+        public string KiloModel { get; set; } = string.Empty;
 
         [JsonPropertyName("ollama_model")]
-        public string OllamaModel { get; set; } = "qwen2.5:latest";
+        public string OllamaModel { get; set; } = string.Empty;
 
         [JsonPropertyName("lmstudio_model")]
-        public string LmStudioModel { get; set; } = "default";
+        public string LmStudioModel { get; set; } = string.Empty;
 
         [JsonPropertyName("custom_model")]
-        public string CustomModel { get; set; } = "default";
+        public string CustomModel { get; set; } = string.Empty;
 
         [JsonPropertyName("ollama_url")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -339,6 +339,24 @@ namespace RuApp.Models
 
         [JsonPropertyName("has_custom_api_key")]
         public bool HasCustomKey { get; set; } = false;
+
+        [JsonPropertyName("openai_api_key")]
+        public string OpenAiApiKey { get; set; } = string.Empty;
+
+        [JsonPropertyName("has_openai_api_key")]
+        public bool HasOpenAiKey { get; set; } = false;
+
+        [JsonPropertyName("openai_model")]
+        public string OpenAiModel { get; set; } = string.Empty;
+
+        [JsonPropertyName("anthropic_api_key")]
+        public string AnthropicApiKey { get; set; } = string.Empty;
+
+        [JsonPropertyName("has_anthropic_api_key")]
+        public bool HasAnthropicKey { get; set; } = false;
+
+        [JsonPropertyName("anthropic_model")]
+        public string AnthropicModel { get; set; } = string.Empty;
 
         [JsonPropertyName("kilo_reasoning_enabled")]
         public bool KiloReasoningEnabled { get; set; } = false;

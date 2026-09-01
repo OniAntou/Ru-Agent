@@ -58,9 +58,11 @@ public static class WorkerV2Contracts
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly IReadOnlySet<string> EnvelopeFields = new HashSet<string>(["v", "id", "type", "seq", "correlation_id", "payload"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> EnvelopeRequired = new HashSet<string>(["v", "id", "type", "payload"], StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> StartFields = new HashSet<string>(["prompt", "turns", "system_prompt_context", "settings"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> StartFields = new HashSet<string>(["prompt", "turns", "system_prompt_context", "settings", "provider_bootstrap_path"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> TurnFields = new HashSet<string>(["prompt", "response"], StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> SettingFields = new HashSet<string>(["model_tools"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> SettingFields = new HashSet<string>(
+        ["model_tools", "reasoning", "reasoning_effort", "reasoning_model", "kilo_reasoning_enabled", "api_variant", "max_tokens"],
+        StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ModelToolFields = new HashSet<string>(["tool_id", "tool_version", "scopes", "availability", "model_enabled", "capability_class", "verification_required"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> ModelToolOptional = new HashSet<string>(["hint", "input_schema"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptContextFields = new HashSet<string>(["schema_version", "agent_profile", "preset", "environment", "instruction_blocks", "capabilities", "runtime_context"], StringComparer.Ordinal);
@@ -278,6 +280,17 @@ public static class WorkerV2Contracts
         }
 
         ValidatePromptContext(promptContext);
+
+        if (payload.ContainsKey("provider_bootstrap_path")
+            && (payload["provider_bootstrap_path"] is not JsonValue bootstrapPathValue
+                || !bootstrapPathValue.TryGetValue<string>(out var bootstrapPath)
+                || string.IsNullOrWhiteSpace(bootstrapPath)
+                || bootstrapPath.Length > 4096
+                || bootstrapPath.Contains('\0')
+                || bootstrapPath.Any(char.IsControl)))
+        {
+            throw new AgentProtocolException("invalid_request");
+        }
 
         var settingsNode = payload["settings"];
         JsonObject settings = settingsNode as JsonObject ?? new JsonObject();

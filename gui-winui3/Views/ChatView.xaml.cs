@@ -140,17 +140,11 @@ namespace RuApp.Views
 
         public event EventHandler<SessionOpenedEventArgs>? SessionOpened;
 
-        private static readonly Dictionary<string, string[]> FallbackModels = new()
-        {
-            ["opencode"] = Array.Empty<string>(),
-            ["kilo"] = Array.Empty<string>(),
-            ["ollama"] = new[] { "qwen2.5:latest", "llama3.2:latest", "mistral:latest" },
-            ["lmstudio"] = new[] { "default" },
-            ["custom"] = new[] { "default" },
-            ["gguf"] = Array.Empty<string>()
-        };
-
-        private AppSettingsDto? _cachedSettings;
+        private ProviderCatalogController? _providerCatalogController;
+        private bool _ownsProviderCatalogController;
+        private ProviderCatalogState _providerCatalogState = ProviderCatalogState.Empty(string.Empty);
+        private string _selectedModel = string.Empty;
+        private DispatcherTimer? _modelSaveFailureTimer;
 
         public void Initialize(
             ApiService apiService,
@@ -159,7 +153,8 @@ namespace RuApp.Views
             HarnessEventSink? harnessEvents = null,
             string? harnessScenario = null,
             AgentRunController? agentController = null,
-            string? defaultAgentWorkspace = null)
+            string? defaultAgentWorkspace = null,
+            ProviderCatalogController? providerCatalogController = null)
         {
             _apiService = apiService;
             _voicePlayback = voicePlayback;
@@ -171,6 +166,9 @@ namespace RuApp.Views
                 : defaultAgentWorkspace.Trim();
             _defaultAgentWorkspace = defaultWorkspace;
             _agentWorkspace = defaultWorkspace;
+            _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
+            _ownsProviderCatalogController = providerCatalogController == null;
+            _providerCatalogController.StateChanged += OnProviderCatalogStateChanged;
             _agentController?.PropertyChanged += OnAgentControllerChanged;
             _agentController?.ActivityReceived += OnAgentActivityReceived;
             _agentController?.SummaryReceived += OnAgentSummaryReceived;
@@ -210,36 +208,24 @@ namespace RuApp.Views
             {
                 var settings = await _apiService.GetSettingsAsync();
                 if (settings == null) return;
-                _cachedSettings = settings;
-
                 string backend = settings.BackendChoice ?? "opencode";
                 string currentModel = backend switch
                 {
-                    "opencode" => settings.OpenCodeModel ?? "opencode/free",
-                    "kilo" => settings.KiloModel ?? "kilo-auto/free",
-                    "ollama" => settings.OllamaModel ?? "qwen2.5:latest",
-                    "lmstudio" => settings.LmStudioModel ?? "default",
-                    "custom" => settings.CustomModel ?? "default",
+                    "opencode" => settings.OpenCodeModel ?? string.Empty,
+                    "kilo" => settings.KiloModel ?? string.Empty,
+                    "ollama" => settings.OllamaModel ?? string.Empty,
+                    "lmstudio" => settings.LmStudioModel ?? string.Empty,
+                    "custom" => settings.CustomModel ?? string.Empty,
                     _ => ""
                 };
 
-                var models = await _apiService.GetModelsAsync(backend);
-                if (models.Count == 0 && FallbackModels.TryGetValue(backend, out var fallback))
+                _selectedModel = currentModel;
+                ChatModelLabel.Text = string.IsNullOrEmpty(currentModel) ? "Model..." : currentModel;
+                _providerCatalogController?.SetBackend(backend);
+                if (_providerCatalogController != null)
                 {
-                    models = new List<string>(fallback);
+                    await _providerCatalogController.RefreshAsync();
                 }
-
-                if (!string.IsNullOrEmpty(currentModel) && !models.Contains(currentModel))
-                {
-                    models.Insert(0, currentModel);
-                }
-
-                _loadedModels = models;
-                string effectiveModel = !string.IsNullOrEmpty(currentModel) ? currentModel : (models.Count > 0 ? models[0] : "Model...");
-                ChatModelLabel.Text = effectiveModel;
-
-                FilterAndRenderModels(string.Empty);
-                UpdateContextUsage();
             }
             catch (Exception ex)
             {
@@ -251,29 +237,75 @@ namespace RuApp.Views
 
         private void OnChatModelFlyoutOpened(object sender, object e)
         {
-            ModelSearchBox.Text = string.Empty;
             ModelSearchBox.Focus(FocusState.Programmatic);
-            FilterAndRenderModels(string.Empty);
+            _ = RefreshProviderCatalogAsync(force: true);
+            FilterAndRenderModels(ModelSearchBox.Text);
         }
 
         private void OnModelSearchTextChanged(object sender, TextChangedEventArgs e)
         {
+            _providerCatalogController?.SetSearchText(ModelSearchBox.Text);
             FilterAndRenderModels(ModelSearchBox.Text);
+        }
+
+        private async Task RefreshProviderCatalogAsync(bool force)
+        {
+            if (_providerCatalogController == null) return;
+            await _providerCatalogController.RefreshAsync(force);
+        }
+
+        private void OnProviderCatalogStateChanged(object? sender, ProviderCatalogState state)
+        {
+            if (!DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_providerCatalogController is null ||
+                    !ReferenceEquals(_providerCatalogController.State, state))
+                {
+                    return;
+                }
+
+                ApplyProviderCatalogState(state);
+            }))
+            {
+                return;
+            }
+        }
+
+        private void ApplyProviderCatalogState(ProviderCatalogState state)
+        {
+            _providerCatalogState = state;
+            _loadedModels = state.Models.ToList();
+            if (!string.IsNullOrEmpty(state.SelectedModel))
+            {
+                _selectedModel = state.SelectedModel;
+            }
+            ChatModelLabel.Text = GetModelDisplayText(_selectedModel);
+            FilterAndRenderModels(state.SearchText);
+            UpdateContextUsage();
         }
 
         private void FilterAndRenderModels(string query)
         {
             ModelListContainer.Children.Clear();
 
+            var candidates = _loadedModels.ToList();
+            if (!string.IsNullOrWhiteSpace(_selectedModel) &&
+                !candidates.Contains(_selectedModel, StringComparer.Ordinal))
+            {
+                candidates.Insert(0, _selectedModel);
+            }
+
             var filtered = string.IsNullOrWhiteSpace(query)
-                ? _loadedModels
-                : _loadedModels.Where(m => m.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+                ? candidates
+                : candidates.Where(m => m.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
 
             if (filtered.Count == 0)
             {
                 var emptyBlock = new TextBlock
                 {
-                    Text = _loadedModels.Count == 0 ? "Không có model khả dụng" : "Không tìm thấy model phù hợp",
+                    Text = _providerCatalogController?.State.IsSuccess == false
+                        ? "Không thể tải catalog model"
+                        : _loadedModels.Count == 0 ? "Không có model khả dụng" : "Không tìm thấy model phù hợp",
                     FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
                     FontSize = 11.5,
                     Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"],
@@ -284,11 +316,15 @@ namespace RuApp.Views
                 return;
             }
 
-            string activeModel = ChatModelLabel.Text ?? string.Empty;
+            string activeModel = _selectedModel;
 
             foreach (var model in filtered)
             {
                 bool isSelected = string.Equals(model, activeModel, StringComparison.Ordinal);
+                bool unavailable = TryGetUnavailableReason(model, out string unavailableReason);
+                string annotation = unavailable
+                    ? unavailableReason
+                    : _providerCatalogState.Stale ? "Stale" : string.Empty;
                 var (_, specDisplay) = ModelContextSpecs.GetContextSpec(model);
 
                 var itemButton = new Button
@@ -317,7 +353,7 @@ namespace RuApp.Views
 
                 var textBlock = new TextBlock
                 {
-                    Text = model,
+                    Text = string.IsNullOrEmpty(annotation) ? model : $"{model} · {annotation}",
                     FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
                     FontSize = 12,
                     Foreground = isSelected
@@ -366,51 +402,115 @@ namespace RuApp.Views
                 }
 
                 itemButton.Content = itemGrid;
+                itemButton.IsEnabled = !unavailable;
 
                 string modelCapture = model;
+                string backendCapture = _providerCatalogState.Backend;
                 itemButton.Click += async (s, e) =>
                 {
                     ChatModelFlyout.Hide();
-                    await SelectChatModelAsync(modelCapture);
+                    await SelectChatModelAsync(modelCapture, backendCapture);
                 };
 
                 ModelListContainer.Children.Add(itemButton);
             }
         }
 
-        private async Task SelectChatModelAsync(string model)
+        private bool TryGetUnavailableReason(string model, out string reason)
         {
-            ChatModelLabel.Text = model;
-            FilterAndRenderModels(ModelSearchBox?.Text ?? string.Empty);
-            UpdateContextUsage();
+            var descriptor = _providerCatalogState.Catalog.FirstOrDefault(item =>
+                string.Equals(item.Id, model, StringComparison.Ordinal));
+            if (descriptor is not null &&
+                (!descriptor.Supported || IsUnsupportedProtocol(descriptor.Protocol)))
+            {
+                reason = IsUnsupportedProtocol(descriptor.Protocol)
+                    ? "Unsupported protocol"
+                    : "Unavailable";
+                return true;
+            }
 
+            if (string.Equals(model, _selectedModel, StringComparison.Ordinal) &&
+                !_loadedModels.Contains(model, StringComparer.Ordinal))
+            {
+                reason = "Unavailable";
+                return true;
+            }
+
+            reason = string.Empty;
+            return false;
+        }
+
+        private string GetModelDisplayText(string model)
+        {
+            if (string.IsNullOrWhiteSpace(model)) return "Model...";
+            if (TryGetUnavailableReason(model, out string reason))
+                return $"{model} · {reason}";
+            return _providerCatalogState.Stale ? $"{model} · Stale" : model;
+        }
+
+        private static bool IsUnsupportedProtocol(string protocol) =>
+            protocol is not ("chat_completions" or "openai_responses" or "anthropic_messages");
+
+        private async Task SelectChatModelAsync(string model, string backend)
+        {
             try
             {
-                var settings = _cachedSettings ?? (_apiService != null ? await _apiService.GetSettingsAsync() : null);
-                if (settings == null || _apiService == null) return;
-
-                string backend = settings.BackendChoice ?? "opencode";
-                switch (backend)
+                if (_apiService is null ||
+                    string.IsNullOrWhiteSpace(backend) ||
+                    !string.Equals(backend, _providerCatalogState.Backend, StringComparison.Ordinal))
                 {
-                    case "opencode": settings.OpenCodeModel = model; break;
-                    case "kilo": settings.KiloModel = model; break;
-                    case "ollama": settings.OllamaModel = model; break;
-                    case "lmstudio": settings.LmStudioModel = model; break;
-                    case "custom": settings.CustomModel = model; break;
+                    ShowModelSaveFailure();
+                    return;
                 }
 
-                _cachedSettings = settings;
-                await _apiService.SaveSettingsAsync(settings);
+                var settings = await _apiService.GetSettingsAsync();
+                if (settings is null ||
+                    !string.Equals(settings.BackendChoice, backend, StringComparison.Ordinal))
+                {
+                    ShowModelSaveFailure();
+                    return;
+                }
+
+                if (await _apiService.SaveModelSettingsAsync(backend, model))
+                {
+                    _selectedModel = model;
+                    ChatModelLabel.Text = GetModelDisplayText(model);
+                    FilterAndRenderModels(ModelSearchBox?.Text ?? string.Empty);
+                    UpdateContextUsage();
+                }
+                else
+                {
+                    ShowModelSaveFailure();
+                }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[ChatView] Error saving model: {ex.Message}");
+                ShowModelSaveFailure();
             }
+        }
+
+        private void ShowModelSaveFailure()
+        {
+            ChatModelSaveStatusText.Text = "Không thể lưu model đã chọn.";
+            ChatModelSaveStatusText.Visibility = Visibility.Visible;
+            _modelSaveFailureTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            _modelSaveFailureTimer.Stop();
+            _modelSaveFailureTimer.Tick -= OnModelSaveFailureTimerTick;
+            _modelSaveFailureTimer.Tick += OnModelSaveFailureTimerTick;
+            _modelSaveFailureTimer.Start();
+        }
+
+        private void OnModelSaveFailureTimerTick(object? sender, object e)
+        {
+            _modelSaveFailureTimer?.Stop();
+            ChatModelSaveStatusText.Visibility = Visibility.Collapsed;
+            ChatModelSaveStatusText.Text = string.Empty;
         }
 
         public void UpdateContextUsage()
         {
-            string currentModel = ChatModelLabel.Text ?? string.Empty;
+            string currentModel = _selectedModel;
             var (maxTokens, displayLimit) = ModelContextSpecs.GetContextSpec(currentModel);
 
             int totalChars = 0;
@@ -2124,6 +2224,16 @@ namespace RuApp.Views
             _agentMonitorCts?.Cancel();
             _agentMonitorCts?.Dispose();
             _agentMonitorCts = null;
+            _modelSaveFailureTimer?.Stop();
+            if (_providerCatalogController != null)
+            {
+                _providerCatalogController.StateChanged -= OnProviderCatalogStateChanged;
+                if (_ownsProviderCatalogController)
+                {
+                    _providerCatalogController.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                }
+                _providerCatalogController = null;
+            }
             if (_agentController is not null)
             {
                 _agentController.PropertyChanged -= OnAgentControllerChanged;

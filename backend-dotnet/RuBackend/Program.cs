@@ -12,6 +12,7 @@ using RuBackend.Harness.Worker;
 using RuBackend.Harness.Workspace;
 using RuBackend.Memory;
 using RuBackend.Runtime;
+using RuBackend.Providers;
 using RuBackend.Security;
 using RuBackend.Speech;
 using RuBackend.Vts;
@@ -122,14 +123,10 @@ if (isManagedRuntime)
             ?? Environment.GetEnvironmentVariable("RU_BACKEND_DEVICE_WORKER_PORT"),
         PublicHostRuntimeOptions.DefaultDeviceWorkerPort);
 
-    var startupSettings = new SettingsStore(BuildDataPaths(builder.Configuration));
-    var startupCredentials = new WindowsCredentialStore();
     var bootstrapRoot = Path.Combine(managedLogRoot, "agent", "session");
     var providerBootstrapPath = new ManagedProviderBootstrapFactory()
         .CreateAsync(
             bootstrapRoot,
-            startupSettings.ReadAsync(CancellationToken.None).GetAwaiter().GetResult(),
-            startupCredentials,
             CancellationToken.None)
         .GetAwaiter()
         .GetResult();
@@ -264,6 +261,11 @@ if (!string.IsNullOrWhiteSpace(brokerDescriptor))
 }
 builder.Services.AddSingleton<ISettingsStore, SettingsStore>();
 builder.Services.AddSingleton<ICredentialStore, WindowsCredentialStore>();
+builder.Services.AddHttpClient("ProviderCatalog")
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddSingleton(services => new ProviderCatalogService(
+    services.GetRequiredService<IHttpClientFactory>().CreateClient("ProviderCatalog"),
+    services.GetRequiredService<ICredentialStore>(), services.GetRequiredService<TimeProvider>()));
 builder.Services.AddSingleton<IRuntimeSettingsLoader, LoopbackRuntimeSettingsLoader>();
 builder.Services.AddSingleton<ISettingsTransitionService, SettingsTransitionService>();
 builder.Services.AddSingleton<ISessionStore, SessionStore>();
@@ -351,7 +353,19 @@ builder.Services.AddHostedService<AgentRuntimeLoopService>();
 builder.Services.AddSingleton<AgentV1Service>();
 // Harness Core adapters: Worker v2 and ToolGateway via factory
 builder.Services.AddSingleton<LoopbackModelStepRunner>(services =>
-    new LoopbackModelStepRunner(services.GetRequiredService<AgentWorkerClientOptions>()));
+    new LoopbackModelStepRunner(services.GetRequiredService<AgentWorkerClientOptions>())
+    {
+        CreateProviderBootstrapAsync = services.GetRequiredService<AgentProviderSnapshotFactory>().CreateAsync,
+    });
+builder.Services.AddSingleton(services => new AgentProviderSnapshotFactory(
+    services.GetRequiredService<ISettingsStore>(), services.GetRequiredService<ICredentialStore>(),
+    services.GetRequiredService<ProviderCatalogService>(),
+    Path.Combine(services.GetRequiredService<DataPaths>().LogRoot, "agent", "session"),
+    async (runId, ct) =>
+    {
+        var run = await services.GetRequiredService<IHarnessEventStore>().GetRunAsync(runId, ct);
+        return run is null || run.TerminalAt.HasValue;
+    }));
 builder.Services.AddSingleton<IModelStepRunner>(services => services.GetRequiredService<LoopbackModelStepRunner>());
 // Lease registry and idle monitor singletons (managed or not)
 if (managedLeaseRegistry is not null)

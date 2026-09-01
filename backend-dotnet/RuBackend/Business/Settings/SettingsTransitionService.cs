@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using RuBackend.Providers;
 
 namespace RuBackend.Business.Settings;
 
@@ -25,22 +26,29 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
     private const string KiloAccount = "kilo_gateway_api_key";
     private const string GeminiAccount = "gemini_vision_api_key";
     private const string CustomAccount = "custom_api_key";
+    private const string OpenAiAccount = "openai_api_key";
+    private const string AnthropicAccount = "anthropic_api_key";
     private const string BackendOpenCode = "OpenCode Zen";
     private const string BackendKilo = "Kilo Gateway";
+    private const string BackendOpenAi = "OpenAI";
+    private const string BackendAnthropic = "Anthropic";
 
     private readonly ISettingsStore _settings;
     private readonly ICredentialStore _credentials;
     private readonly IRuntimeSettingsLoader _runtime;
+    private readonly ProviderCatalogService? _catalog;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public SettingsTransitionService(
         ISettingsStore settings,
         ICredentialStore credentials,
-        IRuntimeSettingsLoader runtime)
+        IRuntimeSettingsLoader runtime,
+        ProviderCatalogService? catalog = null)
     {
         _settings = settings;
         _credentials = credentials;
         _runtime = runtime;
+        _catalog = catalog;
     }
 
     public async Task<SettingsTransitionResult> ApplyAsync(
@@ -56,10 +64,23 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             IReadOnlyList<CredentialUpdate> updates;
             try
             {
-                candidate = BuildCandidate(previous, payload);
+                candidate = BuildCandidate(ProviderReasoningPreferences.CaptureLegacy(previous), payload);
                 updates = BuildCredentialUpdates(candidate.Backend, payload);
+                if (payload.ContainsKey("reasoning_effort"))
+                {
+                    if (_catalog is null || updates.Count != 0) throw new SettingsPayloadException();
+                    // Reasoning saves are intentionally partial and selection-bound.
+                    if (payload.Count != 3) throw new SettingsPayloadException();
+                    var effort = OptionalString(payload, "reasoning_effort", 32) ?? throw new SettingsPayloadException();
+                    var model = OptionalString(payload, "reasoning_model", 256);
+                    var identity = OptionalString(payload, "reasoning_identity", 64);
+                    var snapshot = await _catalog.GetAsync(previous, false, cancellationToken).ConfigureAwait(false);
+                    if (snapshot.Identity != identity || snapshot.SelectedModel != model) throw new SettingsPayloadException();
+                    if (effort != "default") ProviderReasoningPreferences.Resolve(snapshot, model, effort);
+                    candidate = ProviderReasoningPreferences.Save(candidate, effort);
+                }
             }
-            catch (SettingsPayloadException)
+            catch (Exception error) when (error is SettingsPayloadException or ProviderCatalogException or ArgumentException)
             {
                 return new SettingsTransitionResult(false, "Invalid settings payload.");
             }
@@ -191,6 +212,10 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             ?? current.LmStudioUrl;
         var customUrl = OptionalString(payload, "custom_url", 1024)
             ?? current.CustomUrl;
+        var openAiModel = OptionalString(payload, "openai_model", 256)
+            ?? current.OpenAiModel;
+        var anthropicModel = OptionalString(payload, "anthropic_model", 256)
+            ?? current.AnthropicModel;
         var apiVariant = OptionalString(payload, "api_variant", 64) ?? current.ApiVariant;
         var voiceStyle = OptionalString(payload, "voice_style_id", 32)
             ?? current.VoiceStyleId;
@@ -231,7 +256,9 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             customModel,
             ollamaUrl,
             lmStudioUrl,
-            customUrl);
+            customUrl,
+            openAiModel,
+            anthropicModel);
     }
 
     private static IReadOnlyList<CredentialUpdate> BuildCredentialUpdates(
@@ -243,6 +270,8 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         var kilo = OptionalSecret(payload, "kilo_api_key");
         var gemini = OptionalSecret(payload, "gemini_vision_api_key");
         var custom = OptionalSecret(payload, "custom_api_key");
+        var openAi = OptionalSecret(payload, "openai_api_key");
+        var anthropic = OptionalSecret(payload, "anthropic_api_key");
         var legacy = OptionalSecret(payload, "api_key");
         if (openCode is not null)
         {
@@ -262,6 +291,16 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         if (custom is not null)
         {
             updates[CustomAccount] = custom;
+        }
+
+        if (openAi is not null)
+        {
+            updates[OpenAiAccount] = openAi;
+        }
+
+        if (anthropic is not null)
+        {
+            updates[AnthropicAccount] = anthropic;
         }
 
         if (legacy is not null)
@@ -296,6 +335,10 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             "ollama_url",
             "lmstudio_url",
             "custom_url",
+            "openai_model",
+            "anthropic_model",
+            "openai_api_key",
+            "anthropic_api_key",
             "custom_api_key",
             "api_variant",
             "kilo_reasoning_enabled",
@@ -314,7 +357,7 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
         };
         return runtimeFields.Any(payload.ContainsKey)
             || updates.Any(update =>
-                update.Account is OpenCodeAccount or KiloAccount or CustomAccount);
+                update.Account is OpenCodeAccount or KiloAccount or CustomAccount or OpenAiAccount or AnthropicAccount);
     }
 
     private static string NormalizeBackend(string value) =>
@@ -326,6 +369,8 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             "ollama" or "ollama api" => "Ollama",
             "lmstudio" or "lm studio" or "lm studio api" => "LM Studio",
             "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
+            "openai" or "openai api" => BackendOpenAi,
+            "anthropic" or "anthropic claude" or "claude" => BackendAnthropic,
             _ => throw new SettingsPayloadException(),
         };
 

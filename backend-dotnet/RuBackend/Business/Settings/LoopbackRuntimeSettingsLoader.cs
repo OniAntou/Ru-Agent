@@ -42,6 +42,8 @@ public sealed class LoopbackRuntimeSettingsLoader : IRuntimeSettingsLoader
                 ["ollama_url"] = candidate.OllamaUrl,
                 ["lmstudio_url"] = candidate.LmStudioUrl,
                 ["custom_url"] = candidate.CustomUrl,
+                ["openai_model"] = candidate.OpenAiModel,
+                ["anthropic_model"] = candidate.AnthropicModel,
                 ["api_variant"] = candidate.ApiVariant,
                 ["kilo_reasoning_enabled"] = candidate.KiloReasoningEnabled,
                 ["voice_label"] = candidate.VoiceLabel,

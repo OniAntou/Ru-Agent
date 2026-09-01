@@ -109,6 +109,40 @@ Performance acceptance remains open in TODO, independently of bug-fix tests.
   That compile did not update the shortcut's published GUI artifact; see the
   separately authorized release follow-up below.
 
+### Provider catalog refresh evidence (2026-09-01)
+
+Design and plan are in
+[the provider catalog design](../superpowers/specs/2026-09-01-provider-catalog-refresh-design.md)
+and [the implementation plan](../superpowers/plans/2026-09-01-provider-catalog-refresh.md).
+Host discovery (`ProviderCatalogService` with bounded 15 s timeout, 4 MiB cap, 5000-item cap),
+capability parsing (`ProviderCatalogParser` for Kilo `opencode.variants` allowlist vs bare-ID unknown),
+per-model reasoning persistence (`ProviderReasoningPreferences`), typed additive `GET /models` snapshot,
+GUI polling/throttle/single-flight (`ProviderCatalogController`) and protected per-run Worker handoff
+(`AgentProviderSnapshotFactory` + `ProviderRequestOptionsValidator`) are covered by controlled fake-handler/clock/credential
+tests only — no live provider credentials or generation and no published GUI launch.
+
+Focused and sequential gates on this uncommitted working tree after native OpenAI/Anthropic provider implementation (commit/publish remain separately authorized):
+
+- Backend `RuBackend.Tests` `683 passed` (including provider catalog/cache/parser, OpenAI/Anthropic capability registry `2026-09-01`, catalog request factory with `Authorization: Bearer` / `x-api-key`+`anthropic-version: 2023-06-01`, `store:false` / `max_tokens` 8192, endpoint, malformed preference, neutral startup and run-pinned snapshot cases, plus fail-closed persisted-provider/API alias handling without OpenCode fallback).
+- GUI `gui-winui3.Tests` `330 passed` (including provider-catalog cases covering contract, no fabricated defaults, reasoning options, stale/empty vs error, single-flight, throttle, polling, disposal, partial saves, and `OfficialProviderTests` for OpenAI/Anthropic selector rows, DTO wire names, and model-save routing).
+- Worker `RuAgent.Runtime.Worker.Tests` `54 passed` (including Worker v2 reasoning-option stripping, trusted-root bootstrap requirement, protocol dispatch via `IModelProviderResolver`, and cancellation cleanup).
+- Adapters `RuAgent.Runtime.Adapters.Tests` `169 passed` (including protected-bootstrap lifecycle with protocol/output-cap, `BoundedSseReaderTests` 16, `OpenAiResponsesModelProviderTests` 24, `AnthropicMessagesModelProviderTests` 31). Regression coverage proves raw-byte line rejection before whole-stream consumption, CR-only framing, strict native roles before HTTP, duplicate OpenAI terminal rejection, matching SSE event/type pairs, known-event/ping mismatch rejection, and safe malformed scalar/container mapping.
+- Full `scripts/test_dotnet.ps1` Release `2,233 passed` across all 13 projects (Broker 488, CLI 119, Client 45, Connectors 3, Harness.Core 210, Persistence 79, Hosting 36, Protocol 11, Adapters 169, Core 6, Worker 54, RuBackend 683, GUI 330).
+- Python `409 passed` (`ruff check src tests scripts tools` clean, `56 HTTP + 1 WebSocket` route contract clean, `git diff --check` clean, `test_current_documentation.py` 2/2, doc links valid).
+- `dotnet build gui-winui3/RuApp.csproj -c Release -p:Platform=x64 -p:RuntimeIdentifier=win-x64 --no-restore` clean. `.gitignore` fixed: `models/` → `/models/` so `RuAgent.Runtime.Adapters/Models` (BoundedSseReader, OpenAiResponses, AnthropicMessages, resolvers) is no longer ignored. Anthropic: matching `event: ping` frames are ignored, mismatches involving a known event fail closed, and unknown future event pairs remain forward-compatible.
+
+Boundaries: `mypy src` passed for 39 source files; native/microphone/speaker/VTube Studio/observation live acceptance remain pending.
+Provider catalog coverage proves bounded HTTP behavior, capability-registry intersection, native reasoning serialization and protocol dispatch, not liveness of OpenAI/Anthropic/Custom/Ollama/LM Studio endpoints or billing.
+No live OpenAI/Anthropic key, catalog refresh, generation, publish, or push was performed here; those are separate user-authorized acceptance steps.
+
+Visible GUI startup/catalog smoke on 2026-09-01 launched the current Release/x64
+`RuApp.exe` without automating controls. RuApp, Public Host, Worker and Broker
+all remained responsive; authenticated `/status` and `/settings` returned 200.
+The selected Kilo catalog refresh returned `status: ok`, one model and one
+matching metadata entry, `stale: false`, with no error. The window remains open
+for user inspection. No prompt, generation, paid request, voice/device action,
+or reasoning-setting mutation was performed, so those live paths remain pending.
+
 ### Authorized release follow-up (2026-09-01)
 
 - The user requested commit/push and a refreshed GUI publish. Fresh sequential
@@ -138,8 +172,9 @@ audio endpoint worked.
 
 The managed runtime topology is deterministic: one C# Worker serves the Agent
 loopback endpoint (`/worker/v2`) and the separate device endpoint
-(`/worker/v1`). Worker tokens are distinct; provider credentials are carried
-only by the single-use DPAPI bootstrap and never by the device graph,
+(`/worker/v1`). Worker tokens are distinct; the startup handoff is
+credential-free and provider credentials are carried only by per-step
+single-use DPAPI handoffs, never by the device graph,
 legacy Python configuration, descriptors, logs, or public responses. The
 production Python generation/worker modules and compatibility launch branch
 are retired; the test-only fixture under `scripts/harness` is not a production
@@ -327,8 +362,10 @@ catalog/action/connect use the managed adapter, voice/STT use typed providers,
 and observation control is explicitly disabled until its managed capture and
 reaction loop exists. Overlay enable is fail-closed while its process owner is
 missing. The generic private-route fallback is no longer reachable
-from the managed composition; provider-backed model catalogs, VTS overlay
-process/semantic actions, and observation capture/reaction still require a
+from the managed composition. Public provider-backed model catalogs are now
+Host-owned (see the 2026-09-01 catalog evidence); the private Worker model
+status is not their discovery source. VTS overlay process/semantic actions
+and observation capture/reaction still require a
 dedicated managed-runtime integration gate before claiming full production
 parity.
 

@@ -1,6 +1,6 @@
 # Native OpenAI and Anthropic providers
 
-**Status:** Approved design; implementation not started.
+**Status:** Implemented and deterministically verified on 2026-09-01; no live OpenAI/Anthropic key, catalog refresh, generation, publish, or push was performed here. A live smoke requires separate user authorization.
 
 ## Goal
 

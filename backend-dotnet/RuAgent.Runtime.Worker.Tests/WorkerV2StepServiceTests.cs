@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
+using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Adapters.Models;
 using RuAgent.Runtime.Core.Lifecycle;
 using RuAgent.Runtime.Worker;
@@ -170,7 +171,187 @@ public sealed class WorkerV2StepServiceTests
         await released!.DisposeAsync();
     }
 
-    private static JsonObject StartPayload(bool includeTool = false)
+    [Fact]
+    public async Task Step_service_uses_the_per_step_protected_provider_snapshot()
+    {
+        var root = Directory.CreateTempSubdirectory("ru-worker-bootstrap-");
+        try
+        {
+            var path = ProtectedProviderBootstrap.Write(
+                root.FullName,
+                new ProviderBootstrapData("Kilo", "chat_completions", new Uri("https://step-provider.invalid/v1"),
+                    "model-b",
+                    "step-secret",
+                    new JsonObject
+                    {
+                        ["reasoning"] = new JsonObject
+                        {
+                            ["effort"] = "high",
+                            ["enabled"] = true,
+                        },
+                    }));
+            var start = StartPayload(providerBootstrapPath: path);
+            start["settings"]!["reasoning"] = new JsonObject { ["effort"] = "low", ["enabled"] = true };
+            start["settings"]!["reasoning_model"] = "untrusted-model";
+            var provider = new FakeModelProvider(new ModelDelta("ok", [], true, "stop"));
+
+            await new WorkerV2StepService(
+                provider,
+                new WorkerV2Options(
+                    0,
+                    "worker",
+                    new Uri("https://startup-provider.invalid/v1"),
+                    "startup-model",
+                    "startup-secret",
+                    root.FullName))
+                .RunAsync(start, CancellationToken.None);
+
+            var request = Assert.Single(provider.Requests);
+            Assert.Equal("model-b", request.Model);
+            Assert.Equal(new Uri("https://step-provider.invalid/v1"), request.Endpoint);
+            Assert.Equal("step-secret", request.Credential);
+            Assert.Equal("high", request.Settings["reasoning"]!["effort"]!.GetValue<string>());
+            Assert.True(request.Settings["reasoning"]!["enabled"]!.GetValue<bool>());
+            Assert.False(request.Settings.ContainsKey("reasoning_model"));
+            Assert.False(File.Exists(path));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Step_service_requires_a_per_step_handoff_when_a_trusted_root_is_configured()
+    {
+        var root = Directory.CreateTempSubdirectory("ru-worker-bootstrap-");
+        try
+        {
+            var provider = new FakeModelProvider(new ModelDelta("must not run", [], true, "stop"));
+            var error = await Assert.ThrowsAsync<WorkerV2StepException>(() => new WorkerV2StepService(
+                provider,
+                new WorkerV2Options(
+                    0,
+                    "worker",
+                    new Uri("https://startup-provider.invalid/v1"),
+                    "startup-model",
+                    "startup-secret",
+                    root.FullName))
+                .RunAsync(StartPayload(), CancellationToken.None));
+
+            Assert.Equal("provider_bootstrap_required", error.Code);
+            Assert.Empty(provider.Requests);
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Step_service_preserves_provider_default_omission()
+    {
+        var root = Directory.CreateTempSubdirectory("ru-worker-bootstrap-");
+        try
+        {
+            var path = ProtectedProviderBootstrap.Write(
+                root.FullName,
+                new ProviderBootstrapData("Zen", "chat_completions", new Uri("https://step-provider.invalid/v1"),
+                    "model-a",
+                    string.Empty));
+            var start = StartPayload(providerBootstrapPath: path);
+            start["settings"]!["reasoning_effort"] = "high";
+            start["settings"]!["max_tokens"] = 256;
+            var provider = new FakeModelProvider(new ModelDelta("ok", [], true, "stop"));
+
+            await new WorkerV2StepService(
+                provider,
+                new WorkerV2Options(
+                    0,
+                    "worker",
+                    new Uri("https://startup-provider.invalid/v1"),
+                    "startup-model",
+                    "startup-secret",
+                    root.FullName))
+                .RunAsync(start, CancellationToken.None);
+
+            var request = Assert.Single(provider.Requests);
+            Assert.False(request.Settings.ContainsKey("reasoning_effort"));
+            Assert.False(request.Settings.ContainsKey("max_tokens"));
+            Assert.False(File.Exists(path));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Step_service_deletes_a_malformed_owned_handoff_without_dispatching()
+    {
+        var root = Directory.CreateTempSubdirectory("ru-worker-bootstrap-");
+        var path = Path.Combine(root.FullName, "provider-bootstrap-invalid.bin");
+        await File.WriteAllBytesAsync(path, [1, 2, 3]);
+        try
+        {
+            var provider = new FakeModelProvider(new ModelDelta("must not run", [], true, "stop"));
+            var error = await Assert.ThrowsAsync<WorkerV2StepException>(() => new WorkerV2StepService(
+                provider,
+                new WorkerV2Options(
+                    0,
+                    "worker",
+                    new Uri("https://startup-provider.invalid/v1"),
+                    "startup-model",
+                    "startup-secret",
+                    root.FullName))
+                .RunAsync(StartPayload(providerBootstrapPath: path), CancellationToken.None));
+
+            Assert.Equal("provider_bootstrap_invalid", error.Code);
+            Assert.Empty(provider.Requests);
+            Assert.False(File.Exists(path));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Step_service_cleans_an_owned_handoff_when_cancelled_before_dispatch()
+    {
+        var root = Directory.CreateTempSubdirectory("ru-worker-bootstrap-");
+        try
+        {
+            var path = ProtectedProviderBootstrap.Write(
+                root.FullName,
+                new ProviderBootstrapData("Kilo", "chat_completions", new Uri("https://step-provider.invalid/v1"),
+                    "model-a",
+                    string.Empty));
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            var provider = new FakeModelProvider(new ModelDelta("must not run", [], true, "stop"));
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new WorkerV2StepService(
+                provider,
+                new WorkerV2Options(
+                    0,
+                    "worker",
+                    new Uri("https://startup-provider.invalid/v1"),
+                    "startup-model",
+                    "startup-secret",
+                    root.FullName))
+                .RunAsync(StartPayload(providerBootstrapPath: path), cancellation.Token));
+
+            Assert.Empty(provider.Requests);
+            Assert.False(File.Exists(path));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    private static JsonObject StartPayload(bool includeTool = false, string? providerBootstrapPath = null)
     {
         var context = WorkerV2PromptCodec.WriteContext(SystemPromptContext.Empty);
         var settings = new JsonObject();
@@ -190,13 +371,19 @@ public sealed class WorkerV2StepServiceTests
                 },
             };
         }
-        return new JsonObject
+        var payload = new JsonObject
         {
             ["prompt"] = "xin chào",
             ["turns"] = new JsonArray(),
             ["system_prompt_context"] = context,
             ["settings"] = settings,
         };
+        if (providerBootstrapPath is not null)
+        {
+            payload["provider_bootstrap_path"] = providerBootstrapPath;
+        }
+
+        return payload;
     }
 
     private sealed class FakeModelProvider : IModelProvider

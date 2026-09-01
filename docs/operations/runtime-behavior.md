@@ -1,6 +1,6 @@
 # Current runtime behavior
 
-Status: operating contract for the current main branch, 2026-08-31.
+Status: operating contract for the current main branch, 2026-09-01.
 
 This document keeps current runtime decisions separate from implementation
 history. Where automated and live evidence differ, the narrower claim wins.
@@ -17,6 +17,12 @@ GGUF settings migrate to the cloud default and cannot select a removed runtime.
 Cloud generation requests omit provider-specific `Temperature`, `Top-K`, and
 `Max New Tokens` controls; legacy stored values are ignored and stripped rather
 than forwarded to a provider.
+
+Provider models and verified reasoning options come from the Host-owned
+catalog, refreshed by the GUI while Chat is active. Provider default omits
+reasoning overrides; invalid explicit choices or unsupported model protocols
+stop new model requests without an API/model/effort fallback. See
+[provider catalogs](provider-catalog.md) for refresh and capability boundaries.
 
 Ru mirrors Vietnamese, English, and mixed-language turns. In Vietnamese Ru
 calls the user `anh` and itself `em`. Agent replies contain no Unicode emoji or ASCII
@@ -41,12 +47,19 @@ v1 graph receives typed settings and adapters, never the provider credential.
 
 Managed startup launches one `RuAgent.Runtime.Worker.exe` with
 `ws://127.0.0.1:8005/worker/v2` and `ws://127.0.0.1:8006/worker/v1`, followed
-by the private Broker. A single-use DPAPI bootstrap carries only the selected
-provider endpoint/model/credential to the C# v2 graph and is deleted after it
-is read. The retired `PythonCompatibility` selector fails closed with
-`python_compatibility_retired`; `runtime-live` is a bounded diagnostic
-without starting a child topology. There is no Python compatibility startup
-path.
+by the private Broker. A neutral single-use DPAPI startup handoff composes the
+C# v2 graph without reading or retaining a provider credential. Each Agent
+step requires a separate protected handoff containing
+the run-pinned provider selection, bounded protocol
+(`chat_completions`/`openai_responses`/`anthropic_messages`), verified native
+reasoning options, and for Anthropic the bounded `max_tokens`; changes to
+settings apply to the next run, not a continuation of the active run.
+Each handoff is deleted after consumption. The Worker dispatches exactly the
+pinned protocol through one of three focused adapters; unknown or mismatched
+protocols fail closed before HTTP. The retired `PythonCompatibility` selector
+fails closed with `python_compatibility_retired`; `runtime-live` is a bounded
+diagnostic without starting a child topology. There is no Python compatibility
+startup path.
 
 ### Agent system-prompt composition
 

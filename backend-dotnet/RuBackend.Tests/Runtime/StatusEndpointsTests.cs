@@ -11,8 +11,7 @@ public sealed class StatusEndpointsTests
 {
     [Theory]
     [InlineData("/status")]
-    [InlineData("/models?backend=OpenCode%20Zen")]
-    public async Task AspNet_mode_maps_status_and_models_to_the_private_worker(string path)
+    public async Task AspNet_mode_maps_status_to_the_private_worker(string path)
     {
         var worker = WorkerReturning("{\"status\":\"ok\"}");
         using var factory = new BackendWebApplicationFactory(runtimeWorkerClient: worker);

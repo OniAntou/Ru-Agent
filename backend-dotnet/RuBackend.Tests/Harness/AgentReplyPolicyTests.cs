@@ -407,7 +407,9 @@ public sealed class AgentReplyPolicyTests
                 "default",
                 "http://localhost:11434/v1",
                 "http://localhost:1234/v1",
-                "http://localhost:8000/v1"));
+                "http://localhost:8000/v1",
+                string.Empty,
+                string.Empty));
 
         public Task SaveAsync(SettingsSnapshot candidate, CancellationToken cancellationToken) =>
             Task.CompletedTask;

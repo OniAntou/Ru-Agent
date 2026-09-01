@@ -7,7 +7,8 @@ public sealed record WorkerV2Options
         string token,
         Uri providerEndpoint,
         string providerModel,
-        string providerCredential)
+        string providerCredential,
+        string? providerBootstrapRoot = null)
     {
         if (port is < 0 or > 65_535)
         {
@@ -40,6 +41,11 @@ public sealed record WorkerV2Options
         ProviderEndpoint = providerEndpoint;
         ProviderModel = providerModel;
         ProviderCredential = providerCredential;
+        ProviderBootstrapRoot = providerBootstrapRoot is null
+            ? null
+            : Path.GetFullPath(string.IsNullOrWhiteSpace(providerBootstrapRoot)
+                ? throw new ArgumentException("Provider bootstrap root is invalid.", nameof(providerBootstrapRoot))
+                : providerBootstrapRoot);
     }
 
     public int Port { get; }
@@ -51,4 +57,6 @@ public sealed record WorkerV2Options
     public string ProviderModel { get; }
 
     public string ProviderCredential { get; }
+
+    public string? ProviderBootstrapRoot { get; }
 }

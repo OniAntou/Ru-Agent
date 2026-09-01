@@ -25,7 +25,8 @@ public sealed record ManagedWorkerCompositionOptions
         string agentWorkerToken,
         string deviceWorkerToken,
         ProviderBootstrapData agentProviderBootstrap,
-        string projectRoot)
+        string projectRoot,
+        string? providerBootstrapRoot = null)
     {
         ValidatePort(agentPort, nameof(agentPort));
         ValidatePort(devicePort, nameof(devicePort));
@@ -42,6 +43,9 @@ public sealed record ManagedWorkerCompositionOptions
         }
         AgentProviderBootstrap = agentProviderBootstrap ?? throw new ArgumentNullException(nameof(agentProviderBootstrap));
         ProjectRoot = ResolveDirectory(projectRoot, nameof(projectRoot));
+        ProviderBootstrapRoot = providerBootstrapRoot is null
+            ? null
+            : ResolveDirectory(providerBootstrapRoot, nameof(providerBootstrapRoot));
     }
 
     public int AgentPort { get; }
@@ -55,6 +59,8 @@ public sealed record ManagedWorkerCompositionOptions
     public ProviderBootstrapData AgentProviderBootstrap { get; }
 
     public string ProjectRoot { get; }
+
+    public string? ProviderBootstrapRoot { get; }
 
     public string? LogRoot { get; init; }
 
@@ -106,6 +112,8 @@ public sealed record ManagedWorkerCompositionOptions
 public sealed class ManagedWorkerCompositionDependencies
 {
     public IModelProvider? ModelProvider { get; init; }
+
+    public IModelProviderResolver? ModelProviderResolver { get; init; }
 
     public IVoiceProvider? VoiceProvider { get; init; }
 
@@ -205,11 +213,30 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
                 InitialSettings(options.AgentProviderBootstrap),
                 dependencies.RuntimeApplier);
 
-            var modelProvider = dependencies.ModelProvider;
-            if (modelProvider is null)
+            IModelProviderResolver providerResolver;
+            if (dependencies.ModelProviderResolver is not null)
+            {
+                providerResolver = dependencies.ModelProviderResolver;
+            }
+            else if (dependencies.ModelProvider is not null)
+            {
+                var single = dependencies.ModelProvider;
+                providerResolver = new ModelProviderResolver(new Dictionary<string, IModelProvider>
+                {
+                    ["chat_completions"] = single,
+                    ["openai_responses"] = single,
+                    ["anthropic_messages"] = single,
+                });
+            }
+            else
             {
                 var modelHttpClient = Own(owned, new HttpClient());
-                modelProvider = new OpenAiCompatibleModelProvider(modelHttpClient);
+                providerResolver = new ModelProviderResolver(new Dictionary<string, IModelProvider>
+                {
+                    ["chat_completions"] = new OpenAiCompatibleModelProvider(modelHttpClient),
+                    ["openai_responses"] = new OpenAiResponsesModelProvider(modelHttpClient),
+                    ["anthropic_messages"] = new AnthropicMessagesModelProvider(modelHttpClient),
+                });
             }
 
             var agentOptions = new WorkerV2Options(
@@ -217,8 +244,9 @@ public sealed class ManagedWorkerComposition : IAsyncDisposable
                 options.AgentWorkerToken,
                 options.AgentProviderBootstrap.Endpoint,
                 options.AgentProviderBootstrap.Model,
-                options.AgentProviderBootstrap.Credential);
-            var agentSteps = new WorkerV2StepService(modelProvider, agentOptions, leases);
+                options.AgentProviderBootstrap.Credential,
+                options.ProviderBootstrapRoot);
+            var agentSteps = new WorkerV2StepService(providerResolver, agentOptions, leases);
             var agentServer = new WorkerV2Server(options.AgentWorkerToken, agentSteps);
 
             var voiceProvider = dependencies.VoiceProvider;

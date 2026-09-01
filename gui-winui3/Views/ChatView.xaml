@@ -869,7 +869,7 @@
                                                                 <VisualState x:Name="PointerOver">
                                                                     <Storyboard>
                                                                         <ObjectAnimationUsingKeyFrames Storyboard.TargetName="RootBorder" Storyboard.TargetProperty="Background">
-                                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource RuAccentSoftBrush}" />
+                                                                            <DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource RuCanvasBrush}" />
                                                                         </ObjectAnimationUsingKeyFrames>
                                                                     </Storyboard>
                                                                 </VisualState>
@@ -922,13 +922,19 @@
                                                 <Setter Property="Background" Value="{StaticResource RuSurfaceBrush}" />
                                                 <Setter Property="BorderBrush" Value="{StaticResource RuLineBrush}" />
                                                 <Setter Property="BorderThickness" Value="1" />
-                                                <Setter Property="CornerRadius" Value="{StaticResource RuControlCornerRadius}" />
-                                                <Setter Property="Padding" Value="2" />
-                                                <Setter Property="MinWidth" Value="250" />
-                                                <Setter Property="MaxWidth" Value="340" />
+                                                <Setter Property="CornerRadius" Value="8" />
+                                                <Setter Property="Padding" Value="4" />
+                                                <Setter Property="Width" Value="320" />
+                                                <Setter Property="MinWidth" Value="320" />
+                                                <Setter Property="MaxWidth" Value="320" />
+                                                <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+                                                <Setter Property="ScrollViewer.HorizontalScrollMode" Value="Disabled" />
+                                                <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Disabled" />
+                                                <Setter Property="ScrollViewer.VerticalScrollMode" Value="Disabled" />
                                             </Style>
                                         </Flyout.FlyoutPresenterStyle>
                                         <views:ProviderModelPicker x:Name="ModelPicker"
+                                                                   Width="312"
                                                                    SearchTextChanged="OnModelPickerSearchTextChanged"
                                                                    ModelSelected="OnModelPickerModelSelected" />
                                     </Flyout>
@@ -958,7 +964,7 @@
                                         <Setter Property="Template">
                                             <Setter.Value>
                                                 <ControlTemplate TargetType="Button">
-                                                    <Border Background="Transparent"
+                                                    <Border Background="{TemplateBinding Background}"
                                                             CornerRadius="13"
                                                             Width="26"
                                                             Height="26">

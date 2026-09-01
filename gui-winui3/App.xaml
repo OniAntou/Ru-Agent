@@ -35,6 +35,27 @@
                     <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#334155" />
                     <SolidColorBrush x:Key="SliderThumbBackground" Color="#1E293B" />
                     <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#334155" />
+
+                    <!-- Universal Button & Control Hover/Pressed Theme Resources (Clean & Flicker-free) -->
+                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#F4F5F7" />
+                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+                    <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+
+                    <SolidColorBrush x:Key="SubtleFillColorSecondary" Color="#F4F5F7" />
+                    <SolidColorBrush x:Key="SubtleFillColorTertiary" Color="#E2E8F0" />
+
+                    <!-- ListViewItem Hover & Selected -->
+                    <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#F4F5F7" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#E2E8F0" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#CBD5E1" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#CBD5E1" />
+                    <SolidColorBrush x:Key="ListViewItemForegroundPointerOver" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ListViewItemForegroundSelected" Color="#0F172A" />
+                    <SolidColorBrush x:Key="ListViewItemForegroundSelectedPointerOver" Color="#0F172A" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <Color x:Key="RuCanvasColor">#16181D</Color>
@@ -59,6 +80,27 @@
                     <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#F8FAFC" />
                     <SolidColorBrush x:Key="SliderThumbBackground" Color="#E2E8F0" />
                     <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#F8FAFC" />
+
+                    <!-- Universal Button & Control Hover/Pressed Theme Resources (Clean & Flicker-free) -->
+                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#16181D" />
+                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#282D37" />
+                    <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
+                    <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
+
+                    <SolidColorBrush x:Key="SubtleFillColorSecondary" Color="#16181D" />
+                    <SolidColorBrush x:Key="SubtleFillColorTertiary" Color="#282D37" />
+
+                    <!-- ListViewItem Hover & Selected -->
+                    <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#16181D" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="#282D37" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#282D37" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#334155" />
+                    <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#334155" />
+                    <SolidColorBrush x:Key="ListViewItemForegroundPointerOver" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ListViewItemForegroundSelected" Color="#F1F5F9" />
+                    <SolidColorBrush x:Key="ListViewItemForegroundSelectedPointerOver" Color="#F1F5F9" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 

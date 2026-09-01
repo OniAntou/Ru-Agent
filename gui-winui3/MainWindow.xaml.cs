@@ -83,6 +83,7 @@ namespace RuApp
                 catch { }
 
                 ApplyTheme(_themePreferenceStore.Load());
+                InitializeSidebarHoverEffects();
 
                 this.Closed += OnWindowClosed;
 
@@ -356,8 +357,60 @@ namespace RuApp
             }
         }
 
+        private Button? _activeNavButton;
+
+        private void InitializeSidebarHoverEffects()
+        {
+            SetupNavHover(NavChat);
+            SetupNavHover(NavVoice);
+            SetupNavHover(NavSettings);
+
+            // Theme toggle button
+            ThemeToggleButton.PointerEntered += (s, e) =>
+            {
+                ThemeToggleButton.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
+                ThemeToggleButton.Foreground = (Brush)Application.Current.Resources["RuInkBrush"];
+            };
+            ThemeToggleButton.PointerExited += (s, e) =>
+            {
+                ThemeToggleButton.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                ThemeToggleButton.Foreground = (Brush)Application.Current.Resources["RuMutedBrush"];
+            };
+
+            // New Chat button
+            NavNewChat.PointerEntered += (s, e) =>
+            {
+                NavNewChat.Background = (Brush)Application.Current.Resources["RuLineBrush"];
+            };
+            NavNewChat.PointerExited += (s, e) =>
+            {
+                NavNewChat.Background = (Brush)Application.Current.Resources["RuAccentSoftBrush"];
+            };
+        }
+
+        private void SetupNavHover(Button btn)
+        {
+            btn.PointerEntered += (s, e) =>
+            {
+                if (btn != _activeNavButton)
+                {
+                    btn.Background = (Brush)Application.Current.Resources["RuCanvasBrush"];
+                    btn.Foreground = (Brush)Application.Current.Resources["RuInkBrush"];
+                }
+            };
+            btn.PointerExited += (s, e) =>
+            {
+                if (btn != _activeNavButton)
+                {
+                    btn.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                    btn.Foreground = (Brush)Application.Current.Resources["RuMutedBrush"];
+                }
+            };
+        }
+
         private void SetActiveNav(Button activeBtn)
         {
+            _activeNavButton = activeBtn;
             var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             var muted = (SolidColorBrush)Application.Current.Resources["RuMutedBrush"];
             var ink = (SolidColorBrush)Application.Current.Resources["RuInkBrush"];

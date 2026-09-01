@@ -27,6 +27,7 @@ namespace RuApp.Views
         public SettingsView()
         {
             this.InitializeComponent();
+            InitializeSettingsHoverEffects();
         }
 
         public void Initialize(ApiService apiService, ProviderCatalogController? providerCatalogController = null)
@@ -466,6 +467,38 @@ namespace RuApp.Views
             }
         }
 
+        private string _activeSettingsTab = "system";
+
+        private void InitializeSettingsHoverEffects()
+        {
+            SetupSettingsNavHover(NavSystemBtn, NavSystemIcon, NavSystemText, () => _activeSettingsTab == "system");
+            SetupSettingsNavHover(NavObserverBtn, NavObserverIcon, NavObserverText, () => _activeSettingsTab == "observer");
+            SetupSettingsNavHover(NavVtsBtn, NavVtsIcon, NavVtsText, () => _activeSettingsTab == "vts");
+            SetupSettingsNavHover(NavMemoryBtn, NavMemoryIcon, NavMemoryText, () => _activeSettingsTab == "memory");
+        }
+
+        private void SetupSettingsNavHover(Button btn, FontIcon? icon, TextBlock? text, Func<bool> isActive)
+        {
+            btn.PointerEntered += (s, e) =>
+            {
+                if (!isActive())
+                {
+                    btn.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuCanvasBrush"];
+                    if (text != null) text.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"];
+                    if (icon != null) icon.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"];
+                }
+            };
+            btn.PointerExited += (s, e) =>
+            {
+                if (!isActive())
+                {
+                    btn.Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                    if (text != null) text.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
+                    if (icon != null) icon.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"];
+                }
+            };
+        }
+
         private void OnNavSystemClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("system");
         private void OnNavObserverClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("observer");
         private void OnNavVtsClick(object sender, RoutedEventArgs e) => SetActiveSettingsTab("vts");
@@ -473,6 +506,13 @@ namespace RuApp.Views
 
         private void SetActiveSettingsTab(string tab)
         {
+            _activeSettingsTab = tab;
+            var transparent = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            NavSystemBtn.Background = transparent;
+            NavObserverBtn.Background = transparent;
+            NavVtsBtn.Background = transparent;
+            NavMemoryBtn.Background = transparent;
+
             var isSystem = tab == "system";
             var isObserver = tab == "observer";
             var isVts = tab == "vts";

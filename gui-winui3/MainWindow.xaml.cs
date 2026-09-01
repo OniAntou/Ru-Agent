@@ -44,6 +44,7 @@ namespace RuApp
         private RefreshController<SessionListResponse?>? _sessionsRefreshController;
         private RefreshController<HealthStatusSnapshot?>? _healthRefreshController;
         private ProviderCatalogController? _providerCatalogController;
+        private GroupedProviderCatalogController? _groupedCatalogs;
         private DispatcherTimer? _providerCatalogTimer;
         private ResponsiveLayoutTier? _responsiveTier;
         private double _lastExpandedSidebarWidth = 250;
@@ -214,11 +215,13 @@ namespace RuApp
 
                 _apiService = new ApiService(backendSession);
                 _providerCatalogController = new ProviderCatalogController(new ProviderCatalogService(_apiService));
+                _groupedCatalogs = new GroupedProviderCatalogController(new ProviderCatalogService(_apiService));
                 _apiService.SettingsSaved += OnSettingsSaved;
                 _providerCatalogTimer = new DispatcherTimer { Interval = ProviderCatalogController.PollInterval };
                 _providerCatalogTimer.Tick += async (_, __) =>
                 {
                     await (_providerCatalogController?.RefreshIfDueAsync() ?? Task.FromResult(false));
+                    await (_groupedCatalogs?.RefreshIfDueAsync() ?? Task.FromResult(false));
                 };
                 _healthStatusService = new HealthStatusService(
                     _apiService,
@@ -268,7 +271,8 @@ namespace RuApp
                     _composition.HarnessScenario,
                     _agentController,
                     projectRoot,
-                    _providerCatalogController);
+                    _providerCatalogController,
+                    _groupedCatalogs);
                 _chatView.SessionOpened += (_, e) =>
                 {
                     SyncSidebarSelection(e.SessionId);
@@ -389,7 +393,35 @@ namespace RuApp
         private void OnSettingsSaved(object? sender, EventArgs e)
         {
             _providerCatalogController?.Invalidate();
-            _ = _providerCatalogController?.RefreshAsync();
+            _groupedCatalogs?.Invalidate();
+            _ = ReloadProviderSelectionAsync();
+        }
+
+        private async Task ReloadProviderSelectionAsync()
+        {
+            if (_apiService is null) return;
+            try
+            {
+                var settings = await _apiService.GetSettingsAsync();
+                if (settings is null) return;
+                string backend = settings.BackendChoice ?? "opencode";
+                string model = backend switch
+                {
+                    "opencode" => settings.OpenCodeModel ?? string.Empty,
+                    "kilo" => settings.KiloModel ?? string.Empty,
+                    "openai" => settings.OpenAiModel ?? string.Empty,
+                    "anthropic" => settings.AnthropicModel ?? string.Empty,
+                    "ollama" => settings.OllamaModel ?? string.Empty,
+                    "lmstudio" => settings.LmStudioModel ?? string.Empty,
+                    "custom" => settings.CustomModel ?? string.Empty,
+                    _ => string.Empty,
+                };
+                _groupedCatalogs?.SetSelection(backend, model);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[MainWindow] Reload provider selection failed: {ex.Message}");
+            }
         }
 
         private void OnNavClick(object sender, RoutedEventArgs e)
@@ -413,11 +445,14 @@ namespace RuApp
                 {
                     _ = _chatView?.LoadChatModelsAsync();
                     _providerCatalogController?.SetPollingActive(true);
+                    _groupedCatalogs?.SetPollingActive(true);
+                    _ = _groupedCatalogs?.RefreshIfDueAsync();
                     _providerCatalogTimer?.Start();
                 }
                 else
                 {
                     _providerCatalogController?.SetPollingActive(false);
+                    _groupedCatalogs?.SetPollingActive(false);
                     _providerCatalogTimer?.Stop();
                 }
                 if (tag == "settings")
@@ -502,6 +537,11 @@ namespace RuApp
             {
                 await _providerCatalogController.DisposeAsync();
                 _providerCatalogController = null;
+            }
+            if (_groupedCatalogs != null)
+            {
+                await _groupedCatalogs.DisposeAsync();
+                _groupedCatalogs = null;
             }
             _observationTimer?.Stop();
             _chatView?.Dispose();

@@ -133,15 +133,14 @@ public sealed class GroupedProviderCatalogControllerTests
     }
 
     [Fact]
-    public async Task Invalidate_rejects_late_state_from_the_previous_generation()
+    public async Task Invalidate_rejects_late_state_and_a_new_refresh_survives_it()
     {
         var controlled = new ControlledCatalogs();
-        await using var controller = new GroupedProviderCatalogController(controlled.CreateService());
-        var events = 0;
+        var clock = new TestClock(DateTimeOffset.UtcNow);
+        await using var controller = new GroupedProviderCatalogController(controlled.CreateService(), clock);
         var successfulEvents = 0;
         controller.StateChanged += (_, state) =>
         {
-            events++;
             if (state.Catalogs.Values.Any(catalog => catalog.IsSuccess)) successfulEvents++;
         };
 
@@ -152,6 +151,14 @@ public sealed class GroupedProviderCatalogControllerTests
 
         Assert.Equal(0, successfulEvents);
         Assert.All(controller.State.Catalogs.Values, catalog => Assert.False(catalog.IsSuccess));
+
+        controlled.ReArmAll();
+        clock.Advance(TimeSpan.FromSeconds(31));
+        var second = controller.RefreshAsync(force: true);
+        controlled.CompleteAll(alias => Snapshot(alias, "fresh-model"));
+        Assert.True(await second);
+        Assert.Equal("fresh-model", controller.State.Catalogs["kilo"].Models.Single());
+        Assert.Equal(7, successfulEvents);
     }
 
     [Fact]

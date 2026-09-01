@@ -217,6 +217,8 @@ namespace RuApp.Views
                 {
                     "opencode" => settings.OpenCodeModel ?? string.Empty,
                     "kilo" => settings.KiloModel ?? string.Empty,
+                    "openai" => settings.OpenAiModel ?? string.Empty,
+                    "anthropic" => settings.AnthropicModel ?? string.Empty,
                     "ollama" => settings.OllamaModel ?? string.Empty,
                     "lmstudio" => settings.LmStudioModel ?? string.Empty,
                     "custom" => settings.CustomModel ?? string.Empty,

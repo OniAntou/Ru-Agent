@@ -368,6 +368,20 @@ public sealed class ProviderCatalogTests
     }
 
     [Fact]
+    public async Task Failed_provider_model_selection_does_not_raise_settings_saved()
+    {
+        using var handler = new SaveHandler(new[] { "{\"status\":\"error\"}" });
+        using var api = new ApiService(
+            new BackendSession(new Uri("http://127.0.0.1:59999/"), "secret"),
+            handler);
+        var notifications = 0;
+        api.SettingsSaved += (_, _) => notifications++;
+
+        Assert.False(await api.SaveProviderModelSelectionAsync("kilo", "kilo-model"));
+        Assert.Equal(0, notifications);
+    }
+
+    [Fact]
     public async Task Provider_model_selection_serializes_only_the_two_field_body()
     {
         using var handler = new SaveHandler(new[] { "{\"status\":\"success\"}" });

@@ -77,6 +77,17 @@ host capabilities, and bounded runtime context. The model then receives the
 ordered user/assistant/tool turns; clock, mood, memory, voice/VTS state, and
 references are not appended as separate system messages.
 
+Host capabilities are the runtime projection of the 17 Protocol-owned tool
+definitions: ten core model tools plus independently gated `web.search` and
+`web.fetch`; five internal/deterministic definitions never enter this model
+projection. Each capability includes its ID/version, description, canonical
+scope, strict proposal schema, example, and SHA-256 digest. To select one, Ru
+emits exactly one JSON object of the form
+`{"tool_id":"files.read","tool_version":"1.0.0","arguments":{"path":"README.md"}}`
+and makes no success claim until the durable result arrives. Ordinary answers
+remain ordinary text. The Worker rejects unknown, duplicate, or digest-mismatched
+contracts before provider execution.
+
 The Host reads only `Ru.md`, `.ru/AGENTS.md`, and `.ru/CONTEXT.md` below the
 selected run root. It applies final-path containment, strict UTF-8 decoding,
 NFC/newline normalization, a 64 KiB per-file limit, and a 256 KiB combined

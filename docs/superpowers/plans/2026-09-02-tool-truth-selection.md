@@ -668,7 +668,7 @@ git commit -m "fix(agent): enforce canonical proposal contracts"
 - Modify owned hunks as required: `docs/operations/agent-tools.md`
 - Modify: `docs/operations/runtime-behavior.md`
 - Modify: `TODO.md`
-- Test: `scripts/check_current_docs.py`
+- Test: `tests/test_current_documentation.py`
 - Test: `scripts/check_aspnetcore_route_matrix.py`
 
 **Interfaces:**
@@ -705,7 +705,7 @@ In `TODO.md`, mark Tool Truth and Selection complete only after tests pass; reta
 Run sequentially:
 
 ```powershell
-.venv\Scripts\python.exe scripts\check_current_docs.py
+.venv\Scripts\python.exe -m pytest tests\test_current_documentation.py -q
 .venv\Scripts\python.exe scripts\check_aspnetcore_route_matrix.py
 ```
 

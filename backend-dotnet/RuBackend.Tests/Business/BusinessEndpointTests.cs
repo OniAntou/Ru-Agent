@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
@@ -279,6 +280,148 @@ public sealed class BusinessEndpointTests
         var loaded = Assert.Single(runtime.Candidates);
         Assert.Equal("http://10.0.0.5:11434/v1", loaded.OllamaUrl);
     }
+
+    [Fact]
+    public async Task PostSettings_selected_model_saves_one_atomic_candidate()
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(
+            data.Paths.SettingsFile,
+            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\",\"kilo_model\":\"old-kilo\"}");
+        var runtime = new FakeRuntimeSettingsLoader();
+        using var factory = CreateAspNetFactory(data.Paths, runtimeLoader: runtime);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.PostAsJsonAsync("/settings", new
+        {
+            backend_choice = "kilo",
+            selected_model = "kilo-model",
+        });
+        var payload = await response.Content.ReadFromJsonAsync<JsonObject>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("success", payload!["status"]!.GetValue<string>());
+        Assert.Single(runtime.Candidates);
+        Assert.Equal("Kilo Gateway", runtime.Candidates[0].Backend);
+        Assert.Equal("kilo-model", runtime.Candidates[0].KiloModel);
+        Assert.Equal("opencode/free", runtime.Candidates[0].OpenCodeModel);
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        Assert.Equal("Kilo Gateway", persisted["backend"]!.GetValue<string>());
+        Assert.Equal("kilo-model", persisted["kilo_model"]!.GetValue<string>());
+        Assert.Equal("opencode/free", persisted["opencode_model"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("opencode", "OpenCode Zen", "opencode_model")]
+    [InlineData("kilo", "Kilo Gateway", "kilo_model")]
+    [InlineData("openai", "OpenAI", "openai_model")]
+    [InlineData("anthropic", "Anthropic", "anthropic_model")]
+    [InlineData("ollama", "Ollama", "ollama_model")]
+    [InlineData("lmstudio", "LM Studio", "lmstudio_model")]
+    [InlineData("custom", "Custom OpenAI", "custom_model")]
+    public async Task PostSettings_selected_model_table_covers_every_alias(
+        string alias,
+        string expectedBackend,
+        string expectedModelField)
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(
+            data.Paths.SettingsFile,
+            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\",\"kilo_model\":\"old-kilo\"}");
+        var runtime = new FakeRuntimeSettingsLoader();
+        using var factory = CreateAspNetFactory(data.Paths, runtimeLoader: runtime);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var response = await client.PostAsJsonAsync("/settings", new
+        {
+            backend_choice = alias,
+            selected_model = "grouped-model",
+        });
+        var payload = await response.Content.ReadFromJsonAsync<JsonObject>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("success", payload!["status"]!.GetValue<string>());
+        Assert.Single(runtime.Candidates);
+        Assert.Equal(expectedBackend, runtime.Candidates[0].Backend);
+        Assert.Equal("grouped-model", CandidateModel(runtime.Candidates[0], expectedModelField));
+        var persisted = JsonNode.Parse(await File.ReadAllTextAsync(data.Paths.SettingsFile))!.AsObject();
+        Assert.Equal(expectedBackend, persisted["backend"]!.GetValue<string>());
+        Assert.Equal("grouped-model", persisted[expectedModelField]!.GetValue<string>());
+        var unchangedField = expectedModelField == "opencode_model" ? "kilo_model" : "opencode_model";
+        var unchangedValue = expectedModelField == "opencode_model" ? "old-kilo" : "opencode/free";
+        Assert.Equal(unchangedValue, persisted[unchangedField]!.GetValue<string>());
+    }
+
+    public static TheoryData<string> InvalidModelSelectionPayloads => new()
+    {
+        """{"backend_choice":"unknown-provider","selected_model":"grouped-model"}""",
+        """{"backend_choice":"kilo","selected_model":""}""",
+        """{"backend_choice":"kilo","selected_model":"   "}""",
+        """{"selected_model":"kilo-model"}""",
+        """{"backend_choice":"kilo","selected_model":"grouped-model","voice_speed":1.5}""",
+        """{"backend_choice":"kilo","selected_model":"grouped-model","kilo_model":"other-model"}""",
+        """{"backend_choice":"kilo","selected_model":"grouped-model","model":"legacy-model"}""",
+        """{"backend_choice":"kilo","selected_model":"grouped-model","kilo_api_key":"private-key"}""",
+        """{"backend_choice":"kilo","selected_model":"grouped-model","opencode_api_key":"private-key"}""",
+        """{"backend_choice":"kilo","selected_model":"grouped-model","ollama_url":"http://127.0.0.1:11434/v1"}""",
+        """{"backend_choice":"kilo","selected_model":"grouped-model","reasoning_effort":"high","reasoning_model":"grouped-model","reasoning_identity":"kilo"}""",
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidModelSelectionPayloads))]
+    public async Task PostSettings_invalid_selected_model_payloads_fail_closed(string json)
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(
+            data.Paths.SettingsFile,
+            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\",\"kilo_model\":\"old-kilo\"}");
+        var originalSettings = await File.ReadAllTextAsync(data.Paths.SettingsFile);
+        var runtime = new FakeRuntimeSettingsLoader();
+        using var factory = CreateAspNetFactory(data.Paths, runtimeLoader: runtime);
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/settings", content);
+        var payload = await response.Content.ReadFromJsonAsync<JsonObject>();
+
+        Assert.Equal("error", payload!["status"]!.GetValue<string>());
+        Assert.Empty(runtime.Candidates);
+        Assert.Equal(originalSettings, await File.ReadAllTextAsync(data.Paths.SettingsFile));
+    }
+
+    [Fact]
+    public async Task PostSettings_selected_model_longer_than_256_characters_fails_closed()
+    {
+        using var data = TemporaryBusinessData.Create();
+        await File.WriteAllTextAsync(
+            data.Paths.SettingsFile,
+            "{\"backend\":\"opencode\",\"opencode_model\":\"opencode/free\"}");
+        var originalSettings = await File.ReadAllTextAsync(data.Paths.SettingsFile);
+        var runtime = new FakeRuntimeSettingsLoader();
+        using var factory = CreateAspNetFactory(data.Paths, runtimeLoader: runtime);
+        using var client = factory.CreateAuthenticatedClient();
+
+        var json = "{\"backend_choice\":\"kilo\",\"selected_model\":\"" + new string('a', 257) + "\"}";
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/settings", content);
+        var payload = await response.Content.ReadFromJsonAsync<JsonObject>();
+
+        Assert.Equal("error", payload!["status"]!.GetValue<string>());
+        Assert.Empty(runtime.Candidates);
+        Assert.Equal(originalSettings, await File.ReadAllTextAsync(data.Paths.SettingsFile));
+    }
+
+    private static string? CandidateModel(SettingsSnapshot snapshot, string modelField) => modelField switch
+    {
+        "opencode_model" => snapshot.OpenCodeModel,
+        "kilo_model" => snapshot.KiloModel,
+        "openai_model" => snapshot.OpenAiModel,
+        "anthropic_model" => snapshot.AnthropicModel,
+        "ollama_model" => snapshot.OllamaModel,
+        "lmstudio_model" => snapshot.LmStudioModel,
+        "custom_model" => snapshot.CustomModel,
+        _ => throw new ArgumentOutOfRangeException(nameof(modelField)),
+    };
 
     [Fact]
     public async Task Session_routes_create_list_activate_and_delete_the_same_document()

@@ -64,6 +64,7 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             IReadOnlyList<CredentialUpdate> updates;
             try
             {
+                payload = ExpandModelSelection(payload);
                 candidate = BuildCandidate(ProviderReasoningPreferences.CaptureLegacy(previous), payload);
                 updates = BuildCredentialUpdates(candidate.Backend, payload);
                 if (payload.ContainsKey("reasoning_effort"))
@@ -187,6 +188,45 @@ public sealed class SettingsTransitionService : ISettingsTransitionService
             // The caller receives one redacted transition failure.
         }
     }
+
+    private static JsonObject ExpandModelSelection(JsonObject payload)
+    {
+        if (!payload.ContainsKey("selected_model"))
+        {
+            return payload;
+        }
+
+        if (payload.Count != 2 || !payload.ContainsKey("backend_choice"))
+        {
+            throw new SettingsPayloadException();
+        }
+
+        var backend = NormalizeBackend(
+            OptionalString(payload, "backend_choice", 64)
+            ?? throw new SettingsPayloadException());
+        var model = OptionalString(payload, "selected_model", 256)?.Trim()
+            ?? throw new SettingsPayloadException();
+        if (model.Length == 0)
+        {
+            throw new SettingsPayloadException();
+        }
+
+        var expanded = new JsonObject { ["backend_choice"] = backend };
+        expanded[ModelFieldForBackend(backend)] = model;
+        return expanded;
+    }
+
+    private static string ModelFieldForBackend(string backend) => backend switch
+    {
+        BackendOpenCode => "opencode_model",
+        BackendKilo => "kilo_model",
+        "Ollama" => "ollama_model",
+        "LM Studio" => "lmstudio_model",
+        "Custom OpenAI" => "custom_model",
+        BackendOpenAi => "openai_model",
+        BackendAnthropic => "anthropic_model",
+        _ => throw new SettingsPayloadException(),
+    };
 
     private static SettingsSnapshot BuildCandidate(
         SettingsSnapshot current,

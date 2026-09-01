@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using RuApp.Models;
 using RuApp.Services;
 using Xunit;
@@ -367,20 +368,31 @@ public sealed class ProviderCatalogTests
     }
 
     [Fact]
-    public async Task Model_save_serializes_only_the_selected_provider_model()
+    public async Task Provider_model_selection_serializes_only_the_two_field_body()
     {
         using var handler = new SaveHandler(new[] { "{\"status\":\"success\"}" });
         using var api = new ApiService(
             new BackendSession(new Uri("http://127.0.0.1:59999/"), "secret"),
             handler);
+        var notifications = 0;
+        api.SettingsSaved += (_, _) => notifications++;
 
-        Assert.True(await api.SaveModelSettingsAsync("kilo", "kilo-model"));
-        Assert.Contains("\"kilo_model\":\"kilo-model\"", handler.LastBody);
-        Assert.DoesNotContain("backend_choice", handler.LastBody);
-        Assert.DoesNotContain("opencode_model", handler.LastBody);
-        Assert.DoesNotContain("ollama_model", handler.LastBody);
-        Assert.DoesNotContain("lmstudio_model", handler.LastBody);
-        Assert.DoesNotContain("custom_model", handler.LastBody);
+        Assert.True(await api.SaveProviderModelSelectionAsync("kilo", "kilo-model"));
+        using (var document = JsonDocument.Parse(handler.LastBody))
+        {
+            Assert.Equal(2, document.RootElement.EnumerateObject().Count());
+        }
+
+        Assert.Contains("\"backend_choice\":\"kilo\"", handler.LastBody, StringComparison.Ordinal);
+        Assert.Contains("\"selected_model\":\"kilo-model\"", handler.LastBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("opencode_model", handler.LastBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("kilo_model", handler.LastBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("ollama_model", handler.LastBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("lmstudio_model", handler.LastBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("custom_model", handler.LastBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("openai_model", handler.LastBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("anthropic_model", handler.LastBody, StringComparison.Ordinal);
+        Assert.Equal(1, notifications);
     }
 
     private sealed class TestClock : IProviderCatalogClock

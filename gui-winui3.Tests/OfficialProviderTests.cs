@@ -66,7 +66,7 @@ public sealed class OfficialProviderTests
     }
 
     [Fact]
-    public async Task OpenAi_model_save_serializes_only_selected_provider_model()
+    public async Task OpenAi_provider_model_selection_serializes_only_the_two_field_body()
     {
         using var handler = new SaveHandler(new[] { "{\"status\":\"ok\"}", "{\"status\":\"ok\"}" });
         using var api = new ApiService(
@@ -74,26 +74,36 @@ public sealed class OfficialProviderTests
             handler);
 
         // OpenAI path
-        Assert.True(await api.SaveModelSettingsAsync("openai", "gpt-5.6-sol"));
-        Assert.Contains("\"openai_model\":\"gpt-5.6-sol\"", handler.LastBody, StringComparison.Ordinal);
+        Assert.True(await api.SaveProviderModelSelectionAsync("openai", "gpt-5.6-sol"));
+        using (var document = JsonDocument.Parse(handler.LastBody))
+        {
+            Assert.Equal(2, document.RootElement.EnumerateObject().Count());
+        }
+
+        Assert.Contains("\"backend_choice\":\"openai\"", handler.LastBody, StringComparison.Ordinal);
+        Assert.Contains("\"selected_model\":\"gpt-5.6-sol\"", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("anthropic_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("kilo_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("opencode_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("ollama_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("lmstudio_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("custom_model", handler.LastBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("backend_choice", handler.LastBody, StringComparison.Ordinal);
 
         // Anthropic path (similarly)
-        Assert.True(await api.SaveModelSettingsAsync("anthropic", "claude-4-sonnet"));
-        Assert.Contains("\"anthropic_model\":\"claude-4-sonnet\"", handler.LastBody, StringComparison.Ordinal);
+        Assert.True(await api.SaveProviderModelSelectionAsync("anthropic", "claude-4-sonnet"));
+        using (var anthropicDocument = JsonDocument.Parse(handler.LastBody))
+        {
+            Assert.Equal(2, anthropicDocument.RootElement.EnumerateObject().Count());
+        }
+
+        Assert.Contains("\"backend_choice\":\"anthropic\"", handler.LastBody, StringComparison.Ordinal);
+        Assert.Contains("\"selected_model\":\"claude-4-sonnet\"", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("openai_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("kilo_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("opencode_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("ollama_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("lmstudio_model", handler.LastBody, StringComparison.Ordinal);
         Assert.DoesNotContain("custom_model", handler.LastBody, StringComparison.Ordinal);
-        Assert.DoesNotContain("backend_choice", handler.LastBody, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -471,7 +471,7 @@ namespace RuApp.Views
                     return;
                 }
 
-                if (await _apiService.SaveModelSettingsAsync(backend, model))
+                if (await _apiService.SaveProviderModelSelectionAsync(backend, model))
                 {
                     _selectedModel = model;
                     ChatModelLabel.Text = GetModelDisplayText(model);

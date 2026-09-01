@@ -230,33 +230,11 @@ public sealed class ReasoningSettingsUpdateDto
     public string ReasoningIdentity { get; init; } = string.Empty;
 }
 
-public sealed class ModelSettingsUpdateDto
+public sealed class ProviderModelSelectionUpdateDto
 {
-    [JsonPropertyName("opencode_model")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? OpenCodeModel { get; init; }
+    [JsonPropertyName("backend_choice")]
+    public string BackendChoice { get; init; } = string.Empty;
 
-    [JsonPropertyName("kilo_model")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? KiloModel { get; init; }
-
-    [JsonPropertyName("ollama_model")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? OllamaModel { get; init; }
-
-    [JsonPropertyName("lmstudio_model")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? LmStudioModel { get; init; }
-
-    [JsonPropertyName("custom_model")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? CustomModel { get; init; }
-
-    [JsonPropertyName("openai_model")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? OpenAiModel { get; init; }
-
-    [JsonPropertyName("anthropic_model")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string? AnthropicModel { get; init; }
+    [JsonPropertyName("selected_model")]
+    public string SelectedModel { get; init; } = string.Empty;
 }

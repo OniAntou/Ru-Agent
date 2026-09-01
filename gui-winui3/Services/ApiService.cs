@@ -129,18 +129,12 @@ namespace RuApp.Services
             }
         }
 
-        public async Task<bool> SaveModelSettingsAsync(string backend, string model)
+        public async Task<bool> SaveProviderModelSelectionAsync(string backend, string model)
         {
-            ModelSettingsUpdateDto payload = backend switch
+            var payload = new ProviderModelSelectionUpdateDto
             {
-                "opencode" => new ModelSettingsUpdateDto { OpenCodeModel = model },
-                "kilo" => new ModelSettingsUpdateDto { KiloModel = model },
-                "ollama" => new ModelSettingsUpdateDto { OllamaModel = model },
-                "lmstudio" => new ModelSettingsUpdateDto { LmStudioModel = model },
-                "custom" => new ModelSettingsUpdateDto { CustomModel = model },
-                "openai" => new ModelSettingsUpdateDto { OpenAiModel = model },
-                "anthropic" => new ModelSettingsUpdateDto { AnthropicModel = model },
-                _ => throw new ArgumentException($"Unsupported model backend: {backend}", nameof(backend))
+                BackendChoice = backend,
+                SelectedModel = model,
             };
 
             try
@@ -152,7 +146,7 @@ namespace RuApp.Services
             }
             catch (Exception ex)
             {
-                LogApiError("SaveModelSettingsAsync", ex);
+                LogApiError("SaveProviderModelSelectionAsync", ex);
                 return false;
             }
         }

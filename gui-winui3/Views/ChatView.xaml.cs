@@ -142,7 +142,8 @@ namespace RuApp.Views
 
         private ProviderCatalogController? _providerCatalogController;
         private bool _ownsProviderCatalogController;
-        private ProviderCatalogState _providerCatalogState = ProviderCatalogState.Empty(string.Empty);
+        private GroupedProviderCatalogController? _groupedCatalogs;
+        private bool _ownsGroupedCatalogs;
         private string _selectedModel = string.Empty;
         private DispatcherTimer? _modelSaveFailureTimer;
 
@@ -154,7 +155,8 @@ namespace RuApp.Views
             string? harnessScenario = null,
             AgentRunController? agentController = null,
             string? defaultAgentWorkspace = null,
-            ProviderCatalogController? providerCatalogController = null)
+            ProviderCatalogController? providerCatalogController = null,
+            GroupedProviderCatalogController? groupedProviderCatalogs = null)
         {
             _apiService = apiService;
             _voicePlayback = voicePlayback;
@@ -168,7 +170,9 @@ namespace RuApp.Views
             _agentWorkspace = defaultWorkspace;
             _providerCatalogController = providerCatalogController ?? new ProviderCatalogController(new ProviderCatalogService(apiService));
             _ownsProviderCatalogController = providerCatalogController == null;
-            _providerCatalogController.StateChanged += OnProviderCatalogStateChanged;
+            _groupedCatalogs = groupedProviderCatalogs ?? new GroupedProviderCatalogController(new ProviderCatalogService(apiService));
+            _ownsGroupedCatalogs = groupedProviderCatalogs == null;
+            _groupedCatalogs.StateChanged += OnGroupedStateChanged;
             _agentController?.PropertyChanged += OnAgentControllerChanged;
             _agentController?.ActivityReceived += OnAgentActivityReceived;
             _agentController?.SummaryReceived += OnAgentSummaryReceived;
@@ -220,10 +224,11 @@ namespace RuApp.Views
                 };
 
                 _selectedModel = currentModel;
-                ChatModelLabel.Text = string.IsNullOrEmpty(currentModel) ? "Model..." : currentModel;
-                _providerCatalogController?.SetBackend(backend);
+                _groupedCatalogs?.SetSelection(backend, currentModel);
+                ChatModelLabel.Text = ProviderModelPickerProjection.TriggerDisplay(backend, currentModel);
                 if (_providerCatalogController != null)
                 {
+                    _providerCatalogController.SetBackend(backend);
                     await _providerCatalogController.RefreshAsync();
                 }
             }
@@ -233,223 +238,61 @@ namespace RuApp.Views
             }
         }
 
-        private List<string> _loadedModels = new();
-
         private void OnChatModelFlyoutOpened(object sender, object e)
         {
-            ModelSearchBox.Focus(FocusState.Programmatic);
-            _ = RefreshProviderCatalogAsync(force: true);
-            FilterAndRenderModels(ModelSearchBox.Text);
+            ModelPicker.FocusSearch();
+            _ = RefreshGroupedCatalogsAsync(force: true);
         }
 
-        private void OnModelSearchTextChanged(object sender, TextChangedEventArgs e)
+        private async Task RefreshGroupedCatalogsAsync(bool force)
         {
-            _providerCatalogController?.SetSearchText(ModelSearchBox.Text);
-            FilterAndRenderModels(ModelSearchBox.Text);
+            if (_groupedCatalogs == null) return;
+            await _groupedCatalogs.RefreshAsync(force);
         }
 
-        private async Task RefreshProviderCatalogAsync(bool force)
+        private void OnModelPickerSearchTextChanged(object? sender, string searchText)
         {
-            if (_providerCatalogController == null) return;
-            await _providerCatalogController.RefreshAsync(force);
+            _groupedCatalogs?.SetSearchText(searchText);
         }
 
-        private void OnProviderCatalogStateChanged(object? sender, ProviderCatalogState state)
+        private void OnModelPickerModelSelected(object? sender, ProviderModelSelectionEventArgs e)
+        {
+            ChatModelFlyout.Hide();
+            _ = SelectChatModelAsync(e.Model, e.Backend);
+        }
+
+        private void OnGroupedStateChanged(object? sender, GroupedProviderCatalogState state)
         {
             if (!DispatcherQueue.TryEnqueue(() =>
             {
-                if (_providerCatalogController is null ||
-                    !ReferenceEquals(_providerCatalogController.State, state))
+                if (_groupedCatalogs is null ||
+                    !ReferenceEquals(_groupedCatalogs.State, state))
                 {
                     return;
                 }
 
-                ApplyProviderCatalogState(state);
+                ApplyGroupedState(state);
             }))
             {
                 return;
             }
         }
 
-        private void ApplyProviderCatalogState(ProviderCatalogState state)
+        private void ApplyGroupedState(GroupedProviderCatalogState state)
         {
-            _providerCatalogState = state;
-            _loadedModels = state.Models.ToList();
-            if (!string.IsNullOrEmpty(state.SelectedModel))
+            if (!string.IsNullOrWhiteSpace(state.SelectedModel))
             {
                 _selectedModel = state.SelectedModel;
             }
-            ChatModelLabel.Text = GetModelDisplayText(_selectedModel);
-            FilterAndRenderModels(state.SearchText);
+            ChatModelLabel.Text = ProviderModelPickerProjection.TriggerDisplay(
+                state.SelectedBackend, state.SelectedModel);
+            ModelPicker.Apply(ProviderModelPickerProjection.Create(
+                state.Catalogs.Values,
+                state.SelectedBackend,
+                state.SelectedModel,
+                state.SearchText));
             UpdateContextUsage();
         }
-
-        private void FilterAndRenderModels(string query)
-        {
-            ModelListContainer.Children.Clear();
-
-            var candidates = _loadedModels.ToList();
-            if (!string.IsNullOrWhiteSpace(_selectedModel) &&
-                !candidates.Contains(_selectedModel, StringComparer.Ordinal))
-            {
-                candidates.Insert(0, _selectedModel);
-            }
-
-            var filtered = string.IsNullOrWhiteSpace(query)
-                ? candidates
-                : candidates.Where(m => m.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
-
-            if (filtered.Count == 0)
-            {
-                var emptyBlock = new TextBlock
-                {
-                    Text = _providerCatalogController?.State.IsSuccess == false
-                        ? "Không thể tải catalog model"
-                        : _loadedModels.Count == 0 ? "Không có model khả dụng" : "Không tìm thấy model phù hợp",
-                    FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
-                    FontSize = 11.5,
-                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"],
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Margin = new Thickness(0, 14, 0, 14)
-                };
-                ModelListContainer.Children.Add(emptyBlock);
-                return;
-            }
-
-            string activeModel = _selectedModel;
-
-            foreach (var model in filtered)
-            {
-                bool isSelected = string.Equals(model, activeModel, StringComparison.Ordinal);
-                bool unavailable = TryGetUnavailableReason(model, out string unavailableReason);
-                string annotation = unavailable
-                    ? unavailableReason
-                    : _providerCatalogState.Stale ? "Stale" : string.Empty;
-                var (_, specDisplay) = ModelContextSpecs.GetContextSpec(model);
-
-                var itemButton = new Button
-                {
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                    Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-                    BorderThickness = new Thickness(0),
-                    Padding = new Thickness(7, 5, 7, 5),
-                    CornerRadius = (CornerRadius)Application.Current.Resources["RuControlCornerRadius"],
-                    MinHeight = 28
-                };
-
-                itemButton.Resources["ButtonBackgroundPointerOver"] = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentSoftBrush"];
-                itemButton.Resources["ButtonBackgroundPressed"] = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentSoftBrush"];
-                itemButton.Resources["ButtonBorderBrushPointerOver"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-                itemButton.Resources["ButtonBorderBrushPressed"] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-
-                var itemGrid = new Grid();
-                itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                if (isSelected)
-                {
-                    itemGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                }
-
-                var textBlock = new TextBlock
-                {
-                    Text = string.IsNullOrEmpty(annotation) ? model : $"{model} · {annotation}",
-                    FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
-                    FontSize = 12,
-                    Foreground = isSelected
-                        ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuInkBrush"]
-                        : (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuMutedBrush"],
-                    FontWeight = isSelected ? Microsoft.UI.Text.FontWeights.Medium : Microsoft.UI.Text.FontWeights.Normal,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                Grid.SetColumn(textBlock, 0);
-                itemGrid.Children.Add(textBlock);
-
-                var specBadge = new Border
-                {
-                    Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentSoftBrush"],
-                    CornerRadius = new CornerRadius(3),
-                    Padding = new Thickness(4, 1, 4, 1),
-                    Margin = new Thickness(6, 0, isSelected ? 4 : 0, 0),
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                var specBlock = new TextBlock
-                {
-                    Text = specDisplay,
-                    FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["RuUiFontFamily"],
-                    FontSize = 9.5,
-                    FontWeight = Microsoft.UI.Text.FontWeights.Normal,
-                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"],
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                specBadge.Child = specBlock;
-                Grid.SetColumn(specBadge, 1);
-                itemGrid.Children.Add(specBadge);
-
-                if (isSelected)
-                {
-                    var checkIcon = new FontIcon
-                    {
-                        Glyph = "\uE73E",
-                        FontSize = 10,
-                        Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["RuAccentBrush"],
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(3, 0, 0, 0)
-                    };
-                    Grid.SetColumn(checkIcon, 2);
-                    itemGrid.Children.Add(checkIcon);
-                }
-
-                itemButton.Content = itemGrid;
-                itemButton.IsEnabled = !unavailable;
-
-                string modelCapture = model;
-                string backendCapture = _providerCatalogState.Backend;
-                itemButton.Click += async (s, e) =>
-                {
-                    ChatModelFlyout.Hide();
-                    await SelectChatModelAsync(modelCapture, backendCapture);
-                };
-
-                ModelListContainer.Children.Add(itemButton);
-            }
-        }
-
-        private bool TryGetUnavailableReason(string model, out string reason)
-        {
-            var descriptor = _providerCatalogState.Catalog.FirstOrDefault(item =>
-                string.Equals(item.Id, model, StringComparison.Ordinal));
-            if (descriptor is not null &&
-                (!descriptor.Supported || IsUnsupportedProtocol(descriptor.Protocol)))
-            {
-                reason = IsUnsupportedProtocol(descriptor.Protocol)
-                    ? "Unsupported protocol"
-                    : "Unavailable";
-                return true;
-            }
-
-            if (string.Equals(model, _selectedModel, StringComparison.Ordinal) &&
-                !_loadedModels.Contains(model, StringComparer.Ordinal))
-            {
-                reason = "Unavailable";
-                return true;
-            }
-
-            reason = string.Empty;
-            return false;
-        }
-
-        private string GetModelDisplayText(string model)
-        {
-            if (string.IsNullOrWhiteSpace(model)) return "Model...";
-            if (TryGetUnavailableReason(model, out string reason))
-                return $"{model} · {reason}";
-            return _providerCatalogState.Stale ? $"{model} · Stale" : model;
-        }
-
-        private static bool IsUnsupportedProtocol(string protocol) =>
-            protocol is not ("chat_completions" or "openai_responses" or "anthropic_messages");
 
         private async Task SelectChatModelAsync(string model, string backend)
         {
@@ -457,15 +300,7 @@ namespace RuApp.Views
             {
                 if (_apiService is null ||
                     string.IsNullOrWhiteSpace(backend) ||
-                    !string.Equals(backend, _providerCatalogState.Backend, StringComparison.Ordinal))
-                {
-                    ShowModelSaveFailure();
-                    return;
-                }
-
-                var settings = await _apiService.GetSettingsAsync();
-                if (settings is null ||
-                    !string.Equals(settings.BackendChoice, backend, StringComparison.Ordinal))
+                    string.IsNullOrWhiteSpace(model))
                 {
                     ShowModelSaveFailure();
                     return;
@@ -474,9 +309,14 @@ namespace RuApp.Views
                 if (await _apiService.SaveProviderModelSelectionAsync(backend, model))
                 {
                     _selectedModel = model;
-                    ChatModelLabel.Text = GetModelDisplayText(model);
-                    FilterAndRenderModels(ModelSearchBox?.Text ?? string.Empty);
+                    _groupedCatalogs?.SetSelection(backend, model);
+                    ChatModelLabel.Text = ProviderModelPickerProjection.TriggerDisplay(backend, model);
                     UpdateContextUsage();
+                    if (_providerCatalogController != null)
+                    {
+                        _providerCatalogController.SetBackend(backend);
+                        _ = _providerCatalogController.RefreshAsync();
+                    }
                 }
                 else
                 {
@@ -2227,12 +2067,20 @@ namespace RuApp.Views
             _modelSaveFailureTimer?.Stop();
             if (_providerCatalogController != null)
             {
-                _providerCatalogController.StateChanged -= OnProviderCatalogStateChanged;
                 if (_ownsProviderCatalogController)
                 {
                     _providerCatalogController.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 }
                 _providerCatalogController = null;
+            }
+            if (_groupedCatalogs != null)
+            {
+                _groupedCatalogs.StateChanged -= OnGroupedStateChanged;
+                if (_ownsGroupedCatalogs)
+                {
+                    _groupedCatalogs.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                }
+                _groupedCatalogs = null;
             }
             if (_agentController is not null)
             {

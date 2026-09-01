@@ -167,9 +167,21 @@ public sealed class ChatMessageAttachmentTests
         {
             string xaml = File.ReadAllText(xamlPath);
             Assert.Contains("ChatModelFlyout", xaml, StringComparison.Ordinal);
-            Assert.Contains("ModelSearchBox", xaml, StringComparison.Ordinal);
-            Assert.Contains("ModelListContainer", xaml, StringComparison.Ordinal);
-            Assert.Contains("PlaceholderText=\"Tìm model...\"", xaml, StringComparison.Ordinal);
+            Assert.Contains("ProviderModelPicker", xaml, StringComparison.Ordinal);
+        }
+
+        string pickerPath = Path.Combine("..", "..", "..", "..", "gui-winui3", "Views", "ProviderModelPicker.xaml");
+        if (!File.Exists(pickerPath))
+        {
+            pickerPath = Path.Combine("Views", "ProviderModelPicker.xaml");
+        }
+        if (File.Exists(pickerPath))
+        {
+            string pickerXaml = File.ReadAllText(pickerPath);
+            Assert.Contains("ModelSearchBox", pickerXaml, StringComparison.Ordinal);
+            Assert.Contains("PickerListContainer", pickerXaml, StringComparison.Ordinal);
+            Assert.Contains("PlaceholderText=\"Tìm model...\"", pickerXaml, StringComparison.Ordinal);
+            Assert.Contains("HorizontalScrollBarVisibility=\"Disabled\"", pickerXaml, StringComparison.Ordinal);
         }
     }
 

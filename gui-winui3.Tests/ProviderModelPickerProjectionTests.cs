@@ -265,6 +265,43 @@ public sealed class ProviderModelPickerProjectionTests
     }
 
     [Fact]
+    public void Row_automation_text_reflects_selected_unavailable_and_stale_states()
+    {
+        var selected = new ProviderModelPickerRow(
+            "kilo", "Kilo", "kilo-auto/frontier", string.Empty, true, true, false, string.Empty);
+        var unavailable = new ProviderModelPickerRow(
+            "kilo", "Kilo", "retired-model", string.Empty, true, false, false,
+            ProviderModelPickerProjection.UnavailableAnnotation);
+        var stale = new ProviderModelPickerRow(
+            "kilo", "Kilo", "kilo-mini", string.Empty, false, true, true,
+            ProviderModelPickerProjection.StaleAnnotation);
+
+        Assert.Equal(
+            "Kilo, kilo-auto/frontier, selected",
+            ProviderModelPickerProjection.RowAutomationText(selected));
+        Assert.Equal(
+            "Kilo, retired-model, unavailable",
+            ProviderModelPickerProjection.RowAutomationText(unavailable));
+        Assert.Equal(
+            "Kilo, kilo-mini, stale",
+            ProviderModelPickerProjection.RowAutomationText(stale));
+    }
+
+    [Fact]
+    public void Trigger_display_shows_provider_model_pair_or_placeholder()
+    {
+        Assert.Equal(
+            "Kilo · kilo-auto/frontier",
+            ProviderModelPickerProjection.TriggerDisplay("kilo", "kilo-auto/frontier"));
+        Assert.Equal(
+            "OpenCode · opencode/free",
+            ProviderModelPickerProjection.TriggerDisplay("opencode", "opencode/free"));
+        Assert.Equal("Model...", ProviderModelPickerProjection.TriggerDisplay("kilo", string.Empty));
+        Assert.Equal("Model...", ProviderModelPickerProjection.TriggerDisplay(string.Empty, string.Empty));
+        Assert.Equal("Model...", ProviderModelPickerProjection.TriggerDisplay("kilo", "   "));
+    }
+
+    [Fact]
     public void Provider_group_definitions_are_presentation_only()
     {
         Assert.Equal(7, ProviderGroupDefinitions.All.Count);

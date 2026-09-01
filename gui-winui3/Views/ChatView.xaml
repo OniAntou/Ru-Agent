@@ -928,62 +928,9 @@
                                                 <Setter Property="MaxWidth" Value="340" />
                                             </Style>
                                         </Flyout.FlyoutPresenterStyle>
-                                        <StackPanel Spacing="0">
-                                            <!-- Polished Search Pill Box -->
-                                            <Border Background="{StaticResource RuCanvasBrush}"
-                                                    BorderBrush="{StaticResource RuLineBrush}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="{StaticResource RuControlCornerRadius}"
-                                                    Padding="9,5"
-                                                    Margin="6,6,6,4">
-                                                <Grid ColumnDefinitions="Auto,*">
-                                                    <FontIcon Glyph="&#xE721;"
-                                                              FontSize="11"
-                                                              Foreground="{StaticResource RuMutedBrush}"
-                                                              VerticalAlignment="Center"
-                                                              Margin="0,0,7,0" />
-                                                    <TextBox x:Name="ModelSearchBox"
-                                                             Grid.Column="1"
-                                                             AutomationProperties.AutomationId="ModelSearchBox"
-                                                             PlaceholderText="Tìm model..."
-                                                             TextChanged="OnModelSearchTextChanged"
-                                                             FontFamily="{StaticResource RuUiFontFamily}"
-                                                             FontSize="12"
-                                                             MinHeight="0"
-                                                             Padding="0,1,0,1"
-                                                             Margin="0"
-                                                             VerticalAlignment="Center"
-                                                             VerticalContentAlignment="Center"
-                                                             Background="Transparent"
-                                                             BorderThickness="0"
-                                                             IsSpellCheckEnabled="False"
-                                                             Foreground="{StaticResource RuInkBrush}">
-                                                        <TextBox.Resources>
-                                                            <SolidColorBrush x:Key="TextControlBackground" Color="Transparent" />
-                                                            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
-                                                            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
-                                                            <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent" />
-                                                            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
-                                                            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
-                                                            <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="{ThemeResource RuMutedColor}" />
-                                                            <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="{ThemeResource RuMutedColor}" />
-                                                            <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="{ThemeResource RuMutedColor}" />
-                                                            <Thickness x:Key="TextControlBorderThemeThickness">0</Thickness>
-                                                            <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
-                                                            <Thickness x:Key="TextControlThemePadding">0,1,0,1</Thickness>
-                                                        </TextBox.Resources>
-                                                    </TextBox>
-                                                </Grid>
-                                            </Border>
-
-                                            <!-- Divider Line -->
-                                            <Border Height="1" Background="{StaticResource RuLineBrush}" Opacity="0.4" Margin="6,2,6,2" />
-
-                                            <!-- Model List -->
-                                            <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto" Padding="4,2,4,4">
-                                                <StackPanel x:Name="ModelListContainer" Spacing="2" />
-                                            </ScrollViewer>
-                                        </StackPanel>
+                                        <views:ProviderModelPicker x:Name="ModelPicker"
+                                                                   SearchTextChanged="OnModelPickerSearchTextChanged"
+                                                                   ModelSelected="OnModelPickerModelSelected" />
                                     </Flyout>
                                 </Button.Flyout>
                             </Button>

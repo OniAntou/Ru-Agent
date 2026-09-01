@@ -19,9 +19,14 @@ Cloud generation requests omit provider-specific `Temperature`, `Top-K`, and
 than forwarded to a provider.
 
 Provider models and verified reasoning options come from the Host-owned
-catalog, refreshed by the GUI while Chat is active. Provider default omits
-reasoning overrides; invalid explicit choices or unsupported model protocols
-stop new model requests without an API/model/effort fallback. See
+catalog, refreshed by the GUI while Chat is active. The Chat picker renders
+all non-empty provider catalogs in one stable grouped list with global
+provider/model search; one selection saves a strict two-field payload through
+the existing atomic `/settings` transition. Failed catalog groups stay
+isolated, stale same-identity data is labeled, and a selected model that is no
+longer available is never replaced. Provider default omits reasoning
+overrides; invalid explicit choices or unsupported model protocols stop new
+model requests without an API/model/effort fallback. See
 [provider catalogs](provider-catalog.md) for refresh and capability boundaries.
 
 Ru mirrors Vietnamese, English, and mixed-language turns. In Vietnamese Ru

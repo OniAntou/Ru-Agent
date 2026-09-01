@@ -56,6 +56,14 @@ IDs are retained as unsupported and never selected. The response adds per-model
 protocol/reasoning metadata, stale/error state and last-success time. See
 [provider catalogs](operations/provider-catalog.md).
 
+The Chat client composes the per-provider `GET /models` catalogs into one
+grouped, searchable picker through `GroupedProviderCatalogController`, which
+owns one child controller per provider and isolates child failures. Selecting
+a model posts one strict two-field payload (`backend_choice` + `selected_model`)
+through the existing atomic `/settings` transition; the Host expands it onto
+the mapped provider model field inside the same transaction. There is no
+aggregate endpoint, no second save path and no fallback provider or model.
+
 The Host validates model/reasoning against that catalog at the first model
 step and pins model, endpoint, credential and allowlisted reasoning options
 for the run. Each step receives a fresh single-use DPAPI handoff under the

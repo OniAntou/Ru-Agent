@@ -22,6 +22,28 @@ selected but unavailable; refresh does not select the first model or save a
 replacement. Search text is retained. New runs require a fresh successful
 catalog and an available, supported selected model.
 
+## Grouped Chat model picker
+
+The Chat selector shows every provider group from a fixed presentation list
+(OpenCode Zen, Kilo Gateway, OpenAI, Anthropic, Ollama, LM Studio, Custom
+OpenAI) in that stable order, but only when the group has at least one
+selectable model. Each catalog is refreshed independently, so one failed or
+slow provider never hides another provider's group. A failed group without
+retained data is hidden; same-identity stale data is kept and labeled
+`Dữ liệu cũ`. Search spans provider names and model IDs, is case-insensitive,
+and never mutates the cached catalog state; groups with no matching rows are
+hidden. Empty result sets show `Không có model khả dụng`.
+
+Selecting a row saves one strict two-field payload (`backend_choice` plus
+`selected_model`) through the existing atomic `POST /settings` transition; the
+Host normalizes the alias and maps `selected_model` onto that provider's
+persisted model field in the same runtime-load/save/rollback transaction.
+Cross-provider selection is intentional. A save failure keeps the previous
+pair and shows a bounded five-second error. A selected model that disappears
+from a successful non-empty catalog stays visible once, disabled and labeled
+`Không còn khả dụng`; it is never replaced automatically and no fallback
+provider, model, key or protocol is tried.
+
 ## Reasoning capability contract
 
 - OpenAI (`openai`, `openai_responses`, `https://api.openai.com/v1`): fixed

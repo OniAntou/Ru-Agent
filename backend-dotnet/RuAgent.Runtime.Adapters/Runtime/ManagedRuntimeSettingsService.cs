@@ -75,6 +75,8 @@ public sealed class ManagedRuntimeSettingsException : Exception
 
 public sealed class ManagedRuntimeSettingsService
 {
+    private const string InternalPerStepBackend = "per-step";
+
     private static readonly IReadOnlySet<string> SupportedBackends = new HashSet<string>(
         [
             "OpenCode Zen",
@@ -93,7 +95,7 @@ public sealed class ManagedRuntimeSettingsService
         RuntimeSettingsSnapshot initial,
         IManagedRuntimeApplier? applier = null)
     {
-        _current = ValidateSnapshot(initial);
+        _current = ValidateSnapshot(initial, allowInternalPerStepBackend: true);
         _applier = applier;
     }
 
@@ -168,10 +170,15 @@ public sealed class ManagedRuntimeSettingsService
         });
     }
 
-    private static RuntimeSettingsSnapshot ValidateSnapshot(RuntimeSettingsSnapshot snapshot)
+    private static RuntimeSettingsSnapshot ValidateSnapshot(
+        RuntimeSettingsSnapshot snapshot,
+        bool allowInternalPerStepBackend = false)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        if (!SupportedBackends.Contains(snapshot.Backend)
+        var backendIsSupported = SupportedBackends.Contains(snapshot.Backend)
+            || (allowInternalPerStepBackend
+                && string.Equals(snapshot.Backend, InternalPerStepBackend, StringComparison.Ordinal));
+        if (!backendIsSupported
             || string.IsNullOrWhiteSpace(snapshot.ModelName)
             || snapshot.ModelName.Length > RuntimeLimits.MaxModelNameChars
             || snapshot.ModelName.Contains('\0')

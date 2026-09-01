@@ -17,6 +17,30 @@ namespace RuAgent.Runtime.Worker.Tests;
 public sealed class ManagedWorkerCompositionTests
 {
     [Fact]
+    public async Task Managed_composition_accepts_internal_per_step_bootstrap_without_provider_fallback()
+    {
+        await using var composition = ManagedWorkerComposition.Create(
+            new ManagedWorkerCompositionOptions(
+                8005,
+                8006,
+                "agent-token",
+                "device-token",
+                new ProviderBootstrapData(
+                    "per-step",
+                    ProviderProtocols.ChatCompletions,
+                    new Uri("http://127.0.0.1/"),
+                    "per-step-required",
+                    string.Empty),
+                Directory.GetCurrentDirectory()),
+            new ManagedWorkerCompositionDependencies
+            {
+                ModelProvider = new SequenceProvider(new ModelDelta("ok", [], true, "stop")),
+            });
+
+        Assert.Equal("per-step", composition.Settings.Current.Backend);
+    }
+
+    [Fact]
     public async Task Managed_composition_serves_runtime_status_through_v1_relay()
     {
         await using var composition = ManagedWorkerComposition.Create(

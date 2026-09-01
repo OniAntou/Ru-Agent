@@ -1,6 +1,6 @@
 # Native OpenAI and Anthropic Providers Implementation Plan
 
-**Status:** Implemented 2026-09-01. Deterministic gates after fail-closed review remediation: `RuBackend.Tests` 683, `RuAgent.Runtime.Adapters.Tests` 169, `RuAgent.Runtime.Worker.Tests` 54, `gui-winui3.Tests` 330, Python 409, route 56+1, WinUI Release clean. No live OpenAI/Anthropic key/catalog/generation/publish/push was performed; those require separate authorization.
+**Status:** Implemented 2026-09-01. Deterministic gates after fail-closed review and managed-host startup remediation: `RuBackend.Tests` 683, `RuAgent.Runtime.Adapters.Tests` 169, `RuAgent.Runtime.Worker.Tests` 55, `gui-winui3.Tests` 330, Python 409, route 56+1, WinUI Release clean; local managed-host smoke returned authenticated HTTP 200. No live OpenAI/Anthropic key/catalog/generation/push was performed; those require separate authorization.
 
 **Goal:** Add first-party OpenAI Responses and Anthropic Messages providers with isolated credentials, verified Agent-capable model catalogs, native reasoning controls, and no fallback.
 

@@ -151,11 +151,20 @@ and [the implementation plan](../superpowers/plans/2026-09-01-grouped-provider-m
 
 Sequential deterministic gates on this working tree:
 
-- Backend `RuBackend.Tests` Release `703 passed`, including the strict
+- Backend `RuBackend.Tests` Release `706 passed`, including the strict
   atomic-selection expansion table (seven aliases), fail-closed rejection of
   unknown aliases, blank/oversized models, extra properties, mixed
   provider-specific model fields, and byte-for-byte unchanged settings after
-  every rejection with no runtime load.
+  every rejection with no runtime load, plus per-provider catalog endpoint
+  coverage: a configured but inactive provider serves its own catalog, a
+  provider without a credential fails as `catalog_unauthorized`, and an
+  unknown alias fails as `provider_not_active`.
+- A follow-up endpoint change (`GET /models` for any configured provider,
+  active or not) re-ran the full backend suite at `706 passed` and was
+  verified against the locally running managed Host with non-secret state
+  only: configured providers returned `status: ok` with usable catalogs
+  (32 and 363 usable rows) and unconfigured providers failed closed with
+  `catalog_unauthorized` or `catalog_unavailable`.
 - GUI `gui-winui3.Tests` Release `354 passed`, including grouped projection
   ordering/visibility/stale/unavailable/search cases, grouped controller
   composition (independent per-provider publishing, coalesced refreshes,

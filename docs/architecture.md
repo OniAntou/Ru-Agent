@@ -58,7 +58,10 @@ protocol/reasoning metadata, stale/error state and last-success time. See
 
 The Chat client composes the per-provider `GET /models` catalogs into one
 grouped, searchable picker through `GroupedProviderCatalogController`, which
-owns one child controller per provider and isolates child failures. Selecting
+owns one child controller per provider and isolates child failures. The Host
+serves `GET /models` for any provider whose credential is configured, active
+or not; unknown aliases fail closed as `provider_not_active` and a missing
+credential fails as `catalog_unauthorized`. Selecting
 a model posts one strict two-field payload (`backend_choice` + `selected_model`)
 through the existing atomic `/settings` transition; the Host expands it onto
 the mapped provider model field inside the same transaction. There is no

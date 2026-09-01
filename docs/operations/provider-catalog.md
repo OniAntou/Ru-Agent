@@ -5,6 +5,11 @@ tracked in [the implementation plan](../superpowers/plans/2026-09-01-provider-ca
 
 ## Refresh and selection
 
+The Host serves `GET /models` for every provider whose credential is
+configured, active or not; unknown aliases fail closed as
+`provider_not_active`, and a provider without a credential fails as
+`catalog_unauthorized` instead of falling back.
+
 The GUI refreshes on startup, successful provider/model/key settings changes,
 opening the model selector and every five minutes while Chat is active. It
 stops polling when Chat is inactive or the window closes. Repeated manual

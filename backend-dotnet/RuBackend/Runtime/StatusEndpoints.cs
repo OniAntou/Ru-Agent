@@ -15,16 +15,19 @@ public static class StatusEndpoints
         ProviderCatalogService catalog, CancellationToken cancellationToken)
     {
         var current = await settings.ReadAsync(cancellationToken);
+        var requested = context.Request.Query["backend"].ToString();
         try
         {
-            var selection = ProviderSelection.From(current);
-            var requested = context.Request.Query["backend"].ToString();
-            if (requested.Length != 0 && requested != selection.Alias && requested != selection.Backend)
-                return Results.Json(new { status = "error", error_code = "provider_not_active", models = Array.Empty<string>() });
-            var result = await catalog.GetAsync(current, context.Request.Query["refresh"] == "true", cancellationToken);
+            var result = requested.Length == 0
+                ? await catalog.GetAsync(current, context.Request.Query["refresh"] == "true", cancellationToken)
+                : await catalog.GetAsync(requested, current, context.Request.Query["refresh"] == "true", cancellationToken);
             return Results.Json(result.ToJson());
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (UnknownProviderAliasException)
+        {
+            return Results.Json(new { status = "error", error_code = "provider_not_active", models = Array.Empty<string>() });
+        }
         catch (Exception error) when (error is ArgumentException or CredentialStoreException)
         {
             return Results.Json(new { status = "error", error_code = "catalog_configuration_error", models = Array.Empty<string>() });

@@ -24,9 +24,18 @@ public sealed class ProviderCatalogService(HttpClient http, ICredentialStore cre
         public string? Error { get; set; }
     }
 
-    public async Task<ProviderCatalogSnapshot> GetAsync(SettingsSnapshot settings, bool refresh, CancellationToken ct)
+    public Task<ProviderCatalogSnapshot> GetAsync(SettingsSnapshot settings, bool refresh, CancellationToken ct) =>
+        GetAsyncCore(ProviderSelection.From(settings), settings, refresh, ct);
+
+    public Task<ProviderCatalogSnapshot> GetAsync(string alias, SettingsSnapshot settings, bool refresh, CancellationToken ct) =>
+        GetAsyncCore(ProviderSelection.From(settings, alias), settings, refresh, ct);
+
+    private async Task<ProviderCatalogSnapshot> GetAsyncCore(
+        ProviderSelection selection,
+        SettingsSnapshot settings,
+        bool refresh,
+        CancellationToken ct)
     {
-        var selection = ProviderSelection.From(settings);
         // Reading only this account also invalidates cached metadata on key changes.
         var credential = selection.Account is null ? "" : await credentials.GetAsync("Ru", selection.Account, ct).ConfigureAwait(false) ?? "";
         var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(credential)));

@@ -21,9 +21,26 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
     public string PreferenceKey => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
         $"{Backend}\n{BaseUri.AbsoluteUri}\n{Model}")));
 
-    public static ProviderSelection From(SettingsSnapshot settings)
+    public static ProviderSelection From(SettingsSnapshot settings) => Describe(settings.Backend, settings);
+
+    public static ProviderSelection From(SettingsSnapshot settings, string alias) =>
+        Describe(NormalizeAlias(alias), settings);
+
+    private static string NormalizeAlias(string alias) => alias.Trim().ToLowerInvariant() switch
     {
-        var (alias, protocol, url, model, account) = settings.Backend switch
+        "opencode" or "opencode zen" or "opencode zen api" or "opencode api" => "OpenCode Zen",
+        "kilo" or "kilo gateway" or "kilo gateway api" or "kilo api" => "Kilo Gateway",
+        "custom" or "custom openai" or "custom openai api" => "Custom OpenAI",
+        "ollama" or "ollama api" => "Ollama",
+        "lmstudio" or "lm studio" or "lm studio api" => "LM Studio",
+        "openai" or "openai api" => "OpenAI",
+        "anthropic" or "anthropic claude" or "claude" => "Anthropic",
+        _ => throw new UnknownProviderAliasException(),
+    };
+
+    private static ProviderSelection Describe(string backend, SettingsSnapshot settings)
+    {
+        var (alias, protocol, url, model, account) = backend switch
         {
             "OpenCode Zen" => ("opencode", "chat_completions", "https://opencode.ai/zen/v1", settings.OpenCodeModel, "api_key"),
             "Kilo Gateway" => ("kilo", "chat_completions", "https://api.kilo.ai/api/gateway", settings.KiloModel, "kilo_gateway_api_key"),
@@ -39,6 +56,14 @@ public sealed record ProviderSelection(string Backend, string Alias, string Prot
             || uri.Query.Length != 0 || uri.Fragment.Length != 0)
             throw new ArgumentException("Invalid provider endpoint.");
         model = model?.Trim() ?? string.Empty;
-        return new(settings.Backend, alias, protocol, uri, model, account);
+        return new(backend, alias, protocol, uri, model, account);
+    }
+}
+
+public sealed class UnknownProviderAliasException : Exception
+{
+    public UnknownProviderAliasException()
+        : base("Unsupported model provider alias.")
+    {
     }
 }

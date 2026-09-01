@@ -25,6 +25,50 @@ public sealed class ProviderCatalogEndpointTests
         Assert.NotNull(body["identity"]);
     }
 
+    [Fact]
+    public async Task Models_returns_the_catalog_for_an_inactive_provider_with_a_credential()
+    {
+        using var factory = new BackendWebApplicationFactory(credentialStore: new SingleCredential("kilo_gateway_api_key", "kilo-key"));
+        using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddHttpClient("ProviderCatalog").ConfigurePrimaryHttpMessageHandler(() => new KiloCatalogHandler())));
+        using var client = configured.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-secret");
+
+        var body = JsonNode.Parse(await client.GetStringAsync("/models?backend=kilo"))!;
+
+        Assert.Equal("ok", body["status"]!.GetValue<string>());
+        Assert.Equal("kilo", body["backend"]!.GetValue<string>());
+        Assert.Equal("kilo-model-a", body["models"]![0]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Models_for_an_inactive_provider_without_a_credential_fails_closed()
+    {
+        using var factory = new BackendWebApplicationFactory(credentialStore: new EmptyCredentials());
+        using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+            services.AddHttpClient("ProviderCatalog").ConfigurePrimaryHttpMessageHandler(() => new KiloCatalogHandler(HttpStatusCode.Unauthorized))));
+        using var client = configured.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-secret");
+
+        var body = JsonNode.Parse(await client.GetStringAsync("/models?backend=kilo"))!;
+
+        Assert.Equal("error", body["status"]!.GetValue<string>());
+        Assert.Equal("catalog_unauthorized", body["error_code"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Models_rejects_an_unknown_backend_alias()
+    {
+        using var factory = new BackendWebApplicationFactory(credentialStore: new EmptyCredentials());
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-secret");
+
+        var body = JsonNode.Parse(await client.GetStringAsync("/models?backend=banana"))!;
+
+        Assert.Equal("error", body["status"]!.GetValue<string>());
+        Assert.Equal("provider_not_active", body["error_code"]!.GetValue<string>());
+    }
+
     private sealed class CatalogHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -36,6 +80,39 @@ public sealed class ProviderCatalogEndpointTests
                 {"data":[{"id":"catalog-model-a","supported_parameters":["reasoning_effort"],"reasoning_efforts":["low","high"]},{"id":"catalog-model-b"}]}
                 """) });
         }
+    }
+
+    private sealed class KiloCatalogHandler(HttpStatusCode status = HttpStatusCode.OK) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.Equal("https://api.kilo.ai/api/gateway/models", request.RequestUri?.AbsoluteUri);
+            return Task.FromResult(new HttpResponseMessage(status)
+            { Content = new StringContent("""{"data":[{"id":"kilo-model-a"}]}""") });
+        }
+    }
+
+    private sealed class SingleCredential : ICredentialStore
+    {
+        private readonly string _account;
+        private readonly string _secret;
+
+        public SingleCredential(string account, string secret)
+        {
+            _account = account;
+            _secret = secret;
+        }
+
+        public Task<string?> GetAsync(string serviceName, string accountName, CancellationToken cancellationToken) =>
+            Task.FromResult<string?>(
+                string.Equals(serviceName, "Ru", StringComparison.Ordinal) &&
+                string.Equals(accountName, _account, StringComparison.Ordinal) ? _secret : null);
+
+        public Task SetAsync(string serviceName, string accountName, string secret, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task DeleteAsync(string serviceName, string accountName, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     [Fact]

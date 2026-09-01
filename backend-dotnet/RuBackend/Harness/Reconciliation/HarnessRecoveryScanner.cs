@@ -317,7 +317,6 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         {
             DataSource = _sqliteOptions.DatabasePath,
             Mode = SqliteOpenMode.ReadOnly,
-            Cache = SqliteCacheMode.Shared,
 
             // No pooling: a pooled handle would keep the database file locked and break
             // temporary-data cleanup in tests and shutdown paths.

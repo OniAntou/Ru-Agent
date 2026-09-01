@@ -131,7 +131,6 @@ internal sealed class HarnessStoreTestFixture : IAsyncDisposable
         {
             DataSource = Options.DatabasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
             Pooling = true,
         }.ToString()))
         {

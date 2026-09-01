@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Persistence.Policy;
 using Xunit;
@@ -6,6 +7,35 @@ namespace RuAgent.Harness.Persistence.Tests;
 
 public sealed class AgentSessionPermissionStoreTests
 {
+    [Fact]
+    public async Task A_concurrent_reader_does_not_block_the_preset_write()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var store = new AgentSessionPermissionStore(fixture.Options);
+        var session = HarnessStoreTestFixture.Session(1);
+
+        await using var reader = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = fixture.Options.DatabasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = true,
+        }.ToString());
+        await reader.OpenAsync();
+        await using var readCommand = reader.CreateCommand();
+        readCommand.CommandText = "SELECT preset, version FROM agent_session_settings";
+        await using var read = await readCommand.ExecuteReaderAsync();
+
+        var result = await store.SetInteractivelyAsync(
+            session,
+            AgentPermissionPreset.Standard,
+            expectedVersion: 0,
+            HarnessStoreTestFixture.Timestamp,
+            CancellationToken.None);
+
+        Assert.Equal(SessionPermissionOutcome.UpdatedInteractively, result.Outcome);
+        Assert.NotNull(result.Selection);
+    }
+
     [Fact]
     public async Task First_standard_run_creates_version_one_then_requires_an_exact_match()
     {

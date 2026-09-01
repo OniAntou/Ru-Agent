@@ -28,11 +28,14 @@ public sealed record HarnessSqliteOptions
         CancellationToken cancellationToken,
         SqliteOpenMode mode = SqliteOpenMode.ReadWriteCreate)
     {
+        // Private per-connection caches only: a shared cache makes table-level
+        // locks fail immediately with SQLITE_LOCKED (bypassing busy_timeout)
+        // whenever one pooled connection holds a read transaction while another
+        // writes the same table.
         var connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = DatabasePath,
             Mode = mode,
-            Cache = SqliteCacheMode.Shared,
             Pooling = true,
         }.ToString();
         var connection = new SqliteConnection(connectionString);

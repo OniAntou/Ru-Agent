@@ -589,7 +589,6 @@ public sealed class BusinessEndpointTests
             {
                 DataSource = Paths.AgentHarnessDatabase,
                 Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared,
                 Pooling = true,
             }.ToString()))
             {

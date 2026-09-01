@@ -435,7 +435,6 @@ public sealed class SqliteMemoryRepositoryTests
         {
             DataSource = options.DatabasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
             DefaultTimeout = 30,
             ForeignKeys = true,
             Pooling = false,
@@ -488,7 +487,6 @@ public sealed class SqliteMemoryRepositoryTests
         {
             DataSource = options.DatabasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
             DefaultTimeout = 30,
             ForeignKeys = true,
         }.ToString());

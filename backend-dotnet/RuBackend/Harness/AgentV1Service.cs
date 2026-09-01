@@ -2564,7 +2564,6 @@ public sealed class AgentV1Service
         {
             DataSource = _options.DatabasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
             Pooling = true,
         }.ToString();
         var connection = new SqliteConnection(connectionString);

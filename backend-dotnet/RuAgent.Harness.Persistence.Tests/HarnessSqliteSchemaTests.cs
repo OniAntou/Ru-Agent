@@ -129,7 +129,6 @@ public sealed class HarnessSqliteSchemaTests
             {
                 DataSource = databasePath,
                 Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared,
                 Pooling = true,
             }.ToString()))
             {
@@ -194,7 +193,6 @@ public sealed class HarnessSqliteSchemaTests
             {
                 DataSource = databasePath,
                 Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared,
                 Pooling = true,
             }.ToString()))
             {

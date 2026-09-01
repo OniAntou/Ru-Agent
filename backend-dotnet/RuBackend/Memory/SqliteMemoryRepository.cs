@@ -496,7 +496,6 @@ public sealed class SqliteMemoryRepository : IMemoryRepository
         {
             DataSource = path,
             Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
             DefaultTimeout = 30,
             ForeignKeys = true,
             Pooling = false,

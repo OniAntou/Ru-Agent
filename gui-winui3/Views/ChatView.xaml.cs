@@ -113,7 +113,70 @@ namespace RuApp.Views
             Messages.CollectionChanged += (s, e) => UpdateViewMode();
             RootGrid.SizeChanged += OnRootGridSizeChanged;
             this.Loaded += (s, e) => ApplyInputWidth();
+            InitializeChatHoverEffects();
             UpdateViewMode();
+        }
+
+        private void InitializeChatHoverEffects()
+        {
+            var canvas = (Brush)Application.Current.Resources["RuCanvasBrush"];
+            var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+            var ink = (Brush)Application.Current.Resources["RuInkBrush"];
+            var muted = (Brush)Application.Current.Resources["RuMutedBrush"];
+            var accentSoft = (Brush)Application.Current.Resources["RuAccentSoftBrush"];
+            var line = (Brush)Application.Current.Resources["RuLineBrush"];
+
+            if (AttachImageButton != null)
+            {
+                AttachImageButton.PointerEntered += (s, e) =>
+                {
+                    AttachImageButton.Background = canvas;
+                    if (AttachImageIcon != null) AttachImageIcon.Foreground = ink;
+                };
+                AttachImageButton.PointerExited += (s, e) =>
+                {
+                    AttachImageButton.Background = transparent;
+                    if (AttachImageIcon != null) AttachImageIcon.Foreground = muted;
+                };
+            }
+
+            if (MicButton != null)
+            {
+                MicButton.PointerEntered += (s, e) =>
+                {
+                    MicButton.Background = canvas;
+                    if (MicIcon != null) MicIcon.Foreground = ink;
+                };
+                MicButton.PointerExited += (s, e) =>
+                {
+                    MicButton.Background = transparent;
+                    if (MicIcon != null) MicIcon.Foreground = muted;
+                };
+            }
+
+            if (SendButton != null)
+            {
+                SendButton.PointerEntered += (s, e) =>
+                {
+                    SendButton.Background = line;
+                };
+                SendButton.PointerExited += (s, e) =>
+                {
+                    SendButton.Background = accentSoft;
+                };
+            }
+
+            if (ContextMeterButton != null)
+            {
+                ContextMeterButton.PointerEntered += (s, e) =>
+                {
+                    ContextMeterButton.Background = canvas;
+                };
+                ContextMeterButton.PointerExited += (s, e) =>
+                {
+                    ContextMeterButton.Background = transparent;
+                };
+            }
         }
 
         private void UpdateViewMode()
@@ -232,6 +295,10 @@ namespace RuApp.Views
                 {
                     _providerCatalogController.SetBackend(backend);
                     await _providerCatalogController.RefreshAsync();
+                }
+                if (_groupedCatalogs != null)
+                {
+                    await _groupedCatalogs.RefreshAsync(force: false);
                 }
             }
             catch (Exception ex)
@@ -479,7 +546,15 @@ namespace RuApp.Views
                 return;
             }
 
-            _agentRunSummary = new AgentRunSummaryItem(summary);
+            var item = new AgentRunSummaryItem(summary);
+            if (!item.IsFailure)
+            {
+                // Success and cancelled runs keep the transcript clean; the
+                // assistant reply itself is the outcome the user reads.
+                return;
+            }
+
+            _agentRunSummary = item;
             AgentRunSummaryText.Text = _agentRunSummary.DisplayText;
             AgentRunSummaryMetadata.Text = _agentRunSummary.MetadataText;
             AgentRunSummaryGlyph.Glyph = _agentRunSummary.StatusGlyph;

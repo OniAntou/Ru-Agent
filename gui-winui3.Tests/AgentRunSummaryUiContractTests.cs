@@ -41,6 +41,20 @@ public sealed class AgentRunSummaryUiContractTests
         Assert.Contains("dừng", cancelled.DisplayText, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Summary_card_only_renders_for_failures()
+    {
+        var code = File.ReadAllText(FindSource("Views", "ChatView.xaml.cs"));
+        var applyStart = code.IndexOf("private void ApplyAgentRunSummary", StringComparison.Ordinal);
+        var applyEnd = code.IndexOf("private void OnAgentAssistantDeltaReceived", StringComparison.Ordinal);
+        Assert.True(applyStart >= 0, "ApplyAgentRunSummary was not found.");
+        Assert.True(applyEnd > applyStart, "ApplyAgentRunSummary body boundary was not found.");
+
+        var applyBody = code[applyStart..applyEnd];
+        Assert.Contains("IsFailure", applyBody, StringComparison.Ordinal);
+        Assert.Contains("return;", applyBody, StringComparison.Ordinal);
+    }
+
     private static AgentRunSummaryModel Model(string status, string verification) =>
         new(status, verification, "Workspace", 5, 1, 0, 0, null, 1);
 

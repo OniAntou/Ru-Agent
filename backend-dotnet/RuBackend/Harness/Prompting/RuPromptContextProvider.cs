@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
@@ -17,28 +16,11 @@ namespace RuBackend.Harness.Prompting;
 public sealed class RuPromptContextProvider : ISystemPromptContextProvider
 {
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
-    private static readonly IReadOnlyDictionary<string, string> CapabilityScopes =
-        new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["files.list"] = "workspace.read",
-            ["files.read"] = "workspace.read",
-            ["files.glob"] = "workspace.read",
-            ["files.search"] = "workspace.read",
-            ["files.write"] = "workspace.write",
-            ["files.edit"] = "workspace.write",
-            ["files.delete"] = "workspace.write",
-            ["files.restore"] = "workspace.write",
-            ["terminal.run"] = "terminal.execute",
-            ["terminal.shell"] = "terminal.execute",
-            ["web.search"] = "network.search",
-            ["web.fetch"] = "network.fetch",
-        };
-
     private readonly string _canonicalRoot;
     private readonly RuInstructionLoader _instructionLoader;
     private readonly ISettingsStore _settings;
     private readonly ITimeProvider _time;
-    private readonly bool _webToolsEnabled;
+    private readonly AgentToolRuntimeAvailability _availability;
 
     public RuPromptContextProvider(
         string workspaceRoot,
@@ -46,13 +28,24 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         ISettingsStore settings,
         ITimeProvider time,
         bool webToolsEnabled = false)
+        : this(workspaceRoot, instructionLoader, settings, time,
+            new AgentToolRuntimeAvailability(webToolsEnabled, webToolsEnabled))
+    {
+    }
+
+    public RuPromptContextProvider(
+        string workspaceRoot,
+        RuInstructionLoader instructionLoader,
+        ISettingsStore settings,
+        ITimeProvider time,
+        AgentToolRuntimeAvailability availability)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _canonicalRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(workspaceRoot);
         _instructionLoader = instructionLoader ?? throw new ArgumentNullException(nameof(instructionLoader));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _time = time ?? throw new ArgumentNullException(nameof(time));
-        _webToolsEnabled = webToolsEnabled;
+        _availability = availability;
     }
 
     public async Task<SystemPromptContext> BuildAsync(
@@ -110,32 +103,18 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
 
     private IReadOnlyList<PromptCapability> BuildCapabilities()
     {
-        var runtimeToolIds = AgentRuntimeCoordinatorFactory.RuntimeCapabilities;
-        var capabilities = new List<PromptCapability>(runtimeToolIds.Count);
-        foreach (var toolId in runtimeToolIds)
+        var definitions = AgentToolRuntimeProjection.Select(_availability);
+        var capabilities = new List<PromptCapability>(definitions.Count);
+        foreach (var definition in definitions)
         {
-            if (AgentModelToolContractCatalog.WebToolIds.Contains(toolId) && !_webToolsEnabled)
-            {
-                continue;
-            }
-
-            if (!CapabilityScopes.TryGetValue(toolId, out var scope))
-            {
-                continue;
-            }
-
-            var contract = AgentModelToolContractCatalog.Find(toolId, AgentModelToolContractCatalog.CurrentVersion);
-            if (contract is null)
-            {
-                continue;
-            }
-
             capabilities.Add(new PromptCapability(
-                toolId,
-                contract.ToolVersion,
-                $"Host tool capability: {toolId}",
-                ComputeSchemaDigest(contract.InputSchema),
-                scope,
+                definition.ToolId,
+                definition.ToolVersion,
+                definition.Description,
+                definition.Scope,
+                definition.InputSchema.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false }),
+                AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema),
+                definition.ExampleArguments?.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false }),
                 "enabled"));
         }
 
@@ -165,15 +144,6 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             .ToArray();
 
         return new PromptRuntimeContext(memory, null, null, null, null, references);
-    }
-
-    private static string ComputeSchemaDigest(JsonObject schema)
-    {
-        var canonical = schema.ToJsonString(new System.Text.Json.JsonSerializerOptions
-        {
-            WriteIndented = false,
-        });
-        return Convert.ToHexString(SHA256.HashData(StrictUtf8.GetBytes(canonical))).ToLowerInvariant();
     }
 
     private static string WorkspaceLabel(string canonicalRoot)

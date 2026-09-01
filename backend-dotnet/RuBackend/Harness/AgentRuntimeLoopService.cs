@@ -145,17 +145,6 @@ public interface IAgentRuntimeCoordinatorFactory
 
 public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFactory
 {
-    /// <summary>
-    /// Only tools the Host gateway actually implements are advertised on the headless
-    /// path; anything else would fall through to the wrong execution branch.
-    /// </summary>
-    public static readonly IReadOnlyList<string> RuntimeCapabilities =
-    [
-        "files.list", "files.read", "files.glob", "files.search",
-        "files.write", "files.edit", "files.delete", "files.restore",
-        "terminal.run", "terminal.shell", "web.search", "web.fetch",
-    ];
-
     private readonly IModelStepRunner _model;
     private readonly IHarnessEventStore _store;
     private readonly HarnessSqliteOptions _sqliteOptions;
@@ -212,9 +201,13 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
 
     public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null)
     {
+        var availability = new AgentToolRuntimeAvailability(
+            _webExecutor?.IsSearchEnabled == true,
+            _webExecutor?.IsFetchEnabled == true);
+        var projectedDefinitions = AgentToolRuntimeProjection.Select(availability);
         var gateway = new Broker.HarnessToolGateway(
             workspaceRoot,
-            RuntimeCapabilities,
+            projectedDefinitions.Select(definition => definition.ToolId).ToArray(),
             presetProvider: runId => policySnapshot?.Preset ?? AgentPermissionPreset.Standard,
             idGenerator: new CryptographicIdGenerator(),
             approvalGrants: _approvalGrants,
@@ -233,7 +226,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             _instructionLoader,
             _settings,
             _time,
-            webToolsEnabled: _webExecutor?.IsEnabled == true);
+            availability);
         return new AgentRunCoordinator(
             _model,
             gateway,

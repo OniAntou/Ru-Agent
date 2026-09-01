@@ -54,9 +54,11 @@
               {
                 "id": "files.read",
                 "version": "1.0.0",
-                "summary": "Read a file",
-                "input_schema_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "policy_summary": "workspace.read",
+                "description": "Read a file",
+                "scope": "workspace.read",
+                "input_schema_json": "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"path\":{\"type\":\"string\"},\"offset\":{\"type\":\"integer\",\"minimum\":0},\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":262144}},\"required\":[\"path\"]}",
+                "input_schema_digest": "32908559cc4aa5ea54db32cb29b5f95eb7e531e3b4269207aea417923782b4e0",
+                "example_arguments_json": "{\"path\":\"README.md\",\"offset\":0,\"limit\":1024}",
                 "availability": "enabled"
               }
             ],

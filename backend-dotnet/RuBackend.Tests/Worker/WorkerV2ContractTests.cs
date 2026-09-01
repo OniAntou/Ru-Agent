@@ -171,8 +171,10 @@ public sealed class WorkerV2ContractTests
     [Fact]
     public void Runtime_capabilities_advertise_both_web_tools()
     {
-        Assert.Contains("web.search", RuBackend.Harness.AgentRuntimeCoordinatorFactory.RuntimeCapabilities);
-        Assert.Contains("web.fetch", RuBackend.Harness.AgentRuntimeCoordinatorFactory.RuntimeCapabilities);
+        var runtimeTools = RuBackend.Harness.Prompting.AgentToolRuntimeProjection.Select(
+            new RuBackend.Harness.Prompting.AgentToolRuntimeAvailability(true, true));
+        Assert.Contains(runtimeTools, definition => definition.ToolId == "web.search");
+        Assert.Contains(runtimeTools, definition => definition.ToolId == "web.fetch");
     }
 
     [Fact]
@@ -322,8 +324,8 @@ public sealed class WorkerV2ContractTests
                     content,
                     Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant())],
                 [
-                    new PromptCapability("files.read", "1.0.0", "Read a file", new string('a', 64), "workspace.read", "enabled"),
-                    new PromptCapability("web.search", "1.0.0", "Search the web", new string('b', 64), "network.search", "enabled"),
+                    Capability("files.read"),
+                    Capability("web.search"),
                 ],
                 new PromptRuntimeContext(
                     "remembered preference",
@@ -332,6 +334,21 @@ public sealed class WorkerV2ContractTests
                     null,
                     null,
                     [new PromptReference("tool_result", "untrusted", "untrusted tool result")]));
+        }
+
+        private static PromptCapability Capability(string toolId)
+        {
+            var definition = AgentToolDefinitionCatalog.Find(toolId, "1.0.0")!;
+            var schema = definition.InputSchema.ToJsonString();
+            return new PromptCapability(
+                definition.ToolId,
+                definition.ToolVersion,
+                definition.Description,
+                definition.Scope,
+                schema,
+                AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema),
+                definition.ExampleArguments?.ToJsonString(),
+                "enabled");
         }
 
         public static JsonObject Receipt(SystemPromptContext context)

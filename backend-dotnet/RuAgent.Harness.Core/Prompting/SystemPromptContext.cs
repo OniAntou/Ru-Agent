@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace RuAgent.Harness.Core.Prompting;
 
@@ -72,16 +73,20 @@ public sealed record PromptCapability
     public PromptCapability(
         string id,
         string version,
-        string summary,
+        string description,
+        string scope,
+        string inputSchemaJson,
         string inputSchemaDigest,
-        string policySummary,
+        string? exampleArgumentsJson,
         string availability)
     {
         Id = PromptText.RequireIdentifier(id, 128, nameof(id));
         Version = PromptText.RequireSemVer(version, nameof(version));
-        Summary = PromptText.Require(summary, 2 * 1024, nameof(summary));
+        Description = PromptText.Require(description, 2 * 1024, nameof(description));
+        Scope = PromptText.RequireIdentifier(scope, 128, nameof(scope));
+        InputSchemaJson = PromptJson.RequireCanonicalObject(inputSchemaJson, 32 * 1024, nameof(inputSchemaJson));
         InputSchemaDigest = PromptText.RequireDigest(inputSchemaDigest, nameof(inputSchemaDigest));
-        PolicySummary = PromptText.Require(policySummary, 2 * 1024, nameof(policySummary));
+        ExampleArgumentsJson = PromptJson.OptionalCanonicalObject(exampleArgumentsJson, 4 * 1024, nameof(exampleArgumentsJson));
         Availability = PromptText.RequireIdentifier(availability, 32, nameof(availability));
     }
 
@@ -89,11 +94,15 @@ public sealed record PromptCapability
 
     public string Version { get; }
 
-    public string Summary { get; }
+    public string Description { get; }
+
+    public string Scope { get; }
+
+    public string InputSchemaJson { get; }
 
     public string InputSchemaDigest { get; }
 
-    public string PolicySummary { get; }
+    public string? ExampleArgumentsJson { get; }
 
     public string Availability { get; }
 }
@@ -311,9 +320,11 @@ public sealed record SystemPromptContext
             {
                 id = capability.Id,
                 version = capability.Version,
-                summary = capability.Summary,
+                description = capability.Description,
+                scope = capability.Scope,
+                input_schema_json = capability.InputSchemaJson,
                 input_schema_digest = capability.InputSchemaDigest,
-                policy_summary = capability.PolicySummary,
+                example_arguments_json = capability.ExampleArgumentsJson,
                 availability = capability.Availability,
             }),
             runtime_context = new
@@ -459,4 +470,39 @@ internal static class PromptText
 
         return value!;
     }
+}
+
+internal static class PromptJson
+{
+    public static string RequireCanonicalObject(string value, int maxBytes, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value) || PromptText.StrictUtf8.GetByteCount(value) > maxBytes)
+        {
+            throw new ArgumentException("JSON exceeds the capability bound.", parameterName);
+        }
+
+        try
+        {
+            var node = JsonNode.Parse(value);
+            if (node is not JsonObject objectNode)
+            {
+                throw new ArgumentException("Capability JSON must be an object.", parameterName);
+            }
+
+            var canonical = objectNode.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+            if (!string.Equals(canonical, value, StringComparison.Ordinal))
+            {
+                throw new ArgumentException("Capability JSON must be canonical compact JSON.", parameterName);
+            }
+
+            return canonical;
+        }
+        catch (JsonException error)
+        {
+            throw new ArgumentException("Capability JSON is invalid.", parameterName, error);
+        }
+    }
+
+    public static string? OptionalCanonicalObject(string? value, int maxBytes, string parameterName) =>
+        value is null ? null : RequireCanonicalObject(value, maxBytes, parameterName);
 }

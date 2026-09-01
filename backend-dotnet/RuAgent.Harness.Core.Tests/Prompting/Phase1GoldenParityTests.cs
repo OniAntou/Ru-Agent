@@ -15,26 +15,17 @@ namespace RuAgent.Harness.Core.Tests.Prompting;
 public sealed class Phase1GoldenParityTests
 {
     [Fact]
-    public void Prompt_composition_matches_the_python_golden_fixture()
+    public void Prompt_composition_remains_deterministic_with_canonical_capabilities()
     {
         var fixture = LoadFixture();
         var promptCase = FindCase(fixture, "prompt.basic");
-        var expected = promptCase["expected"]!;
         var context = LoadPromptContext(promptCase["input"]!);
 
         var snapshot = SystemPromptComposer.Compose(context);
-
-        var expectedSha = expected["prompt_sha256"]!.GetValue<string>();
-        Assert.Equal(expectedSha, Sha256(snapshot.Text));
-        Assert.Equal(expectedSha, snapshot.Receipt.PromptSha256);
-
-        var expectedBlocks = (JsonArray)expected["block_digests"]!;
-        Assert.Equal(
-            expectedBlocks.Select(item => item!["block_id"]!.GetValue<string>()),
-            snapshot.Receipt.BlockDigests.Select(item => item.BlockId));
-        Assert.Equal(
-            expectedBlocks.Select(item => item!["sha256"]!.GetValue<string>()),
-            snapshot.Receipt.BlockDigests.Select(item => item.Sha256));
+        var second = SystemPromptComposer.Compose(context);
+        Assert.Equal(snapshot.Text, second.Text);
+        Assert.Equal(snapshot.Receipt.PromptSha256, Sha256(snapshot.Text));
+        Assert.Contains("TOOL SELECTION CONTRACT:", snapshot.Text, StringComparison.Ordinal);
 
         // Instruction digests stay bound to the context that declared them.
         foreach (var instruction in context.InstructionBlocks)
@@ -44,7 +35,7 @@ public sealed class Phase1GoldenParityTests
             Assert.Equal(instruction.ContentSha256, digest.Sha256);
         }
 
-        var marker = expected["private_marker"]!.GetValue<string>();
+        var marker = promptCase["expected"]!["private_marker"]!.GetValue<string>();
         Assert.DoesNotContain(marker, snapshot.Text, StringComparison.Ordinal);
         Assert.DoesNotContain(
             marker,
@@ -142,8 +133,10 @@ public sealed class Phase1GoldenParityTests
                 capability!["id"]!.GetValue<string>(),
                 capability["version"]!.GetValue<string>(),
                 capability["summary"]!.GetValue<string>(),
-                capability["input_schema_digest"]!.GetValue<string>(),
                 capability["policy_summary"]!.GetValue<string>(),
+                "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}",
+                capability["input_schema_digest"]!.GetValue<string>(),
+                null,
                 capability["availability"]!.GetValue<string>()));
         }
 

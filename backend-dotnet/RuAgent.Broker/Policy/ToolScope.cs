@@ -1,18 +1,20 @@
+using RuAgent.Protocol;
+
 namespace RuAgent.Broker.Policy;
 
 public static class ToolScope
 {
-    public const string SystemRead = "system.read";
-    public const string SystemWrite = "system.write";
+    public const string SystemRead = AgentToolScopes.SystemRead;
+    public const string SystemWrite = AgentToolScopes.SystemWrite;
     public const string AppOpen = "app.open";
-    public const string WorkspaceRead = "workspace.read";
-    public const string WorkspaceWrite = "workspace.write";
+    public const string WorkspaceRead = AgentToolScopes.WorkspaceRead;
+    public const string WorkspaceWrite = AgentToolScopes.WorkspaceWrite;
     public const string ClipboardRead = "clipboard.read";
     public const string ClipboardWrite = "clipboard.write";
-    public const string TerminalExecute = "terminal.execute";
+    public const string TerminalExecute = AgentToolScopes.TerminalExecute;
     public const string TerminalNetwork = "terminal.network";
-    public const string WebSearch = "web.search";
-    public const string WebFetch = "web.fetch";
+    public const string WebSearch = AgentToolScopes.NetworkSearch;
+    public const string WebFetch = AgentToolScopes.NetworkFetch;
     public const string SkillExecute = "skill.execute";
     public const string CalendarWrite = "calendar.write";
     public const string TasksWrite = "tasks.write";

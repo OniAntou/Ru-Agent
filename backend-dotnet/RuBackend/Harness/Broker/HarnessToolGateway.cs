@@ -547,7 +547,9 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             cancellationToken.ThrowIfCancellationRequested();
             var args = JsonNode.Parse(execution.Proposal.Arguments.GetRawText()) as JsonObject ?? new JsonObject();
             var path = args["path"]?.GetValue<string>() ?? throw new ArgumentException("missing_path");
-            var expectedSha = args["expected_sha256"]?.GetValue<string>();
+            var expectedSha = _pendingExpectedHashes.TryGetValue(execution.ExecutionId.Value, out var preparedDeleteHash)
+                ? preparedDeleteHash
+                : null;
 
             // Resolve within workspace and validate
             var resolved = ResolveWithinRootForPrepare(path);
@@ -644,7 +646,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 {
                     throw new IOException("file_exists");
                 }
-                var expectedHash = args["expected_sha256"]?.GetValue<string>() ?? ComputeFileHash(resolved);
+                var expectedHash = ComputeFileHash(resolved);
                 _pendingExpectedHashes[execution.ExecutionId.Value] = expectedHash;
                 _pendingResolvedPaths[execution.ExecutionId.Value] = resolved;
             }
@@ -761,9 +763,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
 
                 var argsDelete = args;
                 var pathInput = argsDelete["path"]?.GetValue<string>() ?? throw new ArgumentException("missing_path");
-                var expectedSha = argsDelete["expected_sha256"]?.GetValue<string>();
-                if (string.IsNullOrWhiteSpace(expectedSha)
-                    && !_pendingExpectedHashes.TryGetValue(execution.ExecutionId.Value, out expectedSha))
+                if (!_pendingExpectedHashes.TryGetValue(execution.ExecutionId.Value, out var expectedSha))
                 {
                     throw new ArgumentException("missing_expected_sha256");
                 }
@@ -1016,17 +1016,13 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 JsonObject output;
                 if (toolId == "files.write")
                 {
-                    // Expect path, content, expected_sha256
+                    // Expect only the canonical model proposal fields; the preimage hash is Host-owned.
                     var pathInput = args["path"]?.GetValue<string>() ?? throw new ArgumentException("missing_path");
                     var content = args["content"]?.GetValue<string>() ?? throw new ArgumentException("missing_content");
                     var overwrite = args["overwrite"]?.GetValue<bool>() ?? false;
-                    var expected = args["expected_sha256"]?.GetValue<string>();
-                    if (string.IsNullOrWhiteSpace(expected))
-                    {
-                        expected = _pendingExpectedHashes.TryGetValue(execution.ExecutionId.Value, out var preparedHash)
-                            ? preparedHash
-                            : "missing";
-                    }
+                    var expected = _pendingExpectedHashes.TryGetValue(execution.ExecutionId.Value, out var preparedHash)
+                        ? preparedHash
+                        : "missing";
                     var resolved = ResolveWithinRootForPrepare(pathInput);
                     if (Directory.Exists(resolved))
                     {
@@ -1064,9 +1060,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                     var pathInput = args["path"]?.GetValue<string>() ?? throw new ArgumentException("missing_path");
                     var oldStr = args["old_string"]?.GetValue<string>() ?? throw new ArgumentException("missing_old_string");
                     var newStr = args["new_string"]?.GetValue<string>() ?? string.Empty;
-                    var expected = args["expected_sha256"]?.GetValue<string>();
-                    if (string.IsNullOrWhiteSpace(expected)
-                        && !_pendingExpectedHashes.TryGetValue(execution.ExecutionId.Value, out expected))
+                    if (!_pendingExpectedHashes.TryGetValue(execution.ExecutionId.Value, out var expected))
                     {
                         throw new ArgumentException("missing_expected_sha256");
                     }
@@ -1830,7 +1824,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         var query = args["query"] is JsonValue qv && qv.TryGetValue<string>(out var q) ? q : throw new ArgumentException("missing query");
         var fileGlob = args["file_glob"] is JsonValue fg && fg.TryGetValue<string>(out var fgStr) ? fgStr : null;
         var caseSensitive = args["case_sensitive"] is JsonValue csv && csv.TryGetValue<bool>(out var cs) ? cs : false;
-        var isRegex = args["is_regex"] is JsonValue rv && rv.TryGetValue<bool>(out var rv2) ? rv2 : args["regex"] is JsonValue rv3 && rv3.TryGetValue<bool>(out var rv4) ? rv4 : false;
+        var isRegex = args["is_regex"] is JsonValue rv && rv.TryGetValue<bool>(out var rv2) && rv2;
         Regex? queryRegex = null;
         if (isRegex)
         {
@@ -2342,6 +2336,27 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             throw new ArgumentException("arguments must be object");
         }
 
+        var definition = AgentToolDefinitionCatalog.Find(proposal.ToolId, proposal.ToolVersion);
+        if (definition is null && proposal.ToolId != "files.apply_patch")
+        {
+            throw new ArgumentException("invalid_arguments");
+        }
+
+        var proposalObject = JsonNode.Parse(args.GetRawText()) as JsonObject
+            ?? throw new ArgumentException("invalid_arguments");
+        try
+        {
+            if (definition is not null
+                && proposal.ToolId is not ("terminal.run" or "terminal.shell"))
+            {
+                RuAgent.Broker.Tools.ToolSchemaValidator.Validate(definition.InputSchema, proposalObject, "invalid_arguments");
+            }
+        }
+        catch (RuAgent.Broker.Tools.ToolSchemaException error)
+        {
+            throw new ArgumentException(error.Code, error);
+        }
+
         try
         {
             _ = HarnessIntentCanonicalizer.Canonicalize(args);
@@ -2367,6 +2382,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 OptionalString(args, "path", MaxFilePathLength);
                 OptionalString(args, "file_glob", MaxPatternLength);
                 OptionalBool(args, "case_sensitive");
+                OptionalBool(args, "is_regex");
                 OptionalInt(args, "max_results", 1, MaxDiscoveryResults);
                 break;
             case "files.read":
@@ -2378,7 +2394,6 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 RequiredString(args, "path", MaxFilePathLength);
                 var content = RequiredString(args, "content", MaxMutationBytes, allowEmpty: true);
                 ValidateUtf8AndSize(content, MaxMutationBytes, "content_too_large");
-                OptionalSha256(args, "expected_sha256");
                 OptionalBool(args, "overwrite");
                 break;
             case "files.edit":
@@ -2397,11 +2412,9 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 }
 
                 OptionalInt(args, "expected_occurrences", 1, MaxExpectedOccurrences);
-                OptionalSha256(args, "expected_sha256");
                 break;
             case "files.delete":
                 RequiredString(args, "path", MaxFilePathLength);
-                OptionalSha256(args, "expected_sha256");
                 break;
             case "files.restore":
                 RequiredString(args, "recovery_id", 256);

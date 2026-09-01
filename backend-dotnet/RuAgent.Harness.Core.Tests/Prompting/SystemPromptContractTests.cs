@@ -55,7 +55,7 @@ public sealed class SystemPromptContractTests
                 },
                 new[]
                 {
-                    new PromptCapability("files.read", "1.0.0", "Read a file", "a".PadRight(64, 'a'), "workspace.read", "enabled"),
+                    new PromptCapability("files.read", "1.0.0", "Read a file", "workspace.read", "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}", "a".PadRight(64, 'a'), null, "enabled"),
                 },
                 new PromptRuntimeContext(null, null, null, null, null, Array.Empty<PromptReference>()));
 

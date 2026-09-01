@@ -9,6 +9,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
 using RuAgent.Protocol.Harness;
+using RuAgent.Protocol;
 using RuAgent.Runtime.Adapters.Bootstrap;
 using RuAgent.Runtime.Worker;
 using RuBackend.Harness.Worker;
@@ -515,7 +516,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                     ["text"] = "ok",
                     ["tool_calls"] = new JsonArray(),
                     ["finish_reason"] = "stop",
-                    ["prompt_receipt"] = PromptReceiptJson(),
+                    ["prompt_receipt"] = PromptReceiptJson(PromptContextFixture.Create()),
                 },
             }.ToJsonString());
         });
@@ -529,6 +530,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
             new RunId("run_33333333333333333333333333333333"),
             new ModelStepId("step_33333333333333333333333333333333"),
             context,
+            PromptContextFixture.Create(),
             AgentPermissionPreset.FullAccess,
             1,
             new string('c', 64));
@@ -715,10 +717,10 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                     "Ru.md",
                     content,
                     Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant())],
-                [
-                    new PromptCapability("files.read", "1.0.0", "Read a file", new string('a', 64), "workspace.read", "enabled"),
-                    new PromptCapability("web.search", "1.0.0", "Search the web", new string('b', 64), "network.search", "enabled"),
-                ],
+                AgentToolDefinitionCatalog.Get()
+                    .Where(definition => definition.Exposure.HasFlag(AgentToolExposure.ModelVisible))
+                    .Select(definition => Capability(definition.ToolId))
+                    .ToArray(),
                 new PromptRuntimeContext(
                     "remembered preference",
                     null,
@@ -726,6 +728,21 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
                     null,
                     null,
                     [new PromptReference("tool_result", "untrusted", "untrusted tool result")]));
+        }
+
+        private static PromptCapability Capability(string toolId)
+        {
+            var definition = AgentToolDefinitionCatalog.Find(toolId, "1.0.0")!;
+            var schema = definition.InputSchema.ToJsonString();
+            return new PromptCapability(
+                definition.ToolId,
+                definition.ToolVersion,
+                definition.Description,
+                definition.Scope,
+                schema,
+                AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema),
+                definition.ExampleArguments?.ToJsonString(),
+                "enabled");
         }
     }
 

@@ -134,8 +134,10 @@ public sealed class AgentPromptReceiptTests
                 "files.read",
                 "1.0.0",
                 "Read a file",
-                new string('a', 64),
                 "workspace.read",
+                "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}",
+                new string('a', 64),
+                null,
                 "enabled")],
             new PromptRuntimeContext(
                 null,

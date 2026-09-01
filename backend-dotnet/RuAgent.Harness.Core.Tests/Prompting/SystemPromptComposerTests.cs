@@ -30,22 +30,37 @@ public sealed class SystemPromptComposerTests
     }
 
     [Fact]
-    public void Compose_sorts_capabilities_and_normalizes_empty_runtime_sections()
+    public void Compose_preserves_projected_capability_order_and_normalizes_empty_runtime_sections()
     {
         var context = PromptFixtures.ValidContext(
             capabilities: new[]
             {
-                new PromptCapability("z.tool", "1.0.0", "z", new string('b', 64), "z", "enabled"),
-                new PromptCapability("a.tool", "1.0.0", "a", new string('a', 64), "a", "enabled"),
+                new PromptCapability("z.tool", "1.0.0", "z", "z", "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}", new string('b', 64), null, "enabled"),
+                new PromptCapability("a.tool", "1.0.0", "a", "a", "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}", new string('a', 64), null, "enabled"),
             },
             instruction: "e\u0301\r\n");
 
         var snapshot = SystemPromptComposer.Compose(context);
 
-        Assert.True(snapshot.Text.IndexOf("a.tool", StringComparison.Ordinal) < snapshot.Text.IndexOf("z.tool", StringComparison.Ordinal));
+        Assert.True(snapshot.Text.IndexOf("z.tool", StringComparison.Ordinal) < snapshot.Text.IndexOf("a.tool", StringComparison.Ordinal));
         Assert.Contains("é", snapshot.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("\r", snapshot.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("## runtime\n\n", snapshot.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Compose_renders_exact_schema_example_and_selection_envelope()
+    {
+        var snapshot = SystemPromptComposer.Compose(PromptFixtures.ValidContext());
+
+        Assert.Contains("files.read@1.0.0", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("scope: workspace.read", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("input_schema:", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("example_arguments:", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("\"tool_id\": \"files.read\"", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("emit exactly one JSON object", snapshot.Text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Do not claim success", snapshot.Text, StringComparison.Ordinal);
+        Assert.Contains("Ordinary conversational answers must remain ordinary text", snapshot.Text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -77,7 +92,7 @@ public sealed class SystemPromptComposerTests
                 },
                 capabilities ?? new[]
                 {
-                    new PromptCapability("files.read", "1.0.0", "Read a file", new string('a', 64), "workspace.read", "enabled"),
+                    new PromptCapability("files.read", "1.0.0", "Read a file", "workspace.read", "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"path\":{\"type\":\"string\"}}}", new string('a', 64), "{\"path\":\"README.md\"}", "enabled"),
                 },
                 new PromptRuntimeContext(null, null, null, null, null, Array.Empty<PromptReference>()));
 

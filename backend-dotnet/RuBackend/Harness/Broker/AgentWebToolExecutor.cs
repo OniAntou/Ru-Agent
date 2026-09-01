@@ -46,6 +46,10 @@ public sealed class AgentWebToolExecutor
 
     public bool IsEnabled => _options.Enabled;
 
+    public bool IsSearchEnabled => _options.SearchEnabled;
+
+    public bool IsFetchEnabled => _options.FetchEnabled;
+
     public async Task<JsonObject> ExecuteAsync(
         string toolId,
         JsonObject arguments,

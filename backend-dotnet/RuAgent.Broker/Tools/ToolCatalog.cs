@@ -30,6 +30,19 @@ public sealed class ToolCatalog
             throw new InvalidOperationException("incomplete_tool_binding");
         }
 
+        foreach (var manifest in manifests)
+        {
+            var definition = AgentToolDefinitionCatalog.Find(manifest.Id, manifest.Version);
+            if (definition is null
+                || !string.Equals(
+                    AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema),
+                    AgentToolDefinitionCatalog.ComputeSchemaDigest(manifest.InputSchema),
+                    StringComparison.Ordinal))
+            {
+                throw new AgentProtocolException("tool_contract_mismatch");
+            }
+        }
+
         Registry = new ToolBindingRegistry();
         foreach (var manifest in manifests)
         {

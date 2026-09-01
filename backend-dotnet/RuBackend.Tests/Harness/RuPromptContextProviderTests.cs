@@ -2,8 +2,10 @@ using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Protocol;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Prompting;
+using RuBackend.Harness.Worker;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -83,11 +85,64 @@ public sealed class RuPromptContextProviderTests
         Assert.Contains(allowed.Capabilities, capability =>
             capability.Id == "web.search"
             && capability.Availability == "enabled"
-            && capability.PolicySummary == "network.search");
+            && capability.Scope == "network.search");
         Assert.Contains(allowed.Capabilities, capability =>
             capability.Id == "web.fetch"
             && capability.Availability == "enabled"
-            && capability.PolicySummary == "network.fetch");
+            && capability.Scope == "network.fetch");
+    }
+
+    [Theory]
+    [InlineData(false, false, 10)]
+    [InlineData(true, false, 11)]
+    [InlineData(false, true, 11)]
+    [InlineData(true, true, 12)]
+    public async Task Prompt_and_worker_share_the_same_runtime_projection(bool search, bool fetch, int expectedCount)
+    {
+        using var fixture = RuInstructionLoaderTestsRoot.Create();
+        var provider = new RuPromptContextProvider(
+            fixture.Root,
+            new RuInstructionLoader(),
+            new StubSettingsStore(Settings()),
+            new FixedTimeProvider(new DateTimeOffset(2026, 8, 29, 12, 0, 0, TimeSpan.Zero)),
+            new AgentToolRuntimeAvailability(search, fetch));
+        var context = await provider.BuildAsync(
+            TestRun(),
+            new ModelContextSnapshot(Array.Empty<ModelContextEntry>(), Array.Empty<byte>()),
+            CancellationToken.None);
+        var settings = LoopbackModelStepRunner.BuildSettingsForTests(context);
+        var promptIds = context.Capabilities.Select(capability => capability.Id).ToArray();
+        var workerIds = settings["model_tools"]!.AsArray()
+            .Select(node => node!["tool_id"]!.GetValue<string>())
+            .ToArray();
+
+        Assert.Equal(expectedCount, promptIds.Length);
+        Assert.Equal(promptIds, workerIds);
+        Assert.DoesNotContain(promptIds, id => !AgentToolDefinitionCatalog.Select(AgentToolExposure.ModelVisible).Any(definition => definition.ToolId == id));
+        foreach (var capability in context.Capabilities)
+        {
+            var definition = AgentToolDefinitionCatalog.Find(capability.Id, capability.Version)!;
+            Assert.Equal(definition.Scope, capability.Scope);
+            Assert.Equal(definition.InputSchema.ToJsonString(), capability.InputSchemaJson);
+            Assert.Equal(AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema), capability.InputSchemaDigest);
+        }
+    }
+
+    [Fact]
+    public void Worker_settings_fail_closed_when_prompt_schema_digest_drifts()
+    {
+        var schema = "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{}}";
+        var context = new SystemPromptContext(
+            1,
+            "ru-agent",
+            "standard",
+            new PromptEnvironment("model", "windows", "vi-VN", "Asia/Bangkok", "2026-09-02", "LLM"),
+            Array.Empty<PromptInstructionBlock>(),
+            [new PromptCapability("files.read", "1.0.0", "Read", "workspace.read", schema, new string('0', 64), null, "enabled")],
+            new PromptRuntimeContext(null, null, null, null, null, Array.Empty<PromptReference>()));
+
+        var error = Assert.Throws<AgentProtocolException>(() => LoopbackModelStepRunner.BuildSettingsForTests(context));
+        Assert.Equal("tool_contract_mismatch", error.Code);
     }
 
     private static SettingsSnapshot Settings() => new(

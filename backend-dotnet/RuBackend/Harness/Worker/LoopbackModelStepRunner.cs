@@ -435,37 +435,34 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         return turns;
     }
 
-    private static readonly (string ToolId, string Scope)[] RuntimeTools =
-    [
-        ("files.list", "workspace.read"),
-        ("files.read", "workspace.read"),
-        ("files.glob", "workspace.read"),
-        ("files.search", "workspace.read"),
-        ("files.write", "workspace.write"),
-        ("files.edit", "workspace.write"),
-        ("files.delete", "workspace.write"),
-        ("files.restore", "workspace.write"),
-        ("terminal.run", "terminal.execute"),
-        ("terminal.shell", "terminal.execute"),
-        ("web.search", "network.search"),
-        ("web.fetch", "network.fetch"),
-    ];
-
     private static JsonObject BuildSettings(SystemPromptContext context)
     {
-        // The worker receives the same executable surface as the Host gateway. Policy
-        // decides whether a proposed call is allowed; hiding mutation tools here would
-        // make the model contract disagree with the runtime contract.
-        var tools = new JsonArray(
-            RuntimeTools.Select(tool =>
-                (JsonNode?)BuildModelTool(tool.ToolId, "1.0.0", tool.Scope, CreateToolSchema(tool.ToolId)))
-                .ToArray());
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var tools = new JsonArray();
+        foreach (var capability in context.Capabilities)
+        {
+            var definition = AgentToolDefinitionCatalog.Find(capability.Id, capability.Version);
+            var key = $"{capability.Id}@{capability.Version}";
+            if (definition is null
+                || !definition.Exposure.HasFlag(AgentToolExposure.ModelVisible)
+                || !seen.Add(key)
+                || !string.Equals(definition.Scope, capability.Scope, StringComparison.Ordinal)
+                || !string.Equals(AgentToolDefinitionCatalog.ComputeSchemaDigest(definition.InputSchema), capability.InputSchemaDigest, StringComparison.Ordinal)
+                || !string.Equals(definition.InputSchema.ToJsonString(CompactJson), capability.InputSchemaJson, StringComparison.Ordinal))
+            {
+                throw new AgentProtocolException("tool_contract_mismatch");
+            }
+
+            tools.Add(BuildModelTool(definition.ToolId, definition.ToolVersion, definition.Scope, definition.InputSchema));
+        }
 
         return new JsonObject
         {
             ["model_tools"] = tools,
         };
     }
+
+    internal static JsonObject BuildSettingsForTests(SystemPromptContext context) => BuildSettings(context);
 
     private static JsonObject BuildModelTool(
         string toolId,
@@ -486,37 +483,7 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
         };
     }
 
-    private static JsonObject CreateToolSchema(string toolId) =>
-        AgentModelToolContractCatalog.Find(toolId, AgentModelToolContractCatalog.CurrentVersion)?.InputSchema
-        ?? toolId switch
-        {
-            "files.delete" => new JsonObject
-            {
-                ["type"] = "object",
-                ["additionalProperties"] = false,
-                ["properties"] = new JsonObject
-                {
-                    ["path"] = new JsonObject { ["type"] = "string" },
-                    ["expected_sha256"] = new JsonObject { ["type"] = "string" },
-                },
-                ["required"] = new JsonArray("path"),
-            },
-            "files.restore" => new JsonObject
-            {
-                ["type"] = "object",
-                ["additionalProperties"] = false,
-                ["properties"] = new JsonObject
-                {
-                    ["recovery_id"] = new JsonObject { ["type"] = "string" },
-                },
-                ["required"] = new JsonArray("recovery_id"),
-            },
-            _ => new JsonObject
-            {
-                ["type"] = "object",
-                ["additionalProperties"] = false,
-            },
-        };
+    private static readonly JsonSerializerOptions CompactJson = new() { WriteIndented = false };
 
     private static async Task SendAsync(ClientWebSocket socket, WorkerV2Envelope envelope, CancellationToken cancellationToken)
     {

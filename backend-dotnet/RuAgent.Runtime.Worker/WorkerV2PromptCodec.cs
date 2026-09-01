@@ -83,9 +83,11 @@ public static class WorkerV2PromptCodec
             {
                 ["id"] = capability.Id,
                 ["version"] = capability.Version,
-                ["summary"] = capability.Summary,
+                ["description"] = capability.Description,
+                ["scope"] = capability.Scope,
+                ["input_schema_json"] = capability.InputSchemaJson,
                 ["input_schema_digest"] = capability.InputSchemaDigest,
-                ["policy_summary"] = capability.PolicySummary,
+                ["example_arguments_json"] = capability.ExampleArgumentsJson,
                 ["availability"] = capability.Availability,
             });
         }
@@ -240,9 +242,13 @@ public static class WorkerV2PromptCodec
             return new PromptCapability(
                 RequiredString(value["id"]),
                 RequiredString(value["version"]),
-                RequiredString(value["summary"]),
+                RequiredString(value["description"]),
+                RequiredString(value["scope"]),
+                RequiredString(value["input_schema_json"]),
                 RequiredString(value["input_schema_digest"]),
-                RequiredString(value["policy_summary"]),
+                value["example_arguments_json"] is null || value["example_arguments_json"]!.GetValueKind() == System.Text.Json.JsonValueKind.Null
+                    ? null
+                    : RequiredString(value["example_arguments_json"]),
                 RequiredString(value["availability"]));
         }).ToArray();
 

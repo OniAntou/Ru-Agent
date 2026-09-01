@@ -68,7 +68,7 @@ public static class WorkerV2Contracts
     private static readonly IReadOnlySet<string> PromptContextFields = new HashSet<string>(["schema_version", "agent_profile", "preset", "environment", "instruction_blocks", "capabilities", "runtime_context"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptEnvironmentFields = new HashSet<string>(["model", "platform", "locale", "timezone", "date", "workspace_label"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptInstructionFields = new HashSet<string>(["source_id", "display_name", "content", "content_sha256"], StringComparer.Ordinal);
-    private static readonly IReadOnlySet<string> PromptCapabilityFields = new HashSet<string>(["id", "version", "summary", "input_schema_digest", "policy_summary", "availability"], StringComparer.Ordinal);
+    private static readonly IReadOnlySet<string> PromptCapabilityFields = new HashSet<string>(["id", "version", "description", "scope", "input_schema_json", "input_schema_digest", "example_arguments_json", "availability"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptRuntimeFields = new HashSet<string>(["memory", "mood", "voice", "vts", "hardware", "references"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptReferenceFields = new HashSet<string>(["kind", "label", "content"], StringComparer.Ordinal);
     private static readonly IReadOnlySet<string> PromptReceiptFields = new HashSet<string>(["composer_version", "prompt_sha256", "block_digests"], StringComparer.Ordinal);
@@ -419,9 +419,12 @@ public static class WorkerV2Contracts
                 || !HasExactFields(capability, PromptCapabilityFields)
                 || !TryGetPromptIdentifier(capability["id"], 128, allowColon: false, out var capabilityId)
                 || !TryGetSemVer(capability["version"], out _)
-                || !TryGetString(capability["summary"], 2 * 1024, out _)
-                || !TryGetDigest(capability["input_schema_digest"], out _)
-                || !TryGetString(capability["policy_summary"], 2 * 1024, out _)
+                || !TryGetString(capability["description"], 2 * 1024, out _)
+                || !TryGetPromptIdentifier(capability["scope"], 128, allowColon: false, out _)
+                || !TryGetCanonicalObject(capability["input_schema_json"], MaxToolSchemaBytes, out var schemaJson)
+                || !TryGetDigest(capability["input_schema_digest"], out var schemaDigest)
+                || !string.Equals(schemaDigest, ComputeSha256(schemaJson), StringComparison.Ordinal)
+                || !TryGetOptionalCanonicalObject(capability["example_arguments_json"], 4 * 1024)
                 || !TryGetPromptIdentifier(capability["availability"], 32, allowColon: false, out var availability)
                 || !capabilityIds.Add(capabilityId))
             {
@@ -579,6 +582,41 @@ public static class WorkerV2Contracts
 
         value = text;
         return true;
+    }
+
+    private static bool TryGetCanonicalObject(JsonNode? node, int maxBytes, out string canonical)
+    {
+        canonical = string.Empty;
+        if (node is not JsonValue value || !value.TryGetValue<string>(out var json)
+            || string.IsNullOrWhiteSpace(json) || Encoding.UTF8.GetByteCount(json) > maxBytes)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (JsonNode.Parse(json) is not JsonObject objectNode)
+            {
+                return false;
+            }
+
+            canonical = objectNode.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+            return string.Equals(canonical, json, StringComparison.Ordinal);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetOptionalCanonicalObject(JsonNode? node, int maxBytes)
+    {
+        if (node is null || node.GetValueKind() == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        return TryGetCanonicalObject(node, maxBytes, out _);
     }
 
     private static bool TryGetSemVer(JsonNode? node, out string value)

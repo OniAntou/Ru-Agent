@@ -143,6 +143,39 @@ matching metadata entry, `stale: false`, with no error. The window remains open
 for user inspection. No prompt, generation, paid request, voice/device action,
 or reasoning-setting mutation was performed, so those live paths remain pending.
 
+### Grouped provider model picker evidence (2026-09-01)
+
+Design and plan are in
+[the grouped picker design](../superpowers/specs/2026-09-01-grouped-provider-model-picker-design.md)
+and [the implementation plan](../superpowers/plans/2026-09-01-grouped-provider-model-picker.md).
+
+Sequential deterministic gates on this working tree:
+
+- Backend `RuBackend.Tests` Release `703 passed`, including the strict
+  atomic-selection expansion table (seven aliases), fail-closed rejection of
+  unknown aliases, blank/oversized models, extra properties, mixed
+  provider-specific model fields, and byte-for-byte unchanged settings after
+  every rejection with no runtime load.
+- GUI `gui-winui3.Tests` Release `354 passed`, including grouped projection
+  ordering/visibility/stale/unavailable/search cases, grouped controller
+  composition (independent per-provider publishing, coalesced refreshes,
+  invalidation with late-result rejection, due-only polling, disposal without
+  post-dispose publication), exact two-field body serialization for
+  Kilo/OpenAI/Anthropic, and `SettingsSaved` raised only on a success envelope.
+- Python `409 passed`; `56 HTTP + 1 WebSocket` route contract unchanged;
+  `git diff --check` clean; the documentation/route-matrix pairing passed `4/4`.
+- `dotnet build gui-winui3/RuApp.csproj -c Release -p:Platform=x64 --no-restore`
+  passed with zero warnings and zero errors.
+- Fallback audit: every `fallback`/provider-retry hit in `gui-winui3` and
+  `backend-dotnet/RuBackend` is unrelated to model selection (playback-device,
+  subtitle-geometry, mutex, port-config, encoding, and lease-registry naming).
+  The grouped picker contains no provider/model/key/protocol fallback.
+
+Boundaries: no GUI launch, no live provider catalog/generation, no credential
+or settings mutation, no publish, and no push. Interactive grouped-picker
+acceptance (visible order, searches, keyboard navigation, themes, cross-provider
+save with a simulated failure) remains a user-run manual gate.
+
 ### Authorized release follow-up (2026-09-01)
 
 - The user requested commit/push and a refreshed GUI publish. Fresh sequential

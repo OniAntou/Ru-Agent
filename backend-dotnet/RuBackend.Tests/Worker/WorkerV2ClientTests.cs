@@ -37,6 +37,34 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         return _url;
     }
 
+    [Fact]
+    public async Task RunStepAsync_retries_the_worker_connect_within_the_startup_window()
+    {
+        var options = new AgentWorkerClientOptions(new Uri("ws://127.0.0.1:1/worker/v2"), _token);
+        await using var runner = new LoopbackModelStepRunner(options)
+        {
+            StartupConnectWindowOverride = TimeSpan.FromMilliseconds(300),
+        };
+        var context = new ModelContextSnapshot(
+            new[] { RuAgent.Harness.Core.Context.ModelContextEntry.Text("src-1", 1, ModelContextRole.User, "test prompt") },
+            Array.Empty<byte>());
+        var request = new ModelStepRequest(
+            new RunId("run_11111111111111111111111111111111"),
+            new ModelStepId("step_11111111111111111111111111111111"),
+            context,
+            AgentPermissionPreset.Standard,
+            1,
+            new string('a', 64));
+
+        var started = Environment.TickCount64;
+        await Assert.ThrowsAsync<WorkerUnavailableException>(
+            () => runner.RunStepAsync(request, _ => ValueTask.CompletedTask, CancellationToken.None));
+
+        Assert.True(
+            Environment.TickCount64 - started >= 300,
+            "the bounded startup retry window was not applied.");
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_app is not null)

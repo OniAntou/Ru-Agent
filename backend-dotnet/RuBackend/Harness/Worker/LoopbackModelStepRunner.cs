@@ -19,6 +19,11 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
     private readonly AgentWorkerClientOptions _options;
     private readonly TimeSpan _connectTimeout = TimeSpan.FromSeconds(5);
     private readonly TimeSpan _receiveTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan StartupConnectWindow = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan StartupConnectBackoff = TimeSpan.FromMilliseconds(400);
+
+    // Tests shrink this window; production retries for the full window.
+    internal TimeSpan StartupConnectWindowOverride { get; set; }
 
     public LoopbackModelStepRunner(AgentWorkerClientOptions options)
     {
@@ -71,6 +76,41 @@ public sealed class LoopbackModelStepRunner : IModelStepRunner, IAsyncDisposable
                 if (string.IsNullOrWhiteSpace(providerBootstrapPath))
                 {
                     throw new WorkerProtocolException("provider_bootstrap_failed");
+                }
+            }
+
+            // The managed Worker can still be binding its loopback port when a
+            // run starts right after Host startup; retry the connect window in
+            // a bounded loop instead of failing the whole run on the first
+            // refused socket.
+            var startupDeadline = Environment.TickCount64 + (long)(
+                StartupConnectWindowOverride == default
+                    ? StartupConnectWindow
+                    : StartupConnectWindowOverride).TotalMilliseconds;
+            while (true)
+            {
+                using var probe = CreateSocket();
+                probe.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+                using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                probeCts.CancelAfter(_connectTimeout);
+                try
+                {
+                    await probe.ConnectAsync(_options.Uri, probeCts.Token).ConfigureAwait(false);
+                    break;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    if (Environment.TickCount64 >= startupDeadline)
+                    {
+                        // The real connect below throws the exact failure.
+                        break;
+                    }
+
+                    await Task.Delay(StartupConnectBackoff, cancellationToken).ConfigureAwait(false);
                 }
             }
 

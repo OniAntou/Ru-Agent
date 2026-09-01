@@ -34,6 +34,31 @@ public sealed record ProviderModelPickerProjection(
     public const string StaleAnnotation = "Dữ liệu cũ";
     public const string UnavailableAnnotation = "Không còn khả dụng";
     public const string NoUsableModelsText = "Không có model khả dụng";
+    public const string TriggerPlaceholderText = "Model...";
+
+    public static string RowAutomationText(ProviderModelPickerRow row)
+    {
+        var state = !row.IsEnabled &&
+                string.Equals(row.Annotation, UnavailableAnnotation, StringComparison.Ordinal)
+            ? "unavailable"
+            : row.IsStale ? "stale"
+            : row.IsSelected ? "selected"
+            : "available";
+        return $"{row.ProviderName}, {row.ModelId}, {state}";
+    }
+
+    public static string TriggerDisplay(string backend, string model)
+    {
+        if (string.IsNullOrWhiteSpace(backend) || string.IsNullOrWhiteSpace(model))
+        {
+            return TriggerPlaceholderText;
+        }
+
+        var providerName = ProviderGroupDefinitions.ByAlias.TryGetValue(backend, out var definition)
+            ? definition.DisplayName
+            : backend;
+        return $"{providerName} · {model}";
+    }
 
     public static ProviderModelPickerProjection Create(
         IEnumerable<ProviderCatalogState>? groups,

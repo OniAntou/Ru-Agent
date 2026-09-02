@@ -20,6 +20,7 @@ public sealed class AgentToolDefinitionCatalogTests
         "terminal.shell",
         "web.search",
         "web.fetch",
+        "help.docs",
         "system.time",
         "system.status",
         "app.list",
@@ -33,9 +34,9 @@ public sealed class AgentToolDefinitionCatalogTests
         var definitions = AgentToolDefinitionCatalog.Get();
 
         Assert.Equal(ExpectedOrder, definitions.Select(item => item.ToolId));
-        Assert.Equal(17, definitions.Count);
+        Assert.Equal(18, definitions.Count);
         Assert.Equal(
-            12,
+            13,
             definitions.Count(item => item.Exposure.HasFlag(AgentToolExposure.ModelVisible)));
         Assert.Equal(
             5,
@@ -74,6 +75,13 @@ public sealed class AgentToolDefinitionCatalogTests
 
         Assert.Equal(["path"], Required("files.delete"));
         Assert.Equal(["recovery_id"], Required("files.restore"));
+
+        var help = Properties("help.docs");
+        Assert.Equal("string", help["query"]!["type"]!.GetValue<string>());
+        Assert.Equal(256, help["query"]!["maxLength"]!.GetValue<int>());
+        Assert.Equal(1, help["max_results"]!["minimum"]!.GetValue<int>());
+        Assert.Equal(5, help["max_results"]!["maximum"]!.GetValue<int>());
+        Assert.False(help.ContainsKey("path"));
     }
 
     [Fact]

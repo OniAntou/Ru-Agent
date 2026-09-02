@@ -8,5 +8,10 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
+    <EmbeddedResource Include="..\..\README.md" LogicalName="RuAgent.Broker.HelpDocs.ru-overview.md" />
+    <EmbeddedResource Include="..\..\docs\architecture.md" LogicalName="RuAgent.Broker.HelpDocs.architecture.md" />
+    <EmbeddedResource Include="..\..\docs\operations\runtime-behavior.md" LogicalName="RuAgent.Broker.HelpDocs.runtime.md" />
+    <EmbeddedResource Include="..\..\docs\operations\agent-tools.md" LogicalName="RuAgent.Broker.HelpDocs.agent-tools.md" />
+    <EmbeddedResource Include="..\..\docs\operations\provider-catalog.md" LogicalName="RuAgent.Broker.HelpDocs.provider-catalog.md" />
   </ItemGroup>
 </Project>

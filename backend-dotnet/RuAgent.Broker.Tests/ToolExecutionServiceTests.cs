@@ -10,6 +10,59 @@ namespace RuAgent.Broker.Tests;
 public sealed class ToolExecutionServiceTests
 {
     [Fact]
+    public async Task Help_docs_executes_without_workspace_or_approval()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "ru-help-service-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var descriptor = new BrokerSessionDescriptor(
+            "http://127.0.0.1:18086",
+            "broker-token",
+            1,
+            Path.Combine(root, "session"),
+            DateTimeOffset.UtcNow.AddMinutes(5));
+        Directory.CreateDirectory(descriptor.SessionRoot);
+        var descriptorPath = Path.Combine(root, "broker.json");
+        File.WriteAllText(descriptorPath, JsonSerializer.Serialize(descriptor, BrokerSessionDescriptor.JsonOptions));
+        var session = BrokerSession.Load(descriptorPath, DateTimeOffset.UtcNow);
+        session.Open(
+            "session-help",
+            new HashSet<string>([RuAgent.Broker.Policy.ToolScope.SystemRead], StringComparer.Ordinal),
+            new HashSet<string>(StringComparer.Ordinal));
+
+        var workspace = Path.Combine(root, "empty-workspace");
+        Directory.CreateDirectory(workspace);
+        try
+        {
+            var service = new ToolExecutionService(session, workspace);
+            var result = await service.ExecuteAsync(
+                new AgentEnvelope(
+                    AgentEnvelopeCodec.ProtocolVersion,
+                    "help-" + Guid.NewGuid().ToString("N"),
+                    AgentMessageTypes.ToolRequest,
+                    "session-help",
+                    null,
+                    30_000,
+                    new JsonObject
+                    {
+                        ["tool_id"] = "help.docs",
+                        ["tool_version"] = "1.0.0",
+                        ["capability_class"] = "internal",
+                        ["arguments"] = new JsonObject { ["query"] = "approvals", ["max_results"] = 1 },
+                    }),
+                CancellationToken.None);
+
+            Assert.Equal(ToolResultStatuses.Succeeded, result.Status);
+            Assert.Equal("approvals", result.Output["query"]!.GetValue<string>());
+            Assert.True(result.Output["results"] is JsonArray);
+            Assert.False(result.Output.ContainsKey("approval_id"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Approved_full_terminal_run_can_use_an_outside_working_directory()
     {
         var root = Path.Combine(Path.GetTempPath(), "ru-terminal-service-" + Guid.NewGuid().ToString("N"));

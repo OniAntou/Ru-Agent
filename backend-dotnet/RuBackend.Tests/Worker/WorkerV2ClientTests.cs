@@ -552,7 +552,7 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
             {
                 "files.list", "files.read", "files.glob", "files.search",
                 "files.write", "files.edit", "files.delete", "files.restore",
-                "terminal.run", "terminal.shell", "web.search", "web.fetch",
+                "terminal.run", "terminal.shell", "help.docs", "web.search", "web.fetch",
             }.Order(StringComparer.Ordinal),
             tools.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(
@@ -570,6 +570,9 @@ public sealed class WorkerV2ClientTests : IAsyncDisposable
         Assert.Equal(
             ["network.fetch"],
             tools["web.fetch"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
+        Assert.Equal(
+            ["system.read"],
+            tools["help.docs"]["scopes"]!.AsArray().Select(item => item!.GetValue<string>()));
     }
 
     [Fact]

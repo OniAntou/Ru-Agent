@@ -24,6 +24,7 @@ public sealed class ToolBindingRegistryTests
             .Select(binding => binding.Manifest.Id).ToHashSet();
 
         Assert.Contains("files.write", ids);
+        Assert.Contains("help.docs", ids);
         Assert.DoesNotContain("terminal.run", ids);
         Assert.DoesNotContain("terminal.shell", ids);
         Assert.Contains("system.volume", ids);

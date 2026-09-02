@@ -59,7 +59,9 @@ public sealed class ToolBindingRegistry
         lock (_gate)
         {
             return OrderedBindings()
-                .Where(binding => binding.Manifest.Scopes.All(scopes.Contains))
+                .Where(binding => binding.Manifest.Id == "help.docs"
+                    ? profile is CapabilityProfile.Agent or CapabilityProfile.Full
+                    : binding.Manifest.Scopes.All(scopes.Contains))
                 .ToArray();
         }
     }
@@ -80,7 +82,9 @@ public sealed class ToolBindingRegistry
         {
             var scopes = EffectiveScopes(profile, additionalScopes);
             return OrderedBindings()
-                .Where(binding => binding.Manifest.Scopes.All(scopes.Contains))
+                .Where(binding => binding.Manifest.Id == "help.docs"
+                    ? profile is CapabilityProfile.Agent or CapabilityProfile.Full
+                    : binding.Manifest.Scopes.All(scopes.Contains))
                 .Select(ToCapability)
                 .ToArray();
         }

@@ -76,7 +76,7 @@ public sealed class ToolBindingRegistryTests
 
         Assert.Equal(new[]
         {
-            "app.list", "files.edit", "files.glob", "files.list", "files.read", "files.search", "files.write", "notes.create",
+            "app.list", "files.edit", "files.glob", "files.list", "files.read", "files.search", "files.write", "help.docs", "notes.create",
             "system.status", "system.time", "system.volume", "terminal.run", "terminal.shell",
         }, ids);
         Assert.DoesNotContain("app.open", ids);
@@ -92,6 +92,7 @@ public sealed class ToolBindingRegistryTests
     {
         ["system.time"] = Succeeded,
         ["system.status"] = Succeeded,
+        ["help.docs"] = Succeeded,
         ["system.volume"] = Succeeded,
         ["app.list"] = Succeeded,
         ["files.list"] = Succeeded,

@@ -70,6 +70,7 @@ public sealed class ToolCatalog
     {
         yield return Manifest("system.time", ToolScope.SystemRead, RiskClass.Read, "builtin");
         yield return Manifest("system.status", ToolScope.SystemRead, RiskClass.Read, "builtin");
+        yield return Manifest("help.docs", ToolScope.SystemRead, RiskClass.Read, "builtin", maxOutputBytes: 64 * 1024);
         yield return VolumeTools.Manifest;
         yield return Manifest("app.list", ToolScope.SystemRead, RiskClass.Read, "desktop");
         yield return Manifest("files.list", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
@@ -98,7 +99,8 @@ public sealed class ToolCatalog
         RiskClass risk,
         string adapter,
         bool workspace = false,
-        bool requiresApproval = false) => new(
+        bool requiresApproval = false,
+        int maxOutputBytes = 256 * 1024) => new(
         id,
         "1.0.0",
         adapter,
@@ -107,7 +109,7 @@ public sealed class ToolCatalog
         AgentModelToolContractCatalog.Get(id, AgentModelToolContractCatalog.CurrentVersion).InputSchema,
         new JsonObject { ["type"] = "object" },
         30_000,
-        256 * 1024,
+        maxOutputBytes,
         "builtin",
         WorkspaceRequired: workspace,
         RequiresApproval: requiresApproval);

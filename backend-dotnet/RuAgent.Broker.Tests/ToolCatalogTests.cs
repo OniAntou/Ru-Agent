@@ -30,6 +30,7 @@ public sealed class ToolCatalogTests
     [Theory]
     [InlineData("system.time", "system.read", RiskClass.Read, false, false)]
     [InlineData("system.status", "system.read", RiskClass.Read, false, false)]
+    [InlineData("help.docs", "system.read", RiskClass.Read, false, false)]
     [InlineData("app.list", "system.read", RiskClass.Read, false, false)]
     [InlineData("files.list", "workspace.read", RiskClass.Read, false, true)]
     [InlineData("files.glob", "workspace.read", RiskClass.Read, false, true)]

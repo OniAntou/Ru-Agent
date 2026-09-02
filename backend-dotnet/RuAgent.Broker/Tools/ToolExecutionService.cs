@@ -11,6 +11,7 @@ using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Notes;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Broker.Tools.Web;
+using RuAgent.Broker.Tools.Help;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Tools;
@@ -42,6 +43,7 @@ public sealed class ToolExecutionService : IToolInvoker
     private readonly Lazy<VolumeTools> _volume;
     private readonly TerminalAdapter _terminal;
     private readonly NotesAdapter _notes;
+    private readonly HelpDocsTool _helpDocs;
     private readonly SkillRegistry _skills;
     private readonly SkillOrchestrator _skillOrchestrator;
     private readonly WebOptions _webOptions;
@@ -65,6 +67,7 @@ public sealed class ToolExecutionService : IToolInvoker
         _fileSearch = new FileSearchAdapter(_workspace.Root);
         _fileRead = new FileReadAdapter(_workspace.Root);
         _notes = new NotesAdapter(_workspace);
+        _helpDocs = HelpDocsTool.CreateDefault();
         _terminal = new TerminalAdapter(
             _workspace,
             new ShellRuntimeResolver(),
@@ -559,6 +562,9 @@ public sealed class ToolExecutionService : IToolInvoker
         {
             ["system.time"] = (_, _, _) => Succeeded(_system.Time(), "System time read."),
             ["system.status"] = (_, _, _) => Succeeded(_system.Status(), "System status read."),
+            ["help.docs"] = (_, arguments, cancellationToken) => Succeeded(
+                _helpDocs.Execute(arguments, cancellationToken),
+                "Bundled Ru documentation searched."),
             ["system.volume"] = ExecuteVolumeAsync,
             ["app.list"] = (_, _, _) => Succeeded(_apps.List(), "Application list read."),
             ["files.list"] = (_, arguments, _) => Succeeded(

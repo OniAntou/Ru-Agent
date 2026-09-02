@@ -9,6 +9,26 @@ namespace RuAgent.Broker.Tests;
 public sealed class TerminalAdapterTests
 {
     [Fact]
+    public async Task Terminal_write_set_metadata_rejects_read_only_calls_with_paths()
+    {
+        var root = CreateTemporaryRoot("ru-terminal-write-set-");
+        try
+        {
+            var adapter = CreateAdapter(root);
+            var error = await Assert.ThrowsAsync<UnauthorizedAccessException>(() => adapter.RunAsync(
+                MakeGrantWithScopes(ToolScope.TerminalExecute),
+                Request("rg", ["--files"]) with { ReadOnly = true, WriteSet = ["src/app.cs"] },
+                confineWorkspace: true,
+                CancellationToken.None));
+            Assert.Equal("invalid_terminal_write_set", error.Message);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Adapter_rejects_unregistered_commands_and_unscoped_network_requests()
     {
         var root = CreateTemporaryRoot("ru-terminal-");

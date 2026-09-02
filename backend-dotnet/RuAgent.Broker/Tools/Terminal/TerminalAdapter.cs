@@ -2,6 +2,7 @@ using System.Collections.Frozen;
 using RuAgent.Broker.Policy;
 using RuAgent.Broker.Policy.Commands;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Broker.Tools.Terminal;
 
@@ -103,6 +104,7 @@ public sealed class TerminalAdapter
     {
         ArgumentNullException.ThrowIfNull(grant);
         ArgumentNullException.ThrowIfNull(request);
+        ValidateWriteSet(request.ReadOnly, request.WriteSet);
         var intent = CanonicalizeRun(request);
         EnforceWorkingDirectoryPolicy(intent, confineWorkspace);
 
@@ -148,6 +150,7 @@ public sealed class TerminalAdapter
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ValidateWriteSet(request.ReadOnly, request.WriteSet);
         if (string.IsNullOrWhiteSpace(request.Script) || request.Script.Length > TerminalLimits.MaxScriptChars)
         {
             throw new ArgumentException("terminal_script_invalid", nameof(request));
@@ -198,6 +201,18 @@ public sealed class TerminalAdapter
         if (!confineWorkspace && IsProtectedLocation(intent.CanonicalWorkingDirectory))
         {
             throw new UnauthorizedAccessException("terminal_cwd_not_allowed");
+        }
+    }
+
+    private static void ValidateWriteSet(bool readOnly, IReadOnlyList<string>? writeSet)
+    {
+        try
+        {
+            WorkspaceWriteSet.Validate(readOnly, writeSet ?? Array.Empty<string>());
+        }
+        catch (AgentProtocolException exception)
+        {
+            throw new UnauthorizedAccessException(exception.Code, exception);
         }
     }
 

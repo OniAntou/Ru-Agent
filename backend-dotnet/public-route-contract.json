@@ -55,5 +55,10 @@
   {"method":"GET","path":"/agent/v1/policies","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"POST","path":"/agent/v1/policies","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"DELETE","path":"/agent/v1/policies/{ruleId}","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
+  {"method":"GET","path":"/agent/v1/workspaces/{workspaceId}/concurrency","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
+  {"method":"PUT","path":"/agent/v1/workspaces/{workspaceId}/concurrency","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
+  {"method":"GET","path":"/agent/v1/workspaces/{workspaceId}/activity","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
+  {"method":"GET","path":"/agent/v1/workspaces/{workspaceId}/changes","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
+  {"method":"POST","path":"/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore","transport":"http","source":"backend-dotnet/RuBackend/Harness/AgentV1Endpoints.cs","classification":"aspnet-direct","winui_callers":[]},
   {"method":"WS","path":"/voice/stream","transport":"websocket","source":"backend-dotnet/RuBackend/Runtime/VoiceStreamEndpoint.cs","classification":"runtime-worker","winui_callers":["VoiceStreamClient"]}
 ]

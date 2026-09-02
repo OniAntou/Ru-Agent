@@ -63,6 +63,7 @@ namespace RuApp.Views
         private string _activeSessionId = "default";
         private AgentRunController? _agentController;
         private CancellationTokenSource? _agentMonitorCts;
+        private CancellationTokenSource? _workspaceActivityCts;
         private readonly AgentSessionRecovery _agentSessionRecovery = new();
         private bool _agentActivityVisible;
         private AgentPermissionPreset _agentPreset = AgentPermissionPreset.Standard;
@@ -88,6 +89,8 @@ namespace RuApp.Views
         private AgentTurnSource _activeAgentTurnSource;
         private ChatMessageItem? _activeAgentAssistantMessage;
         private string? _activeAgentRunId;
+        private string? _activeWorkspaceId;
+        private WorkspaceChangeItemDto? _latestRestorableChange;
         private bool _activeAgentReplyReceived;
         private bool _activeAgentReplyCompleted;
         private readonly HashSet<string> _agentDeltaKeys = new(StringComparer.Ordinal);
@@ -664,6 +667,111 @@ namespace RuApp.Views
                 AgentRunSummaryPanel.Visibility = Visibility.Collapsed;
                 AgentRunSummaryText.Text = string.Empty;
                 AgentRunSummaryMetadata.Text = string.Empty;
+            }
+        }
+
+        private async void OnWorkspaceActivityRefreshClick(object sender, RoutedEventArgs e)
+        {
+            await RefreshWorkspaceActivityAsync();
+        }
+
+        private async void OnWorkspaceRestoreClick(object sender, RoutedEventArgs e)
+        {
+            var change = _latestRestorableChange;
+            var workspaceId = _activeWorkspaceId;
+            if (change is null || string.IsNullOrWhiteSpace(workspaceId) || _apiService is null || _agentController?.IsBusy == true)
+            {
+                return;
+            }
+
+            WorkspaceRestoreButton.IsEnabled = false;
+            try
+            {
+                var restored = await _apiService.RestoreWorkspaceChangeAsync(
+                    workspaceId,
+                    change.ChangeId,
+                    change.AfterSha256 ?? string.Empty);
+                WorkspaceActivityText.Text += restored is null
+                    ? "\nKhôi phục thất bại hoặc file đã thay đổi; cần làm mới lại."
+                    : "\nĐã khôi phục thay đổi cuối và ghi journal mới.";
+            }
+            finally
+            {
+                WorkspaceRestoreButton.IsEnabled = _agentController?.IsBusy != true;
+                await RefreshWorkspaceActivityAsync();
+            }
+        }
+
+        private async Task RefreshWorkspaceActivityAsync()
+        {
+            if (_apiService is null)
+            {
+                return;
+            }
+
+            var workspaceId = _agentController?.CurrentRun?.WorkspaceId ?? _activeWorkspaceId;
+            if (string.IsNullOrWhiteSpace(workspaceId))
+            {
+                return;
+            }
+
+            _workspaceActivityCts?.Cancel();
+            _workspaceActivityCts?.Dispose();
+            _workspaceActivityCts = new CancellationTokenSource();
+            var token = _workspaceActivityCts.Token;
+            try
+            {
+                var response = await _apiService.GetWorkspaceActivityAsync(workspaceId, 0, 8);
+                if (token.IsCancellationRequested || response is null)
+                {
+                    return;
+                }
+
+                var concurrency = await _apiService.GetWorkspaceConcurrencyAsync(workspaceId);
+                var changes = await _apiService.GetWorkspaceChangesAsync(workspaceId, 0, 8);
+                if (token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                void Apply()
+                {
+                    var mode = concurrency?.Policy.Mode ?? "unknown";
+                    var header = concurrency is null
+                        ? $"Workspace: {mode}"
+                        : $"Workspace: {mode} · {concurrency.ActiveClaimCount} claim đang hoạt động";
+                    var entries = response.Items.Take(5).Select(item =>
+                    {
+                        var writer = item.WriterKind == "unknown_external" ? "external không xác định" : "Ru peer";
+                        var path = string.IsNullOrWhiteSpace(item.Path) ? "workspace" : item.Path;
+                        return $"{writer}: {path} · seq {item.Sequence}";
+                    });
+                    WorkspaceActivityText.Text = entries.Any()
+                        ? header + "\n" + string.Join("\n", entries)
+                        : header + "\nChưa có thay đổi đồng thời được ghi nhận.";
+                    _latestRestorableChange = changes?.Items
+                        .Where(item => item.Status is "committed" or "rejected"
+                            && item.AfterSha256 is not null
+                            && response.Items.Any(activity => activity.EventId == item.ChangeId
+                                && activity.WriterKind == "unknown_external"))
+                        .OrderByDescending(item => item.Sequence)
+                        .FirstOrDefault();
+                    WorkspaceRestoreButton.Visibility = _latestRestorableChange is not null
+                        && _agentController?.IsBusy != true
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
+                    WorkspaceActivityPanel.Visibility = Visibility.Visible;
+                }
+
+                if (DispatcherQueue.HasThreadAccess) Apply();
+                else DispatcherQueue.TryEnqueue(Apply);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatView] Workspace activity refresh failed: {ex.Message}");
             }
         }
 
@@ -1333,6 +1441,8 @@ namespace RuApp.Views
                     Guid.NewGuid().ToString("N"),
                     imagePayloads);
 
+                _activeWorkspaceId = null;
+
                 ClearAgentActivities();
                 ClearAgentRunSummary();
                 BeginAgentReply(source, text, attachments, displayUserText);
@@ -1341,6 +1451,8 @@ namespace RuApp.Views
                 AgentStopButton.Visibility = Visibility.Collapsed;
                 UpdateAgentInlineState();
                 await _agentController.CreateAndRunAsync(request, cancellationToken);
+                _activeWorkspaceId = _agentController.CurrentRun?.WorkspaceId;
+                _ = RefreshWorkspaceActivityAsync();
             }
             catch (AgentApiException error) when (
                 allowSessionRecovery
@@ -2141,6 +2253,9 @@ namespace RuApp.Views
             _agentMonitorCts?.Cancel();
             _agentMonitorCts?.Dispose();
             _agentMonitorCts = null;
+            _workspaceActivityCts?.Cancel();
+            _workspaceActivityCts?.Dispose();
+            _workspaceActivityCts = null;
             _modelSaveFailureTimer?.Stop();
             if (_providerCatalogController != null)
             {
@@ -2168,6 +2283,13 @@ namespace RuApp.Views
             }
             ClearAgentActivities();
             ClearAgentRunSummary();
+            if (WorkspaceActivityPanel is not null)
+            {
+                WorkspaceActivityPanel.Visibility = Visibility.Collapsed;
+                WorkspaceActivityText.Text = string.Empty;
+                WorkspaceRestoreButton.Visibility = Visibility.Collapsed;
+                _latestRestorableChange = null;
+            }
             _typingDebounce?.Stop();
             _typingDebounce = null;
             MeteorShowerField?.Dispose();

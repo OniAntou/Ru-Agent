@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Prompting;
+using RuAgent.Harness.Persistence;
 using RuAgent.Protocol;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Workspace;
@@ -21,15 +22,18 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
     private readonly ISettingsStore _settings;
     private readonly ITimeProvider _time;
     private readonly AgentToolRuntimeAvailability _availability;
+    private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
 
     public RuPromptContextProvider(
         string workspaceRoot,
         RuInstructionLoader instructionLoader,
         ISettingsStore settings,
         ITimeProvider time,
-        bool webToolsEnabled = false)
+        bool webToolsEnabled = false,
+        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null)
         : this(workspaceRoot, instructionLoader, settings, time,
-            new AgentToolRuntimeAvailability(webToolsEnabled, webToolsEnabled))
+            new AgentToolRuntimeAvailability(webToolsEnabled, webToolsEnabled),
+            workspaceCoordinatorStore)
     {
     }
 
@@ -38,7 +42,8 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         RuInstructionLoader instructionLoader,
         ISettingsStore settings,
         ITimeProvider time,
-        AgentToolRuntimeAvailability availability)
+        AgentToolRuntimeAvailability availability,
+        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _canonicalRoot = WindowsWorkspaceIdentityResolver.GetCanonicalRoot(workspaceRoot);
@@ -46,6 +51,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _availability = availability;
+        _workspaceCoordinatorStore = workspaceCoordinatorStore;
     }
 
     public async Task<SystemPromptContext> BuildAsync(
@@ -69,7 +75,7 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
             TimeZoneInfo.Local.Id,
             now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
             WorkspaceLabel(_canonicalRoot));
-        var runtime = BuildRuntimeContext(modelContext);
+        var runtime = await BuildRuntimeContextAsync(run, modelContext, cancellationToken).ConfigureAwait(false);
         var capabilities = BuildCapabilities();
 
         return new SystemPromptContext(
@@ -121,7 +127,10 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
         return capabilities;
     }
 
-    private static PromptRuntimeContext BuildRuntimeContext(ModelContextSnapshot modelContext)
+    private async Task<PromptRuntimeContext> BuildRuntimeContextAsync(
+        AgentRun run,
+        ModelContextSnapshot modelContext,
+        CancellationToken cancellationToken)
     {
         var memoryParts = modelContext.Entries
             .Where(entry => entry.Role == ModelContextRole.System
@@ -141,7 +150,35 @@ public sealed class RuPromptContextProvider : ISystemPromptContextProvider
                 "tool_result",
                 "untrusted tool result",
                 entry.Content!))
-            .ToArray();
+            .ToList();
+
+        if (_workspaceCoordinatorStore is not null)
+        {
+            try
+            {
+                var changes = await _workspaceCoordinatorStore
+                    .ListChangesAsync(run.WorkspaceId, 0, 16, cancellationToken)
+                    .ConfigureAwait(false);
+                var external = changes
+                    .Where(change => change.RunId is null)
+                    .TakeLast(8)
+                    .Select(change =>
+                        $"sequence={change.CommitSequence}; path={change.NormalizedPath}; before={change.BeforeSha256 ?? "missing"}; observed={change.AfterSha256 ?? "missing"}")
+                    .ToArray();
+                if (external.Length > 0 && references.Count < 16)
+                {
+                    references.Add(new PromptReference(
+                        "workspace_activity",
+                        "untrusted workspace activity",
+                        string.Join("\n", external)));
+                }
+            }
+            catch (HarnessStoreException)
+            {
+                // Prompt construction remains available if the optional activity
+                // journal is unavailable; terminal/file guards remain authoritative.
+            }
+        }
 
         return new PromptRuntimeContext(memory, null, null, null, null, references);
     }

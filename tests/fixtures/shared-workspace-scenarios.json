@@ -1,0 +1,12 @@
+[
+  {"name": "ru_plus_ru_disjoint", "writer": "ru_peer", "path": "src/a.cs", "expected": "workspace_file_changed"},
+  {"name": "ru_plus_codex", "writer": "unknown_external", "path": "src/b.cs", "expected": "workspace_external_change_detected"},
+  {"name": "ru_plus_opencode", "writer": "unknown_external", "path": "src/c.cs", "expected": "workspace_external_change_detected"},
+  {"name": "terminal_write", "writer": "ru_peer", "path": "src/d.cs", "expected": "workspace_file_changed"},
+  {"name": "editor_write", "writer": "unknown_external", "path": "src/e.cs", "expected": "workspace_external_change_detected"},
+  {"name": "text_overlap", "writer": "unknown_external", "path": "src/f.cs", "expected": "last_writer_wins"},
+  {"name": "binary_overlap", "writer": "unknown_external", "path": "assets/icon.png", "expected": "concurrent_binary_conflict"},
+  {"name": "undeclared_file", "writer": "unknown_external", "path": "src/undeclared.cs", "expected": "workspace_undeclared_text_discovered"},
+  {"name": "process_crash", "writer": "ru_peer", "path": "src/crash.cs", "expected": "workspace_claim_orphaned"},
+  {"name": "restart_recovery", "writer": "ru_peer", "path": "src/restart.cs", "expected": "workspace_recovery_reconciled"}
+]

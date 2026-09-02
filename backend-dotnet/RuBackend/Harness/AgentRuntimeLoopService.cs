@@ -163,6 +163,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly IModelContextLimitProvider _contextLimit;
     private readonly Broker.AgentWebToolExecutor? _webExecutor;
     private readonly HelpDocsTool _helpDocs;
+    private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -180,7 +181,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         ISettingsStore? settings = null,
         ITimeProvider? time = null,
         IModelContextLimitProvider? contextLimit = null,
-        Broker.AgentWebToolExecutor? webExecutor = null)
+        Broker.AgentWebToolExecutor? webExecutor = null,
+        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -200,6 +202,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             ?? new StaticModelContextLimitProvider(32_768);
         _webExecutor = webExecutor;
         _helpDocs = HelpDocsTool.CreateDefault();
+        _workspaceCoordinatorStore = workspaceCoordinatorStore;
     }
 
     public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null)
@@ -216,7 +219,9 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             approvalGrants: _approvalGrants,
             policySnapshot: policySnapshot,
             webExecutor: _webExecutor,
-            helpDocsTool: _helpDocs);
+            helpDocsTool: _helpDocs,
+            workspaceCoordinatorStore: _workspaceCoordinatorStore,
+            eventStore: _store);
         var frames = new TransientFrameBuffer(
             64 * 1024,
             _liveEvents is null ? null : frame => PublishLiveFrame(_liveEvents, frame));
@@ -230,7 +235,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             _instructionLoader,
             _settings,
             _time,
-            availability);
+            availability,
+            _workspaceCoordinatorStore);
         return new AgentRunCoordinator(
             _model,
             gateway,
@@ -280,6 +286,9 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     private readonly IAgentRuntimeRootRegistry _roots;
     private readonly ILogger<AgentRuntimeLoopService> _logger;
     private readonly AgentRunSummaryLivePublisher? _summaryPublisher;
+    private readonly WorkspaceExternalChangeMonitor? _workspaceChangeMonitor;
+    private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
+    private readonly WorkspaceJournalProtector? _workspaceJournalProtector;
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.Ordinal);
 
     public AgentRuntimeLoopService(
@@ -288,7 +297,10 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         IAgentRuntimeCoordinatorFactory coordinatorFactory,
         IAgentRuntimeRootRegistry roots,
         ILogger<AgentRuntimeLoopService> logger,
-        AgentRunSummaryLivePublisher? summaryPublisher = null)
+        AgentRunSummaryLivePublisher? summaryPublisher = null,
+        WorkspaceExternalChangeMonitor? workspaceChangeMonitor = null,
+        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
+        WorkspaceJournalProtector? workspaceJournalProtector = null)
     {
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -296,6 +308,9 @@ public sealed class AgentRuntimeLoopService : BackgroundService
         _roots = roots ?? throw new ArgumentNullException(nameof(roots));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _summaryPublisher = summaryPublisher;
+        _workspaceChangeMonitor = workspaceChangeMonitor;
+        _workspaceCoordinatorStore = workspaceCoordinatorStore;
+        _workspaceJournalProtector = workspaceJournalProtector;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -401,9 +416,44 @@ public sealed class AgentRuntimeLoopService : BackgroundService
     {
         var runId = new RunId(runIdValue);
         AgentRunCoordinator? coordinator = null;
+        IDisposable? workspaceWatcher = null;
+        WorkspaceRunMembershipRecord? membership = null;
         try
         {
             _summaryPublisher?.RegisterWorkspace(runId, workspaceRoot);
+            var workspaceRun = await LoadRunAsync(runIdValue, cancellationToken).ConfigureAwait(false);
+            if (workspaceRun is null)
+            {
+                return;
+            }
+
+            if (_workspaceCoordinatorStore is not null)
+            {
+                var workspace = await _workspaceCoordinatorStore.GetOrCreateAsync(workspaceRun.WorkspaceId, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    membership = await _workspaceCoordinatorStore.AcquireRunMembershipAsync(
+                        workspaceRun.WorkspaceId,
+                        runId,
+                        "ru_peer",
+                        DateTimeOffset.UtcNow,
+                        TimeSpan.FromSeconds(workspace.LeaseTtlSeconds),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (HarnessStoreException exception) when (exception.Code == "workspace_busy")
+                {
+                    _logger.LogInformation("run {RunId} is waiting for a workspace membership lease", runIdValue);
+                    return;
+                }
+            }
+
+            if (_workspaceChangeMonitor is not null)
+            {
+                _workspaceChangeMonitor.CaptureExpectedHashes(workspaceRoot);
+                workspaceWatcher = _workspaceChangeMonitor.StartWatchingAsync(
+                    workspaceRoot,
+                    change => PersistExternalChangeAsync(workspaceRun.WorkspaceId, workspaceRoot, change, CancellationToken.None));
+            }
             coordinator = _coordinatorFactory.Create(workspaceRoot, policySnapshot);
             _roots.RegisterCoordinator(runId, coordinator);
 
@@ -416,6 +466,21 @@ public sealed class AgentRuntimeLoopService : BackgroundService
 
             while (!cancellationToken.IsCancellationRequested)
             {
+                if (membership is not null && _workspaceCoordinatorStore is not null)
+                {
+                    var renewed = await _workspaceCoordinatorStore.RenewRunMembershipAsync(
+                        workspaceRun.WorkspaceId,
+                        runId,
+                        DateTimeOffset.UtcNow,
+                        membership.LeaseExpiresAtUtc - membership.HeartbeatAtUtc,
+                        cancellationToken).ConfigureAwait(false);
+                    if (!renewed)
+                    {
+                        await coordinator.FailAsync(runId, "workspace_membership_expired", cancellationToken).ConfigureAwait(false);
+                        break;
+                    }
+                }
+
                 var result = await coordinator.RunOneStepAsync(runId, cancellationToken).ConfigureAwait(false);
                 if (result.Run.State == HarnessRunState.Running && result.ErrorCode is null)
                 {
@@ -452,6 +517,90 @@ public sealed class AgentRuntimeLoopService : BackgroundService
             {
                 _logger.LogError(nested, "failed to mark run {RunId} as failed", runIdValue);
             }
+        }
+        finally
+        {
+            workspaceWatcher?.Dispose();
+            if (membership is not null && _workspaceCoordinatorStore is not null)
+            {
+                try
+                {
+                    var run = await LoadRunAsync(runIdValue, CancellationToken.None).ConfigureAwait(false);
+                    if (run is not null)
+                    {
+                        await _workspaceCoordinatorStore.ReleaseRunMembershipAsync(
+                            run.WorkspaceId,
+                            runId,
+                            DateTimeOffset.UtcNow,
+                            CancellationToken.None).ConfigureAwait(false);
+                        await _workspaceCoordinatorStore.ReleasePathClaimsAsync(
+                            run.WorkspaceId,
+                            runId,
+                            DateTimeOffset.UtcNow,
+                            CancellationToken.None).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception error)
+                {
+                    _logger.LogWarning(error, "failed to release workspace membership for run {RunId}", runIdValue);
+                }
+            }
+        }
+    }
+
+    private async Task PersistExternalChangeAsync(
+        WorkspaceId workspaceId,
+        string workspaceRoot,
+        WorkspaceExternalChangeEvent change,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogWarning(
+            "Workspace external change detected: {Path} expected={ExpectedSha256} observed={ObservedSha256} writer={WriterKind}",
+            change.NormalizedPath,
+            change.ExpectedSha256,
+            change.ObservedSha256,
+            change.WriterKind);
+
+        if (_workspaceCoordinatorStore is null || _workspaceJournalProtector is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var changeId = $"chg_{Guid.NewGuid():N}";
+            byte[]? expectedContent = null;
+            _workspaceChangeMonitor?.TryGetExpectedContent(workspaceRoot, change.NormalizedPath, out expectedContent);
+            var payload = JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                kind = change.Kind,
+                expected_sha256 = change.ExpectedSha256,
+                observed_sha256 = change.ObservedSha256,
+                writer_kind = change.WriterKind,
+                content_base64 = expectedContent is null ? null : Convert.ToBase64String(expectedContent),
+            });
+            var encrypted = await _workspaceJournalProtector.EncryptAsync(
+                workspaceId,
+                changeId,
+                change.NormalizedPath,
+                payload,
+                cancellationToken).ConfigureAwait(false);
+            await _workspaceCoordinatorStore.AppendChangeAsync(
+                workspaceId,
+                runId: null,
+                changeId,
+                change.NormalizedPath,
+                change.ExpectedSha256,
+                change.ObservedSha256,
+                encrypted,
+                "committed",
+                DateTimeOffset.UtcNow,
+                cancellationToken).ConfigureAwait(false);
+            _workspaceChangeMonitor?.RegisterExpectedHash(workspaceRoot, change.NormalizedPath, change.ObservedSha256);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogError(error, "failed to persist external workspace change for {WorkspaceId}/{Path}", workspaceId.Value, change.NormalizedPath);
         }
     }
 

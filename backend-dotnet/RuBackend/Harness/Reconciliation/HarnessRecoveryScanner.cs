@@ -204,6 +204,7 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
     private readonly SqliteWorkspaceStore? _workspaceStore;
     private readonly HarnessPolicySnapshotService? _policySnapshots;
     private readonly IAgentRuntimeRootRegistry? _runtimeRoots;
+    private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
 
     public HarnessRecoveryStartupService(
         IHarnessEventStore store,
@@ -212,7 +213,8 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         WorkspaceTrustService? trustService = null,
         SqliteWorkspaceStore? workspaceStore = null,
         HarnessPolicySnapshotService? policySnapshots = null,
-        IAgentRuntimeRootRegistry? runtimeRoots = null)
+        IAgentRuntimeRootRegistry? runtimeRoots = null,
+        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null)
     {
         _store = store;
         _sqliteOptions = sqliteOptions;
@@ -221,6 +223,7 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
         _workspaceStore = workspaceStore;
         _policySnapshots = policySnapshots;
         _runtimeRoots = runtimeRoots;
+        _workspaceCoordinatorStore = workspaceCoordinatorStore;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -239,6 +242,23 @@ public sealed class HarnessRecoveryStartupService : BackgroundService
                     "startup recovery marked run {RunId} as {Action}",
                     summary.RunId.Value,
                     summary.Action);
+            }
+
+            if (_workspaceCoordinatorStore is not null)
+            {
+                var reconciled = await _workspaceCoordinatorStore
+                    .ReconcileExpiredAsync(DateTimeOffset.UtcNow, stoppingToken)
+                    .ConfigureAwait(false);
+                if (reconciled.ExpiredMemberships > 0
+                    || reconciled.ExpiredClaims > 0
+                    || reconciled.RejectedPreparedChanges > 0)
+                {
+                    _logger.LogWarning(
+                        "workspace recovery reconciled memberships={Memberships} claims={Claims} prepared_changes={PreparedChanges}",
+                        reconciled.ExpiredMemberships,
+                        reconciled.ExpiredClaims,
+                        reconciled.RejectedPreparedChanges);
+                }
             }
 
             await RehydrateRuntimeRootsAsync(pendingRunIds, stoppingToken).ConfigureAwait(false);

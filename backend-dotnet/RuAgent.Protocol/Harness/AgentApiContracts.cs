@@ -136,3 +136,24 @@ public sealed record ApprovalRequest(
     [property: JsonPropertyName("scope")] string? Scope,
     [property: JsonPropertyName("decision")] string? Decision,
     [property: JsonPropertyName("command")] string? Command);
+
+public sealed record WorkspaceActivityResponse(
+    [property: JsonPropertyName("items")] IReadOnlyList<WorkspaceActivityItem> Items,
+    [property: JsonPropertyName("next_cursor")] string? NextCursor);
+
+public sealed record WorkspaceChangesResponse(
+    [property: JsonPropertyName("items")] IReadOnlyList<WorkspaceChangeItem> Items,
+    [property: JsonPropertyName("next_cursor")] string? NextCursor);
+
+public sealed record WorkspaceConcurrencyUpdateRequest(
+    [property: JsonPropertyName("mode")] string Mode,
+    [property: JsonPropertyName("max_concurrent_runs")] int MaxConcurrentRuns = 1,
+    [property: JsonPropertyName("lease_ttl_seconds")] int LeaseTtlSeconds = 30,
+    [property: JsonPropertyName("merge_text_conflicts")] bool MergeTextConflicts = true,
+    [property: JsonPropertyName("external_writer_detection")] bool ExternalWriterDetection = true);
+
+public sealed record WorkspaceConcurrencyResponse(
+    [property: JsonPropertyName("workspace_id")] string WorkspaceId,
+    [property: JsonPropertyName("policy")] WorkspaceConcurrencyPolicy Policy,
+    [property: JsonPropertyName("active_claim_count")] int ActiveClaimCount,
+    [property: JsonPropertyName("updated_at_utc")] string UpdatedAtUtc);

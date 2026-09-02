@@ -10,6 +10,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Harness;
 using RuAgent.Broker.Tools.Help;
 using RuBackend.Harness;
 
@@ -57,6 +58,8 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
     private readonly object _mutationGate = new();
     private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
     private readonly int _maxRecoveryBytes;
+    private readonly RuAgent.Harness.Persistence.WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
+    private readonly IHarnessEventStore? _eventStore;
     private const int MaxHostRecoveries = 4096;
 
     public HarnessToolGateway(string canonicalRoot, IReadOnlyList<string> advertisedCapabilities)
@@ -73,7 +76,9 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         PolicySnapshot? policySnapshot = null,
         AgentWebToolExecutor? webExecutor = null,
         HelpDocsTool? helpDocsTool = null,
-        int maxRecoveryBytes = RuAgent.Broker.Tools.Files.FileToolLimits.MaxRecoveryBytes)
+        int maxRecoveryBytes = RuAgent.Broker.Tools.Files.FileToolLimits.MaxRecoveryBytes,
+        RuAgent.Harness.Persistence.WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
+        IHarnessEventStore? eventStore = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(canonicalRoot);
         ArgumentNullException.ThrowIfNull(advertisedCapabilities);
@@ -93,6 +98,8 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         _webExecutor = webExecutor;
         _helpDocs = helpDocsTool ?? HelpDocsTool.CreateDefault();
         _maxRecoveryBytes = RuAgent.Broker.Tools.Files.FileToolLimits.ValidateRecoveryBytes(maxRecoveryBytes);
+        _workspaceCoordinatorStore = workspaceCoordinatorStore;
+        _eventStore = eventStore;
         _sanitizedSearchDirectories = SanitizeSearchDirectories();
     }
 
@@ -2911,7 +2918,9 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             MapTerminalAccessKind(operationClass),
             execution.Proposal.ToolCallId,
             execution.Proposal.ModelOrder,
-            preparationToken);
+            preparationToken,
+            request.ReadOnly,
+            request.WriteSet);
 
         return new PreparedToolExecution(
             execution.ExecutionId,
@@ -2969,6 +2978,28 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         }
 
         var mutationCapable = spec.AccessKind == ToolAccessKind.Mutation;
+        WorkspaceId? claimedWorkspace = null;
+        if (mutationCapable && _workspaceCoordinatorStore is not null && _eventStore is not null && spec.WriteSet.Count > 0)
+        {
+            var ownerRun = await _eventStore.GetRunAsync(spec.RunId, cancellationToken).ConfigureAwait(false);
+            if (ownerRun is not null)
+            {
+                var claims = spec.WriteSet.Select(path => new WorkspacePathClaim(path, ClassifyClaimKind(path))).ToArray();
+                var claimResult = await _workspaceCoordinatorStore.TryClaimPathsAsync(
+                    ownerRun.WorkspaceId,
+                    spec.RunId,
+                    claims,
+                    DateTimeOffset.UtcNow,
+                    TimeSpan.FromSeconds(30),
+                    cancellationToken).ConfigureAwait(false);
+                if (!claimResult.Accepted)
+                {
+                    return FailedReceipt(execution, claimResult.ErrorCode ?? "workspace_claim_conflict");
+                }
+
+                claimedWorkspace = ownerRun.WorkspaceId;
+            }
+        }
         ThrowIfExecutionCancelled(execution.ExecutionId, cancellationToken);
         var active = new ActiveTerminalExecution(spec.RunId, execution.ExecutionId);
         _activeTerminalExecutions[execution.ExecutionId.Value] = active;
@@ -3073,6 +3104,23 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         finally
         {
             _activeTerminalExecutions.TryRemove(execution.ExecutionId.Value, out _);
+            if (claimedWorkspace is not null && _workspaceCoordinatorStore is not null)
+            {
+                try
+                {
+                    await _workspaceCoordinatorStore.ReleasePathClaimsAsync(
+                        claimedWorkspace.Value,
+                        spec.RunId,
+                        DateTimeOffset.UtcNow,
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception error)
+                {
+                    // Recovery reconciliation will expire a claim that cannot
+                    // be released synchronously; never mask the tool receipt.
+                    _ = error;
+                }
+            }
         }
     }
 
@@ -3791,9 +3839,54 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 networkIntent,
                 timeoutMs,
                 TerminalOperationClass.Unknown,
-                shellRuntime),
+                shellRuntime,
+                arguments.TryGetProperty("read_only", out var readOnlyNode) && readOnlyNode.ValueKind == JsonValueKind.True,
+                ReadWriteSet(arguments)),
             null);
     }
+
+    private static IReadOnlyList<string> ReadWriteSet(JsonElement arguments)
+    {
+        if (!arguments.TryGetProperty("write_set", out var node) || node.ValueKind == JsonValueKind.Null)
+        {
+            return Array.Empty<string>();
+        }
+
+        if (node.ValueKind != JsonValueKind.Array || node.GetArrayLength() > 256)
+        {
+            throw new ArgumentException("invalid_terminal_write_set");
+        }
+
+        var paths = new List<string>();
+        foreach (var item in node.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String)
+            {
+                throw new ArgumentException("invalid_terminal_write_set");
+            }
+
+            paths.Add(item.GetString() ?? string.Empty);
+        }
+
+        try
+        {
+            WorkspaceWriteSet.Validate(
+                arguments.TryGetProperty("read_only", out var readOnlyNode) && readOnlyNode.ValueKind == JsonValueKind.True,
+                paths);
+        }
+        catch (AgentProtocolException error)
+        {
+            throw new ArgumentException(error.Code);
+        }
+
+        return paths;
+    }
+
+    private static WorkspacePathKind ClassifyClaimKind(string path) =>
+        new[] { ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip", ".7z", ".exe", ".dll" }
+            .Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)
+            ? WorkspacePathKind.Binary
+            : WorkspacePathKind.Text;
 
     private static readonly FrozenDictionary<string, string> DeniedArgumentTokens =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -4078,7 +4171,9 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         bool NetworkIntent,
         int TimeoutMs,
         TerminalOperationClass OperationClass,
-        string? ShellRuntime)
+        string? ShellRuntime,
+        bool ReadOnly,
+        IReadOnlyList<string> WriteSet)
     {
         public IReadOnlyList<string> ExecutionArgv() =>
             ToolId == "terminal.shell"
@@ -4099,7 +4194,9 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         ToolAccessKind AccessKind,
         ToolCallId ToolCallId,
         int ModelOrder,
-        string PreparationToken);
+        string PreparationToken,
+        bool ReadOnly,
+        IReadOnlyList<string> WriteSet);
 
     private enum TerminalWorkingDirectoryClass
     {

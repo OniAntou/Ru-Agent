@@ -46,6 +46,8 @@ public sealed class AgentV1Service
     private readonly ReconciliationInspectionGate? _inspectionGate;
     private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
     private readonly IAgentBrokerClient? _agentBrokerClient;
+    private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
+    private readonly WorkspaceJournalProtector? _workspaceJournalProtector;
 
     private const int ApprovalToolIdMaxLength = 128;
     private const int ApprovalToolVersionMaxLength = 32;
@@ -76,7 +78,9 @@ public sealed class AgentV1Service
         ReconciliationInspectionGate? inspectionGate = null,
         RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null,
         HarnessPolicySnapshotService? policySnapshotService = null,
-        IAgentBrokerClient? agentBrokerClient = null)
+        IAgentBrokerClient? agentBrokerClient = null,
+        WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
+        WorkspaceJournalProtector? workspaceJournalProtector = null)
     {
         _store = store;
         _options = options;
@@ -96,6 +100,8 @@ public sealed class AgentV1Service
         _inspectionGate = inspectionGate;
         _approvalGrants = approvalGrants;
         _agentBrokerClient = agentBrokerClient;
+        _workspaceCoordinatorStore = workspaceCoordinatorStore;
+        _workspaceJournalProtector = workspaceJournalProtector;
     }
 
     // Compatibility overload for tests that construct with old signature (fallback to ephemeral)
@@ -304,6 +310,24 @@ public sealed class AgentV1Service
 
         var isTrusted = await _workspaceStore.IsTrustedAsync(workspaceIdentity, preset, cancellationToken).ConfigureAwait(false);
 
+        // Materialize the durable coordinator before inserting the run. This
+        // makes shared-mode policy visible to the event store for this very
+        // first run and keeps the legacy exclusive fallback intact when the
+        // coordinator is not registered (for compatibility test hosts).
+        if (_workspaceCoordinatorStore is not null)
+        {
+            try
+            {
+                await _workspaceCoordinatorStore
+                    .GetOrCreateAsync(workspaceIdentity.WorkspaceId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (HarnessStoreException ex)
+            {
+                return BoundedError(409, ex.Code ?? "workspace_coordinator_unavailable", "Workspace coordination is unavailable.");
+            }
+        }
+
         var now = _time.UtcNow;
         var runId = _ids.NewRunId();
         PolicySnapshot policySnapshot;
@@ -432,6 +456,271 @@ public sealed class AgentV1Service
             "workspace_not_found" => BoundedError(404, "workspace_not_found", "Workspace not found."),
             _ => BoundedError(409, code, "Create conflict."),
         };
+    }
+
+    public async Task<AgentServiceResult> GetWorkspaceConcurrencyAsync(string workspaceIdRaw, CancellationToken cancellationToken)
+    {
+        if (!IsWorkspaceId(workspaceIdRaw) || _workspaceCoordinatorStore is null)
+        {
+            return new AgentServiceResult(400, new AgentErrorResponse("invalid_workspace_id"));
+        }
+
+        try
+        {
+            var workspaceId = new WorkspaceId(workspaceIdRaw);
+            var coordinator = await _workspaceCoordinatorStore.GetOrCreateAsync(workspaceId, cancellationToken).ConfigureAwait(false);
+            var activeClaims = await _workspaceCoordinatorStore.CountActiveClaimsAsync(workspaceId, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+            return new AgentServiceResult(
+                200,
+                new WorkspaceConcurrencyResponse(
+                    workspaceIdRaw,
+                    new WorkspaceConcurrencyPolicy(
+                        coordinator.Mode,
+                        coordinator.MaxConcurrentRuns,
+                        coordinator.LeaseTtlSeconds,
+                        coordinator.MergeTextConflicts,
+                        coordinator.ExternalWriterDetection),
+                    activeClaims,
+                    coordinator.UpdatedAtUtc.ToString("O")));
+        }
+        catch (HarnessStoreException exception) when (exception.Code == "workspace_not_found")
+        {
+            return new AgentServiceResult(404, new AgentErrorResponse(exception.Code));
+        }
+    }
+
+    public async Task<AgentServiceResult> UpdateWorkspaceConcurrencyAsync(
+        string workspaceIdRaw,
+        WorkspaceConcurrencyUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsWorkspaceId(workspaceIdRaw) || request is null || _workspaceCoordinatorStore is null)
+        {
+            return new AgentServiceResult(400, new AgentErrorResponse("invalid_workspace_concurrency_request"));
+        }
+
+        try
+        {
+            var workspaceId = new WorkspaceId(workspaceIdRaw);
+            var current = await _workspaceCoordinatorStore.GetOrCreateAsync(workspaceId, cancellationToken).ConfigureAwait(false);
+            var updated = await _workspaceCoordinatorStore.UpdatePolicyAsync(
+                workspaceId,
+                current.Version,
+                request.Mode,
+                request.MaxConcurrentRuns,
+                request.LeaseTtlSeconds,
+                request.MergeTextConflicts,
+                request.ExternalWriterDetection,
+                cancellationToken).ConfigureAwait(false);
+            var activeClaims = await _workspaceCoordinatorStore.CountActiveClaimsAsync(workspaceId, DateTimeOffset.UtcNow, cancellationToken).ConfigureAwait(false);
+            return new AgentServiceResult(
+                200,
+                new WorkspaceConcurrencyResponse(
+                    workspaceIdRaw,
+                    new WorkspaceConcurrencyPolicy(
+                        updated.Mode,
+                        updated.MaxConcurrentRuns,
+                        updated.LeaseTtlSeconds,
+                        updated.MergeTextConflicts,
+                        updated.ExternalWriterDetection),
+                    activeClaims,
+                    updated.UpdatedAtUtc.ToString("O")));
+        }
+        catch (HarnessStoreException exception) when (exception.Code is "workspace_not_found" or "invalid_workspace_concurrency_policy" or "workspace_concurrency_version_conflict")
+        {
+            var status = exception.Code == "workspace_not_found" ? 404 : 409;
+            return new AgentServiceResult(status, new AgentErrorResponse(exception.Code));
+        }
+    }
+
+    public async Task<AgentServiceResult> ListWorkspaceChangesAsync(
+        string workspaceIdRaw,
+        long afterSequence,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        if (!IsWorkspaceId(workspaceIdRaw) || _workspaceCoordinatorStore is null)
+        {
+            return new AgentServiceResult(400, new AgentErrorResponse("invalid_workspace_id"));
+        }
+
+        try
+        {
+            var workspaceId = new WorkspaceId(workspaceIdRaw);
+            var changes = await _workspaceCoordinatorStore.ListChangesAsync(workspaceId, afterSequence, limit, cancellationToken).ConfigureAwait(false);
+            return new AgentServiceResult(
+                200,
+                new WorkspaceChangesResponse(
+                    changes.Select(change => new WorkspaceChangeItem(
+                        change.ChangeId,
+                        change.WorkspaceId,
+                        change.NormalizedPath,
+                        change.CommitSequence,
+                        change.Status,
+                        change.BeforeSha256,
+                        change.AfterSha256,
+                        change.CreatedAtUtc.ToString("O"))).ToArray(),
+                    changes.Count == limit ? changes[^1].CommitSequence.ToString(CultureInfo.InvariantCulture) : null));
+        }
+        catch (HarnessStoreException exception) when (exception.Code == "invalid_workspace_changes_query")
+        {
+            return new AgentServiceResult(400, new AgentErrorResponse(exception.Code));
+        }
+    }
+
+    public async Task<AgentServiceResult> ListWorkspaceActivityAsync(
+        string workspaceIdRaw,
+        long afterSequence,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        if (!IsWorkspaceId(workspaceIdRaw) || _workspaceCoordinatorStore is null)
+        {
+            return new AgentServiceResult(400, new AgentErrorResponse("invalid_workspace_id"));
+        }
+
+        try
+        {
+            var workspaceId = new WorkspaceId(workspaceIdRaw);
+            var changes = await _workspaceCoordinatorStore.ListChangesAsync(workspaceId, afterSequence, limit, cancellationToken).ConfigureAwait(false);
+            var activity = changes.Select(change =>
+            {
+                var external = change.RunId is null;
+                return new WorkspaceActivityItem(
+                    change.ChangeId,
+                    change.WorkspaceId,
+                    external
+                        ? "workspace_external_change_detected"
+                        : change.Status == "rejected" ? "workspace_conflict_detected" : "workspace_file_changed",
+                    change.NormalizedPath,
+                    external ? WorkspaceWriterKind.UnknownExternal : WorkspaceWriterKind.RuPeer,
+                    change.CommitSequence,
+                    change.CreatedAtUtc.ToString("O"),
+                    null);
+            }).ToArray();
+            var nextCursor = changes.Count == limit
+                ? changes[^1].CommitSequence.ToString(CultureInfo.InvariantCulture)
+                : null;
+            return new AgentServiceResult(200, new WorkspaceActivityResponse(activity, nextCursor));
+        }
+        catch (HarnessStoreException exception) when (exception.Code == "invalid_workspace_changes_query")
+        {
+            return new AgentServiceResult(400, new AgentErrorResponse(exception.Code));
+        }
+    }
+
+    public async Task<AgentServiceResult> RestoreWorkspaceChangeAsync(
+        string workspaceIdRaw,
+        string changeId,
+        WorkspaceChangeRestoreRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsWorkspaceId(workspaceIdRaw)
+            || _workspaceCoordinatorStore is null
+            || string.IsNullOrWhiteSpace(changeId)
+            || changeId.Length > 256)
+        {
+            return new AgentServiceResult(400, new AgentErrorResponse("invalid_workspace_change"));
+        }
+
+        if (request is null
+            || request.ExpectedCurrentSha256 is null
+            || request.ExpectedCurrentSha256.Length != 64
+            || !IsLowerHex(request.ExpectedCurrentSha256))
+        {
+            return new AgentServiceResult(400, new AgentErrorResponse("invalid_expected_current_sha256"));
+        }
+
+        try
+        {
+            var workspaceId = new WorkspaceId(workspaceIdRaw);
+            var stored = await _workspaceStore.GetAsync(workspaceId, cancellationToken).ConfigureAwait(false);
+            if (stored is null)
+            {
+                return new AgentServiceResult(404, new AgentErrorResponse("workspace_not_found"));
+            }
+
+            var envelope = await _workspaceCoordinatorStore.GetChangeEnvelopeAsync(workspaceId, changeId, cancellationToken).ConfigureAwait(false);
+            if (envelope is null)
+            {
+                return new AgentServiceResult(404, new AgentErrorResponse("workspace_change_not_found"));
+            }
+
+            if (envelope.Change.Status == "restored")
+            {
+                return new AgentServiceResult(200, new WorkspaceChangeRestoreResponse(changeId, "restored", envelope.Change.BeforeSha256 ?? string.Empty, changeId));
+            }
+
+            var root = await _trustService.DecryptCanonicalRootAsync(stored, cancellationToken).ConfigureAwait(false);
+            var target = ResolveWorkspaceFile(root, envelope.Change.NormalizedPath);
+            var current = File.Exists(target) ? await File.ReadAllBytesAsync(target, cancellationToken).ConfigureAwait(false) : Array.Empty<byte>();
+            var currentSha = Convert.ToHexString(SHA256.HashData(current)).ToLowerInvariant();
+            if (!string.Equals(currentSha, request.ExpectedCurrentSha256, StringComparison.Ordinal))
+            {
+                return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_stale"));
+            }
+
+            var protector = _workspaceJournalProtector ?? new WorkspaceJournalProtector(_keyStore);
+            var plaintext = await protector.DecryptAsync(workspaceId, changeId, envelope.Change.NormalizedPath, envelope.Journal, cancellationToken).ConfigureAwait(false);
+            if (!TryReadRestoreContent(plaintext.Span, out var restoredBytes))
+            {
+                return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_unavailable"));
+            }
+
+            var restoredSha = Convert.ToHexString(SHA256.HashData(restoredBytes)).ToLowerInvariant();
+            var restoreChangeId = $"chg_restore_{Guid.NewGuid():N}";
+            var restorePayload = JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                restore_of = changeId,
+                restored_sha256 = restoredSha,
+                content_base64 = Convert.ToBase64String(restoredBytes),
+            });
+            var encrypted = await protector.EncryptAsync(workspaceId, restoreChangeId, envelope.Change.NormalizedPath, restorePayload, cancellationToken).ConfigureAwait(false);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            var temporary = target + ".ru-restore-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                await File.WriteAllBytesAsync(temporary, restoredBytes, cancellationToken).ConfigureAwait(false);
+                File.Move(temporary, target, overwrite: true);
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(temporary))
+                    {
+                        File.Delete(temporary);
+                    }
+                }
+                catch (IOException)
+                {
+                    // The durable journal is authoritative; an orphaned temp
+                    // file is harmless and is cleaned by the next retry/startup.
+                }
+            }
+            await _workspaceCoordinatorStore.AppendChangeAsync(
+                workspaceId,
+                runId: null,
+                restoreChangeId,
+                envelope.Change.NormalizedPath,
+                currentSha,
+                restoredSha,
+                encrypted,
+                "restored",
+                _time.UtcNow,
+                cancellationToken).ConfigureAwait(false);
+            await _workspaceCoordinatorStore.MarkChangeRestoredAsync(workspaceId, changeId, cancellationToken).ConfigureAwait(false);
+            return new AgentServiceResult(200, new WorkspaceChangeRestoreResponse(changeId, "restored", restoredSha, restoreChangeId));
+        }
+        catch (HarnessStoreException exception) when (exception.Code is "workspace_root_decrypt_failed" or "workspace_identity_changed" or "workspace_root_key_unavailable")
+        {
+            return new AgentServiceResult(409, new AgentErrorResponse("workspace_unavailable"));
+        }
+        catch (IOException)
+        {
+            return new AgentServiceResult(409, new AgentErrorResponse("workspace_restore_io_failed"));
+        }
     }
 
     public async Task<AgentServiceResult> GetRunAsync(string runIdRaw, CancellationToken cancellationToken)
@@ -2742,6 +3031,46 @@ public sealed class AgentV1Service
         }
 
         return true;
+    }
+
+    private static string ResolveWorkspaceFile(string root, string relativePath)
+    {
+        var canonicalRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        var target = Path.GetFullPath(Path.Combine(canonicalRoot, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+        if (!target.Equals(canonicalRoot, StringComparison.OrdinalIgnoreCase)
+            && !target.StartsWith(canonicalRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new HarnessStoreException("workspace_path_outside_root");
+        }
+
+        return target;
+    }
+
+    private static bool TryReadRestoreContent(ReadOnlySpan<byte> plaintext, out byte[] content)
+    {
+        content = Array.Empty<byte>();
+        try
+        {
+            using var document = JsonDocument.Parse(plaintext.ToArray());
+            if (!document.RootElement.TryGetProperty("content_base64", out var encoded)
+                || encoded.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+
+            var value = encoded.GetString();
+            if (string.IsNullOrWhiteSpace(value) || value.Length > 22_369_624)
+            {
+                return false;
+            }
+
+            content = Convert.FromBase64String(value);
+            return content.Length <= 16 * 1024 * 1024;
+        }
+        catch (Exception error) when (error is JsonException or FormatException)
+        {
+            return false;
+        }
     }
 
     private static bool IsValidIsoTimestamp(string value)

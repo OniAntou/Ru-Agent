@@ -35,11 +35,11 @@ ASP.NET Core is the only public backend. It owns authentication, validation,
 settings and credentials, sessions/history, activity, structured memory, Agent
 run ordering, public errors, durable Agent harness (Core + SQLite
 `agent_harness.db` + AES-GCM payloads, conversation outbox, workspace trust,
-session permissions, encrypted policy snapshots), and all 56 HTTP plus
-1 WebSocket route (`/voice/stream`; 41 pre-existing HTTP routes plus 15 additive
+session permissions, encrypted policy snapshots), and all 61 HTTP plus
+1 WebSocket route (`/voice/stream`; 41 pre-existing HTTP routes plus 20 additive
 `/agent/v1/*`).
 The public Agent path uses Worker v2 (`/worker/v2` one-step `AssistantStep` and
-`/agent/v1/*` 15-route API/SSE with bearer auth, `id:<sequence>`/
+`/agent/v1/*` 20-route API/SSE with bearer auth, `id:<sequence>`/
 `Last-Event-ID` cursor, idempotency 409, `workspace_busy` 409,
 `preset_mismatch` 409). The legacy `RuBackend:AgentHarness:Version` setting is
 still accepted by compatibility Harness construction, but it is not a product
@@ -221,8 +221,8 @@ dotnet test D:\LLM\gui-winui3.Tests\gui-winui3.Tests.csproj --nologo
 cmd /c D:\LLM\build.bat
 ```
 
-The backend artifact covers 56 HTTP routes and 1 WebSocket route (`/voice/stream`; 41 legacy
-plus 15 `/agent/v1/*`), requires correct-bearer success plus
+The backend artifact covers 61 HTTP routes and 1 WebSocket route (`/voice/stream`; 41 legacy
+plus 20 `/agent/v1/*`), requires correct-bearer success plus
 wrong/missing-bearer rejection, and records observation routes as explicit
 hardware/external skips. It uses synthetic STT/TTS and records only statuses,
 timings, counts, event types, and cleanup state. In deterministic mode it also

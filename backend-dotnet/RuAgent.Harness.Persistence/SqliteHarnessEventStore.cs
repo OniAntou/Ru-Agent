@@ -63,7 +63,15 @@ public sealed class SqliteHarnessEventStore : IHarnessEventStore
                 return CreateRunResult.Conflict(activeSession, "session_busy");
             }
 
-            var activeWorkspace = await HarnessSqliteQueries.FindActiveWorkspaceRunAsync(
+            var concurrencyMode = await HarnessSqliteQueries.GetWorkspaceConcurrencyModeAsync(
+                    connection,
+                    transaction,
+                    request.Run.WorkspaceId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var activeWorkspace = string.Equals(concurrencyMode, "shared", StringComparison.Ordinal)
+                ? null
+                : await HarnessSqliteQueries.FindActiveWorkspaceRunAsync(
                     connection,
                     transaction,
                     request.Run.WorkspaceId,

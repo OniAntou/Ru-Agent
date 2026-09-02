@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Text.Json.Serialization;
 
 namespace RuAgent.Protocol.Harness;
 
@@ -8,6 +9,100 @@ public sealed record WorkspaceTrustApiState(
     string Decision,
     bool IsTrusted,
     string UpdatedAtUtc);
+
+public static class WorkspaceConcurrencyMode
+{
+    public const string Exclusive = "exclusive";
+    public const string Shared = "shared";
+}
+
+public static class WorkspaceWriterKind
+{
+    public const string RuPeer = "ru_peer";
+    public const string UnknownExternal = "unknown_external";
+}
+
+public sealed record WorkspaceConcurrencyPolicy(
+    [property: JsonPropertyName("mode")] string Mode,
+    [property: JsonPropertyName("max_concurrent_runs")] int MaxConcurrentRuns = 1,
+    [property: JsonPropertyName("lease_ttl_seconds")] int LeaseTtlSeconds = 30,
+    [property: JsonPropertyName("merge_text_conflicts")] bool MergeTextConflicts = true,
+    [property: JsonPropertyName("external_writer_detection")] bool ExternalWriterDetection = true)
+{
+    public void Validate()
+    {
+        if (Mode is not (WorkspaceConcurrencyMode.Exclusive or WorkspaceConcurrencyMode.Shared))
+        {
+            throw new AgentProtocolException("invalid_workspace_concurrency_mode");
+        }
+
+        if (MaxConcurrentRuns is < 1 or > 32 || LeaseTtlSeconds is < 5 or > 600)
+        {
+            throw new AgentProtocolException("invalid_workspace_concurrency_policy");
+        }
+    }
+}
+
+public sealed record WorkspaceWriteSet(
+    [property: JsonPropertyName("read_only")] bool ReadOnly,
+    [property: JsonPropertyName("paths")] IReadOnlyList<string> Paths)
+{
+    public static void Validate(bool readOnly, IReadOnlyList<string>? paths)
+    {
+        if (paths is null)
+        {
+            throw new AgentProtocolException("invalid_terminal_write_set");
+        }
+
+        if (readOnly && paths.Count > 0)
+        {
+            throw new AgentProtocolException("invalid_terminal_write_set");
+        }
+
+        if (paths.Count > 256
+            || paths.Any(path => string.IsNullOrWhiteSpace(path) || path.Length > 4096)
+            || paths.Any(path => Path.IsPathRooted(path)
+                || path.Replace('\\', '/').Split('/').Any(segment => segment == "..")))
+        {
+            throw new AgentProtocolException("invalid_terminal_write_set");
+        }
+    }
+}
+
+public sealed record WorkspaceActivityItem(
+    [property: JsonPropertyName("event_id")] string EventId,
+    [property: JsonPropertyName("workspace_id")] string WorkspaceId,
+    [property: JsonPropertyName("kind")] string Kind,
+    [property: JsonPropertyName("path")] string? Path,
+    [property: JsonPropertyName("writer_kind")] string? WriterKind,
+    [property: JsonPropertyName("sequence")] long Sequence,
+    [property: JsonPropertyName("created_at_utc")] string CreatedAtUtc,
+    [property: JsonPropertyName("details")] string? Details);
+
+public sealed record WorkspaceChangeItem(
+    [property: JsonPropertyName("change_id")] string ChangeId,
+    [property: JsonPropertyName("workspace_id")] string WorkspaceId,
+    [property: JsonPropertyName("path")] string Path,
+    [property: JsonPropertyName("sequence")] long Sequence,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("before_sha256")] string? BeforeSha256,
+    [property: JsonPropertyName("after_sha256")] string? AfterSha256,
+    [property: JsonPropertyName("created_at_utc")] string CreatedAtUtc);
+
+public sealed record WorkspaceChangeRestoreRequest(
+    [property: JsonPropertyName("expected_current_sha256")] string ExpectedCurrentSha256);
+
+public sealed record WorkspaceChangeRestoreResponse(
+    [property: JsonPropertyName("change_id")] string ChangeId,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("restored_sha256")] string RestoredSha256,
+    [property: JsonPropertyName("restore_change_id")] string RestoreChangeId);
+
+public sealed record WorkspaceClaimState(
+    [property: JsonPropertyName("run_id")] string RunId,
+    [property: JsonPropertyName("path")] string Path,
+    [property: JsonPropertyName("lease_expires_at_utc")] string LeaseExpiresAtUtc,
+    [property: JsonPropertyName("state")] string State);
 
 public static class WorkspaceContracts
 {

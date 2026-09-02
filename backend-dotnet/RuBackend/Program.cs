@@ -277,6 +277,10 @@ builder.Services.AddSingleton<WindowsWorkspaceIdentityResolver>();
 builder.Services.AddSingleton<RuBackend.Harness.Prompting.RuInstructionLoader>();
 builder.Services.AddSingleton<SqliteWorkspaceStore>(services =>
     new SqliteWorkspaceStore(services.GetRequiredService<HarnessSqliteOptions>()));
+builder.Services.AddSingleton<WorkspaceCoordinatorStore>(services =>
+    new WorkspaceCoordinatorStore(services.GetRequiredService<HarnessSqliteOptions>()));
+builder.Services.AddSingleton<WorkspaceExternalChangeMonitor>();
+builder.Services.AddSingleton<WorkspaceCoordinatorService>();
 builder.Services.AddSingleton<WorkspaceTrustRequestStore>(services =>
     new WorkspaceTrustRequestStore(services.GetRequiredService<HarnessSqliteOptions>()));
 builder.Services.AddSingleton<WorkspaceTrustService>();
@@ -303,6 +307,8 @@ builder.Services.AddSingleton<IHarnessKeyStore>(services =>
     // Development-only platforms; Windows is the supported production host.
     return new EphemeralHarnessKeyStore();
 });
+builder.Services.AddSingleton<WorkspaceJournalProtector>(services =>
+    new WorkspaceJournalProtector(services.GetRequiredService<IHarnessKeyStore>()));
 builder.Services.AddSingleton<KnownSecretRedactor>(_ => BuildKnownSecretRedactor());
 builder.Services.AddSingleton<AgentReplyTransientRedactor>();
 builder.Services.AddSingleton<ITransientContentRedactor>(services =>

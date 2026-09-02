@@ -28,6 +28,11 @@ public static class AgentV1Endpoints
         app.MapGet("/agent/v1/policies", GetPoliciesAsync);
         app.MapPost("/agent/v1/policies", PostPolicyAsync);
         app.MapDelete("/agent/v1/policies/{ruleId}", DeletePolicyAsync);
+        app.MapGet("/agent/v1/workspaces/{workspaceId}/concurrency", GetWorkspaceConcurrencyAsync);
+        app.MapPut("/agent/v1/workspaces/{workspaceId}/concurrency", PutWorkspaceConcurrencyAsync);
+        app.MapGet("/agent/v1/workspaces/{workspaceId}/activity", GetWorkspaceActivityAsync);
+        app.MapGet("/agent/v1/workspaces/{workspaceId}/changes", GetWorkspaceChangesAsync);
+        app.MapPost("/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore", PostWorkspaceChangeRestoreAsync);
     }
 
     private static async Task<IResult> CreateRunAsync(HttpContext context, AgentV1Service service, CancellationToken ct)
@@ -59,6 +64,102 @@ public static class AgentV1Endpoints
         }
 
         var result = await service.CreateRunAsync(dto, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
+    }
+
+    private static async Task<IResult> GetWorkspaceConcurrencyAsync(string workspaceId, AgentV1Service service, CancellationToken ct)
+    {
+        var result = await service.GetWorkspaceConcurrencyAsync(workspaceId, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
+    }
+
+    private static async Task<IResult> PutWorkspaceConcurrencyAsync(string workspaceId, HttpContext context, AgentV1Service service, CancellationToken ct)
+    {
+        WorkspaceConcurrencyUpdateRequest? request;
+        try
+        {
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
+            request = text is null
+                ? null
+                : JsonSerializer.Deserialize<WorkspaceConcurrencyUpdateRequest>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (RequestBodyTooLargeException)
+        {
+            return Results.Json(new { error_code = "request_too_large" }, statusCode: 413);
+        }
+        catch (JsonException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+
+        if (request is null)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+
+        var result = await service.UpdateWorkspaceConcurrencyAsync(workspaceId, request, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
+    }
+
+    private static Task<IResult> GetWorkspaceActivityAsync(string workspaceId, HttpContext context, AgentV1Service service, CancellationToken ct) =>
+        GetWorkspaceFeedAsync(workspaceId, context, service, ct, activity: true);
+
+    private static Task<IResult> GetWorkspaceChangesAsync(string workspaceId, HttpContext context, AgentV1Service service, CancellationToken ct) =>
+        GetWorkspaceFeedAsync(workspaceId, context, service, ct, activity: false);
+
+    private static async Task<IResult> PostWorkspaceChangeRestoreAsync(
+        string workspaceId,
+        string changeId,
+        HttpContext context,
+        AgentV1Service service,
+        CancellationToken ct)
+    {
+        WorkspaceChangeRestoreRequest? request;
+        try
+        {
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
+            request = text is null
+                ? null
+                : JsonSerializer.Deserialize<WorkspaceChangeRestoreRequest>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (RequestBodyTooLargeException)
+        {
+            return Results.Json(new { error_code = "request_too_large" }, statusCode: 413);
+        }
+        catch (JsonException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+
+        if (request is null)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+
+        var result = await service.RestoreWorkspaceChangeAsync(workspaceId, changeId, request, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
+    }
+
+    private static async Task<IResult> GetWorkspaceFeedAsync(
+        string workspaceId,
+        HttpContext context,
+        AgentV1Service service,
+        CancellationToken ct,
+        bool activity)
+    {
+        var afterRaw = context.Request.Query["after_sequence"].ToString();
+        var limitRaw = context.Request.Query["limit"].ToString();
+        var after = 0L;
+        var limit = 50;
+        if ((!string.IsNullOrWhiteSpace(afterRaw) && (!long.TryParse(afterRaw, NumberStyles.None, CultureInfo.InvariantCulture, out after) || after < 0))
+            || (!string.IsNullOrWhiteSpace(limitRaw) && (!int.TryParse(limitRaw, NumberStyles.None, CultureInfo.InvariantCulture, out limit) || limit is < 1 or > 200)))
+        {
+            return Results.Json(new { error_code = "invalid_cursor" }, statusCode: 400);
+        }
+
+        var result = activity
+            ? await service.ListWorkspaceActivityAsync(workspaceId, after, limit, ct)
+            : await service.ListWorkspaceChangesAsync(workspaceId, after, limit, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 

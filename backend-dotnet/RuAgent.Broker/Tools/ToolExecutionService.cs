@@ -13,6 +13,7 @@ using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Broker.Tools.Web;
 using RuAgent.Broker.Tools.Help;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Broker.Tools;
 
@@ -861,7 +862,9 @@ public sealed class ToolExecutionService : IToolInvoker
                 IsTrue(arguments, "network_intent") || IsTrue(arguments, "network"),
                 context.ApprovalToken ?? string.Empty,
                 context.RequestId,
-                context.SessionId),
+                context.SessionId,
+                IsTrue(arguments, "read_only"),
+                ReadWriteSet(arguments)),
             context.ConfinementRequired,
             cancellationToken).ConfigureAwait(false);
         return ProcessOutcome(result, context.ConfinementRequired);
@@ -888,6 +891,11 @@ public sealed class ToolExecutionService : IToolInvoker
             context.SessionId,
             TryComputeTerminalIntentHash("terminal.shell", arguments)
                 ?? PendingApprovalStore.ComputeArgumentsHash("terminal.shell", "1.0.0", arguments));
+        shellRequest = shellRequest with
+        {
+            ReadOnly = IsTrue(arguments, "read_only"),
+            WriteSet = ReadWriteSet(arguments),
+        };
         var result = await _terminal.RunApprovedShellAsync(
             shellRequest,
             confineWorkspace,
@@ -1321,6 +1329,49 @@ public sealed class ToolExecutionService : IToolInvoker
             }
 
             result.Add(text);
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<string> ReadWriteSet(JsonObject payload)
+    {
+        if (payload["write_set"] is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        if (payload["write_set"] is not JsonArray values)
+        {
+            throw new ToolExecutionException("invalid_terminal_write_set");
+        }
+
+        if (values.Count > 256)
+        {
+            throw new ToolExecutionException("invalid_terminal_write_set");
+        }
+
+        var result = new List<string>(values.Count);
+        foreach (var value in values)
+        {
+            if (value is not JsonValue item
+                || !item.TryGetValue<string>(out var path)
+                || string.IsNullOrWhiteSpace(path)
+                || path.Length > 4096)
+            {
+                throw new ToolExecutionException("invalid_terminal_write_set");
+            }
+
+            result.Add(path);
+        }
+
+        try
+        {
+            WorkspaceWriteSet.Validate(IsTrue(payload, "read_only"), result);
+        }
+        catch (AgentProtocolException exception)
+        {
+            throw new ToolExecutionException(exception.Code);
         }
 
         return result;

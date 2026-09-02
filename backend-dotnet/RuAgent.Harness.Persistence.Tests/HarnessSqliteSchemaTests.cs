@@ -17,16 +17,23 @@ public sealed class HarnessSqliteSchemaTests
         "agent_workspaces",
         "agent_session_settings",
         "agent_context_compactions",
+        "workspace_coordinators",
+        "workspace_run_members",
+        "workspace_path_claims",
+        "workspace_file_snapshots",
+        "workspace_change_journal",
+        "workspace_mutations",
     ];
 
     private static readonly string[] RequiredIndexes =
     [
         "ux_agent_runs_active_session",
-        "ux_agent_runs_active_workspace",
         "ux_agent_payloads_context_source",
         "ux_agent_payloads_context_sequence",
         "ix_agent_conversation_outbox_dispatch",
         "ix_agent_context_compactions_run_created",
+        "ix_workspace_path_claims_active",
+        "ix_workspace_change_journal_sequence",
     ];
 
     [Fact]
@@ -43,7 +50,7 @@ public sealed class HarnessSqliteSchemaTests
         await connection.OpenAsync();
         await using var tableCommand = connection.CreateCommand();
         tableCommand.CommandText =
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'agent_%'";
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND (name LIKE 'agent_%' OR name LIKE 'workspace_%')";
         var names = new HashSet<string>(StringComparer.Ordinal);
         await using (var reader = await tableCommand.ExecuteReaderAsync())
         {
@@ -56,7 +63,7 @@ public sealed class HarnessSqliteSchemaTests
         Assert.All(RequiredTables, name => Assert.Contains(name, names));
         await using var indexCommand = connection.CreateCommand();
         indexCommand.CommandText =
-            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE '%agent_%'";
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND (name LIKE '%agent_%' OR name LIKE '%workspace_%')";
         var indexes = new HashSet<string>(StringComparer.Ordinal);
         await using (var reader = await indexCommand.ExecuteReaderAsync())
         {
@@ -95,6 +102,28 @@ public sealed class HarnessSqliteSchemaTests
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task Initialize_creates_workspace_coordinator_tables_with_required_columns()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(workspace_coordinators)";
+        var columns = new HashSet<string>(StringComparer.Ordinal);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            columns.Add(reader.GetString(1));
+        }
+
+        Assert.Contains("workspace_id", columns);
+        Assert.Contains("mode", columns);
+        Assert.Contains("commit_sequence", columns);
+        Assert.Contains("policy_json", columns);
     }
 
     [Fact]
@@ -175,7 +204,7 @@ public sealed class HarnessSqliteSchemaTests
                 CancellationToken.None);
 
             Assert.True(migrated.IsAvailable, migrated.ErrorCode);
-            Assert.Equal(3, migrated.SchemaVersion);
+            Assert.Equal(HarnessSqliteSchema.CurrentVersion, migrated.SchemaVersion);
             await using var verify = new SqliteConnection($"Data Source={databasePath};Pooling=False");
             await verify.OpenAsync();
             await using var sentinel = verify.CreateCommand();

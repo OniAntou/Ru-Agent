@@ -13,7 +13,7 @@ public sealed record HarnessStoreHealth(bool IsAvailable, int SchemaVersion, str
 
 public static class HarnessSqliteSchema
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 5;
 
     public static async Task<HarnessStoreHealth> InitializeAsync(
         HarnessSqliteOptions options,
@@ -39,7 +39,7 @@ public static class HarnessSqliteSchema
 
             var existingVersion = await ReadUserVersionAsync(connection, cancellationToken)
                 .ConfigureAwait(false);
-            if (existingVersion is not 0 and not 2 and not CurrentVersion)
+            if (existingVersion is not 0 and not 2 and not 3 and not 4 and not CurrentVersion)
             {
                 return HarnessStoreHealth.Unavailable("harness_schema_incompatible");
             }
@@ -47,7 +47,27 @@ public static class HarnessSqliteSchema
             if (existingVersion == 2)
             {
                 await using var migration = connection.CreateCommand();
-                migration.CommandText = SchemaVersionTwoToThree;
+                migration.CommandText = SchemaVersionTwoToThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate;
+                await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                await using var verCmd = connection.CreateCommand();
+                verCmd.CommandText = $"PRAGMA user_version = {CurrentVersion};";
+                await verCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 3)
+            {
+                await using var migration = connection.CreateCommand();
+                migration.CommandText = SchemaVersionThreeToFour + SchemaVersionFourFinalGate;
+                await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                await using var verCmd = connection.CreateCommand();
+                verCmd.CommandText = $"PRAGMA user_version = {CurrentVersion};";
+                await verCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else if (existingVersion == 4)
+            {
+                await using var migration = connection.CreateCommand();
+                migration.CommandText = SchemaVersionFourFinalGate;
                 await migration.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 await using var verCmd = connection.CreateCommand();
@@ -57,7 +77,7 @@ public static class HarnessSqliteSchema
             else if (existingVersion == 0)
             {
                 await using var command = connection.CreateCommand();
-                command.CommandText = SchemaVersionThree;
+                command.CommandText = SchemaVersionThree + SchemaVersionThreeToFour + SchemaVersionFourFinalGate;
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 await using var verCmd = connection.CreateCommand();
@@ -286,5 +306,99 @@ public static class HarnessSqliteSchema
 
         CREATE INDEX IF NOT EXISTS ix_agent_context_compactions_run_created
             ON agent_context_compactions(run_id, created_at_utc, compaction_id);
+        """;
+
+    private const string SchemaVersionThreeToFour = """
+        CREATE TABLE IF NOT EXISTS workspace_coordinators (
+            workspace_id TEXT PRIMARY KEY REFERENCES agent_workspaces(workspace_id) ON DELETE CASCADE,
+            mode TEXT NOT NULL CHECK(mode IN ('exclusive', 'shared')),
+            max_concurrent_runs INTEGER NOT NULL CHECK(max_concurrent_runs BETWEEN 1 AND 32),
+            lease_ttl_seconds INTEGER NOT NULL CHECK(lease_ttl_seconds BETWEEN 5 AND 600),
+            merge_text_conflicts INTEGER NOT NULL CHECK(merge_text_conflicts IN (0, 1)),
+            external_writer_detection INTEGER NOT NULL CHECK(external_writer_detection IN (0, 1)),
+            commit_sequence INTEGER NOT NULL CHECK(commit_sequence >= 0),
+            policy_json TEXT NOT NULL CHECK(length(policy_json) BETWEEN 2 AND 16384),
+            version INTEGER NOT NULL CHECK(version > 0),
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS workspace_run_members (
+            member_id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL REFERENCES workspace_coordinators(workspace_id) ON DELETE CASCADE,
+            run_id TEXT NOT NULL REFERENCES agent_runs(run_id) ON DELETE CASCADE,
+            writer_kind TEXT NOT NULL CHECK(writer_kind IN ('ru_peer', 'unknown_external')),
+            state TEXT NOT NULL CHECK(state IN ('active', 'expired', 'released')),
+            heartbeat_at_utc TEXT NOT NULL,
+            lease_expires_at_utc TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            UNIQUE(workspace_id, run_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS workspace_path_claims (
+            claim_id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL REFERENCES workspace_coordinators(workspace_id) ON DELETE CASCADE,
+            run_id TEXT NOT NULL REFERENCES agent_runs(run_id) ON DELETE CASCADE,
+            normalized_path TEXT NOT NULL CHECK(length(normalized_path) BETWEEN 1 AND 4096),
+            path_kind TEXT NOT NULL CHECK(path_kind IN ('text', 'binary', 'unknown')),
+            state TEXT NOT NULL CHECK(state IN ('active', 'expired', 'released', 'conflict')),
+            base_sha256 TEXT NULL CHECK(base_sha256 IS NULL OR length(base_sha256) = 64),
+            lease_expires_at_utc TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            UNIQUE(workspace_id, run_id, normalized_path)
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_workspace_path_claims_active
+            ON workspace_path_claims(workspace_id, normalized_path, state, lease_expires_at_utc);
+
+        CREATE TABLE IF NOT EXISTS workspace_file_snapshots (
+            snapshot_id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL REFERENCES workspace_coordinators(workspace_id) ON DELETE CASCADE,
+            run_id TEXT NOT NULL REFERENCES agent_runs(run_id) ON DELETE CASCADE,
+            normalized_path TEXT NOT NULL CHECK(length(normalized_path) BETWEEN 1 AND 4096),
+            phase TEXT NOT NULL CHECK(phase IN ('base', 'before', 'after', 'merged')),
+            sha256 TEXT NOT NULL CHECK(length(sha256) = 64),
+            content BLOB NOT NULL CHECK(length(content) <= 16777216),
+            encoding TEXT NOT NULL CHECK(length(encoding) BETWEEN 1 AND 32),
+            captured_at_utc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS workspace_change_journal (
+            change_id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL REFERENCES workspace_coordinators(workspace_id) ON DELETE CASCADE,
+            run_id TEXT NULL REFERENCES agent_runs(run_id) ON DELETE SET NULL,
+            commit_sequence INTEGER NOT NULL CHECK(commit_sequence > 0),
+            normalized_path TEXT NOT NULL CHECK(length(normalized_path) BETWEEN 1 AND 4096),
+            before_sha256 TEXT NULL CHECK(before_sha256 IS NULL OR length(before_sha256) = 64),
+            after_sha256 TEXT NULL CHECK(after_sha256 IS NULL OR length(after_sha256) = 64),
+            protected_payload BLOB NOT NULL,
+            nonce BLOB NOT NULL CHECK(length(nonce) = 12),
+            authentication_tag BLOB NOT NULL CHECK(length(authentication_tag) = 16),
+            protection_version INTEGER NOT NULL CHECK(protection_version = 1),
+            status TEXT NOT NULL CHECK(status IN ('prepared', 'committed', 'restored', 'rejected')),
+            created_at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_workspace_change_journal_sequence
+            ON workspace_change_journal(workspace_id, commit_sequence, created_at_utc);
+
+        CREATE TABLE IF NOT EXISTS workspace_mutations (
+            mutation_id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL REFERENCES workspace_coordinators(workspace_id) ON DELETE CASCADE,
+            run_id TEXT NULL REFERENCES agent_runs(run_id) ON DELETE SET NULL,
+            change_id TEXT NULL REFERENCES workspace_change_journal(change_id) ON DELETE SET NULL,
+            idempotency_key TEXT NOT NULL CHECK(length(idempotency_key) BETWEEN 1 AND 256),
+            operation TEXT NOT NULL CHECK(length(operation) BETWEEN 1 AND 64),
+            state TEXT NOT NULL CHECK(state IN ('prepared', 'applied', 'rejected', 'restored')),
+            created_at_utc TEXT NOT NULL,
+            UNIQUE(workspace_id, idempotency_key)
+        );
+        """;
+
+    // Named final-gate migration. The legacy unique index remains in place
+    // while coordinator tables are introduced and is removed only once the
+    // shared-mode schema is ready. This is idempotent for interrupted upgrades.
+    private const string SchemaVersionFourFinalGate = """
+        DROP INDEX IF EXISTS ux_agent_runs_active_workspace;
         """;
 }

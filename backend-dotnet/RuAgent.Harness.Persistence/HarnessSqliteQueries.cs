@@ -94,6 +94,19 @@ internal static class HarnessSqliteQueries
         return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not null;
     }
 
+    internal static async Task<string?> GetWorkspaceConcurrencyModeAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        WorkspaceId workspaceId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT mode FROM workspace_coordinators WHERE workspace_id = $workspace_id";
+        command.Parameters.AddWithValue("$workspace_id", workspaceId.Value);
+        return (string?)await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private static async Task<AgentRun?> FindActiveAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,

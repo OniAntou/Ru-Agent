@@ -12,7 +12,9 @@ public sealed record TerminalRunRequest(
     bool Network = false,
     string ApprovalToken = "",
     string RequestId = "",
-    string SessionId = "");
+    string SessionId = "",
+    bool ReadOnly = false,
+    IReadOnlyList<string>? WriteSet = null);
 
 public sealed record TerminalShellRequest(
     string Shell,
@@ -22,7 +24,9 @@ public sealed record TerminalShellRequest(
     string ApprovalToken,
     string RequestId = "",
     string SessionId = "",
-    string ArgumentsHash = "");
+    string ArgumentsHash = "",
+    bool ReadOnly = false,
+    IReadOnlyList<string>? WriteSet = null);
 
 public static class TerminalManifests
 {

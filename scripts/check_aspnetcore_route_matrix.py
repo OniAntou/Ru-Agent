@@ -47,7 +47,7 @@ def validate_route_contract(repo_root: Path) -> tuple[int, int]:
 
         if not isinstance(path, str) or not path.startswith("/"):
             raise ValueError(f"invalid public route path: {path!r}")
-        if transport == "http" and method not in {"GET", "POST", "DELETE"}:
+        if transport == "http" and method not in {"GET", "POST", "PUT", "DELETE"}:
             raise ValueError(f"invalid HTTP method: {identity!r}")
         if transport == "websocket" and method != "WS":
             raise ValueError(f"invalid WebSocket method: {identity!r}")
@@ -75,9 +75,9 @@ def validate_route_contract(repo_root: Path) -> tuple[int, int]:
     websocket_count = sum(
         transport == "websocket" for _, _, transport in identities
     )
-    if (http_count, websocket_count) != (56, 1):
+    if (http_count, websocket_count) != (61, 1):
         raise ValueError(
-            "expected 56 HTTP routes and 1 WebSocket route (/voice/stream), "
+            "expected 61 HTTP routes and 1 WebSocket route (/voice/stream), "
             f"found {http_count} and {websocket_count}"
         )
     return http_count, websocket_count

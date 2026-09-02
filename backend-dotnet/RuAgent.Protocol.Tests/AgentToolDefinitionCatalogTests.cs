@@ -85,6 +85,20 @@ public sealed class AgentToolDefinitionCatalogTests
     }
 
     [Fact]
+    public void Terminal_tools_expose_optional_read_only_and_write_set_contract()
+    {
+        foreach (var toolId in new[] { "terminal.run", "terminal.shell" })
+        {
+            var properties = Properties(toolId);
+            Assert.Equal("boolean", properties["read_only"]!["type"]!.GetValue<string>());
+            Assert.Equal("array", properties["write_set"]!["type"]!.GetValue<string>());
+            Assert.Equal("string", properties["write_set"]!["items"]!["type"]!.GetValue<string>());
+            Assert.DoesNotContain("read_only", Required(toolId));
+            Assert.DoesNotContain("write_set", Required(toolId));
+        }
+    }
+
+    [Fact]
     public void Every_definition_has_valid_identity_description_scope_schema_and_example()
     {
         foreach (var definition in AgentToolDefinitionCatalog.Get())

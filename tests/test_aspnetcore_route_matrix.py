@@ -61,6 +61,11 @@ EXPECTED_HTTP_ROUTES = {
     ("GET", "/agent/v1/policies"),
     ("POST", "/agent/v1/policies"),
     ("DELETE", "/agent/v1/policies/{ruleId}"),
+    ("GET", "/agent/v1/workspaces/{workspaceId}/concurrency"),
+    ("PUT", "/agent/v1/workspaces/{workspaceId}/concurrency"),
+    ("GET", "/agent/v1/workspaces/{workspaceId}/activity"),
+    ("GET", "/agent/v1/workspaces/{workspaceId}/changes"),
+    ("POST", "/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore"),
 }
 
 EXPECTED_WEBSOCKET_ROUTES = {("WS", "/voice/stream")}
@@ -69,7 +74,7 @@ EXPECTED_WEBSOCKET_ROUTES = {("WS", "/voice/stream")}
 def test_public_route_contract_matches_the_final_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    assert validate_route_contract(repo_root) == (56, 1)
+    assert validate_route_contract(repo_root) == (61, 1)
     contract = load_route_contract(repo_root)
 
     assert {
@@ -104,6 +109,7 @@ def test_every_public_route_has_one_final_aspnet_execution_class() -> None:
         "/agent/v1/runs/{runId}",
         "/agent/v1/runs/{runId}/events",
         "/agent/v1/runs/{runId}/payloads/{payloadId}",
+        "/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore",
         "/agent/v1/runs/{runId}/approvals/{approvalId}",
         "/agent/v1/runs/{runId}/trust",
         "/agent/v1/runs/{runId}/cancel",
@@ -114,6 +120,9 @@ def test_every_public_route_has_one_final_aspnet_execution_class() -> None:
         "/agent/v1/sessions/{sessionId}/runs",
         "/agent/v1/policies",
         "/agent/v1/policies/{ruleId}",
+        "/agent/v1/workspaces/{workspaceId}/concurrency",
+        "/agent/v1/workspaces/{workspaceId}/activity",
+        "/agent/v1/workspaces/{workspaceId}/changes",
     }
     for entry in contract:
         expected = (

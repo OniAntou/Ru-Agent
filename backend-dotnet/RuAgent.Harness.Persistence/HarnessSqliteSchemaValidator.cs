@@ -88,6 +88,12 @@ internal static class HarnessSqliteSchemaValidator
                 "input_hash",
                 "created_at_utc",
             ],
+            ["workspace_coordinators"] = ["workspace_id", "mode", "commit_sequence", "policy_json"],
+            ["workspace_run_members"] = ["member_id", "workspace_id", "run_id", "lease_expires_at_utc"],
+            ["workspace_path_claims"] = ["claim_id", "workspace_id", "run_id", "normalized_path", "state"],
+            ["workspace_file_snapshots"] = ["snapshot_id", "workspace_id", "normalized_path", "sha256", "content"],
+            ["workspace_change_journal"] = ["change_id", "workspace_id", "commit_sequence", "protected_payload", "nonce", "authentication_tag"],
+            ["workspace_mutations"] = ["mutation_id", "workspace_id", "idempotency_key", "operation", "state"],
         };
 
     internal static async Task<bool> ValidateAsync(
@@ -129,14 +135,15 @@ internal static class HarnessSqliteSchemaValidator
             WHERE type = 'index'
               AND name IN (
                   'ux_agent_runs_active_session',
-                  'ux_agent_runs_active_workspace',
                   'ux_agent_payloads_context_source',
                   'ux_agent_payloads_context_sequence',
                   'ix_agent_conversation_outbox_dispatch',
-                  'ix_agent_context_compactions_run_created')
+                  'ix_agent_context_compactions_run_created',
+                  'ix_workspace_path_claims_active',
+                  'ix_workspace_change_journal_sequence')
             """;
         return (long)(await indexCommand.ExecuteScalarAsync(cancellationToken)
-            .ConfigureAwait(false) ?? 0L) == 6;
+            .ConfigureAwait(false) ?? 0L) == 7;
     }
 
     private static async Task<HashSet<string>> ReadColumnsAsync(

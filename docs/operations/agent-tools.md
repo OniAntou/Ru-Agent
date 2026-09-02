@@ -15,7 +15,7 @@ runtime surface.
 >   one Job Object; `RuApp` and `RuAgent.Cli` start-or-attach via
 >   `RuAgent.Client`. Worker v1 is a device/runtime adapter only; Agent
 >   generation runs on the v2 one-step protocol at `/worker/v2` and the
->   `/agent/v1/*` (15 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
+>   `/agent/v1/*` (19 HTTP + SSE `GET /agent/v1/runs/{runId}/events` with
 >   `id:<sequence>`/`Last-Event-ID`/`after_sequence` cursor, reconnect replay).
 >   This checkpoint exposes Broker-backed model tools (`files.list`,
 >   `files.glob`, `files.search`, `files.read` offset/limit, `files.write`,
@@ -45,7 +45,14 @@ runtime surface.
 >   Managed startup enables `web.search` and `web.fetch` as read-only
 >   capabilities backed by the fixed DuckDuckGo HTML endpoint; results are
 >   bounded, sanitized, and explicitly untrusted.
-> - Public Contract is now **56 HTTP plus 1 WebSocket** (41 + 15 `/agent/v1/*`;
+>   Workspace coordination is now opt-in per workspace through the authenticated
+>   concurrency/activity/changes endpoints. Shared mode permits disjoint runs;
+>   active Ru runs hold renewable workspace membership leases, and external file
+>   changes are surfaced as `unknown_external` after an authoritative SHA-256
+>   check and durably appended to the encrypted change journal. Terminal
+>   `read_only` and `write_set` fields are additive protocol metadata; full
+>   terminal write-set enforcement remains gated.
+> - Public Contract is now **61 HTTP plus 1 WebSocket** (41 + 20 `/agent/v1/*`;
 >   `/voice/stream` is the only public WebSocket).
 > - Worker v2, Harness Core/Persistence (`PolicySnapshot`/`PolicyMatcher`/
 >   `SqlitePolicyRuleStore`/`PolicySnapshotLoader`/`WorkspaceTrust`,

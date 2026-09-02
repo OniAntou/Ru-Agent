@@ -1,8 +1,8 @@
 # Ru ASP.NET Core backend
 
 `RuBackend` is the only public backend for Ru. It binds to loopback port `8000`
-when started as `RuBackend.exe --managed-runtime` and owns all 56 HTTP routes
-plus the single `/voice/stream` WebSocket (41 legacy routes plus 15 additive
+when started as `RuBackend.exe --managed-runtime` and owns all 61 HTTP routes
+plus the single `/voice/stream` WebSocket (41 legacy routes plus 20 additive
 `/agent/v1/*`). Text turns use the current Worker v2-backed Agent HTTP/SSE
 contract; no Chat WebSocket is exposed. The legacy
 `RuBackend:AgentHarness:Version` setting remains accepted by compatibility

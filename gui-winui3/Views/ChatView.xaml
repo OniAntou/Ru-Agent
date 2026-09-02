@@ -382,7 +382,7 @@
 
         <Grid x:Name="InputContainer"
               Grid.Row="1"
-              RowDefinitions="Auto,Auto,Auto"
+              RowDefinitions="Auto,Auto,Auto,Auto"
               Width="820"
               MaxWidth="820"
               Background="Transparent"
@@ -507,8 +507,43 @@
                         AutomationProperties.Name="Tiếp tục phiên Coding Agent" />
             </StackPanel>
 
-            <Border x:Name="InputBorder"
+            <Border x:Name="WorkspaceActivityPanel"
                     Grid.Row="2"
+                    Visibility="Collapsed"
+                    Margin="8,0,8,8"
+                    Padding="10,8"
+                    Background="{StaticResource RuSurfaceBrush}"
+                    BorderBrush="{StaticResource RuLineBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource RuControlCornerRadius}"
+                    AutomationProperties.AutomationId="WorkspaceActivityPanel"
+                    AutomationProperties.Name="Hoạt động workspace">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBlock x:Name="WorkspaceActivityText"
+                               TextWrapping="Wrap"
+                               Foreground="{StaticResource RuMutedBrush}"
+                               FontSize="12"
+                               AutomationProperties.LiveSetting="Polite" />
+                    <Button x:Name="WorkspaceActivityRefreshButton"
+                            Grid.Column="1"
+                            Content="Làm mới"
+                            Padding="8,3"
+                            Click="OnWorkspaceActivityRefreshClick"
+                            AutomationProperties.AutomationId="WorkspaceActivityRefreshButton"
+                            AutomationProperties.Name="Làm mới hoạt động workspace" />
+                    <Button x:Name="WorkspaceRestoreButton"
+                            Grid.Column="2"
+                            Content="Khôi phục cuối"
+                            Padding="8,3"
+                            Visibility="Collapsed"
+                            Click="OnWorkspaceRestoreClick"
+                            AutomationProperties.AutomationId="WorkspaceRestoreButton"
+                            AutomationProperties.Name="Khôi phục thay đổi workspace gần nhất" />
+                </Grid>
+            </Border>
+
+            <Border x:Name="InputBorder"
+                    Grid.Row="3"
                     Background="{StaticResource RuSurfaceBrush}"
                     BorderBrush="{StaticResource RuLineBrush}"
                     BorderThickness="1"

@@ -30,8 +30,8 @@ over a private lifecycle/TTS contract.
 _Avoid_: TTS web server, Flask voice server
 
 **Public Contract**:
-The stable authenticated surface of 56 HTTP method/path pairs plus the single
-`/voice/stream` WebSocket (41 legacy plus 15 additive `/agent/v1/*`; Agent v2 is
+The stable authenticated surface of 61 HTTP method/path pairs plus the single
+`/voice/stream` WebSocket (41 legacy plus 20 additive `/agent/v1/*`; Agent v2 is
 the current generation path at `/worker/v2` and `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. The
 legacy `RuBackend:AgentHarness:Version` setting is compatibility-only and is

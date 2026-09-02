@@ -24,10 +24,15 @@ public sealed class AgentV1EndpointTests
         ("GET", "/agent/v1/policies"),
         ("POST", "/agent/v1/policies"),
         ("DELETE", "/agent/v1/policies/{ruleId}"),
+        ("GET", "/agent/v1/workspaces/{workspaceId}/concurrency"),
+        ("PUT", "/agent/v1/workspaces/{workspaceId}/concurrency"),
+        ("GET", "/agent/v1/workspaces/{workspaceId}/activity"),
+        ("GET", "/agent/v1/workspaces/{workspaceId}/changes"),
+        ("POST", "/agent/v1/workspaces/{workspaceId}/changes/{changeId}/restore"),
     };
 
     [Fact]
-    public void Route_manifest_contains_exact_15_agent_routes()
+    public void Route_manifest_contains_agent_routes()
     {
         var contractPath = FindContractPath();
         var json = File.ReadAllText(contractPath);
@@ -39,7 +44,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(56, doc.RootElement.GetArrayLength() - 1); // minus 1 websocket, HTTP count 56
+        Assert.Equal(61, doc.RootElement.GetArrayLength() - 1); // minus 1 websocket, HTTP count 61
     }
 
     [Theory]
@@ -58,12 +63,17 @@ public sealed class AgentV1EndpointTests
     [InlineData("GET", "/agent/v1/policies")]
     [InlineData("POST", "/agent/v1/policies")]
     [InlineData("DELETE", "/agent/v1/policies/rule_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("GET", "/agent/v1/workspaces/ws_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/concurrency")]
+    [InlineData("PUT", "/agent/v1/workspaces/ws_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/concurrency")]
+    [InlineData("GET", "/agent/v1/workspaces/ws_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/activity")]
+    [InlineData("GET", "/agent/v1/workspaces/ws_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/changes")]
+    [InlineData("POST", "/agent/v1/workspaces/ws_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/changes/chg_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/restore")]
     public async Task Agent_routes_reject_missing_bearer_with_401(string method, string path)
     {
         using var factory = new BackendWebApplicationFactory();
         using var client = factory.CreateClient(); // no auth
         using var request = new HttpRequestMessage(new HttpMethod(method), path);
-        if (method == "POST")
+        if (method is "POST" or "PUT")
         {
             request.Content = JsonContent.Create(new { });
         }
@@ -88,13 +98,17 @@ public sealed class AgentV1EndpointTests
     [InlineData("GET", "/agent/v1/policies")]
     [InlineData("POST", "/agent/v1/policies")]
     [InlineData("DELETE", "/agent/v1/policies/rule_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("GET", "/agent/v1/workspaces/ws_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/concurrency")]
+    [InlineData("PUT", "/agent/v1/workspaces/ws_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/concurrency")]
+    [InlineData("GET", "/agent/v1/workspaces/ws_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/activity")]
+    [InlineData("GET", "/agent/v1/workspaces/ws_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/changes")]
     public async Task Agent_routes_reject_wrong_bearer_with_401(string method, string path)
     {
         using var factory = new BackendWebApplicationFactory();
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "wrong-secret");
         using var request = new HttpRequestMessage(new HttpMethod(method), path);
-        if (method == "POST")
+        if (method is "POST" or "PUT")
         {
             request.Content = JsonContent.Create(new { });
         }
@@ -154,6 +168,21 @@ public sealed class AgentV1EndpointTests
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("runtime_not_ready", json.GetProperty("error_code").GetString());
+    }
+
+    [Fact]
+    public async Task Workspace_concurrency_endpoint_validates_identity_and_reports_missing_workspace()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient();
+
+        using var invalid = await client.GetAsync("/agent/v1/workspaces/not-a-workspace/concurrency");
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+
+        using var missing = await client.GetAsync("/agent/v1/workspaces/ws_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/concurrency");
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        var json = await missing.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("workspace_not_found", json.GetProperty("error_code").GetString());
     }
 
     [Fact]

@@ -8,6 +8,7 @@ using RuAgent.Harness.Core.Prompting;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Privacy;
 using RuAgent.Harness.Persistence.Context;
+using RuAgent.Broker.Tools.Help;
 using RuBackend.Business.Settings;
 using RuBackend.Harness.Prompting;
 
@@ -161,6 +162,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly ITimeProvider _time;
     private readonly IModelContextLimitProvider _contextLimit;
     private readonly Broker.AgentWebToolExecutor? _webExecutor;
+    private readonly HelpDocsTool _helpDocs;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -197,6 +199,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _contextLimit = contextLimit
             ?? new StaticModelContextLimitProvider(32_768);
         _webExecutor = webExecutor;
+        _helpDocs = HelpDocsTool.CreateDefault();
     }
 
     public AgentRunCoordinator Create(string workspaceRoot, PolicySnapshot? policySnapshot = null)
@@ -212,7 +215,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             idGenerator: new CryptographicIdGenerator(),
             approvalGrants: _approvalGrants,
             policySnapshot: policySnapshot,
-            webExecutor: _webExecutor);
+            webExecutor: _webExecutor,
+            helpDocsTool: _helpDocs);
         var frames = new TransientFrameBuffer(
             64 * 1024,
             _liveEvents is null ? null : frame => PublishLiveFrame(_liveEvents, frame));

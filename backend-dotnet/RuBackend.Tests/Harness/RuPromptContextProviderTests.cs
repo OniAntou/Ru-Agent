@@ -93,10 +93,10 @@ public sealed class RuPromptContextProviderTests
     }
 
     [Theory]
-    [InlineData(false, false, 10)]
-    [InlineData(true, false, 11)]
-    [InlineData(false, true, 11)]
-    [InlineData(true, true, 12)]
+    [InlineData(false, false, 11)]
+    [InlineData(true, false, 12)]
+    [InlineData(false, true, 12)]
+    [InlineData(true, true, 13)]
     public async Task Prompt_and_worker_share_the_same_runtime_projection(bool search, bool fetch, int expectedCount)
     {
         using var fixture = RuInstructionLoaderTestsRoot.Create();

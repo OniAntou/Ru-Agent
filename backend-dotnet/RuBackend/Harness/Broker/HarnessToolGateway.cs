@@ -10,6 +10,7 @@ using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Protocol;
+using RuAgent.Broker.Tools.Help;
 using RuBackend.Harness;
 
 namespace RuBackend.Harness.Broker;
@@ -52,6 +53,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
     private readonly ConcurrentDictionary<string, byte> _cancelledRuns = new();
     private readonly ConcurrentDictionary<string, byte> _cancelledExecutions = new();
     private readonly AgentWebToolExecutor? _webExecutor;
+    private readonly HelpDocsTool _helpDocs;
     private readonly object _mutationGate = new();
     private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
     private const int MaxHostRecoveries = 4096;
@@ -68,7 +70,8 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         IIdGenerator? idGenerator,
         RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null,
         PolicySnapshot? policySnapshot = null,
-        AgentWebToolExecutor? webExecutor = null)
+        AgentWebToolExecutor? webExecutor = null,
+        HelpDocsTool? helpDocsTool = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(canonicalRoot);
         ArgumentNullException.ThrowIfNull(advertisedCapabilities);
@@ -86,6 +89,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         _ids = idGenerator ?? new GatewayIdGenerator();
         _approvalGrants = approvalGrants;
         _webExecutor = webExecutor;
+        _helpDocs = helpDocsTool ?? HelpDocsTool.CreateDefault();
         _sanitizedSearchDirectories = SanitizeSearchDirectories();
     }
 
@@ -114,7 +118,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             "files.write", "files.edit", "files.delete", "files.restore",
             "terminal.run", "terminal.shell", "web.search", "web.fetch"
         };
-        if (!allowedIds.Contains(proposal.ToolId) && proposal.ToolId != "notes.create" && proposal.ToolId != "system.time" && proposal.ToolId != "system.status" && proposal.ToolId != "system.volume" && proposal.ToolId != "app.list")
+        if (!allowedIds.Contains(proposal.ToolId) && proposal.ToolId != "help.docs" && proposal.ToolId != "notes.create" && proposal.ToolId != "system.time" && proposal.ToolId != "system.status" && proposal.ToolId != "system.volume" && proposal.ToolId != "app.list")
         {
             return Task.FromResult(ToolProposalDecision.Deny(MapAccessKind(proposal.ToolId), "phase_not_available"));
         }
@@ -225,7 +229,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             "files.list" or "files.glob" or "files.search" or "files.read"
                 or "files.write" or "files.edit" =>
                 Allow(proposal, accessKind),
-            "web.search" or "web.fetch" => Allow(proposal, accessKind),
+            "web.search" or "web.fetch" or "help.docs" => Allow(proposal, accessKind),
             _ => ToolProposalDecision.Deny(accessKind, "phase_not_available"),
         };
     }
@@ -392,7 +396,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         "files.apply_patch" => "patch",
         "files.delete" => "delete",
         "files.restore" => "restore",
-        "web.search" or "web.fetch" => "read",
+        "web.search" or "web.fetch" or "help.docs" => "read",
         _ => "mutation",
     };
 
@@ -746,6 +750,11 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         if (toolId is "web.search" or "web.fetch")
         {
             return await ExecuteWebAsync(execution, toolId, args, publishDelta, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (toolId == "help.docs")
+        {
+            return await ExecuteHelpDocsAsync(execution, args, publishDelta, cancellationToken).ConfigureAwait(false);
         }
 
         if (toolId == "files.delete")
@@ -1326,6 +1335,62 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
             {
                 active.Dispose();
             }
+        }
+    }
+
+    private async Task<ToolExecutionReceipt> ExecuteHelpDocsAsync(
+        PreparedToolExecution execution,
+        JsonObject arguments,
+        Func<ToolOutputChunk, ValueTask> publishDelta,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            ThrowIfExecutionCancelled(execution.ExecutionId, cancellationToken);
+            var output = _helpDocs.Execute(arguments, cancellationToken);
+            var outputBytes = Encoding.UTF8.GetBytes(output.ToJsonString());
+            if (outputBytes.Length > HelpDocsTool.MaxOutputBytes)
+            {
+                return FailedReceipt(execution, "output_too_large");
+            }
+
+            const int chunkSize = 16 * 1024;
+            for (var offset = 0; offset < outputBytes.Length; offset += chunkSize)
+            {
+                await publishDelta(new ToolOutputChunk(
+                    execution.ExecutionId,
+                    (offset / chunkSize) + 1,
+                    ToolOutputStream.Stdout,
+                    Encoding.UTF8.GetString(outputBytes, offset, Math.Min(chunkSize, outputBytes.Length - offset)))).ConfigureAwait(false);
+            }
+
+            return new ToolExecutionReceipt(
+                execution.ExecutionId,
+                execution.ToolCallId,
+                ToolExecutionOutcome.Succeeded,
+                "ok",
+                null,
+                sideEffectsPossible: false,
+                modelContent: outputBytes,
+                contentEncoding: HarnessPayloadEncoding.Json);
+        }
+        catch (OperationCanceledException)
+        {
+            return new ToolExecutionReceipt(
+                execution.ExecutionId,
+                execution.ToolCallId,
+                ToolExecutionOutcome.Cancelled,
+                "cancelled",
+                null,
+                sideEffectsPossible: false);
+        }
+        catch (ArgumentException)
+        {
+            return FailedReceipt(execution, "invalid_arguments");
+        }
+        catch (Exception)
+        {
+            return FailedReceipt(execution, "help_docs_failed");
         }
     }
 
@@ -2325,6 +2390,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         "files.read" => ToolAccessKind.ReadOnly,
         "web.search" => ToolAccessKind.ReadOnly,
         "web.fetch" => ToolAccessKind.ReadOnly,
+        "help.docs" => ToolAccessKind.ReadOnly,
         _ => ToolAccessKind.Mutation,
     };
 
@@ -2433,6 +2499,11 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 {
                     throw new ArgumentException("invalid_url");
                 }
+                break;
+            case "help.docs":
+                EnsureOnlyArguments(args, "query", "max_results");
+                RequiredString(args, "query", 256);
+                OptionalInt(args, "max_results", 1, 5);
                 break;
         }
     }

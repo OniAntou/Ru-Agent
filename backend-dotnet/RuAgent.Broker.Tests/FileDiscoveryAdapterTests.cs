@@ -73,6 +73,22 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
         Assert.Equal(sorted, paths);
     }
 
+    [Fact]
+    public async Task Search_async_is_cancellable_and_keeps_ordinal_result_order()
+    {
+        File.WriteAllText(Path.Combine(_root, "src", "z.txt"), "needle\n");
+        File.WriteAllText(Path.Combine(_root, "src", "a.txt"), "needle\n");
+        File.WriteAllText(Path.Combine(_root, "src", "m.txt"), "needle\n");
+
+        var result = await _search.ExecuteAsync(new JsonObject { ["path"] = "src", ["query"] = "needle" }, CancellationToken.None);
+        var paths = result["results"]!.AsArray().Select(n => n!["path"]!.GetValue<string>()).ToArray();
+        Assert.Equal(paths.OrderBy(path => path, StringComparer.Ordinal), paths);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _search.ExecuteAsync(new JsonObject { ["path"] = "src", ["query"] = "needle" }, cts.Token));
+    }
+
     // ---------- hidden / binary handling ----------
 
     [Fact]

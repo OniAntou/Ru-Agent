@@ -1,3 +1,4 @@
+using System.Text;
 using RuAgent.Broker.Tools;
 using RuAgent.Broker.Tools.Desktop;
 using Xunit;
@@ -47,6 +48,21 @@ public sealed class FileEditAdapterTests : IDisposable
 
         Assert.Equal(2, result["replacements"]?.GetValue<int>());
         Assert.Equal("z\ny\nz\n", ReadFile("a.txt"));
+    }
+
+    [Fact]
+    public void Edit_accepts_lf_markers_in_crlf_file_and_preserves_crlf_style()
+    {
+        var path = FullPath("crlf.txt");
+        File.WriteAllText(path, "first\r\nneedle\r\nlast\r\n", new UTF8Encoding(false));
+
+        var result = _files.Edit("crlf.txt", "needle\nlast", "replaced\nlast");
+
+        Assert.Equal(1, result["replacements"]?.GetValue<int>());
+        var bytes = File.ReadAllBytes(path);
+        var text = new UTF8Encoding(false).GetString(bytes);
+        Assert.Equal("first\r\nreplaced\r\nlast\r\n", text);
+        Assert.DoesNotContain("\n", text.Replace("\r\n", string.Empty, StringComparison.Ordinal));
     }
 
     [Fact]

@@ -10,12 +10,14 @@ public sealed class FileDeleteAdapter
 
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
+    private readonly int _maxRecoveryBytes;
 
-    public FileDeleteAdapter(string workspaceRoot)
+    public FileDeleteAdapter(string workspaceRoot, int maxRecoveryBytes = FileToolLimits.MaxRecoveryBytes)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
         _resolver = new CanonicalPathResolver(_workspaceRoot);
+        _maxRecoveryBytes = FileToolLimits.ValidateRecoveryBytes(maxRecoveryBytes);
     }
 
     public FileDeletePrepareResult Prepare(JsonObject arguments)
@@ -49,7 +51,7 @@ public sealed class FileDeleteAdapter
         }
 
         var info = new FileInfo(resolved.CanonicalPath);
-        if (info.Length > MaxRecoveryBytes)
+        if (info.Length > _maxRecoveryBytes)
         {
             throw new ArgumentException("recovery_too_large");
         }
@@ -62,7 +64,7 @@ public sealed class FileDeleteAdapter
 
         // Read file byte-exact, bounded by cap (the file may grow after the
         // metadata check, so do not trust FileInfo.Length for allocation).
-        var bytes = ReadBoundedBytes(resolved.CanonicalPath);
+        var bytes = ReadBoundedBytes(resolved.CanonicalPath, _maxRecoveryBytes);
 
         var computed = FileHashService.ComputeBytesHash(bytes);
         if (!string.Equals(computed, expected, StringComparison.Ordinal))
@@ -128,7 +130,7 @@ public sealed class FileDeleteAdapter
         }
 
         var info = new FileInfo(reResolved.CanonicalPath);
-        if (info.Length > MaxRecoveryBytes)
+        if (info.Length > _maxRecoveryBytes)
         {
             throw new ArgumentException("recovery_too_large");
         }
@@ -144,7 +146,7 @@ public sealed class FileDeleteAdapter
             // Capture the byte-exact recovery copy and perform the delete under the
             // same process-wide mutation gate. This prevents another adapter call
             // from replacing the preimage between the hash and File.Delete.
-            var recoveryBytes = ReadBoundedBytes(reResolved.CanonicalPath);
+            var recoveryBytes = ReadBoundedBytes(reResolved.CanonicalPath, _maxRecoveryBytes);
             var computedHash = FileHashService.ComputeBytesHash(recoveryBytes);
             if (!string.Equals(computedHash, currentHash, StringComparison.Ordinal))
             {
@@ -164,7 +166,7 @@ public sealed class FileDeleteAdapter
 
         var recoveryId = "payload_" + Guid.NewGuid().ToString("N");
         // Store for restore – byte-exact, shared with FileRestoreAdapter
-        FileRestoreAdapter.RegisterWithId(recoveryId, reResolved.CanonicalPath, recoveryBytes, currentHash);
+        FileRestoreAdapter.RegisterWithId(recoveryId, reResolved.CanonicalPath, recoveryBytes, currentHash, _maxRecoveryBytes);
         return new JsonObject
         {
             ["path"] = ToRelative(reResolved.CanonicalPath),
@@ -205,7 +207,7 @@ public sealed class FileDeleteAdapter
         return relative.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
     }
 
-    private static byte[] ReadBoundedBytes(string canonicalPath)
+    private static byte[] ReadBoundedBytes(string canonicalPath, int maxRecoveryBytes)
     {
         using var stream = new FileStream(
             canonicalPath,
@@ -214,8 +216,8 @@ public sealed class FileDeleteAdapter
             FileShare.ReadWrite | FileShare.Delete,
             81920,
             FileOptions.SequentialScan);
-        using var output = new MemoryStream(Math.Min(MaxRecoveryBytes, 81920));
-        var buffer = new byte[Math.Min(MaxRecoveryBytes, 81920)];
+        using var output = new MemoryStream(Math.Min(maxRecoveryBytes, 81920));
+        var buffer = new byte[Math.Min(maxRecoveryBytes, 81920)];
         while (true)
         {
             var read = stream.Read(buffer, 0, buffer.Length);
@@ -224,7 +226,7 @@ public sealed class FileDeleteAdapter
                 break;
             }
 
-            if (output.Length > MaxRecoveryBytes - read)
+            if (output.Length > maxRecoveryBytes - read)
             {
                 throw new ArgumentException("recovery_too_large");
             }

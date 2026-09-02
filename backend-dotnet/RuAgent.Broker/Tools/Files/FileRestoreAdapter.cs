@@ -8,6 +8,7 @@ public sealed class FileRestoreAdapter
 {
     private readonly string _workspaceRoot;
     private readonly CanonicalPathResolver _resolver;
+    private readonly int _maxRecoveryBytes;
 
     // In-memory registry for Broker-level tests (process-isolated). For persistence-backed Host path, HarnessToolGateway uses FileRecoveryStore directly.
     private static readonly ConcurrentDictionary<string, RecoveryRecord> _store = new();
@@ -25,11 +26,12 @@ public sealed class FileRestoreAdapter
         DateTimeOffset CreatedAt,
         bool IsConsumed);
 
-    public FileRestoreAdapter(string workspaceRoot)
+    public FileRestoreAdapter(string workspaceRoot, int maxRecoveryBytes = FileToolLimits.MaxRecoveryBytes)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceRoot);
         _workspaceRoot = Path.GetFullPath(workspaceRoot);
         _resolver = new CanonicalPathResolver(_workspaceRoot);
+        _maxRecoveryBytes = FileToolLimits.ValidateRecoveryBytes(maxRecoveryBytes);
     }
 
     // For testing: allow injecting a recovery directly (simulates Host gateway having stored recovery)
@@ -50,12 +52,12 @@ public sealed class FileRestoreAdapter
         return id;
     }
 
-    internal static void RegisterWithId(string recoveryId, string canonicalPath, byte[] content, string sha256)
+    internal static void RegisterWithId(string recoveryId, string canonicalPath, byte[] content, string sha256, int maxRecoveryBytes = FileToolLimits.MaxRecoveryBytes)
     {
         ArgumentNullException.ThrowIfNull(content);
         ValidateRecoveryHash(content, sha256);
         PruneStore(DateTimeOffset.UtcNow);
-        if (content.Length > FileDeleteAdapter.MaxRecoveryBytes)
+        if (content.Length > FileToolLimits.ValidateRecoveryBytes(maxRecoveryBytes))
         {
             throw new ArgumentException("recovery_too_large", nameof(content));
         }
@@ -194,7 +196,7 @@ public sealed class FileRestoreAdapter
         ArgumentNullException.ThrowIfNull(recoveryBytes);
         ArgumentException.ThrowIfNullOrWhiteSpace(canonicalPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedSha256);
-        if (recoveryBytes.Length > FileDeleteAdapter.MaxRecoveryBytes)
+        if (recoveryBytes.Length > _maxRecoveryBytes)
         {
             throw new ArgumentException("recovery_too_large", nameof(recoveryBytes));
         }
@@ -373,7 +375,7 @@ public sealed class FileRestoreAdapter
                 throw new UnauthorizedAccessException("access_denied", ex);
             }
 
-            var restoredBytes = ReadBoundedBytes(resolved.CanonicalPath);
+            var restoredBytes = ReadBoundedBytes(resolved.CanonicalPath, _maxRecoveryBytes);
             if (!restoredBytes.SequenceEqual(content))
             {
                 throw new IOException("io_error");
@@ -416,11 +418,11 @@ public sealed class FileRestoreAdapter
         }
     }
 
-    private static byte[] ReadBoundedBytes(string canonicalPath)
+    private static byte[] ReadBoundedBytes(string canonicalPath, int maxRecoveryBytes)
     {
         using var stream = new FileStream(canonicalPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920, FileOptions.SequentialScan);
-        using var output = new MemoryStream(Math.Min(FileDeleteAdapter.MaxRecoveryBytes, 81920));
-        var buffer = new byte[Math.Min(FileDeleteAdapter.MaxRecoveryBytes, 81920)];
+        using var output = new MemoryStream(Math.Min(maxRecoveryBytes, 81920));
+        var buffer = new byte[Math.Min(maxRecoveryBytes, 81920)];
         while (true)
         {
             var read = stream.Read(buffer, 0, buffer.Length);
@@ -429,7 +431,7 @@ public sealed class FileRestoreAdapter
                 break;
             }
 
-            if (output.Length > FileDeleteAdapter.MaxRecoveryBytes - read)
+            if (output.Length > maxRecoveryBytes - read)
             {
                 throw new ArgumentException("recovery_too_large");
             }

@@ -11,6 +11,32 @@ namespace RuAgent.Harness.Persistence.Tests;
 public sealed class FileRecoveryStoreTests
 {
     [Fact]
+    public async Task Recovery_store_honors_configured_cap_below_default()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var run = fixture.NewRun(1, 1, 1);
+        await fixture.CreateEventStore().TryCreateRunAsync(run, CancellationToken.None);
+        var store = new FileRecoveryStore(
+            fixture.Options,
+            new HarnessPayloadCryptography(new FakeHarnessKeyStore()),
+            KnownSecretRedactor.Empty,
+            maxRecoveryBytes: 4);
+        var content = Encoding.UTF8.GetBytes("12345");
+        var hash = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => store.CreateRecoveryAsync(
+            run.Run.RunId,
+            "/tmp/workspace/capped.txt",
+            content,
+            hash,
+            DateTimeOffset.UtcNow,
+            CancellationToken.None));
+
+        Assert.Equal("recovery_too_large", error.Message);
+    }
+
+    [Fact]
     public async Task Recovery_payload_is_byte_exact_encrypted_and_internal_only()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();

@@ -8,23 +8,28 @@ namespace RuAgent.Harness.Persistence.Recovery;
 
 public sealed class FileRecoveryStore
 {
+    public const int DefaultMaxRecoveryBytes = 4 * 1024 * 1024;
+    public const int HardMaxRecoveryBytes = DefaultMaxRecoveryBytes;
     private readonly HarnessSqliteOptions _options;
     private readonly HarnessPayloadStore _payloadStore;
     private readonly HarnessPayloadCryptography _cryptography;
     private readonly KnownSecretRedactor _redactor;
+    private readonly int _maxRecoveryBytes;
 
-    public FileRecoveryStore(HarnessSqliteOptions options, HarnessPayloadCryptography cryptography, KnownSecretRedactor redactor)
+    public FileRecoveryStore(HarnessSqliteOptions options, HarnessPayloadCryptography cryptography, KnownSecretRedactor redactor, int maxRecoveryBytes = DefaultMaxRecoveryBytes)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _cryptography = cryptography ?? throw new ArgumentNullException(nameof(cryptography));
         _redactor = redactor ?? throw new ArgumentNullException(nameof(redactor));
+        _maxRecoveryBytes = ValidateRecoveryBytes(maxRecoveryBytes);
         _payloadStore = new HarnessPayloadStore(options, cryptography, redactor);
     }
 
-    public FileRecoveryStore(HarnessSqliteOptions options, HarnessPayloadStore payloadStore)
+    public FileRecoveryStore(HarnessSqliteOptions options, HarnessPayloadStore payloadStore, int maxRecoveryBytes = DefaultMaxRecoveryBytes)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
+        _maxRecoveryBytes = ValidateRecoveryBytes(maxRecoveryBytes);
         // Extract cryptography/redactor via reflection? For simplicity require the other ctor for direct usage.
         _cryptography = new HarnessPayloadCryptography(new FakeFallbackKeyStore());
         _redactor = KnownSecretRedactor.Empty;
@@ -65,6 +70,10 @@ public sealed class FileRecoveryStore
         _ = runId.Value;
         ArgumentException.ThrowIfNullOrWhiteSpace(canonicalPath);
         ArgumentNullException.ThrowIfNull(content);
+        if (content.Length > _maxRecoveryBytes)
+        {
+            throw new ArgumentException("recovery_too_large");
+        }
         if (string.IsNullOrWhiteSpace(contentSha256) || !IsValidSha256(contentSha256))
         {
             throw new ArgumentException("Content hash must be 64 lowercase hex.", nameof(contentSha256));
@@ -178,7 +187,7 @@ public sealed class FileRecoveryStore
         await using var check = connection.CreateCommand();
         check.Transaction = transaction;
         check.CommandText = """
-            SELECT run_id, consumed_at_utc, canonical_path, content_sha256
+            SELECT run_id, consumed_at_utc, canonical_path, content_sha256, content_length
             FROM agent_file_recovery
             WHERE recovery_id = $recovery_id
             """;
@@ -199,6 +208,11 @@ public sealed class FileRecoveryStore
         if (consumedAt is not null)
         {
             throw new HarnessStoreException("payload_recovery_consumed");
+        }
+
+        if (reader.GetInt64(4) > _maxRecoveryBytes)
+        {
+            throw new HarnessStoreException("recovery_too_large");
         }
 
         // Verify run is still active (not terminal)
@@ -385,5 +399,15 @@ public sealed class FileRecoveryStore
     {
         var hash = System.Security.Cryptography.SHA256.HashData(bytes);
         return Convert.ToHexString(hash).ToLowerInvariant();
+    }
+
+    private static int ValidateRecoveryBytes(int value)
+    {
+        if (value < 1 || value > HardMaxRecoveryBytes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value));
+        }
+
+        return value;
     }
 }

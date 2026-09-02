@@ -56,6 +56,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
     private readonly HelpDocsTool _helpDocs;
     private readonly object _mutationGate = new();
     private readonly RuBackend.Harness.Reconciliation.IAgentApprovalGrants? _approvalGrants;
+    private readonly int _maxRecoveryBytes;
     private const int MaxHostRecoveries = 4096;
 
     public HarnessToolGateway(string canonicalRoot, IReadOnlyList<string> advertisedCapabilities)
@@ -71,7 +72,8 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         RuBackend.Harness.Reconciliation.IAgentApprovalGrants? approvalGrants = null,
         PolicySnapshot? policySnapshot = null,
         AgentWebToolExecutor? webExecutor = null,
-        HelpDocsTool? helpDocsTool = null)
+        HelpDocsTool? helpDocsTool = null,
+        int maxRecoveryBytes = RuAgent.Broker.Tools.Files.FileToolLimits.MaxRecoveryBytes)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(canonicalRoot);
         ArgumentNullException.ThrowIfNull(advertisedCapabilities);
@@ -90,6 +92,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
         _approvalGrants = approvalGrants;
         _webExecutor = webExecutor;
         _helpDocs = helpDocsTool ?? HelpDocsTool.CreateDefault();
+        _maxRecoveryBytes = RuAgent.Broker.Tools.Files.FileToolLimits.ValidateRecoveryBytes(maxRecoveryBytes);
         _sanitizedSearchDirectories = SanitizeSearchDirectories();
     }
 
@@ -568,7 +571,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 throw new ArgumentException("not_a_file");
             }
 
-            if (info.Length > RuAgent.Broker.Tools.Files.FileToolLimits.MaxRecoveryBytes)
+            if (info.Length > _maxRecoveryBytes)
             {
                 throw new ArgumentException("recovery_too_large");
             }
@@ -583,7 +586,7 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
 
             // Read byte-exact, bounded. FileInfo.Length is only a snapshot and
             // must not be used to size an allocation after a concurrent growth.
-            var bytes = ReadBoundedBytes(resolved, RuAgent.Broker.Tools.Files.FileToolLimits.MaxRecoveryBytes, "recovery_too_large");
+            var bytes = ReadBoundedBytes(resolved, _maxRecoveryBytes, "recovery_too_large");
 
             // Prepare recovery payload â€“ byte-exact, opaque, internal only
             var recoveryPayload = new PreparedPayload(
@@ -1110,14 +1113,20 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                     {
                         throw new ArgumentException("invalid_utf8", error);
                     }
+                    var useCrLf = text.Contains("\r\n", StringComparison.Ordinal);
+                    var normalizedText = NormalizeToLf(text);
+                    var normalizedOld = NormalizeToLf(oldStr);
+                    var normalizedNew = NormalizeToLf(newStr);
                     var expectedOccurrences = args["expected_occurrences"]?.GetValue<int>() ?? 1;
-                    var occurrences = CountOccurrences(text, oldStr);
+                    var occurrences = CountOccurrences(normalizedText, normalizedOld);
                     if (occurrences != expectedOccurrences)
                     {
                         throw new ArgumentException("edit_match_count");
                     }
 
-                    var updated = text.Replace(oldStr, newStr, StringComparison.Ordinal);
+                    var updated = DenormalizeFromLf(
+                        normalizedText.Replace(normalizedOld, normalizedNew, StringComparison.Ordinal),
+                        useCrLf);
                     var updatedBytes = EncodeUtf8Strict(updated);
                     if (updatedBytes.Length > MaxMutationBytes)
                     {
@@ -2045,6 +2054,11 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
 
         return count;
     }
+
+    private static string NormalizeToLf(string text) => text.Replace("\r\n", "\n").Replace("\r", "\n");
+
+    private static string DenormalizeFromLf(string text, bool useCrLf) =>
+        useCrLf ? text.Replace("\n", "\r\n") : text;
 
     private static byte[] EncodeUtf8Strict(string value)
     {

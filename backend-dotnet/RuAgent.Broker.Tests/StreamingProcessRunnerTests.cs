@@ -62,6 +62,23 @@ public sealed class StreamingProcessRunnerTests
     }
 
     [Fact]
+    public async Task Runner_closes_stdin_so_reading_child_exits_without_waiting_for_input()
+    {
+        var runner = new StreamingProcessRunner();
+        var stopwatch = Stopwatch.StartNew();
+        var script = "$line=[Console]::ReadLine(); if ($null -eq $line) { exit 7 } else { exit 0 }";
+        var result = await runner.RunAsync(
+            CmdSpec($"powershell -NoProfile -EncodedCommand {EncodePowerShell(script)}", timeoutMs: 5_000),
+            null,
+            CancellationToken.None);
+        stopwatch.Stop();
+
+        Assert.Equal("failed", result.Status);
+        Assert.Equal(7, result.ExitCode);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(3), "stdin readers must receive EOF promptly");
+    }
+
+    [Fact]
     public async Task Stdout_and_stderr_are_drained_concurrently_with_a_merged_monotonic_sequence()
     {
         var runner = new StreamingProcessRunner();

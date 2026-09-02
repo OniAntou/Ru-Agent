@@ -17,4 +17,15 @@ public static class FileToolLimits
     public const int DefaultMaxResults = 64;
     public const int DefaultReadLimit = 256 * 1024;
     public const int MaxRecoveryBytes = 4 * 1024 * 1024;
+    public const int HardMaxRecoveryBytes = MaxRecoveryBytes;
+
+    public static int ValidateRecoveryBytes(int value)
+    {
+        if (value < 1 || value > HardMaxRecoveryBytes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), "Recovery cap must be between 1 byte and 4 MiB.");
+        }
+
+        return value;
+    }
 }

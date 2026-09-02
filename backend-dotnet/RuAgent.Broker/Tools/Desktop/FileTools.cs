@@ -176,13 +176,19 @@ public sealed class FileTools
                 throw new FileEditException("workspace_changed");
             }
 
-            var matches = CountOccurrences(text, oldString);
+            var useCrLf = text.Contains("\r\n", StringComparison.Ordinal);
+            var normalizedText = NormalizeToLf(text);
+            var normalizedOld = NormalizeToLf(oldString);
+            var normalizedNew = NormalizeToLf(newString ?? string.Empty);
+            var matches = CountOccurrences(normalizedText, normalizedOld);
             if (matches != expectedOccurrences)
             {
                 throw new FileEditException("edit_not_unique", new JsonObject { ["matches"] = matches });
             }
 
-            var updated = text.Replace(oldString, newString ?? string.Empty, StringComparison.Ordinal);
+            var updated = DenormalizeFromLf(
+                normalizedText.Replace(normalizedOld, normalizedNew, StringComparison.Ordinal),
+                useCrLf);
             byte[] updatedBytes;
             try
             {
@@ -273,6 +279,11 @@ public sealed class FileTools
 
         return count;
     }
+
+    private static string NormalizeToLf(string text) => text.Replace("\r\n", "\n").Replace("\r", "\n");
+
+    private static string DenormalizeFromLf(string text, bool useCrLf) =>
+        useCrLf ? text.Replace("\n", "\r\n") : text;
 
     private readonly record struct BoundedRead(byte[] Bytes, bool Truncated);
 }

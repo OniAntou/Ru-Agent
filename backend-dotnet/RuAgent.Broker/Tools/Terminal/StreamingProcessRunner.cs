@@ -89,6 +89,10 @@ public sealed class StreamingProcessRunner
             }
 
             job.Assign(process.Id);
+            // Tool calls are non-interactive by contract. Redirect and close
+            // stdin immediately so a child that reads from Console/stdin gets
+            // EOF instead of hanging until the timeout.
+            process.StandardInput.Close();
         }
         catch (Exception error) when (error is Win32Exception or InvalidOperationException)
         {
@@ -238,6 +242,7 @@ public sealed class StreamingProcessRunner
             WorkingDirectory = spec.WorkingDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             StandardOutputEncoding = Encoding.UTF8,

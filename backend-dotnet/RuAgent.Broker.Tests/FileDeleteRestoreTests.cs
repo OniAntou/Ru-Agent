@@ -71,6 +71,24 @@ public sealed class FileDeleteRestoreTests : IDisposable
     }
 
     [Fact]
+    public void Delete_honors_configured_recovery_cap_below_default()
+    {
+        var path = Full("small-cap.txt");
+        File.WriteAllBytes(path, new byte[] { 1, 2, 3, 4, 5 });
+        var adapter = new FileDeleteAdapter(_root, maxRecoveryBytes: 4);
+        var hash = FileHashService.ComputeFileHash(path);
+
+        var error = Assert.Throws<ArgumentException>(() => adapter.Prepare(new JsonObject
+        {
+            ["path"] = "small-cap.txt",
+            ["expected_sha256"] = hash,
+        }));
+
+        Assert.Equal("recovery_too_large", error.Message);
+        Assert.True(File.Exists(path));
+    }
+
+    [Fact]
     public void Delete_expected_hash_mismatch_returns_workspace_changed_with_zero_write()
     {
         File.WriteAllText(Full("a.txt"), "original");

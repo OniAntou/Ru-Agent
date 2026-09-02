@@ -101,7 +101,7 @@ follow-up boxes track acceptance reconciliation, not a reversal of that work.
   local vision model until a new product decision explicitly reopens that scope.
 - [ ] Keep the structured `/observation/*` cloud-reaction boundary available so
   a future model can be connected without changing the reaction coordinator.
-- [x] Establish one Protocol-owned catalog for Ru's 17 tool definitions and
+- [x] Establish one Protocol-owned catalog for Ru's 18 tool definitions and
   derive the runtime prompt/Worker projection from it. The exact selection
   envelope, strict schemas, examples, scopes, and schema digests now prevent
   model-contract drift; Broker manifest validation remains in place while the

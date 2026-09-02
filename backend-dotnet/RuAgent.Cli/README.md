@@ -39,7 +39,8 @@ agent policy remove <rule-id>
 
 ## Current model tool surface
 
-The Agent Worker v2 advertisement contains ten core bindings plus the managed
+The Agent Worker v2 advertisement contains eleven core bindings (including
+offline `help.docs`) plus the managed
 read-only web bindings in both Standard and Full Access: `files.list`, `files.read`, `files.glob`,
 `files.search`, `files.write`, `files.edit`, `files.delete`, `files.restore`,
 `terminal.run`, and `terminal.shell`. Standard applies the stricter

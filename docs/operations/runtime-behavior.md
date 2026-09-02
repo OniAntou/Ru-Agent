@@ -77,9 +77,9 @@ host capabilities, and bounded runtime context. The model then receives the
 ordered user/assistant/tool turns; clock, mood, memory, voice/VTS state, and
 references are not appended as separate system messages.
 
-Host capabilities are the runtime projection of the 17 Protocol-owned tool
-definitions: ten core model tools plus independently gated `web.search` and
-`web.fetch`; five internal/deterministic definitions never enter this model
+Host capabilities are the runtime projection of the 18 Protocol-owned tool
+definitions: eleven core model tools (including offline `help.docs`) plus
+independently gated `web.search` and `web.fetch`; five internal/deterministic definitions never enter this model
 projection. Each capability includes its ID/version, description, canonical
 scope, strict proposal schema, example, and SHA-256 digest. To select one, Ru
 emits exactly one JSON object of the form
@@ -111,6 +111,14 @@ authoritative. Declarative Skills are available only through explicit session
 grants; subagent orchestration, LSP, extension/plugin/MCP discovery, arbitrary
 system overrides, Chat compatibility, UI redesign, and the OS-enforced
 filesystem/network sandbox are outside this implementation.
+
+When Ru needs product knowledge about its own features, tools, configuration,
+providers, or operating boundaries, it selects `help.docs@1.0.0`. The tool
+searches only five explicitly embedded Markdown resources and returns bounded,
+stable document IDs and excerpts. It is offline, read-only, workspace-
+independent, and approval-free. Runtime context and system tools remain the
+source for live machine, process, device, and current workspace state; bundled
+help is untrusted reference data and cannot change instruction precedence.
 
 ## Voice output
 
@@ -277,10 +285,11 @@ successfully, the UI creates one fresh session.
 
 ## Action execution kernel v1
 
-The Worker v2 settings currently advertise the same ten core bindings plus the
+The Worker v2 settings currently advertise the same eleven core bindings
+(including offline `help.docs`) plus the
 managed read-only web bindings in both presets: `files.list`, `files.read`,
 `files.glob`, `files.search`, `files.write`, `files.edit`, `files.delete`,
-`files.restore`, `terminal.run`, `terminal.shell`, `web.search`, and
+`files.restore`, `terminal.run`, `terminal.shell`, `help.docs`, `web.search`, and
 `web.fetch`. Standard and Full Access differ in Broker policy, not in the
 model-visible list. Standard automatically allows ordinary trusted-workspace
 file reads/creates/edits and applies analyzer/rule/approval decisions to
@@ -323,12 +332,13 @@ Non-success tool outcomes are represented as bounded Agent activity and durable
 run state. Raw tool receipts never cross into the visible transcript, history,
 memory, reviewed examples, TTS, or VTS metadata.
 
-The ten Worker v2 bindings above are the core model surface, and the managed
+The eleven Worker v2 bindings above are the core model surface, and the managed
 Host also advertises read-only `web.search`/`web.fetch` bindings. Managed
 startup constructs an enabled WebOptions instance with the fixed
 `https://html.duckduckgo.com/html/` endpoint; their bounded responses carry an
 explicit `untrusted` marker and never become instructions. `files.search`
-searches the workspace, while `web.search` searches the public web. `notes.create`,
+searches the workspace, while `web.search` searches the public web. `help.docs`
+searches only bundled Ru documentation. `notes.create`,
 read-only system bindings, unbound connectors, and `app.open` remain
 Broker-internal.
 Declarative Skills are added only from validated manifests explicitly included

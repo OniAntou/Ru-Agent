@@ -106,7 +106,7 @@ follow-up boxes track acceptance reconciliation, not a reversal of that work.
   envelope, strict schemas, examples, scopes, and schema digests now prevent
   model-contract drift; Broker manifest validation remains in place while the
   later Broker-authority migration stays open.
-- [ ] Implement bundled internal documentation & docs lookup tool (`help.docs` / `app.docs`) in `RuAgentBroker` and System Prompt Composer so Agent can automatically inspect Ru's own features/documentation and guide the user across any workspace.
+- [x] Implement bundled internal documentation & docs lookup tool (`help.docs`; `app.docs` is not a second model tool) in `RuAgentBroker` and System Prompt Composer. The offline, read-only search is backed by five explicitly embedded current documents and works from any workspace. See `docs/superpowers/specs/2026-09-02-bundled-help-docs-design.md` and `docs/superpowers/plans/2026-09-02-bundled-help-docs.md`.
 - [ ] Harden Agent Broker file and terminal tools against edge-case failures:
   - Fix `files.edit` line-ending normalization (`\r\n` vs `\n`) to prevent `edit_no_match` mismatches on CRLF files.
   - Keep the canonical `files.search.is_regex` contract; multithreaded directory traversal remains open.

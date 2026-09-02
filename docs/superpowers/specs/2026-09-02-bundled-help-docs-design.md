@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-02
 
-**Status:** Approved for implementation planning
+**Status:** Implemented
 
 **Scope:** Add one model-visible, read-only `help.docs@1.0.0` tool that lets Ru search a curated snapshot of its own current documentation from any workspace.
 

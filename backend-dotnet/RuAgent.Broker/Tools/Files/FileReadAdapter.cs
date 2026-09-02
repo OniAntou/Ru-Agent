@@ -97,23 +97,9 @@ public sealed class FileReadAdapter
         var info = new FileInfo(canonical);
         long fileLength = info.Length;
 
-        if (offset >= fileLength)
-        {
-            var relBeyond = GetRelative(canonical);
-            return new JsonObject
-            {
-                ["path"] = relBeyond,
-                ["content"] = string.Empty,
-                ["truncated"] = false,
-                ["bytes_read"] = 0,
-                ["total_bytes"] = fileLength,
-                ["offset"] = offset,
-                ["duration_ms"] = 0,
-            };
-        }
-
         var sw = Stopwatch.StartNew();
         var buffer = new byte[limit];
+        var observedFileLength = fileLength;
         int bytesRead = 0;
         using (var stream = new FileStream(canonical, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan))
         {
@@ -134,9 +120,25 @@ public sealed class FileReadAdapter
 
                 bytesRead += n;
             }
+
+            // FileInfo.Length is only a point-in-time snapshot. If another
+            // process appends while we read, use the largest length observed so
+            // the caller cannot mistake a moving file for a complete read.
+            try
+            {
+                observedFileLength = Math.Max(observedFileLength, stream.Length);
+            }
+            catch (IOException)
+            {
+                // Preserve the initial snapshot when the handle cannot report
+                // its final length; the read itself remains valid.
+            }
         }
 
-        bool isMore = (offset + bytesRead) < fileLength;
+        // Keep the arithmetic in Int64: a valid Int32 offset near EOF can
+        // otherwise wrap when the requested window crosses 2 GiB, incorrectly
+        // reporting a complete read.
+        bool isMore = ((long)offset + bytesRead) < observedFileLength;
         // Check time truncation
         bool timeTruncated = sw.ElapsedMilliseconds > FileToolLimits.MaxTimeMs;
 
@@ -175,7 +177,7 @@ public sealed class FileReadAdapter
             ["content"] = content,
             ["truncated"] = truncated,
             ["bytes_read"] = validLength,
-            ["total_bytes"] = fileLength,
+            ["total_bytes"] = observedFileLength,
             ["offset"] = offset,
             ["duration_ms"] = (int)sw.ElapsedMilliseconds,
         };

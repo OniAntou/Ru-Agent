@@ -33,6 +33,17 @@ public sealed class SkillPackageLoaderTests
     }
 
     [Fact]
+    public void Loader_rejects_content_that_grows_after_initial_size_check()
+    {
+        using var package = Package.Create();
+        File.AppendAllText(Path.Combine(package.Root, "instructions.md"), new string('x', SkillPackageLoader.DefaultMaxInstructionsBytes));
+
+        var error = Assert.Throws<InvalidDataException>(() => new SkillPackageLoader().Load(package.Root));
+
+        Assert.Equal("skill_package_too_large", error.Message);
+    }
+
+    [Fact]
     public void Registry_requires_skill_execute_and_keeps_failed_registration_atomic()
     {
         using var package = Package.Create(json =>

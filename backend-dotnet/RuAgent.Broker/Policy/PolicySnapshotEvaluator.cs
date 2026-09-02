@@ -183,15 +183,15 @@ public sealed class PolicySnapshotEvaluator
 
         if (context.Target is { } target)
         {
-            if (target.IsProtected)
-            {
-                return Ask("protected_path");
-            }
+        if (target.IsProtected)
+        {
+        return Ask("protected_path");
+        }
 
-            if (target.IsOutsideWorkspace)
-            {
-                return Ask("outside_workspace");
-            }
+        if (target.IsOutsideWorkspace)
+        {
+        return Ask("external_directory_required");
+        }
         }
 
         switch (context.OperationClass)
@@ -210,7 +210,7 @@ public sealed class PolicySnapshotEvaluator
             case PolicyOperationClasses.Discovery:
                 if (context.Target is { } insideTarget && !insideTarget.IsInsideWorkspace)
                 {
-                    return Ask("outside_workspace");
+                    return Ask("external_directory_required");
                 }
 
                 return Allow("standard_workspace_allow");

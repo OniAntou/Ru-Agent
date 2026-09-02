@@ -61,8 +61,8 @@ public sealed class FileMutationAdapterTests : IDisposable
         File.WriteAllText(Full("exists.txt"), "exists");
         var hash = FileHashService.ComputeFileHash(Full("exists.txt"));
         var argsMissingOnExisting = new JsonObject { ["path"] = "exists.txt", ["content"] = "x", ["expected_sha256"] = "missing" };
-        var ex = Assert.Throws<UnauthorizedAccessException>(() => _write.Execute(argsMissingOnExisting));
-        Assert.Equal("workspace_changed", ex.Message);
+        var ex = Assert.Throws<IOException>(() => _write.Execute(argsMissingOnExisting));
+        Assert.Equal("file_exists", ex.Message);
         Assert.Equal("exists", File.ReadAllText(Full("exists.txt")));
 
         var argsHashOnMissing = new JsonObject { ["path"] = "missing.txt", ["content"] = "x", ["expected_sha256"] = hash };
@@ -93,7 +93,7 @@ public sealed class FileMutationAdapterTests : IDisposable
         var correctHash = FileHashService.ComputeFileHash(Full("a.txt"));
         var wrongHash = new string('a', 64);
         Assert.NotEqual(correctHash, wrongHash);
-        var args = new JsonObject { ["path"] = "a.txt", ["content"] = "new", ["expected_sha256"] = wrongHash };
+        var args = new JsonObject { ["path"] = "a.txt", ["content"] = "new", ["expected_sha256"] = wrongHash, ["overwrite"] = true };
         var ex = Assert.Throws<UnauthorizedAccessException>(() => _write.Execute(args));
         Assert.Equal("workspace_changed", ex.Message);
         Assert.Equal("original", File.ReadAllText(Full("a.txt")));
@@ -108,7 +108,7 @@ public sealed class FileMutationAdapterTests : IDisposable
         Assert.Equal(hashV1, prep["before_sha256"]?.GetValue<string>());
 
         File.WriteAllText(Full("conc.txt"), "external");
-        var args = new JsonObject { ["path"] = "conc.txt", ["content"] = "v2", ["expected_sha256"] = hashV1 };
+        var args = new JsonObject { ["path"] = "conc.txt", ["content"] = "v2", ["expected_sha256"] = hashV1, ["overwrite"] = true };
         var ex = Assert.Throws<UnauthorizedAccessException>(() => _write.Execute(args));
         Assert.Equal("workspace_changed", ex.Message);
         Assert.Equal("external", File.ReadAllText(Full("conc.txt")));
@@ -137,7 +137,7 @@ public sealed class FileMutationAdapterTests : IDisposable
         var beforeTemps = Directory.GetFiles(dir, ".ru-tmp-*.tmp");
         Assert.Empty(beforeTemps);
 
-        var result = _write.Execute(new JsonObject { ["path"] = "atomic.txt", ["content"] = "new content for atomic", ["expected_sha256"] = hash });
+        var result = _write.Execute(new JsonObject { ["path"] = "atomic.txt", ["content"] = "new content for atomic", ["expected_sha256"] = hash, ["overwrite"] = true });
         Assert.Equal(hash, result["before_sha256"]?.GetValue<string>());
         var newHash = FileHashService.ComputeStringHash("new content for atomic");
         Assert.Equal(newHash, result["after_sha256"]?.GetValue<string>());
@@ -157,7 +157,7 @@ public sealed class FileMutationAdapterTests : IDisposable
         File.SetAttributes(Full("perm.txt"), FileAttributes.ReadOnly);
         try
         {
-            var ex = Assert.ThrowsAny<Exception>(() => _write.Execute(new JsonObject { ["path"] = "perm.txt", ["content"] = "new", ["expected_sha256"] = hash }));
+            var ex = Assert.ThrowsAny<Exception>(() => _write.Execute(new JsonObject { ["path"] = "perm.txt", ["content"] = "new", ["expected_sha256"] = hash, ["overwrite"] = true }));
             Assert.True(ex.Message == "access_denied" || ex.Message == "workspace_changed" || ex is UnauthorizedAccessException);
             // File may have been replaced despite read-only? On Windows File.Move can replace read-only if we use overwrite; but our test expects either success or access_denied
             // If it succeeded, verify content changed; if access_denied, content unchanged
@@ -303,7 +303,7 @@ public sealed class FileMutationAdapterTests : IDisposable
         Assert.Equal(afterHash, prep["after_sha256"]?.GetValue<string>());
         Assert.True(prep["diff_summary"]!.GetValue<string>().Length <= FileWriteAdapter.MaxDiffChars);
 
-        var result = _write.Execute(new JsonObject { ["path"] = "w.txt", ["content"] = "new", ["expected_sha256"] = beforeHash });
+        var result = _write.Execute(new JsonObject { ["path"] = "w.txt", ["content"] = "new", ["expected_sha256"] = beforeHash, ["overwrite"] = true });
         Assert.Equal(afterHash, result["after_sha256"]?.GetValue<string>());
         Assert.Equal(afterHash, FileHashService.ComputeFileHash(Full("w.txt")));
         Assert.True(result["diff_summary"]!.GetValue<string>().Length <= FileWriteAdapter.MaxDiffChars);

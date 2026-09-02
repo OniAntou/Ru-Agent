@@ -127,14 +127,7 @@ public sealed class PolicyContextFactory
 
                 if (pathInput is not null)
                 {
-                    try
-                    {
-                        target = resolver.Resolve(pathInput);
-                    }
-                    catch (ArgumentException error)
-                    {
-                        throw new PolicyContextException("invalid_path", error);
-                    }
+                    target = ResolveNonTerminalTarget(pathInput);
                 }
             }
             else
@@ -152,9 +145,9 @@ public sealed class PolicyContextFactory
 
                 try
                 {
-                    target = resolver.Resolve(pathInput);
+                    target = ResolveNonTerminalTarget(pathInput);
                 }
-                catch (ArgumentException error)
+                catch (ArgumentException error) when (error.Message != "invalid_arguments")
                 {
                     throw new PolicyContextException("invalid_path", error);
                 }
@@ -185,6 +178,36 @@ public sealed class PolicyContextFactory
                 operationClass,
                 arguments),
             TimeoutMs: timeoutMs);
+    }
+
+    private ResolvedPath ResolveNonTerminalTarget(string pathInput)
+    {
+        var resolver = new CanonicalPathResolver(_canonicalRoot);
+        try
+        {
+            var resolved = resolver.Resolve(pathInput);
+            // A relative path that resolves outside the workspace is a proposal
+            // escape attempt: the model must address workspace files directly.
+            // Absolute targets keep following the outside-workspace approval path.
+            if (!Path.IsPathRooted(pathInput) && resolved.IsOutsideWorkspace)
+            {
+                throw new ArgumentException("invalid_arguments");
+            }
+
+            return resolved;
+        }
+        catch (PolicyContextException)
+        {
+            throw;
+        }
+        catch (ArgumentException error) when (error.Message == "invalid_arguments")
+        {
+            throw new PolicyContextException("invalid_arguments");
+        }
+        catch (ArgumentException error)
+        {
+            throw new PolicyContextException("invalid_path", error);
+        }
     }
 
     private static string OperationClassFor(string toolId) => toolId switch

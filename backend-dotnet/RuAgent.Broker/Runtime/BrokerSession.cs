@@ -1,4 +1,6 @@
+using System.Text;
 using System.Text.Json;
+using RuAgent.Broker.Policy;
 using RuAgent.Protocol;
 
 namespace RuAgent.Broker.Runtime;
@@ -16,11 +18,12 @@ public sealed class BrokerSessionException : Exception
 
 public sealed class BrokerSession
 {
+    private const long MaximumDescriptorBytes = 1 * 1024 * 1024;
     private readonly object _gate = new();
     private string? _activeSessionId;
     private IReadOnlySet<string> _activeScopes = new HashSet<string>(StringComparer.Ordinal);
     private IReadOnlySet<string> _activeSkillIds = new HashSet<string>(StringComparer.Ordinal);
-    private BrokerRunLease? _activeRunLease;
+    private readonly Dictionary<string, BrokerRunLease> _runLeases = new(StringComparer.Ordinal);
     private readonly Dictionary<string, PendingDecision> _pendingDecisions = new(StringComparer.Ordinal);
     private long _decisionCounter;
 
@@ -121,27 +124,33 @@ public sealed class BrokerSession
                 _activeSessionId = null;
                 _activeScopes = new HashSet<string>(StringComparer.Ordinal);
                 _activeSkillIds = new HashSet<string>(StringComparer.Ordinal);
-                _activeRunLease = null;
+                _runLeases.Clear();
                 _pendingDecisions.Clear();
             }
         }
     }
 
     /// <summary>
-    /// Closes the active run lease (and invalidates its pending decisions) without closing the
-    /// owning session.
+    /// Closes the run lease with the given id (and invalidates its pending decisions) without
+    /// closing the owning session.
     /// </summary>
     public bool TryCloseRun(string runId)
     {
         lock (_gate)
         {
-            if (_activeRunLease is null || !string.Equals(_activeRunLease.RunId, runId, StringComparison.Ordinal))
+            if (!_runLeases.Remove(runId))
             {
                 return false;
             }
 
-            _activeRunLease = null;
-            _pendingDecisions.Clear();
+            foreach (var token in _pendingDecisions
+                         .Where(pair => string.Equals(pair.Value.RunId, runId, StringComparison.Ordinal))
+                         .Select(pair => pair.Key)
+                         .ToList())
+            {
+                _pendingDecisions.Remove(token);
+            }
+
             return true;
         }
     }
@@ -151,13 +160,15 @@ public sealed class BrokerSession
         ArgumentNullException.ThrowIfNull(reboundLease);
         lock (_gate)
         {
-            if (_activeRunLease is null)
+            var current = _runLeases.TryGetValue(reboundLease.RunId, out var existing)
+                ? existing
+                : null;
+            if (current is null)
             {
                 errorCode = "run_not_open";
                 return false;
             }
 
-            var current = _activeRunLease;
             if (current.IsExpired(DateTimeOffset.UtcNow)
                 || reboundLease.IsExpired(DateTimeOffset.UtcNow))
             {
@@ -196,7 +207,7 @@ public sealed class BrokerSession
             var nextBindingVersion = current.BindingVersion + 1;
             // Decisions issued under the older binding stay recorded but are invalidated by
             // binding-version comparison, so late callers observe decision_stale (not unknown).
-            _activeRunLease = reboundLease with { BindingVersion = nextBindingVersion };
+            _runLeases[reboundLease.RunId] = reboundLease with { BindingVersion = nextBindingVersion };
             errorCode = null;
             return true;
         }
@@ -235,15 +246,9 @@ public sealed class BrokerSession
         lock (_gate)
         {
             preparationToken = null;
-            if (_activeRunLease is null || !string.Equals(_activeRunLease.RunId, runId, StringComparison.Ordinal))
+            if (!LeaseIsOpenLocked(runId))
             {
                 errorCode = "run_not_open";
-                return false;
-            }
-
-            if (_activeRunLease.IsExpired(DateTimeOffset.UtcNow))
-            {
-                errorCode = "lease_expired";
                 return false;
             }
 
@@ -278,15 +283,9 @@ public sealed class BrokerSession
     {
         lock (_gate)
         {
-            if (_activeRunLease is null || !string.Equals(_activeRunLease.RunId, runId, StringComparison.Ordinal))
+            if (!LeaseIsOpenLocked(runId))
             {
                 errorCode = "run_not_open";
-                return false;
-            }
-
-            if (_activeRunLease.IsExpired(DateTimeOffset.UtcNow))
-            {
-                errorCode = "lease_expired";
                 return false;
             }
 
@@ -324,32 +323,30 @@ public sealed class BrokerSession
 
     private long CurrentBindingVersionLocked(string runId)
     {
-        var lease = _activeRunLease;
-        return lease is not null
+        return _runLeases.TryGetValue(runId, out var lease)
             && !lease.IsExpired(DateTimeOffset.UtcNow)
-            && string.Equals(lease.RunId, runId, StringComparison.Ordinal)
             ? lease.BindingVersion
             : -1;
     }
 
     private BrokerRunLease RequireActiveRunLocked(string runId)
     {
-        if (_activeRunLease is null || !string.Equals(_activeRunLease.RunId, runId, StringComparison.Ordinal))
+        if (!_runLeases.TryGetValue(runId, out var lease))
         {
             throw new BrokerSessionException("run_not_open");
         }
 
-        if (_activeRunLease.IsExpired(DateTimeOffset.UtcNow))
+        if (lease.IsExpired(DateTimeOffset.UtcNow))
         {
             throw new BrokerSessionException("lease_expired");
         }
 
-        return _activeRunLease;
+        return lease;
     }
 
     private string ResolveDecisionErrorCode(string? token, PendingDecision? entry, string runId, string toolId, string intentHash)
     {
-        if (_activeRunLease is null || !string.Equals(_activeRunLease.RunId, runId, StringComparison.Ordinal))
+        if (!_runLeases.ContainsKey(runId))
         {
             return "run_not_open";
         }
@@ -375,13 +372,19 @@ public sealed class BrokerSession
         return "unknown_decision_token";
     }
 
+    private bool LeaseIsOpenLocked(string runId)
+    {
+        return _runLeases.TryGetValue(runId, out var lease)
+            && !lease.IsExpired(DateTimeOffset.UtcNow);
+    }
+
     public BrokerRunLease? ActiveRunLease
     {
         get
         {
             lock (_gate)
             {
-                return _activeRunLease;
+                return _runLeases.Count == 1 ? _runLeases.Values.Single() : null;
             }
         }
     }
@@ -407,7 +410,9 @@ public sealed class BrokerSession
                 return false;
             }
 
-            if (_activeRunLease is not null && !string.Equals(_activeRunLease.RunId, lease.RunId, StringComparison.Ordinal))
+            if (_runLeases.Count > 0
+                && !_runLeases.ContainsKey(lease.RunId)
+                && _runLeases.Values.Any(open => !string.Equals(open.SessionId, lease.SessionId, StringComparison.Ordinal)))
             {
                 errorCode = "run_conflict";
                 return false;
@@ -423,26 +428,39 @@ public sealed class BrokerSession
                 return false;
             }
 
-            _activeRunLease = lease;
+            _runLeases[lease.RunId] = lease;
             // Also open session for v2 lease if not already open
             if (_activeSessionId is null)
             {
                 _activeSessionId = lease.SessionId;
-                _activeScopes = new HashSet<string>(lease.AdvertisedCapabilities.Select(_ => "workspace.read"), StringComparer.Ordinal);
+                _activeScopes = new HashSet<string>(StringComparer.Ordinal);
             }
+
+            _activeScopes = new HashSet<string>(
+                _activeScopes.Concat(lease.AdvertisedCapabilities.SelectMany(WorkspaceScopesFor)),
+                StringComparer.Ordinal);
 
             errorCode = null;
             return true;
         }
     }
 
+    private static IEnumerable<string> WorkspaceScopesFor(string toolId) => toolId switch
+    {
+        "files.write" or "files.edit" or "files.delete" or "files.restore"
+            => [ToolScope.WorkspaceRead, ToolScope.WorkspaceWrite],
+        "terminal.run" or "terminal.shell"
+            => [ToolScope.WorkspaceRead, ToolScope.TerminalExecute],
+        _ => [ToolScope.WorkspaceRead],
+    };
+
     public bool TryGetRunLease(string runId, out BrokerRunLease? lease)
     {
         lock (_gate)
         {
-            if (_activeRunLease is not null && string.Equals(_activeRunLease.RunId, runId, StringComparison.Ordinal))
+            if (_runLeases.TryGetValue(runId, out var found))
             {
-                lease = _activeRunLease;
+                lease = found;
                 return true;
             }
 
@@ -455,19 +473,19 @@ public sealed class BrokerSession
     {
         lock (_gate)
         {
-            if (_activeRunLease is null || !string.Equals(_activeRunLease.RunId, runId, StringComparison.Ordinal))
+            if (!_runLeases.TryGetValue(runId, out var runLease))
             {
                 errorCode = "run_not_open";
                 return false;
             }
 
-            if (_activeRunLease.IsExpired(DateTimeOffset.UtcNow))
+            if (runLease.IsExpired(DateTimeOffset.UtcNow))
             {
                 errorCode = "lease_expired";
                 return false;
             }
 
-            if (!_activeRunLease.AdvertisedCapabilities.Contains(toolId))
+            if (!runLease.AdvertisedCapabilities.Contains(toolId))
             {
                 errorCode = "capability_unavailable";
                 return false;
@@ -494,11 +512,23 @@ public sealed class BrokerSession
             throw new BrokerSessionException("missing_descriptor");
         }
 
+        try
+        {
+            if (new FileInfo(fullDescriptorPath).Length > MaximumDescriptorBytes)
+            {
+                throw new BrokerSessionException("invalid_descriptor");
+            }
+        }
+        catch (IOException error)
+        {
+            throw new BrokerSessionException("invalid_descriptor", error.Message);
+        }
+
         BrokerSessionDescriptor? descriptor;
         try
         {
             descriptor = JsonSerializer.Deserialize<BrokerSessionDescriptor>(
-                File.ReadAllText(fullDescriptorPath),
+                ReadBoundedText(fullDescriptorPath, checked((int)MaximumDescriptorBytes)),
                 BrokerSessionDescriptor.JsonOptions);
         }
         catch (JsonException error)
@@ -555,6 +585,22 @@ public sealed class BrokerSession
 
         var normalizedDescriptor = descriptor with { SessionRoot = sessionRoot };
         return new BrokerSession(fullDescriptorPath, normalizedDescriptor);
+    }
+
+    private static string ReadBoundedText(string path, int maximumBytes)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.SequentialScan);
+        using var output = new MemoryStream(Math.Min(maximumBytes, 81920));
+        var buffer = new byte[Math.Min(maximumBytes, 81920)];
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            if (output.Length > maximumBytes - read)
+                throw new BrokerSessionException("invalid_descriptor");
+            output.Write(buffer, 0, read);
+        }
+        using var text = new StreamReader(new MemoryStream(output.ToArray(), writable: false), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return text.ReadToEnd();
     }
 
     private static bool IsUnderRoot(string root, string candidate)

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -9,6 +10,7 @@ using RuAgent.Broker.Skills;
 using RuAgent.Broker.Tools.Desktop;
 using RuAgent.Broker.Tools.Files;
 using RuAgent.Broker.Tools.Notes;
+using RuAgent.Broker.Tools.Paths;
 using RuAgent.Broker.Tools.Terminal;
 using RuAgent.Broker.Tools.Web;
 using RuAgent.Broker.Tools.Help;
@@ -39,6 +41,12 @@ public sealed class ToolExecutionService : IToolInvoker
     private readonly FileGlobAdapter _fileGlob;
     private readonly FileSearchAdapter _fileSearch;
     private readonly FileReadAdapter _fileRead;
+    private readonly FileWriteAdapter _fileWrite;
+    private readonly FileDeleteAdapter _fileDelete;
+    private readonly FileRestoreAdapter _fileRestore;
+    private readonly CanonicalPathResolver _mutationResolver;
+    private readonly RootToolSet _defaultTools;
+    private readonly ConcurrentDictionary<string, RootToolSet> _toolSetsByRoot = new(StringComparer.OrdinalIgnoreCase);
     private readonly AppTools _apps = new();
     private readonly SystemTools _system = new();
     private readonly Lazy<VolumeTools> _volume;
@@ -67,12 +75,28 @@ public sealed class ToolExecutionService : IToolInvoker
         _fileGlob = new FileGlobAdapter(_workspace.Root);
         _fileSearch = new FileSearchAdapter(_workspace.Root);
         _fileRead = new FileReadAdapter(_workspace.Root);
+        _fileWrite = new FileWriteAdapter(_workspace.Root);
+        _fileDelete = new FileDeleteAdapter(_workspace.Root);
+        _fileRestore = new FileRestoreAdapter(_workspace.Root);
+        _mutationResolver = new CanonicalPathResolver(_workspace.Root);
         _notes = new NotesAdapter(_workspace);
         _helpDocs = HelpDocsTool.CreateDefault();
         _terminal = new TerminalAdapter(
             _workspace,
             new ShellRuntimeResolver(),
             _approvalTokens);
+        _defaultTools = new RootToolSet
+        {
+            List = _fileList,
+            Glob = _fileGlob,
+            Search = _fileSearch,
+            Read = _fileRead,
+            Write = _fileWrite,
+            Delete = _fileDelete,
+            Restore = _fileRestore,
+            MutationResolver = _mutationResolver,
+            Terminal = _terminal,
+        };
         _volume = new Lazy<VolumeTools>(
             () => new VolumeTools(volumeController ?? new WindowsCoreAudioVolumeController()));
         _webOptions = webOptions ?? new WebOptions();
@@ -298,7 +322,12 @@ public sealed class ToolExecutionService : IToolInvoker
                     adapterInvoked: false);
             }
 
-            if (decision.RequiresApproval)
+            // V2 executes arrive with a consumed preparation or authorization token
+            // (AgentConnection consumes it before dispatch), so the v1 approval
+            // prompt must not re-gate them; approval already happened at evaluate.
+            var isV2Authorized = ReadOptionalString(request.Payload, "preparation_token") is not null
+                || ReadOptionalString(request.Payload, "authorization_token") is not null;
+            if (decision.RequiresApproval && !isV2Authorized)
             {
                 var expiresAt = DateTimeOffset.UtcNow.AddSeconds(60);
                 var argumentsHash = PendingApprovalStore.ComputeArgumentsHash(toolId, toolVersion, arguments);
@@ -308,7 +337,7 @@ public sealed class ToolExecutionService : IToolInvoker
                         request.SessionId,
                         toolId,
                         toolVersion,
-                        TryComputeTerminalIntentHash(toolId, arguments) ?? argumentsHash,
+                        TryComputeTerminalIntentHash(_defaultTools, toolId, arguments) ?? argumentsHash,
                         TimeSpan.FromSeconds(60))
                     : null;
                 var approvalId = _approvals.Issue(
@@ -350,6 +379,7 @@ public sealed class ToolExecutionService : IToolInvoker
                     || ReadOptionalString(request.Payload, "preparation_token") is not null,
                 approvalToken: ReadOptionalString(request.Payload, "authorization_token")
                     ?? ReadOptionalString(request.Payload, "preparation_token"),
+                ReadOptionalString(request.Payload, "run_id") ?? request.SessionId,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -469,6 +499,7 @@ public sealed class ToolExecutionService : IToolInvoker
                 pending.Arguments,
                 approved: true,
                 pending.TerminalApprovalToken,
+                ReadOptionalString(pending.Request.Payload, "run_id") ?? pending.Request.SessionId,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -568,25 +599,28 @@ public sealed class ToolExecutionService : IToolInvoker
                 "Bundled Ru documentation searched."),
             ["system.volume"] = ExecuteVolumeAsync,
             ["app.list"] = (_, _, _) => Succeeded(_apps.List(), "Application list read."),
-            ["files.list"] = (_, arguments, _) => Succeeded(
-                _fileList.Execute(arguments),
+            ["files.list"] = (context, arguments, _) => Succeeded(
+                ToolsFor(context).List.Execute(arguments),
                 "Workspace entries listed."),
-            ["files.glob"] = (_, arguments, _) => Succeeded(
-                _fileGlob.Execute(arguments),
+            ["files.glob"] = (context, arguments, _) => Succeeded(
+                ToolsFor(context).Glob.Execute(arguments),
                 "Workspace glob completed."),
-            ["files.search"] = (_, arguments, _) => Succeeded(
-                _fileSearch.Execute(arguments),
+            ["files.search"] = (context, arguments, _) => Succeeded(
+                ToolsFor(context).Search.Execute(arguments),
                 "Workspace search completed."),
-            ["files.read"] = (_, arguments, _) => Succeeded(
-                _fileRead.Execute(arguments),
+            ["files.read"] = (context, arguments, _) => Succeeded(
+                ToolsFor(context).Read.Execute(arguments),
                 "Workspace file read."),
             ["files.edit"] = (_, arguments, _) => ExecuteFileEdit(arguments),
-            ["files.write"] = (_, arguments, _) => Succeeded(
-                _files.Write(
-                    ReadString(arguments, "path"),
-                    ReadString(arguments, "content"),
-                    arguments["overwrite"]?.GetValue<bool>() ?? false),
+            ["files.write"] = (context, arguments, _) => Succeeded(
+                ExecuteFileWrite(context, arguments),
                 "Workspace file written."),
+            ["files.delete"] = (context, arguments, _) => Succeeded(
+                ToolsFor(context).Delete.Execute(WithInternalExpectedHash(ToolsFor(context).MutationResolver, arguments)),
+                "Workspace file deleted."),
+            ["files.restore"] = (context, arguments, _) => Succeeded(
+                ToolsFor(context).Restore.Execute(arguments),
+                "Workspace file restored."),
             ["terminal.run"] = ExecuteTerminalRunAsync,
             ["terminal.shell"] = ExecuteTerminalShellAsync,
             ["notes.create"] = (context, arguments, _) => Succeeded(
@@ -611,6 +645,73 @@ public sealed class ToolExecutionService : IToolInvoker
         return executors;
     }
 
+    private JsonObject ExecuteFileWrite(ToolExecutionContext context, JsonObject arguments) =>
+        ToolsFor(context).Write.Execute(WithInternalExpectedHash(ToolsFor(context).MutationResolver, arguments));
+
+    private static JsonObject WithInternalExpectedHash(CanonicalPathResolver resolver, JsonObject arguments)
+    {
+        if (arguments["path"] is not JsonValue value || !value.TryGetValue<string>(out var pathInput))
+        {
+            return arguments;
+        }
+
+        string canonicalPath;
+        try
+        {
+            canonicalPath = resolver.Resolve(pathInput).CanonicalPath;
+        }
+        catch (ArgumentException)
+        {
+            return arguments;
+        }
+
+        var enriched = (JsonObject)arguments.DeepClone();
+        enriched["expected_sha256"] = FileHashService.GetCurrentHash(canonicalPath);
+        return enriched;
+ }
+
+    private RootToolSet ToolsFor(ToolExecutionContext context)
+    {
+        if (!_session.TryGetRunLease(context.RunId, out var lease) || lease is null)
+        {
+            return _defaultTools;
+        }
+
+        var root = Path.GetFullPath(lease.CanonicalRoot);
+        return _toolSetsByRoot.GetOrAdd(root, static (_, resolvedRoot) => RootToolSet.Create(resolvedRoot), root);
+    }
+
+    private sealed class RootToolSet
+    {
+        public required FileListAdapter List { get; init; }
+        public required FileGlobAdapter Glob { get; init; }
+        public required FileSearchAdapter Search { get; init; }
+        public required FileReadAdapter Read { get; init; }
+        public required FileWriteAdapter Write { get; init; }
+        public required FileDeleteAdapter Delete { get; init; }
+        public required FileRestoreAdapter Restore { get; init; }
+        public required CanonicalPathResolver MutationResolver { get; init; }
+        public required TerminalAdapter Terminal { get; init; }
+
+        public static RootToolSet Create(string canonicalRoot)
+        {
+            return new RootToolSet
+            {
+                List = new FileListAdapter(canonicalRoot),
+                Glob = new FileGlobAdapter(canonicalRoot),
+                Search = new FileSearchAdapter(canonicalRoot),
+                Read = new FileReadAdapter(canonicalRoot),
+                Write = new FileWriteAdapter(canonicalRoot),
+                Delete = new FileDeleteAdapter(canonicalRoot),
+                Restore = new FileRestoreAdapter(canonicalRoot),
+                MutationResolver = new CanonicalPathResolver(canonicalRoot),
+                Terminal = new TerminalAdapter(
+                    new WorkspacePathGuard(canonicalRoot),
+                    new ShellRuntimeResolver()),
+            };
+        }
+    }
+
     private static HttpClient CreateWebHttpClient()
     {
         var handler = new HttpClientHandler
@@ -627,6 +728,7 @@ public sealed class ToolExecutionService : IToolInvoker
         JsonObject arguments,
         bool approved,
         string? approvalToken,
+        string runId,
         CancellationToken cancellationToken)
     {
         var started = Stopwatch.StartNew();
@@ -670,7 +772,8 @@ public sealed class ToolExecutionService : IToolInvoker
             approved,
             approvalToken,
             !sessionScopes.Contains(ToolScope.TerminalNetwork),
-            sessionScopes);
+            sessionScopes,
+            runId);
         ToolExecutionOutcome outcome;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(Math.Clamp(context.DeadlineMs, 1, 300_000));
@@ -851,7 +954,7 @@ public sealed class ToolExecutionService : IToolInvoker
             context.SessionId,
             context.SessionScopes ?? _session.Scopes,
             _session.Descriptor.ExpiresAt);
-        var result = await _terminal.RunAsync(
+        var result = await ToolsFor(context).Terminal.RunAsync(
             grant,
             new TerminalRunRequest(
                 ReadOptionalString(arguments, "shell") ?? "powershell",
@@ -889,7 +992,7 @@ public sealed class ToolExecutionService : IToolInvoker
             context.ApprovalToken ?? string.Empty,
             context.RequestId,
             context.SessionId,
-            TryComputeTerminalIntentHash("terminal.shell", arguments)
+            TryComputeTerminalIntentHash(ToolsFor(context), "terminal.shell", arguments)
                 ?? PendingApprovalStore.ComputeArgumentsHash("terminal.shell", "1.0.0", arguments));
         shellRequest = shellRequest with
         {
@@ -909,13 +1012,16 @@ public sealed class ToolExecutionService : IToolInvoker
     /// argv, working directory, operation class, network intent, or timeout between
     /// approval and execution invalidates the authorization.
     /// </summary>
-    private string? TryComputeTerminalIntentHash(string toolId, JsonObject arguments)
+    private string? TryComputeTerminalIntentHash(string toolId, JsonObject arguments) =>
+        TryComputeTerminalIntentHash(_defaultTools, toolId, arguments);
+
+    private string? TryComputeTerminalIntentHash(RootToolSet tools, string toolId, JsonObject arguments)
     {
         try
         {
             if (toolId == "terminal.shell")
             {
-                return _terminal.CanonicalizeShell(new TerminalShellRequest(
+                return tools.Terminal.CanonicalizeShell(new TerminalShellRequest(
                     ReadOptionalString(arguments, "shell") ?? "powershell",
                     ReadOptionalString(arguments, "working_directory") ?? ".",
                     ReadString(arguments, "script"),

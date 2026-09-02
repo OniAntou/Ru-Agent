@@ -67,7 +67,12 @@ public static class BrokerPolicyContracts
 
     public static IReadOnlyList<string> AuthoritativeFallbackCapabilities()
     {
-        return new[] { "files.list", "files.glob", "files.search", "files.read" };
+        return new[]
+        {
+            "files.list", "files.glob", "files.search", "files.read",
+            "files.write", "files.edit", "files.delete", "files.restore",
+            "terminal.run", "terminal.shell",
+        };
     }
 
     public static bool IsReadOnlyTool(string toolId) =>

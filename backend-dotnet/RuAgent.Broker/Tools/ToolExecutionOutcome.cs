@@ -12,7 +12,8 @@ public sealed record ToolExecutionContext(
     bool Approved,
     string? ApprovalToken = null,
     bool ConfinementRequired = true,
-    IReadOnlySet<string>? SessionScopes = null);
+    IReadOnlySet<string>? SessionScopes = null,
+    string RunId = "");
 
 public sealed record ToolExecutionOutcome(
     string Status,

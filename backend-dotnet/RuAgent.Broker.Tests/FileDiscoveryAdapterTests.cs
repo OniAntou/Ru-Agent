@@ -428,7 +428,7 @@ public sealed class FileDiscoveryAdapterTests : IDisposable
             var outsideCtx = factory.Create("files.read", "1.0.0", new JsonObject { ["path"] = outsidePath });
             var outEval = evaluator.Evaluate(lease.Snapshot, outsideCtx, PolicyRequestInvariants.Valid, DateTimeOffset.UtcNow);
             Assert.Equal("ask", outEval.Decision);
-            Assert.Equal("outside_workspace", outEval.ReasonCode);
+            Assert.Equal("external_directory_required", outEval.ReasonCode);
         }
         finally { File.Delete(outsidePath); }
     }

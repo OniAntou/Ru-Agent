@@ -82,6 +82,16 @@ public sealed class FileWriteAdapter
             throw new UnauthorizedAccessException("workspace_changed");
         }
 
+        // Create-only semantics mirror the Host gateway: writing over an existing
+        // file without an explicit overwrite is a bounded application failure.
+        var overwrite = arguments["overwrite"] is JsonValue overwriteValue
+            && overwriteValue.TryGetValue<bool>(out var overwriteFlag)
+            && overwriteFlag;
+        if (!overwrite && File.Exists(reResolved.CanonicalPath))
+        {
+            throw new IOException("file_exists");
+        }
+
         var beforeHash = FileHashService.GetCurrentHash(reResolved.CanonicalPath);
         if (!string.Equals(beforeHash, expected, StringComparison.Ordinal))
         {

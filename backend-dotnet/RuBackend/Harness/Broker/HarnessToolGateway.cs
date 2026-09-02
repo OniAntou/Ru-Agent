@@ -654,12 +654,6 @@ public sealed class HarnessToolGateway : IToolGateway, IToolRunCancellation
                 {
                     throw new ArgumentException("not_a_file");
                 }
-                if (execution.Proposal.ToolId == "files.write"
-                    && File.Exists(resolved)
-                    && !(args["overwrite"]?.GetValue<bool>() ?? false))
-                {
-                    throw new IOException("file_exists");
-                }
                 var expectedHash = ComputeFileHash(resolved);
                 _pendingExpectedHashes[execution.ExecutionId.Value] = expectedHash;
                 _pendingResolvedPaths[execution.ExecutionId.Value] = resolved;

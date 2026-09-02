@@ -232,7 +232,7 @@ public sealed class PolicyEvaluationTests
     [Theory]
     [InlineData("delete_requires_approval", "files.delete", "src/old.txt")]
     [InlineData("restore_once", "files.restore", "src/old.txt")]
-    [InlineData("outside_workspace", "files.read", null)]
+    [InlineData("external_directory_required", "files.read", null)]
     [InlineData("protected_path", "files.read", ".env.local")]
     public void Standard_fallback_asks_for_risky_file_operations(string reasonCode, string toolId, string? path)
     {

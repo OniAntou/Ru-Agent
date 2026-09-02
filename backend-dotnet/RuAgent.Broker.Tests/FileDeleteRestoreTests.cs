@@ -184,9 +184,9 @@ public sealed class FileDeleteRestoreTests : IDisposable
         var result = _restore.Execute(new JsonObject { ["recovery_id"] = recoveredId });
         Assert.Equal(recoveredId, result["recovery_id"]!.GetValue<string>());
         Assert.True(File.Exists(canonical));
-        // After consumption, prepare should fail with recovery_consumed
-        var ex = Assert.Throws<InvalidOperationException>(() => _restore.Prepare(new JsonObject { ["recovery_id"] = recoveredId }));
-        Assert.Equal("recovery_consumed", ex.Message);
+        // After consumption, the recovery record is removed — replay fails unavailable
+        var ex = Assert.Throws<FileNotFoundException>(() => _restore.Prepare(new JsonObject { ["recovery_id"] = recoveredId }));
+        Assert.Equal("recovery_unavailable", ex.Message);
         Assert.False(FileRestoreAdapter.IsAvailable(recoveredId));
     }
 
@@ -209,7 +209,7 @@ public sealed class FileDeleteRestoreTests : IDisposable
     }
 
     [Fact]
-    public void Restore_success_consumes_id_once_replay_returns_recovery_consumed()
+    public void Restore_success_consumes_id_once_replay_returns_recovery_unavailable()
     {
         var content = "once";
         var bytes = Encoding.UTF8.GetBytes(content);
@@ -219,10 +219,10 @@ public sealed class FileDeleteRestoreTests : IDisposable
         if (File.Exists(canonical)) File.Delete(canonical);
         var result = _restore.Execute(new JsonObject { ["recovery_id"] = recoveryId });
         Assert.Equal("once", File.ReadAllText(canonical));
-        var ex = Assert.Throws<InvalidOperationException>(() => _restore.Execute(new JsonObject { ["recovery_id"] = recoveryId }));
-        Assert.Equal("recovery_consumed", ex.Message);
-        var ex2 = Assert.Throws<InvalidOperationException>(() => _restore.Prepare(new JsonObject { ["recovery_id"] = recoveryId }));
-        Assert.Equal("recovery_consumed", ex2.Message);
+        var ex = Assert.Throws<FileNotFoundException>(() => _restore.Execute(new JsonObject { ["recovery_id"] = recoveryId }));
+        Assert.Equal("recovery_unavailable", ex.Message);
+        var ex2 = Assert.Throws<FileNotFoundException>(() => _restore.Prepare(new JsonObject { ["recovery_id"] = recoveryId }));
+        Assert.Equal("recovery_unavailable", ex2.Message);
     }
 
     [Fact]

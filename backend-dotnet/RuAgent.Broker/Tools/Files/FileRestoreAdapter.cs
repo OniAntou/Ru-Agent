@@ -161,14 +161,9 @@ public sealed class FileRestoreAdapter
             }
 
             reservationHeld = false;
-            // Retain the consumed marker until the normal TTL pruning pass. This
-            // makes replay deterministic (`recovery_consumed`) while keeping the
-            // registry bounded instead of retaining every historical payload. The
-            // byte payload itself is no longer needed after a successful restore.
-            _store.TryUpdate(
-                recoveryId,
-                reserved with { Content = Array.Empty<byte>() },
-                reserved);
+            // One-time contract: the record is removed after a successful restore so
+            // a replay fails as unavailable, matching the Host recovery store.
+            _store.TryRemove(recoveryId, out _);
 
             return new JsonObject
             {

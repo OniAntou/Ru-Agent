@@ -731,7 +731,7 @@ public sealed class BrokerHostTests
         Assert.Equal(AgentMessageTypes.RunOpened, opened.MessageType);
         Assert.Equal("succeeded", opened.Payload["status"]!.GetValue<string>());
         var caps = opened.Payload["advertised_capabilities"]!.AsArray().Select(n => n!.GetValue<string>()).OrderBy(x => x).ToArray();
-        Assert.Equal(new[] { "files.glob", "files.list", "files.read", "files.search" }, caps);
+        Assert.Equal(new[] { "files.delete", "files.edit", "files.glob", "files.list", "files.read", "files.restore", "files.search", "files.write", "terminal.run", "terminal.shell" }, caps);
     }
 
     [Fact]
@@ -770,7 +770,14 @@ public sealed class BrokerHostTests
             .Select(node => node!["tool_id"]!.GetValue<string>())
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
-        Assert.Equal(new[] { "files.glob", "files.list", "files.read", "files.search" }, ids);
+        Assert.Equal(
+            new[]
+            {
+                "files.delete", "files.edit", "files.glob", "files.list",
+                "files.read", "files.restore", "files.search", "files.write",
+                "terminal.run", "terminal.shell",
+            },
+            ids);
     }
 
     [Fact]
@@ -859,7 +866,7 @@ public sealed class BrokerHostTests
             cts.Token);
         _ = await ReceiveAsync(socket, cts.Token);
 
-        foreach (var toolId in new[] { "files.write", "terminal.shell" })
+        foreach (var toolId in new[] { "notes.create", "web.search" })
         {
             await SendAsync(
                 socket,

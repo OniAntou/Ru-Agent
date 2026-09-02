@@ -79,6 +79,8 @@ public sealed class ToolCatalog
         yield return Manifest("files.read", ToolScope.WorkspaceRead, RiskClass.Read, "desktop", workspace: true);
         yield return Manifest("files.edit", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
         yield return Manifest("files.write", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
+        yield return Manifest("files.delete", ToolScope.WorkspaceWrite, RiskClass.Destructive, "desktop", workspace: true, requiresApproval: true);
+        yield return Manifest("files.restore", ToolScope.WorkspaceWrite, RiskClass.Reversible, "desktop", workspace: true, requiresApproval: true);
         yield return TerminalManifests.Run;
         yield return TerminalManifests.Shell;
         yield return Manifest("notes.create", ToolScope.WorkspaceWrite, RiskClass.External, "builtin", workspace: true, requiresApproval: true);

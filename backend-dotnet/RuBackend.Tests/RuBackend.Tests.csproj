@@ -23,4 +23,7 @@
     <ProjectReference Include="..\RuAgent.Protocol\RuAgent.Protocol.csproj" />
     <ProjectReference Include="..\RuBackend\RuBackend.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\RuAgent.Harness.Core.Tests\Conformance\ToolGatewayConformance.cs" Link="Conformance\ToolGatewayConformance.cs" />
+  </ItemGroup>
 </Project>

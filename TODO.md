@@ -107,11 +107,7 @@ follow-up boxes track acceptance reconciliation, not a reversal of that work.
   model-contract drift; Broker manifest validation remains in place while the
   later Broker-authority migration stays open.
 - [x] Implement bundled internal documentation & docs lookup tool (`help.docs`; `app.docs` is not a second model tool) in `RuAgentBroker` and System Prompt Composer. The offline, read-only search is backed by five explicitly embedded current documents and works from any workspace. See `docs/superpowers/specs/2026-09-02-bundled-help-docs-design.md` and `docs/superpowers/plans/2026-09-02-bundled-help-docs.md`.
-- [ ] Harden Agent Broker file and terminal tools against edge-case failures:
-  - Fix `files.edit` line-ending normalization (`\r\n` vs `\n`) to prevent `edit_no_match` mismatches on CRLF files.
-  - Keep the canonical `files.search.is_regex` contract; multithreaded directory traversal remains open.
-  - Add interactive CLI detection / early abort for commands waiting on stdin in `terminal.run`/`terminal.shell`.
-  - Parameterize the recovery cap in `files.delete`/`FileRecoveryStore`.
+- [x] Harden Agent Broker file and terminal tools against edge-case failures: `files.edit` now preserves CRLF while accepting LF markers; `files.search` uses clamped concurrent reads, cancellation, and ordinal result ordering; terminal child stdin is redirected and closed immediately; delete/restore recovery caps are configurable but bounded by the 4 MiB hard maximum. See `docs/superpowers/specs/2026-09-02-agent-tool-hardening-design.md` and `docs/superpowers/plans/2026-09-02-agent-tool-hardening.md`.
 
 ## Deferred capabilities
 

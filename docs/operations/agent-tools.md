@@ -6,9 +6,9 @@ v2 surfaces (2026-08-31).
 It distinguishes a Broker binding that can execute from a capability the model
 is actually allowed to select. Those states are not interchangeable.
 
-This checkpoint includes declarative Skills only. Subagent orchestration, LSP,
-extension/plugin discovery, and MCP servers are intentionally outside the
-runtime surface.
+This checkpoint includes declarative Skills, Model Context Protocol (MCP stdio JSON-RPC 2.0),
+Interactive Windows ConPTY terminal sessions, session branching/fork/rewind,
+managed Git commit workflow, and dynamic model context compaction.
 
 > **Current checkpoint (Agent-only generation, 2026-08-29):**
 > - Public Host (`RuBackend.exe --managed-runtime`) now owns Worker/Broker in
@@ -36,8 +36,9 @@ runtime surface.
 >   reconciliation outcomes. `full` preset requires
 >   interactive confirmation and `X-Interactive-Confirmed: true`; `--json`
 >   cannot create global rules or confirm trust/approval.
->   Headless terminal requests are available under the same policy/approval
->   boundary; the managed Git commit workflow (Phase 3 Task 6) is not shipped.
+>   Headless terminal requests and interactive Windows ConPTY sessions are available
+>   under the policy/approval boundary; the managed Git commit workflow is fully shipped
+>   with temporary index isolation and path attribution rollback.
 >   Typed command dispatch is available through `POST /agent/v1/runs/{runId}/commands`;
 >   `/compact`, `/help`, `/skills`, and `/skill <id> {json}` use the shared
 >   Protocol parser and do not become model history. Declarative Skills are

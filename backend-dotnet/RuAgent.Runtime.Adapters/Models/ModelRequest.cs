@@ -64,6 +64,16 @@ public sealed record ModelRequest
             long totalDecoded = 0;
             foreach (var img in images)
             {
+                if (img.MimeType is not ("image/png" or "image/jpeg" or "image/webp"))
+                {
+                    throw new ArgumentException("MimeType is invalid. Only image/png, image/jpeg, image/webp are allowed.", nameof(images));
+                }
+
+                if (string.IsNullOrWhiteSpace(img.Base64Data) || img.Base64Data.Length > 5_600_000)
+                {
+                    throw new ArgumentException("Base64Data is invalid.", nameof(images));
+                }
+
                 // Estimate decoded bytes: ceil(Base64Data.Length * 3 / 4)
                 // Account for padding via formula (len * 3 + 3) / 4 to get upper bound
                 var len = (long)img.Base64Data.Length;

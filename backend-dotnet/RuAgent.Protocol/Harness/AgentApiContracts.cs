@@ -9,6 +9,7 @@ public sealed record CreateAgentRunRequest(
     [property: JsonPropertyName("preset")] string Preset,
     [property: JsonPropertyName("preset_selection_version")] long? PresetSelectionVersion,
     [property: JsonPropertyName("idempotency_key")] string IdempotencyKey,
+    /// <summary>Up to 4 data:image/(png|jpeg|webp);base64,... images (decoded total &lt;= 20MB, per-image &lt;= 4MB).</summary>
     [property: JsonPropertyName("image_attachments")] System.Collections.Generic.IReadOnlyList<string>? ImageAttachments = null);
 
 public sealed record CreateAgentRunResponse(

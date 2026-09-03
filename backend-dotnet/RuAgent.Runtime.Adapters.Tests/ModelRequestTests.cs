@@ -144,4 +144,33 @@ public sealed class ModelRequestTests
         list.Add(new ModelImage("image/jpeg", "b"));
         Assert.Single(req.Images);
     }
+
+    [Fact]
+    public void ModelRequest_accepts_empty_prompt_when_images_present()
+    {
+        var imgs = new[] { new ModelImage("image/png", "a") };
+        var req = new ModelRequest("gpt-4o", "sys", "", Array.Empty<ModelTurn>(), new JsonObject(), new Uri("https://api.openai.com/v1"), "sk", 100, imgs);
+        Assert.Equal("", req.Prompt);
+        Assert.Single(req.Images);
+    }
+
+    [Theory]
+    [InlineData("gpt-4o", true)]
+    [InlineData("gpt-4o-mini", true)]
+    [InlineData("gpt-5.6-sol", true)]
+    [InlineData("claude-3-5-sonnet", true)]
+    [InlineData("claude-sonnet-4-6", true)]
+    [InlineData("claude-opus-5", true)]
+    [InlineData("gemini-1.5-pro", true)]
+    [InlineData("o1", true)]
+    [InlineData("llama-3.2-vision-11b", true)]
+    [InlineData("deepseek-chat", false)]
+    [InlineData("deepseek-coder", false)]
+    [InlineData("qwen2.5-72b", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void ModelImage_IsVisionModel_matches_correctly(string? model, bool expected)
+    {
+        Assert.Equal(expected, ModelImage.IsVisionModel(model));
+    }
 }

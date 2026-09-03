@@ -25,9 +25,19 @@ public sealed record ModelRequest
             throw new ArgumentException("System prompt exceeds the adapter cap.", nameof(systemPrompt));
         }
 
-        if (string.IsNullOrWhiteSpace(prompt) || prompt.Length > 16_000 || prompt.Contains('\0'))
+        if (images is null || images.Count == 0)
         {
-            throw new ArgumentException("Prompt is invalid.", nameof(prompt));
+            if (string.IsNullOrWhiteSpace(prompt) || prompt.Length > 16_000 || prompt.Contains('\0'))
+            {
+                throw new ArgumentException("Prompt is invalid.", nameof(prompt));
+            }
+        }
+        else
+        {
+            if (prompt is null || prompt.Length > 16_000 || prompt.Contains('\0'))
+            {
+                throw new ArgumentException("Prompt is invalid.", nameof(prompt));
+            }
         }
 
         ArgumentNullException.ThrowIfNull(turns);

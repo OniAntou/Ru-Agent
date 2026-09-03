@@ -9,6 +9,8 @@ namespace RuBackend.Harness;
 public static class AgentV1Endpoints
 {
     private const int MaxJsonBodyBytes = 64 * 1024;
+    private const int MaxJsonBodyBytesDefault = MaxJsonBodyBytes;
+    private const int MaxJsonBodyBytesAgentRun = 1024 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     public static void Map(WebApplication app)
@@ -40,7 +42,7 @@ public static class AgentV1Endpoints
         CreateAgentRunRequest? dto;
         try
         {
-            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct, MaxJsonBodyBytesAgentRun);
             dto = text is null
                 ? null
                 : JsonSerializer.Deserialize<CreateAgentRunRequest>(text, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -764,16 +766,16 @@ public static class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<string?> ReadBoundedBodyTextAsync(HttpRequest request, CancellationToken cancellationToken)
+    private static async Task<string?> ReadBoundedBodyTextAsync(HttpRequest request, CancellationToken cancellationToken, int maxBodyBytes = MaxJsonBodyBytesDefault)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (request.ContentLength is > MaxJsonBodyBytes)
+        if (request.ContentLength is > 0 && request.ContentLength > maxBodyBytes)
         {
             throw new RequestBodyTooLargeException();
         }
 
         using var buffer = new MemoryStream(
-            request.ContentLength is >= 0 and <= MaxJsonBodyBytes
+            request.ContentLength is >= 0 and <= int.MaxValue && request.ContentLength <= maxBodyBytes
                 ? checked((int)request.ContentLength.Value)
                 : 0);
         var chunk = new byte[8 * 1024];
@@ -785,7 +787,7 @@ public static class AgentV1Endpoints
                 break;
             }
 
-            if (buffer.Length > MaxJsonBodyBytes - read)
+            if (buffer.Length > maxBodyBytes - read)
             {
                 throw new RequestBodyTooLargeException();
             }

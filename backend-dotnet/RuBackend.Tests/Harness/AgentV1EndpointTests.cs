@@ -1,6 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Microsoft.Extensions.DependencyInjection;
+using RuAgent.Harness.Persistence;
+using RuAgent.Protocol.Harness;
+using RuBackend.Business.Settings;
+using RuBackend.Harness;
 using Xunit;
 
 namespace RuBackend.Tests.Harness;
@@ -171,7 +177,78 @@ public sealed class AgentV1EndpointTests
     }
 
     [Fact]
-    public async Task Create_run_rejects_legacy_image_attachments_instead_of_dropping_them()
+    public async Task Create_run_accepts_valid_image_attachments_and_persists_payloads()
+    {
+        using var tmp = TempWorkspace.Create();
+        var snapshot = CreateSettingsSnapshot("OpenAI", "gpt-4o");
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths, settingsStore: new StubSettingsStore(snapshot));
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+
+        var validPngBase64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        using var response = await client.PostAsJsonAsync(
+            "/agent/v1/runs",
+            new
+            {
+                session_id = sessionId,
+                workspace_path = tmp.Path,
+                prompt = "inspect image",
+                preset = "standard",
+                idempotency_key = "image-valid-test-" + Guid.NewGuid().ToString("N"),
+                image_attachments = new[] { validPngBase64 },
+            });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var runId = json.GetProperty("run_id").GetString()!;
+        Assert.False(string.IsNullOrEmpty(runId));
+
+        using var getRun = await client.GetAsync($"/agent/v1/runs/{runId}");
+        Assert.Equal(HttpStatusCode.OK, getRun.StatusCode);
+
+        // Verify UserImage payload persisted in SQLite and readable via payload endpoint
+        await using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmp.DataPaths.AgentHarnessDatabase}");
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT payload_id, kind, audience FROM agent_payloads WHERE run_id = $runId AND kind = 11";
+        cmd.Parameters.AddWithValue("$runId", runId);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        var payloadId = reader.GetString(0);
+        Assert.Equal(11, reader.GetInt32(1));
+        Assert.Equal(3, reader.GetInt32(2)); // AuthenticatedClient (1) | ModelContext (2) = 3
+
+        using var getPayload = await client.GetAsync($"/agent/v1/runs/{runId}/payloads/{payloadId}");
+        Assert.Equal(HttpStatusCode.OK, getPayload.StatusCode);
+        var payloadJson = await getPayload.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(validPngBase64, payloadJson.GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public async Task Create_run_rejects_five_images_with_image_limit_exceeded()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient();
+        var fiveImages = Enumerable.Repeat("data:image/png;base64,aGVsbG8=", 5).ToArray();
+        using var response = await client.PostAsJsonAsync(
+            "/agent/v1/runs",
+            new
+            {
+                session_id = "sess_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                workspace_path = Path.GetTempPath(),
+                prompt = "inspect images",
+                preset = "standard",
+                idempotency_key = "image-limit-test",
+                image_attachments = fiveImages,
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("image_limit_exceeded", json.GetProperty("error_code").GetString());
+    }
+
+    [Fact]
+    public async Task Create_run_rejects_invalid_mime()
     {
         using var factory = new BackendWebApplicationFactory();
         using var client = factory.CreateAuthenticatedClient();
@@ -183,13 +260,154 @@ public sealed class AgentV1EndpointTests
                 workspace_path = Path.GetTempPath(),
                 prompt = "inspect image",
                 preset = "standard",
-                idempotency_key = "image-attachment-test",
-                image_attachments = new[] { "data:image/png;base64,abc" },
+                idempotency_key = "image-mime-test",
+                image_attachments = new[] { "data:image/gif;base64,aGVsbG8=" },
             });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("image_attachments_unsupported", json.GetProperty("error_code").GetString());
+        Assert.Equal("invalid_image_mime", json.GetProperty("error_code").GetString());
+    }
+
+    [Fact]
+    public async Task Create_run_rejects_invalid_base64()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient();
+        using var response = await client.PostAsJsonAsync(
+            "/agent/v1/runs",
+            new
+            {
+                session_id = "sess_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                workspace_path = Path.GetTempPath(),
+                prompt = "inspect image",
+                preset = "standard",
+                idempotency_key = "image-b64-test",
+                image_attachments = new[] { "data:image/png;base64,not valid base64 with spaces!" },
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("invalid_image_base64", json.GetProperty("error_code").GetString());
+    }
+
+    [Fact]
+    public async Task Create_run_rejects_http_body_larger_than_1mb()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient();
+        var largeBytes = new byte[1024 * 1024];
+        var largeBase64 = "data:image/png;base64," + Convert.ToBase64String(largeBytes);
+        using var response = await client.PostAsJsonAsync(
+            "/agent/v1/runs",
+            new
+            {
+                session_id = "sess_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                workspace_path = Path.GetTempPath(),
+                prompt = "inspect image",
+                preset = "standard",
+                idempotency_key = "image-large-http-test",
+                image_attachments = new[] { largeBase64 },
+            });
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("request_too_large", json.GetProperty("error_code").GetString());
+    }
+
+    [Fact]
+    public async Task Create_run_service_rejects_image_too_large_per_image()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        var svc = factory.Services.GetRequiredService<AgentV1Service>();
+        var largeBytes = new byte[4 * 1024 * 1024 + 4];
+        var largeBase64 = "data:image/png;base64," + Convert.ToBase64String(largeBytes);
+        var req = new CreateAgentRunRequest(
+            "sess_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            Path.GetTempPath(),
+            "inspect image",
+            "standard",
+            1,
+            "image-large-test",
+            new[] { largeBase64 });
+
+        var result = await svc.CreateRunAsync(req, CancellationToken.None);
+        Assert.Equal(413, result.StatusCode);
+        var err = Assert.IsType<AgentErrorResponse>(result.Body);
+        Assert.Equal("image_too_large", err.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Create_run_service_rejects_image_chars_exceeds_5600000()
+    {
+        using var factory = new BackendWebApplicationFactory();
+        var svc = factory.Services.GetRequiredService<AgentV1Service>();
+        var longUrl = "data:image/png;base64," + new string('A', 5_600_001);
+        var req = new CreateAgentRunRequest(
+            "sess_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            Path.GetTempPath(),
+            "inspect image",
+            "standard",
+            1,
+            "image-chars-test",
+            new[] { longUrl });
+
+        var result = await svc.CreateRunAsync(req, CancellationToken.None);
+        Assert.Equal(413, result.StatusCode);
+        var err = Assert.IsType<AgentErrorResponse>(result.Body);
+        Assert.Equal("image_too_large", err.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Create_run_rejects_vision_unsupported_model()
+    {
+        using var tmp = TempWorkspace.Create();
+        var snapshot = CreateSettingsSnapshot("OpenCode Zen", "deepseek-chat");
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths, settingsStore: new StubSettingsStore(snapshot));
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+
+        var validPngBase64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        using var response = await client.PostAsJsonAsync(
+            "/agent/v1/runs",
+            new
+            {
+                session_id = sessionId,
+                workspace_path = tmp.Path,
+                prompt = "inspect image",
+                preset = "standard",
+                idempotency_key = "image-vision-unsupported-test-" + Guid.NewGuid().ToString("N"),
+                image_attachments = new[] { validPngBase64 },
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("vision_unsupported", json.GetProperty("error_code").GetString());
+    }
+
+    [Fact]
+    public async Task Create_run_accepts_empty_prompt_when_image_present()
+    {
+        using var tmp = TempWorkspace.Create();
+        var snapshot = CreateSettingsSnapshot("OpenAI", "gpt-4o");
+        using var factory = new BackendWebApplicationFactory(dataPaths: tmp.DataPaths, settingsStore: new StubSettingsStore(snapshot));
+        using var client = factory.CreateAuthenticatedClient();
+        var sessionId = await CreateSessionAsync(client);
+
+        var validPngBase64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        using var response = await client.PostAsJsonAsync(
+            "/agent/v1/runs",
+            new
+            {
+                session_id = sessionId,
+                workspace_path = tmp.Path,
+                prompt = "",
+                preset = "standard",
+                idempotency_key = "image-empty-prompt-test-" + Guid.NewGuid().ToString("N"),
+                image_attachments = new[] { validPngBase64 },
+            });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     [Fact]
@@ -234,5 +452,80 @@ public sealed class AgentV1EndpointTests
         }
 
         throw new FileNotFoundException("contract not found");
+    }
+
+    private static async Task<string> CreateSessionAsync(HttpClient client)
+    {
+        using var resp = await client.PostAsync("/sessions/new", null);
+        var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        return json.GetProperty("session_id").GetString()!;
+    }
+
+    private static SettingsSnapshot CreateSettingsSnapshot(string backend, string model) => new(
+        new JsonObject(),
+        backend,
+        model,
+        OpenCodeModel: backend == "OpenCode Zen" ? model : string.Empty,
+        KiloModel: backend == "Kilo Gateway" ? model : string.Empty,
+        ApiVariant: "Default",
+        EnableSelfLearning: true,
+        ShareMemoryWithCloud: true,
+        KiloReasoningEnabled: false,
+        VoiceLabel: "Ru",
+        VoiceStyleId: "original",
+        VoiceSpeed: 1.0,
+        AutoPaceEnabled: false,
+        AutoReadReplies: false,
+        ShowSubtitles: false,
+        SubtitleColor: "#FFFFFF",
+        SubtitleSize: "medium",
+        SubtitleDuration: 2.0,
+        SubtitlePosMode: "auto",
+        SubtitlePosX: -1,
+        SubtitlePosY: -1,
+        OllamaModel: string.Empty,
+        LmStudioModel: string.Empty,
+        CustomModel: string.Empty,
+        OllamaUrl: "http://localhost:11434/v1",
+        LmStudioUrl: "http://localhost:1234/v1",
+        CustomUrl: "http://localhost:8000/v1",
+        OpenAiModel: backend == "OpenAI" ? model : string.Empty,
+        AnthropicModel: backend == "Anthropic" ? model : string.Empty);
+
+    private sealed class StubSettingsStore(SettingsSnapshot snapshot) : ISettingsStore
+    {
+        public Task<SettingsSnapshot> ReadAsync(CancellationToken cancellationToken) => Task.FromResult(snapshot);
+        public Task SaveAsync(SettingsSnapshot candidate, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class TempWorkspace : IDisposable
+    {
+        public string Path { get; }
+        public RuBackend.Business.DataPaths DataPaths { get; }
+        private readonly string _root;
+
+        private TempWorkspace(string root, string wsPath, RuBackend.Business.DataPaths dataPaths)
+        {
+            _root = root;
+            Path = wsPath;
+            DataPaths = dataPaths;
+        }
+
+        public static TempWorkspace Create()
+        {
+            var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ru-agent-test-" + Guid.NewGuid().ToString("N"));
+            var ws = System.IO.Path.Combine(root, "ws");
+            Directory.CreateDirectory(ws);
+            var dataRoot = System.IO.Path.Combine(root, "data");
+            Directory.CreateDirectory(dataRoot);
+            var resolved = RuBackend.Business.DataPaths.Resolve(root, root, root, dataRoot, System.IO.Path.Combine(root, "logs"));
+            return new TempWorkspace(root, ws, resolved);
+        }
+
+        public void Dispose()
+        {
+            try { Directory.Delete(_root, recursive: true); } catch { }
+            try { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); } catch { }
+        }
     }
 }

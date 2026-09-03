@@ -19,8 +19,11 @@ using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using RuBackend.Agent;
 using RuBackend.Business.Sessions;
+using RuBackend.Business.Settings;
 using RuBackend.Harness.Policy;
 using RuBackend.Harness.Workspace;
+using RuBackend.Providers;
+using RuAgent.Runtime.Adapters.Models;
 
 namespace RuBackend.Harness;
 
@@ -49,6 +52,8 @@ public sealed class AgentV1Service
     private readonly Broker.BrokerToolGatewayFactory? _brokerGateways;
     private readonly WorkspaceCoordinatorStore? _workspaceCoordinatorStore;
     private readonly WorkspaceJournalProtector? _workspaceJournalProtector;
+    private readonly ISettingsStore? _settingsStore;
+    private readonly Func<string, bool> _isVisionModel;
 
     private const int ApprovalToolIdMaxLength = 128;
     private const int ApprovalToolVersionMaxLength = 32;
@@ -60,6 +65,8 @@ public sealed class AgentV1Service
     private const int MaxCursorChars = 512;
     private const int MaxCursorBytes = 384;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+
+    public static bool IsVisionModel(string? model) => ModelImage.IsVisionModel(model);
 
     public AgentV1Service(
         IHarnessEventStore store,
@@ -82,7 +89,9 @@ public sealed class AgentV1Service
         IAgentBrokerClient? agentBrokerClient = null,
         Broker.BrokerToolGatewayFactory? brokerGateways = null,
         WorkspaceCoordinatorStore? workspaceCoordinatorStore = null,
-        WorkspaceJournalProtector? workspaceJournalProtector = null)
+        WorkspaceJournalProtector? workspaceJournalProtector = null,
+        ISettingsStore? settingsStore = null,
+        Func<string, bool>? isVisionModel = null)
     {
         _store = store;
         _options = options;
@@ -105,6 +114,8 @@ public sealed class AgentV1Service
         _brokerGateways = brokerGateways;
         _workspaceCoordinatorStore = workspaceCoordinatorStore;
         _workspaceJournalProtector = workspaceJournalProtector;
+        _settingsStore = settingsStore;
+        _isVisionModel = isVisionModel ?? ModelImage.IsVisionModel;
     }
 
     // Compatibility overload for tests that construct with old signature (fallback to ephemeral)
@@ -143,12 +154,101 @@ public sealed class AgentV1Service
             return BoundedError(400, "invalid_request", "Request body required.");
         }
 
-        if (request.ImageAttachments is { Count: > 0 })
+        var hasImages = request.ImageAttachments is { Count: > 0 };
+        if (hasImages)
         {
-            return BoundedError(
-                400,
-                "image_attachments_unsupported",
-                "Image attachments are not supported by Agent v1.");
+            if (request.ImageAttachments!.Count > 4)
+            {
+                return BoundedError(400, "image_limit_exceeded", "Too many images. Maximum is 4.");
+            }
+
+            long totalDecodedBytes = 0;
+            foreach (var url in request.ImageAttachments)
+            {
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    return BoundedError(400, "invalid_image_mime", "Image attachment cannot be empty.");
+                }
+
+                if (url.Length > 5_600_000)
+                {
+                    return BoundedError(413, "image_too_large", "Image attachment exceeds character limit.");
+                }
+
+                if (!url.StartsWith("data:image/", StringComparison.Ordinal))
+                {
+                    return BoundedError(400, "invalid_image_mime", "Image data URL must start with 'data:image/'.");
+                }
+
+                var semi = url.IndexOf(";base64,", StringComparison.Ordinal);
+                if (semi < 0)
+                {
+                    return BoundedError(400, "invalid_image_base64", "Image data URL must contain ';base64,'.");
+                }
+
+                var mime = url.Substring(5, semi - 5);
+                if (mime is not ("image/png" or "image/jpeg" or "image/webp"))
+                {
+                    return BoundedError(400, "invalid_image_mime", "Unsupported image mime type. Only image/png, image/jpeg, and image/webp are allowed.");
+                }
+
+                var b64 = url.Substring(semi + 8);
+                if (b64.Length == 0)
+                {
+                    return BoundedError(400, "invalid_image_base64", "Base64 data cannot be empty.");
+                }
+
+                for (var i = 0; i < b64.Length; i++)
+                {
+                    var ch = b64[i];
+                    if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '+' || ch == '/' || ch == '='))
+                    {
+                        return BoundedError(400, "invalid_image_base64", "Base64 data contains invalid characters or whitespace.");
+                    }
+                }
+
+                byte[] decoded;
+                try
+                {
+                    decoded = Convert.FromBase64String(b64);
+                }
+                catch (FormatException)
+                {
+                    return BoundedError(400, "invalid_image_base64", "Base64 data is malformed.");
+                }
+
+                if (decoded.Length > 4 * 1024 * 1024)
+                {
+                    return BoundedError(413, "image_too_large", "Image decoded size exceeds 4MB.");
+                }
+
+                totalDecodedBytes += decoded.Length;
+            }
+
+            if (totalDecodedBytes > 20 * 1024 * 1024)
+            {
+                return BoundedError(413, "image_too_large", "Total images decoded size exceeds 20MB.");
+            }
+
+            if (_settingsStore is not null)
+            {
+                var settings = await _settingsStore.ReadAsync(cancellationToken).ConfigureAwait(false);
+                string model;
+                try
+                {
+                    var selection = ProviderSelection.From(settings);
+                    model = selection.Model;
+                }
+                catch
+                {
+                    model = settings.Model;
+                }
+
+                if (!_isVisionModel(model))
+                {
+                    return BoundedError(400, "vision_unsupported", $"Model '{model}' does not support vision.");
+                }
+            }
         }
 
         var sessionIdRaw = request.SessionId?.Trim() ?? string.Empty;
@@ -169,7 +269,18 @@ public sealed class AgentV1Service
         }
 
         var prompt = request.Prompt ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(prompt) || prompt.Length > 16000)
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            if (hasImages)
+            {
+                prompt = string.Empty;
+            }
+            else
+            {
+                return BoundedError(400, "invalid_prompt", "prompt invalid.");
+            }
+        }
+        else if (prompt.Length > 16000)
         {
             return BoundedError(400, "invalid_prompt", "prompt invalid.");
         }
@@ -401,6 +512,22 @@ public sealed class AgentV1Service
             updatedAt: now);
 
         var payloads = new List<HarnessPayloadIntent> { promptPayload };
+        if (hasImages)
+        {
+            foreach (var url in request.ImageAttachments!)
+            {
+                var imageBytes = Encoding.UTF8.GetBytes(url);
+                var imagePayloadId = _ids.NewPayloadId();
+                payloads.Add(new HarnessPayloadIntent(
+                    imagePayloadId,
+                    HarnessPayloadKind.UserImage,
+                    HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                    HarnessPayloadEncoding.Utf8Text,
+                    imageBytes.Length,
+                    imageBytes));
+            }
+        }
+
         IReadOnlyList<ConversationOutboxIntent> outbox = Array.Empty<ConversationOutboxIntent>();
 
         if (isTrusted)
@@ -419,7 +546,10 @@ public sealed class AgentV1Service
         }
 
         var idempotencySha = ComputeSha256(idempotencyKey);
-        var normalizedRequestSha = ComputeSha256($"{sessionIdRaw}|{workspaceIdentity.WorkspaceId.Value}|{prompt}|{preset}|{effectiveVersion}");
+        var imagesPart = hasImages
+            ? "|" + string.Join(";", request.ImageAttachments!.Select(ComputeSha256))
+            : string.Empty;
+        var normalizedRequestSha = ComputeSha256($"{sessionIdRaw}|{workspaceIdentity.WorkspaceId.Value}|{prompt}|{preset}|{effectiveVersion}{imagesPart}");
         var creationIdentity = new RunCreationIdentity(idempotencySha, normalizedRequestSha, effectiveVersion);
         var newRun = new NewAgentRun(run, events, payloads, outbox, creationIdentity);
 

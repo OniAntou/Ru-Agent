@@ -130,6 +130,10 @@ public sealed partial class HarnessPayloadStore
                 16 * 1024,
                 HarnessPayloadAudience.InternalOnly,
                 [HarnessPayloadEncoding.Json]),
+            [HarnessPayloadKind.UserImage] = new(
+                HarnessPayloadIntent.MaximumByteCap,
+                HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                [HarnessPayloadEncoding.Utf8Text]),
         };
 
     private readonly HarnessPayloadCryptography _cryptography;

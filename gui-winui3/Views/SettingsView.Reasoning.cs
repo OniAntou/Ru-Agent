@@ -40,8 +40,9 @@ public sealed partial class SettingsView
         _loadingReasoning = true;
         try
         {
+            var options = ProviderReasoningOptions.For(state);
             ReasoningEffortComboBox.Items.Clear();
-            foreach (var option in ProviderReasoningOptions.For(state))
+            foreach (var option in options)
             {
                 AddReasoningItem(option.Value, option.Label, option.IsEnabled);
             }
@@ -56,6 +57,28 @@ public sealed partial class SettingsView
             ReasoningEffortComboBox.SelectedItem = ReasoningEffortComboBox.Items
                 .Cast<ComboBoxItem>()
                 .FirstOrDefault(item => string.Equals(item.Tag as string, selected, StringComparison.Ordinal));
+
+            // Model-aware enable: only when catalog ok, not stale, and model actually exposes levels/toggle
+            bool hasModelLevels = options.Count > 1;
+            bool canSelect = state.IsSuccess && !state.Stale && hasModelLevels;
+            ReasoningEffortComboBox.IsEnabled = canSelect;
+            if (!canSelect && state.IsSuccess)
+            {
+                ReasoningSaveStatusText.Text = state.Stale
+                    ? "Catalog đang stale — tạm dùng Provider default, sẽ cập nhật sau khi refresh."
+                    : "Model này không hỗ trợ reasoning riêng, dùng Provider default.";
+                ReasoningSaveStatusText.Visibility = Visibility.Visible;
+                _reasoningSaveFailureTimer?.Stop();
+            }
+            else if (canSelect)
+            {
+                // Clear stale hint when model supports reasoning; keep failure hint if still visible within 5s timer
+                if (ReasoningSaveStatusText.Text.StartsWith("Model này") || ReasoningSaveStatusText.Text.StartsWith("Catalog đang"))
+                {
+                    ReasoningSaveStatusText.Visibility = Visibility.Collapsed;
+                    ReasoningSaveStatusText.Text = string.Empty;
+                }
+            }
         }
         finally
         {

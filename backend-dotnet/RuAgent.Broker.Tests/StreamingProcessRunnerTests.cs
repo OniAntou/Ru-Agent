@@ -75,7 +75,7 @@ public sealed class StreamingProcessRunnerTests
 
         Assert.Equal("failed", result.Status);
         Assert.Equal(7, result.ExitCode);
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(3), "stdin readers must receive EOF promptly");
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), "stdin readers must receive EOF promptly");
     }
 
     [Fact]

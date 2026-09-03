@@ -12,7 +12,8 @@ public sealed record ModelRequest
         JsonObject settings,
         Uri endpoint,
         string credential,
-        int? maximumOutputTokens = null)
+        int? maximumOutputTokens = null,
+        IReadOnlyList<ModelImage>? images = null)
     {
         if (string.IsNullOrWhiteSpace(model) || model.Length > 256 || model.Contains('\0'))
         {
@@ -48,6 +49,33 @@ public sealed record ModelRequest
         }
         if (maximumOutputTokens is < 1 or > 128000) throw new ArgumentException("Maximum output tokens is invalid.", nameof(maximumOutputTokens));
 
+        if (images is not null)
+        {
+            if (images.Count > 4)
+            {
+                throw new ArgumentException("Too many images. Maximum is 4.", nameof(images));
+            }
+
+            if (images.Any(img => img is null))
+            {
+                throw new ArgumentException("Images contains null entry.", nameof(images));
+            }
+
+            long totalDecoded = 0;
+            foreach (var img in images)
+            {
+                // Estimate decoded bytes: ceil(Base64Data.Length * 3 / 4)
+                // Account for padding via formula (len * 3 + 3) / 4 to get upper bound
+                var len = (long)img.Base64Data.Length;
+                var decoded = (len * 3 + 3) / 4;
+                totalDecoded += decoded;
+                if (totalDecoded > 20L * 1024 * 1024)
+                {
+                    throw new ArgumentException("Total decoded images exceed 20MB.", nameof(images));
+                }
+            }
+        }
+
         Model = model;
         SystemPrompt = systemPrompt;
         Prompt = prompt;
@@ -56,6 +84,7 @@ public sealed record ModelRequest
         Endpoint = endpoint;
         Credential = credential ?? throw new ArgumentNullException(nameof(credential));
         MaximumOutputTokens = maximumOutputTokens;
+        Images = images is null ? Array.Empty<ModelImage>() : images.ToArray();
     }
 
     public string Model { get; }
@@ -73,4 +102,6 @@ public sealed record ModelRequest
     public string Credential { get; }
 
     public int? MaximumOutputTokens { get; }
+
+    public IReadOnlyList<ModelImage> Images { get; }
 }
